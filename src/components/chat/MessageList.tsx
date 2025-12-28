@@ -10,13 +10,20 @@ interface MessageListProps {
 
 export function MessageList({ messages, isLoading = false }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const prevMessageCountRef = useRef(messages.length)
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll only when a NEW message is added (not during streaming updates)
   useEffect(() => {
-    if (bottomRef.current) {
+    const messageCount = messages.length
+    const prevCount = prevMessageCountRef.current
+
+    // Only scroll if message count increased (new message added)
+    if (messageCount > prevCount && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, isLoading])
+
+    prevMessageCountRef.current = messageCount
+  }, [messages.length])
 
   return (
     <div className="p-4 sm:p-6">
