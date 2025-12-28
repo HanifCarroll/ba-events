@@ -11,15 +11,17 @@ export function EventList({ events, maxDisplay = 5 }: EventListProps) {
   const hasMore = events.length > maxDisplay
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 stagger-children">
       {displayEvents.map((event) => (
         <EventCard key={event.id} event={event} />
       ))}
 
       {hasMore && (
-        <p className="text-xs text-muted-foreground text-center py-2">
-          +{events.length - maxDisplay} more events
-        </p>
+        <div className="text-center py-3">
+          <span className="text-xs text-primary/70 tracking-wide">
+            +{events.length - maxDisplay} more events found
+          </span>
+        </div>
       )}
     </div>
   )

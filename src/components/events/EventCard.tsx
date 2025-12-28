@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, Calendar, MapPin, Clock } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { ChevronDown, Calendar, MapPin, Clock, Users } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -30,101 +27,133 @@ export function EventCard({ event }: EventCardProps) {
     minute: '2-digit',
   })
 
+  const priceDisplay = formatPrice(event.price, event.is_free)
+  const isFree = event.is_free
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <Card className="overflow-hidden">
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            className="w-full p-0 h-auto hover:bg-accent/50 rounded-none"
-          >
-            <CardContent className="p-4 w-full">
-              {/* Compact view */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 text-left">
-                  <h3 className="font-semibold text-sm line-clamp-1">
-                    {event.name}
-                  </h3>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {event.venue_name}
-                    </span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {dateStr}
-                    </span>
-                  </div>
-                </div>
+      <div className="group relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm transition-all duration-300 hover:border-primary/30 hover:bg-card/80">
+        {/* Subtle top accent line */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant={event.is_free ? 'secondary' : 'outline'}>
-                    {formatPrice(event.price, event.is_free)}
-                  </Badge>
-                  {isOpen ? (
-                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        <CollapsibleTrigger asChild>
+          <button className="w-full p-4 text-left focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-inset rounded-xl">
+            {/* Compact view */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-display font-medium text-base text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-1">
+                  {event.name}
+                </h3>
+                <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2">
+                  {event.venue_name && (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <MapPin className="h-3 w-3 text-primary/60" />
+                      <span className="truncate max-w-[120px]">{event.venue_name}</span>
+                    </span>
                   )}
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Calendar className="h-3 w-3 text-primary/60" />
+                    {dateStr}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3 text-primary/60" />
+                    {timeStr}
+                  </span>
                 </div>
               </div>
-            </CardContent>
-          </Button>
+
+              <div className="flex items-center gap-3 shrink-0">
+                {/* Price badge */}
+                <span
+                  className={`
+                    px-2.5 py-1 rounded-lg text-xs font-medium tracking-wide
+                    ${isFree
+                      ? 'bg-primary/15 text-primary border border-primary/20'
+                      : 'bg-muted text-muted-foreground border border-border/50'
+                    }
+                  `}
+                >
+                  {priceDisplay}
+                </span>
+
+                {/* Expand indicator */}
+                <div
+                  className={`
+                    p-1 rounded-lg transition-all duration-300
+                    ${isOpen ? 'bg-primary/10 text-primary rotate-180' : 'text-muted-foreground'}
+                  `}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </div>
+              </div>
+            </div>
+          </button>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <CardContent className="pt-0 pb-4 px-4 border-t">
+          <div className="px-4 pb-4">
+            {/* Separator */}
+            <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-4" />
+
             {/* Expanded view */}
-            <div className="pt-3 space-y-3">
+            <div className="space-y-4">
               {/* Description */}
               {event.description && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground leading-relaxed">
                   {event.description}
                 </p>
               )}
 
               {/* Details grid */}
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4 text-primary/60" />
                   <span>{formatEventTime(event.starts_at, event.ends_at)}</span>
                 </div>
                 {event.venue_neighborhood && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <MapPin className="h-4 w-4" />
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <MapPin className="h-4 w-4 text-primary/60" />
                     <span>{event.venue_neighborhood}</span>
                   </div>
                 )}
                 {event.min_age && (
-                  <div className="text-muted-foreground">
-                    {event.min_age}+ only
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="h-4 w-4 text-primary/60" />
+                    <span>{event.min_age}+ only</span>
                   </div>
                 )}
               </div>
 
               {/* Categories & vibes */}
-              <div className="flex flex-wrap gap-1">
-                {event.categories.slice(0, 3).map((cat) => (
-                  <Badge key={cat} variant="secondary" className="text-xs">
-                    {cat}
-                  </Badge>
-                ))}
-                {event.vibes.slice(0, 2).map((vibe) => (
-                  <Badge key={vibe} variant="outline" className="text-xs">
-                    {vibe}
-                  </Badge>
-                ))}
-              </div>
+              {(event.categories.length > 0 || event.vibes.length > 0) && (
+                <div className="flex flex-wrap gap-2">
+                  {event.categories.slice(0, 3).map((cat) => (
+                    <span
+                      key={cat}
+                      className="px-2.5 py-1 rounded-lg text-xs bg-primary/10 text-primary/90 border border-primary/20"
+                    >
+                      {cat}
+                    </span>
+                  ))}
+                  {event.vibes.slice(0, 2).map((vibe) => (
+                    <span
+                      key={vibe}
+                      className="px-2.5 py-1 rounded-lg text-xs bg-muted text-muted-foreground border border-border/50"
+                    >
+                      {vibe}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex items-center justify-between pt-2">
                 <EventActions event={event} />
               </div>
             </div>
-          </CardContent>
+          </div>
         </CollapsibleContent>
-      </Card>
+      </div>
     </Collapsible>
   )
 }

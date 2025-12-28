@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Send, Sparkles } from 'lucide-react'
 
 interface ChatInputProps {
   onSend: (message: string) => void
@@ -9,8 +7,13 @@ interface ChatInputProps {
   placeholder?: string
 }
 
-export function ChatInput({ onSend, disabled = false, placeholder = 'Ask about events in Buenos Aires...' }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  disabled = false,
+  placeholder = 'Ask about events in Buenos Aires...',
+}: ChatInputProps) {
   const [value, setValue] = useState('')
+  const [isFocused, setIsFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -34,26 +37,74 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Ask about e
     }
   }
 
+  const canSubmit = value.trim().length > 0 && !disabled
+
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 p-4 border-t bg-background">
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        disabled={disabled}
-        className="flex-1"
-        autoComplete="off"
-      />
-      <Button
-        type="submit"
-        size="icon"
-        disabled={disabled || !value.trim()}
+    <div className="relative">
+      {/* Top border with gradient */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+
+      <form
+        onSubmit={handleSubmit}
+        className="relative px-4 py-4 sm:px-6 sm:py-5 bg-background/80 backdrop-blur-sm"
       >
-        <Send className="h-4 w-4" />
-        <span className="sr-only">Send message</span>
-      </Button>
-    </form>
+        <div className="max-w-3xl mx-auto">
+          <div
+            className={`
+              relative flex items-center gap-3 rounded-2xl border bg-card/50 backdrop-blur-sm
+              transition-all duration-300
+              ${isFocused ? 'border-primary/40 glow-gold-subtle' : 'border-border/50'}
+              ${disabled ? 'opacity-60' : ''}
+            `}
+          >
+            {/* Decorative sparkle */}
+            <div className="absolute left-4 text-primary/30">
+              <Sparkles className="h-4 w-4" />
+            </div>
+
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              placeholder={placeholder}
+              disabled={disabled}
+              autoComplete="off"
+              className={`
+                flex-1 bg-transparent py-3.5 pl-11 pr-4 text-sm text-foreground
+                placeholder:text-muted-foreground/60
+                focus:outline-none
+                disabled:cursor-not-allowed
+              `}
+            />
+
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className={`
+                mr-2 p-2.5 rounded-xl
+                transition-all duration-300
+                ${
+                  canSubmit
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 glow-gold'
+                    : 'bg-muted text-muted-foreground cursor-not-allowed'
+                }
+              `}
+            >
+              <Send className="h-4 w-4" />
+              <span className="sr-only">Send message</span>
+            </button>
+          </div>
+
+          {/* Powered by hint */}
+          <p className="text-[10px] text-muted-foreground/50 text-center mt-2 tracking-wide">
+            Powered by AI • Discover what's happening tonight
+          </p>
+        </div>
+      </form>
+    </div>
   )
 }

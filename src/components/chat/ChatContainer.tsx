@@ -1,9 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
-import { MessageSquarePlus } from 'lucide-react'
+import { MessageSquarePlus, RotateCcw } from 'lucide-react'
 import type { ChatMessage, ChatState, StreamEvent, EventWithVenue, APIMessage } from '@/lib/types'
 import { generateId } from '@/lib/chat'
 import { chat } from '@/lib/ai'
-import { Button } from '@/components/ui/button'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { SuggestedPrompts } from './SuggestedPrompts'
@@ -188,11 +187,14 @@ export function ChatContainer() {
     <div className="flex flex-col h-full">
       {/* New Chat button - only show when there are messages */}
       {hasMessages && (
-        <div className="flex-shrink-0 flex justify-end p-2 border-b">
-          <Button variant="ghost" size="sm" onClick={handleNewChat}>
-            <MessageSquarePlus className="h-4 w-4 mr-2" />
-            New Chat
-          </Button>
+        <div className="flex-shrink-0 flex justify-end items-center px-4 py-2 border-b border-border/30 bg-background/50 backdrop-blur-sm">
+          <button
+            onClick={handleNewChat}
+            className="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-card/50 transition-all duration-200"
+          >
+            <RotateCcw className="h-3.5 w-3.5 group-hover:rotate-[-90deg] transition-transform duration-300" />
+            <span className="text-xs tracking-wide">New Chat</span>
+          </button>
         </div>
       )}
 

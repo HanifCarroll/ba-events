@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Share2, Heart, Ticket, MapPin, Check } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
@@ -64,64 +63,66 @@ export function EventActions({ event }: EventActionsProps) {
     }
   }
 
+  const actionButtonClass = `
+    p-2 rounded-lg transition-all duration-200
+    text-muted-foreground hover:text-primary hover:bg-primary/10
+    focus:outline-none focus:ring-2 focus:ring-primary/20
+  `
+
   return (
     <TooltipProvider>
       <div className="flex gap-1">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
+            <button
+              className={actionButtonClass}
               onClick={handleShare}
             >
               {copied ? (
-                <Check className="h-4 w-4 text-green-500" />
+                <Check className="h-4 w-4 text-primary" />
               ) : (
                 <Share2 className="h-4 w-4" />
               )}
               <span className="sr-only">Share</span>
-            </Button>
+            </button>
           </TooltipTrigger>
-          <TooltipContent>
-            <p>{copied ? 'Copied!' : 'Share'}</p>
+          <TooltipContent className="bg-card border border-border/50 text-foreground">
+            <p className="text-xs">{copied ? 'Copied!' : 'Share'}</p>
           </TooltipContent>
         </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
+            <button
+              className={actionButtonClass}
               onClick={handleSave}
             >
               <Heart
-                className={`h-4 w-4 ${saved ? 'fill-red-500 text-red-500' : ''}`}
+                className={`h-4 w-4 transition-colors duration-200 ${
+                  saved ? 'fill-accent text-accent' : ''
+                }`}
               />
               <span className="sr-only">Save</span>
-            </Button>
+            </button>
           </TooltipTrigger>
-          <TooltipContent>
-            <p>{saved ? 'Saved!' : 'Save'}</p>
+          <TooltipContent className="bg-card border border-border/50 text-foreground">
+            <p className="text-xs">{saved ? 'Saved!' : 'Save'}</p>
           </TooltipContent>
         </Tooltip>
 
         {(event.ticket_url || event.link) && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
+              <button
+                className={actionButtonClass}
                 onClick={handleTickets}
               >
                 <Ticket className="h-4 w-4" />
                 <span className="sr-only">Get tickets</span>
-              </Button>
+              </button>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>Get tickets</p>
+            <TooltipContent className="bg-card border border-border/50 text-foreground">
+              <p className="text-xs">Get tickets</p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -129,18 +130,16 @@ export function EventActions({ event }: EventActionsProps) {
         {(event.venue_address || event.venue_name) && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
+              <button
+                className={actionButtonClass}
                 onClick={handleMap}
               >
                 <MapPin className="h-4 w-4" />
                 <span className="sr-only">View on map</span>
-              </Button>
+              </button>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>View on map</p>
+            <TooltipContent className="bg-card border border-border/50 text-foreground">
+              <p className="text-xs">View on map</p>
             </TooltipContent>
           </Tooltip>
         )}

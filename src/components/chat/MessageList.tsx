@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { ChatMessage } from './ChatMessage'
 import type { ChatMessage as ChatMessageType } from '@/lib/types'
 
@@ -19,7 +19,7 @@ export function MessageList({ messages, isLoading = false }: MessageListProps) {
   }, [messages, isLoading])
 
   return (
-    <div className="p-4">
+    <div className="p-4 sm:p-6">
       <div className="max-w-3xl mx-auto">
         {messages.map((message) => (
           <ChatMessage key={message.id} message={message} />
@@ -27,11 +27,19 @@ export function MessageList({ messages, isLoading = false }: MessageListProps) {
 
         {/* Loading indicator */}
         {isLoading && (
-          <div className="flex justify-start mb-4">
-            <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm">Thinking...</span>
+          <div className="flex justify-start mb-4 animate-fade-in-up">
+            <div className="bg-card/80 border border-border/50 rounded-2xl rounded-bl-md backdrop-blur-sm px-4 py-3">
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <div className="relative">
+                  <Sparkles className="h-4 w-4 text-primary animate-pulse-warm" />
+                  <div className="absolute inset-0 bg-primary/20 blur-md animate-pulse-warm" />
+                </div>
+                <span className="text-sm tracking-wide">Thinking</span>
+                <span className="flex gap-1">
+                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
               </div>
             </div>
           </div>

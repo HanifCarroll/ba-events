@@ -21,7 +21,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   return (
     <div
       className={cn(
-        'flex w-full mb-4',
+        'flex w-full mb-5 animate-fade-in-up',
         isUser ? 'justify-end' : 'justify-start'
       )}
     >
@@ -35,16 +35,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {hasContent && (
           <div
             className={cn(
-              'rounded-2xl px-4 py-2',
+              'rounded-2xl px-4 py-3 transition-all duration-300',
               isUser
-                ? 'bg-primary text-primary-foreground rounded-br-md'
-                : 'bg-muted rounded-bl-md'
+                ? 'bg-primary text-primary-foreground rounded-br-md glow-gold'
+                : 'bg-card/80 border border-border/50 rounded-bl-md backdrop-blur-sm'
             )}
           >
             {isUser ? (
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
             ) : (
-              <div className="text-sm prose prose-sm prose-neutral dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              <div className="text-sm prose prose-sm prose-warm max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_strong]:text-foreground [&_strong]:font-semibold">
                 <ReactMarkdown>{message.content}</ReactMarkdown>
               </div>
             )}
@@ -53,7 +53,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {/* Event results for assistant messages */}
         {!isUser && hasEvents && (
-          <div className={hasContent ? 'mt-3' : ''}>
+          <div className={hasContent ? 'mt-4' : ''}>
             <EventList events={message.events!} />
           </div>
         )}
@@ -62,8 +62,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {(hasContent || hasEvents || !message.isStreaming) && (
           <p
             className={cn(
-              'text-xs text-muted-foreground mt-1',
-              isUser ? 'text-right' : 'text-left'
+              'text-[10px] text-muted-foreground/60 mt-1.5 tracking-wide',
+              isUser ? 'text-right pr-1' : 'text-left pl-1'
             )}
           >
             {message.timestamp.toLocaleTimeString('en-US', {
