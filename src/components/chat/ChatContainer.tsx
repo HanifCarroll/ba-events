@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef } from 'react'
+import { MessageSquarePlus } from 'lucide-react'
 import type { ChatMessage, ChatState, StreamEvent, EventWithVenue, APIMessage } from '@/lib/types'
 import { generateId } from '@/lib/chat'
 import { chat } from '@/lib/ai'
+import { Button } from '@/components/ui/button'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { SuggestedPrompts } from './SuggestedPrompts'
@@ -167,16 +169,46 @@ export function ChatContainer() {
     }
   }, [state.messages])
 
+  const handleNewChat = useCallback(() => {
+    // Cancel any ongoing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    // Reset state to initial values
+    setState({
+      messages: [],
+      apiHistory: [],
+      isLoading: false,
+    })
+  }, [])
+
   const hasMessages = state.messages.length > 0
 
   return (
     <div className="flex flex-col h-full">
-      {hasMessages ? (
-        <MessageList messages={state.messages} isLoading={state.isLoading} />
-      ) : (
-        <SuggestedPrompts onSelectPrompt={handleSendMessage} />
+      {/* New Chat button - only show when there are messages */}
+      {hasMessages && (
+        <div className="flex-shrink-0 flex justify-end p-2 border-b">
+          <Button variant="ghost" size="sm" onClick={handleNewChat}>
+            <MessageSquarePlus className="h-4 w-4 mr-2" />
+            New Chat
+          </Button>
+        </div>
       )}
-      <ChatInput onSend={handleSendMessage} disabled={state.isLoading} />
+
+      {/* Message area - this scrolls */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {hasMessages ? (
+          <MessageList messages={state.messages} isLoading={state.isLoading} />
+        ) : (
+          <SuggestedPrompts onSelectPrompt={handleSendMessage} />
+        )}
+      </div>
+
+      {/* Input - fixed at bottom */}
+      <div className="flex-shrink-0">
+        <ChatInput onSend={handleSendMessage} disabled={state.isLoading} />
+      </div>
     </div>
   )
 }

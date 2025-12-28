@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { ChatMessage } from './ChatMessage'
 import type { ChatMessage as ChatMessageType } from '@/lib/types'
 
@@ -20,7 +19,7 @@ export function MessageList({ messages, isLoading = false }: MessageListProps) {
   }, [messages, isLoading])
 
   return (
-    <ScrollArea className="flex-1 p-4">
+    <div className="p-4">
       <div className="max-w-3xl mx-auto">
         {messages.map((message) => (
           <ChatMessage key={message.id} message={message} />
@@ -32,7 +31,7 @@ export function MessageList({ messages, isLoading = false }: MessageListProps) {
             <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm">Searching for events...</span>
+                <span className="text-sm">Thinking...</span>
               </div>
             </div>
           </div>
@@ -41,6 +40,6 @@ export function MessageList({ messages, isLoading = false }: MessageListProps) {
         {/* Scroll anchor */}
         <div ref={bottomRef} />
       </div>
-    </ScrollArea>
+    </div>
   )
 }
