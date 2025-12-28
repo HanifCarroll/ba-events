@@ -1,9 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerFn } from '@tanstack/react-start'
+import { getRequestHeader } from '@tanstack/react-start/server'
 import { z } from 'zod'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
 import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from './supabase'
+import { checkRateLimit } from './rate-limit'
 import { CATEGORIES, VIBES, NEIGHBORHOODS } from './types'
 import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue } from './types'
 
@@ -445,12 +447,54 @@ async function processStream(
   return { text, toolUses, stopReason }
 }
 
+// Helper to extract client IP from request headers
+function getClientIP(): string {
+  try {
+    // Netlify/proxies set x-forwarded-for header
+    const forwarded = getRequestHeader('x-forwarded-for')
+    if (forwarded) {
+      return forwarded.split(',')[0].trim()
+    }
+    // Fallback headers
+    return (
+      getRequestHeader('x-real-ip') ??
+      getRequestHeader('cf-connecting-ip') ?? // Cloudflare
+      'unknown'
+    )
+  } catch {
+    return 'unknown'
+  }
+}
+
+// Create error stream for rate limiting
+function createRateLimitErrorStream(resetTimestamp: number): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  const resetDate = new Date(resetTimestamp)
+  const message = `You've reached the rate limit (10 requests per hour). Please try again after ${resetDate.toLocaleTimeString()}.`
+
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message })}\n\n`))
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+      controller.close()
+    },
+  })
+}
+
 // Server function for chat with proper agentic loop
 export const chat = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => chatRequestSchema.parse(data))
   .handler(async ({ data }): Promise<ReadableStream<Uint8Array>> => {
     const { message, history } = data
     const encoder = new TextEncoder()
+
+    // Check rate limit
+    const ip = getClientIP()
+    const { success, reset } = await checkRateLimit(ip)
+    if (!success) {
+      console.log(`[RATE LIMIT] IP ${ip} exceeded rate limit, reset at ${new Date(reset).toISOString()}`)
+      return createRateLimitErrorStream(reset)
+    }
 
     // Build messages from history (already in proper APIMessage format)
     const messages: Anthropic.MessageParam[] = [

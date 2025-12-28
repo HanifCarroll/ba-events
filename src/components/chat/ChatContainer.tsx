@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import { MessageSquarePlus, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import type { ChatMessage, ChatState, StreamEvent, EventWithVenue, APIMessage } from '@/lib/types'
 import { generateId } from '@/lib/chat'
 import { chat } from '@/lib/ai'
