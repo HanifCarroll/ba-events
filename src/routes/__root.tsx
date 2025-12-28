@@ -1,8 +1,4 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
-
-import Header from '../components/Header'
+import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 
 import appCss from '../styles.css?url'
 
@@ -17,7 +13,11 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'BA Events - Discover Buenos Aires',
+      },
+      {
+        name: 'description',
+        content: 'AI-powered event discovery for Buenos Aires. Find techno nights, jazz bars, tango milongas, and more.',
       },
     ],
     links: [
@@ -28,29 +28,27 @@ export const Route = createRootRoute({
     ],
   }),
 
-  shellComponent: RootDocument,
+  component: RootDocument,
 })
 
-function RootDocument({ children }: { children: React.ReactNode }) {
+function RootDocument() {
   return (
     <html lang="en">
       <head>
         <HeadContent />
       </head>
-      <body>
-        <Header />
-        {children}
-        <TanStackDevtools
-          config={{
-            position: 'bottom-right',
-          }}
-          plugins={[
-            {
-              name: 'Tanstack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
+      <body className="bg-background text-foreground">
+        <div className="min-h-screen flex flex-col">
+          <header className="h-16 border-b flex items-center px-4 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-bold">BA Events</span>
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                Discover Buenos Aires
+              </span>
+            </div>
+          </header>
+          <Outlet />
+        </div>
         <Scripts />
       </body>
     </html>
