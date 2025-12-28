@@ -196,7 +196,7 @@ export function ChatContainer() {
     <div className="flex flex-col h-full">
       {/* New Chat button - only show when there are messages */}
       {hasMessages && (
-        <div className="flex-shrink-0 flex justify-end items-center px-4 py-2 border-b border-border/30 bg-background/50 backdrop-blur-sm">
+        <div className="flex-shrink-0 flex justify-end items-center px-4 py-2 border-b border-border/30 bg-background">
           <button
             onClick={handleNewChat}
             className="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-card/50 transition-all duration-200"

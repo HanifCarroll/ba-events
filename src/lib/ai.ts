@@ -3,9 +3,9 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
-import { searchEventsWithFilters, hybridEventSearch } from './supabase'
+import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from './supabase'
 import { CATEGORIES, VIBES, NEIGHBORHOODS } from './types'
-import type { EventWithVenue, EventFilters, APIMessage, ContentBlock } from './types'
+import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue } from './types'
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -56,6 +56,14 @@ const searchEventsInputSchema = z.object({
 })
 
 type SearchEventsInput = z.infer<typeof searchEventsInputSchema>
+
+// Tool input schema for get_venue_details
+const getVenueDetailsInputSchema = z.object({
+  venueId: z.string().optional(),
+  venueName: z.string().optional(),
+})
+
+type GetVenueDetailsInput = z.infer<typeof getVenueDetailsInputSchema>
 
 // System prompt for the events assistant
 const SYSTEM_PROMPT = `You are a friendly and knowledgeable Buenos Aires events assistant. You help users discover events happening in the city - from techno nights and jazz bars to tango milongas, art exhibitions, and food markets.
@@ -169,6 +177,23 @@ or descriptive searches like "romantic date spot", "high energy dance party",
       },
     },
   },
+  {
+    name: 'get_venue_details',
+    description: `Get detailed information about a specific venue, including website, Instagram, capacity, and address. Use this when users ask about a venue's website, contact info, or want more details about where an event is held.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        venueId: {
+          type: 'string',
+          description: 'The venue ID (if known from a previous event search)',
+        },
+        venueName: {
+          type: 'string',
+          description: 'The name of the venue to search for',
+        },
+      },
+    },
+  },
 ]
 
 const BA_TIMEZONE = 'America/Argentina/Buenos_Aires'
@@ -269,6 +294,53 @@ function toolInputToFilters(input: SearchEventsInput): EventFilters {
   }
 
   return filters
+}
+
+// Execute the get_venue_details tool
+async function executeGetVenueDetails(input: GetVenueDetailsInput): Promise<Venue | null> {
+  console.log('[DEBUG] Get venue details input:', JSON.stringify(input))
+
+  // If we have a venue ID, fetch directly
+  if (input.venueId) {
+    try {
+      const venue = await getVenueById(input.venueId)
+      return venue
+    } catch (error) {
+      console.log('[DEBUG] Venue not found by ID:', input.venueId)
+      return null
+    }
+  }
+
+  // Otherwise search by name
+  if (input.venueName) {
+    const venues = await searchVenuesByName(input.venueName)
+    if (venues.length > 0) {
+      // Return the best match (first result)
+      return venues[0]
+    }
+  }
+
+  return null
+}
+
+// Format venue result for Claude
+function formatVenueResult(venue: Venue | null): string {
+  if (!venue) {
+    return JSON.stringify({ found: false, message: 'Venue not found' })
+  }
+
+  return JSON.stringify({
+    found: true,
+    venue: {
+      name: venue.name,
+      neighborhood: venue.neighborhood,
+      address: venue.address,
+      website: venue.website,
+      instagram: venue.instagram_handle,
+      capacity: venue.capacity,
+      type: venue.type,
+    },
+  })
 }
 
 // Execute the search_events tool
@@ -489,6 +561,39 @@ export const chat = createServerFn({ method: 'POST' })
                   } catch (toolError) {
                     console.error('Tool execution error:', toolError)
                     const errorContent = JSON.stringify({ error: 'Failed to search for events' })
+                    toolResults.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: errorContent,
+                      is_error: true,
+                    })
+                    toolResultsForHistory.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: errorContent,
+                    })
+                  }
+                } else if (toolUse.name === 'get_venue_details') {
+                  try {
+                    const input = toolUse.input as GetVenueDetailsInput
+                    const venue = await executeGetVenueDetails(input)
+
+                    const resultContent = formatVenueResult(venue)
+                    toolResults.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: resultContent,
+                    })
+                    toolResultsForHistory.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: resultContent,
+                    })
+
+                    console.log(`[DEBUG] Tool ${toolUse.name} returned venue: ${venue?.name ?? 'not found'}`)
+                  } catch (toolError) {
+                    console.error('Tool execution error:', toolError)
+                    const errorContent = JSON.stringify({ error: 'Failed to get venue details' })
                     toolResults.push({
                       type: 'tool_result',
                       tool_use_id: toolUse.id,

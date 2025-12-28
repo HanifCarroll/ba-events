@@ -46,7 +46,7 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
             <button
               key={prompt.text}
               onClick={() => onSelectPrompt(prompt.text)}
-              className="group relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-5 text-left transition-all duration-300 hover:border-primary/30 hover:bg-card/80 hover:glow-gold-subtle"
+              className="group relative overflow-hidden rounded-xl border border-border/50 bg-card p-5 text-left transition-all duration-300 hover:border-primary/30 hover:bg-card/90 hover:glow-gold-subtle"
             >
               {/* Hover gradient */}
               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />

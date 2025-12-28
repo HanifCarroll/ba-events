@@ -28,12 +28,9 @@ export function MessageList({ messages, isLoading = false }: MessageListProps) {
         {/* Loading indicator */}
         {isLoading && (
           <div className="flex justify-start mb-4 animate-fade-in-up">
-            <div className="bg-card/80 border border-border/50 rounded-2xl rounded-bl-md backdrop-blur-sm px-4 py-3">
+            <div className="bg-card border border-border/50 rounded-2xl rounded-bl-md px-4 py-3">
               <div className="flex items-center gap-3 text-muted-foreground">
-                <div className="relative">
-                  <Sparkles className="h-4 w-4 text-primary animate-pulse-warm" />
-                  <div className="absolute inset-0 bg-primary/20 blur-md animate-pulse-warm" />
-                </div>
+                <Sparkles className="h-4 w-4 text-primary animate-pulse-warm" />
                 <span className="text-sm tracking-wide">Thinking</span>
                 <span className="flex gap-1">
                   <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />

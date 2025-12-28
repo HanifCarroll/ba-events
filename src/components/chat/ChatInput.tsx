@@ -46,12 +46,12 @@ export function ChatInput({
 
       <form
         onSubmit={handleSubmit}
-        className="relative px-4 py-4 sm:px-6 sm:py-5 bg-background/80 backdrop-blur-sm"
+        className="relative px-4 py-4 sm:px-6 sm:py-5 bg-background"
       >
         <div className="max-w-3xl mx-auto">
           <div
             className={`
-              relative flex items-center gap-3 rounded-2xl border bg-card/50 backdrop-blur-sm
+              relative flex items-center gap-3 rounded-2xl border bg-card
               transition-all duration-300
               ${isFocused ? 'border-primary/40 glow-gold-subtle' : 'border-border/50'}
               ${disabled ? 'opacity-60' : ''}

@@ -35,10 +35,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {hasContent && (
           <div
             className={cn(
-              'rounded-2xl px-4 py-3 transition-all duration-300',
+              'rounded-2xl px-4 py-3',
               isUser
                 ? 'bg-primary text-primary-foreground rounded-br-md glow-gold'
-                : 'bg-card/80 border border-border/50 rounded-bl-md backdrop-blur-sm'
+                : 'bg-card border border-border/50 rounded-bl-md'
             )}
           >
             {isUser ? (
