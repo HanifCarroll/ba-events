@@ -62,6 +62,7 @@ export function ChatContainer() {
       let buffer = ''
       let accumulatedContent = ''
       let events: EventWithVenue[] | undefined
+      let hasReceivedContent = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -80,8 +81,12 @@ export function ChatContainer() {
 
               if (event.type === 'text') {
                 accumulatedContent += event.content
+                // Hide loading indicator as soon as content starts streaming
+                const shouldHideLoading = !hasReceivedContent
+                hasReceivedContent = true
                 setState(prev => ({
                   ...prev,
+                  isLoading: shouldHideLoading ? false : prev.isLoading,
                   messages: prev.messages.map(m =>
                     m.id === assistantMessage.id
                       ? { ...m, content: accumulatedContent }
@@ -90,8 +95,12 @@ export function ChatContainer() {
                 }))
               } else if (event.type === 'events') {
                 events = event.data
+                // Also hide loading when events arrive
+                const shouldHideLoading = !hasReceivedContent
+                hasReceivedContent = true
                 setState(prev => ({
                   ...prev,
+                  isLoading: shouldHideLoading ? false : prev.isLoading,
                   messages: prev.messages.map(m =>
                     m.id === assistantMessage.id
                       ? { ...m, events }
