@@ -230,11 +230,25 @@ export interface ChatMessage {
   content: string
   events?: EventWithVenue[]
   timestamp: Date
+  isStreaming?: boolean
 }
 
 export interface ChatState {
   messages: ChatMessage[]
   isLoading: boolean
+}
+
+// Streaming event types
+export type StreamEvent =
+  | { type: 'text'; content: string }
+  | { type: 'events'; data: EventWithVenue[] }
+  | { type: 'error'; message: string }
+  | { type: 'done' }
+
+// Conversation history for API
+export interface ConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 // Suggested prompts for empty state
