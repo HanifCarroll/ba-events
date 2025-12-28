@@ -61,9 +61,6 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
                   </span>
                 </div>
               </div>
-
-              {/* Corner accent */}
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </button>
           )
         })}
