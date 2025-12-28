@@ -1,111 +1,113 @@
----
-description: Use Bun instead of Node.js, npm, pnpm, or vite.
-globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
-alwaysApply: false
----
+# BA Events - Project Guidelines
 
-Default to using Bun instead of Node.js.
+## Runtime
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Bun automatically loads .env, so don't use dotenv.
+Always use **Bun** instead of Node.js, npm, pnpm, or yarn.
 
-## APIs
-
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
-
-## Testing
-
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+```bash
+bun install          # Install dependencies
+bun run dev          # Start dev server (port 3000)
+bun run build        # Production build
+bun run preview      # Preview production build
+bun test             # Run tests
 ```
 
-## Frontend
+Bun automatically loads `.env` files - don't use dotenv.
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+## Framework
 
-Server:
+This is a **TanStack Start** project with:
+- TanStack Router (file-based routing in `src/routes/`)
+- React 19
+- Vite + Nitro
+- Tailwind CSS v4
 
-```ts#index.ts
-import index from "./index.html"
+### Routing
 
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
+Routes are in `src/routes/`. The route tree is auto-generated in `src/routeTree.gen.ts`.
+
+```
+src/routes/
+├── __root.tsx      # Root layout
+├── index.tsx       # Home page (/)
+└── about.tsx       # About page (/about)
+```
+
+Create new routes by adding files to `src/routes/`. Dynamic routes use `$param` syntax:
+- `src/routes/events/$id.tsx` → `/events/:id`
+
+### Server Functions
+
+Use TanStack Start server functions for API calls:
+
+```tsx
+import { createServerFn } from '@tanstack/react-start'
+
+const getEvents = createServerFn('GET', async () => {
+  // This runs on the server
+  return db.query('SELECT * FROM events')
 })
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+## UI Components
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
+**Always use shadcn/ui components** for UI elements. If a component isn't installed, add it:
+
+```bash
+bunx shadcn@latest add button
+bunx shadcn@latest add card
+bunx shadcn@latest add input
+# etc.
 ```
 
-With the following `frontend.tsx`:
+Components will be installed to `src/components/ui/`.
 
-```tsx#frontend.tsx
-import React from "react";
+Before building custom UI, check if shadcn has a component: https://ui.shadcn.com/docs/components
 
-// import .css files directly and it works
-import './index.css';
+Use `lucide-react` for icons (already installed).
 
-import { createRoot } from "react-dom/client";
+## Styling
 
-const root = createRoot(document.body);
+Tailwind CSS v4 is configured. Import styles in components:
 
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
+```tsx
+import '../styles.css'
 ```
 
-Then, run index.ts
+Use Tailwind utility classes. Follow shadcn's conventions for component styling.
 
-```sh
-bun --hot ./index.ts
+## Database
+
+Use Supabase (PostgreSQL + pgvector) for the database. Use the Supabase JS client, not raw pg drivers.
+
+## AI/LLM
+
+Use the Anthropic SDK with Claude for the AI agent.
+
+## Testing
+
+```bash
+bun test              # Run all tests
+bun test --watch      # Watch mode
 ```
 
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
+Tests use Vitest with React Testing Library.
+
+## Project Structure
+
+```
+src/
+├── components/       # React components
+│   └── ui/          # shadcn components (auto-generated)
+├── routes/          # TanStack Router pages
+├── data/            # Data utilities
+├── styles.css       # Global styles
+└── router.tsx       # Router configuration
+```
+
+## Best Practices
+
+- Keep components small and focused
+- Use TypeScript strictly - no `any` types
+- Prefer server functions over client-side API calls
+- Use TanStack Query for data fetching (integrated via router)
