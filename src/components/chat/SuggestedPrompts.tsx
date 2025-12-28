@@ -14,49 +14,49 @@ interface SuggestedPromptsProps {
 
 export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-full px-6 py-12">
+    <div className="flex flex-col items-center justify-center h-full px-4 sm:px-6 py-4 sm:py-8">
       {/* Hero section */}
-      <div className="text-center mb-12 animate-fade-in-up">
-        {/* Decorative element */}
-        <div className="flex items-center justify-center gap-3 mb-6">
+      <div className="text-center mb-6 sm:mb-10 animate-fade-in-up">
+        {/* Decorative element - hidden on small screens */}
+        <div className="hidden sm:flex items-center justify-center gap-3 mb-4">
           <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/50" />
           <Sparkles className="h-5 w-5 text-primary animate-pulse-warm" />
           <div className="h-px w-12 bg-gradient-to-l from-transparent to-primary/50" />
         </div>
 
-        <h1 className="font-display text-4xl md:text-5xl font-semibold mb-4 tracking-tight">
+        <h1 className="font-display text-2xl sm:text-4xl md:text-5xl font-semibold mb-2 sm:mb-4 tracking-tight">
           <span className="bg-gradient-to-r from-foreground via-foreground to-primary bg-clip-text text-transparent">
             Discover Buenos Aires
           </span>
         </h1>
 
-        <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
-          Your AI guide to the city's hidden gems, late-night venues, and unforgettable experiences.
+        <p className="text-muted-foreground text-sm sm:text-lg max-w-md mx-auto leading-relaxed">
+          Your AI guide to the city's hidden gems and unforgettable experiences.
         </p>
 
-        {/* Decorative line */}
-        <div className="deco-line w-32 mx-auto mt-8" />
+        {/* Decorative line - hidden on mobile */}
+        <div className="deco-line w-32 mx-auto mt-4 sm:mt-6 hidden sm:block" />
       </div>
 
       {/* Prompt cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-xl stagger-children">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full max-w-xl stagger-children">
         {SUGGESTED_PROMPTS.map((prompt) => {
           const Icon = iconMap[prompt.icon]
           return (
             <button
               key={prompt.text}
               onClick={() => onSelectPrompt(prompt.text)}
-              className="group relative overflow-hidden rounded-xl border border-border/50 bg-card p-5 text-left transition-all duration-300 hover:border-primary/30 hover:bg-card/90 hover:glow-gold-subtle"
+              className="group relative overflow-hidden rounded-xl border border-border/50 bg-card p-3 sm:p-5 text-left transition-all duration-300 hover:border-primary/30 hover:bg-card/90 hover:glow-gold-subtle"
             >
               {/* Hover gradient */}
               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-              <div className="relative flex items-start gap-4">
-                <div className="shrink-0 p-2.5 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors duration-300">
-                  <Icon className="h-5 w-5" />
+              <div className="relative flex items-center sm:items-start gap-3 sm:gap-4">
+                <div className="shrink-0 p-2 sm:p-2.5 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors duration-300">
+                  <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors duration-300">
+                  <span className="text-xs sm:text-sm font-medium text-foreground group-hover:text-primary transition-colors duration-300">
                     {prompt.text}
                   </span>
                 </div>
@@ -66,8 +66,8 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
         })}
       </div>
 
-      {/* Footer hint */}
-      <div className="mt-12 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+      {/* Footer hint - hidden on mobile to save space */}
+      <div className="hidden sm:block mt-8 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
           Ask about events, venues, neighborhoods, or specific vibes.
           <span className="block mt-1 text-primary/70">
