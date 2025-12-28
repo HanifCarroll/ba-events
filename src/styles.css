@@ -6,6 +6,7 @@
 /* Always dark mode for this aesthetic */
 html {
   color-scheme: dark;
+  height: 100%;
 }
 
 body {
@@ -13,6 +14,9 @@ body {
   font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  height: 100dvh; /* Dynamic viewport height - adjusts for mobile browser chrome */
+  overflow: hidden;
 }
 
 /* Display font for headings */
