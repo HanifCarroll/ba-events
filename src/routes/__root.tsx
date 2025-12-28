@@ -55,7 +55,7 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body className="bg-background text-foreground antialiased">
-        <div className="min-h-screen flex flex-col bg-grain">
+        <div className="h-dvh flex flex-col bg-grain overflow-hidden">
           {/* Atmospheric gradient overlay */}
           <div className="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none" />
 
