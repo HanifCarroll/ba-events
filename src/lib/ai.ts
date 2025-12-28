@@ -3,28 +3,50 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
-import { searchEventsWithFilters } from './supabase'
+import { searchEventsWithFilters, hybridEventSearch } from './supabase'
 import { CATEGORIES, VIBES, NEIGHBORHOODS } from './types'
-import type { EventWithVenue, EventFilters } from './types'
+import type { EventWithVenue, EventFilters, APIMessage, ContentBlock } from './types'
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
-// Message schema for conversation history
-const messageSchema = z.object({
-  role: z.enum(['user', 'assistant']),
+// Content block schemas for proper API message format
+const textBlockSchema = z.object({
+  type: z.literal('text'),
+  text: z.string(),
+})
+
+const toolUseBlockSchema = z.object({
+  type: z.literal('tool_use'),
+  id: z.string(),
+  name: z.string(),
+  input: z.record(z.string(), z.unknown()),
+})
+
+const toolResultBlockSchema = z.object({
+  type: z.literal('tool_result'),
+  tool_use_id: z.string(),
   content: z.string(),
+})
+
+const contentBlockSchema = z.union([textBlockSchema, toolUseBlockSchema, toolResultBlockSchema])
+
+// Message schema for conversation history - supports both string and ContentBlock[] content
+const apiMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.union([z.string(), z.array(contentBlockSchema)]),
 })
 
 const chatRequestSchema = z.object({
   message: z.string(),
-  history: z.array(messageSchema).default([]),
+  history: z.array(apiMessageSchema).default([]),
 })
 
 // Tool input schema for search_events
 const searchEventsInputSchema = z.object({
+  query: z.string().optional(),
   categories: z.array(z.string()).optional(),
   vibes: z.array(z.string()).optional(),
   neighborhood: z.string().optional(),
@@ -53,11 +75,33 @@ ${VIBES.join(', ')}
 ## Neighborhoods
 You know all 48 official CABA neighborhoods, including popular ones like Palermo, San Telmo, Recoleta, La Boca, and Villa Crespo.
 
-## How to Help Users
-1. When users ask about events, use the search_events tool to find relevant options
-2. Interpret natural language queries: "tonight" = today evening, "this weekend" = Saturday/Sunday
-3. Suggest filters based on context (e.g., if they mention "underground" → add that vibe)
-4. After showing events, offer to refine the search if they want something different
+## How to Search for Events
+
+Use the search_events tool with these parameters:
+
+1. **Use 'query' for natural language/vibe-based searches:**
+   - "romantic evening with live music"
+   - "underground techno party"
+   - "chill outdoor activity"
+   - "high energy dance night"
+   The semantic search understands moods and vibes beyond exact category matches.
+
+2. **Use filters for specific requirements:**
+   - timeFilter: tonight, tomorrow, weekend, week
+   - neighborhood: specific barrio
+   - isFree: only free events
+   - maxPrice: budget limit
+   - categories/vibes: when user explicitly mentions them
+
+3. **Combine both for best results:**
+   - query="underground techno" + timeFilter="weekend"
+   - query="romantic dinner" + neighborhood="Palermo"
+
+## When to Use Each Approach
+
+- Vibe/mood requests ("something chill", "high energy") → use query parameter
+- Specific filters ("free events in Palermo this weekend") → use filter parameters
+- Both ("underground techno tonight") → combine query + timeFilter
 
 ## Response Format
 - Start with a brief, friendly intro
@@ -70,10 +114,19 @@ Remember: You're helping people have a great time in Buenos Aires!`
 const tools: Anthropic.Tool[] = [
   {
     name: 'search_events',
-    description: 'Search for events in Buenos Aires. Use this whenever users ask about events, what to do, or activities in the city.',
+    description: `Search for events in Buenos Aires using semantic search and/or filters.
+Use the 'query' parameter for natural language searches describing the desired experience
+(e.g., "romantic jazz night", "underground techno party", "chill outdoor activities").
+Use other parameters for specific requirements. Combine both for best results.`,
     input_schema: {
       type: 'object' as const,
       properties: {
+        query: {
+          type: 'string',
+          description: `Natural language search query for semantic matching. Use for vibe-based
+or descriptive searches like "romantic date spot", "high energy dance party",
+"relaxed afternoon activity", "underground warehouse vibes".`,
+        },
         categories: {
           type: 'array',
           items: { type: 'string' },
@@ -213,33 +266,119 @@ async function executeSearchEvents(input: SearchEventsInput): Promise<EventWithV
   console.log('[DEBUG] Filters:', JSON.stringify(filters))
   console.log('[DEBUG] Current time:', new Date().toISOString())
   console.log('[DEBUG] BA time:', getNowInBA().toISOString())
-  const results = await searchEventsWithFilters(filters)
+
+  let results: EventWithVenue[]
+
+  // If semantic query provided, use hybrid search
+  if (input.query && input.query.trim()) {
+    console.log('[DEBUG] Using hybrid search with query:', input.query)
+    results = await hybridEventSearch(input.query, filters, 10)
+  } else {
+    // Otherwise, use filter-only search
+    console.log('[DEBUG] Using filter-only search')
+    results = await searchEventsWithFilters(filters)
+  }
+
   console.log('[DEBUG] Results count:', results.length)
   return results
 }
 
-// Stream event types
+// Stream event types - includes history for client to store full conversation
 export type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'events'; data: EventWithVenue[] }
+  | { type: 'history'; messages: APIMessage[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
 
-// Server function for chat
+// Format tool result for Claude
+function formatToolResult(events: EventWithVenue[]): string {
+  return JSON.stringify({
+    count: events.length,
+    events: events.slice(0, 10).map(e => ({
+      name: e.name,
+      description: e.description,
+      venue: e.venue_name,
+      venueAddress: e.venue_address,
+      neighborhood: e.venue_neighborhood,
+      dateTime: formatInBA(e.starts_at),
+      endsAt: e.ends_at ? formatInBA(e.ends_at) : null,
+      price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
+      categories: e.categories,
+      vibes: e.vibes,
+      minAge: e.min_age,
+      ticketUrl: e.ticket_url,
+    })),
+  })
+}
+
+// Process stream and collect response data
+interface StreamResult {
+  text: string
+  toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>
+  stopReason: string | null
+}
+
+async function processStream(
+  response: AsyncIterable<Anthropic.MessageStreamEvent>,
+  sendEvent: (event: StreamEvent) => void
+): Promise<StreamResult> {
+  let text = ''
+  const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
+  let currentToolUse: { id: string; name: string; inputJson: string } | null = null
+  let stopReason: string | null = null
+
+  for await (const event of response) {
+    if (event.type === 'content_block_start') {
+      if (event.content_block.type === 'tool_use') {
+        currentToolUse = {
+          id: event.content_block.id,
+          name: event.content_block.name,
+          inputJson: '',
+        }
+      }
+    } else if (event.type === 'content_block_delta') {
+      if (event.delta.type === 'text_delta') {
+        text += event.delta.text
+        sendEvent({ type: 'text', content: event.delta.text })
+      } else if (event.delta.type === 'input_json_delta' && currentToolUse) {
+        currentToolUse.inputJson += event.delta.partial_json
+      }
+    } else if (event.type === 'content_block_stop') {
+      if (currentToolUse) {
+        toolUses.push({
+          id: currentToolUse.id,
+          name: currentToolUse.name,
+          input: JSON.parse(currentToolUse.inputJson) as Record<string, unknown>,
+        })
+        currentToolUse = null
+      }
+    } else if (event.type === 'message_delta') {
+      stopReason = event.delta.stop_reason
+    }
+  }
+
+  return { text, toolUses, stopReason }
+}
+
+// Server function for chat with proper agentic loop
 export const chat = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => chatRequestSchema.parse(data))
   .handler(async ({ data }): Promise<ReadableStream<Uint8Array>> => {
     const { message, history } = data
     const encoder = new TextEncoder()
 
-    // Convert history to Anthropic format
+    // Build messages from history (already in proper APIMessage format)
     const messages: Anthropic.MessageParam[] = [
       ...history.map(msg => ({
         role: msg.role as 'user' | 'assistant',
-        content: msg.content,
+        content: msg.content as string | Anthropic.ContentBlockParam[],
       })),
       { role: 'user' as const, content: message },
     ]
+
+    // Track new messages added during this exchange for history event
+    const newMessages: APIMessage[] = []
 
     return new ReadableStream({
       async start(controller) {
@@ -247,123 +386,147 @@ export const chat = createServerFn({ method: 'POST' })
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
         }
 
+        const MAX_ITERATIONS = 5
+        let iterations = 0
+
         try {
-          // First API call - may result in tool use
-          let response = await anthropic.messages.create({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 1024,
-            system: SYSTEM_PROMPT,
-            tools,
-            messages,
-            stream: true,
-          })
+          // Agentic loop - continues until Claude responds without tool use or max iterations
+          while (iterations < MAX_ITERATIONS) {
+            iterations++
+            console.log(`[DEBUG] Agentic loop iteration ${iterations}`)
 
-          let fullText = ''
-          let toolUseBlock: { id: string; name: string; input: string } | null = null
-          let currentToolInput = ''
+            const response = await anthropic.messages.create({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 1024,
+              system: SYSTEM_PROMPT,
+              tools,
+              messages,
+              stream: true,
+            })
 
-          // Process the stream
-          for await (const event of response) {
-            if (event.type === 'content_block_start') {
-              if (event.content_block.type === 'tool_use') {
-                toolUseBlock = {
-                  id: event.content_block.id,
-                  name: event.content_block.name,
-                  input: '',
-                }
+            // Process the stream
+            const { text, toolUses, stopReason } = await processStream(response, sendEvent)
+            console.log(`[DEBUG] Stop reason: ${stopReason}, tool uses: ${toolUses.length}`)
+
+            // Check stop reason to determine next action
+            if (stopReason === 'end_turn' || stopReason === 'max_tokens') {
+              // Claude is done - no more tool calls needed
+              console.log('[DEBUG] Claude finished (end_turn or max_tokens)')
+
+              // Record assistant's final text response
+              if (text) {
+                newMessages.push({
+                  role: 'assistant',
+                  content: text,
+                })
               }
-            } else if (event.type === 'content_block_delta') {
-              if (event.delta.type === 'text_delta') {
-                fullText += event.delta.text
-                sendEvent({ type: 'text', content: event.delta.text })
-              } else if (event.delta.type === 'input_json_delta') {
-                currentToolInput += event.delta.partial_json
-              }
-            } else if (event.type === 'content_block_stop') {
-              if (toolUseBlock) {
-                toolUseBlock.input = currentToolInput
-              }
-            } else if (event.type === 'message_stop') {
-              // Check if we need to handle tool use
-              if (toolUseBlock && toolUseBlock.name === 'search_events') {
-                try {
-                  const input = JSON.parse(toolUseBlock.input) as SearchEventsInput
-                  const events = await executeSearchEvents(input)
-
-                  // Send events to client
-                  sendEvent({ type: 'events', data: events })
-
-                  // Continue conversation with tool result
-                  const continuationMessages: Anthropic.MessageParam[] = [
-                    ...messages,
-                    {
-                      role: 'assistant' as const,
-                      content: [
-                        ...(fullText ? [{ type: 'text' as const, text: fullText }] : []),
-                        {
-                          type: 'tool_use' as const,
-                          id: toolUseBlock.id,
-                          name: toolUseBlock.name,
-                          input: JSON.parse(toolUseBlock.input),
-                        },
-                      ],
-                    },
-                    {
-                      role: 'user' as const,
-                      content: [
-                        {
-                          type: 'tool_result' as const,
-                          tool_use_id: toolUseBlock.id,
-                          content: JSON.stringify({
-                            count: events.length,
-                            events: events.slice(0, 10).map(e => ({
-                              name: e.name,
-                              description: e.description,
-                              venue: e.venue_name,
-                              venueAddress: e.venue_address,
-                              neighborhood: e.venue_neighborhood,
-                              dateTime: formatInBA(e.starts_at),
-                              endsAt: e.ends_at ? formatInBA(e.ends_at) : null,
-                              price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
-                              categories: e.categories,
-                              vibes: e.vibes,
-                              minAge: e.min_age,
-                              ticketUrl: e.ticket_url,
-                            })),
-                          }),
-                        },
-                      ],
-                    },
-                  ]
-
-                  // Get Claude's response after seeing the events
-                  const continuationResponse = await anthropic.messages.create({
-                    model: 'claude-haiku-4-5-20251001',
-                    max_tokens: 1024,
-                    system: SYSTEM_PROMPT,
-                    tools,
-                    messages: continuationMessages,
-                    stream: true,
-                  })
-
-                  for await (const contEvent of continuationResponse) {
-                    if (contEvent.type === 'content_block_delta') {
-                      if (contEvent.delta.type === 'text_delta') {
-                        sendEvent({ type: 'text', content: contEvent.delta.text })
-                      }
-                    }
-                  }
-                } catch (toolError) {
-                  console.error('Tool execution error:', toolError)
-                  sendEvent({
-                    type: 'error',
-                    message: 'Failed to search for events. Please try again.',
-                  })
-                }
-              }
+              break
             }
+
+            if (stopReason === 'tool_use' && toolUses.length > 0) {
+              // Build assistant message content with text (if any) and tool uses
+              const assistantContent: ContentBlock[] = []
+              if (text) {
+                assistantContent.push({ type: 'text', text })
+              }
+              for (const toolUse of toolUses) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: toolUse.name,
+                  input: toolUse.input,
+                })
+              }
+
+              // Add assistant message to conversation
+              messages.push({
+                role: 'assistant',
+                content: assistantContent as Anthropic.ContentBlockParam[],
+              })
+              newMessages.push({
+                role: 'assistant',
+                content: assistantContent,
+              })
+
+              // Execute each tool and collect results
+              const toolResults: Anthropic.ToolResultBlockParam[] = []
+              const toolResultsForHistory: ContentBlock[] = []
+
+              for (const toolUse of toolUses) {
+                if (toolUse.name === 'search_events') {
+                  try {
+                    const input = toolUse.input as SearchEventsInput
+                    const events = await executeSearchEvents(input)
+
+                    // Send events to client for display
+                    sendEvent({ type: 'events', data: events })
+
+                    const resultContent = formatToolResult(events)
+                    toolResults.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: resultContent,
+                    })
+                    toolResultsForHistory.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: resultContent,
+                    })
+
+                    console.log(`[DEBUG] Tool ${toolUse.name} returned ${events.length} events`)
+                  } catch (toolError) {
+                    console.error('Tool execution error:', toolError)
+                    const errorContent = JSON.stringify({ error: 'Failed to search for events' })
+                    toolResults.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: errorContent,
+                      is_error: true,
+                    })
+                    toolResultsForHistory.push({
+                      type: 'tool_result',
+                      tool_use_id: toolUse.id,
+                      content: errorContent,
+                    })
+                  }
+                }
+              }
+
+              // Add tool results as user message (per Anthropic format)
+              messages.push({
+                role: 'user',
+                content: toolResults,
+              })
+              newMessages.push({
+                role: 'user',
+                content: toolResultsForHistory,
+              })
+
+              // Add visual separator before Claude's response to tool results
+              if (text) {
+                sendEvent({ type: 'text', content: '\n\n' })
+              }
+
+              // Continue loop - Claude will process tool results
+              continue
+            }
+
+            // Unexpected stop reason - break to avoid infinite loop
+            console.log(`[DEBUG] Unexpected stop reason: ${stopReason}`)
+            break
           }
 
+          if (iterations >= MAX_ITERATIONS) {
+            console.log('[DEBUG] Max iterations reached')
+            sendEvent({
+              type: 'text',
+              content:
+                '\n\nI apologize, but I need to stop here to avoid getting stuck in a loop. Please try rephrasing your question.',
+            })
+          }
+
+          // Send history event so client can store full conversation for follow-ups
+          sendEvent({ type: 'history', messages: newMessages })
           sendEvent({ type: 'done' })
         } catch (error) {
           console.error('Chat error:', error)

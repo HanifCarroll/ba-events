@@ -11,6 +11,7 @@ import type {
   VenueUpdate,
   Neighborhood,
 } from './types'
+import { generateEmbedding } from './embeddings'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY
@@ -303,4 +304,67 @@ export async function getTonightsEvents() {
 
   if (error) throw error
   return data as EventWithVenue[]
+}
+
+// Hybrid semantic + filter search
+export async function hybridEventSearch(
+  query: string,
+  filters: EventFilters,
+  matchCount = 10
+): Promise<EventWithVenue[]> {
+  // Generate embedding for the search query
+  const queryEmbedding = await generateEmbedding(query)
+
+  // Get semantic results with low threshold - short queries vs long docs have lower similarity
+  const { data: semanticResults, error } = await supabase.rpc(
+    'match_events_with_venues',
+    {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.2,
+      match_count: 50, // Get more for filtering
+    }
+  )
+
+  if (error) throw error
+  if (!semanticResults || semanticResults.length === 0) return []
+
+  // Apply post-filters to semantic results
+  let filtered = semanticResults as EventWithVenue[]
+
+  if (filters.startsAfter) {
+    filtered = filtered.filter(
+      e => new Date(e.starts_at) >= new Date(filters.startsAfter!)
+    )
+  }
+  if (filters.startsBefore) {
+    filtered = filtered.filter(
+      e => new Date(e.starts_at) <= new Date(filters.startsBefore!)
+    )
+  }
+  if (filters.neighborhood) {
+    filtered = filtered.filter(
+      e => e.venue_neighborhood === filters.neighborhood
+    )
+  }
+  if (filters.isFree) {
+    filtered = filtered.filter(e => e.is_free)
+  }
+  if (filters.maxPrice !== undefined) {
+    filtered = filtered.filter(
+      e => e.price === null || e.price <= filters.maxPrice!
+    )
+  }
+  if (filters.categories && filters.categories.length > 0) {
+    filtered = filtered.filter(e =>
+      e.categories.some(c => filters.categories!.includes(c))
+    )
+  }
+  if (filters.vibes && filters.vibes.length > 0) {
+    filtered = filtered.filter(e =>
+      e.vibes.some(v => filters.vibes!.includes(v))
+    )
+  }
+
+  // Return top results (already sorted by similarity from database)
+  return filtered.slice(0, matchCount)
 }

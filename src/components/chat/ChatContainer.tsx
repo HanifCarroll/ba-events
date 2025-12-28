@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { ChatMessage, ChatState, ConversationMessage, StreamEvent, EventWithVenue } from '@/lib/types'
+import type { ChatMessage, ChatState, StreamEvent, EventWithVenue, APIMessage } from '@/lib/types'
 import { generateId } from '@/lib/chat'
 import { chat } from '@/lib/ai'
 import { MessageList } from './MessageList'
@@ -9,6 +9,7 @@ import { SuggestedPrompts } from './SuggestedPrompts'
 export function ChatContainer() {
   const [state, setState] = useState<ChatState>({
     messages: [],
+    apiHistory: [], // Full API history for Claude (includes tool_use/tool_result blocks)
     isLoading: false,
   })
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -44,15 +45,11 @@ export function ChatContainer() {
     }))
 
     try {
-      // Build conversation history (excluding the current messages)
-      const history: ConversationMessage[] = state.messages
-        .filter(m => !m.isStreaming)
-        .map(m => ({
-          role: m.role,
-          content: m.content,
-        }))
+      // Use full API history for proper multi-turn tool use conversations
+      // This includes tool_use and tool_result blocks, not just text
+      const history = state.apiHistory
 
-      // Call the server function
+      // Call the server function with full API history
       const stream = await chat({ data: { message: content, history } })
 
       if (!stream) {
@@ -109,6 +106,17 @@ export function ChatContainer() {
                       ? { ...m, content: accumulatedContent }
                       : m
                   ),
+                }))
+              } else if (event.type === 'history') {
+                // Server sends full history of new messages for this exchange
+                // Append user message + all new messages to apiHistory
+                setState(prev => ({
+                  ...prev,
+                  apiHistory: [
+                    ...prev.apiHistory,
+                    { role: 'user', content } as APIMessage, // User's text message
+                    ...event.messages, // All messages from this exchange (tool_use, tool_result, final text)
+                  ],
                 }))
               } else if (event.type === 'done') {
                 // Mark streaming as complete

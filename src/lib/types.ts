@@ -223,11 +223,33 @@ export interface EventFilters {
   status?: EventStatus
 }
 
-// Chat message types
+// Content block types for Claude API messages
+export type TextBlock = { type: 'text'; text: string }
+export type ToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: string
+  input: Record<string, unknown>
+}
+export type ToolResultBlock = {
+  type: 'tool_result'
+  tool_use_id: string
+  content: string
+}
+
+export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+
+// API message format (for sending to Claude)
+export interface APIMessage {
+  role: 'user' | 'assistant'
+  content: string | ContentBlock[]
+}
+
+// Chat message types (for UI display)
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
-  content: string
+  content: string // Display text
   events?: EventWithVenue[]
   timestamp: Date
   isStreaming?: boolean
@@ -235,6 +257,7 @@ export interface ChatMessage {
 
 export interface ChatState {
   messages: ChatMessage[]
+  apiHistory: APIMessage[] // Full API history for Claude
   isLoading: boolean
 }
 
@@ -242,10 +265,11 @@ export interface ChatState {
 export type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'events'; data: EventWithVenue[] }
+  | { type: 'history'; messages: APIMessage[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
 
-// Conversation history for API
+// Conversation history for API (legacy - use APIMessage instead)
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
