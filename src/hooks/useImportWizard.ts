@@ -5,20 +5,28 @@ import Papa from 'papaparse'
 import {
   processPasslineEventsAction,
   importPasslineEventsBatchAction,
+  processEventbriteEventsAction,
+  importEventbriteEventsBatchAction,
   bulkCreateVenuesAction,
   bulkCreateEventsAction,
   listVenues,
   type PasslinePreviewEvent,
+  type EventbritePreviewEvent,
 } from '@/lib/admin'
 import {
   fetchPasslineEventsClient,
   filterCABAEventsClient,
   filterByDateRangeClient,
 } from '@/lib/scrapers/passline/client'
+import {
+  fetchEventbriteEvents,
+  filterInPersonEvents,
+  filterByDateRange as filterEventbriteByDateRange,
+} from '@/lib/scrapers/eventbrite'
 import { CATEGORIES, VIBES, EVENT_STATUSES } from '@/lib/types'
 import type { Neighborhood, Category, Vibe, EventStatus, EventInsert } from '@/lib/types'
 
-export type ImportSource = 'passline' | 'csv'
+export type ImportSource = 'passline' | 'eventbrite' | 'csv'
 export type WizardStep = 'source' | 'configure' | 'venues' | 'select' | 'confirm'
 
 interface VenueEdit {
@@ -68,7 +76,7 @@ export function useImportWizard(
   const [step, setStep] = useState<WizardStep>('source')
   const [source, setSource] = useState<ImportSource | null>(null)
 
-  // Passline-specific state
+  // Passline/Eventbrite-specific state (shared date range)
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(() => {
     const date = new Date()
@@ -76,6 +84,7 @@ export function useImportWizard(
     return date.toISOString().split('T')[0]
   })
   const [passlineEvents, setPasslineEvents] = useState<PasslinePreviewEvent[]>([])
+  const [eventbriteEvents, setEventbriteEvents] = useState<EventbritePreviewEvent[]>([])
 
   // CSV-specific state
   const [csvRows, setCsvRows] = useState<ParsedCSVRow[]>([])
@@ -100,26 +109,45 @@ export function useImportWizard(
     return map
   }, [venues])
 
-  // Compute unmatched venues for Passline events
+  // Compute unmatched venues for Passline/Eventbrite events
   const unmatchedVenues = useMemo<UnmatchedVenue[]>(() => {
-    if (source !== 'passline') return []
+    if (source === 'passline') {
+      const venueMap = new Map<string, UnmatchedVenue>()
+      passlineEvents
+        .filter(e => e.venueMatch.matchType === 'none')
+        .forEach(e => {
+          const name = e.passline.lugar
+          const existing = venueMap.get(name)
+          if (existing) {
+            existing.count++
+            existing.eventIds.push(e.passline.id)
+          } else {
+            venueMap.set(name, { name, count: 1, eventIds: [e.passline.id] })
+          }
+        })
+      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
+    }
 
-    const venueMap = new Map<string, UnmatchedVenue>()
-    passlineEvents
-      .filter(e => e.venueMatch.matchType === 'none')
-      .forEach(e => {
-        const name = e.passline.lugar
-        const existing = venueMap.get(name)
-        if (existing) {
-          existing.count++
-          existing.eventIds.push(e.passline.id)
-        } else {
-          venueMap.set(name, { name, count: 1, eventIds: [e.passline.id] })
-        }
-      })
+    if (source === 'eventbrite') {
+      const venueMap = new Map<string, UnmatchedVenue>()
+      eventbriteEvents
+        .filter(e => e.venueMatch.matchType === 'none')
+        .forEach(e => {
+          const name = e.eventbrite.location?.name || 'Unknown Venue'
+          const eventId = e.eventbrite.url // Use URL as unique ID for Eventbrite
+          const existing = venueMap.get(name)
+          if (existing) {
+            existing.count++
+            existing.eventIds.push(eventId)
+          } else {
+            venueMap.set(name, { name, count: 1, eventIds: [eventId] })
+          }
+        })
+      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
+    }
 
-    return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
-  }, [source, passlineEvents])
+    return []
+  }, [source, passlineEvents, eventbriteEvents])
 
   // Find similar venue names for merge suggestions
   const similarVenues = useMemo(() => {
@@ -270,7 +298,7 @@ export function useImportWizard(
     setError(null)
   }, [])
 
-  const fetchPasslineEvents = useCallback(async () => {
+  const fetchPasslineEventsHandler = useCallback(async () => {
     setIsFetching(true)
     setError(null)
 
@@ -298,6 +326,53 @@ export function useImportWizard(
         setStep('venues')
       } else {
         setSelectedIds(new Set(data.map(e => e.passline.id)))
+        setStep('select')
+      }
+
+      toast.success(`Found ${data.length} events`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch events')
+      toast.error('Failed to fetch events')
+    } finally {
+      setIsFetching(false)
+    }
+  }, [startDate, endDate])
+
+  const fetchEventbriteEventsHandler = useCallback(async () => {
+    setIsFetching(true)
+    setError(null)
+
+    try {
+      // Fetch all events from Eventbrite JSON-LD
+      const allEvents = await fetchEventbriteEvents()
+
+      // Filter for in-person events only
+      const inPersonEvents = filterInPersonEvents(allEvents)
+
+      // Filter by date range
+      const filteredEvents = filterEventbriteByDateRange(inPersonEvents, startDate, endDate)
+
+      // Process events on server (venue matching + transformation)
+      const data = await processEventbriteEventsAction({ data: { events: filteredEvents } })
+
+      setEventbriteEvents(data)
+
+      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
+      if (hasUnmatched) {
+        // Initialize venue edits
+        const edits = new Map<string, VenueEdit>()
+        data
+          .filter(e => e.venueMatch.matchType === 'none')
+          .forEach(e => {
+            const name = e.eventbrite.location?.name || 'Unknown Venue'
+            if (!edits.has(name)) {
+              edits.set(name, { name, neighborhood: null, skip: false })
+            }
+          })
+        setVenueEdits(edits)
+        setStep('venues')
+      } else {
+        setSelectedIds(new Set(data.map(e => e.eventbrite.url)))
         setStep('select')
       }
 
@@ -382,42 +457,84 @@ export function useImportWizard(
       const updatedVenues = await listVenues()
       setVenues(updatedVenues.map(v => ({ id: v.id, name: v.name, neighborhood: v.neighborhood })))
 
-      // Update event venue matches
-      setPasslineEvents(prev =>
-        prev.map(event => {
-          if (event.venueMatch.matchType !== 'none') return event
+      if (source === 'passline') {
+        // Update Passline event venue matches
+        setPasslineEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
 
-          const passlineName = event.passline.lugar
-          const edit = venueEdits.get(passlineName)
-          let targetName = passlineName
-          if (edit?.mergeInto) targetName = edit.mergeInto
+            const passlineName = event.passline.lugar
+            const edit = venueEdits.get(passlineName)
+            let targetName = passlineName
+            if (edit?.mergeInto) targetName = edit.mergeInto
 
-          const matchedVenue = updatedVenues.find(
-            v => v.name.toLowerCase() === targetName.toLowerCase()
-          )
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === targetName.toLowerCase()
+            )
 
-          if (matchedVenue) {
-            return {
-              ...event,
-              venueMatch: {
-                venue: matchedVenue,
-                matchType: 'exact' as const,
-                confidence: 1,
-                searchName: event.venueMatch.searchName,
-              },
-              transformed: { ...event.transformed, venue_id: matchedVenue.id },
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: { ...event.transformed, venue_id: matchedVenue.id },
+              }
             }
-          }
-          return event
-        })
-      )
+            return event
+          })
+        )
 
-      // Auto-select events with matched venues
-      setSelectedIds(new Set(
-        passlineEvents
-          .filter(e => e.venueMatch.matchType !== 'none' || !venueEdits.get(e.passline.lugar)?.skip)
-          .map(e => e.passline.id)
-      ))
+        // Auto-select Passline events with matched venues
+        setSelectedIds(new Set(
+          passlineEvents
+            .filter(e => e.venueMatch.matchType !== 'none' || !venueEdits.get(e.passline.lugar)?.skip)
+            .map(e => e.passline.id)
+        ))
+      } else if (source === 'eventbrite') {
+        // Update Eventbrite event venue matches
+        setEventbriteEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const eventbriteName = event.eventbrite.location?.name || ''
+            const edit = venueEdits.get(eventbriteName)
+            let targetName = eventbriteName
+            if (edit?.mergeInto) targetName = edit.mergeInto
+
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === targetName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: { ...event.transformed, venue_id: matchedVenue.id },
+              }
+            }
+            return event
+          })
+        )
+
+        // Auto-select Eventbrite events with matched venues
+        setSelectedIds(new Set(
+          eventbriteEvents
+            .filter(e => {
+              const name = e.eventbrite.location?.name || ''
+              return e.venueMatch.matchType !== 'none' || !venueEdits.get(name)?.skip
+            })
+            .map(e => e.eventbrite.url)
+        ))
+      }
 
       setStep('select')
     } catch (err) {
@@ -426,17 +543,26 @@ export function useImportWizard(
     } finally {
       setIsCreatingVenues(false)
     }
-  }, [venueEdits, passlineEvents])
+  }, [source, venueEdits, passlineEvents, eventbriteEvents])
 
   const skipVenues = useCallback(() => {
-    // Auto-select only events with matched venues
-    setSelectedIds(new Set(
-      passlineEvents
-        .filter(e => e.venueMatch.matchType !== 'none')
-        .map(e => e.passline.id)
-    ))
+    if (source === 'passline') {
+      // Auto-select only Passline events with matched venues
+      setSelectedIds(new Set(
+        passlineEvents
+          .filter(e => e.venueMatch.matchType !== 'none')
+          .map(e => e.passline.id)
+      ))
+    } else if (source === 'eventbrite') {
+      // Auto-select only Eventbrite events with matched venues
+      setSelectedIds(new Set(
+        eventbriteEvents
+          .filter(e => e.venueMatch.matchType !== 'none')
+          .map(e => e.eventbrite.url)
+      ))
+    }
     setStep('select')
-  }, [passlineEvents])
+  }, [source, passlineEvents, eventbriteEvents])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -457,6 +583,12 @@ export function useImportWizard(
       } else {
         setSelectedIds(new Set(passlineEvents.map(e => e.passline.id)))
       }
+    } else if (source === 'eventbrite') {
+      if (selectedIds.size === eventbriteEvents.length) {
+        setSelectedIds(new Set())
+      } else {
+        setSelectedIds(new Set(eventbriteEvents.map(e => e.eventbrite.url)))
+      }
     } else {
       const validIds = csvRows.filter(r => r.errors.length === 0).map((_, i) => `csv-${i}`)
       if (selectedIds.size === validIds.length) {
@@ -465,7 +597,7 @@ export function useImportWizard(
         setSelectedIds(new Set(validIds))
       }
     }
-  }, [source, passlineEvents, csvRows, selectedIds.size])
+  }, [source, passlineEvents, eventbriteEvents, csvRows, selectedIds.size])
 
   const proceedToConfirm = useCallback(() => {
     setStep('confirm')
@@ -500,6 +632,27 @@ export function useImportWizard(
         }
 
         toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+      } else if (source === 'eventbrite') {
+        const eventsToImport = eventbriteEvents
+          .filter(e => selectedIds.has(e.eventbrite.url))
+          .map(e => ({
+            eventbriteEvent: e.eventbrite,
+            venueId: e.venueMatch.venue?.id || null,
+          }))
+
+        const BATCH_SIZE = 10
+        let totalInserted = 0
+        let totalUpdated = 0
+
+        for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
+          const batch = eventsToImport.slice(i, i + BATCH_SIZE)
+          const result = await importEventbriteEventsBatchAction({ data: { events: batch } })
+          totalInserted += result.inserted
+          totalUpdated += result.updated
+          setImportProgress({ current: Math.min(i + BATCH_SIZE, eventsToImport.length), total: eventsToImport.length })
+        }
+
+        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
       } else {
         const events = csvRows
           .filter((_, i) => selectedIds.has(`csv-${i}`))
@@ -520,7 +673,7 @@ export function useImportWizard(
       setIsImporting(false)
       setImportProgress(null)
     }
-  }, [source, selectedIds, passlineEvents, csvRows, router])
+  }, [source, selectedIds, passlineEvents, eventbriteEvents, csvRows, router])
 
   const goBack = useCallback(() => {
     if (step === 'configure') {
@@ -529,7 +682,7 @@ export function useImportWizard(
     } else if (step === 'venues') {
       setStep('configure')
     } else if (step === 'select') {
-      if (source === 'passline' && unmatchedVenues.length > 0) {
+      if ((source === 'passline' || source === 'eventbrite') && unmatchedVenues.length > 0) {
         setStep('venues')
       } else {
         setStep('configure')
@@ -543,6 +696,7 @@ export function useImportWizard(
     setStep('source')
     setSource(null)
     setPasslineEvents([])
+    setEventbriteEvents([])
     setCsvRows([])
     setCsvFileName(null)
     setVenueEdits(new Map())
@@ -557,6 +711,7 @@ export function useImportWizard(
     startDate,
     endDate,
     passlineEvents,
+    eventbriteEvents,
     csvRows,
     csvFileName,
     venues,
@@ -578,7 +733,8 @@ export function useImportWizard(
     selectSource,
     setStartDate,
     setEndDate,
-    fetchPasslineEvents,
+    fetchPasslineEvents: fetchPasslineEventsHandler,
+    fetchEventbriteEvents: fetchEventbriteEventsHandler,
     handleCSVFile,
     updateVenueEdit,
     createVenuesAndProceed,

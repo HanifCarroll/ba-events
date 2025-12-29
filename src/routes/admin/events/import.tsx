@@ -34,11 +34,11 @@ function ImportEventsPage() {
   const visibleSteps = STEPS.filter((step) => {
     // Always show source and configure
     if (step.key === 'source' || step.key === 'configure') return true
-    // Show venues only for passline with unmatched venues
+    // Show venues for passline or eventbrite with unmatched venues
     if (step.key === 'venues') {
-      return wizard.source === 'passline' && wizard.unmatchedVenues.length > 0
+      return (wizard.source === 'passline' || wizard.source === 'eventbrite') && wizard.unmatchedVenues.length > 0
     }
-    // Show select and confirm for both
+    // Show select and confirm for all sources
     return true
   })
 
@@ -146,6 +146,7 @@ function ImportEventsPage() {
             onStartDateChange={wizard.setStartDate}
             onEndDateChange={wizard.setEndDate}
             onFetchPassline={wizard.fetchPasslineEvents}
+            onFetchEventbrite={wizard.fetchEventbriteEvents}
             onCSVFile={wizard.handleCSVFile}
             onClearCSV={wizard.reset}
           />
@@ -158,7 +159,13 @@ function ImportEventsPage() {
             similarVenues={wizard.similarVenues}
             venuesToCreateCount={wizard.venuesToCreateCount}
             isCreatingVenues={wizard.isCreatingVenues}
-            totalEventsCount={wizard.passlineEvents.length}
+            totalEventsCount={
+              wizard.source === 'passline'
+                ? wizard.passlineEvents.length
+                : wizard.source === 'eventbrite'
+                  ? wizard.eventbriteEvents.length
+                  : 0
+            }
             onUpdateVenueEdit={wizard.updateVenueEdit}
             onCreateVenues={wizard.createVenuesAndProceed}
             onSkip={wizard.skipVenues}
@@ -169,6 +176,7 @@ function ImportEventsPage() {
           <SelectStep
             source={wizard.source}
             passlineEvents={wizard.passlineEvents}
+            eventbriteEvents={wizard.eventbriteEvents}
             csvRows={wizard.csvRows}
             csvValidCount={wizard.csvValidCount}
             csvErrorCount={wizard.csvErrorCount}

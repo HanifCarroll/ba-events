@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { Download, Upload, FileText, X, Loader2, Zap } from 'lucide-react'
+import { Download, Upload, FileText, X, Loader2, Zap, Ticket } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,6 +26,7 @@ interface ConfigureStepProps {
   onStartDateChange: (date: string) => void
   onEndDateChange: (date: string) => void
   onFetchPassline: () => void
+  onFetchEventbrite: () => void
   onCSVFile: (file: File) => void
   onClearCSV: () => void
 }
@@ -39,6 +40,7 @@ export function ConfigureStep({
   onStartDateChange,
   onEndDateChange,
   onFetchPassline,
+  onFetchEventbrite,
   onCSVFile,
   onClearCSV,
 }: ConfigureStepProps) {
@@ -123,6 +125,69 @@ export function ConfigureStep({
         <p className="text-xs text-muted-foreground text-center">
           Only events in Capital Federal (CABA) will be imported
         </p>
+      </div>
+    )
+  }
+
+  if (source === 'eventbrite') {
+    return (
+      <div className="space-y-6 max-w-md mx-auto">
+        <div className="text-center space-y-2">
+          <h2 className="font-display text-xl font-semibold text-foreground">
+            Configure Date Range
+          </h2>
+          <p className="text-muted-foreground">
+            Select the date range to fetch events from Eventbrite
+          </p>
+        </div>
+
+        <div className="bg-card/50 rounded-xl border border-border/50 p-6 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="start-date">From</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => onStartDateChange(e.target.value)}
+                className="bg-background/50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date">To</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => onEndDateChange(e.target.value)}
+                className="bg-background/50"
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={onFetchEventbrite}
+            disabled={isFetching}
+            className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+          >
+            {isFetching ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Fetching events...
+              </>
+            ) : (
+              <>
+                <Ticket className="h-4 w-4 mr-2" />
+                Fetch Events
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className="text-xs text-muted-foreground text-center space-y-1">
+          <p>Fetches events from Eventbrite Buenos Aires listing</p>
+          <p>Descriptions are included • Prices require enrichment</p>
+        </div>
       </div>
     )
   }

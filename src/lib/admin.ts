@@ -488,3 +488,94 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
       total: updates.length,
     }
   })
+
+// ============================================================================
+// EVENTBRITE SCRAPER
+// ============================================================================
+
+import {
+  type EventbriteEvent,
+  transformEventbriteEvent,
+} from './scrapers/eventbrite'
+
+export interface EventbritePreviewEvent {
+  eventbrite: EventbriteEvent
+  transformed: EventInsert
+  venueMatch: VenueMatchResult
+}
+
+// Re-export EventbriteEvent type for client use
+export type { EventbriteEvent }
+
+/**
+ * Process raw Eventbrite events and do venue matching
+ * Events are fetched directly in the browser (JSON-LD from listing page)
+ */
+export const processEventbriteEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { events: EventbriteEvent[] }) => data)
+  .handler(async ({ data: { events } }): Promise<EventbritePreviewEvent[]> => {
+    // Match venues and transform events
+    const previews: EventbritePreviewEvent[] = await Promise.all(
+      events.map(async (event) => {
+        // Use venue name for matching (Eventbrite provides full venue info)
+        const venueName = event.location?.name || ''
+        const venueMatch = await matchVenue(venueName)
+        const transformed = transformEventbriteEvent(
+          event,
+          venueMatch.venue?.id || null
+        )
+
+        return {
+          eventbrite: event,
+          transformed,
+          venueMatch,
+        }
+      })
+    )
+
+    return previews
+  })
+
+/**
+ * Import a batch of events from Eventbrite data
+ * Processes events in small batches to avoid timeouts
+ */
+export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { events: Array<{ eventbriteEvent: EventbriteEvent; venueId: string | null }> }) => data
+  )
+  .handler(async ({ data }) => {
+    // Transform events
+    const eventsToImport: EventInsert[] = data.events.map(({ eventbriteEvent, venueId }) =>
+      transformEventbriteEvent(eventbriteEvent, venueId)
+    )
+
+    if (eventsToImport.length === 0) {
+      return { success: true, inserted: 0, updated: 0 }
+    }
+
+    // Generate embeddings sequentially to avoid rate limits
+    // Eventbrite events already have description_es from JSON-LD
+    const eventsWithEmbeddings: EventInsert[] = []
+    for (const event of eventsToImport) {
+      const textForEmbedding = [
+        event.name,
+        event.description_es,
+        ...(event.categories || []),
+        ...(event.vibes || []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+
+      const embedding = await generateEmbedding(textForEmbedding)
+      eventsWithEmbeddings.push({ ...event, embedding })
+    }
+
+    // Upsert events (insert new, update existing)
+    const result = await upsertEvents(eventsWithEmbeddings)
+
+    return {
+      success: true,
+      ...result,
+    }
+  })

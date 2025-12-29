@@ -2,9 +2,9 @@ import { useMemo } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { DataTable, getPasslineColumns, getCSVColumns } from '@/components/data-table'
-import type { ParsedCSVRowWithId, PasslineEventWithId } from '@/components/data-table'
-import type { PasslinePreviewEvent } from '@/lib/admin'
+import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns } from '@/components/data-table'
+import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId } from '@/components/data-table'
+import type { PasslinePreviewEvent, EventbritePreviewEvent } from '@/lib/admin'
 import type { ImportSource } from '@/hooks/useImportWizard'
 
 interface ParsedCSVRow {
@@ -21,6 +21,7 @@ interface ParsedCSVRow {
 interface SelectStepProps {
   source: ImportSource
   passlineEvents: PasslinePreviewEvent[]
+  eventbriteEvents: EventbritePreviewEvent[]
   csvRows: ParsedCSVRow[]
   csvValidCount: number
   csvErrorCount: number
@@ -34,6 +35,7 @@ interface SelectStepProps {
 export function SelectStep({
   source,
   passlineEvents,
+  eventbriteEvents,
   csvRows,
   csvErrorCount,
   csvAllValid,
@@ -42,8 +44,15 @@ export function SelectStep({
   onProceed,
 }: SelectStepProps) {
   const isPassline = source === 'passline'
-  const totalCount = isPassline ? passlineEvents.length : csvRows.length
-  const canProceed = isPassline ? selectedIds.size > 0 : (csvAllValid && selectedIds.size > 0)
+  const isEventbrite = source === 'eventbrite'
+  const totalCount = isPassline
+    ? passlineEvents.length
+    : isEventbrite
+      ? eventbriteEvents.length
+      : csvRows.length
+  const canProceed = (isPassline || isEventbrite)
+    ? selectedIds.size > 0
+    : (csvAllValid && selectedIds.size > 0)
 
   // Transform data to include id field for DataTable compatibility
   const passlineData = useMemo((): PasslineEventWithId[] => {
@@ -52,6 +61,13 @@ export function SelectStep({
       id: event.passline.id,
     }))
   }, [passlineEvents])
+
+  const eventbriteData = useMemo((): EventbriteEventWithId[] => {
+    return eventbriteEvents.map((event) => ({
+      ...event,
+      id: event.eventbrite.url, // Use URL as unique ID
+    }))
+  }, [eventbriteEvents])
 
   const csvData = useMemo((): ParsedCSVRowWithId[] => {
     return csvRows.map((row, index) => ({
@@ -62,6 +78,7 @@ export function SelectStep({
 
   // Get column definitions
   const passlineColumns = useMemo(() => getPasslineColumns(), [])
+  const eventbriteColumns = useMemo(() => getEventbriteColumns(), [])
   const csvColumns = useMemo(() => getCSVColumns(), [])
 
   // Handle selection change
@@ -117,6 +134,19 @@ export function SelectStep({
           columns={passlineColumns}
           data={passlineData}
           tableId="import-passline"
+          enableRowSelection={true}
+          selectedIds={selectedIds}
+          onSelectionChange={handleSelectionChange}
+          enableColumnResizing={true}
+          enableColumnReordering={true}
+          enableMultiSort={true}
+          enableVirtualization={false}
+        />
+      ) : isEventbrite ? (
+        <DataTable
+          columns={eventbriteColumns}
+          data={eventbriteData}
+          tableId="import-eventbrite"
           enableRowSelection={true}
           selectedIds={selectedIds}
           onSelectionChange={handleSelectionChange}

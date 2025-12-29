@@ -1,4 +1,4 @@
-import { Zap, FileSpreadsheet, ArrowRight } from 'lucide-react'
+import { Zap, FileSpreadsheet, ArrowRight, Ticket } from 'lucide-react'
 import type { ImportSource } from '@/hooks/useImportWizard'
 
 interface SourceStepProps {
@@ -17,7 +17,7 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 max-w-2xl mx-auto">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 max-w-4xl mx-auto">
         {/* Passline Card */}
         <button
           onClick={() => onSelectSource('passline')}
@@ -49,13 +49,44 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
           </div>
         </button>
 
+        {/* Eventbrite Card */}
+        <button
+          onClick={() => onSelectSource('eventbrite')}
+          className="group relative bg-card/50 hover:bg-card/80 border border-border/50 hover:border-orange-500/50 rounded-xl p-6 text-left transition-all duration-200"
+        >
+          <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ArrowRight className="h-5 w-5 text-orange-500" />
+          </div>
+          <div className="space-y-4">
+            <div className="h-12 w-12 rounded-lg bg-orange-500/10 flex items-center justify-center">
+              <Ticket className="h-6 w-6 text-orange-500" />
+            </div>
+            <div>
+              <h3 className="font-display font-semibold text-foreground mb-1">
+                Eventbrite
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Fetch events from Eventbrite Buenos Aires listing. Includes descriptions and venue data.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs bg-orange-500/10 text-orange-500 px-2 py-1 rounded-full">
+                Automatic
+              </span>
+              <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
+                Buenos Aires
+              </span>
+            </div>
+          </div>
+        </button>
+
         {/* CSV Card */}
         <button
           onClick={() => onSelectSource('csv')}
-          className="group relative bg-card/50 hover:bg-card/80 border border-border/50 hover:border-primary/50 rounded-xl p-6 text-left transition-all duration-200"
+          className="group relative bg-card/50 hover:bg-card/80 border border-border/50 hover:border-emerald-500/50 rounded-xl p-6 text-left transition-all duration-200"
         >
           <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-            <ArrowRight className="h-5 w-5 text-primary" />
+            <ArrowRight className="h-5 w-5 text-emerald-500" />
           </div>
           <div className="space-y-4">
             <div className="h-12 w-12 rounded-lg bg-emerald-500/10 flex items-center justify-center">

@@ -1,7 +1,7 @@
 import { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2, HelpCircle, AlertCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { PasslinePreviewEvent } from '@/lib/admin'
+import type { PasslinePreviewEvent, EventbritePreviewEvent } from '@/lib/admin'
 
 interface ParsedCSVRow {
   rowNumber: number
@@ -16,6 +16,7 @@ interface ParsedCSVRow {
 
 // Extended types with id for DataTable compatibility
 export type PasslineEventWithId = PasslinePreviewEvent & { id: string }
+export type EventbriteEventWithId = EventbritePreviewEvent & { id: string }
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
@@ -58,6 +59,41 @@ function VenueMatchIndicator({ event }: { event: PasslinePreviewEvent }) {
     <div className="flex items-center gap-2">
       <AlertCircle className="h-4 w-4 text-red-500" />
       <span className="text-sm text-muted-foreground">{event.passline.lugar}</span>
+    </div>
+  )
+}
+
+function EventbriteVenueMatchIndicator({ event }: { event: EventbritePreviewEvent }) {
+  const { matchType, confidence, venue } = event.venueMatch
+  const originalName = event.eventbrite.location?.name || 'Unknown Venue'
+
+  if (matchType === 'exact') {
+    return (
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-green-500" />
+        <span className="text-sm">{venue?.name}</span>
+      </div>
+    )
+  }
+
+  if (matchType === 'fuzzy') {
+    return (
+      <div className="flex items-center gap-2">
+        <HelpCircle className="h-4 w-4 text-yellow-500" />
+        <span className="text-sm">
+          {venue?.name}
+          <span className="text-muted-foreground ml-1">
+            ({Math.round(confidence * 100)}%)
+          </span>
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <AlertCircle className="h-4 w-4 text-red-500" />
+      <span className="text-sm text-muted-foreground">{originalName}</span>
     </div>
   )
 }
@@ -152,6 +188,85 @@ export function getPasslineColumns(): ColumnDef<PasslineEventWithId>[] {
           </div>
         )
       },
+    },
+  ]
+}
+
+// Eventbrite events columns
+export function getEventbriteColumns(): ColumnDef<EventbriteEventWithId>[] {
+  return [
+    {
+      id: 'name',
+      accessorFn: (row) => row.eventbrite.name,
+      size: 280,
+      minSize: 180,
+      enableSorting: true,
+      header: 'Event',
+      cell: ({ row }) => {
+        const event = row.original
+        return (
+          <div className="flex flex-col gap-1">
+            <span className="font-medium line-clamp-1">
+              {event.eventbrite.name}
+            </span>
+            {event.eventbrite.description && (
+              <span className="text-xs text-muted-foreground line-clamp-1">
+                {event.eventbrite.description}
+              </span>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      id: 'date',
+      accessorFn: (row) => row.transformed.starts_at,
+      size: 160,
+      minSize: 130,
+      enableSorting: true,
+      header: 'Date',
+      cell: ({ row }) => (
+        <span className="text-sm">
+          {formatDate(row.original.transformed.starts_at)}
+        </span>
+      ),
+    },
+    {
+      id: 'venue',
+      accessorFn: (row) => row.venueMatch.venue?.name || row.eventbrite.location?.name || '',
+      size: 200,
+      minSize: 150,
+      enableSorting: true,
+      header: 'Venue',
+      cell: ({ row }) => <EventbriteVenueMatchIndicator event={row.original} />,
+    },
+    {
+      id: 'source',
+      accessorFn: () => 'Eventbrite',
+      size: 100,
+      minSize: 80,
+      enableSorting: false,
+      header: 'Source',
+      cell: () => (
+        <Badge variant="outline" className="text-xs border-orange-500/30 text-orange-500">
+          Eventbrite
+        </Badge>
+      ),
+    },
+    {
+      id: 'hasDescription',
+      accessorFn: (row) => row.eventbrite.description ? 'Yes' : 'No',
+      size: 100,
+      minSize: 80,
+      enableSorting: false,
+      header: 'Description',
+      cell: ({ row }) => (
+        row.original.eventbrite.description ? (
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
+        ) : (
+          <span className="text-muted-foreground text-sm">-</span>
+        )
+      ),
     },
   ]
 }
