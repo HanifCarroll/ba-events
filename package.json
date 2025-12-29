@@ -52,6 +52,8 @@
     "nitro": "latest",
     "openai": "^6.15.0",
     "papaparse": "^5.5.3",
+    "playwright": "^1.57.0",
+    "puppeteer-core": "^24.34.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.69.0",

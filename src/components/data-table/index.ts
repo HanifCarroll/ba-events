@@ -7,5 +7,5 @@ export { useColumnPreferences } from './hooks/useColumnPreferences'
 // Column definitions
 export { getVenueColumns } from './columns/venue-columns'
 export { getEventColumns } from './columns/event-columns'
-export { getPasslineColumns, getEventbriteColumns, getCSVColumns } from './columns/import-columns'
-export type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId } from './columns/import-columns'
+export { getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns } from './columns/import-columns'
+export type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId } from './columns/import-columns'

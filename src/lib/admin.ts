@@ -579,3 +579,105 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
       ...result,
     }
   })
+
+// ============================================================================
+// BA TOURISM SCRAPER
+// ============================================================================
+
+import {
+  type BATourismEvent,
+  type WeekContext,
+  scrapeBATourismEventsWithBrowser,
+  transformBATourismEvent,
+  parseWeekContext,
+} from './scrapers/ba-tourism'
+
+export interface BATourismPreviewEvent {
+  baTourism: BATourismEvent
+  transformed: EventInsert[]
+  venueMatch: VenueMatchResult
+  dateCount: number
+}
+
+export type { BATourismEvent, WeekContext }
+
+export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { weekContextText?: string }) => data)
+  .handler(async ({ data }): Promise<{ events: BATourismPreviewEvent[]; weekContext: WeekContext }> => {
+    try {
+      console.log('[Admin] Starting BA Tourism fetch...')
+      const { events: rawEvents, weekContext: fetchedContext } = await scrapeBATourismEventsWithBrowser()
+      console.log(`[Admin] Scraped ${rawEvents.length} raw events`)
+
+      const weekContext = data.weekContextText
+        ? parseWeekContext(data.weekContextText)
+        : fetchedContext
+
+      const previews: BATourismPreviewEvent[] = await Promise.all(
+        rawEvents.map(async (event) => {
+          const venueMatch = await matchVenue(event.venueName)
+          const transformed = transformBATourismEvent(
+            event,
+            weekContext,
+            venueMatch.venue?.id || null,
+            new Date()
+          )
+
+          return {
+            baTourism: event,
+            transformed,
+            venueMatch,
+            dateCount: transformed.length,
+          }
+        })
+      )
+
+      console.log(`[Admin] Returning ${previews.length} preview events`)
+      return { events: previews, weekContext }
+    } catch (error) {
+      console.error('[Admin] BA Tourism fetch error:', error)
+      throw error
+    }
+  })
+
+export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: {
+      events: Array<{
+        baTourismEvent: BATourismEvent
+        venueId: string | null
+        weekContext: WeekContext
+      }>
+    }) => data
+  )
+  .handler(async ({ data }) => {
+    const eventsToImport: EventInsert[] = data.events.flatMap(({ baTourismEvent, venueId, weekContext }) =>
+      transformBATourismEvent(baTourismEvent, weekContext, venueId, new Date())
+    )
+
+    if (eventsToImport.length === 0) {
+      return { success: true, inserted: 0, updated: 0 }
+    }
+
+    const eventsWithEmbeddings: EventInsert[] = []
+    for (const event of eventsToImport) {
+      const textForEmbedding = [
+        event.name,
+        event.description_es,
+        ...(event.categories || []),
+        ...(event.vibes || []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+
+      const embedding = await generateEmbedding(textForEmbedding)
+      eventsWithEmbeddings.push({ ...event, embedding })
+    }
+
+    const result = await upsertEvents(eventsWithEmbeddings)
+
+    return {
+      success: true,
+      ...result,
+    }
+  })

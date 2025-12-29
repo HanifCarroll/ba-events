@@ -2,9 +2,9 @@ import { useMemo } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns } from '@/components/data-table'
-import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId } from '@/components/data-table'
-import type { PasslinePreviewEvent, EventbritePreviewEvent } from '@/lib/admin'
+import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns } from '@/components/data-table'
+import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId } from '@/components/data-table'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent } from '@/lib/admin'
 import type { ImportSource } from '@/hooks/useImportWizard'
 
 interface ParsedCSVRow {
@@ -22,6 +22,7 @@ interface SelectStepProps {
   source: ImportSource
   passlineEvents: PasslinePreviewEvent[]
   eventbriteEvents: EventbritePreviewEvent[]
+  baTourismEvents: BATourismPreviewEvent[]
   csvRows: ParsedCSVRow[]
   csvValidCount: number
   csvErrorCount: number
@@ -36,6 +37,7 @@ export function SelectStep({
   source,
   passlineEvents,
   eventbriteEvents,
+  baTourismEvents,
   csvRows,
   csvErrorCount,
   csvAllValid,
@@ -45,12 +47,15 @@ export function SelectStep({
 }: SelectStepProps) {
   const isPassline = source === 'passline'
   const isEventbrite = source === 'eventbrite'
+  const isBaTourism = source === 'ba-tourism'
   const totalCount = isPassline
     ? passlineEvents.length
     : isEventbrite
       ? eventbriteEvents.length
-      : csvRows.length
-  const canProceed = (isPassline || isEventbrite)
+      : isBaTourism
+        ? baTourismEvents.length
+        : csvRows.length
+  const canProceed = (isPassline || isEventbrite || isBaTourism)
     ? selectedIds.size > 0
     : (csvAllValid && selectedIds.size > 0)
 
@@ -69,6 +74,13 @@ export function SelectStep({
     }))
   }, [eventbriteEvents])
 
+  const baTourismData = useMemo((): BaTourismEventWithId[] => {
+    return baTourismEvents.map((event) => ({
+      ...event,
+      id: `${event.baTourism.name}-${event.baTourism.whenText}`.replace(/\s+/g, '-').toLowerCase(),
+    }))
+  }, [baTourismEvents])
+
   const csvData = useMemo((): ParsedCSVRowWithId[] => {
     return csvRows.map((row, index) => ({
       ...row,
@@ -79,6 +91,7 @@ export function SelectStep({
   // Get column definitions
   const passlineColumns = useMemo(() => getPasslineColumns(), [])
   const eventbriteColumns = useMemo(() => getEventbriteColumns(), [])
+  const baTourismColumns = useMemo(() => getBaTourismColumns(), [])
   const csvColumns = useMemo(() => getCSVColumns(), [])
 
   // Handle selection change
@@ -112,7 +125,7 @@ export function SelectStep({
           <span className="text-sm text-muted-foreground">
             of {totalCount} events
           </span>
-          {!isPassline && csvErrorCount > 0 && (
+          {!isPassline && !isEventbrite && !isBaTourism && csvErrorCount > 0 && (
             <Badge variant="outline" className="border-destructive/30 text-destructive">
               {csvErrorCount} with errors
             </Badge>
@@ -147,6 +160,19 @@ export function SelectStep({
           columns={eventbriteColumns}
           data={eventbriteData}
           tableId="import-eventbrite"
+          enableRowSelection={true}
+          selectedIds={selectedIds}
+          onSelectionChange={handleSelectionChange}
+          enableColumnResizing={true}
+          enableColumnReordering={true}
+          enableMultiSort={true}
+          enableVirtualization={false}
+        />
+      ) : isBaTourism ? (
+        <DataTable
+          columns={baTourismColumns}
+          data={baTourismData}
+          tableId="import-ba-tourism"
           enableRowSelection={true}
           selectedIds={selectedIds}
           onSelectionChange={handleSelectionChange}

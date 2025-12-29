@@ -34,9 +34,9 @@ function ImportEventsPage() {
   const visibleSteps = STEPS.filter((step) => {
     // Always show source and configure
     if (step.key === 'source' || step.key === 'configure') return true
-    // Show venues for passline or eventbrite with unmatched venues
+    // Show venues for passline, eventbrite, or ba-tourism with unmatched venues
     if (step.key === 'venues') {
-      return (wizard.source === 'passline' || wizard.source === 'eventbrite') && wizard.unmatchedVenues.length > 0
+      return (wizard.source === 'passline' || wizard.source === 'eventbrite' || wizard.source === 'ba-tourism') && wizard.unmatchedVenues.length > 0
     }
     // Show select and confirm for all sources
     return true
@@ -147,6 +147,7 @@ function ImportEventsPage() {
             onEndDateChange={wizard.setEndDate}
             onFetchPassline={wizard.fetchPasslineEvents}
             onFetchEventbrite={wizard.fetchEventbriteEvents}
+            onFetchBaTourism={wizard.fetchBaTourismEvents}
             onCSVFile={wizard.handleCSVFile}
             onClearCSV={wizard.reset}
           />
@@ -164,7 +165,9 @@ function ImportEventsPage() {
                 ? wizard.passlineEvents.length
                 : wizard.source === 'eventbrite'
                   ? wizard.eventbriteEvents.length
-                  : 0
+                  : wizard.source === 'ba-tourism'
+                    ? wizard.baTourismEvents.length
+                    : 0
             }
             onUpdateVenueEdit={wizard.updateVenueEdit}
             onCreateVenues={wizard.createVenuesAndProceed}
@@ -177,6 +180,7 @@ function ImportEventsPage() {
             source={wizard.source}
             passlineEvents={wizard.passlineEvents}
             eventbriteEvents={wizard.eventbriteEvents}
+            baTourismEvents={wizard.baTourismEvents}
             csvRows={wizard.csvRows}
             csvValidCount={wizard.csvValidCount}
             csvErrorCount={wizard.csvErrorCount}

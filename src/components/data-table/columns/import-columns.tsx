@@ -1,7 +1,7 @@
 import { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2, HelpCircle, AlertCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { PasslinePreviewEvent, EventbritePreviewEvent } from '@/lib/admin'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent } from '@/lib/admin'
 
 interface ParsedCSVRow {
   rowNumber: number
@@ -17,6 +17,7 @@ interface ParsedCSVRow {
 // Extended types with id for DataTable compatibility
 export type PasslineEventWithId = PasslinePreviewEvent & { id: string }
 export type EventbriteEventWithId = EventbritePreviewEvent & { id: string }
+export type BaTourismEventWithId = BATourismPreviewEvent & { id: string }
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
@@ -366,6 +367,148 @@ export function getCSVColumns(): ColumnDef<ParsedCSVRowWithId>[] {
           </div>
         )
       },
+    },
+  ]
+}
+
+function BaTourismVenueMatchIndicator({ event }: { event: BATourismPreviewEvent }) {
+  const { matchType, confidence, venue } = event.venueMatch
+  const originalName = event.baTourism.venueName
+
+  if (matchType === 'exact') {
+    return (
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-green-500" />
+        <span className="text-sm">{venue?.name}</span>
+      </div>
+    )
+  }
+
+  if (matchType === 'fuzzy') {
+    return (
+      <div className="flex items-center gap-2">
+        <HelpCircle className="h-4 w-4 text-yellow-500" />
+        <span className="text-sm">
+          {venue?.name}
+          <span className="text-muted-foreground ml-1">
+            ({Math.round(confidence * 100)}%)
+          </span>
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <AlertCircle className="h-4 w-4 text-red-500" />
+      <span className="text-sm text-muted-foreground">{originalName}</span>
+    </div>
+  )
+}
+
+// BA Tourism events columns
+export function getBaTourismColumns(): ColumnDef<BaTourismEventWithId>[] {
+  return [
+    {
+      id: 'name',
+      accessorFn: (row) => row.baTourism.name,
+      size: 280,
+      minSize: 180,
+      enableSorting: true,
+      header: 'Event',
+      cell: ({ row }) => {
+        const event = row.original
+        return (
+          <div className="flex flex-col gap-1">
+            <span className="font-medium line-clamp-1">
+              {event.baTourism.name}
+            </span>
+            {event.baTourism.description && (
+              <span className="text-xs text-muted-foreground line-clamp-1">
+                {event.baTourism.description}
+              </span>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      id: 'category',
+      accessorFn: (row) => row.baTourism.category,
+      size: 120,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Category',
+      cell: ({ row }) => (
+        <Badge variant="secondary" className="text-xs">
+          {row.original.baTourism.category}
+        </Badge>
+      ),
+    },
+    {
+      id: 'when',
+      accessorFn: (row) => row.baTourism.whenText,
+      size: 200,
+      minSize: 150,
+      enableSorting: false,
+      header: 'When',
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground line-clamp-2">
+          {row.original.baTourism.whenText}
+        </span>
+      ),
+    },
+    {
+      id: 'dateCount',
+      accessorFn: (row) => row.dateCount,
+      size: 80,
+      minSize: 60,
+      enableSorting: true,
+      header: 'Dates',
+      cell: ({ row }) => (
+        <Badge variant="outline" className="text-xs">
+          {row.original.dateCount}
+        </Badge>
+      ),
+    },
+    {
+      id: 'venue',
+      accessorFn: (row) => row.venueMatch.venue?.name || row.baTourism.venueName,
+      size: 200,
+      minSize: 150,
+      enableSorting: true,
+      header: 'Venue',
+      cell: ({ row }) => <BaTourismVenueMatchIndicator event={row.original} />,
+    },
+    {
+      id: 'neighborhood',
+      accessorFn: (row) => row.baTourism.neighborhood,
+      size: 120,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Barrio',
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.baTourism.neighborhood}
+        </span>
+      ),
+    },
+    {
+      id: 'price',
+      accessorFn: (row) => row.baTourism.isFree ? 0 : 1,
+      size: 80,
+      minSize: 60,
+      enableSorting: true,
+      header: 'Price',
+      cell: ({ row }) => (
+        row.original.baTourism.isFree ? (
+          <Badge variant="outline" className="text-green-500 border-green-500/30">
+            Free
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground text-sm">Paid</span>
+        )
+      ),
     },
   ]
 }

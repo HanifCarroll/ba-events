@@ -1,4 +1,4 @@
-import { Zap, FileSpreadsheet, ArrowRight, Ticket } from 'lucide-react'
+import { Zap, FileSpreadsheet, ArrowRight, Ticket, Landmark } from 'lucide-react'
 import type { ImportSource } from '@/hooks/useImportWizard'
 
 interface SourceStepProps {
@@ -17,7 +17,7 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 max-w-4xl mx-auto">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 max-w-5xl mx-auto">
         {/* Passline Card */}
         <button
           onClick={() => onSelectSource('passline')}
@@ -75,6 +75,37 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
               </span>
               <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
                 Buenos Aires
+              </span>
+            </div>
+          </div>
+        </button>
+
+        {/* BA Tourism Card */}
+        <button
+          onClick={() => onSelectSource('ba-tourism')}
+          className="group relative bg-card/50 hover:bg-card/80 border border-border/50 hover:border-sky-500/50 rounded-xl p-6 text-left transition-all duration-200"
+        >
+          <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ArrowRight className="h-5 w-5 text-sky-500" />
+          </div>
+          <div className="space-y-4">
+            <div className="h-12 w-12 rounded-lg bg-sky-500/10 flex items-center justify-center">
+              <Landmark className="h-6 w-6 text-sky-500" />
+            </div>
+            <div>
+              <h3 className="font-display font-semibold text-foreground mb-1">
+                BA Tourism
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Fetch weekly events from the official Buenos Aires city tourism website.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs bg-sky-500/10 text-sky-500 px-2 py-1 rounded-full">
+                Weekly
+              </span>
+              <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
+                Official
               </span>
             </div>
           </div>

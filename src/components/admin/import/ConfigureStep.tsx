@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { Download, Upload, FileText, X, Loader2, Zap, Ticket } from 'lucide-react'
+import { Download, Upload, FileText, X, Loader2, Zap, Ticket, Landmark } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,6 +27,7 @@ interface ConfigureStepProps {
   onEndDateChange: (date: string) => void
   onFetchPassline: () => void
   onFetchEventbrite: () => void
+  onFetchBaTourism: () => void
   onCSVFile: (file: File) => void
   onClearCSV: () => void
 }
@@ -41,6 +42,7 @@ export function ConfigureStep({
   onEndDateChange,
   onFetchPassline,
   onFetchEventbrite,
+  onFetchBaTourism,
   onCSVFile,
   onClearCSV,
 }: ConfigureStepProps) {
@@ -192,8 +194,50 @@ export function ConfigureStep({
     )
   }
 
-  // TODO: BA Tourism integration
-  // if (source === 'ba-tourism') { ... }
+  if (source === 'ba-tourism') {
+    return (
+      <div className="space-y-6 max-w-md mx-auto">
+        <div className="text-center space-y-2">
+          <h2 className="font-display text-xl font-semibold text-foreground">
+            Fetch Weekly Events
+          </h2>
+          <p className="text-muted-foreground">
+            Import this week's events from Buenos Aires Tourism
+          </p>
+        </div>
+
+        <div className="bg-card/50 rounded-xl border border-border/50 p-6 space-y-4">
+          <div className="text-center text-sm text-muted-foreground">
+            <p>The BA Tourism website publishes a weekly list of events.</p>
+            <p className="mt-2">Click below to fetch this week's events.</p>
+          </div>
+
+          <Button
+            onClick={onFetchBaTourism}
+            disabled={isFetching}
+            className="w-full bg-sky-500 hover:bg-sky-600 text-white"
+          >
+            {isFetching ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Fetching events...
+              </>
+            ) : (
+              <>
+                <Landmark className="h-4 w-4 mr-2" />
+                Fetch Weekly Events
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className="text-xs text-muted-foreground text-center space-y-1">
+          <p>Source: turismo.buenosaires.gob.ar</p>
+          <p>Events are parsed from Spanish with date/time extraction</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
