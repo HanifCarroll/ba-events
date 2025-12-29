@@ -193,10 +193,10 @@ export function ChatContainer() {
   const hasMessages = state.messages.length > 0
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative h-full flex flex-col">
       {/* New Chat button - only show when there are messages */}
       {hasMessages && (
-        <div className="flex-shrink-0 flex justify-end items-center px-4 py-2 border-b border-border/30 bg-background">
+        <div className="shrink-0 flex justify-end items-center px-4 py-2 border-b border-border/30 bg-background">
           <button
             onClick={handleNewChat}
             className="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-card/50 transition-all duration-200"
@@ -207,8 +207,8 @@ export function ChatContainer() {
         </div>
       )}
 
-      {/* Message area - this scrolls */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      {/* Message area - scrollable */}
+      <div className="flex-1 overflow-y-auto overscroll-contain">
         {hasMessages ? (
           <MessageList messages={state.messages} isLoading={state.isLoading} />
         ) : (
@@ -216,8 +216,8 @@ export function ChatContainer() {
         )}
       </div>
 
-      {/* Input - fixed at bottom */}
-      <div className="flex-shrink-0">
+      {/* Input - at bottom */}
+      <div className="shrink-0 bg-background">
         <ChatInput onSend={handleSendMessage} disabled={state.isLoading} />
       </div>
     </div>
