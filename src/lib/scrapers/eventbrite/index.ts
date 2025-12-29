@@ -34,14 +34,7 @@ export {
   type EventbriteVenueInfo,
 } from './transformer'
 
-// Enrichment (price + AI inference)
-export {
-  fetchEventbritePrice,
-  inferCategoriesAndVibes,
-  enrichEventbriteEvent,
-  enrichEventbriteEventsBatch,
-  type EventbritePriceInfo,
-  type CategoryVibeInference,
-  type EventbriteEnrichmentResult,
-  type BatchEnrichmentResult,
-} from './enrichment'
+// NOTE: Enrichment functions (fetchEventbritePrice, inferCategoriesAndVibes, etc.)
+// are NOT exported here because they use the Anthropic SDK which requires server-side execution.
+// Import directly from './enrichment' in server-side code only:
+//   import { enrichEventbriteEvent } from '@/lib/scrapers/eventbrite/enrichment'
