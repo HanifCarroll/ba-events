@@ -1,4 +1,4 @@
-import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 
 import appCss from '../styles.css?url'
 
@@ -60,7 +60,7 @@ function RootDocument() {
 
         {/* Header - fixed at top */}
         <header className="fixed top-0 left-0 right-0 h-16 border-b border-border/50 backdrop-blur-sm bg-background/80 flex items-center px-6 z-20">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             {/* Art deco inspired logo accent */}
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent blur-sm" />
@@ -74,7 +74,7 @@ function RootDocument() {
             <span className="text-xs text-muted-foreground tracking-widest uppercase hidden sm:inline ml-2">
               Buenos Aires
             </span>
-          </div>
+          </Link>
         </header>
 
         {/* Main content - positioned below header */}
