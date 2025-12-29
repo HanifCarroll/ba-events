@@ -17,6 +17,7 @@ import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/index'
 import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/index'
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
+import { Route as AdminVenuesImportRouteImport } from './routes/admin/venues/import'
 import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
 import { Route as AdminEventsNewRouteImport } from './routes/admin/events/new'
 import { Route as AdminEventsImportRouteImport } from './routes/admin/events/import'
@@ -62,6 +63,11 @@ const AdminVenuesNewRoute = AdminVenuesNewRouteImport.update({
   path: '/venues/new',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminVenuesImportRoute = AdminVenuesImportRouteImport.update({
+  id: '/venues/import',
+  path: '/venues/import',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminVenuesIdRoute = AdminVenuesIdRouteImport.update({
   id: '/venues/$id',
   path: '/venues/$id',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
+  '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/venues': typeof AdminVenuesIndexRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
+  '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/venues': typeof AdminVenuesIndexRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
+  '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
   '/admin/events/': typeof AdminEventsIndexRoute
   '/admin/venues/': typeof AdminVenuesIndexRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
+    | '/admin/venues/import'
     | '/admin/venues/new'
     | '/admin/events'
     | '/admin/venues'
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
+    | '/admin/venues/import'
     | '/admin/venues/new'
     | '/admin/events'
     | '/admin/venues'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
+    | '/admin/venues/import'
     | '/admin/venues/new'
     | '/admin/events/'
     | '/admin/venues/'
@@ -233,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminVenuesNewRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/venues/import': {
+      id: '/admin/venues/import'
+      path: '/venues/import'
+      fullPath: '/admin/venues/import'
+      preLoaderRoute: typeof AdminVenuesImportRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/venues/$id': {
       id: '/admin/venues/$id'
       path: '/venues/$id'
@@ -271,6 +290,7 @@ interface AdminRouteChildren {
   AdminEventsImportRoute: typeof AdminEventsImportRoute
   AdminEventsNewRoute: typeof AdminEventsNewRoute
   AdminVenuesIdRoute: typeof AdminVenuesIdRoute
+  AdminVenuesImportRoute: typeof AdminVenuesImportRoute
   AdminVenuesNewRoute: typeof AdminVenuesNewRoute
   AdminEventsIndexRoute: typeof AdminEventsIndexRoute
   AdminVenuesIndexRoute: typeof AdminVenuesIndexRoute
@@ -283,6 +303,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminEventsImportRoute: AdminEventsImportRoute,
   AdminEventsNewRoute: AdminEventsNewRoute,
   AdminVenuesIdRoute: AdminVenuesIdRoute,
+  AdminVenuesImportRoute: AdminVenuesImportRoute,
   AdminVenuesNewRoute: AdminVenuesNewRoute,
   AdminEventsIndexRoute: AdminEventsIndexRoute,
   AdminVenuesIndexRoute: AdminVenuesIndexRoute,

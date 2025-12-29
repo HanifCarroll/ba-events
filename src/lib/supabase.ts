@@ -82,6 +82,16 @@ export async function createVenue(venue: VenueInsert) {
   return data as Venue
 }
 
+export async function createVenues(venues: VenueInsert[]) {
+  const { data, error } = await supabase
+    .from('venues')
+    .insert(venues)
+    .select()
+
+  if (error) throw error
+  return data as Venue[]
+}
+
 export async function updateVenue(id: string, updates: VenueUpdate) {
   const { data, error } = await supabase
     .from('venues')

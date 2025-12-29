@@ -3,6 +3,7 @@ import {
   getVenues,
   getVenueById,
   createVenue,
+  createVenues,
   updateVenue,
   deleteVenue,
   getEventsWithVenues,
@@ -68,6 +69,16 @@ export const deleteVenueAction = createServerFn({ method: 'POST' })
   .handler(async ({ data: id }) => {
     await deleteVenue(id)
     return { success: true }
+  })
+
+export const bulkCreateVenuesAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: VenueInsert[]) => data)
+  .handler(async ({ data: venues }) => {
+    const created = await createVenues(venues)
+    return {
+      success: true,
+      count: created.length,
+    }
   })
 
 // ============================================================================
