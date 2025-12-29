@@ -78,7 +78,7 @@ function RootDocument() {
         </header>
 
         {/* Main content - positioned below header */}
-        <main className="fixed top-16 left-0 right-0 bottom-0 z-10">
+        <main className="fixed top-16 left-0 right-0 bottom-0 z-10 flex flex-col overflow-hidden">
           <Outlet />
         </main>
 

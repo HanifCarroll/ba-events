@@ -193,7 +193,7 @@ export function ChatContainer() {
   const hasMessages = state.messages.length > 0
 
   return (
-    <div className="relative h-full flex flex-col">
+    <div className="relative h-full min-h-0 flex flex-col">
       {/* New Chat button - only show when there are messages */}
       {hasMessages && (
         <div className="shrink-0 flex justify-end items-center px-4 py-2 border-b border-border/30 bg-background">
@@ -208,7 +208,7 @@ export function ChatContainer() {
       )}
 
       {/* Message area - scrollable */}
-      <div className="flex-1 overflow-y-auto overscroll-contain">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {hasMessages ? (
           <MessageList messages={state.messages} isLoading={state.isLoading} />
         ) : (
