@@ -2,6 +2,7 @@
  * Passline API Client
  *
  * Fetches events from Passline's public API.
+ * Uses Browserless.io to bypass Cloudflare protection.
  * API discovered via browser network inspection - no official documentation.
  */
 
@@ -32,22 +33,19 @@ interface PasslineAPIResponse {
   BillboardByCountry: PasslineEvent[]
 }
 
-const PASSLINE_API_URL =
-  'https://api.passline.com/v1/event/GetCountryByBillboardHome'
+const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
 
 /**
  * Fetch all events from Passline for Argentina
+ * Note: This may fail with Cloudflare protection when called server-side.
+ * Works when called from browser context (admin UI manual import).
  */
 export async function fetchPasslineEvents(): Promise<PasslineEvent[]> {
   const response = await fetch(PASSLINE_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
-      'Origin': 'https://www.passline.com',
-      'Referer': 'https://www.passline.com/',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
     },
     body: JSON.stringify({ country: 'argentina' }),
   })
@@ -62,9 +60,12 @@ export async function fetchPasslineEvents(): Promise<PasslineEvent[]> {
 
 /**
  * Filter events to only include CABA (Capital Federal) events
+ * Also excludes "VARIAS LOCACIONES" which are venue rental ads, not real events
  */
 export function filterCABAEvents(events: PasslineEvent[]): PasslineEvent[] {
-  return events.filter((e) => e.nombre_region === 'Capital Federal')
+  return events.filter(
+    (e) => e.nombre_region === 'Capital Federal' && e.lugar !== 'VARIAS LOCACIONES'
+  )
 }
 
 /**

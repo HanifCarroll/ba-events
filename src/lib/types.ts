@@ -124,7 +124,7 @@ export type Vibe = (typeof VIBES)[number]
 export interface Venue {
   id: string
   name: string
-  neighborhood: Neighborhood
+  neighborhood: Neighborhood | null
   address: string | null
   website: string | null
   instagram_handle: string | null
@@ -137,7 +137,7 @@ export interface Venue {
 // For inserting new venues
 export interface VenueInsert {
   name: string
-  neighborhood: Neighborhood
+  neighborhood?: Neighborhood | null
   address?: string | null
   website?: string | null
   instagram_handle?: string | null

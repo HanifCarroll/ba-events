@@ -14,6 +14,8 @@ bun test             # Run tests
 
 Bun automatically loads `.env` files - don't use dotenv.
 
+**Important:** Never start the dev server yourself. The user will always have it running.
+
 ## Framework
 
 This is a **TanStack Start** project with:

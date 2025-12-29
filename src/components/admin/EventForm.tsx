@@ -30,6 +30,7 @@ const statusLabels: Record<EventStatus, string> = {
   cancelled: 'Cancelled',
   postponed: 'Postponed',
   past: 'Past',
+  pending_review: 'Pending Review',
 }
 
 function toLocalDatetime(isoString: string | null | undefined): string {
@@ -44,7 +45,7 @@ export function EventForm({ event, mode }: EventFormProps) {
   const navigate = useNavigate()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [venues, setVenues] = useState<{ id: string; name: string; neighborhood: string }[]>([])
+  const [venues, setVenues] = useState<{ id: string; name: string; neighborhood: string | null }[]>([])
 
   // Form state
   const [name, setName] = useState(event?.name || '')
@@ -272,7 +273,7 @@ export function EventForm({ event, mode }: EventFormProps) {
                   ...venues.map((v) => ({
                     value: v.id,
                     label: v.name,
-                    sublabel: v.neighborhood,
+                    sublabel: v.neighborhood ?? undefined,
                   })),
                 ]}
                 value={venueId}

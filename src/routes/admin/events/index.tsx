@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter, Upload, Clock, XCircle, Zap, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter, Upload, Clock, XCircle, Zap, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'

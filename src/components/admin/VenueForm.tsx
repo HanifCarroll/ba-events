@@ -40,7 +40,7 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
 
   // Form state
   const [name, setName] = useState(venue?.name || '')
-  const [neighborhood, setNeighborhood] = useState<Neighborhood | undefined>(venue?.neighborhood)
+  const [neighborhood, setNeighborhood] = useState<Neighborhood | undefined>(venue?.neighborhood ?? undefined)
   const [address, setAddress] = useState(venue?.address || '')
   const [website, setWebsite] = useState(venue?.website || '')
   const [instagram, setInstagram] = useState(venue?.instagram_handle || '')

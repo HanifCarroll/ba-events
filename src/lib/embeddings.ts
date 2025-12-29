@@ -3,10 +3,20 @@ import { createServerFn } from '@tanstack/react-start'
 import { supabase } from './supabase'
 import type { Event, EventWithVenue } from './types'
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Lazy-initialize OpenAI client (only when needed, server-side only)
+let openai: OpenAI | null = null
+
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is required')
+    }
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  }
+  return openai
+}
 
 // Build embedding text from event data
 export function buildEmbeddingText(event: Event | EventWithVenue): string {
@@ -53,7 +63,7 @@ export function buildEmbeddingText(event: Event | EventWithVenue): string {
 
 // Generate embedding using OpenAI
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
+  const response = await getOpenAI().embeddings.create({
     model: 'text-embedding-3-small',
     input: text,
     dimensions: 1536,

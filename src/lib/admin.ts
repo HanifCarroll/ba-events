@@ -16,7 +16,6 @@ import {
   bulkDeleteEvents,
   markPastEvents,
   countPastEvents,
-  checkEventExists,
 } from './supabase'
 import { generateEmbedding } from './embeddings'
 import type { VenueInsert, VenueUpdate, EventInsert, EventUpdate, EventWithVenue, EventStatus } from './types'
@@ -230,7 +229,7 @@ export const markPastEventsAction = createServerFn({ method: 'POST' }).handler(a
 // VENUE LOOKUP (for event form)
 // ============================================================================
 
-export const getVenuesForSelect = createServerFn({ method: 'GET' }).handler(async (): Promise<{ id: string; name: string; neighborhood: string }[]> => {
+export const getVenuesForSelect = createServerFn({ method: 'GET' }).handler(async (): Promise<{ id: string; name: string; neighborhood: string | null }[]> => {
   const venues = await getVenues(1000)
   return venues.map(v => ({
     id: v.id,
@@ -244,12 +243,8 @@ export const getVenuesForSelect = createServerFn({ method: 'GET' }).handler(asyn
 // ============================================================================
 
 import {
-  fetchPasslineEvents,
-  filterCABAEvents,
-  filterByDateRange,
   transformPasslineEvent,
   type PasslineEvent,
-  type DateRange,
 } from './scrapers/passline'
 import { matchVenue, type VenueMatchResult } from './scrapers/venue-matcher'
 import { upsertEvents } from './supabase'
@@ -260,21 +255,19 @@ export interface PasslinePreviewEvent {
   venueMatch: VenueMatchResult
 }
 
-export const fetchPasslinePreviewAction = createServerFn({ method: 'GET' })
-  .inputValidator((data: DateRange) => data)
-  .handler(async ({ data: dateRange }): Promise<PasslinePreviewEvent[]> => {
-    // Fetch all events from Passline
-    const allEvents = await fetchPasslineEvents()
+// Re-export PasslineEvent type for client use
+export type { PasslineEvent }
 
-    // Filter to CABA only
-    const cabaEvents = filterCABAEvents(allEvents)
-
-    // Filter by date range
-    const dateFiltered = filterByDateRange(cabaEvents, dateRange)
-
+/**
+ * Process raw Passline events (client-side fetched) and do venue matching
+ * This is used when the browser fetches events directly to bypass Cloudflare
+ */
+export const processPasslineEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { events: PasslineEvent[] }) => data)
+  .handler(async ({ data: { events } }): Promise<PasslinePreviewEvent[]> => {
     // Match venues and transform events
     const previews: PasslinePreviewEvent[] = await Promise.all(
-      dateFiltered.map(async (event) => {
+      events.map(async (event) => {
         const venueMatch = await matchVenue(event.lugar)
         const transformed = transformPasslineEvent(
           event,
@@ -292,53 +285,39 @@ export const fetchPasslinePreviewAction = createServerFn({ method: 'GET' })
     return previews
   })
 
-export const importPasslineEventsAction = createServerFn({ method: 'POST' })
+/**
+ * Import a batch of events from client-provided Passline data
+ * Processes events in small batches to avoid timeouts
+ */
+export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' })
   .inputValidator(
-    (data: { events: Array<{ passlineId: string; venueId: string | null }> }) => data
+    (data: { events: Array<{ passlineEvent: PasslineEvent; venueId: string | null }> }) => data
   )
   .handler(async ({ data }) => {
-    // Fetch fresh data from Passline
-    const allEvents = await fetchPasslineEvents()
-    const cabaEvents = filterCABAEvents(allEvents)
-
-    // Create lookup map by Passline ID
-    const eventMap = new Map(cabaEvents.map((e) => [e.id, e]))
-
-    // Transform selected events
-    const eventsToImport: EventInsert[] = []
-
-    for (const { passlineId, venueId } of data.events) {
-      const passlineEvent = eventMap.get(passlineId)
-      if (!passlineEvent) continue
-
-      const transformed = transformPasslineEvent(passlineEvent, venueId)
-      eventsToImport.push(transformed)
-    }
+    // Transform events
+    const eventsToImport: EventInsert[] = data.events.map(({ passlineEvent, venueId }) =>
+      transformPasslineEvent(passlineEvent, venueId)
+    )
 
     if (eventsToImport.length === 0) {
       return { success: true, inserted: 0, updated: 0 }
     }
 
-    // Generate embeddings for all events
-    const eventsWithEmbeddings = await Promise.all(
-      eventsToImport.map(async (event) => {
-        const textForEmbedding = [
-          event.name,
-          event.description,
-          ...(event.categories || []),
-          ...(event.vibes || []),
-        ]
-          .filter(Boolean)
-          .join(' ')
+    // Generate embeddings sequentially to avoid rate limits
+    const eventsWithEmbeddings: EventInsert[] = []
+    for (const event of eventsToImport) {
+      const textForEmbedding = [
+        event.name,
+        event.description,
+        ...(event.categories || []),
+        ...(event.vibes || []),
+      ]
+        .filter(Boolean)
+        .join(' ')
 
-        const embedding = await generateEmbedding(textForEmbedding)
-
-        return {
-          ...event,
-          embedding,
-        }
-      })
-    )
+      const embedding = await generateEmbedding(textForEmbedding)
+      eventsWithEmbeddings.push({ ...event, embedding })
+    }
 
     // Upsert events (insert new, update existing)
     const result = await upsertEvents(eventsWithEmbeddings)
@@ -348,86 +327,6 @@ export const importPasslineEventsAction = createServerFn({ method: 'POST' })
       ...result,
     }
   })
-
-// ============================================================================
-// AUTOMATED PASSLINE IMPORT (for GitHub Actions)
-// ============================================================================
-
-/**
- * Core logic for automated Passline import.
- * Can be called directly from API routes.
- */
-export async function runPasslineAutoImport(): Promise<{
-  imported: number
-  pending: number
-  skipped: number
-  total: number
-}> {
-  // Calculate date range (next 30 days)
-  const today = new Date()
-  const startDate = today.toISOString().split('T')[0]
-  const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split('T')[0]
-
-  // Fetch and filter events
-  const allEvents = await fetchPasslineEvents()
-  const cabaEvents = filterCABAEvents(allEvents)
-  const dateFiltered = filterByDateRange(cabaEvents, { startDate, endDate })
-
-  let imported = 0
-  let pending = 0
-  let skipped = 0
-
-  for (const event of dateFiltered) {
-    // Check if already exists
-    const exists = await checkEventExists('passline', event.id)
-    if (exists) {
-      skipped++
-      continue
-    }
-
-    // Match venue
-    const venueMatch = await matchVenue(event.lugar)
-
-    // Determine status based on venue match
-    const status: EventStatus =
-      venueMatch.matchType === 'none' ? 'pending_review' : 'scheduled'
-
-    // Transform event
-    const transformed = transformPasslineEvent(
-      event,
-      venueMatch.venue?.id || null
-    )
-
-    // Generate embedding
-    const textForEmbedding = [
-      transformed.name,
-      transformed.description,
-      ...(transformed.categories || []),
-      ...(transformed.vibes || []),
-    ]
-      .filter(Boolean)
-      .join(' ')
-
-    const embedding = await generateEmbedding(textForEmbedding)
-
-    // Insert event with appropriate status
-    await createEvent({
-      ...transformed,
-      status,
-      embedding,
-    })
-
-    if (status === 'pending_review') {
-      pending++
-    } else {
-      imported++
-    }
-  }
-
-  return { imported, pending, skipped, total: dateFiltered.length }
-}
 
 // ============================================================================
 // PENDING EVENT MANAGEMENT

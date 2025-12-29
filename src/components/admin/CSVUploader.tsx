@@ -39,7 +39,7 @@ interface ParsedRow {
 }
 
 interface CSVUploaderProps {
-  venues: { id: string; name: string; neighborhood: string }[]
+  venues: { id: string; name: string; neighborhood: string | null }[]
   onImport: (events: EventInsert[]) => Promise<void>
   isImporting: boolean
 }

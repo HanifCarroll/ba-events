@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type {
   Event,
   EventInsert,
@@ -14,14 +14,29 @@ import type {
 } from './types'
 import { generateEmbedding } from './embeddings'
 
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_ANON_KEY
+// Lazy-initialize Supabase client (only when needed, server-side only)
+let supabaseInstance: SupabaseClient | null = null
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables')
+function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const supabaseUrl = process.env.SUPABASE_URL
+    const supabaseKey = process.env.SUPABASE_ANON_KEY
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables')
+    }
+
+    supabaseInstance = createClient(supabaseUrl, supabaseKey)
+  }
+  return supabaseInstance
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+// Export for backward compatibility (use getSupabase() internally)
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_, prop) {
+    return (getSupabase() as unknown as Record<string | symbol, unknown>)[prop]
+  },
+})
 
 // ============================================================================
 // VENUE OPERATIONS

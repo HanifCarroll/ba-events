@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import {
   Loader2,
@@ -9,6 +9,9 @@ import {
   Download,
   Plus,
   Zap,
+  ArrowLeft,
+  Building2,
+  Merge,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -39,16 +42,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  fetchPasslinePreviewAction,
-  importPasslineEventsAction,
+  processPasslineEventsAction,
+  importPasslineEventsBatchAction,
   createVenueAction,
+  bulkCreateVenuesAction,
+  listVenues,
   type PasslinePreviewEvent,
 } from '@/lib/admin'
+import {
+  fetchPasslineEventsClient,
+  filterCABAEventsClient,
+  filterByDateRangeClient,
+} from '@/lib/scrapers/passline/client'
 import { NEIGHBORHOODS, VENUE_TYPES } from '@/lib/types'
 import type { Neighborhood, VenueType } from '@/lib/types'
 
 interface PasslineScraperProps {
-  venues: { id: string; name: string; neighborhood: string }[]
+  venues: { id: string; name: string; neighborhood: string | null }[]
 }
 
 export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps) {
@@ -64,9 +74,13 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
     return date.toISOString().split('T')[0]
   })
 
+  // Step state: fetch -> venues (if unmatched) -> import
+  const [step, setStep] = useState<'fetch' | 'venues' | 'import'>('fetch')
+
   // State
   const [isLoading, setIsLoading] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
+  const [isCreatingVenues, setIsCreatingVenues] = useState(false)
   const [events, setEvents] = useState<PasslinePreviewEvent[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -74,6 +88,19 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
     inserted: number
     updated: number
   } | null>(null)
+  const [importProgress, setImportProgress] = useState<{
+    current: number
+    total: number
+  } | null>(null)
+
+  // Venue preview state
+  interface VenueEdit {
+    name: string
+    neighborhood: Neighborhood | null
+    skip: boolean
+    mergeInto?: string // Name of venue to merge into
+  }
+  const [venueEdits, setVenueEdits] = useState<Map<string, VenueEdit>>(new Map())
 
   // Quick venue creation dialog
   const [venueDialog, setVenueDialog] = useState<{
@@ -87,26 +114,101 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
   const [isCreatingVenue, setIsCreatingVenue] = useState(false)
 
   // Venues state (can be updated when creating new venues)
-  const [venues, setVenues] = useState(initialVenues)
+  const [_venues, setVenues] = useState(initialVenues)
 
-  // Fetch events from Passline
+  // Compute unmatched venues with event counts
+  const unmatchedVenues = useMemo(() => {
+    const venueMap = new Map<string, { name: string; count: number; eventIds: string[] }>()
+
+    events
+      .filter((e) => e.venueMatch.matchType === 'none')
+      .forEach((e) => {
+        const name = e.passline.lugar
+        const existing = venueMap.get(name)
+        if (existing) {
+          existing.count++
+          existing.eventIds.push(e.passline.id)
+        } else {
+          venueMap.set(name, { name, count: 1, eventIds: [e.passline.id] })
+        }
+      })
+
+    return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
+  }, [events])
+
+  // Find similar venue names for merge suggestions
+  const similarVenues = useMemo(() => {
+    const similar = new Map<string, string[]>()
+    const names = unmatchedVenues.map((v) => v.name)
+
+    for (let i = 0; i < names.length; i++) {
+      for (let j = i + 1; j < names.length; j++) {
+        const a = names[i].toLowerCase().trim()
+        const b = names[j].toLowerCase().trim()
+
+        // Simple check: one contains the other (excluding very short strings)
+        if (a.length > 5 && b.length > 5) {
+          if (a.includes(b) || b.includes(a)) {
+            const existing = similar.get(names[i]) || []
+            existing.push(names[j])
+            similar.set(names[i], existing)
+          }
+        }
+      }
+    }
+
+    return similar
+  }, [unmatchedVenues])
+
+  // Initialize venue edits when unmatched venues change
+  useMemo(() => {
+    if (unmatchedVenues.length > 0 && venueEdits.size === 0) {
+      const edits = new Map<string, VenueEdit>()
+      unmatchedVenues.forEach((v) => {
+        edits.set(v.name, {
+          name: v.name,
+          neighborhood: null, // No default - will be enriched later
+          skip: false,
+        })
+      })
+      setVenueEdits(edits)
+    }
+  }, [unmatchedVenues])
+
+  // Fetch events from Passline (client-side to bypass Cloudflare)
   async function handleFetch() {
     setIsLoading(true)
     setError(null)
     setImportResult(null)
+    setVenueEdits(new Map()) // Reset venue edits
 
     try {
-      const data = await fetchPasslinePreviewAction({
-        data: { startDate, endDate },
+      // Step 1: Fetch from Passline API directly (browser can handle Cloudflare)
+      const allEvents = await fetchPasslineEventsClient()
+
+      // Step 2: Filter to CABA and date range
+      const cabaEvents = filterCABAEventsClient(allEvents)
+      const filteredEvents = filterByDateRangeClient(cabaEvents, { startDate, endDate })
+
+      // Step 3: Send to server for venue matching and transformation
+      const data = await processPasslineEventsAction({
+        data: { events: filteredEvents },
       })
+
       setEvents(data)
-      // Auto-select all events with matched venues
-      const autoSelected = new Set(
-        data
-          .filter((e) => e.venueMatch.matchType !== 'none')
-          .map((e) => e.passline.id)
-      )
-      setSelectedIds(autoSelected)
+
+      // Check if there are unmatched venues
+      const hasUnmatched = data.some((e) => e.venueMatch.matchType === 'none')
+
+      if (hasUnmatched) {
+        // Go to venue preview step
+        setStep('venues')
+      } else {
+        // All venues matched, go directly to import
+        setStep('import')
+        // Auto-select all events
+        setSelectedIds(new Set(data.map((e) => e.passline.id)))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch events')
     } finally {
@@ -134,6 +236,123 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
     } else {
       setSelectedIds(new Set(events.map((e) => e.passline.id)))
     }
+  }
+
+  // Update a venue edit
+  function updateVenueEdit(name: string, updates: Partial<VenueEdit>) {
+    setVenueEdits((prev) => {
+      const next = new Map(prev)
+      const existing = next.get(name)
+      if (existing) {
+        next.set(name, { ...existing, ...updates })
+      }
+      return next
+    })
+  }
+
+  // Skip venue creation and go to import
+  function handleSkipVenues() {
+    setStep('import')
+    // Auto-select only events with matched venues
+    const autoSelected = new Set(
+      events
+        .filter((e) => e.venueMatch.matchType !== 'none')
+        .map((e) => e.passline.id)
+    )
+    setSelectedIds(autoSelected)
+  }
+
+  // Bulk create venues and proceed to import
+  async function handleBulkCreateVenues() {
+    setIsCreatingVenues(true)
+    setError(null)
+
+    try {
+      // Collect venues to create (excluding skipped and merged)
+      const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: VenueType }[] = []
+      const mergeMap = new Map<string, string>() // Maps merged venue names to target
+
+      venueEdits.forEach((edit, originalName) => {
+        if (edit.skip) return
+        if (edit.mergeInto) {
+          mergeMap.set(originalName, edit.mergeInto)
+          return
+        }
+        venuesToCreate.push({
+          name: edit.name,
+          neighborhood: edit.neighborhood, // Can be null - will be enriched later
+          type: 'other',
+        })
+      })
+
+      if (venuesToCreate.length > 0) {
+        // Bulk create venues
+        await bulkCreateVenuesAction({ data: venuesToCreate })
+      }
+
+      // Re-fetch venue list
+      const updatedVenues = await listVenues()
+      setVenues(updatedVenues.map((v) => ({ id: v.id, name: v.name, neighborhood: v.neighborhood })))
+
+      // Update event venue matches locally
+      setEvents((prev) =>
+        prev.map((event) => {
+          if (event.venueMatch.matchType !== 'none') return event
+
+          const passlineName = event.passline.lugar
+          const edit = venueEdits.get(passlineName)
+
+          // Find the target venue name (after merge resolution)
+          let targetName = passlineName
+          if (edit?.mergeInto) {
+            targetName = edit.mergeInto
+          }
+
+          // Find the created/existing venue
+          const matchedVenue = updatedVenues.find(
+            (v) => v.name.toLowerCase() === targetName.toLowerCase()
+          )
+
+          if (matchedVenue) {
+            return {
+              ...event,
+              venueMatch: {
+                venue: matchedVenue,
+                matchType: 'exact' as const,
+                confidence: 1,
+                searchName: event.venueMatch.searchName,
+              },
+              transformed: { ...event.transformed, venue_id: matchedVenue.id },
+            }
+          }
+
+          return event
+        })
+      )
+
+      // Move to import step
+      setStep('import')
+      // Auto-select all events with matched venues
+      setTimeout(() => {
+        setSelectedIds(new Set(
+          events
+            .filter((e) => e.venueMatch.matchType !== 'none' || !venueEdits.get(e.passline.lugar)?.skip)
+            .map((e) => e.passline.id)
+        ))
+      }, 0)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create venues')
+    } finally {
+      setIsCreatingVenues(false)
+    }
+  }
+
+  // Go back to fetch step
+  function handleBack() {
+    setStep('fetch')
+    setEvents([])
+    setSelectedIds(new Set())
+    setVenueEdits(new Map())
   }
 
   // Open venue creation dialog
@@ -193,32 +412,48 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
     }
   }
 
-  // Import selected events
+  // Import selected events in batches
   async function handleImport() {
     if (selectedIds.size === 0) return
 
     setIsImporting(true)
     setError(null)
     setImportResult(null)
+    setImportProgress({ current: 0, total: selectedIds.size })
 
     try {
-      // Build import payload
+      // Build import payload with full event data
       const eventsToImport = events
         .filter((e) => selectedIds.has(e.passline.id))
         .map((e) => ({
-          passlineId: e.passline.id,
+          passlineEvent: e.passline,
           venueId: e.venueMatch.venue?.id || null,
         }))
 
-      const result = await importPasslineEventsAction({ data: { events: eventsToImport } })
-      setImportResult(result)
+      // Process in batches of 10 to avoid timeouts
+      const BATCH_SIZE = 10
+      let totalInserted = 0
+      let totalUpdated = 0
 
-      // Clear selection and redirect after delay
+      for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
+        const batch = eventsToImport.slice(i, i + BATCH_SIZE)
+        const result = await importPasslineEventsBatchAction({ data: { events: batch } })
+
+        totalInserted += result.inserted
+        totalUpdated += result.updated
+        setImportProgress({ current: Math.min(i + BATCH_SIZE, eventsToImport.length), total: eventsToImport.length })
+      }
+
+      setImportResult({ inserted: totalInserted, updated: totalUpdated })
+      setImportProgress(null)
+
+      // Redirect after delay
       setTimeout(() => {
         router.navigate({ to: '/admin/events' })
       }, 2000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import events')
+      setImportProgress(null)
     } finally {
       setIsImporting(false)
     }
@@ -280,89 +515,157 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
     )
   }
 
+  // Count venues to create (excluding skipped and merged)
+  const venuesToCreateCount = useMemo(() => {
+    let count = 0
+    venueEdits.forEach((edit) => {
+      if (!edit.skip && !edit.mergeInto) count++
+    })
+    return count
+  }, [venueEdits])
+
   return (
     <div className="space-y-6">
-      {/* Date filter */}
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="start-date" className="text-sm text-muted-foreground whitespace-nowrap">
-            From
-          </Label>
-          <Input
-            id="start-date"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-40"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="end-date" className="text-sm text-muted-foreground whitespace-nowrap">
-            To
-          </Label>
-          <Input
-            id="end-date"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-40"
-          />
-        </div>
-      </div>
-
-      {/* Actions bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={handleFetch}
-            disabled={isLoading}
-            className="bg-primary text-primary-foreground"
+      {/* Step indicator */}
+      {step !== 'fetch' && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1 hover:text-foreground transition-colors"
           >
-            {isLoading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Fetching...
-              </>
-            ) : events.length > 0 ? (
-              <>
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+          <span className="text-border">/</span>
+          <span className={step === 'venues' ? 'text-foreground font-medium' : ''}>
+            {step === 'venues' ? 'Review Venues' : 'Import Events'}
+          </span>
+        </div>
+      )}
+
+      {/* Date filter - only show on fetch step */}
+      {step === 'fetch' && (
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="start-date" className="text-sm text-muted-foreground whitespace-nowrap">
+              From
+            </Label>
+            <Input
+              id="start-date"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-40"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="end-date" className="text-sm text-muted-foreground whitespace-nowrap">
+              To
+            </Label>
+            <Input
+              id="end-date"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-40"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Actions bar - venues step */}
+      {step === 'venues' && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+            <span className="font-medium">
+              {unmatchedVenues.length} unmatched venue{unmatchedVenues.length !== 1 ? 's' : ''}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              ({events.length} events total)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleSkipVenues}
+            >
+              Skip Venue Creation
+            </Button>
+            <Button
+              onClick={handleBulkCreateVenues}
+              disabled={isCreatingVenues || venuesToCreateCount === 0}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isCreatingVenues ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create {venuesToCreateCount} Venue{venuesToCreateCount !== 1 ? 's' : ''}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Actions bar - import step */}
+      {step === 'import' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleFetch}
+                disabled={isLoading || isImporting}
+                variant="outline"
+              >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4 mr-2" />
-                Fetch Events
-              </>
-            )}
-          </Button>
-
-          {events.length > 0 && (
-            <span className="text-sm text-muted-foreground">
-              {events.length} events found
-            </span>
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {events.length} events found
+              </span>
+            </div>
+            <Button
+              onClick={handleImport}
+              disabled={isImporting || selectedIds.size === 0}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isImporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {importProgress
+                    ? `Importing ${importProgress.current}/${importProgress.total}...`
+                    : 'Importing...'}
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" />
+                  Import {selectedIds.size} Event{selectedIds.size !== 1 ? 's' : ''}
+                </>
+              )}
+            </Button>
+          </div>
+          {/* Progress bar */}
+          {importProgress && (
+            <div className="space-y-1">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 transition-all duration-300"
+                  style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-right">
+                {importProgress.current} of {importProgress.total} events imported
+              </p>
+            </div>
           )}
         </div>
-
-        {events.length > 0 && (
-          <Button
-            onClick={handleImport}
-            disabled={isImporting || selectedIds.size === 0}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            {isImporting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Importing...
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4 mr-2" />
-                Import {selectedIds.size} Events
-              </>
-            )}
-          </Button>
-        )}
-      </div>
+      )}
 
       {/* Success message */}
       {importResult && (
@@ -384,8 +687,122 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
         </div>
       )}
 
-      {/* Events table */}
-      {events.length > 0 && (
+      {/* Venue preview table - venues step */}
+      {step === 'venues' && unmatchedVenues.length > 0 && (
+        <div className="bg-card/50 rounded-xl border border-border/50 overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[50px]">Skip</TableHead>
+                <TableHead>Venue Name</TableHead>
+                <TableHead className="w-[100px]">Events</TableHead>
+                <TableHead className="w-[200px]">Neighborhood</TableHead>
+                <TableHead className="w-[250px]">Merge Into</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {unmatchedVenues.map((venue) => {
+                const edit = venueEdits.get(venue.name)
+                const suggestions = similarVenues.get(venue.name) || []
+                const isMerged = edit?.mergeInto !== undefined
+
+                return (
+                  <TableRow
+                    key={venue.name}
+                    className={edit?.skip ? 'opacity-50' : isMerged ? 'bg-blue-500/5' : ''}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        checked={edit?.skip || false}
+                        onCheckedChange={(checked) =>
+                          updateVenueEdit(venue.name, { skip: !!checked, mergeInto: undefined })
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <span className={`font-medium ${edit?.skip ? 'line-through' : ''}`}>
+                          {venue.name}
+                        </span>
+                        {suggestions.length > 0 && !edit?.skip && !isMerged && (
+                          <span className="text-xs text-yellow-500 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            Similar to: {suggestions.join(', ')}
+                          </span>
+                        )}
+                        {isMerged && (
+                          <span className="text-xs text-blue-500 flex items-center gap-1">
+                            <Merge className="h-3 w-3" />
+                            Will merge into "{edit.mergeInto}"
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs">
+                        {venue.count}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={edit?.neighborhood || '_unknown'}
+                        onValueChange={(v) =>
+                          updateVenueEdit(venue.name, {
+                            neighborhood: v === '_unknown' ? null : (v as Neighborhood),
+                          })
+                        }
+                        disabled={edit?.skip || isMerged}
+                      >
+                        <SelectTrigger className="h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_unknown">Unknown</SelectItem>
+                          {NEIGHBORHOODS.map((n) => (
+                            <SelectItem key={n} value={n}>
+                              {n}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      {suggestions.length > 0 ? (
+                        <Select
+                          value={edit?.mergeInto || '_none'}
+                          onValueChange={(v) =>
+                            updateVenueEdit(venue.name, {
+                              mergeInto: v === '_none' ? undefined : v,
+                            })
+                          }
+                          disabled={edit?.skip}
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue placeholder="Don't merge" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Don't merge</SelectItem>
+                            {suggestions.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Events table - import step */}
+      {step === 'import' && events.length > 0 && (
         <div className="bg-card/50 rounded-xl border border-border/50 overflow-hidden">
           <Table>
             <TableHeader>
@@ -438,7 +855,7 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
                     <VenueMatchIndicator event={event} />
                   </TableCell>
                   <TableCell>
-                    {event.transformed.categories.map((cat) => (
+                    {(event.transformed.categories || []).map((cat) => (
                       <Badge
                         key={cat}
                         variant="secondary"
@@ -468,17 +885,31 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
         </div>
       )}
 
-      {/* Empty state */}
-      {!isLoading && events.length === 0 && (
+      {/* Empty state - only on fetch step */}
+      {step === 'fetch' && events.length === 0 && (
         <div className="bg-card/50 rounded-xl border border-border/50 p-12 text-center">
-          <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          {isLoading ? (
+            <Loader2 className="h-12 w-12 text-muted-foreground mx-auto mb-4 animate-spin" />
+          ) : (
+            <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          )}
           <h3 className="text-lg font-medium text-foreground mb-2">
-            Ready to fetch events
+            {isLoading ? 'Fetching events...' : 'Ready to fetch events'}
           </h3>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Click "Fetch Events" to load events from Passline. Only events in
-            Capital Federal (CABA) will be shown.
+          <p className="text-muted-foreground max-w-md mx-auto mb-6">
+            {isLoading
+              ? 'Loading events from Passline. This may take a moment.'
+              : 'Load events from Passline. Only events in Capital Federal (CABA) will be shown.'}
           </p>
+          {!isLoading && (
+            <Button
+              onClick={handleFetch}
+              className="bg-primary text-primary-foreground"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Fetch Events
+            </Button>
+          )}
         </div>
       )}
 
