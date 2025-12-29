@@ -1,5 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
-import { RotateCcw } from 'lucide-react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import type { ChatMessage, ChatState, StreamEvent, EventWithVenue, APIMessage } from '@/lib/types'
 import { generateId } from '@/lib/chat'
 import { chat } from '@/lib/ai'
@@ -14,6 +13,29 @@ export function ChatContainer() {
     isLoading: false,
   })
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Notify header about chat state changes
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('chat-state-change', {
+      detail: { hasMessages: state.messages.length > 0 }
+    }))
+  }, [state.messages.length])
+
+  // Listen for new-chat event from header
+  useEffect(() => {
+    const handleNewChat = () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+      setState({
+        messages: [],
+        apiHistory: [],
+        isLoading: false,
+      })
+    }
+    window.addEventListener('new-chat', handleNewChat)
+    return () => window.removeEventListener('new-chat', handleNewChat)
+  }, [])
 
   const handleSendMessage = useCallback(async (content: string) => {
     // Cancel any ongoing request
@@ -177,36 +199,10 @@ export function ChatContainer() {
     }
   }, [state.messages])
 
-  const handleNewChat = useCallback(() => {
-    // Cancel any ongoing request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    // Reset state to initial values
-    setState({
-      messages: [],
-      apiHistory: [],
-      isLoading: false,
-    })
-  }, [])
-
   const hasMessages = state.messages.length > 0
 
   return (
     <div className="relative h-full min-h-0 flex flex-col">
-      {/* New Chat button - only show when there are messages */}
-      {hasMessages && (
-        <div className="shrink-0 flex justify-end items-center px-4 py-2 border-b border-border/30 bg-background">
-          <button
-            onClick={handleNewChat}
-            className="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-card/50 transition-all duration-200"
-          >
-            <RotateCcw className="h-3.5 w-3.5 group-hover:rotate-[-90deg] transition-transform duration-300" />
-            <span className="text-xs tracking-wide">New Chat</span>
-          </button>
-        </div>
-      )}
-
       {/* Message area - scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {hasMessages ? (

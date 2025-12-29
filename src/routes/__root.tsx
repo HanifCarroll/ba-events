@@ -1,4 +1,6 @@
 import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 
 import appCss from '../styles.css?url'
 
@@ -49,6 +51,21 @@ export const Route = createRootRoute({
 })
 
 function RootDocument() {
+  const [hasMessages, setHasMessages] = useState(false)
+
+  // Listen for chat state changes from ChatContainer
+  useEffect(() => {
+    const handleChatStateChange = (e: CustomEvent<{ hasMessages: boolean }>) => {
+      setHasMessages(e.detail.hasMessages)
+    }
+    window.addEventListener('chat-state-change', handleChatStateChange as EventListener)
+    return () => window.removeEventListener('chat-state-change', handleChatStateChange as EventListener)
+  }, [])
+
+  const handleNewChat = () => {
+    window.dispatchEvent(new CustomEvent('new-chat'))
+  }
+
   return (
     <html lang="en" className="dark">
       <head>
@@ -59,7 +76,7 @@ function RootDocument() {
         <div className="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0" />
 
         {/* Header - fixed at top */}
-        <header className="fixed top-0 left-0 right-0 h-16 border-b border-border/50 backdrop-blur-sm bg-background/80 flex items-center px-6 z-20">
+        <header className="fixed top-0 left-0 right-0 h-16 border-b border-border/50 backdrop-blur-sm bg-background/80 flex items-center justify-between px-6 z-20">
           <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             {/* Art deco inspired logo accent */}
             <div className="relative">
@@ -75,6 +92,17 @@ function RootDocument() {
               Buenos Aires
             </span>
           </Link>
+
+          {/* New Chat button - only show when there are messages */}
+          {hasMessages && (
+            <button
+              onClick={handleNewChat}
+              className="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-card/50 transition-all duration-200"
+            >
+              <RotateCcw className="h-3.5 w-3.5 group-hover:rotate-[-90deg] transition-transform duration-300" />
+              <span className="text-xs tracking-wide">New Chat</span>
+            </button>
+          )}
         </header>
 
         {/* Main content - positioned below header */}
