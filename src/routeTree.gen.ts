@@ -19,6 +19,7 @@ import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/inde
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
 import { Route as AdminVenuesImportRouteImport } from './routes/admin/venues/import'
 import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
+import { Route as AdminEventsPasslineRouteImport } from './routes/admin/events/passline'
 import { Route as AdminEventsNewRouteImport } from './routes/admin/events/new'
 import { Route as AdminEventsImportRouteImport } from './routes/admin/events/import'
 import { Route as AdminEventsIdRouteImport } from './routes/admin/events/$id'
@@ -73,6 +74,11 @@ const AdminVenuesIdRoute = AdminVenuesIdRouteImport.update({
   path: '/venues/$id',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminEventsPasslineRoute = AdminEventsPasslineRouteImport.update({
+  id: '/events/passline',
+  path: '/events/passline',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminEventsNewRoute = AdminEventsNewRouteImport.update({
   id: '/events/new',
   path: '/events/new',
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
+  '/admin/events/passline': typeof AdminEventsPasslineRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
+  '/admin/events/passline': typeof AdminEventsPasslineRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
+  '/admin/events/passline': typeof AdminEventsPasslineRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
+    | '/admin/events/passline'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
+    | '/admin/events/passline'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
+    | '/admin/events/passline'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
@@ -259,6 +271,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminVenuesIdRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/events/passline': {
+      id: '/admin/events/passline'
+      path: '/events/passline'
+      fullPath: '/admin/events/passline'
+      preLoaderRoute: typeof AdminEventsPasslineRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/events/new': {
       id: '/admin/events/new'
       path: '/events/new'
@@ -289,6 +308,7 @@ interface AdminRouteChildren {
   AdminEventsIdRoute: typeof AdminEventsIdRoute
   AdminEventsImportRoute: typeof AdminEventsImportRoute
   AdminEventsNewRoute: typeof AdminEventsNewRoute
+  AdminEventsPasslineRoute: typeof AdminEventsPasslineRoute
   AdminVenuesIdRoute: typeof AdminVenuesIdRoute
   AdminVenuesImportRoute: typeof AdminVenuesImportRoute
   AdminVenuesNewRoute: typeof AdminVenuesNewRoute
@@ -302,6 +322,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminEventsIdRoute: AdminEventsIdRoute,
   AdminEventsImportRoute: AdminEventsImportRoute,
   AdminEventsNewRoute: AdminEventsNewRoute,
+  AdminEventsPasslineRoute: AdminEventsPasslineRoute,
   AdminVenuesIdRoute: AdminVenuesIdRoute,
   AdminVenuesImportRoute: AdminVenuesImportRoute,
   AdminVenuesNewRoute: AdminVenuesNewRoute,

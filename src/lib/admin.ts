@@ -237,3 +237,108 @@ export const getVenuesForSelect = createServerFn({ method: 'GET' }).handler(asyn
     neighborhood: v.neighborhood,
   }))
 })
+
+// ============================================================================
+// PASSLINE SCRAPER
+// ============================================================================
+
+import {
+  fetchPasslineEvents,
+  filterCABAEvents,
+  transformPasslineEvent,
+  type PasslineEvent,
+} from './scrapers/passline'
+import { matchVenue, type VenueMatchResult } from './scrapers/venue-matcher'
+import { upsertEvents } from './supabase'
+
+export interface PasslinePreviewEvent {
+  passline: PasslineEvent
+  transformed: EventInsert
+  venueMatch: VenueMatchResult
+}
+
+export const fetchPasslinePreviewAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<PasslinePreviewEvent[]> => {
+    // Fetch all events from Passline
+    const allEvents = await fetchPasslineEvents()
+
+    // Filter to CABA only
+    const cabaEvents = filterCABAEvents(allEvents)
+
+    // Match venues and transform events
+    const previews: PasslinePreviewEvent[] = await Promise.all(
+      cabaEvents.map(async (event) => {
+        const venueMatch = await matchVenue(event.lugar)
+        const transformed = transformPasslineEvent(
+          event,
+          venueMatch.venue?.id || null
+        )
+
+        return {
+          passline: event,
+          transformed,
+          venueMatch,
+        }
+      })
+    )
+
+    return previews
+  }
+)
+
+export const importPasslineEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { events: Array<{ passlineId: string; venueId: string | null }> }) => data
+  )
+  .handler(async ({ data }) => {
+    // Fetch fresh data from Passline
+    const allEvents = await fetchPasslineEvents()
+    const cabaEvents = filterCABAEvents(allEvents)
+
+    // Create lookup map by Passline ID
+    const eventMap = new Map(cabaEvents.map((e) => [e.id, e]))
+
+    // Transform selected events
+    const eventsToImport: EventInsert[] = []
+
+    for (const { passlineId, venueId } of data.events) {
+      const passlineEvent = eventMap.get(passlineId)
+      if (!passlineEvent) continue
+
+      const transformed = transformPasslineEvent(passlineEvent, venueId)
+      eventsToImport.push(transformed)
+    }
+
+    if (eventsToImport.length === 0) {
+      return { success: true, inserted: 0, updated: 0 }
+    }
+
+    // Generate embeddings for all events
+    const eventsWithEmbeddings = await Promise.all(
+      eventsToImport.map(async (event) => {
+        const textForEmbedding = [
+          event.name,
+          event.description,
+          ...(event.categories || []),
+          ...(event.vibes || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+
+        const embedding = await generateEmbedding(textForEmbedding)
+
+        return {
+          ...event,
+          embedding,
+        }
+      })
+    )
+
+    // Upsert events (insert new, update existing)
+    const result = await upsertEvents(eventsWithEmbeddings)
+
+    return {
+      success: true,
+      ...result,
+    }
+  })

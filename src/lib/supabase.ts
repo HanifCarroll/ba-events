@@ -438,3 +438,48 @@ export async function hybridEventSearch(
   // Return top results (already sorted by similarity from database)
   return filtered.slice(0, matchCount)
 }
+
+// ============================================================================
+// UPSERT OPERATIONS (for scrapers)
+// ============================================================================
+
+/**
+ * Upsert events - insert new events, update existing ones
+ * Uses source + external_id for deduplication
+ */
+export async function upsertEvents(events: EventInsert[]): Promise<{
+  inserted: number
+  updated: number
+}> {
+  let inserted = 0
+  let updated = 0
+
+  for (const event of events) {
+    // Check if event already exists
+    const { data: existing } = await supabase
+      .from('events')
+      .select('id')
+      .eq('source', event.source)
+      .eq('external_id', event.external_id)
+      .single()
+
+    if (existing) {
+      // Update existing event
+      const { error } = await supabase
+        .from('events')
+        .update(event)
+        .eq('id', existing.id)
+
+      if (!error) updated++
+    } else {
+      // Insert new event
+      const { error } = await supabase
+        .from('events')
+        .insert(event)
+
+      if (!error) inserted++
+    }
+  }
+
+  return { inserted, updated }
+}
