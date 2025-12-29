@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
-import { Plus, Pencil, Trash2, MapPin, Search, X, Filter, Users, Upload } from 'lucide-react'
+import { Plus, MapPin, Search, X, Filter, Users, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -13,14 +13,6 @@ import {
 } from '@/components/ui/select'
 import { Combobox } from '@/components/ui/combobox'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -28,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DataTable, getVenueColumns } from '@/components/data-table'
 import { listVenues, deleteVenueAction } from '@/lib/admin'
 import { NEIGHBORHOODS, VENUE_TYPES } from '@/lib/types'
 import type { Venue, Neighborhood, VenueType } from '@/lib/types'
@@ -38,6 +31,17 @@ export const Route = createFileRoute('/admin/venues/')({
   },
   component: VenueListPage,
 })
+
+const venueTypeLabels: Record<string, string> = {
+  club: 'Club',
+  bar: 'Bar',
+  theater: 'Theater',
+  gallery: 'Gallery',
+  cultural_center: 'Cultural Center',
+  outdoor: 'Outdoor',
+  restaurant: 'Restaurant',
+  other: 'Other',
+}
 
 function VenueListPage() {
   const venues = Route.useLoaderData()
@@ -98,16 +102,11 @@ function VenueListPage() {
     }
   }
 
-  const venueTypeLabels: Record<string, string> = {
-    club: 'Club',
-    bar: 'Bar',
-    theater: 'Theater',
-    gallery: 'Gallery',
-    cultural_center: 'Cultural Center',
-    outdoor: 'Outdoor',
-    restaurant: 'Restaurant',
-    other: 'Other',
-  }
+  // Column definitions with delete handler
+  const columns = useMemo(
+    () => getVenueColumns({ onDelete: setDeleteTarget }),
+    []
+  )
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
@@ -250,115 +249,26 @@ function VenueListPage() {
           {/* Mobile Card View */}
           <div className="sm:hidden space-y-3">
             {filteredVenues.map((venue) => (
-              <div
+              <MobileVenueCard
                 key={venue.id}
-                className="bg-card/50 rounded-xl border border-border/50 p-4 space-y-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">{venue.name}</p>
-                    <Badge variant="outline" className="mt-1 border-primary/30 text-primary">
-                      {venue.neighborhood}
-                    </Badge>
-                  </div>
-                  <Badge variant="outline" className="shrink-0 border-border/50 text-muted-foreground">
-                    {venueTypeLabels[venue.type] || venue.type}
-                  </Badge>
-                </div>
-
-                <div className="text-sm text-muted-foreground">
-                  {venue.capacity && (
-                    <div className="flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 shrink-0" />
-                      <span>Capacity: {venue.capacity}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-muted-foreground hover:text-foreground"
-                  >
-                    <Link to="/admin/venues/$id" params={{ id: venue.id }}>
-                      <Pencil className="h-4 w-4 mr-2" />
-                      Edit
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-muted-foreground hover:text-destructive"
-                    onClick={() => setDeleteTarget(venue)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
+                venue={venue}
+                onDelete={() => setDeleteTarget(venue)}
+              />
             ))}
           </div>
 
           {/* Desktop Table View */}
-          <div className="hidden sm:block bg-card/50 rounded-xl border border-border/50 overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border/50 hover:bg-transparent">
-                  <TableHead className="text-muted-foreground font-medium">Name</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Neighborhood</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Type</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Capacity</TableHead>
-                  <TableHead className="text-muted-foreground font-medium text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredVenues.map((venue) => (
-                  <TableRow
-                    key={venue.id}
-                    className="border-border/30 hover:bg-muted/30 transition-colors"
-                  >
-                    <TableCell className="font-medium text-foreground">
-                      {venue.name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="border-primary/30 text-primary">
-                        {venue.neighborhood}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {venueTypeLabels[venue.type] || venue.type}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {venue.capacity || '—'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          asChild
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                        >
-                          <Link to="/admin/venues/$id" params={{ id: venue.id }}>
-                            <Pencil className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleteTarget(venue)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="hidden sm:block">
+            <DataTable
+              columns={columns}
+              data={filteredVenues}
+              tableId="admin-venues"
+              enableRowSelection={false}
+              enableColumnResizing={true}
+              enableColumnReordering={true}
+              enableMultiSort={true}
+              enableVirtualization={false}
+            />
           </div>
         </>
       )}
@@ -391,6 +301,61 @@ function VenueListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// Mobile venue card component
+function MobileVenueCard({
+  venue,
+  onDelete,
+}: {
+  venue: Venue
+  onDelete: () => void
+}) {
+  return (
+    <div className="bg-card/50 rounded-xl border border-border/50 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-foreground truncate">{venue.name}</p>
+          <Badge variant="outline" className="mt-1 border-primary/30 text-primary">
+            {venue.neighborhood}
+          </Badge>
+        </div>
+        <Badge variant="outline" className="shrink-0 border-border/50 text-muted-foreground">
+          {venueTypeLabels[venue.type] || venue.type}
+        </Badge>
+      </div>
+
+      <div className="text-sm text-muted-foreground">
+        {venue.capacity && (
+          <div className="flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5 shrink-0" />
+            <span>Capacity: {venue.capacity}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 pt-2 border-t border-border/30">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="flex-1 text-muted-foreground hover:text-foreground"
+        >
+          <Link to="/admin/venues/$id" params={{ id: venue.id }}>
+            Edit
+          </Link>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="flex-1 text-muted-foreground hover:text-destructive"
+          onClick={onDelete}
+        >
+          Delete
+        </Button>
+      </div>
     </div>
   )
 }
