@@ -50,11 +50,11 @@ export const Route = createRootRoute({
 
 function RootDocument() {
   return (
-    <html lang="en" className="dark h-full">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
-      <body className="bg-background text-foreground antialiased h-full overflow-hidden">
+      <body className="bg-background text-foreground antialiased h-dvh overflow-hidden">
         <div className="h-full flex flex-col bg-grain">
           {/* Atmospheric gradient overlay */}
           <div className="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none" />
