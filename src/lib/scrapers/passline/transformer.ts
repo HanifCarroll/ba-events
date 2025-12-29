@@ -31,27 +31,6 @@ function combineDateTime(date: string, time: string): string {
 }
 
 /**
- * Build a description from event data
- */
-function buildDescription(event: PasslineEvent): string | null {
-  const parts: string[] = []
-
-  if (event.artistas) {
-    parts.push(`Artistas: ${event.artistas}`)
-  }
-
-  if (event.category_name) {
-    parts.push(`Categoría: ${event.category_name}`)
-  }
-
-  if (event.promocion) {
-    parts.push(`Promoción: ${event.promocion}`)
-  }
-
-  return parts.length > 0 ? parts.join('\n') : null
-}
-
-/**
  * Parse price from Passline format
  */
 function parsePrice(precioMin: string | null): number | null {
@@ -72,7 +51,7 @@ export function transformPasslineEvent(
 
   return {
     name: event.nombre,
-    description: buildDescription(event),
+    description: null, // Fetched separately via description enrichment flow
     starts_at: combineDateTime(event.fecha_inicio, event.hora_inicio),
     ends_at:
       event.fecha_termino && event.hora_termino

@@ -32,3 +32,10 @@ export {
   transformPasslineEvent,
   transformPasslineEvents,
 } from './transformer'
+
+// Description scraper (client-side)
+export {
+  fetchEventDescription,
+  fetchDescriptionsBatch,
+  type DescriptionFetchResult,
+} from './description-scraper'

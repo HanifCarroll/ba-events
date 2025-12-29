@@ -55,6 +55,7 @@ const searchEventsInputSchema = z.object({
   isFree: z.boolean().optional(),
   maxPrice: z.number().optional(),
   timeFilter: z.enum(['tonight', 'tomorrow', 'weekend', 'week']).optional(),
+  limit: z.number().min(1).max(10).optional(),
 })
 
 type SearchEventsInput = z.infer<typeof searchEventsInputSchema>
@@ -103,15 +104,23 @@ Use the search_events tool with these parameters:
    - maxPrice: budget limit
    - categories/vibes: when user explicitly mentions them
 
-3. **Combine both for best results:**
-   - query="underground techno" + timeFilter="weekend"
-   - query="romantic dinner" + neighborhood="Palermo"
+3. **Use 'limit' to control how many events are returned:**
+   - If user asks for "top 3 events" → set limit=3
+   - If user asks for "5 recommendations" → set limit=5
+   - If user asks for "a few options" → set limit=3-4
+   - If user doesn't specify → default to 5-6 events
+   - IMPORTANT: The limit controls how many event cards are displayed. Always match it to what the user asked for.
+
+4. **Combine parameters for best results:**
+   - query="underground techno" + timeFilter="weekend" + limit=3
+   - query="romantic dinner" + neighborhood="Palermo" + limit=5
 
 ## When to Use Each Approach
 
 - Vibe/mood requests ("something chill", "high energy") → use query parameter
 - Specific filters ("free events in Palermo this weekend") → use filter parameters
 - Both ("underground techno tonight") → combine query + timeFilter
+- Numbered requests ("top 3", "give me 5") → always set the limit parameter to match
 
 ## Response Format
 
@@ -175,6 +184,10 @@ or descriptive searches like "romantic date spot", "high energy dance party",
           type: 'string',
           enum: ['tonight', 'tomorrow', 'weekend', 'week'],
           description: 'Time period filter. tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of events to return and display (1-10). Use this to match the user\'s request - e.g., if they ask for "top 3 events", set limit to 3.',
         },
       },
     },
@@ -348,8 +361,10 @@ function formatVenueResult(venue: Venue | null): string {
 // Execute the search_events tool
 async function executeSearchEvents(input: SearchEventsInput): Promise<EventWithVenue[]> {
   const filters = toolInputToFilters(input)
+  const limit = input.limit ?? 10 // Default to 10 if not specified
   console.log('[DEBUG] Tool input:', JSON.stringify(input))
   console.log('[DEBUG] Filters:', JSON.stringify(filters))
+  console.log('[DEBUG] Limit:', limit)
   console.log('[DEBUG] Current time:', new Date().toISOString())
   console.log('[DEBUG] BA time:', getNowInBA().toISOString())
 
@@ -358,11 +373,11 @@ async function executeSearchEvents(input: SearchEventsInput): Promise<EventWithV
   // If semantic query provided, use hybrid search
   if (input.query && input.query.trim()) {
     console.log('[DEBUG] Using hybrid search with query:', input.query)
-    results = await hybridEventSearch(input.query, filters, 10)
+    results = await hybridEventSearch(input.query, filters, limit)
   } else {
     // Otherwise, use filter-only search
     console.log('[DEBUG] Using filter-only search')
-    results = await searchEventsWithFilters(filters)
+    results = await searchEventsWithFilters(filters, limit)
   }
 
   console.log('[DEBUG] Results count:', results.length)

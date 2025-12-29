@@ -311,7 +311,7 @@ export async function searchEventsBySimilarity(
 }
 
 // Filter-based search (for structured queries)
-export async function searchEventsWithFilters(filters: EventFilters) {
+export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50) {
   let query = supabase.from('events_with_venues').select('*')
 
   // Default to scheduled events
@@ -346,7 +346,7 @@ export async function searchEventsWithFilters(filters: EventFilters) {
     query = query.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
   }
 
-  query = query.order('starts_at', { ascending: true }).limit(50)
+  query = query.order('starts_at', { ascending: true }).limit(limit)
 
   const { data, error } = await query
   if (error) throw error

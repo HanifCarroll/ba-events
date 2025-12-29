@@ -356,3 +356,64 @@ export const rejectEventAction = createServerFn({ method: 'POST' })
     await deleteEvent(eventId)
     return { success: true }
   })
+
+// ============================================================================
+// DESCRIPTION ENRICHMENT
+// ============================================================================
+
+/**
+ * Get events that are missing descriptions
+ */
+export const getEventsWithoutDescriptions = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<EventWithVenue[]> => {
+    const events = await getEventsWithVenues(1000)
+    return events.filter((e) => !e.description)
+  }
+)
+
+/**
+ * Update event descriptions in batch
+ * Regenerates embeddings for each updated event
+ */
+export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { updates: Array<{ id: string; description: string }> }) => data
+  )
+  .handler(async ({ data: { updates } }) => {
+    let updated = 0
+
+    for (const { id, description } of updates) {
+      try {
+        // Get existing event to merge with new description
+        const existingEvent = await getEventById(id)
+
+        // Generate new embedding with updated description
+        const textForEmbedding = [
+          existingEvent.name,
+          description,
+          ...(existingEvent.categories || []),
+          ...(existingEvent.vibes || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+
+        const embedding = await generateEmbedding(textForEmbedding)
+
+        // Update event with description and new embedding
+        await updateEvent(id, {
+          description,
+          embedding,
+        })
+
+        updated++
+      } catch (error) {
+        console.error(`Failed to update description for event ${id}:`, error)
+      }
+    }
+
+    return {
+      success: true,
+      updated,
+      total: updates.length,
+    }
+  })
