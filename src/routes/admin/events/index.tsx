@@ -1,8 +1,17 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { useState } from 'react'
-import { Plus, Pencil, Trash2, Calendar, MapPin } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Combobox } from '@/components/ui/combobox'
 import {
   Table,
   TableBody,
@@ -20,7 +29,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { listEvents, deleteEventAction } from '@/lib/admin'
-import type { EventWithVenue } from '@/lib/types'
+import type { EventWithVenue, EventStatus } from '@/lib/types'
 
 export const Route = createFileRoute('/admin/events/')({
   loader: async () => {
@@ -34,6 +43,53 @@ function EventListPage() {
   const router = useRouter()
   const [deleteTarget, setDeleteTarget] = useState<EventWithVenue | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Filter state
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<EventStatus | 'all'>('all')
+  const [venueFilter, setVenueFilter] = useState<string | undefined>(undefined)
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Get unique venues for filter dropdown
+  const venueOptions = useMemo(() => {
+    const uniqueVenues = new Map<string, string>()
+    events.forEach((event) => {
+      if (event.venue_name && event.venue_id) {
+        uniqueVenues.set(event.venue_id, event.venue_name)
+      }
+    })
+    return Array.from(uniqueVenues.entries()).map(([id, name]) => ({
+      value: id,
+      label: name,
+    }))
+  }, [events])
+
+  // Filter events
+  const filteredEvents = useMemo(() => {
+    return events.filter((event) => {
+      // Search filter
+      if (search && !event.name.toLowerCase().includes(search.toLowerCase())) {
+        return false
+      }
+      // Status filter
+      if (statusFilter !== 'all' && event.status !== statusFilter) {
+        return false
+      }
+      // Venue filter
+      if (venueFilter && event.venue_id !== venueFilter) {
+        return false
+      }
+      return true
+    })
+  }, [events, search, statusFilter, venueFilter])
+
+  const hasActiveFilters = search || statusFilter !== 'all' || venueFilter
+
+  function clearFilters() {
+    setSearch('')
+    setStatusFilter('all')
+    setVenueFilter(undefined)
+  }
 
   async function handleDelete() {
     if (!deleteTarget) return
@@ -93,7 +149,11 @@ function EventListPage() {
             <Calendar className="h-6 w-6 text-primary" />
             Events
           </h1>
-          <p className="text-muted-foreground mt-1">{events.length} events in database</p>
+          <p className="text-muted-foreground mt-1">
+            {hasActiveFilters
+              ? `${filteredEvents.length} of ${events.length} events`
+              : `${events.length} events in database`}
+          </p>
         </div>
         <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
           <Link to="/admin/events/new">
@@ -105,7 +165,86 @@ function EventListPage() {
 
       <div className="deco-line w-24" />
 
-      {/* Table */}
+      {/* Filter Bar */}
+      {events.length > 0 && (
+        <div className="space-y-3">
+          {/* Mobile filter toggle */}
+          <div className="sm:hidden">
+            <Button
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+              className="w-full justify-between border-border/50"
+            >
+              <span className="flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                Filters
+                {hasActiveFilters && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                    Active
+                  </Badge>
+                )}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {showFilters ? 'Hide' : 'Show'}
+              </span>
+            </Button>
+          </div>
+
+          {/* Filter controls */}
+          <div className={`grid gap-3 ${showFilters ? 'grid' : 'hidden'} sm:grid sm:grid-cols-4`}>
+            {/* Search */}
+            <div className="relative sm:col-span-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search events..."
+                className="pl-9 bg-background/50 border-border/50"
+              />
+            </div>
+
+            {/* Status filter */}
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => setStatusFilter(v as EventStatus | 'all')}
+            >
+              <SelectTrigger className="bg-background/50 border-border/50">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="scheduled">Scheduled</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+                <SelectItem value="postponed">Postponed</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Venue filter */}
+            <Combobox
+              options={venueOptions}
+              value={venueFilter}
+              onValueChange={setVenueFilter}
+              placeholder="All Venues"
+              emptyText="No venues found"
+            />
+          </div>
+
+          {/* Clear filters */}
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5 mr-1.5" />
+              Clear filters
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Content */}
       {events.length === 0 ? (
         <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
           <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -118,88 +257,171 @@ function EventListPage() {
             </Link>
           </Button>
         </div>
-      ) : (
-        <div className="bg-card/50 rounded-xl border border-border/50 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border/50 hover:bg-transparent">
-                <TableHead className="text-muted-foreground font-medium">Event</TableHead>
-                <TableHead className="text-muted-foreground font-medium">Venue</TableHead>
-                <TableHead className="text-muted-foreground font-medium">Date</TableHead>
-                <TableHead className="text-muted-foreground font-medium">Status</TableHead>
-                <TableHead className="text-muted-foreground font-medium text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {events.map((event) => (
-                <TableRow
-                  key={event.id}
-                  className="border-border/30 hover:bg-muted/30 transition-colors"
-                >
-                  <TableCell>
-                    <div>
-                      <p className="font-medium text-foreground">{event.name}</p>
-                      {event.categories.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {event.categories.slice(0, 2).map((cat) => (
-                            <Badge
-                              key={cat}
-                              variant="outline"
-                              className="text-xs border-border/50 text-muted-foreground"
-                            >
-                              {cat}
-                            </Badge>
-                          ))}
-                          {event.categories.length > 2 && (
-                            <span className="text-xs text-muted-foreground">
-                              +{event.categories.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {event.venue_name ? (
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <MapPin className="h-3.5 w-3.5" />
-                        <span>{event.venue_name}</span>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDate(event.starts_at)}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(event.status)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      >
-                        <Link to="/admin/events/$id" params={{ id: event.id }}>
-                          <Pencil className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => setDeleteTarget(event)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      ) : filteredEvents.length === 0 ? (
+        <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
+          <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="font-display text-lg font-medium text-foreground mb-2">No matching events</h3>
+          <p className="text-muted-foreground mb-4">Try adjusting your filters.</p>
+          <Button variant="outline" onClick={clearFilters}>
+            Clear filters
+          </Button>
         </div>
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          <div className="sm:hidden space-y-3">
+            {filteredEvents.map((event) => (
+              <div
+                key={event.id}
+                className="bg-card/50 rounded-xl border border-border/50 p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground truncate">{event.name}</p>
+                    {event.categories.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {event.categories.slice(0, 2).map((cat) => (
+                          <Badge
+                            key={cat}
+                            variant="outline"
+                            className="text-xs border-border/50 text-muted-foreground"
+                          >
+                            {cat}
+                          </Badge>
+                        ))}
+                        {event.categories.length > 2 && (
+                          <span className="text-xs text-muted-foreground">
+                            +{event.categories.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {getStatusBadge(event.status)}
+                </div>
+
+                <div className="space-y-1.5 text-sm text-muted-foreground">
+                  {event.venue_name && (
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{event.venue_name}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 shrink-0" />
+                    <span>{formatDate(event.starts_at)}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-border/30">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <Link to="/admin/events/$id" params={{ id: event.id }}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 text-muted-foreground hover:text-destructive"
+                    onClick={() => setDeleteTarget(event)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden sm:block bg-card/50 rounded-xl border border-border/50 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border/50 hover:bg-transparent">
+                  <TableHead className="text-muted-foreground font-medium">Event</TableHead>
+                  <TableHead className="text-muted-foreground font-medium">Venue</TableHead>
+                  <TableHead className="text-muted-foreground font-medium">Date</TableHead>
+                  <TableHead className="text-muted-foreground font-medium">Status</TableHead>
+                  <TableHead className="text-muted-foreground font-medium text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredEvents.map((event) => (
+                  <TableRow
+                    key={event.id}
+                    className="border-border/30 hover:bg-muted/30 transition-colors"
+                  >
+                    <TableCell>
+                      <div>
+                        <p className="font-medium text-foreground">{event.name}</p>
+                        {event.categories.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {event.categories.slice(0, 2).map((cat) => (
+                              <Badge
+                                key={cat}
+                                variant="outline"
+                                className="text-xs border-border/50 text-muted-foreground"
+                              >
+                                {cat}
+                              </Badge>
+                            ))}
+                            {event.categories.length > 2 && (
+                              <span className="text-xs text-muted-foreground">
+                                +{event.categories.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {event.venue_name ? (
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <MapPin className="h-3.5 w-3.5" />
+                          <span>{event.venue_name}</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(event.starts_at)}
+                    </TableCell>
+                    <TableCell>{getStatusBadge(event.status)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        >
+                          <Link to="/admin/events/$id" params={{ id: event.id }}>
+                            <Pencil className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => setDeleteTarget(event)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {/* Delete confirmation dialog */}
