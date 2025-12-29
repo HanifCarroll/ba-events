@@ -14,6 +14,8 @@ import {
   deleteEvent,
   bulkUpdateEventStatus,
   bulkDeleteEvents,
+  markPastEvents,
+  countPastEvents,
 } from './supabase'
 import { generateEmbedding } from './embeddings'
 import type { VenueInsert, VenueUpdate, EventInsert, EventUpdate, EventWithVenue, EventStatus } from './types'
@@ -209,6 +211,19 @@ export const bulkDeleteEventsAction = createServerFn({ method: 'POST' })
       count: eventIds.length,
     }
   })
+
+export const countPastEventsAction = createServerFn({ method: 'GET' }).handler(async () => {
+  const count = await countPastEvents()
+  return { count }
+})
+
+export const markPastEventsAction = createServerFn({ method: 'POST' }).handler(async () => {
+  const updated = await markPastEvents()
+  return {
+    success: true,
+    count: updated.length,
+  }
+})
 
 // ============================================================================
 // VENUE LOOKUP (for event form)

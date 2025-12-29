@@ -242,6 +242,39 @@ export async function bulkDeleteEvents(eventIds: string[]) {
   if (error) throw error
 }
 
+// Mark all ended events as past
+// - If ends_at exists: mark past when ends_at < now
+// - If ends_at is NULL: mark past when entire start day has passed (conservative for late-night events)
+export async function markPastEvents() {
+  const now = new Date().toISOString()
+  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+
+  const { data, error } = await supabase
+    .from('events')
+    .update({ status: 'past' as EventStatus })
+    .eq('status', 'scheduled')
+    .or(`ends_at.lt.${now},and(ends_at.is.null,starts_at.lt.${today})`)
+    .select()
+
+  if (error) throw error
+  return data as Event[]
+}
+
+// Count events that would be marked as past (for confirmation dialog)
+export async function countPastEvents() {
+  const now = new Date().toISOString()
+  const today = new Date().toISOString().split('T')[0]
+
+  const { count, error } = await supabase
+    .from('events')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'scheduled')
+    .or(`ends_at.lt.${now},and(ends_at.is.null,starts_at.lt.${today})`)
+
+  if (error) throw error
+  return count || 0
+}
+
 // ============================================================================
 // SEARCH OPERATIONS
 // ============================================================================

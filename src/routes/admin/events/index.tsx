@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { listEvents, deleteEventAction, bulkUpdateEventStatusAction, bulkDeleteEventsAction } from '@/lib/admin'
+import { listEvents, deleteEventAction, bulkUpdateEventStatusAction, bulkDeleteEventsAction, countPastEventsAction, markPastEventsAction } from '@/lib/admin'
 import type { EventWithVenue, EventStatus } from '@/lib/types'
 
 export const Route = createFileRoute('/admin/events/')({
@@ -55,6 +55,11 @@ function EventListPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkAction, setBulkAction] = useState<'delete' | 'past' | 'cancelled' | null>(null)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
+
+  // Mark past events state
+  const [showMarkPastDialog, setShowMarkPastDialog] = useState(false)
+  const [pastEventsCount, setPastEventsCount] = useState(0)
+  const [isMarkingPast, setIsMarkingPast] = useState(false)
 
   // Get unique venues for filter dropdown
   const venueOptions = useMemo(() => {
@@ -161,6 +166,26 @@ function EventListPage() {
     }
   }
 
+  // Mark past events handlers
+  async function handleOpenMarkPastDialog() {
+    const { count } = await countPastEventsAction()
+    setPastEventsCount(count)
+    setShowMarkPastDialog(true)
+  }
+
+  async function handleMarkPastEvents() {
+    setIsMarkingPast(true)
+    try {
+      await markPastEventsAction()
+      setShowMarkPastDialog(false)
+      router.invalidate()
+    } catch (err) {
+      console.error('Mark past failed:', err)
+    } finally {
+      setIsMarkingPast(false)
+    }
+  }
+
   function formatDate(dateString: string) {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-US', {
@@ -215,6 +240,14 @@ function EventListPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="border-border/50"
+            onClick={handleOpenMarkPastDialog}
+          >
+            <Clock className="h-4 w-4 mr-2" />
+            Mark Past
+          </Button>
           <Button asChild variant="outline" className="border-border/50">
             <Link to="/admin/events/import">
               <Upload className="h-4 w-4 mr-2" />
@@ -644,6 +677,41 @@ function EventListPage() {
                 : bulkAction === 'delete'
                   ? 'Delete'
                   : 'Confirm'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark past events dialog */}
+      <Dialog open={showMarkPastDialog} onOpenChange={setShowMarkPastDialog}>
+        <DialogContent className="bg-card border-border/50">
+          <DialogHeader>
+            <DialogTitle className="font-display text-foreground">Mark Past Events</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {pastEventsCount === 0 ? (
+                <>No events to mark as past. All scheduled events are still upcoming.</>
+              ) : (
+                <>
+                  Found <strong>{pastEventsCount} ended events</strong> to mark as past.
+                  Events are considered ended when their end time has passed, or if no end time
+                  is set, when the entire start day has passed.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="ghost"
+              onClick={() => setShowMarkPastDialog(false)}
+              className="text-muted-foreground"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMarkPastEvents}
+              disabled={isMarkingPast || pastEventsCount === 0}
+            >
+              {isMarkingPast ? 'Marking...' : `Mark ${pastEventsCount} Past`}
             </Button>
           </DialogFooter>
         </DialogContent>
