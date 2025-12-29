@@ -1,9 +1,9 @@
-import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { MapPin, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -13,9 +13,18 @@ import {
 } from '@/components/ui/select'
 import { Combobox } from '@/components/ui/combobox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { createVenueAction, updateVenueAction } from '@/lib/admin'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { useCreateVenue, useUpdateVenue } from '@/hooks/useVenueMutations'
+import { venueFormSchema, type VenueFormInput } from '@/lib/schemas'
 import { NEIGHBORHOODS, VENUE_TYPES } from '@/lib/types'
-import type { Venue, VenueInsert, VenueUpdate, Neighborhood, VenueType } from '@/lib/types'
+import type { Venue, Neighborhood } from '@/lib/types'
 
 interface VenueFormProps {
   venue?: Venue
@@ -35,60 +44,48 @@ const venueTypeLabels: Record<string, string> = {
 
 export function VenueForm({ venue, mode }: VenueFormProps) {
   const navigate = useNavigate()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const createMutation = useCreateVenue()
+  const updateMutation = useUpdateVenue()
 
-  // Form state
-  const [name, setName] = useState(venue?.name || '')
-  const [neighborhood, setNeighborhood] = useState<Neighborhood | undefined>(venue?.neighborhood ?? undefined)
-  const [address, setAddress] = useState(venue?.address || '')
-  const [website, setWebsite] = useState(venue?.website || '')
-  const [instagram, setInstagram] = useState(venue?.instagram_handle || '')
-  const [capacity, setCapacity] = useState(venue?.capacity?.toString() || '')
-  const [type, setType] = useState<VenueType>(venue?.type || 'other')
+  const form = useForm<VenueFormInput>({
+    resolver: zodResolver(venueFormSchema),
+    defaultValues: {
+      name: venue?.name || '',
+      neighborhood: venue?.neighborhood || ('' as Neighborhood),
+      address: venue?.address || '',
+      website: venue?.website || '',
+      instagram_handle: venue?.instagram_handle || '',
+      capacity: venue?.capacity ?? undefined,
+      type: venue?.type || 'other',
+    },
+  })
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setIsSubmitting(true)
-
+  async function onSubmit(data: VenueFormInput) {
     try {
-      if (!neighborhood) {
-        setError('Neighborhood is required')
-        return
+      const submitData = {
+        name: data.name,
+        neighborhood: data.neighborhood,
+        address: data.address || null,
+        website: data.website || null,
+        instagram_handle: data.instagram_handle || null,
+        capacity: data.capacity ?? null,
+        type: data.type,
       }
 
       if (mode === 'create') {
-        const data: VenueInsert = {
-          name,
-          neighborhood,
-          address: address || null,
-          website: website || null,
-          instagram_handle: instagram || null,
-          capacity: capacity ? parseInt(capacity, 10) : null,
-          type,
-        }
-        await createVenueAction({ data })
+        await createMutation.mutateAsync(submitData)
       } else if (venue) {
-        const data: VenueUpdate = {
-          name,
-          neighborhood,
-          address: address || null,
-          website: website || null,
-          instagram_handle: instagram || null,
-          capacity: capacity ? parseInt(capacity, 10) : null,
-          type,
-        }
-        await updateVenueAction({ data: { id: venue.id, data } })
+        await updateMutation.mutateAsync({ id: venue.id, data: submitData })
       }
 
       navigate({ to: '/admin/venues' })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save venue')
-    } finally {
-      setIsSubmitting(false)
+    } catch {
+      // Error is handled by mutation state
     }
   }
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending
+  const error = createMutation.error || updateMutation.error
 
   return (
     <div className="max-w-2xl mx-auto animate-fade-in-up">
@@ -99,9 +96,7 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
           {mode === 'create' ? 'Add Venue' : 'Edit Venue'}
         </h1>
         <p className="text-muted-foreground mt-1">
-          {mode === 'create'
-            ? 'Register a new venue'
-            : `Editing ${venue?.name}`}
+          {mode === 'create' ? 'Register a new venue' : `Editing ${venue?.name}`}
         </p>
         <div className="deco-line w-24 mt-4" />
       </div>
@@ -112,149 +107,203 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
           <CardTitle className="text-lg text-foreground">Venue Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Name */}
-            <div className="space-y-2">
-              <Label htmlFor="name">
-                Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter venue name"
-                required
-                className="bg-background/50 border-border/50"
-              />
-            </div>
-
-            {/* Neighborhood and Type row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Neighborhood */}
-              <div className="space-y-2">
-                <Label htmlFor="neighborhood">
-                  Neighborhood <span className="text-destructive">*</span>
-                </Label>
-                <Combobox
-                  options={NEIGHBORHOODS.map((n) => ({ value: n, label: n }))}
-                  value={neighborhood}
-                  onValueChange={(value) => setNeighborhood(value as Neighborhood | undefined)}
-                  placeholder="Select neighborhood"
-                  searchPlaceholder="Search neighborhoods..."
-                  emptyText="No neighborhood found."
-                />
-              </div>
-
-              {/* Type */}
-              <div className="space-y-2">
-                <Label htmlFor="type">Type</Label>
-                <Select
-                  value={type}
-                  onValueChange={(value) => setType(value as VenueType)}
-                >
-                  <SelectTrigger className="bg-background/50 border-border/50">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VENUE_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {venueTypeLabels[t] || t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Address */}
-            <div className="space-y-2">
-              <Label htmlFor="address">Address</Label>
-              <Input
-                id="address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Street address"
-                className="bg-background/50 border-border/50"
-              />
-            </div>
-
-            {/* Website and Instagram row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Website */}
-              <div className="space-y-2">
-                <Label htmlFor="website">Website</Label>
-                <Input
-                  id="website"
-                  type="url"
-                  value={website}
-                  onChange={(e) => setWebsite(e.target.value)}
-                  placeholder="https://..."
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-
-              {/* Instagram */}
-              <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram</Label>
-                <Input
-                  id="instagram"
-                  value={instagram}
-                  onChange={(e) => setInstagram(e.target.value)}
-                  placeholder="@handle"
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-            </div>
-
-            {/* Capacity */}
-            <div className="space-y-2">
-              <Label htmlFor="capacity">Capacity</Label>
-              <Input
-                id="capacity"
-                type="number"
-                min="0"
-                value={capacity}
-                onChange={(e) => setCapacity(e.target.value)}
-                placeholder="Maximum capacity"
-                className="bg-background/50 border-border/50 max-w-[200px]"
-              />
-            </div>
-
-            {/* Error message */}
-            {error && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex items-center gap-3 pt-4 border-t border-border/50">
-              <Button
-                type="submit"
-                disabled={isSubmitting || !name || neighborhood === undefined}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : mode === 'create' ? (
-                  'Create Venue'
-                ) : (
-                  'Save Changes'
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              {/* Name */}
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Name <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="Enter venue name"
+                        className="bg-background/50 border-border/50"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => navigate({ to: '/admin/venues' })}
-                className="text-muted-foreground"
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
+              />
+
+              {/* Neighborhood and Type row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Neighborhood */}
+                <FormField
+                  control={form.control}
+                  name="neighborhood"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Neighborhood <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Combobox
+                          options={NEIGHBORHOODS.map((n) => ({ value: n, label: n }))}
+                          value={field.value || undefined}
+                          onValueChange={(value) => field.onChange(value as Neighborhood)}
+                          placeholder="Select neighborhood"
+                          searchPlaceholder="Search neighborhoods..."
+                          emptyText="No neighborhood found."
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Type */}
+                <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Type</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="bg-background/50 border-border/50">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {VENUE_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {venueTypeLabels[t] || t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Address */}
+              <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Address</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="Street address"
+                        className="bg-background/50 border-border/50"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Website and Instagram row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Website */}
+                <FormField
+                  control={form.control}
+                  name="website"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Website</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="url"
+                          placeholder="https://..."
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Instagram */}
+                <FormField
+                  control={form.control}
+                  name="instagram_handle"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Instagram</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="@handle"
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Capacity */}
+              <FormField
+                control={form.control}
+                name="capacity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Capacity</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={field.value ?? ''}
+                        onChange={(e) =>
+                          field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)
+                        }
+                        placeholder="Maximum capacity"
+                        className="bg-background/50 border-border/50 max-w-[200px]"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Error message */}
+              {error && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+                  {error instanceof Error ? error.message : 'Failed to save venue'}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-4 border-t border-border/50">
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : mode === 'create' ? (
+                    'Create Venue'
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => navigate({ to: '/admin/venues' })}
+                  className="text-muted-foreground"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Form>
         </CardContent>
       </Card>
     </div>

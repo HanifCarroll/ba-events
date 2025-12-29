@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useForm, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { Calendar, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -16,9 +17,21 @@ import {
 import { Combobox } from '@/components/ui/combobox'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { createEventAction, updateEventAction, getVenuesForSelect } from '@/lib/admin'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { getVenuesForSelect } from '@/lib/admin'
+import { useCreateEvent, useUpdateEvent } from '@/hooks/useEventMutations'
+import { eventFormSchema, type EventFormInput } from '@/lib/schemas'
 import { CATEGORIES, VIBES, EVENT_STATUSES } from '@/lib/types'
-import type { Event, EventInsert, EventUpdate, EventStatus, Category, Vibe } from '@/lib/types'
+import type { Event, EventStatus, Category, Vibe } from '@/lib/types'
+import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/query'
 
 interface EventFormProps {
   event?: Event
@@ -36,109 +49,88 @@ const statusLabels: Record<EventStatus, string> = {
 function toLocalDatetime(isoString: string | null | undefined): string {
   if (!isoString) return ''
   const date = new Date(isoString)
-  // Format: YYYY-MM-DDTHH:mm
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 export function EventForm({ event, mode }: EventFormProps) {
   const navigate = useNavigate()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [venues, setVenues] = useState<{ id: string; name: string; neighborhood: string | null }[]>([])
+  const createMutation = useCreateEvent()
+  const updateMutation = useUpdateEvent()
 
-  // Form state
-  const [name, setName] = useState(event?.name || '')
-  const [description, setDescription] = useState(event?.description || '')
-  const [startsAt, setStartsAt] = useState(toLocalDatetime(event?.starts_at))
-  const [endsAt, setEndsAt] = useState(toLocalDatetime(event?.ends_at))
-  const [isAllDay, setIsAllDay] = useState(event?.is_all_day || false)
-  const [venueId, setVenueId] = useState(event?.venue_id || '_none')
-  const [categories, setCategories] = useState<Category[]>((event?.categories || []) as Category[])
-  const [vibes, setVibes] = useState<Vibe[]>((event?.vibes || []) as Vibe[])
-  const [price, setPrice] = useState(event?.price?.toString() || '')
-  const [isFree, setIsFree] = useState(event?.is_free || false)
-  const [minAge, setMinAge] = useState(event?.min_age?.toString() || '')
-  const [link, setLink] = useState(event?.link || '')
-  const [ticketUrl, setTicketUrl] = useState(event?.ticket_url || '')
-  const [status, setStatus] = useState<EventStatus>(event?.status || 'scheduled')
+  // Load venues
+  const { data: venues = [] } = useQuery({
+    queryKey: queryKeys.venues.select(),
+    queryFn: getVenuesForSelect,
+  })
 
-  // Load venues on mount
+  const form = useForm<EventFormInput>({
+    resolver: zodResolver(eventFormSchema),
+    defaultValues: {
+      name: event?.name || '',
+      description: event?.description || '',
+      starts_at: toLocalDatetime(event?.starts_at),
+      ends_at: toLocalDatetime(event?.ends_at) || '',
+      is_all_day: event?.is_all_day || false,
+      venue_id: event?.venue_id || '_none',
+      categories: (event?.categories || []) as Category[],
+      vibes: (event?.vibes || []) as Vibe[],
+      price: event?.price ?? undefined,
+      is_free: event?.is_free || false,
+      min_age: event?.min_age ?? undefined,
+      link: event?.link || '',
+      ticket_url: event?.ticket_url || '',
+      status: event?.status || 'scheduled',
+      source: 'manual',
+    },
+  })
+
+  const isFree = form.watch('is_free')
+
+  // Clear price when is_free is checked
   useEffect(() => {
-    getVenuesForSelect().then(setVenues).catch(console.error)
-  }, [])
+    if (isFree) {
+      form.setValue('price', undefined)
+    }
+  }, [isFree, form])
 
-  function toggleCategory(category: Category) {
-    setCategories(prev =>
-      prev.includes(category)
-        ? prev.filter(c => c !== category)
-        : [...prev, category]
-    )
-  }
-
-  function toggleVibe(vibe: Vibe) {
-    setVibes(prev =>
-      prev.includes(vibe)
-        ? prev.filter(v => v !== vibe)
-        : [...prev, vibe]
-    )
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setIsSubmitting(true)
-
+  async function onSubmit(data: EventFormInput) {
     try {
-      const startsAtISO = new Date(startsAt).toISOString()
-      const endsAtISO = endsAt ? new Date(endsAt).toISOString() : null
+      const startsAtISO = new Date(data.starts_at).toISOString()
+      const endsAtISO = data.ends_at ? new Date(data.ends_at).toISOString() : null
+
+      const submitData = {
+        name: data.name,
+        description: data.description || null,
+        starts_at: startsAtISO,
+        ends_at: endsAtISO,
+        is_all_day: data.is_all_day,
+        venue_id: data.venue_id === '_none' ? null : data.venue_id,
+        categories: data.categories,
+        vibes: data.vibes,
+        price: data.price ?? null,
+        is_free: data.is_free,
+        min_age: data.min_age ?? null,
+        link: data.link || null,
+        ticket_url: data.ticket_url || null,
+        source: 'manual',
+        status: data.status,
+      }
 
       if (mode === 'create') {
-        const data: EventInsert = {
-          name,
-          description: description || null,
-          starts_at: startsAtISO,
-          ends_at: endsAtISO,
-          is_all_day: isAllDay,
-          venue_id: venueId === '_none' ? null : venueId,
-          categories,
-          vibes,
-          price: price ? parseFloat(price) : null,
-          is_free: isFree,
-          min_age: minAge ? parseInt(minAge, 10) : null,
-          link: link || null,
-          ticket_url: ticketUrl || null,
-          source: 'manual',
-          status,
-        }
-        await createEventAction({ data })
+        await createMutation.mutateAsync(submitData)
       } else if (event) {
-        const data: EventUpdate = {
-          name,
-          description: description || null,
-          starts_at: startsAtISO,
-          ends_at: endsAtISO,
-          is_all_day: isAllDay,
-          venue_id: venueId === '_none' ? null : venueId,
-          categories,
-          vibes,
-          price: price ? parseFloat(price) : null,
-          is_free: isFree,
-          min_age: minAge ? parseInt(minAge, 10) : null,
-          link: link || null,
-          ticket_url: ticketUrl || null,
-          status,
-        }
-        await updateEventAction({ data: { id: event.id, data } })
+        await updateMutation.mutateAsync({ id: event.id, data: submitData })
       }
 
       navigate({ to: '/admin/events' })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save event')
-    } finally {
-      setIsSubmitting(false)
+    } catch {
+      // Error is handled by mutation state
     }
   }
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending
+  const error = createMutation.error || updateMutation.error
 
   return (
     <div className="max-w-3xl mx-auto animate-fade-in-up">
@@ -149,319 +141,440 @@ export function EventForm({ event, mode }: EventFormProps) {
           {mode === 'create' ? 'Add Event' : 'Edit Event'}
         </h1>
         <p className="text-muted-foreground mt-1">
-          {mode === 'create'
-            ? 'Create a new event'
-            : `Editing ${event?.name}`}
+          {mode === 'create' ? 'Create a new event' : `Editing ${event?.name}`}
         </p>
         <div className="deco-line w-24 mt-4" />
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic info */}
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground">Basic Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Name */}
-            <div className="space-y-2">
-              <Label htmlFor="name">
-                Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Event name"
-                required
-                className="bg-background/50 border-border/50"
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* Basic info */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg text-foreground">Basic Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Name */}
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Name <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="Event name"
+                        className="bg-background/50 border-border/50"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
 
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe the event..."
-                rows={4}
-                className="bg-background/50 border-border/50 resize-none"
+              {/* Description */}
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        value={field.value || ''}
+                        placeholder="Describe the event..."
+                        rows={4}
+                        className="bg-background/50 border-border/50 resize-none"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
 
-            {/* Status */}
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as EventStatus)}>
-                <SelectTrigger className="bg-background/50 border-border/50 max-w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {EVENT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {statusLabels[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Date and Time */}
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground">Date & Time</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Starts at */}
-              <div className="space-y-2">
-                <Label htmlFor="starts_at">
-                  Starts at <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="starts_at"
-                  type="datetime-local"
-                  value={startsAt}
-                  onChange={(e) => setStartsAt(e.target.value)}
-                  required
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-
-              {/* Ends at */}
-              <div className="space-y-2">
-                <Label htmlFor="ends_at">Ends at</Label>
-                <Input
-                  id="ends_at"
-                  type="datetime-local"
-                  value={endsAt}
-                  onChange={(e) => setEndsAt(e.target.value)}
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-            </div>
-
-            {/* All day */}
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="is_all_day"
-                checked={isAllDay}
-                onCheckedChange={(checked) => setIsAllDay(checked === true)}
+              {/* Status */}
+              <FormField
+                control={form.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="bg-background/50 border-border/50 max-w-[200px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {EVENT_STATUSES.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {statusLabels[s]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              <Label htmlFor="is_all_day" className="font-normal cursor-pointer">
-                All-day event
-              </Label>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        {/* Venue */}
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground">Venue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="venue">Select venue</Label>
-              <Combobox
-                options={[
-                  { value: '_none', label: 'No venue' },
-                  ...venues.map((v) => ({
-                    value: v.id,
-                    label: v.name,
-                    sublabel: v.neighborhood ?? undefined,
-                  })),
-                ]}
-                value={venueId}
-                onValueChange={(value) => setVenueId(value || '_none')}
-                placeholder="Choose a venue"
-                searchPlaceholder="Search venues..."
-                emptyText="No venue found."
+          {/* Date and Time */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg text-foreground">Date & Time</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Starts at */}
+                <FormField
+                  control={form.control}
+                  name="starts_at"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Starts at <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="datetime-local"
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Ends at */}
+                <FormField
+                  control={form.control}
+                  name="ends_at"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Ends at</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value || ''}
+                          type="datetime-local"
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* All day */}
+              <FormField
+                control={form.control}
+                name="is_all_day"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormLabel className="font-normal cursor-pointer">
+                      All-day event
+                    </FormLabel>
+                  </FormItem>
+                )}
               />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        {/* Categories & Vibes */}
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground">Categories & Vibes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Categories */}
-            <div className="space-y-3">
-              <Label>Categories</Label>
-              <div className="flex flex-wrap gap-2">
-                {CATEGORIES.map((cat) => (
-                  <Badge
-                    key={cat}
-                    variant="outline"
-                    onClick={() => toggleCategory(cat)}
-                    className={`cursor-pointer transition-all ${
-                      categories.includes(cat)
-                        ? 'bg-primary/20 text-primary border-primary/50'
-                        : 'border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                    }`}
-                  >
-                    {cat}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            {/* Vibes */}
-            <div className="space-y-3">
-              <Label>Vibes</Label>
-              <div className="flex flex-wrap gap-2">
-                {VIBES.map((vibe) => (
-                  <Badge
-                    key={vibe}
-                    variant="outline"
-                    onClick={() => toggleVibe(vibe)}
-                    className={`cursor-pointer transition-all ${
-                      vibes.includes(vibe)
-                        ? 'bg-accent/20 text-accent border-accent/50'
-                        : 'border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground'
-                    }`}
-                  >
-                    {vibe}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Pricing */}
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground">Pricing & Age</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Free checkbox */}
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="is_free"
-                checked={isFree}
-                onCheckedChange={(checked) => {
-                  setIsFree(checked === true)
-                  if (checked) setPrice('')
-                }}
+          {/* Venue */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg text-foreground">Venue</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FormField
+                control={form.control}
+                name="venue_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Select venue</FormLabel>
+                    <FormControl>
+                      <Combobox
+                        options={[
+                          { value: '_none', label: 'No venue' },
+                          ...venues.map((v) => ({
+                            value: v.id,
+                            label: v.name,
+                            sublabel: v.neighborhood ?? undefined,
+                          })),
+                        ]}
+                        value={field.value || '_none'}
+                        onValueChange={(value) => field.onChange(value || '_none')}
+                        placeholder="Choose a venue"
+                        searchPlaceholder="Search venues..."
+                        emptyText="No venue found."
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-              <Label htmlFor="is_free" className="font-normal cursor-pointer">
-                Free event
-              </Label>
+            </CardContent>
+          </Card>
+
+          {/* Categories & Vibes */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg text-foreground">Categories & Vibes</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Categories */}
+              <Controller
+                control={form.control}
+                name="categories"
+                render={({ field }) => (
+                  <div className="space-y-3">
+                    <FormLabel>Categories</FormLabel>
+                    <div className="flex flex-wrap gap-2">
+                      {CATEGORIES.map((cat) => {
+                        const isSelected = field.value.includes(cat)
+                        return (
+                          <Badge
+                            key={cat}
+                            variant="outline"
+                            onClick={() => {
+                              const newValue = isSelected
+                                ? field.value.filter((c: string) => c !== cat)
+                                : [...field.value, cat]
+                              field.onChange(newValue)
+                            }}
+                            className={`cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-primary/20 text-primary border-primary/50'
+                                : 'border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                            }`}
+                          >
+                            {cat}
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              />
+
+              {/* Vibes */}
+              <Controller
+                control={form.control}
+                name="vibes"
+                render={({ field }) => (
+                  <div className="space-y-3">
+                    <FormLabel>Vibes</FormLabel>
+                    <div className="flex flex-wrap gap-2">
+                      {VIBES.map((vibe) => {
+                        const isSelected = field.value.includes(vibe)
+                        return (
+                          <Badge
+                            key={vibe}
+                            variant="outline"
+                            onClick={() => {
+                              const newValue = isSelected
+                                ? field.value.filter((v: string) => v !== vibe)
+                                : [...field.value, vibe]
+                              field.onChange(newValue)
+                            }}
+                            className={`cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-accent/20 text-accent border-accent/50'
+                                : 'border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground'
+                            }`}
+                          >
+                            {vibe}
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Pricing */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg text-foreground">Pricing & Age</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Free checkbox */}
+              <FormField
+                control={form.control}
+                name="is_free"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormLabel className="font-normal cursor-pointer">
+                      Free event
+                    </FormLabel>
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Price */}
+                <FormField
+                  control={form.control}
+                  name="price"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price (ARS)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)
+                          }
+                          placeholder="0.00"
+                          disabled={isFree}
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Min age */}
+                <FormField
+                  control={form.control}
+                  name="min_age"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Minimum Age</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)
+                          }
+                          placeholder="All ages"
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Links */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg text-foreground">Links</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Event link */}
+                <FormField
+                  control={form.control}
+                  name="link"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Event Link</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value || ''}
+                          type="url"
+                          placeholder="https://..."
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Ticket URL */}
+                <FormField
+                  control={form.control}
+                  name="ticket_url"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Ticket URL</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value || ''}
+                          type="url"
+                          placeholder="https://..."
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Error message */}
+          {error && (
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+              {error instanceof Error ? error.message : 'Failed to save event'}
             </div>
+          )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Price */}
-              <div className="space-y-2">
-                <Label htmlFor="price">Price (ARS)</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="0.00"
-                  disabled={isFree}
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-
-              {/* Min age */}
-              <div className="space-y-2">
-                <Label htmlFor="min_age">Minimum Age</Label>
-                <Input
-                  id="min_age"
-                  type="number"
-                  min="0"
-                  value={minAge}
-                  onChange={(e) => setMinAge(e.target.value)}
-                  placeholder="All ages"
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Links */}
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground">Links</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Event link */}
-              <div className="space-y-2">
-                <Label htmlFor="link">Event Link</Label>
-                <Input
-                  id="link"
-                  type="url"
-                  value={link}
-                  onChange={(e) => setLink(e.target.value)}
-                  placeholder="https://..."
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-
-              {/* Ticket URL */}
-              <div className="space-y-2">
-                <Label htmlFor="ticket_url">Ticket URL</Label>
-                <Input
-                  id="ticket_url"
-                  type="url"
-                  value={ticketUrl}
-                  onChange={(e) => setTicketUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="bg-background/50 border-border/50"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Error message */}
-        {error && (
-          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-            {error}
+          {/* Actions */}
+          <div className="flex items-center gap-3 pt-4">
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : mode === 'create' ? (
+                'Create Event'
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => navigate({ to: '/admin/events' })}
+              className="text-muted-foreground"
+            >
+              Cancel
+            </Button>
           </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 pt-4">
-          <Button
-            type="submit"
-            disabled={isSubmitting || !name || !startsAt}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : mode === 'create' ? (
-              'Create Event'
-            ) : (
-              'Save Changes'
-            )}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => navigate({ to: '/admin/events' })}
-            className="text-muted-foreground"
-          >
-            Cancel
-          </Button>
-        </div>
-      </form>
+        </form>
+      </Form>
     </div>
   )
 }

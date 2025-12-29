@@ -1,11 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { User, Mail, Lock, Trash2, ArrowLeft, Check, AlertTriangle } from 'lucide-react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { User, Mail, Lock, Trash2, ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react'
 import { useAuthContext } from '@/components/AuthProvider'
-import { updateDisplayName, updatePassword, deleteAccountAction, signOut } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +26,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  displayNameSchema,
+  changePasswordSchema,
+  type DisplayNameInput,
+  type ChangePasswordInput,
+} from '@/lib/schemas'
+import {
+  useUpdateDisplayName,
+  useUpdatePassword,
+  useDeleteAccount,
+} from '@/hooks/useProfileMutations'
 
 export const Route = createFileRoute('/profile')({
   component: ProfilePage,
@@ -26,23 +46,8 @@ function ProfilePage() {
   const navigate = useNavigate()
   const { user, profile, loading: authLoading } = useAuthContext()
 
-  // Display name state
-  const [displayName, setDisplayName] = useState('')
-  const [displayNameSaving, setDisplayNameSaving] = useState(false)
-  const [displayNameSuccess, setDisplayNameSuccess] = useState(false)
-  const [displayNameError, setDisplayNameError] = useState<string | null>(null)
-
-  // Password state
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [passwordSaving, setPasswordSaving] = useState(false)
-  const [passwordSuccess, setPasswordSuccess] = useState(false)
-  const [passwordError, setPasswordError] = useState<string | null>(null)
-
-  // Delete account state
+  // Delete account state (kept separate since it's in a dialog)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Redirect if not logged in
   useEffect(() => {
@@ -50,76 +55,6 @@ function ProfilePage() {
       navigate({ to: '/login' })
     }
   }, [user, authLoading, navigate])
-
-  // Initialize display name from profile
-  useEffect(() => {
-    if (profile?.display_name) {
-      setDisplayName(profile.display_name)
-    }
-  }, [profile])
-
-  const handleUpdateDisplayName = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setDisplayNameError(null)
-    setDisplayNameSuccess(false)
-    setDisplayNameSaving(true)
-
-    try {
-      await updateDisplayName(displayName)
-      setDisplayNameSuccess(true)
-      setTimeout(() => setDisplayNameSuccess(false), 3000)
-    } catch (err) {
-      setDisplayNameError(err instanceof Error ? err.message : 'Failed to update display name')
-    } finally {
-      setDisplayNameSaving(false)
-    }
-  }
-
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setPasswordError(null)
-    setPasswordSuccess(false)
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match')
-      return
-    }
-
-    if (newPassword.length < 6) {
-      setPasswordError('Password must be at least 6 characters')
-      return
-    }
-
-    setPasswordSaving(true)
-
-    try {
-      await updatePassword(newPassword)
-      setPasswordSuccess(true)
-      setNewPassword('')
-      setConfirmPassword('')
-      setTimeout(() => setPasswordSuccess(false), 3000)
-    } catch (err) {
-      setPasswordError(err instanceof Error ? err.message : 'Failed to update password')
-    } finally {
-      setPasswordSaving(false)
-    }
-  }
-
-  const handleDeleteAccount = async () => {
-    if (!user || deleteConfirmText !== 'DELETE') return
-
-    setDeleteError(null)
-    setDeleting(true)
-
-    try {
-      await deleteAccountAction({ data: { userId: user.id } })
-      await signOut()
-      navigate({ to: '/' })
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete account')
-      setDeleting(false)
-    }
-  }
 
   if (authLoading) {
     return (
@@ -191,42 +126,10 @@ function ProfilePage() {
                 </div>
               </div>
 
-              {/* Display Name */}
-              <form onSubmit={handleUpdateDisplayName}>
-                <div className="space-y-2">
-                  <Label htmlFor="displayName" className="text-sm text-muted-foreground">
-                    Display Name
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="displayName"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Enter your display name"
-                      className="bg-background/50 border-border/50 focus:border-primary/50"
-                    />
-                    <Button
-                      type="submit"
-                      disabled={displayNameSaving || displayName === profile?.display_name}
-                      className="shrink-0"
-                    >
-                      {displayNameSaving ? (
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      ) : displayNameSuccess ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        'Save'
-                      )}
-                    </Button>
-                  </div>
-                  {displayNameError && (
-                    <p className="text-sm text-destructive">{displayNameError}</p>
-                  )}
-                  {displayNameSuccess && (
-                    <p className="text-sm text-primary">Display name updated!</p>
-                  )}
-                </div>
-              </form>
+              {/* Display Name Form */}
+              <DisplayNameForm
+                defaultDisplayName={profile?.display_name || ''}
+              />
             </section>
 
             {/* Security Section */}
@@ -236,54 +139,7 @@ function ProfilePage() {
                 Security
               </h2>
 
-              <form onSubmit={handleUpdatePassword} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="newPassword" className="text-sm text-muted-foreground">
-                    New Password
-                  </Label>
-                  <Input
-                    id="newPassword"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password"
-                    className="bg-background/50 border-border/50 focus:border-primary/50"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword" className="text-sm text-muted-foreground">
-                    Confirm New Password
-                  </Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm new password"
-                    className="bg-background/50 border-border/50 focus:border-primary/50"
-                  />
-                </div>
-
-                {passwordError && (
-                  <p className="text-sm text-destructive">{passwordError}</p>
-                )}
-                {passwordSuccess && (
-                  <p className="text-sm text-primary">Password updated!</p>
-                )}
-
-                <Button
-                  type="submit"
-                  disabled={passwordSaving || !newPassword || !confirmPassword}
-                  variant="outline"
-                >
-                  {passwordSaving ? (
-                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    'Update Password'
-                  )}
-                </Button>
-              </form>
+              <PasswordForm />
             </section>
 
             {/* Danger Zone */}
@@ -296,59 +152,12 @@ function ProfilePage() {
                 Permanently delete your account and all associated data. This action cannot be undone.
               </p>
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="gap-2">
-                    <Trash2 className="h-4 w-4" />
-                    Delete Account
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="bg-card border-border">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="flex items-center gap-2">
-                      <AlertTriangle className="h-5 w-5 text-destructive" />
-                      Delete Account
-                    </AlertDialogTitle>
-                    <AlertDialogDescription className="text-muted-foreground">
-                      This will permanently delete your account, including all your saved events.
-                      This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-
-                  <div className="py-4">
-                    <Label htmlFor="deleteConfirm" className="text-sm text-muted-foreground">
-                      Type <span className="font-mono font-bold text-foreground">DELETE</span> to confirm
-                    </Label>
-                    <Input
-                      id="deleteConfirm"
-                      value={deleteConfirmText}
-                      onChange={(e) => setDeleteConfirmText(e.target.value)}
-                      placeholder="DELETE"
-                      className="mt-2 bg-background/50 border-border/50"
-                    />
-                    {deleteError && (
-                      <p className="mt-2 text-sm text-destructive">{deleteError}</p>
-                    )}
-                  </div>
-
-                  <AlertDialogFooter>
-                    <AlertDialogCancel onClick={() => setDeleteConfirmText('')}>
-                      Cancel
-                    </AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDeleteAccount}
-                      disabled={deleteConfirmText !== 'DELETE' || deleting}
-                      className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                    >
-                      {deleting ? (
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        'Delete Account'
-                      )}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <DeleteAccountDialog
+                userId={user.id}
+                deleteConfirmText={deleteConfirmText}
+                setDeleteConfirmText={setDeleteConfirmText}
+                onDeleted={() => navigate({ to: '/' })}
+              />
             </section>
           </div>
 
@@ -361,5 +170,282 @@ function ProfilePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// =============================================================================
+// Display Name Form
+// =============================================================================
+
+function DisplayNameForm({ defaultDisplayName }: { defaultDisplayName: string }) {
+  const [showSuccess, setShowSuccess] = useState(false)
+  const mutation = useUpdateDisplayName()
+
+  const form = useForm<DisplayNameInput>({
+    resolver: zodResolver(displayNameSchema),
+    defaultValues: {
+      displayName: defaultDisplayName,
+    },
+  })
+
+  // Sync form when profile loads
+  useEffect(() => {
+    if (defaultDisplayName) {
+      form.reset({ displayName: defaultDisplayName })
+    }
+  }, [defaultDisplayName, form])
+
+  const onSubmit = async (data: DisplayNameInput) => {
+    try {
+      await mutation.mutateAsync(data.displayName)
+      setShowSuccess(true)
+      setTimeout(() => setShowSuccess(false), 3000)
+    } catch {
+      // Error is handled by mutation state
+    }
+  }
+
+  const isDirty = form.watch('displayName') !== defaultDisplayName
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-2">
+        <FormField
+          control={form.control}
+          name="displayName"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-sm text-muted-foreground">
+                Display Name
+              </FormLabel>
+              <div className="flex gap-2">
+                <FormControl>
+                  <Input
+                    {...field}
+                    placeholder="Enter your display name"
+                    className="bg-background/50 border-border/50 focus:border-primary/50"
+                  />
+                </FormControl>
+                <Button
+                  type="submit"
+                  disabled={mutation.isPending || !isDirty}
+                  className="shrink-0"
+                >
+                  {mutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : showSuccess ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    'Save'
+                  )}
+                </Button>
+              </div>
+              <FormMessage />
+              {mutation.isError && (
+                <p className="text-sm text-destructive">
+                  {mutation.error instanceof Error
+                    ? mutation.error.message
+                    : 'Failed to update display name'}
+                </p>
+              )}
+              {showSuccess && (
+                <p className="text-sm text-primary">Display name updated!</p>
+              )}
+            </FormItem>
+          )}
+        />
+      </form>
+    </Form>
+  )
+}
+
+// =============================================================================
+// Password Form
+// =============================================================================
+
+function PasswordForm() {
+  const [showSuccess, setShowSuccess] = useState(false)
+  const mutation = useUpdatePassword()
+
+  const form = useForm<ChangePasswordInput>({
+    resolver: zodResolver(changePasswordSchema),
+    defaultValues: {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    },
+  })
+
+  const onSubmit = async (data: ChangePasswordInput) => {
+    try {
+      await mutation.mutateAsync(data.newPassword)
+      setShowSuccess(true)
+      form.reset()
+      setTimeout(() => setShowSuccess(false), 3000)
+    } catch {
+      // Error is handled by mutation state
+    }
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <FormField
+          control={form.control}
+          name="newPassword"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-sm text-muted-foreground">
+                New Password
+              </FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  type="password"
+                  placeholder="Enter new password"
+                  className="bg-background/50 border-border/50 focus:border-primary/50"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="confirmPassword"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-sm text-muted-foreground">
+                Confirm New Password
+              </FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  type="password"
+                  placeholder="Confirm new password"
+                  className="bg-background/50 border-border/50 focus:border-primary/50"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {mutation.isError && (
+          <p className="text-sm text-destructive">
+            {mutation.error instanceof Error
+              ? mutation.error.message
+              : 'Failed to update password'}
+          </p>
+        )}
+        {showSuccess && (
+          <p className="text-sm text-primary">Password updated!</p>
+        )}
+
+        <Button
+          type="submit"
+          disabled={mutation.isPending}
+          variant="outline"
+        >
+          {mutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            'Update Password'
+          )}
+        </Button>
+      </form>
+    </Form>
+  )
+}
+
+// =============================================================================
+// Delete Account Dialog
+// =============================================================================
+
+interface DeleteAccountDialogProps {
+  userId: string
+  deleteConfirmText: string
+  setDeleteConfirmText: (text: string) => void
+  onDeleted: () => void
+}
+
+function DeleteAccountDialog({
+  userId,
+  deleteConfirmText,
+  setDeleteConfirmText,
+  onDeleted,
+}: DeleteAccountDialogProps) {
+  const mutation = useDeleteAccount()
+
+  const handleDelete = async () => {
+    if (deleteConfirmText !== 'DELETE') return
+
+    try {
+      await mutation.mutateAsync(userId)
+      onDeleted()
+    } catch {
+      // Error is handled by mutation state
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" className="gap-2">
+          <Trash2 className="h-4 w-4" />
+          Delete Account
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent className="bg-card border-border">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            Delete Account
+          </AlertDialogTitle>
+          <AlertDialogDescription className="text-muted-foreground">
+            This will permanently delete your account, including all your saved events.
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="py-4">
+          <Label htmlFor="deleteConfirm" className="text-sm text-muted-foreground">
+            Type <span className="font-mono font-bold text-foreground">DELETE</span> to confirm
+          </Label>
+          <Input
+            id="deleteConfirm"
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            placeholder="DELETE"
+            className="mt-2 bg-background/50 border-border/50"
+          />
+          {mutation.isError && (
+            <p className="mt-2 text-sm text-destructive">
+              {mutation.error instanceof Error
+                ? mutation.error.message
+                : 'Failed to delete account'}
+            </p>
+          )}
+        </div>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setDeleteConfirmText('')}>
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDelete}
+            disabled={deleteConfirmText !== 'DELETE' || mutation.isPending}
+            className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+          >
+            {mutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              'Delete Account'
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

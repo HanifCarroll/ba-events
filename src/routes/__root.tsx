@@ -1,4 +1,5 @@
 import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { RotateCcw, User, LogOut, Bookmark, Settings, ChevronDown } from 'lucide-react'
 import { AuthProvider, useAuthContext } from '@/components/AuthProvider'
@@ -13,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Toaster } from '@/components/ui/sonner'
+import { queryClient } from '@/lib/query'
 
 import appCss from '../styles.css?url'
 
@@ -69,11 +71,13 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body className="bg-background text-foreground antialiased overflow-hidden bg-grain">
-        <AuthProvider>
-          <TooltipProvider>
-            <RootLayout />
-          </TooltipProvider>
-        </AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <TooltipProvider>
+              <RootLayout />
+            </TooltipProvider>
+          </AuthProvider>
+        </QueryClientProvider>
         <Toaster position="bottom-right" richColors />
         <Scripts />
       </body>
