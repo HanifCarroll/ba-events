@@ -16,6 +16,7 @@ import { Route as ApiEventsRouteImport } from './routes/api/events'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/index'
 import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/index'
+import { Route as ApiScraperPasslineRouteImport } from './routes/api/scraper/passline'
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
 import { Route as AdminVenuesImportRouteImport } from './routes/admin/venues/import'
 import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
@@ -58,6 +59,11 @@ const AdminEventsIndexRoute = AdminEventsIndexRouteImport.update({
   id: '/events/',
   path: '/events/',
   getParentRoute: () => AdminRoute,
+} as any)
+const ApiScraperPasslineRoute = ApiScraperPasslineRouteImport.update({
+  id: '/api/scraper/passline',
+  path: '/api/scraper/passline',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AdminVenuesNewRoute = AdminVenuesNewRouteImport.update({
   id: '/venues/new',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/api/scraper/passline': typeof ApiScraperPasslineRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/venues': typeof AdminVenuesIndexRoute
 }
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/api/scraper/passline': typeof ApiScraperPasslineRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/venues': typeof AdminVenuesIndexRoute
 }
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/api/scraper/passline': typeof ApiScraperPasslineRoute
   '/admin/events/': typeof AdminEventsIndexRoute
   '/admin/venues/': typeof AdminVenuesIndexRoute
 }
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/api/scraper/passline'
     | '/admin/events'
     | '/admin/venues'
   fileRoutesByTo: FileRoutesByTo
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/api/scraper/passline'
     | '/admin/events'
     | '/admin/venues'
   id:
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/api/scraper/passline'
     | '/admin/events/'
     | '/admin/venues/'
   fileRoutesById: FileRoutesById
@@ -197,6 +209,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   ApiEventsRoute: typeof ApiEventsRoute
+  ApiScraperPasslineRoute: typeof ApiScraperPasslineRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -249,6 +262,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/events'
       preLoaderRoute: typeof AdminEventsIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/api/scraper/passline': {
+      id: '/api/scraper/passline'
+      path: '/api/scraper/passline'
+      fullPath: '/api/scraper/passline'
+      preLoaderRoute: typeof ApiScraperPasslineRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/venues/new': {
       id: '/admin/venues/new'
@@ -336,6 +356,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   ApiEventsRoute: ApiEventsRoute,
+  ApiScraperPasslineRoute: ApiScraperPasslineRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

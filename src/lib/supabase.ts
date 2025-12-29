@@ -444,6 +444,23 @@ export async function hybridEventSearch(
 // ============================================================================
 
 /**
+ * Check if an event already exists by source and external_id
+ */
+export async function checkEventExists(
+  source: string,
+  externalId: string
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('events')
+    .select('id')
+    .eq('source', source)
+    .eq('external_id', externalId)
+    .single()
+
+  return !!data
+}
+
+/**
  * Upsert events - insert new events, update existing ones
  * Uses source + external_id for deduplication
  */

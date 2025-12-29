@@ -67,7 +67,7 @@ export const VENUE_TYPES = [
 export type VenueType = (typeof VENUE_TYPES)[number]
 
 // Event status
-export const EVENT_STATUSES = ['scheduled', 'cancelled', 'postponed', 'past'] as const
+export const EVENT_STATUSES = ['scheduled', 'cancelled', 'postponed', 'past', 'pending_review'] as const
 
 export type EventStatus = (typeof EVENT_STATUSES)[number]
 

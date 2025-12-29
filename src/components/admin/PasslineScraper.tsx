@@ -54,6 +54,16 @@ interface PasslineScraperProps {
 export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps) {
   const router = useRouter()
 
+  // Date filter state (default: next 30 days)
+  const [startDate, setStartDate] = useState(() => {
+    return new Date().toISOString().split('T')[0]
+  })
+  const [endDate, setEndDate] = useState(() => {
+    const date = new Date()
+    date.setDate(date.getDate() + 30)
+    return date.toISOString().split('T')[0]
+  })
+
   // State
   const [isLoading, setIsLoading] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
@@ -86,7 +96,9 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
     setImportResult(null)
 
     try {
-      const data = await fetchPasslinePreviewAction()
+      const data = await fetchPasslinePreviewAction({
+        data: { startDate, endDate },
+      })
       setEvents(data)
       // Auto-select all events with matched venues
       const autoSelected = new Set(
@@ -270,6 +282,34 @@ export function PasslineScraper({ venues: initialVenues }: PasslineScraperProps)
 
   return (
     <div className="space-y-6">
+      {/* Date filter */}
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="start-date" className="text-sm text-muted-foreground whitespace-nowrap">
+            From
+          </Label>
+          <Input
+            id="start-date"
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-40"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="end-date" className="text-sm text-muted-foreground whitespace-nowrap">
+            To
+          </Label>
+          <Input
+            id="end-date"
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="w-40"
+          />
+        </div>
+      </div>
+
       {/* Actions bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

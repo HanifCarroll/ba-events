@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter, Upload, Clock, XCircle, Zap } from 'lucide-react'
+import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter, Upload, Clock, XCircle, Zap, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { listEvents, deleteEventAction, bulkUpdateEventStatusAction, bulkDeleteEventsAction, countPastEventsAction, markPastEventsAction } from '@/lib/admin'
+import { listEvents, deleteEventAction, bulkUpdateEventStatusAction, bulkDeleteEventsAction, countPastEventsAction, markPastEventsAction, approveEventAction, rejectEventAction } from '@/lib/admin'
 import type { EventWithVenue, EventStatus } from '@/lib/types'
 
 export const Route = createFileRoute('/admin/events/')({
@@ -60,6 +60,10 @@ function EventListPage() {
   const [showMarkPastDialog, setShowMarkPastDialog] = useState(false)
   const [pastEventsCount, setPastEventsCount] = useState(0)
   const [isMarkingPast, setIsMarkingPast] = useState(false)
+
+  // Approve/reject pending events
+  const [isApproving, setIsApproving] = useState<string | null>(null)
+  const [isRejecting, setIsRejecting] = useState<string | null>(null)
 
   // Get unique venues for filter dropdown
   const venueOptions = useMemo(() => {
@@ -186,6 +190,32 @@ function EventListPage() {
     }
   }
 
+  // Approve pending event
+  async function handleApprove(eventId: string) {
+    setIsApproving(eventId)
+    try {
+      await approveEventAction({ data: { eventId } })
+      router.invalidate()
+    } catch (err) {
+      console.error('Approve failed:', err)
+    } finally {
+      setIsApproving(null)
+    }
+  }
+
+  // Reject pending event
+  async function handleReject(eventId: string) {
+    setIsRejecting(eventId)
+    try {
+      await rejectEventAction({ data: { eventId } })
+      router.invalidate()
+    } catch (err) {
+      console.error('Reject failed:', err)
+    } finally {
+      setIsRejecting(null)
+    }
+  }
+
   function formatDate(dateString: string) {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-US', {
@@ -202,6 +232,10 @@ function EventListPage() {
       scheduled: {
         className: 'bg-green-500/10 text-green-400 border-green-500/30',
         label: 'Scheduled',
+      },
+      pending_review: {
+        className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+        label: 'Pending',
       },
       cancelled: {
         className: 'bg-destructive/10 text-destructive border-destructive/30',
@@ -320,6 +354,7 @@ function EventListPage() {
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="scheduled">Scheduled</SelectItem>
+                <SelectItem value="pending_review">Pending Review</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
                 <SelectItem value="postponed">Postponed</SelectItem>
                 <SelectItem value="past">Past</SelectItem>
@@ -483,26 +518,53 @@ function EventListPage() {
                 </div>
 
                 <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-muted-foreground hover:text-foreground"
-                  >
-                    <Link to="/admin/events/$id" params={{ id: event.id }}>
-                      <Pencil className="h-4 w-4 mr-2" />
-                      Edit
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-muted-foreground hover:text-destructive"
-                    onClick={() => setDeleteTarget(event)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
+                  {event.status === 'pending_review' ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                        onClick={() => handleApprove(event.id)}
+                        disabled={isApproving === event.id}
+                      >
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                        Approve
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 text-destructive hover:bg-destructive/10"
+                        onClick={() => handleReject(event.id)}
+                        disabled={isRejecting === event.id}
+                      >
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Reject
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <Link to="/admin/events/$id" params={{ id: event.id }}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Edit
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 text-muted-foreground hover:text-destructive"
+                        onClick={() => setDeleteTarget(event)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -578,7 +640,31 @@ function EventListPage() {
                     </TableCell>
                     <TableCell>{getStatusBadge(event.status)}</TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1">
+                        {event.status === 'pending_review' && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                              onClick={() => handleApprove(event.id)}
+                              disabled={isApproving === event.id}
+                              title="Approve"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => handleReject(event.id)}
+                              disabled={isRejecting === event.id}
+                              title="Reject"
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                         <Button
                           asChild
                           variant="ghost"

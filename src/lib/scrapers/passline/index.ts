@@ -8,8 +8,10 @@
 export {
   fetchPasslineEvents,
   filterCABAEvents,
+  filterByDateRange,
   isSoldOut,
   type PasslineEvent,
+  type DateRange,
 } from './api'
 
 // Category mapping

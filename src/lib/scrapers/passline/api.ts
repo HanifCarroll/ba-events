@@ -68,3 +68,25 @@ export function filterCABAEvents(events: PasslineEvent[]): PasslineEvent[] {
 export function isSoldOut(event: PasslineEvent): boolean {
   return event.agotado === '1'
 }
+
+/**
+ * Date range for filtering events
+ */
+export interface DateRange {
+  startDate: string // "YYYY-MM-DD"
+  endDate: string // "YYYY-MM-DD"
+}
+
+/**
+ * Filter events by date range
+ * Uses fecha_inicio (start date) for filtering
+ */
+export function filterByDateRange(
+  events: PasslineEvent[],
+  dateRange: DateRange
+): PasslineEvent[] {
+  return events.filter((event) => {
+    const eventDate = event.fecha_inicio // Already "YYYY-MM-DD" format
+    return eventDate >= dateRange.startDate && eventDate <= dateRange.endDate
+  })
+}
