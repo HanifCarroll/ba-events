@@ -74,7 +74,7 @@ export function ChatInput({
               disabled={disabled}
               autoComplete="off"
               className={`
-                flex-1 bg-transparent py-3.5 pl-11 pr-4 text-sm text-foreground
+                flex-1 bg-transparent py-3.5 pl-11 pr-4 text-base sm:text-sm text-foreground
                 placeholder:text-muted-foreground/60
                 focus:outline-none
                 disabled:cursor-not-allowed
