@@ -38,7 +38,6 @@ import { useColumnPreferences } from './hooks/useColumnPreferences'
 import { DataTableViewOptions } from './DataTableViewOptions'
 
 // Selection adapter functions
-// When getRowId is provided, TanStack Table uses row IDs as keys in RowSelectionState
 function setToRowSelection(ids: Set<string>): RowSelectionState {
   const state: RowSelectionState = {}
   ids.forEach((id) => {
@@ -79,68 +78,69 @@ function DragHandle({ column }: { column: { id: string } }) {
   )
 }
 
-// Sortable header cell
-function SortableHeader({
-  header,
+// Sortable header cell component for use with <th>
+function SortableHeaderCell({
+  headerId,
+  columnId,
+  width,
   children,
   enableReordering,
+  enableResizing,
+  isResizing,
+  onResize,
 }: {
-  header: {
-    column: { id: string; getSize: () => number }
-    getContext: () => unknown
-  }
+  headerId: string
+  columnId: string
+  width: number
   children: ReactNode
   enableReordering?: boolean
+  enableResizing?: boolean
+  isResizing?: boolean
+  onResize?: (e: React.MouseEvent | React.TouchEvent) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
-      id: header.column.id,
+      id: columnId,
     })
 
   const style: CSSProperties = {
-    width: header.column.getSize(),
+    width,
+    minWidth: width,
+    maxWidth: width,
     transform: CSS.Translate.toString(transform),
     transition,
     opacity: isDragging ? 0.8 : 1,
     position: 'relative' as const,
-    zIndex: isDragging ? 1 : 0,
   }
 
   return (
-    <div
+    <th
+      key={headerId}
       ref={setNodeRef}
       style={style}
       className={cn(
-        'flex items-center gap-1.5 px-4 py-3 text-muted-foreground font-medium text-sm',
-        'select-none shrink-0'
+        'px-4 py-3 text-left text-muted-foreground font-medium text-sm',
+        'bg-muted/20 select-none',
+        isDragging && 'z-10'
       )}
       {...(enableReordering ? { ...attributes, ...listeners } : {})}
     >
-      {children}
-    </div>
-  )
-}
-
-// Resize handle component
-function ResizeHandle({
-  isResizing,
-  onMouseDown,
-  onTouchStart,
-}: {
-  isResizing: boolean
-  onMouseDown: (e: React.MouseEvent) => void
-  onTouchStart: (e: React.TouchEvent) => void
-}) {
-  return (
-    <div
-      className={cn(
-        'absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none',
-        'hover:bg-primary/50 transition-colors',
-        isResizing && 'bg-primary'
+      <div className="flex items-center gap-1.5">
+        {enableReordering && <DragHandle column={{ id: columnId }} />}
+        <div className="flex-1">{children}</div>
+      </div>
+      {enableResizing && (
+        <div
+          className={cn(
+            'absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none',
+            'hover:bg-primary/50 transition-colors',
+            isResizing && 'bg-primary'
+          )}
+          onMouseDown={onResize}
+          onTouchStart={onResize}
+        />
       )}
-      onMouseDown={onMouseDown}
-      onTouchStart={onTouchStart}
-    />
+    </th>
   )
 }
 
@@ -201,13 +201,12 @@ export function DataTable<TData extends { id: string }>({
   // Local state
   const [sorting, setSorting] = useState<SortingState>([])
 
-  // Selection state - convert Set<string> to RowSelectionState for internal use
+  // Selection state
   const rowSelection = useMemo(() => {
     if (!selectedIds) return {}
     return setToRowSelection(selectedIds)
   }, [selectedIds])
 
-  // Handle selection change
   const handleSelectionChange = useCallback(
     (updater: RowSelectionState | ((prev: RowSelectionState) => RowSelectionState)) => {
       if (!onSelectionChange) return
@@ -217,7 +216,7 @@ export function DataTable<TData extends { id: string }>({
     [onSelectionChange, rowSelection]
   )
 
-  // Column order - use preferences or default to column order
+  // Column order
   const columnIds = useMemo(
     () => userColumns.map((col) => col.id || String(col.header)),
     [userColumns]
@@ -225,7 +224,6 @@ export function DataTable<TData extends { id: string }>({
 
   const [columnOrder, setColumnOrderState] = useState<ColumnOrderState>(() => {
     if (preferences.order.length > 0) {
-      // Use saved order, but include any new columns
       const savedOrder = preferences.order.filter((id) => columnIds.includes(id))
       const newColumns = columnIds.filter((id) => !preferences.order.includes(id))
       return [...savedOrder, ...newColumns]
@@ -233,7 +231,6 @@ export function DataTable<TData extends { id: string }>({
     return columnIds
   })
 
-  // Update column order in preferences
   const setColumnOrder = useCallback(
     (order: ColumnOrderState | ((prev: ColumnOrderState) => ColumnOrderState)) => {
       setColumnOrderState((prev) => {
@@ -279,12 +276,11 @@ export function DataTable<TData extends { id: string }>({
     return [selectColumn, ...userColumns]
   }, [userColumns, enableRowSelection])
 
-  // Initialize column sizing from preferences
+  // Column sizing
   const [columnSizing, setColumnSizingState] = useState<ColumnSizingState>(
     preferences.sizing
   )
 
-  // Update sizing preferences on change
   const setColumnSizing = useCallback(
     (sizing: ColumnSizingState | ((prev: ColumnSizingState) => ColumnSizingState)) => {
       setColumnSizingState((prev) => {
@@ -296,12 +292,11 @@ export function DataTable<TData extends { id: string }>({
     [preferences]
   )
 
-  // Initialize visibility from preferences
+  // Column visibility
   const [columnVisibility, setColumnVisibilityState] = useState<VisibilityState>(
     preferences.visibility
   )
 
-  // Update visibility preferences on change
   const setColumnVisibility = useCallback(
     (visibility: VisibilityState | ((prev: VisibilityState) => VisibilityState)) => {
       setColumnVisibilityState((prev) => {
@@ -327,7 +322,6 @@ export function DataTable<TData extends { id: string }>({
     onColumnSizingChange: setColumnSizing,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnOrderChange: (order) => {
-      // Remove 'select' column from persisted order
       const filtered = (typeof order === 'function' ? order(columnOrder) : order).filter(
         (id) => id !== 'select'
       )
@@ -353,7 +347,6 @@ export function DataTable<TData extends { id: string }>({
     useSensor(KeyboardSensor)
   )
 
-  // Handle drag end for column reordering
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event
@@ -369,12 +362,12 @@ export function DataTable<TData extends { id: string }>({
   )
 
   // Virtualization
-  const parentRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { rows } = table.getRowModel()
 
   const virtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => estimatedRowHeight,
     overscan: 10,
   })
@@ -382,134 +375,8 @@ export function DataTable<TData extends { id: string }>({
   // Get visible column IDs for sortable context
   const visibleColumnIds = table.getVisibleLeafColumns().map((col) => col.id)
 
-  // Calculate total table width for synchronized horizontal scrolling
+  // Calculate total table width
   const totalTableWidth = table.getVisibleLeafColumns().reduce((sum, col) => sum + col.getSize(), 0)
-
-  // Render header
-  const renderHeader = () => (
-    <DndContext
-      sensors={enableColumnReordering ? sensors : undefined}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-      modifiers={[restrictToHorizontalAxis]}
-    >
-      <div className="flex border-b border-border/50 bg-muted/20" style={{ minWidth: totalTableWidth }}>
-        <SortableContext
-          items={visibleColumnIds}
-          strategy={horizontalListSortingStrategy}
-          disabled={!enableColumnReordering}
-        >
-          {table.getHeaderGroups().map((headerGroup) =>
-            headerGroup.headers.map((header) => {
-              const canReorder =
-                enableColumnReordering &&
-                header.column.id !== 'select' &&
-                header.column.getCanHide()
-
-              return (
-                <SortableHeader
-                  key={header.id}
-                  header={header}
-                  enableReordering={canReorder}
-                >
-                  {canReorder && <DragHandle column={header.column} />}
-                  <div className="flex-1">
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </div>
-                  {enableColumnResizing && header.column.getCanResize() && (
-                    <ResizeHandle
-                      isResizing={header.column.getIsResizing()}
-                      onMouseDown={header.getResizeHandler()}
-                      onTouchStart={header.getResizeHandler()}
-                    />
-                  )}
-                </SortableHeader>
-              )
-            })
-          )}
-        </SortableContext>
-      </div>
-    </DndContext>
-  )
-
-  // Render virtualized body
-  const renderVirtualizedBody = () => (
-    <div
-      ref={parentRef}
-      style={{ height: containerHeight }}
-      className="overflow-y-auto overflow-x-hidden"
-    >
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          minWidth: totalTableWidth,
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualRow) => {
-          const row = rows[virtualRow.index]
-          return (
-            <div
-              key={row.id}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
-              <div
-                className={cn(
-                  'flex items-center border-b border-border/30 hover:bg-muted/30 transition-colors',
-                  row.getIsSelected() && 'bg-primary/5',
-                  rowClassName?.(row)
-                )}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <div
-                    key={cell.id}
-                    style={{ width: cell.column.getSize() }}
-                    className="shrink-0 px-4 py-3"
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-
-  // Render standard body
-  const renderStandardBody = () => (
-    <div style={{ minWidth: totalTableWidth }}>
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          className={cn(
-            'flex items-center border-b border-border/30 hover:bg-muted/30 transition-colors',
-            row.getIsSelected() && 'bg-primary/5',
-            rowClassName?.(row)
-          )}
-        >
-          {row.getVisibleCells().map((cell) => (
-            <div
-              key={cell.id}
-              style={{ width: cell.column.getSize() }}
-              className="shrink-0 px-4 py-3"
-            >
-              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
 
   // Empty state
   if (data.length === 0 && emptyState) {
@@ -529,11 +396,145 @@ export function DataTable<TData extends { id: string }>({
         </div>
       )}
 
-      {/* Table container */}
+      {/* Table container - single scroll container for both header and body */}
       <div className="bg-card/50 rounded-xl border border-border/50 overflow-hidden">
-        <div className="overflow-x-auto">
-          {renderHeader()}
-          {enableVirtualization ? renderVirtualizedBody() : renderStandardBody()}
+        <div
+          ref={scrollContainerRef}
+          className="overflow-auto"
+          style={{ maxHeight: enableVirtualization ? containerHeight : undefined }}
+        >
+          <DndContext
+            sensors={enableColumnReordering ? sensors : undefined}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+            modifiers={[restrictToHorizontalAxis]}
+          >
+            <SortableContext
+              items={visibleColumnIds}
+              strategy={horizontalListSortingStrategy}
+              disabled={!enableColumnReordering}
+            >
+              <table
+                className="w-full border-collapse"
+                style={{ minWidth: totalTableWidth }}
+              >
+                {/* Sticky header */}
+                <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm">
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <tr key={headerGroup.id} className="border-b border-border/50">
+                      {headerGroup.headers.map((header) => {
+                        const canReorder =
+                          enableColumnReordering &&
+                          header.column.id !== 'select' &&
+                          header.column.getCanHide()
+
+                        return (
+                          <SortableHeaderCell
+                            key={header.id}
+                            headerId={header.id}
+                            columnId={header.column.id}
+                            width={header.column.getSize()}
+                            enableReordering={canReorder}
+                            enableResizing={enableColumnResizing && header.column.getCanResize()}
+                            isResizing={header.column.getIsResizing()}
+                            onResize={header.getResizeHandler()}
+                          >
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(header.column.columnDef.header, header.getContext())}
+                          </SortableHeaderCell>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </thead>
+
+                {/* Body */}
+                <tbody>
+                  {enableVirtualization ? (
+                    // Virtualized rows
+                    <>
+                      {/* Spacer for virtualization */}
+                      {virtualizer.getVirtualItems().length > 0 && (
+                        <tr>
+                          <td
+                            colSpan={table.getVisibleLeafColumns().length}
+                            style={{ height: virtualizer.getVirtualItems()[0]?.start || 0 }}
+                          />
+                        </tr>
+                      )}
+                      {virtualizer.getVirtualItems().map((virtualRow) => {
+                        const row = rows[virtualRow.index]
+                        return (
+                          <tr
+                            key={row.id}
+                            className={cn(
+                              'border-b border-border/30 hover:bg-muted/30 transition-colors',
+                              row.getIsSelected() && 'bg-primary/5',
+                              rowClassName?.(row)
+                            )}
+                          >
+                            {row.getVisibleCells().map((cell) => (
+                              <td
+                                key={cell.id}
+                                style={{
+                                  width: cell.column.getSize(),
+                                  minWidth: cell.column.getSize(),
+                                  maxWidth: cell.column.getSize(),
+                                }}
+                                className="px-4 py-3"
+                              >
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </td>
+                            ))}
+                          </tr>
+                        )
+                      })}
+                      {/* Bottom spacer for virtualization */}
+                      {virtualizer.getVirtualItems().length > 0 && (
+                        <tr>
+                          <td
+                            colSpan={table.getVisibleLeafColumns().length}
+                            style={{
+                              height:
+                                virtualizer.getTotalSize() -
+                                (virtualizer.getVirtualItems()[virtualizer.getVirtualItems().length - 1]?.end || 0),
+                            }}
+                          />
+                        </tr>
+                      )}
+                    </>
+                  ) : (
+                    // Standard rows
+                    rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className={cn(
+                          'border-b border-border/30 hover:bg-muted/30 transition-colors',
+                          row.getIsSelected() && 'bg-primary/5',
+                          rowClassName?.(row)
+                        )}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td
+                            key={cell.id}
+                            style={{
+                              width: cell.column.getSize(),
+                              minWidth: cell.column.getSize(),
+                              maxWidth: cell.column.getSize(),
+                            }}
+                            className="px-4 py-3"
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </SortableContext>
+          </DndContext>
         </div>
       </div>
     </div>
