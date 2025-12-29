@@ -3,7 +3,6 @@ import { ChevronDown, Calendar, MapPin, Clock, Users, ExternalLink } from 'lucid
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { EventActions } from './EventActions'
 import { SaveEventButton } from '@/components/SaveEventButton'

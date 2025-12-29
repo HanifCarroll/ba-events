@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { deleteEventAction, approveEventAction, rejectEventAction } from '@/lib/admin'
 import type { EventWithVenue } from '@/lib/types'
@@ -10,7 +10,7 @@ export function useSingleEventActions() {
   const [isApproving, setIsApproving] = useState<string | null>(null)
   const [isRejecting, setIsRejecting] = useState<string | null>(null)
 
-  async function handleDelete() {
+  const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
     setIsDeleting(true)
 
@@ -23,9 +23,9 @@ export function useSingleEventActions() {
     } finally {
       setIsDeleting(false)
     }
-  }
+  }, [deleteTarget, router])
 
-  async function handleApprove(eventId: string) {
+  const handleApprove = useCallback(async (eventId: string) => {
     setIsApproving(eventId)
     try {
       await approveEventAction({ data: { eventId } })
@@ -35,9 +35,9 @@ export function useSingleEventActions() {
     } finally {
       setIsApproving(null)
     }
-  }
+  }, [router])
 
-  async function handleReject(eventId: string) {
+  const handleReject = useCallback(async (eventId: string) => {
     setIsRejecting(eventId)
     try {
       await rejectEventAction({ data: { eventId } })
@@ -47,7 +47,7 @@ export function useSingleEventActions() {
     } finally {
       setIsRejecting(null)
     }
-  }
+  }, [router])
 
   return {
     deleteTarget,

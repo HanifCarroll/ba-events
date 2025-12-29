@@ -121,3 +121,4 @@ src/
 - Use TypeScript strictly - no `any` types
 - Prefer server functions over client-side API calls
 - Use TanStack Query for data fetching (integrated via router)
+- **After each code change, run `bunx tsc --noEmit` to check for TypeScript errors and fix them immediately** - don't leave errors for later

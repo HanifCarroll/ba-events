@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2 } from 'lucide-react'
+import { Clock, XCircle, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { BulkActionType } from '@/hooks/useBulkActions'
@@ -9,6 +9,8 @@ interface BulkActionBarProps {
   onToggleSelectAll: () => void
   onSetBulkAction: (action: BulkActionType) => void
   onClearSelection: () => void
+  /** If true, renders as an overlay-ready component (no outer margins, fills width) */
+  overlay?: boolean
 }
 
 export function BulkActionBar({
@@ -17,9 +19,66 @@ export function BulkActionBar({
   onToggleSelectAll,
   onSetBulkAction,
   onClearSelection,
+  overlay = false,
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
 
+  if (overlay) {
+    // Overlay version - slides in over table header
+    return (
+      <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-4 px-4 py-3 bg-primary/95 backdrop-blur-sm border-b border-primary/30 animate-fade-in-up">
+        <div className="flex items-center gap-3">
+          <Checkbox
+            checked={selectedCount === filteredEventsLength}
+            onCheckedChange={onToggleSelectAll}
+            className="border-primary-foreground/50 data-[state=checked]:bg-primary-foreground data-[state=checked]:text-primary"
+          />
+          <span className="text-sm font-medium text-primary-foreground">
+            {selectedCount} selected
+          </span>
+        </div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSetBulkAction('past')}
+            className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
+          >
+            <Clock className="h-4 w-4 mr-1.5" />
+            Mark Past
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSetBulkAction('cancelled')}
+            className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
+          >
+            <XCircle className="h-4 w-4 mr-1.5" />
+            Mark Cancelled
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => onSetBulkAction('delete')}
+            className="bg-red-600 text-white hover:bg-red-500"
+          >
+            <Trash2 className="h-4 w-4 mr-1.5" />
+            Delete
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClearSelection}
+            className="h-8 w-8 text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/10"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Default standalone version
   return (
     <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg animate-fade-in-up">
       <div className="flex items-center gap-2">

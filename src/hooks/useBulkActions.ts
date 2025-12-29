@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { bulkUpdateEventStatusAction, bulkDeleteEventsAction } from '@/lib/admin'
 import type { EventWithVenue } from '@/lib/types'
@@ -11,7 +11,7 @@ export function useBulkActions(filteredEvents: EventWithVenue[]) {
   const [bulkAction, setBulkAction] = useState<BulkActionType>(null)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
 
-  function toggleSelect(id: string) {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
@@ -21,21 +21,23 @@ export function useBulkActions(filteredEvents: EventWithVenue[]) {
       }
       return next
     })
-  }
+  }, [])
 
-  function toggleSelectAll() {
-    if (selectedIds.size === filteredEvents.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(filteredEvents.map((e) => e.id)))
-    }
-  }
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === filteredEvents.length) {
+        return new Set()
+      } else {
+        return new Set(filteredEvents.map((e) => e.id))
+      }
+    })
+  }, [filteredEvents])
 
-  function clearSelection() {
+  const clearSelection = useCallback(() => {
     setSelectedIds(new Set())
-  }
+  }, [])
 
-  async function handleBulkAction() {
+  const handleBulkAction = useCallback(async () => {
     if (!bulkAction || selectedIds.size === 0) return
     setIsBulkProcessing(true)
 
@@ -56,7 +58,7 @@ export function useBulkActions(filteredEvents: EventWithVenue[]) {
     } finally {
       setIsBulkProcessing(false)
     }
-  }
+  }, [bulkAction, selectedIds, router])
 
   return {
     selectedIds,

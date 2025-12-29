@@ -81,7 +81,7 @@ function RootDocument() {
 
 function RootLayout() {
   const [hasMessages, setHasMessages] = useState(false)
-  const { user, profile, loading, isAdmin } = useAuthContext()
+  const { user, profile, isAdmin } = useAuthContext()
 
   // Listen for chat state changes from ChatContainer
   useEffect(() => {

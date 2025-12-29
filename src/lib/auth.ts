@@ -206,10 +206,10 @@ export async function updateDisplayName(name: string): Promise<void> {
     throw new Error('Must be logged in to update profile')
   }
 
-  const { error } = await (client
-    .from('profiles')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (client.from('profiles') as any)
     .update({ display_name: name, updated_at: new Date().toISOString() })
-    .eq('id', user.id) as any)
+    .eq('id', user.id)
 
   if (error) {
     throw error

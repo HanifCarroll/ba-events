@@ -1,16 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { memo, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { Plus, Pencil, Trash2, Calendar, MapPin, Search, Upload, Clock, XCircle, Zap, CheckCircle2, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { listEvents } from '@/lib/admin'
-import { useEventAdmin } from '@/hooks'
+import { useEventAdmin, type BulkActionType } from '@/hooks'
 import { EventFilterBar } from '@/components/admin/EventFilterBar'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import { EnrichDescriptionsDialog } from '@/components/admin/EnrichDescriptionsDialog'
@@ -151,15 +145,6 @@ function EventListPage() {
         />
       )}
 
-      {/* Bulk Action Bar */}
-      <BulkActionBar
-        selectedCount={bulk.selectedIds.size}
-        filteredEventsLength={filtering.filteredEvents.length}
-        onToggleSelectAll={bulk.toggleSelectAll}
-        onSetBulkAction={bulk.setBulkAction}
-        onClearSelection={bulk.clearSelection}
-      />
-
       {/* Content */}
       {events.length === 0 ? (
         <EmptyState />
@@ -167,7 +152,16 @@ function EventListPage() {
         <NoMatchesState onClearFilters={filtering.clearFilters} />
       ) : (
         <>
-          {/* Mobile Card View */}
+          {/* Mobile Card View - still uses standalone bulk action bar */}
+          <div className="sm:hidden">
+            <BulkActionBar
+              selectedCount={bulk.selectedIds.size}
+              filteredEventsLength={filtering.filteredEvents.length}
+              onToggleSelectAll={bulk.toggleSelectAll}
+              onSetBulkAction={bulk.setBulkAction}
+              onClearSelection={bulk.clearSelection}
+            />
+          </div>
           <MobileEventCards
             events={filtering.filteredEvents}
             selectedIds={bulk.selectedIds}
@@ -179,7 +173,7 @@ function EventListPage() {
             isRejecting={singleActions.isRejecting}
           />
 
-          {/* Desktop Table View */}
+          {/* Desktop Table View - with overlay bulk action bar */}
           <DesktopEventTable
             events={filtering.filteredEvents}
             selectedIds={bulk.selectedIds}
@@ -190,6 +184,8 @@ function EventListPage() {
             onDelete={singleActions.setDeleteTarget}
             isApproving={singleActions.isApproving}
             isRejecting={singleActions.isRejecting}
+            onSetBulkAction={bulk.setBulkAction}
+            onClearSelection={bulk.clearSelection}
           />
         </>
       )}
@@ -372,6 +368,130 @@ interface EventListProps {
   isRejecting: string | null
 }
 
+// Memoized mobile card component
+const MobileEventCard = memo(function MobileEventCard({
+  event,
+  isSelected,
+  onToggleSelect,
+  onApprove,
+  onReject,
+  onDelete,
+  isApproving,
+  isRejecting,
+}: {
+  event: EventWithVenue
+  isSelected: boolean
+  onToggleSelect: (id: string) => void
+  onApprove: (id: string) => void
+  onReject: (id: string) => void
+  onDelete: (event: EventWithVenue) => void
+  isApproving: string | null
+  isRejecting: string | null
+}) {
+  return (
+    <div
+      className={`bg-card/50 rounded-xl border border-border/50 p-4 space-y-3 ${
+        isSelected ? 'border-primary/50 bg-primary/5' : ''
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect(event.id)}
+            className="mt-0.5"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-foreground truncate">{event.name}</p>
+            {event.categories.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {event.categories.slice(0, 2).map((cat) => (
+                  <Badge
+                    key={cat}
+                    variant="outline"
+                    className="text-xs border-border/50 text-muted-foreground"
+                  >
+                    {cat}
+                  </Badge>
+                ))}
+                {event.categories.length > 2 && (
+                  <span className="text-xs text-muted-foreground">
+                    +{event.categories.length - 2}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        {getStatusBadge(event.status)}
+      </div>
+
+      <div className="space-y-1.5 text-sm text-muted-foreground">
+        {event.venue_name && (
+          <div className="flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{event.venue_name}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          <Calendar className="h-3.5 w-3.5 shrink-0" />
+          <span>{formatDate(event.starts_at)}</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 pt-2 border-t border-border/30">
+        {event.status === 'pending_review' ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+              onClick={() => onApprove(event.id)}
+              disabled={isApproving === event.id}
+            >
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Approve
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 text-destructive hover:bg-destructive/10"
+              onClick={() => onReject(event.id)}
+              disabled={isRejecting === event.id}
+            >
+              <XCircle className="h-4 w-4 mr-2" />
+              Reject
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="flex-1 text-muted-foreground hover:text-foreground"
+            >
+              <Link to="/admin/events/$id" params={{ id: event.id }}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 text-muted-foreground hover:text-destructive"
+              onClick={() => onDelete(event)}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+})
+
 function MobileEventCards({
   events,
   selectedIds,
@@ -382,118 +502,192 @@ function MobileEventCards({
   isApproving,
   isRejecting,
 }: EventListProps) {
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: events.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 180, // Estimated card height
+    overscan: 5,
+  })
+
   return (
-    <div className="sm:hidden space-y-3">
-      {events.map((event) => (
-        <div
-          key={event.id}
-          className={`bg-card/50 rounded-xl border border-border/50 p-4 space-y-3 ${
-            selectedIds.has(event.id) ? 'border-primary/50 bg-primary/5' : ''
-          }`}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 flex-1 min-w-0">
-              <Checkbox
-                checked={selectedIds.has(event.id)}
-                onCheckedChange={() => onToggleSelect(event.id)}
-                className="mt-0.5"
+    <div
+      ref={parentRef}
+      className="sm:hidden h-[calc(100vh-400px)] overflow-auto"
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const event = events[virtualRow.index]
+          return (
+            <div
+              key={event.id}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+                padding: '6px 0',
+              }}
+            >
+              <MobileEventCard
+                event={event}
+                isSelected={selectedIds.has(event.id)}
+                onToggleSelect={onToggleSelect}
+                onApprove={onApprove}
+                onReject={onReject}
+                onDelete={onDelete}
+                isApproving={isApproving}
+                isRejecting={isRejecting}
               />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-foreground truncate">{event.name}</p>
-                {event.categories.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {event.categories.slice(0, 2).map((cat) => (
-                      <Badge
-                        key={cat}
-                        variant="outline"
-                        className="text-xs border-border/50 text-muted-foreground"
-                      >
-                        {cat}
-                      </Badge>
-                    ))}
-                    {event.categories.length > 2 && (
-                      <span className="text-xs text-muted-foreground">
-                        +{event.categories.length - 2}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
-            {getStatusBadge(event.status)}
-          </div>
-
-          <div className="space-y-1.5 text-sm text-muted-foreground">
-            {event.venue_name && (
-              <div className="flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{event.venue_name}</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <Calendar className="h-3.5 w-3.5 shrink-0" />
-              <span>{formatDate(event.starts_at)}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-            {event.status === 'pending_review' ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-                  onClick={() => onApprove(event.id)}
-                  disabled={isApproving === event.id}
-                >
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Approve
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1 text-destructive hover:bg-destructive/10"
-                  onClick={() => onReject(event.id)}
-                  disabled={isRejecting === event.id}
-                >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Reject
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1 text-muted-foreground hover:text-foreground"
-                >
-                  <Link to="/admin/events/$id" params={{ id: event.id }}>
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1 text-muted-foreground hover:text-destructive"
-                  onClick={() => onDelete(event)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      ))}
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 interface DesktopTableProps extends EventListProps {
   onToggleSelectAll: () => void
+  onSetBulkAction: (action: BulkActionType) => void
+  onClearSelection: () => void
 }
+
+// Memoized table row component (using divs for virtualization compatibility)
+const EventTableRow = memo(function EventTableRow({
+  event,
+  isSelected,
+  onToggleSelect,
+  onApprove,
+  onReject,
+  onDelete,
+  isApproving,
+  isRejecting,
+}: {
+  event: EventWithVenue
+  isSelected: boolean
+  onToggleSelect: (id: string) => void
+  onApprove: (id: string) => void
+  onReject: (id: string) => void
+  onDelete: (event: EventWithVenue) => void
+  isApproving: string | null
+  isRejecting: string | null
+}) {
+  return (
+    <div
+      className={`flex items-center gap-4 px-4 py-3 border-b border-border/30 hover:bg-muted/30 transition-colors ${
+        isSelected ? 'bg-primary/5' : ''
+      }`}
+    >
+      {/* Checkbox */}
+      <div className="w-8 shrink-0">
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onToggleSelect(event.id)}
+        />
+      </div>
+
+      {/* Event name & categories */}
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-foreground truncate">{event.name}</p>
+        {event.categories.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {event.categories.slice(0, 2).map((cat) => (
+              <Badge
+                key={cat}
+                variant="outline"
+                className="text-xs border-border/50 text-muted-foreground"
+              >
+                {cat}
+              </Badge>
+            ))}
+            {event.categories.length > 2 && (
+              <span className="text-xs text-muted-foreground">
+                +{event.categories.length - 2}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Venue */}
+      <div className="w-40 shrink-0">
+        {event.venue_name ? (
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{event.venue_name}</span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </div>
+
+      {/* Date */}
+      <div className="w-36 shrink-0 text-muted-foreground text-sm">
+        {formatDate(event.starts_at)}
+      </div>
+
+      {/* Status */}
+      <div className="w-24 shrink-0">
+        {getStatusBadge(event.status)}
+      </div>
+
+      {/* Actions */}
+      <div className="w-32 shrink-0 flex items-center justify-end gap-1">
+        {event.status === 'pending_review' && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+              onClick={() => onApprove(event.id)}
+              disabled={isApproving === event.id}
+              title="Approve"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => onReject(event.id)}
+              disabled={isRejecting === event.id}
+              title="Reject"
+            >
+              <XCircle className="h-4 w-4" />
+            </Button>
+          </>
+        )}
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        >
+          <Link to="/admin/events/$id" params={{ id: event.id }}>
+            <Pencil className="h-4 w-4" />
+          </Link>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          onClick={() => onDelete(event)}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
+})
 
 function DesktopEventTable({
   events,
@@ -505,126 +699,88 @@ function DesktopEventTable({
   onDelete,
   isApproving,
   isRejecting,
+  onSetBulkAction,
+  onClearSelection,
 }: DesktopTableProps) {
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: events.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 64, // Estimated row height
+    overscan: 10,
+  })
+
   return (
     <div className="hidden sm:block bg-card/50 rounded-xl border border-border/50 overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="border-border/50 hover:bg-transparent">
-            <TableHead className="w-12">
-              <Checkbox
-                checked={selectedIds.size === events.length && events.length > 0}
-                onCheckedChange={onToggleSelectAll}
-              />
-            </TableHead>
-            <TableHead className="text-muted-foreground font-medium">Event</TableHead>
-            <TableHead className="text-muted-foreground font-medium">Venue</TableHead>
-            <TableHead className="text-muted-foreground font-medium">Date</TableHead>
-            <TableHead className="text-muted-foreground font-medium">Status</TableHead>
-            <TableHead className="text-muted-foreground font-medium text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {events.map((event) => (
-            <TableRow
-              key={event.id}
-              className={`border-border/30 hover:bg-muted/30 transition-colors ${
-                selectedIds.has(event.id) ? 'bg-primary/5' : ''
-              }`}
-            >
-              <TableCell>
-                <Checkbox
-                  checked={selectedIds.has(event.id)}
-                  onCheckedChange={() => onToggleSelect(event.id)}
+      {/* Header wrapper - relative for overlay positioning */}
+      <div className="relative">
+        {/* Normal header */}
+        <div className="flex items-center gap-4 px-4 py-3 border-b border-border/50 bg-muted/20">
+          <div className="w-8 shrink-0">
+            <Checkbox
+              checked={selectedIds.size === events.length && events.length > 0}
+              onCheckedChange={onToggleSelectAll}
+            />
+          </div>
+          <div className="flex-1 text-muted-foreground font-medium text-sm">Event</div>
+          <div className="w-40 shrink-0 text-muted-foreground font-medium text-sm">Venue</div>
+          <div className="w-36 shrink-0 text-muted-foreground font-medium text-sm">Date</div>
+          <div className="w-24 shrink-0 text-muted-foreground font-medium text-sm">Status</div>
+          <div className="w-32 shrink-0 text-muted-foreground font-medium text-sm text-right">Actions</div>
+        </div>
+
+        {/* Overlay bulk action bar - slides over header when items selected */}
+        <BulkActionBar
+          selectedCount={selectedIds.size}
+          filteredEventsLength={events.length}
+          onToggleSelectAll={onToggleSelectAll}
+          onSetBulkAction={onSetBulkAction}
+          onClearSelection={onClearSelection}
+          overlay
+        />
+      </div>
+
+      {/* Virtualized rows */}
+      <div
+        ref={parentRef}
+        className="h-[calc(100vh-400px)] overflow-auto"
+      >
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const event = events[virtualRow.index]
+            return (
+              <div
+                key={event.id}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <EventTableRow
+                  event={event}
+                  isSelected={selectedIds.has(event.id)}
+                  onToggleSelect={onToggleSelect}
+                  onApprove={onApprove}
+                  onReject={onReject}
+                  onDelete={onDelete}
+                  isApproving={isApproving}
+                  isRejecting={isRejecting}
                 />
-              </TableCell>
-              <TableCell>
-                <div>
-                  <p className="font-medium text-foreground">{event.name}</p>
-                  {event.categories.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {event.categories.slice(0, 2).map((cat) => (
-                        <Badge
-                          key={cat}
-                          variant="outline"
-                          className="text-xs border-border/50 text-muted-foreground"
-                        >
-                          {cat}
-                        </Badge>
-                      ))}
-                      {event.categories.length > 2 && (
-                        <span className="text-xs text-muted-foreground">
-                          +{event.categories.length - 2}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell>
-                {event.venue_name ? (
-                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                    <MapPin className="h-3.5 w-3.5" />
-                    <span>{event.venue_name}</span>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {formatDate(event.starts_at)}
-              </TableCell>
-              <TableCell>{getStatusBadge(event.status)}</TableCell>
-              <TableCell className="text-right">
-                <div className="flex items-center justify-end gap-1">
-                  {event.status === 'pending_review' && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-                        onClick={() => onApprove(event.id)}
-                        disabled={isApproving === event.id}
-                        title="Approve"
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => onReject(event.id)}
-                        disabled={isRejecting === event.id}
-                        title="Reject"
-                      >
-                        <XCircle className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  >
-                    <Link to="/admin/events/$id" params={{ id: event.id }}>
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => onDelete(event)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
