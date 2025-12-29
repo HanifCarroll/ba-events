@@ -6,6 +6,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { EventActions } from './EventActions'
+import { SaveEventButton } from '@/components/SaveEventButton'
 import { formatPrice, formatEventTime } from '@/lib/chat'
 import type { EventWithVenue } from '@/lib/types'
 
@@ -30,77 +31,91 @@ export function EventCard({ event }: EventCardProps) {
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free
 
+  const handleToggle = () => setIsOpen(!isOpen)
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <div className="group relative overflow-hidden rounded-xl border border-border/50 bg-card transition-all duration-300 hover:border-primary/30 hover:bg-card/90">
         {/* Subtle top accent line */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-        <CollapsibleTrigger asChild>
-          <button className="w-full p-4 text-left focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-inset rounded-xl">
-            {/* Compact view */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <h3 className="font-display font-medium text-base text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-1">
-                  {event.name}
-                </h3>
-                <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2">
-                  {event.venue_name && (
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <MapPin className="h-3 w-3 text-primary/60" />
-                      <span className="truncate max-w-[120px]">{event.venue_name}</span>
-                    </span>
-                  )}
+        {/* Header - clickable area for expand/collapse */}
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-4">
+            {/* Main content - clickable to toggle */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleToggle}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle() }}}
+              className="flex-1 min-w-0 cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary/20 rounded"
+            >
+              <h3 className="font-display font-medium text-base text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-1">
+                {event.name}
+              </h3>
+              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2">
+                {event.venue_name && (
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Calendar className="h-3 w-3 text-primary/60" />
-                    {dateStr}
+                    <MapPin className="h-3 w-3 text-primary/60" />
+                    <span className="truncate max-w-[120px]">{event.venue_name}</span>
                   </span>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3 text-primary/60" />
-                    {timeStr}
-                  </span>
-                  {event.link && (
-                    <a
-                      href={event.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200 ml-1"
-                    >
-                      <span>View</span>
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0">
-                {/* Price badge */}
-                <span
-                  className={`
-                    px-2.5 py-1 rounded-lg text-xs font-medium tracking-wide
-                    ${isFree
-                      ? 'bg-primary/15 text-primary border border-primary/20'
-                      : 'bg-muted text-muted-foreground border border-border/50'
-                    }
-                  `}
-                >
-                  {priceDisplay}
+                )}
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Calendar className="h-3 w-3 text-primary/60" />
+                  {dateStr}
                 </span>
-
-                {/* Expand indicator */}
-                <div
-                  className={`
-                    p-1 rounded-lg transition-all duration-300
-                    ${isOpen ? 'bg-primary/10 text-primary rotate-180' : 'text-muted-foreground'}
-                  `}
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </div>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3 text-primary/60" />
+                  {timeStr}
+                </span>
+                {event.link && (
+                  <a
+                    href={event.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200 ml-1"
+                  >
+                    <span>View</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
               </div>
             </div>
-          </button>
-        </CollapsibleTrigger>
+
+            {/* Actions - not part of the toggle trigger */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Price badge */}
+              <span
+                className={`
+                  px-2.5 py-1 rounded-lg text-xs font-medium tracking-wide
+                  ${isFree
+                    ? 'bg-primary/15 text-primary border border-primary/20'
+                    : 'bg-muted text-muted-foreground border border-border/50'
+                  }
+                `}
+              >
+                {priceDisplay}
+              </span>
+
+              {/* Save button */}
+              <SaveEventButton eventId={event.id} size="sm" />
+
+              {/* Expand indicator - clickable */}
+              <button
+                onClick={handleToggle}
+                className={`
+                  p-1 rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-primary/20
+                  ${isOpen ? 'bg-primary/10 text-primary rotate-180' : 'text-muted-foreground hover:text-foreground'}
+                `}
+                aria-expanded={isOpen}
+                aria-label={isOpen ? 'Collapse details' : 'Expand details'}
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
 
         <CollapsibleContent>
           <div className="px-4 pb-4">

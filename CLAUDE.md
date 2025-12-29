@@ -45,10 +45,18 @@ Use TanStack Start server functions for API calls:
 ```tsx
 import { createServerFn } from '@tanstack/react-start'
 
-const getEvents = createServerFn('GET', async () => {
+// Simple server function (no input)
+const getEvents = createServerFn({ method: 'GET' }).handler(async () => {
   // This runs on the server
   return db.query('SELECT * FROM events')
 })
+
+// Server function with input validation (use inputValidator, NOT validator)
+const createEvent = createServerFn({ method: 'POST' })
+  .inputValidator((data: { name: string }) => data)
+  .handler(async ({ data }) => {
+    return db.insert('events', data)
+  })
 ```
 
 ## UI Components

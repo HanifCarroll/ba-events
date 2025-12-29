@@ -296,3 +296,24 @@ export const SUGGESTED_PROMPTS = [
     icon: 'map-pin',
   },
 ] as const
+
+// User roles
+export type UserRole = 'admin' | 'user'
+
+// User profile from profiles table
+export interface Profile {
+  id: string
+  email: string
+  display_name: string | null
+  role: UserRole
+  created_at: string
+  updated_at: string
+}
+
+// Saved event record
+export interface SavedEvent {
+  id: string
+  user_id: string
+  event_id: string
+  created_at: string
+}

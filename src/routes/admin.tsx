@@ -2,7 +2,8 @@ import { createFileRoute, Outlet, Link, useLocation, useNavigate } from '@tansta
 import { Calendar, MapPin, LayoutDashboard, LogOut, Menu, X } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { useAuth, signOut } from '@/lib/auth'
+import { useAuthContext } from '@/components/AuthProvider'
+import { signOut } from '@/lib/auth'
 
 export const Route = createFileRoute('/admin')({
   component: AdminLayout,
@@ -15,23 +16,23 @@ const navItems = [
 ]
 
 function AdminLayout() {
-  const { user, loading } = useAuth()
+  const { user, profile, loading, isAdmin } = useAuthContext()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated, or to home if not admin
   useEffect(() => {
-    if (!loading && !user && location.pathname !== '/admin/login') {
-      navigate({ to: '/admin/login' })
+    if (!loading) {
+      if (!user) {
+        navigate({ to: '/login' })
+      } else if (!isAdmin) {
+        // User is logged in but not an admin
+        navigate({ to: '/' })
+      }
     }
-  }, [loading, user, location.pathname, navigate])
-
-  // Don't show layout for login page
-  if (location.pathname === '/admin/login') {
-    return <Outlet />
-  }
+  }, [loading, user, isAdmin, navigate])
 
   // Show loading while checking auth
   if (loading) {
@@ -42,8 +43,8 @@ function AdminLayout() {
     )
   }
 
-  // Don't render if not authenticated
-  if (!user) {
+  // Don't render if not authenticated or not admin
+  if (!user || !isAdmin) {
     return null
   }
 
@@ -51,7 +52,7 @@ function AdminLayout() {
     setIsSigningOut(true)
     try {
       await signOut()
-      navigate({ to: '/admin/login' })
+      navigate({ to: '/login' })
     } catch (err) {
       console.error('Sign out error:', err)
     } finally {
@@ -148,7 +149,8 @@ function AdminLayout() {
         <div className="p-4 border-t border-border/50">
           <div className="px-4 py-2 mb-2">
             <p className="text-xs text-muted-foreground uppercase tracking-wider">Signed in as</p>
-            <p className="text-sm text-foreground truncate">{user.email}</p>
+            <p className="text-sm text-foreground truncate">{profile?.display_name || user.email}</p>
+            <p className="text-xs text-primary/70 mt-0.5">Admin</p>
           </div>
           <Button
             variant="ghost"

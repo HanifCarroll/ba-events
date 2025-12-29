@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { createServerFn } from '@tanstack/react-start'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
+import type { Profile } from './types'
 
 // Browser-side Supabase client for auth
 // Note: These are public keys, safe to expose to browser
@@ -25,12 +26,44 @@ export function getSupabaseBrowserClient() {
   return browserClient
 }
 
+// Sign up with email and password
+export async function signUp(email: string, password: string) {
+  const client = getSupabaseBrowserClient()
+  const { data, error } = await client.auth.signUp({
+    email,
+    password,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
 // Sign in with email and password
 export async function signIn(email: string, password: string) {
   const client = getSupabaseBrowserClient()
   const { data, error } = await client.auth.signInWithPassword({
     email,
     password,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+// Sign in with magic link (sends email)
+export async function signInWithMagicLink(email: string) {
+  const client = getSupabaseBrowserClient()
+  const { data, error } = await client.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
   })
 
   if (error) {
@@ -62,40 +95,141 @@ export async function getSession() {
   return session
 }
 
-// Hook for auth state
+// Fetch user profile from database
+export async function fetchProfile(userId: string): Promise<Profile | null> {
+  const client = getSupabaseBrowserClient()
+  const { data, error } = await client
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single()
+
+  if (error) {
+    console.error('Error fetching profile:', error)
+    return null
+  }
+
+  return data as Profile
+}
+
+// Exchange auth code for session (for magic link callback)
+export async function exchangeCodeForSession(code: string) {
+  const client = getSupabaseBrowserClient()
+  const { data, error } = await client.auth.exchangeCodeForSession(code)
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+// Hook for auth state with profile
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const client = getSupabaseBrowserClient()
-
-    // Get initial session
-    client.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
-
-    // Listen for auth changes
-    const { data: { subscription } } = client.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session)
-        setUser(session?.user ?? null)
-        setLoading(false)
-      }
-    )
-
-    return () => {
-      subscription.unsubscribe()
+  const loadProfile = useCallback(async (userId: string) => {
+    try {
+      const profileData = await fetchProfile(userId)
+      setProfile(profileData)
+    } catch (err) {
+      console.error('Error loading profile:', err)
     }
   }, [])
 
-  return { session, user, loading }
+  useEffect(() => {
+    // Only run on client
+    if (typeof window === 'undefined') {
+      setLoading(false)
+      return
+    }
+
+    let subscription: { unsubscribe: () => void } | null = null
+
+    const initAuth = async () => {
+      try {
+        const client = getSupabaseBrowserClient()
+
+        // Get initial session
+        const { data: { session }, error } = await client.auth.getSession()
+        if (error) {
+          console.error('Error getting session:', error)
+        }
+
+        setSession(session)
+        setUser(session?.user ?? null)
+        if (session?.user) {
+          await loadProfile(session.user.id)
+        }
+
+        // Listen for auth changes
+        const { data } = client.auth.onAuthStateChange(
+          async (_event, session) => {
+            setSession(session)
+            setUser(session?.user ?? null)
+            if (session?.user) {
+              await loadProfile(session.user.id)
+            } else {
+              setProfile(null)
+            }
+          }
+        )
+        subscription = data.subscription
+      } catch (err) {
+        console.error('Error initializing auth:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    initAuth()
+
+    return () => {
+      subscription?.unsubscribe()
+    }
+  }, [loadProfile])
+
+  const isAdmin = profile?.role === 'admin'
+
+  return { session, user, profile, loading, isAdmin }
 }
 
-// Server-side session check
+// Update display name in profiles table
+export async function updateDisplayName(name: string): Promise<void> {
+  const client = getSupabaseBrowserClient()
+
+  const { data: { user } } = await client.auth.getUser()
+  if (!user) {
+    throw new Error('Must be logged in to update profile')
+  }
+
+  const { error } = await (client
+    .from('profiles')
+    .update({ display_name: name, updated_at: new Date().toISOString() })
+    .eq('id', user.id) as any)
+
+  if (error) {
+    throw error
+  }
+}
+
+// Update password (requires current password verification via re-auth)
+export async function updatePassword(newPassword: string): Promise<void> {
+  const client = getSupabaseBrowserClient()
+
+  const { error } = await client.auth.updateUser({
+    password: newPassword,
+  })
+
+  if (error) {
+    throw error
+  }
+}
+
+// Server-side session check (placeholder - relies on client-side auth)
 export const checkAuth = createServerFn({ method: 'GET' }).handler(
   async () => {
     // For server-side, we can't use browser client
@@ -104,3 +238,34 @@ export const checkAuth = createServerFn({ method: 'GET' }).handler(
     return { authenticated: true }
   }
 )
+
+// Delete user account - requires service role key (server-side only)
+export const deleteAccountAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { userId: string }) => data)
+  .handler(async ({ data }) => {
+    const { createClient } = await import('@supabase/supabase-js')
+
+    const supabaseUrl = process.env.SUPABASE_URL
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
+    }
+
+    // Create admin client with service role key
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+
+    // Delete user from auth.users (CASCADE will handle profiles and saved_events)
+    const { error } = await adminClient.auth.admin.deleteUser(data.userId)
+
+    if (error) {
+      throw error
+    }
+
+    return { success: true }
+  })
