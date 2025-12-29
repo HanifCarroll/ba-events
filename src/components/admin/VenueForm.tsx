@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Combobox } from '@/components/ui/combobox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { createVenueAction, updateVenueAction } from '@/lib/admin'
 import { NEIGHBORHOODS, VENUE_TYPES } from '@/lib/types'
@@ -39,12 +40,12 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
 
   // Form state
   const [name, setName] = useState(venue?.name || '')
-  const [neighborhood, setNeighborhood] = useState<Neighborhood | ''>(venue?.neighborhood || '')
+  const [neighborhood, setNeighborhood] = useState<Neighborhood | undefined>(venue?.neighborhood)
   const [address, setAddress] = useState(venue?.address || '')
   const [website, setWebsite] = useState(venue?.website || '')
   const [instagram, setInstagram] = useState(venue?.instagram_handle || '')
   const [capacity, setCapacity] = useState(venue?.capacity?.toString() || '')
-  const [type, setType] = useState<VenueType | ''>(venue?.type || 'other')
+  const [type, setType] = useState<VenueType>(venue?.type || 'other')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -52,26 +53,31 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
     setIsSubmitting(true)
 
     try {
+      if (!neighborhood) {
+        setError('Neighborhood is required')
+        return
+      }
+
       if (mode === 'create') {
         const data: VenueInsert = {
           name,
-          neighborhood: neighborhood as Neighborhood,
+          neighborhood,
           address: address || null,
           website: website || null,
           instagram_handle: instagram || null,
           capacity: capacity ? parseInt(capacity, 10) : null,
-          type: type as VenueType || 'other',
+          type,
         }
         await createVenueAction({ data })
       } else if (venue) {
         const data: VenueUpdate = {
           name,
-          neighborhood: neighborhood as Neighborhood,
+          neighborhood,
           address: address || null,
           website: website || null,
           instagram_handle: instagram || null,
           capacity: capacity ? parseInt(capacity, 10) : null,
-          type: type as VenueType || 'other',
+          type,
         }
         await updateVenueAction({ data: { id: venue.id, data } })
       }
@@ -129,22 +135,14 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
                 <Label htmlFor="neighborhood">
                   Neighborhood <span className="text-destructive">*</span>
                 </Label>
-                <Select
+                <Combobox
+                  options={NEIGHBORHOODS.map((n) => ({ value: n, label: n }))}
                   value={neighborhood}
-                  onValueChange={(value) => setNeighborhood(value as Neighborhood)}
-                  required
-                >
-                  <SelectTrigger className="bg-background/50 border-border/50">
-                    <SelectValue placeholder="Select neighborhood" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {NEIGHBORHOODS.map((n) => (
-                      <SelectItem key={n} value={n}>
-                        {n}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onValueChange={(value) => setNeighborhood(value as Neighborhood | undefined)}
+                  placeholder="Select neighborhood"
+                  searchPlaceholder="Search neighborhoods..."
+                  emptyText="No neighborhood found."
+                />
               </div>
 
               {/* Type */}
@@ -233,7 +231,7 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
             <div className="flex items-center gap-3 pt-4 border-t border-border/50">
               <Button
                 type="submit"
-                disabled={isSubmitting || !name || !neighborhood}
+                disabled={isSubmitting || !name || neighborhood === undefined}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {isSubmitting ? (

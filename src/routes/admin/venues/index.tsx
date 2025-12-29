@@ -135,7 +135,7 @@ function VenueListPage() {
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
-                        <Link to={`/admin/venues/${venue.id}`}>
+                        <Link to="/admin/venues/$id" params={{ id: venue.id }}>
                           <Pencil className="h-4 w-4" />
                         </Link>
                       </Button>

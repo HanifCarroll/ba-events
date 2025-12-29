@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Combobox } from '@/components/ui/combobox'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { createEventAction, updateEventAction, getVenuesForSelect } from '@/lib/admin'
@@ -50,7 +51,7 @@ export function EventForm({ event, mode }: EventFormProps) {
   const [startsAt, setStartsAt] = useState(toLocalDatetime(event?.starts_at))
   const [endsAt, setEndsAt] = useState(toLocalDatetime(event?.ends_at))
   const [isAllDay, setIsAllDay] = useState(event?.is_all_day || false)
-  const [venueId, setVenueId] = useState(event?.venue_id || '')
+  const [venueId, setVenueId] = useState(event?.venue_id || '_none')
   const [categories, setCategories] = useState<Category[]>((event?.categories || []) as Category[])
   const [vibes, setVibes] = useState<Vibe[]>((event?.vibes || []) as Vibe[])
   const [price, setPrice] = useState(event?.price?.toString() || '')
@@ -97,7 +98,7 @@ export function EventForm({ event, mode }: EventFormProps) {
           starts_at: startsAtISO,
           ends_at: endsAtISO,
           is_all_day: isAllDay,
-          venue_id: venueId || null,
+          venue_id: venueId === '_none' ? null : venueId,
           categories,
           vibes,
           price: price ? parseFloat(price) : null,
@@ -116,7 +117,7 @@ export function EventForm({ event, mode }: EventFormProps) {
           starts_at: startsAtISO,
           ends_at: endsAtISO,
           is_all_day: isAllDay,
-          venue_id: venueId || null,
+          venue_id: venueId === '_none' ? null : venueId,
           categories,
           vibes,
           price: price ? parseFloat(price) : null,
@@ -264,19 +265,21 @@ export function EventForm({ event, mode }: EventFormProps) {
           <CardContent>
             <div className="space-y-2">
               <Label htmlFor="venue">Select venue</Label>
-              <Select value={venueId} onValueChange={setVenueId}>
-                <SelectTrigger className="bg-background/50 border-border/50">
-                  <SelectValue placeholder="Choose a venue" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  <SelectItem value="">No venue</SelectItem>
-                  {venues.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      {v.name} ({v.neighborhood})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={[
+                  { value: '_none', label: 'No venue' },
+                  ...venues.map((v) => ({
+                    value: v.id,
+                    label: v.name,
+                    sublabel: v.neighborhood,
+                  })),
+                ]}
+                value={venueId}
+                onValueChange={(value) => setVenueId(value || '_none')}
+                placeholder="Choose a venue"
+                searchPlaceholder="Search venues..."
+                emptyText="No venue found."
+              />
             </div>
           </CardContent>
         </Card>

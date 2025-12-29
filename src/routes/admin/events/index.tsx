@@ -181,7 +181,7 @@ function EventListPage() {
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
-                        <Link to={`/admin/events/${event.id}`}>
+                        <Link to="/admin/events/$id" params={{ id: event.id }}>
                           <Pencil className="h-4 w-4" />
                         </Link>
                       </Button>
