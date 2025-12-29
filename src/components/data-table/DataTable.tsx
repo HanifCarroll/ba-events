@@ -56,7 +56,7 @@ function rowSelectionToSet(state: RowSelectionState): Set<string> {
   return ids
 }
 
-// Drag handle for column reordering
+// Drag handle for column reordering - positioned absolutely to not affect content alignment
 function DragHandle({ column }: { column: { id: string } }) {
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({
     id: column.id,
@@ -68,8 +68,8 @@ function DragHandle({ column }: { column: { id: string } }) {
       {...attributes}
       {...listeners}
       className={cn(
-        'cursor-grab p-0.5 hover:text-foreground rounded transition-colors',
-        isDragging ? 'cursor-grabbing opacity-50' : 'opacity-40 hover:opacity-100'
+        'absolute left-1 top-1/2 -translate-y-1/2 cursor-grab p-0.5 hover:text-foreground rounded transition-all',
+        isDragging ? 'cursor-grabbing opacity-50' : 'opacity-0 group-hover:opacity-40 hover:!opacity-100'
       )}
       aria-label="Reorder column"
     >
@@ -120,15 +120,13 @@ function SortableHeaderCell({
       style={style}
       className={cn(
         'px-4 py-3 text-left text-muted-foreground font-medium text-sm',
-        'bg-muted/20 select-none',
+        'bg-muted/20 select-none group',
         isDragging && 'z-10'
       )}
       {...(enableReordering ? { ...attributes, ...listeners } : {})}
     >
-      <div className="flex items-center gap-1.5">
-        {enableReordering && <DragHandle column={{ id: columnId }} />}
-        <div className="flex-1">{children}</div>
-      </div>
+      {enableReordering && <DragHandle column={{ id: columnId }} />}
+      {children}
       {enableResizing && (
         <div
           className={cn(

@@ -314,8 +314,8 @@ function EventListPage() {
           {/* Desktop Table View with DataTable */}
           <div className="hidden sm:block">
             <div className="relative">
-              {/* Bulk action overlay */}
-              <div className="absolute top-0 left-0 right-0 z-10">
+              {/* Bulk action overlay - needs z-20 to be above sticky table header (z-10) */}
+              <div className="absolute top-0 left-0 right-0 z-20">
                 <BulkActionBar
                   selectedCount={bulk.selectedIds.size}
                   filteredEventsLength={filtering.filteredEvents.length}

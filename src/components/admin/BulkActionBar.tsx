@@ -40,7 +40,7 @@ export function BulkActionBar({
   if (overlay) {
     // Overlay version - slides in over table header
     return (
-      <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-4 px-4 py-3 bg-primary/95 backdrop-blur-sm border-b border-primary/30 animate-fade-in-up">
+      <div className="absolute top-0 left-0 right-0 z-10 flex items-center gap-4 px-4 py-3 bg-primary/95 backdrop-blur-sm border-b border-primary/30 rounded-t-xl animate-fade-in-up">
         <div className="flex items-center gap-3">
           <Checkbox
             checked={selectedCount === filteredEventsLength}
