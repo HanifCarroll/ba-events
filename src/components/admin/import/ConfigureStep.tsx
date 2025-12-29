@@ -192,6 +192,9 @@ export function ConfigureStep({
     )
   }
 
+  // TODO: BA Tourism integration
+  // if (source === 'ba-tourism') { ... }
+
   return (
     <div className="space-y-6 max-w-md mx-auto">
       <div className="text-center space-y-2">

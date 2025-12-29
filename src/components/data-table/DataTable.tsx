@@ -382,6 +382,9 @@ export function DataTable<TData extends { id: string }>({
   // Get visible column IDs for sortable context
   const visibleColumnIds = table.getVisibleLeafColumns().map((col) => col.id)
 
+  // Calculate total table width for synchronized horizontal scrolling
+  const totalTableWidth = table.getVisibleLeafColumns().reduce((sum, col) => sum + col.getSize(), 0)
+
   // Render header
   const renderHeader = () => (
     <DndContext
@@ -390,7 +393,7 @@ export function DataTable<TData extends { id: string }>({
       onDragEnd={handleDragEnd}
       modifiers={[restrictToHorizontalAxis]}
     >
-      <div className="flex border-b border-border/50 bg-muted/20">
+      <div className="flex border-b border-border/50 bg-muted/20" style={{ minWidth: totalTableWidth }}>
         <SortableContext
           items={visibleColumnIds}
           strategy={horizontalListSortingStrategy}
@@ -436,12 +439,12 @@ export function DataTable<TData extends { id: string }>({
     <div
       ref={parentRef}
       style={{ height: containerHeight }}
-      className="overflow-auto"
+      className="overflow-y-auto overflow-x-hidden"
     >
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
-          width: '100%',
+          minWidth: totalTableWidth,
           position: 'relative',
         }}
       >
@@ -484,7 +487,7 @@ export function DataTable<TData extends { id: string }>({
 
   // Render standard body
   const renderStandardBody = () => (
-    <div>
+    <div style={{ minWidth: totalTableWidth }}>
       {rows.map((row) => (
         <div
           key={row.id}
@@ -528,8 +531,10 @@ export function DataTable<TData extends { id: string }>({
 
       {/* Table container */}
       <div className="bg-card/50 rounded-xl border border-border/50 overflow-hidden">
-        {renderHeader()}
-        {enableVirtualization ? renderVirtualizedBody() : renderStandardBody()}
+        <div className="overflow-x-auto">
+          {renderHeader()}
+          {enableVirtualization ? renderVirtualizedBody() : renderStandardBody()}
+        </div>
       </div>
     </div>
   )
