@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter } from 'lucide-react'
+import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -155,12 +155,20 @@ function EventListPage() {
               : `${events.length} events in database`}
           </p>
         </div>
-        <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
-          <Link to="/admin/events/new">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Event
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" className="border-border/50">
+            <Link to="/admin/events/import">
+              <Upload className="h-4 w-4 mr-2" />
+              Import CSV
+            </Link>
+          </Button>
+          <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Link to="/admin/events/new">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Event
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="deco-line w-24" />

@@ -19,6 +19,7 @@ import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/inde
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
 import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
 import { Route as AdminEventsNewRouteImport } from './routes/admin/events/new'
+import { Route as AdminEventsImportRouteImport } from './routes/admin/events/import'
 import { Route as AdminEventsIdRouteImport } from './routes/admin/events/$id'
 
 const AdminRoute = AdminRouteImport.update({
@@ -71,6 +72,11 @@ const AdminEventsNewRoute = AdminEventsNewRouteImport.update({
   path: '/events/new',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminEventsImportRoute = AdminEventsImportRouteImport.update({
+  id: '/events/import',
+  path: '/events/import',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminEventsIdRoute = AdminEventsIdRouteImport.update({
   id: '/events/$id',
   path: '/events/$id',
@@ -84,6 +90,7 @@ export interface FileRoutesByFullPath {
   '/api/events': typeof ApiEventsRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/events/$id': typeof AdminEventsIdRoute
+  '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/api/events': typeof ApiEventsRoute
   '/admin': typeof AdminIndexRoute
   '/admin/events/$id': typeof AdminEventsIdRoute
+  '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/api/events': typeof ApiEventsRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/events/$id': typeof AdminEventsIdRoute
+  '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/admin/'
     | '/admin/events/$id'
+    | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
     | '/admin/venues/new'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/admin'
     | '/admin/events/$id'
+    | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
     | '/admin/venues/new'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/admin/'
     | '/admin/events/$id'
+    | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
     | '/admin/venues/new'
@@ -235,6 +247,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminEventsNewRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/events/import': {
+      id: '/admin/events/import'
+      path: '/events/import'
+      fullPath: '/admin/events/import'
+      preLoaderRoute: typeof AdminEventsImportRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/events/$id': {
       id: '/admin/events/$id'
       path: '/events/$id'
@@ -249,6 +268,7 @@ interface AdminRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminEventsIdRoute: typeof AdminEventsIdRoute
+  AdminEventsImportRoute: typeof AdminEventsImportRoute
   AdminEventsNewRoute: typeof AdminEventsNewRoute
   AdminVenuesIdRoute: typeof AdminVenuesIdRoute
   AdminVenuesNewRoute: typeof AdminVenuesNewRoute
@@ -260,6 +280,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminEventsIdRoute: AdminEventsIdRoute,
+  AdminEventsImportRoute: AdminEventsImportRoute,
   AdminEventsNewRoute: AdminEventsNewRoute,
   AdminVenuesIdRoute: AdminVenuesIdRoute,
   AdminVenuesNewRoute: AdminVenuesNewRoute,

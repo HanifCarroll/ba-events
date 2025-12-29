@@ -8,6 +8,7 @@ import {
   getEventsWithVenues,
   getEventById,
   createEvent,
+  createEvents,
   updateEvent,
   deleteEvent,
 } from './supabase'
@@ -141,6 +142,39 @@ export const deleteEventAction = createServerFn({ method: 'POST' })
   .handler(async ({ data: id }) => {
     await deleteEvent(id)
     return { success: true }
+  })
+
+export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: EventInsert[]) => data)
+  .handler(async ({ data: events }) => {
+    // Generate embeddings for all events
+    const eventsWithEmbeddings = await Promise.all(
+      events.map(async (event) => {
+        const textForEmbedding = [
+          event.name,
+          event.description,
+          ...(event.categories || []),
+          ...(event.vibes || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+
+        const embedding = await generateEmbedding(textForEmbedding)
+
+        return {
+          ...event,
+          embedding,
+        }
+      })
+    )
+
+    // Insert all events
+    const created = await createEvents(eventsWithEmbeddings)
+
+    return {
+      success: true,
+      count: created.length,
+    }
   })
 
 // ============================================================================

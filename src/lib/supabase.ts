@@ -188,6 +188,16 @@ export async function createEvent(event: EventInsert) {
   return data as Event
 }
 
+export async function createEvents(events: EventInsert[]) {
+  const { data, error } = await supabase
+    .from('events')
+    .insert(events)
+    .select()
+
+  if (error) throw error
+  return data as Event[]
+}
+
 export async function updateEvent(id: string, updates: EventUpdate) {
   const { data, error } = await supabase
     .from('events')
