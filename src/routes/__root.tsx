@@ -76,33 +76,35 @@ function RootDocument() {
         <div className="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0" />
 
         {/* Header - fixed at top */}
-        <header className="fixed top-0 left-0 right-0 h-16 border-b border-border/50 backdrop-blur-sm bg-background/80 flex items-center justify-between px-6 z-20">
-          <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            {/* Art deco inspired logo accent */}
-            <div className="relative">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent blur-sm" />
-              <div className="relative flex items-center gap-2">
-                <div className="w-1 h-6 bg-gradient-to-b from-primary to-accent rounded-full" />
-                <span className="font-display text-xl font-semibold tracking-tight text-foreground">
-                  BA Events
-                </span>
+        <header className="fixed top-0 left-0 right-0 h-16 border-b border-border/50 backdrop-blur-sm bg-background/80 z-20">
+          <div className="h-full flex items-center justify-between px-6">
+            <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+              {/* Art deco inspired logo accent */}
+              <div className="relative">
+                <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent blur-sm" />
+                <div className="relative flex items-center gap-2">
+                  <div className="w-1 h-6 bg-gradient-to-b from-primary to-accent rounded-full" />
+                  <span className="font-display text-xl font-semibold tracking-tight text-foreground">
+                    BA Events
+                  </span>
+                </div>
               </div>
-            </div>
-            <span className="text-xs text-muted-foreground tracking-widest uppercase hidden sm:inline ml-2">
-              Buenos Aires
-            </span>
-          </Link>
+              <span className="text-xs text-muted-foreground tracking-widest uppercase hidden sm:inline ml-2">
+                Buenos Aires
+              </span>
+            </Link>
 
-          {/* New Chat button - only show when there are messages */}
-          {hasMessages && (
-            <button
-              onClick={handleNewChat}
-              className="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-card/50 transition-all duration-200"
-            >
-              <RotateCcw className="h-3.5 w-3.5 group-hover:rotate-[-90deg] transition-transform duration-300" />
-              <span className="text-xs tracking-wide">New Chat</span>
-            </button>
-          )}
+            {/* New Chat button - only show when there are messages */}
+            {hasMessages && (
+              <button
+                onClick={handleNewChat}
+                className="group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-card/50 transition-all duration-200"
+              >
+                <RotateCcw className="h-3.5 w-3.5 group-hover:rotate-[-90deg] transition-transform duration-300" />
+                <span className="text-xs tracking-wide">New Chat</span>
+              </button>
+            )}
+          </div>
         </header>
 
         {/* Main content - positioned below header */}
