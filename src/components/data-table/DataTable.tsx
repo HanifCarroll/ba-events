@@ -38,25 +38,20 @@ import { useColumnPreferences } from './hooks/useColumnPreferences'
 import { DataTableViewOptions } from './DataTableViewOptions'
 
 // Selection adapter functions
-function setToRowSelection(ids: Set<string>, data: { id: string }[]): RowSelectionState {
+// When getRowId is provided, TanStack Table uses row IDs as keys in RowSelectionState
+function setToRowSelection(ids: Set<string>): RowSelectionState {
   const state: RowSelectionState = {}
-  data.forEach((row, index) => {
-    if (ids.has(row.id)) {
-      state[index] = true
-    }
+  ids.forEach((id) => {
+    state[id] = true
   })
   return state
 }
 
-function rowSelectionToSet(
-  state: RowSelectionState,
-  data: { id: string }[]
-): Set<string> {
+function rowSelectionToSet(state: RowSelectionState): Set<string> {
   const ids = new Set<string>()
-  Object.keys(state).forEach((indexStr) => {
-    const index = parseInt(indexStr, 10)
-    if (state[index] && data[index]) {
-      ids.add(data[index].id)
+  Object.keys(state).forEach((id) => {
+    if (state[id]) {
+      ids.add(id)
     }
   })
   return ids
@@ -209,17 +204,17 @@ export function DataTable<TData extends { id: string }>({
   // Selection state - convert Set<string> to RowSelectionState for internal use
   const rowSelection = useMemo(() => {
     if (!selectedIds) return {}
-    return setToRowSelection(selectedIds, data)
-  }, [selectedIds, data])
+    return setToRowSelection(selectedIds)
+  }, [selectedIds])
 
   // Handle selection change
   const handleSelectionChange = useCallback(
     (updater: RowSelectionState | ((prev: RowSelectionState) => RowSelectionState)) => {
       if (!onSelectionChange) return
       const newState = typeof updater === 'function' ? updater(rowSelection) : updater
-      onSelectionChange(rowSelectionToSet(newState, data))
+      onSelectionChange(rowSelectionToSet(newState))
     },
-    [onSelectionChange, rowSelection, data]
+    [onSelectionChange, rowSelection]
   )
 
   // Column order - use preferences or default to column order

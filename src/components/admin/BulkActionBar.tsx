@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X, Sparkles } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, Sparkles, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { BulkActionType } from '@/hooks/useBulkActions'
@@ -17,6 +17,8 @@ interface BulkActionBarProps {
   onEnrich?: () => void
   /** Whether enrichment is currently running */
   isEnriching?: boolean
+  /** Callback to stop enrichment */
+  onStopEnrich?: () => void
 }
 
 export function BulkActionBar({
@@ -29,6 +31,7 @@ export function BulkActionBar({
   enrichableCount = 0,
   onEnrich,
   isEnriching = false,
+  onStopEnrich,
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
 
@@ -42,7 +45,7 @@ export function BulkActionBar({
           <Checkbox
             checked={selectedCount === filteredEventsLength}
             onCheckedChange={onToggleSelectAll}
-            className="border-primary-foreground/50 data-[state=checked]:bg-primary-foreground data-[state=checked]:text-primary"
+            className="border-primary-foreground border-2 bg-transparent data-[state=checked]:bg-primary-foreground data-[state=checked]:border-primary-foreground data-[state=checked]:text-background"
           />
           <span className="text-sm font-medium text-primary-foreground">
             {selectedCount} selected
@@ -50,16 +53,26 @@ export function BulkActionBar({
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-2">
-          {showEnrich && (
+          {showEnrich && !isEnriching && (
             <Button
               variant="ghost"
               size="sm"
               onClick={onEnrich}
-              disabled={isEnriching}
               className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
             >
               <Sparkles className="h-4 w-4 mr-1.5" />
-              {isEnriching ? 'Enriching...' : `Enrich (${enrichableCount})`}
+              Enrich ({enrichableCount})
+            </Button>
+          )}
+          {isEnriching && onStopEnrich && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onStopEnrich}
+              className="text-yellow-200 hover:text-yellow-100 hover:bg-yellow-500/20"
+            >
+              <Square className="h-4 w-4 mr-1.5" />
+              Stop
             </Button>
           )}
           <Button
@@ -115,16 +128,26 @@ export function BulkActionBar({
       </div>
       <div className="flex-1" />
       <div className="flex items-center gap-2">
-        {showEnrich && (
+        {showEnrich && !isEnriching && (
           <Button
             variant="outline"
             size="sm"
             onClick={onEnrich}
-            disabled={isEnriching}
             className="border-primary/50 text-primary hover:bg-primary/10"
           >
             <Sparkles className="h-4 w-4 mr-1.5" />
-            {isEnriching ? 'Enriching...' : `Enrich (${enrichableCount})`}
+            Enrich ({enrichableCount})
+          </Button>
+        )}
+        {isEnriching && onStopEnrich && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onStopEnrich}
+            className="border-yellow-500/50 text-yellow-600 hover:bg-yellow-500/10"
+          >
+            <Square className="h-4 w-4 mr-1.5" />
+            Stop
           </Button>
         )}
         <Button
