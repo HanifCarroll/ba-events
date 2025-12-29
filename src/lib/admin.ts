@@ -353,79 +353,81 @@ export const importPasslineEventsAction = createServerFn({ method: 'POST' })
 // AUTOMATED PASSLINE IMPORT (for GitHub Actions)
 // ============================================================================
 
-export const autoImportPasslineEventsAction = createServerFn({ method: 'POST' })
-  .inputValidator((data: { apiKey: string }) => data)
-  .handler(async ({ data: { apiKey } }) => {
-    // Verify API key
-    if (apiKey !== process.env.SCRAPER_API_KEY) {
-      throw new Error('Unauthorized')
+/**
+ * Core logic for automated Passline import.
+ * Can be called directly from API routes.
+ */
+export async function runPasslineAutoImport(): Promise<{
+  imported: number
+  pending: number
+  skipped: number
+  total: number
+}> {
+  // Calculate date range (next 30 days)
+  const today = new Date()
+  const startDate = today.toISOString().split('T')[0]
+  const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0]
+
+  // Fetch and filter events
+  const allEvents = await fetchPasslineEvents()
+  const cabaEvents = filterCABAEvents(allEvents)
+  const dateFiltered = filterByDateRange(cabaEvents, { startDate, endDate })
+
+  let imported = 0
+  let pending = 0
+  let skipped = 0
+
+  for (const event of dateFiltered) {
+    // Check if already exists
+    const exists = await checkEventExists('passline', event.id)
+    if (exists) {
+      skipped++
+      continue
     }
 
-    // Calculate date range (next 30 days)
-    const today = new Date()
-    const startDate = today.toISOString().split('T')[0]
-    const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0]
+    // Match venue
+    const venueMatch = await matchVenue(event.lugar)
 
-    // Fetch and filter events
-    const allEvents = await fetchPasslineEvents()
-    const cabaEvents = filterCABAEvents(allEvents)
-    const dateFiltered = filterByDateRange(cabaEvents, { startDate, endDate })
+    // Determine status based on venue match
+    const status: EventStatus =
+      venueMatch.matchType === 'none' ? 'pending_review' : 'scheduled'
 
-    let imported = 0
-    let pending = 0
-    let skipped = 0
+    // Transform event
+    const transformed = transformPasslineEvent(
+      event,
+      venueMatch.venue?.id || null
+    )
 
-    for (const event of dateFiltered) {
-      // Check if already exists
-      const exists = await checkEventExists('passline', event.id)
-      if (exists) {
-        skipped++
-        continue
-      }
+    // Generate embedding
+    const textForEmbedding = [
+      transformed.name,
+      transformed.description,
+      ...(transformed.categories || []),
+      ...(transformed.vibes || []),
+    ]
+      .filter(Boolean)
+      .join(' ')
 
-      // Match venue
-      const venueMatch = await matchVenue(event.lugar)
+    const embedding = await generateEmbedding(textForEmbedding)
 
-      // Determine status based on venue match
-      const status: EventStatus =
-        venueMatch.matchType === 'none' ? 'pending_review' : 'scheduled'
+    // Insert event with appropriate status
+    await createEvent({
+      ...transformed,
+      status,
+      embedding,
+    })
 
-      // Transform event
-      const transformed = transformPasslineEvent(
-        event,
-        venueMatch.venue?.id || null
-      )
-
-      // Generate embedding
-      const textForEmbedding = [
-        transformed.name,
-        transformed.description,
-        ...(transformed.categories || []),
-        ...(transformed.vibes || []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-
-      const embedding = await generateEmbedding(textForEmbedding)
-
-      // Insert event with appropriate status
-      await createEvent({
-        ...transformed,
-        status,
-        embedding,
-      })
-
-      if (status === 'pending_review') {
-        pending++
-      } else {
-        imported++
-      }
+    if (status === 'pending_review') {
+      pending++
+    } else {
+      imported++
     }
+  }
 
-    return { imported, pending, skipped, total: dateFiltered.length }
-  })
+  return { imported, pending, skipped, total: dateFiltered.length }
+}
 
 // ============================================================================
 // PENDING EVENT MANAGEMENT
