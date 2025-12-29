@@ -17,6 +17,36 @@ function formatDate(dateString: string) {
   })
 }
 
+function getSourceBadge(source: string) {
+  const variants: Record<string, { className: string; label: string }> = {
+    passline: {
+      className: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+      label: 'Passline',
+    },
+    eventbrite: {
+      className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+      label: 'Eventbrite',
+    },
+    manual: {
+      className: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+      label: 'Manual',
+    },
+    csv: {
+      className: 'bg-slate-500/10 text-slate-400 border-slate-500/30',
+      label: 'CSV',
+    },
+  }
+  const variant = variants[source] || {
+    className: 'bg-muted/50 text-muted-foreground border-border/50',
+    label: source || 'Unknown',
+  }
+  return (
+    <Badge variant="outline" className={variant.className}>
+      {variant.label}
+    </Badge>
+  )
+}
+
 function getStatusBadge(status: string) {
   const variants: Record<string, { className: string; label: string }> = {
     scheduled: {
@@ -144,6 +174,16 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
           {formatDate(row.original.starts_at)}
         </span>
       ),
+    },
+    {
+      id: 'source',
+      accessorKey: 'source',
+      size: 110,
+      minSize: 90,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Source" />
+      ),
+      cell: ({ row }) => getSourceBadge(row.original.source),
     },
     {
       id: 'status',
