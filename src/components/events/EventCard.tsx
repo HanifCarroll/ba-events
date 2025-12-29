@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, Calendar, MapPin, Clock, Users } from 'lucide-react'
+import { ChevronDown, Calendar, MapPin, Clock, Users, ExternalLink } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -59,6 +59,18 @@ export function EventCard({ event }: EventCardProps) {
                     <Clock className="h-3 w-3 text-primary/60" />
                     {timeStr}
                   </span>
+                  {event.link && (
+                    <a
+                      href={event.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200 ml-1"
+                    >
+                      <span>View</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
                 </div>
               </div>
 

@@ -49,9 +49,8 @@ export function EventActions({ event }: EventActionsProps) {
   }
 
   const handleTickets = () => {
-    const url = event.ticket_url || event.link
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer')
+    if (event.ticket_url) {
+      window.open(event.ticket_url, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -110,7 +109,7 @@ export function EventActions({ event }: EventActionsProps) {
           </TooltipContent>
         </Tooltip>
 
-        {(event.ticket_url || event.link) && (
+        {event.ticket_url && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
