@@ -1,0 +1,7 @@
+name,starts_at,ends_at,venue_name,categories,vibes,price,is_free,min_age,link,ticket_url,description,status
+Noche de Tango,2025-01-15T21:00:00,2025-01-16T02:00:00,La Catedral,"tango,latin","romantic,intimate",3500,false,18,https://example.com/tango,https://tickets.example.com/tango,Traditional milonga with live orchestra,scheduled
+Jazz en el Jardin,2025-01-18T20:00:00,2025-01-18T23:30:00,Jardín Secreto,jazz,"chill,intimate",2500,false,,https://example.com/jazz,,Intimate jazz trio performance under the stars,scheduled
+Techno Underground,2025-01-20T23:59:00,2025-01-21T08:00:00,Crobar,"techno,electronic","underground,high-energy",8000,false,21,https://example.com/techno,https://tickets.example.com/techno,Deep techno night with international DJs,scheduled
+Festival de Arte Callejero,2025-01-25T14:00:00,2025-01-25T22:00:00,Plaza Dorrego,"art,festival","family-friendly,outdoor",,true,,https://example.com/artefest,,Free street art festival in San Telmo,scheduled
+Comedy Night BA,2025-01-22T21:00:00,2025-01-22T23:30:00,Teatro La Comedia,comedy,chill,4000,false,16,https://example.com/comedy,https://tickets.example.com/comedy,Stand-up comedy in English and Spanish,scheduled
+Sunset Rooftop Session,2025-01-19T18:00:00,2025-01-19T23:00:00,Sky Bar,"house,electronic","rooftop,chill",5000,false,18,https://example.com/sunset,,House music with panoramic city views,scheduled
