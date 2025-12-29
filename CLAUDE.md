@@ -122,3 +122,4 @@ src/
 - Prefer server functions over client-side API calls
 - Use TanStack Query for data fetching (integrated via router)
 - **After each code change, run `bunx tsc --noEmit` to check for TypeScript errors and fix them immediately** - don't leave errors for later
+- **NEVER add backwards compatibility shims or legacy exports** - when changing APIs, update all callsites instead. Only add compatibility layers if explicitly requested.

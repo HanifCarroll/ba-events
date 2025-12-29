@@ -40,7 +40,8 @@ interface CSVRow {
   min_age?: string
   link?: string
   ticket_url?: string
-  description?: string
+  description_es?: string
+  description_en?: string
   status?: string
   is_all_day?: string
 }
@@ -246,7 +247,8 @@ export function useImportWizard(
         min_age: minAge,
         link: row.link?.trim() || null,
         ticket_url: row.ticket_url?.trim() || null,
-        description: row.description?.trim() || null,
+        description_es: row.description_es?.trim() || null,
+        description_en: row.description_en?.trim() || null,
         status,
         is_all_day: isAllDay,
         source: 'csv_import',

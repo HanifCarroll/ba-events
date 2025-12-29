@@ -19,13 +19,14 @@ function getOpenAI(): OpenAI {
 }
 
 // Build embedding text from event data
+// Uses Spanish description for cross-lingual semantic search
 export function buildEmbeddingText(event: Event | EventWithVenue): string {
   const parts: string[] = []
 
-  // Event name and description (core content)
+  // Event name and Spanish description (core content for embedding)
   parts.push(event.name)
-  if (event.description) {
-    parts.push(event.description)
+  if (event.description_es) {
+    parts.push(event.description_es)
   }
 
   // Categories as natural language

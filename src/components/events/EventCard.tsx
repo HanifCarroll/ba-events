@@ -124,9 +124,9 @@ export function EventCard({ event }: EventCardProps) {
             {/* Expanded view */}
             <div className="space-y-4">
               {/* Description */}
-              {event.description && (
+              {event.description_en && (
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  {event.description}
+                  {event.description_en}
                 </p>
               )}
 

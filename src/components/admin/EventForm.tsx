@@ -68,7 +68,8 @@ export function EventForm({ event, mode }: EventFormProps) {
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
       name: event?.name || '',
-      description: event?.description || '',
+      description_es: event?.description_es || '',
+      description_en: event?.description_en || '',
       starts_at: toLocalDatetime(event?.starts_at),
       ends_at: toLocalDatetime(event?.ends_at) || '',
       is_all_day: event?.is_all_day || false,
@@ -101,7 +102,8 @@ export function EventForm({ event, mode }: EventFormProps) {
 
       const submitData = {
         name: data.name,
-        description: data.description || null,
+        description_es: data.description_es || null,
+        description_en: data.description_en || null,
         starts_at: startsAtISO,
         ends_at: endsAtISO,
         is_all_day: data.is_all_day,
@@ -175,13 +177,34 @@ export function EventForm({ event, mode }: EventFormProps) {
                 )}
               />
 
-              {/* Description */}
+              {/* Description (Spanish) */}
               <FormField
                 control={form.control}
-                name="description"
+                name="description_es"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel>Description (Spanish)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        value={field.value || ''}
+                        placeholder="Describe el evento..."
+                        rows={4}
+                        className="bg-background/50 border-border/50 resize-none"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Description (English) */}
+              <FormField
+                control={form.control}
+                name="description_en"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description (English)</FormLabel>
                     <FormControl>
                       <Textarea
                         {...field}

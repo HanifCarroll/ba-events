@@ -15,9 +15,8 @@ export interface TabCounts {
   past: number
 }
 
-export function useEventFiltering(events: EventWithVenue[]) {
+export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab = 'all') {
   const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<EventTab>('all')
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'all'>('all')
   const [venueFilter, setVenueFilter] = useState<string | undefined>(undefined)
   const [showFilters, setShowFilters] = useState(false)
@@ -44,7 +43,7 @@ export function useEventFiltering(events: EventWithVenue[]) {
 
     events.forEach((event) => {
       // Needs attention: missing description but has a link to fetch from
-      if (!event.description && event.link) {
+      if (!event.description_es && event.link) {
         needsAttention++
       }
       if (event.status === 'pending_review') {
@@ -68,7 +67,7 @@ export function useEventFiltering(events: EventWithVenue[]) {
     return events.filter((event) => {
       // Tab filter
       if (activeTab === 'needs_attention') {
-        if (event.description || !event.link) return false
+        if (event.description_es || !event.link) return false
       } else if (activeTab === 'pending_review') {
         if (event.status !== 'pending_review') return false
       } else if (activeTab === 'past') {
@@ -102,7 +101,6 @@ export function useEventFiltering(events: EventWithVenue[]) {
     search,
     setSearch,
     activeTab,
-    setActiveTab,
     statusFilter,
     setStatusFilter,
     venueFilter,

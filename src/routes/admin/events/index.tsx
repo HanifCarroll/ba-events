@@ -34,7 +34,14 @@ import { useEventAdmin, useBackgroundEnrichment, type EventTab } from '@/hooks'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import type { EventWithVenue } from '@/lib/types'
 
+import { z } from 'zod'
+
+const eventSearchSchema = z.object({
+  tab: z.enum(['all', 'needs_attention', 'pending_review', 'past']).optional().catch('all'),
+})
+
 export const Route = createFileRoute('/admin/events/')({
+  validateSearch: eventSearchSchema,
   loader: async () => {
     return listEvents()
   },
@@ -85,7 +92,13 @@ function getStatusBadge(status: string) {
 
 function EventListPage() {
   const events = Route.useLoaderData()
-  const { filtering, bulk, markPast, singleActions } = useEventAdmin(events)
+  const { tab } = Route.useSearch()
+  const navigate = Route.useNavigate()
+
+  // Use URL param for tab, defaulting to 'all'
+  const activeTab = (tab || 'all') as EventTab
+
+  const { filtering, bulk, markPast, singleActions } = useEventAdmin(events, activeTab)
   const backgroundEnrichment = useBackgroundEnrichment()
 
   // Calculate enrichable count for selected events
@@ -117,7 +130,8 @@ function EventListPage() {
   }, []) // Only run once on mount
 
   const handleTabChange = (value: string) => {
-    filtering.setActiveTab(value as EventTab)
+    // Update URL search params to persist tab across router invalidations
+    navigate({ search: { tab: value as EventTab } })
     // Clear other filters when switching tabs
     filtering.clearFilters()
   }
@@ -282,6 +296,7 @@ function EventListPage() {
               enrichableCount={enrichableCount}
               onEnrich={handleEnrich}
               isEnriching={backgroundEnrichment.isEnriching}
+              onStopEnrich={backgroundEnrichment.stopEnrichment}
             />
           </div>
           <MobileEventCards
@@ -311,6 +326,7 @@ function EventListPage() {
                   enrichableCount={enrichableCount}
                   onEnrich={handleEnrich}
                   isEnriching={backgroundEnrichment.isEnriching}
+                  onStopEnrich={backgroundEnrichment.stopEnrichment}
                 />
               </div>
 
@@ -518,7 +534,7 @@ const MobileEventCard = memo(function MobileEventCard({
   isRejecting: string | null
   showNeedsAttention?: boolean
 }) {
-  const needsDescription = !event.description && event.link
+  const needsDescription = !event.description_es && event.link
 
   return (
     <div

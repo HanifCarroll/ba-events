@@ -1,19 +1,31 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { getEventsWithoutDescriptions, updateEventDescriptionsAction } from '@/lib/admin'
-import { fetchDescriptionsBatch, type DescriptionFetchResult } from '@/lib/scrapers/passline'
+import {
+  getEventsWithoutDescriptions,
+  enrichEventDescriptionsAction,
+} from '@/lib/admin'
 import type { EventWithVenue } from '@/lib/types'
 
-export type EnrichStep = 'select' | 'fetching' | 'preview' | 'saving'
+export type EnrichStep = 'select' | 'enriching' | 'complete'
 
 export function useDescriptionEnrichment() {
   const router = useRouter()
   const [showEnrichDialog, setShowEnrichDialog] = useState(false)
-  const [eventsWithoutDesc, setEventsWithoutDesc] = useState<EventWithVenue[]>([])
-  const [enrichSelectedIds, setEnrichSelectedIds] = useState<Set<string>>(new Set())
+  const [eventsWithoutDesc, setEventsWithoutDesc] = useState<EventWithVenue[]>(
+    []
+  )
+  const [enrichSelectedIds, setEnrichSelectedIds] = useState<Set<string>>(
+    new Set()
+  )
   const [enrichStep, setEnrichStep] = useState<EnrichStep>('select')
-  const [enrichProgress, setEnrichProgress] = useState<{ current: number; total: number } | null>(null)
-  const [fetchedDescriptions, setFetchedDescriptions] = useState<DescriptionFetchResult[]>([])
+  const [enrichProgress, setEnrichProgress] = useState<{
+    current: number
+    total: number
+  } | null>(null)
+  const [enrichResult, setEnrichResult] = useState<{
+    enriched: number
+    total: number
+  } | null>(null)
   const [isLoadingEvents, setIsLoadingEvents] = useState(false)
 
   async function openEnrichDialog() {
@@ -21,14 +33,14 @@ export function useDescriptionEnrichment() {
     setIsLoadingEvents(true)
     setEnrichStep('select')
     setEnrichSelectedIds(new Set())
-    setFetchedDescriptions([])
     setEnrichProgress(null)
+    setEnrichResult(null)
 
     try {
       const events = await getEventsWithoutDescriptions()
       setEventsWithoutDesc(events)
       // Select all by default
-      setEnrichSelectedIds(new Set(events.map(e => e.id)))
+      setEnrichSelectedIds(new Set(events.map((e) => e.id)))
     } catch (err) {
       console.error('Failed to load events:', err)
     } finally {
@@ -41,12 +53,12 @@ export function useDescriptionEnrichment() {
     setEnrichStep('select')
     setEventsWithoutDesc([])
     setEnrichSelectedIds(new Set())
-    setFetchedDescriptions([])
     setEnrichProgress(null)
+    setEnrichResult(null)
   }
 
   const toggleEnrichSelect = useCallback((id: string) => {
-    setEnrichSelectedIds(prev => {
+    setEnrichSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
         next.delete(id)
@@ -61,53 +73,34 @@ export function useDescriptionEnrichment() {
     if (enrichSelectedIds.size === eventsWithoutDesc.length) {
       setEnrichSelectedIds(new Set())
     } else {
-      setEnrichSelectedIds(new Set(eventsWithoutDesc.map(e => e.id)))
+      setEnrichSelectedIds(new Set(eventsWithoutDesc.map((e) => e.id)))
     }
   }
 
-  async function handleFetchDescriptions() {
+  /**
+   * Enrich selected events using Jina Reader + Haiku 4.5
+   */
+  async function handleEnrichDescriptions() {
     const selectedEvents = eventsWithoutDesc
-      .filter(e => enrichSelectedIds.has(e.id))
-      .map(e => ({ id: e.id, link: e.link || '' }))
+      .filter((e) => enrichSelectedIds.has(e.id) && e.link)
+      .map((e) => ({ id: e.id, link: e.link! }))
 
     if (selectedEvents.length === 0) return
 
-    setEnrichStep('fetching')
+    setEnrichStep('enriching')
     setEnrichProgress({ current: 0, total: selectedEvents.length })
 
     try {
-      const results = await fetchDescriptionsBatch(
-        selectedEvents,
-        (current, total) => setEnrichProgress({ current, total })
-      )
-      setFetchedDescriptions(results)
-      setEnrichStep('preview')
-    } catch (err) {
-      console.error('Fetch failed:', err)
-      setEnrichStep('select')
-    }
-  }
+      const result = await enrichEventDescriptionsAction({
+        data: { events: selectedEvents },
+      })
 
-  async function handleSaveDescriptions() {
-    const updates = fetchedDescriptions
-      .filter(r => r.description)
-      .map(r => ({ id: r.id, description: r.description! }))
-
-    if (updates.length === 0) {
-      closeEnrichDialog()
-      return
-    }
-
-    setEnrichStep('saving')
-    setEnrichProgress({ current: 0, total: updates.length })
-
-    try {
-      await updateEventDescriptionsAction({ data: { updates } })
-      closeEnrichDialog()
+      setEnrichResult({ enriched: result.enriched, total: result.total })
+      setEnrichStep('complete')
       router.invalidate()
     } catch (err) {
-      console.error('Save failed:', err)
-      setEnrichStep('preview')
+      console.error('Enrichment failed:', err)
+      setEnrichStep('select')
     }
   }
 
@@ -118,15 +111,16 @@ export function useDescriptionEnrichment() {
     enrichStep,
     setEnrichStep,
     enrichProgress,
-    fetchedDescriptions,
+    enrichResult,
     isLoadingEvents,
     openEnrichDialog,
     closeEnrichDialog,
     toggleEnrichSelect,
     toggleEnrichSelectAll,
-    handleFetchDescriptions,
-    handleSaveDescriptions,
+    handleEnrichDescriptions,
   }
 }
 
-export type UseDescriptionEnrichmentReturn = ReturnType<typeof useDescriptionEnrichment>
+export type UseDescriptionEnrichmentReturn = ReturnType<
+  typeof useDescriptionEnrichment
+>

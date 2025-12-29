@@ -398,7 +398,7 @@ function formatToolResult(events: EventWithVenue[]): string {
     count: events.length,
     events: events.slice(0, 10).map(e => ({
       name: e.name,
-      description: e.description,
+      description: e.description_en,
       venue: e.venue_name,
       venueAddress: e.venue_address,
       neighborhood: e.venue_neighborhood,

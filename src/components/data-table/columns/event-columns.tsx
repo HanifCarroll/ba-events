@@ -78,7 +78,7 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
       ),
       cell: ({ row }) => {
         const event = row.original
-        const needsDescription = !event.description && event.link
+        const needsDescription = !event.description_es && event.link
 
         return (
           <div className="min-w-0">

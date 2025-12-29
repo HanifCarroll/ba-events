@@ -51,7 +51,8 @@ export function transformPasslineEvent(
 
   return {
     name: event.nombre,
-    description: null, // Fetched separately via description enrichment flow
+    description_es: null, // Fetched separately via description enrichment flow
+    description_en: null,
     starts_at: combineDateTime(event.fecha_inicio, event.hora_inicio),
     ends_at:
       event.fecha_termino && event.hora_termino

@@ -102,10 +102,10 @@ export const getEventAction = createServerFn({ method: 'GET' })
 export const createEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert) => data)
   .handler(async ({ data }) => {
-    // Generate embedding from name and description
+    // Generate embedding from name and Spanish description (cross-lingual model)
     const textForEmbedding = [
       data.name,
-      data.description,
+      data.description_es,
       ...(data.categories || []),
       ...(data.vibes || []),
     ]
@@ -123,20 +123,21 @@ export const createEventAction = createServerFn({ method: 'POST' })
 export const updateEventAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: string; data: EventUpdate }) => input)
   .handler(async ({ data: { id, data } }) => {
-    // If name, description, categories, or vibes changed, regenerate embedding
+    // If name, description_es, categories, or vibes changed, regenerate embedding
     const existingEvent = await getEventById(id)
     const needsNewEmbedding =
       data.name !== undefined ||
-      data.description !== undefined ||
+      data.description_es !== undefined ||
       data.categories !== undefined ||
       data.vibes !== undefined
 
     let embedding: number[] | undefined
 
     if (needsNewEmbedding) {
+      // Use Spanish description for embedding (cross-lingual model)
       const textForEmbedding = [
         data.name ?? existingEvent.name,
-        data.description ?? existingEvent.description,
+        data.description_es ?? existingEvent.description_es,
         ...(data.categories ?? existingEvent.categories),
         ...(data.vibes ?? existingEvent.vibes),
       ]
@@ -162,12 +163,12 @@ export const deleteEventAction = createServerFn({ method: 'POST' })
 export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert[]) => data)
   .handler(async ({ data: events }) => {
-    // Generate embeddings for all events
+    // Generate embeddings for all events using Spanish description
     const eventsWithEmbeddings = await Promise.all(
       events.map(async (event) => {
         const textForEmbedding = [
           event.name,
-          event.description,
+          event.description_es,
           ...(event.categories || []),
           ...(event.vibes || []),
         ]
@@ -304,11 +305,12 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
     }
 
     // Generate embeddings sequentially to avoid rate limits
+    // Uses Spanish description for embedding (cross-lingual model)
     const eventsWithEmbeddings: EventInsert[] = []
     for (const event of eventsToImport) {
       const textForEmbedding = [
         event.name,
-        event.description,
+        event.description_es,
         ...(event.categories || []),
         ...(event.vibes || []),
       ]
@@ -358,39 +360,44 @@ export const rejectEventAction = createServerFn({ method: 'POST' })
   })
 
 // ============================================================================
-// DESCRIPTION ENRICHMENT
+// DESCRIPTION ENRICHMENT (Bilingual: Spanish + English)
 // ============================================================================
 
-/**
- * Get events that are missing descriptions
- */
-export const getEventsWithoutDescriptions = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<EventWithVenue[]> => {
-    const events = await getEventsWithVenues(1000)
-    return events.filter((e) => !e.description)
-  }
-)
+import { enrichEventDescriptionBilingual } from './enrichment'
 
 /**
- * Update event descriptions in batch
- * Regenerates embeddings for each updated event
+ * Enrich event descriptions using Jina Reader + Haiku 4.5
+ * Extracts semantic description in Spanish, translates to English
+ * Uses Spanish description for embedding (cross-lingual model handles it)
  */
-export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
+export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
   .inputValidator(
-    (data: { updates: Array<{ id: string; description: string }> }) => data
+    (data: { events: Array<{ id: string; link: string }> }) => data
   )
-  .handler(async ({ data: { updates } }) => {
-    let updated = 0
+  .handler(async ({ data: { events } }) => {
+    console.log(`[server] enrichEventDescriptionsAction called with ${events.length} events`)
+    let enriched = 0
+    const errors: Array<{ id: string; error: string }> = []
 
-    for (const { id, description } of updates) {
+    for (const { id, link } of events) {
+      console.log(`[server] Processing event ${id}: ${link}`)
       try {
+        // Fetch and extract bilingual descriptions using Jina + Haiku
+        const bilingual = await enrichEventDescriptionBilingual(link)
+        console.log(`[server] Got descriptions for ${id}: ES=${bilingual?.description_es ? 'yes' : 'no'}, EN=${bilingual?.description_en ? 'yes' : 'no'}`)
+
+        if (!bilingual?.description_es) {
+          errors.push({ id, error: 'Failed to extract description' })
+          continue
+        }
+
         // Get existing event to merge with new description
         const existingEvent = await getEventById(id)
 
-        // Generate new embedding with updated description
+        // Generate new embedding with Spanish description (cross-lingual model)
         const textForEmbedding = [
           existingEvent.name,
-          description,
+          bilingual.description_es,
           ...(existingEvent.categories || []),
           ...(existingEvent.vibes || []),
         ]
@@ -399,9 +406,73 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
 
         const embedding = await generateEmbedding(textForEmbedding)
 
-        // Update event with description and new embedding
+        // Update event with both descriptions and new embedding
         await updateEvent(id, {
-          description,
+          description_es: bilingual.description_es,
+          description_en: bilingual.description_en,
+          embedding,
+        })
+
+        enriched++
+      } catch (error) {
+        console.error(`Failed to enrich event ${id}:`, error)
+        errors.push({
+          id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
+
+    return {
+      success: true,
+      enriched,
+      total: events.length,
+      errors: errors.length > 0 ? errors : undefined,
+    }
+  })
+
+/**
+ * Get events that are missing descriptions (no Spanish description)
+ */
+export const getEventsWithoutDescriptions = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<EventWithVenue[]> => {
+    const events = await getEventsWithVenues(1000)
+    return events.filter((e) => !e.description_es)
+  }
+)
+
+/**
+ * Update event descriptions in batch (bilingual)
+ * Regenerates embeddings for each updated event using Spanish description
+ */
+export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { updates: Array<{ id: string; description_es: string; description_en: string }> }) => data
+  )
+  .handler(async ({ data: { updates } }) => {
+    let updated = 0
+
+    for (const { id, description_es, description_en } of updates) {
+      try {
+        // Get existing event to merge with new description
+        const existingEvent = await getEventById(id)
+
+        // Generate new embedding with Spanish description (cross-lingual model)
+        const textForEmbedding = [
+          existingEvent.name,
+          description_es,
+          ...(existingEvent.categories || []),
+          ...(existingEvent.vibes || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+
+        const embedding = await generateEmbedding(textForEmbedding)
+
+        // Update event with both descriptions and new embedding
+        await updateEvent(id, {
+          description_es,
+          description_en,
           embedding,
         })
 

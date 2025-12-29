@@ -152,7 +152,8 @@ export type VenueUpdate = Partial<VenueInsert>
 export interface Event {
   id: string
   name: string
-  description: string | null
+  description_es: string | null // Spanish description (primary, used for embedding)
+  description_en: string | null // English description (for display)
   starts_at: string // ISO datetime string
   ends_at: string | null // ISO datetime string
   is_all_day: boolean
@@ -184,7 +185,8 @@ export interface EventWithVenue extends Event {
 // For inserting new events
 export interface EventInsert {
   name: string
-  description?: string | null
+  description_es?: string | null
+  description_en?: string | null
   starts_at: string
   ends_at?: string | null
   is_all_day?: boolean

@@ -105,7 +105,8 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>
 // Form schema - used for React Hook Form validation (no transforms, no defaults)
 export const eventFormSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255, 'Name too long'),
-  description: z.string(),
+  description_es: z.string(),
+  description_en: z.string(),
   starts_at: z.string().min(1, 'Start date is required'),
   ends_at: z.string(),
   is_all_day: z.boolean(),
@@ -126,7 +127,8 @@ export type EventFormInput = z.infer<typeof eventFormSchema>
 // API schema with transforms for server-side use
 export const eventSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255, 'Name too long'),
-  description: optionalNullableString,
+  description_es: optionalNullableString,
+  description_en: optionalNullableString,
   starts_at: z.string().min(1, 'Start date is required'),
   ends_at: optionalNullableString,
   is_all_day: z.boolean().default(false),

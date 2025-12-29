@@ -56,7 +56,8 @@ export const Route = createFileRoute('/api/events')({
           // Build event data with defaults
           const eventData: EventInsert = {
             name: body.name,
-            description: body.description ?? null,
+            description_es: body.description_es ?? null,
+            description_en: body.description_en ?? null,
             starts_at: body.starts_at,
             ends_at: body.ends_at ?? null,
             is_all_day: body.is_all_day ?? false,
@@ -73,10 +74,10 @@ export const Route = createFileRoute('/api/events')({
             status: body.status ?? 'scheduled',
           }
 
-          // Generate embedding from name, description, categories, vibes
+          // Generate embedding from name, description_es, categories, vibes
           const textForEmbedding = [
             eventData.name,
-            eventData.description,
+            eventData.description_es,
             ...(eventData.categories || []),
             ...(eventData.vibes || []),
           ]

@@ -33,9 +33,4 @@ export {
   transformPasslineEvents,
 } from './transformer'
 
-// Description scraper (client-side)
-export {
-  fetchEventDescription,
-  fetchDescriptionsBatch,
-  type DescriptionFetchResult,
-} from './description-scraper'
+// Description enrichment moved to src/lib/enrichment.ts (uses Jina Reader + Haiku)
