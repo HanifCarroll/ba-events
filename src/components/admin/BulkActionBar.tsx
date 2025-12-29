@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { BulkActionType } from '@/hooks/useBulkActions'
@@ -11,6 +11,12 @@ interface BulkActionBarProps {
   onClearSelection: () => void
   /** If true, renders as an overlay-ready component (no outer margins, fills width) */
   overlay?: boolean
+  /** Number of selected events that can be enriched (missing description with link) */
+  enrichableCount?: number
+  /** Callback to enrich selected events */
+  onEnrich?: () => void
+  /** Whether enrichment is currently running */
+  isEnriching?: boolean
 }
 
 export function BulkActionBar({
@@ -20,8 +26,13 @@ export function BulkActionBar({
   onSetBulkAction,
   onClearSelection,
   overlay = false,
+  enrichableCount = 0,
+  onEnrich,
+  isEnriching = false,
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
+
+  const showEnrich = enrichableCount > 0 && onEnrich
 
   if (overlay) {
     // Overlay version - slides in over table header
@@ -39,6 +50,18 @@ export function BulkActionBar({
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-2">
+          {showEnrich && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onEnrich}
+              disabled={isEnriching}
+              className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
+            >
+              <Sparkles className="h-4 w-4 mr-1.5" />
+              {isEnriching ? 'Enriching...' : `Enrich (${enrichableCount})`}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -92,6 +115,18 @@ export function BulkActionBar({
       </div>
       <div className="flex-1" />
       <div className="flex items-center gap-2">
+        {showEnrich && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEnrich}
+            disabled={isEnriching}
+            className="border-primary/50 text-primary hover:bg-primary/10"
+          >
+            <Sparkles className="h-4 w-4 mr-1.5" />
+            {isEnriching ? 'Enriching...' : `Enrich (${enrichableCount})`}
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"

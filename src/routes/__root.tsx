@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Toaster } from '@/components/ui/sonner'
 
 import appCss from '../styles.css?url'
 
@@ -73,6 +74,7 @@ function RootDocument() {
             <RootLayout />
           </TooltipProvider>
         </AuthProvider>
+        <Toaster position="bottom-right" richColors />
         <Scripts />
       </body>
     </html>

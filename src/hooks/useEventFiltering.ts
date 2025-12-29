@@ -1,13 +1,23 @@
 import { useState, useMemo } from 'react'
 import type { EventWithVenue, EventStatus } from '@/lib/types'
 
+export type EventTab = 'all' | 'needs_attention' | 'pending_review' | 'past'
+
 export interface VenueOption {
   value: string
   label: string
 }
 
+export interface TabCounts {
+  all: number
+  needs_attention: number
+  pending_review: number
+  past: number
+}
+
 export function useEventFiltering(events: EventWithVenue[]) {
   const [search, setSearch] = useState('')
+  const [activeTab, setActiveTab] = useState<EventTab>('all')
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'all'>('all')
   const [venueFilter, setVenueFilter] = useState<string | undefined>(undefined)
   const [showFilters, setShowFilters] = useState(false)
@@ -26,15 +36,50 @@ export function useEventFiltering(events: EventWithVenue[]) {
     }))
   }, [events])
 
-  // Filter events
+  // Compute tab counts
+  const tabCounts = useMemo<TabCounts>(() => {
+    let needsAttention = 0
+    let pendingReview = 0
+    let past = 0
+
+    events.forEach((event) => {
+      // Needs attention: missing description but has a link to fetch from
+      if (!event.description && event.link) {
+        needsAttention++
+      }
+      if (event.status === 'pending_review') {
+        pendingReview++
+      }
+      if (event.status === 'past') {
+        past++
+      }
+    })
+
+    return {
+      all: events.length,
+      needs_attention: needsAttention,
+      pending_review: pendingReview,
+      past: past,
+    }
+  }, [events])
+
+  // Filter events based on tab + search + venue
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
-      // Search filter
-      if (search && !event.name.toLowerCase().includes(search.toLowerCase())) {
+      // Tab filter
+      if (activeTab === 'needs_attention') {
+        if (event.description || !event.link) return false
+      } else if (activeTab === 'pending_review') {
+        if (event.status !== 'pending_review') return false
+      } else if (activeTab === 'past') {
+        if (event.status !== 'past') return false
+      }
+      // Status filter (only applies when on "all" tab)
+      if (activeTab === 'all' && statusFilter !== 'all' && event.status !== statusFilter) {
         return false
       }
-      // Status filter
-      if (statusFilter !== 'all' && event.status !== statusFilter) {
+      // Search filter
+      if (search && !event.name.toLowerCase().includes(search.toLowerCase())) {
         return false
       }
       // Venue filter
@@ -43,9 +88,9 @@ export function useEventFiltering(events: EventWithVenue[]) {
       }
       return true
     })
-  }, [events, search, statusFilter, venueFilter])
+  }, [events, activeTab, search, statusFilter, venueFilter])
 
-  const hasActiveFilters = !!(search || statusFilter !== 'all' || venueFilter)
+  const hasActiveFilters = !!(search || (activeTab === 'all' && statusFilter !== 'all') || venueFilter)
 
   function clearFilters() {
     setSearch('')
@@ -56,6 +101,8 @@ export function useEventFiltering(events: EventWithVenue[]) {
   return {
     search,
     setSearch,
+    activeTab,
+    setActiveTab,
     statusFilter,
     setStatusFilter,
     venueFilter,
@@ -66,6 +113,7 @@ export function useEventFiltering(events: EventWithVenue[]) {
     filteredEvents,
     hasActiveFilters,
     clearFilters,
+    tabCounts,
   }
 }
 

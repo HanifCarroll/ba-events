@@ -1,10 +1,24 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { memo, useRef } from 'react'
+import { memo, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Plus, Pencil, Trash2, Calendar, MapPin, Search, Upload, Clock, XCircle, Zap, CheckCircle2, FileText } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Calendar,
+  MapPin,
+  Search,
+  XCircle,
+  CheckCircle2,
+  FileSpreadsheet,
+  AlertCircle,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -13,11 +27,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Combobox } from '@/components/ui/combobox'
 import { listEvents } from '@/lib/admin'
-import { useEventAdmin, type BulkActionType } from '@/hooks'
-import { EventFilterBar } from '@/components/admin/EventFilterBar'
+import { useEventAdmin, useBackgroundEnrichment, type BulkActionType, type EventTab } from '@/hooks'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
-import { EnrichDescriptionsDialog } from '@/components/admin/EnrichDescriptionsDialog'
 import type { EventWithVenue } from '@/lib/types'
 
 export const Route = createFileRoute('/admin/events/')({
@@ -71,7 +84,42 @@ function getStatusBadge(status: string) {
 
 function EventListPage() {
   const events = Route.useLoaderData()
-  const { filtering, bulk, markPast, singleActions, enrichment } = useEventAdmin(events)
+  const { filtering, bulk, markPast, singleActions } = useEventAdmin(events)
+  const backgroundEnrichment = useBackgroundEnrichment()
+
+  // Calculate enrichable count for selected events
+  const enrichableCount = useMemo(() => {
+    return backgroundEnrichment.getEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
+  }, [backgroundEnrichment, filtering.filteredEvents, bulk.selectedIds])
+
+  // Handle enrichment with selection clear on complete
+  const handleEnrich = useCallback(() => {
+    backgroundEnrichment.enrichEvents(
+      filtering.filteredEvents,
+      bulk.selectedIds,
+      () => bulk.clearSelection()
+    )
+  }, [backgroundEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+
+  // Smart "Mark Past" toast on page load
+  useEffect(() => {
+    if (markPast.pastEventsCount > 0) {
+      toast.info(`${markPast.pastEventsCount} events have ended`, {
+        description: 'These events can be marked as past.',
+        action: {
+          label: 'Mark Past',
+          onClick: () => markPast.handleMarkPastEvents(),
+        },
+        duration: 10000,
+      })
+    }
+  }, []) // Only run once on mount
+
+  const handleTabChange = (value: string) => {
+    filtering.setActiveTab(value as EventTab)
+    // Clear other filters when switching tabs
+    filtering.clearFilters()
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
@@ -88,35 +136,16 @@ function EventListPage() {
               : `${events.length} events in database`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            className="border-border/50"
-            onClick={enrichment.openEnrichDialog}
-          >
-            <FileText className="h-4 w-4 mr-2" />
-            Enrich
-          </Button>
-          <Button
-            variant="outline"
-            className="border-border/50"
-            onClick={markPast.handleOpenMarkPastDialog}
-          >
-            <Clock className="h-4 w-4 mr-2" />
-            Mark Past
-          </Button>
+        <div className="flex items-center gap-3">
+          {/* Import button - links to unified wizard */}
           <Button asChild variant="outline" className="border-border/50">
             <Link to="/admin/events/import">
-              <Upload className="h-4 w-4 mr-2" />
-              Import CSV
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Import
             </Link>
           </Button>
-          <Button asChild variant="outline" className="border-border/50 border-primary/50 text-primary hover:bg-primary/10">
-            <Link to="/admin/events/passline">
-              <Zap className="h-4 w-4 mr-2" />
-              Passline
-            </Link>
-          </Button>
+
+          {/* Add Event button */}
           <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Link to="/admin/events/new">
               <Plus className="h-4 w-4 mr-2" />
@@ -128,21 +157,82 @@ function EventListPage() {
 
       <div className="deco-line w-24" />
 
-      {/* Filter Bar */}
+      {/* Tabs */}
       {events.length > 0 && (
-        <EventFilterBar
-          search={filtering.search}
-          setSearch={filtering.setSearch}
-          statusFilter={filtering.statusFilter}
-          setStatusFilter={filtering.setStatusFilter}
-          venueFilter={filtering.venueFilter}
-          setVenueFilter={filtering.setVenueFilter}
-          showFilters={filtering.showFilters}
-          setShowFilters={filtering.setShowFilters}
-          venueOptions={filtering.venueOptions}
-          hasActiveFilters={filtering.hasActiveFilters}
-          clearFilters={filtering.clearFilters}
-        />
+        <div className="space-y-4">
+          <Tabs value={filtering.activeTab} onValueChange={handleTabChange}>
+            <TabsList className="bg-card/50 border border-border/50 p-1 h-auto">
+              <TabsTrigger
+                value="all"
+                className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary px-4 py-2"
+              >
+                All Events
+                <span className="ml-2 text-xs opacity-70">({filtering.tabCounts.all})</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="needs_attention"
+                className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400 px-4 py-2"
+              >
+                <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
+                Needs Attention
+                {filtering.tabCounts.needs_attention > 0 && (
+                  <span className="ml-2 text-xs bg-orange-500/30 px-1.5 py-0.5 rounded-full">
+                    {filtering.tabCounts.needs_attention}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="pending_review"
+                className="data-[state=active]:bg-yellow-500/20 data-[state=active]:text-yellow-400 px-4 py-2"
+              >
+                Pending Review
+                {filtering.tabCounts.pending_review > 0 && (
+                  <span className="ml-2 text-xs bg-yellow-500/30 px-1.5 py-0.5 rounded-full">
+                    {filtering.tabCounts.pending_review}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="past"
+                className="data-[state=active]:bg-muted data-[state=active]:text-muted-foreground px-4 py-2"
+              >
+                Past
+                <span className="ml-2 text-xs opacity-70">({filtering.tabCounts.past})</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {/* Search and Venue filter - compact row */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search events..."
+                value={filtering.search}
+                onChange={(e) => filtering.setSearch(e.target.value)}
+                className="pl-9 bg-background/50 border-border/50"
+              />
+            </div>
+            <Combobox
+              options={filtering.venueOptions}
+              value={filtering.venueFilter}
+              onValueChange={filtering.setVenueFilter}
+              placeholder="All Venues"
+              emptyText="No venues found"
+              className="w-48"
+            />
+            {filtering.hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={filtering.clearFilters}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Content */}
@@ -152,7 +242,7 @@ function EventListPage() {
         <NoMatchesState onClearFilters={filtering.clearFilters} />
       ) : (
         <>
-          {/* Mobile Card View - still uses standalone bulk action bar */}
+          {/* Mobile Card View */}
           <div className="sm:hidden">
             <BulkActionBar
               selectedCount={bulk.selectedIds.size}
@@ -160,6 +250,9 @@ function EventListPage() {
               onToggleSelectAll={bulk.toggleSelectAll}
               onSetBulkAction={bulk.setBulkAction}
               onClearSelection={bulk.clearSelection}
+              enrichableCount={enrichableCount}
+              onEnrich={handleEnrich}
+              isEnriching={backgroundEnrichment.isEnriching}
             />
           </div>
           <MobileEventCards
@@ -171,9 +264,10 @@ function EventListPage() {
             onDelete={singleActions.setDeleteTarget}
             isApproving={singleActions.isApproving}
             isRejecting={singleActions.isRejecting}
+            showNeedsAttention={filtering.activeTab === 'needs_attention'}
           />
 
-          {/* Desktop Table View - with overlay bulk action bar */}
+          {/* Desktop Table View */}
           <DesktopEventTable
             events={filtering.filteredEvents}
             selectedIds={bulk.selectedIds}
@@ -186,6 +280,10 @@ function EventListPage() {
             isRejecting={singleActions.isRejecting}
             onSetBulkAction={bulk.setBulkAction}
             onClearSelection={bulk.clearSelection}
+            showNeedsAttention={filtering.activeTab === 'needs_attention'}
+            enrichableCount={enrichableCount}
+            onEnrich={handleEnrich}
+            isEnriching={backgroundEnrichment.isEnriching}
           />
         </>
       )}
@@ -271,7 +369,7 @@ function EventListPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Mark past events dialog */}
+      {/* Mark past events dialog - kept for manual triggering if needed */}
       <Dialog open={markPast.showMarkPastDialog} onOpenChange={markPast.setShowMarkPastDialog}>
         <DialogContent className="bg-card border-border/50">
           <DialogHeader>
@@ -306,22 +404,6 @@ function EventListPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Description enrichment dialog */}
-      <EnrichDescriptionsDialog
-        open={enrichment.showEnrichDialog}
-        onClose={enrichment.closeEnrichDialog}
-        enrichStep={enrichment.enrichStep}
-        setEnrichStep={enrichment.setEnrichStep}
-        enrichProgress={enrichment.enrichProgress}
-        fetchedDescriptions={enrichment.fetchedDescriptions}
-        isLoadingEvents={enrichment.isLoadingEvents}
-        eventsWithoutDesc={enrichment.eventsWithoutDesc}
-        enrichSelectedIds={enrichment.enrichSelectedIds}
-        onToggleSelect={enrichment.toggleEnrichSelect}
-        onToggleSelectAll={enrichment.toggleEnrichSelectAll}
-        onFetchDescriptions={enrichment.handleFetchDescriptions}
-        onSaveDescriptions={enrichment.handleSaveDescriptions}
-      />
     </div>
   )
 }
@@ -366,6 +448,7 @@ interface EventListProps {
   onDelete: (event: EventWithVenue) => void
   isApproving: string | null
   isRejecting: string | null
+  showNeedsAttention?: boolean
 }
 
 // Memoized mobile card component
@@ -378,6 +461,7 @@ const MobileEventCard = memo(function MobileEventCard({
   onDelete,
   isApproving,
   isRejecting,
+  showNeedsAttention,
 }: {
   event: EventWithVenue
   isSelected: boolean
@@ -387,7 +471,10 @@ const MobileEventCard = memo(function MobileEventCard({
   onDelete: (event: EventWithVenue) => void
   isApproving: string | null
   isRejecting: string | null
+  showNeedsAttention?: boolean
 }) {
+  const needsDescription = !event.description && event.link
+
   return (
     <div
       className={`bg-card/50 rounded-xl border border-border/50 p-4 space-y-3 ${
@@ -403,24 +490,30 @@ const MobileEventCard = memo(function MobileEventCard({
           />
           <div className="flex-1 min-w-0">
             <p className="font-medium text-foreground truncate">{event.name}</p>
-            {event.categories.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {event.categories.slice(0, 2).map((cat) => (
-                  <Badge
-                    key={cat}
-                    variant="outline"
-                    className="text-xs border-border/50 text-muted-foreground"
-                  >
-                    {cat}
-                  </Badge>
-                ))}
-                {event.categories.length > 2 && (
-                  <span className="text-xs text-muted-foreground">
-                    +{event.categories.length - 2}
-                  </span>
-                )}
-              </div>
-            )}
+            <div className="flex flex-wrap gap-1 mt-1">
+              {showNeedsAttention && needsDescription && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+                >
+                  No Description
+                </Badge>
+              )}
+              {event.categories.slice(0, 2).map((cat) => (
+                <Badge
+                  key={cat}
+                  variant="outline"
+                  className="text-xs border-border/50 text-muted-foreground"
+                >
+                  {cat}
+                </Badge>
+              ))}
+              {event.categories.length > 2 && (
+                <span className="text-xs text-muted-foreground">
+                  +{event.categories.length - 2}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         {getStatusBadge(event.status)}
@@ -501,13 +594,14 @@ function MobileEventCards({
   onDelete,
   isApproving,
   isRejecting,
+  showNeedsAttention,
 }: EventListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
 
   const virtualizer = useVirtualizer({
     count: events.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 180, // Estimated card height
+    estimateSize: () => 180,
     overscan: 5,
   })
 
@@ -546,6 +640,7 @@ function MobileEventCards({
                 onDelete={onDelete}
                 isApproving={isApproving}
                 isRejecting={isRejecting}
+                showNeedsAttention={showNeedsAttention}
               />
             </div>
           )
@@ -559,9 +654,12 @@ interface DesktopTableProps extends EventListProps {
   onToggleSelectAll: () => void
   onSetBulkAction: (action: BulkActionType) => void
   onClearSelection: () => void
+  enrichableCount?: number
+  onEnrich?: () => void
+  isEnriching?: boolean
 }
 
-// Memoized table row component (using divs for virtualization compatibility)
+// Memoized table row component
 const EventTableRow = memo(function EventTableRow({
   event,
   isSelected,
@@ -571,6 +669,7 @@ const EventTableRow = memo(function EventTableRow({
   onDelete,
   isApproving,
   isRejecting,
+  showNeedsAttention,
 }: {
   event: EventWithVenue
   isSelected: boolean
@@ -580,7 +679,10 @@ const EventTableRow = memo(function EventTableRow({
   onDelete: (event: EventWithVenue) => void
   isApproving: string | null
   isRejecting: string | null
+  showNeedsAttention?: boolean
 }) {
+  const needsDescription = !event.description && event.link
+
   return (
     <div
       className={`flex items-center gap-4 px-4 py-3 border-b border-border/30 hover:bg-muted/30 transition-colors ${
@@ -595,27 +697,33 @@ const EventTableRow = memo(function EventTableRow({
         />
       </div>
 
-      {/* Event name & categories */}
+      {/* Event name & badges */}
       <div className="flex-1 min-w-0">
         <p className="font-medium text-foreground truncate">{event.name}</p>
-        {event.categories.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {event.categories.slice(0, 2).map((cat) => (
-              <Badge
-                key={cat}
-                variant="outline"
-                className="text-xs border-border/50 text-muted-foreground"
-              >
-                {cat}
-              </Badge>
-            ))}
-            {event.categories.length > 2 && (
-              <span className="text-xs text-muted-foreground">
-                +{event.categories.length - 2}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1 mt-1">
+          {showNeedsAttention && needsDescription && (
+            <Badge
+              variant="outline"
+              className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+            >
+              No Description
+            </Badge>
+          )}
+          {event.categories.slice(0, 2).map((cat) => (
+            <Badge
+              key={cat}
+              variant="outline"
+              className="text-xs border-border/50 text-muted-foreground"
+            >
+              {cat}
+            </Badge>
+          ))}
+          {event.categories.length > 2 && (
+            <span className="text-xs text-muted-foreground">
+              +{event.categories.length - 2}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Venue */}
@@ -701,19 +809,23 @@ function DesktopEventTable({
   isRejecting,
   onSetBulkAction,
   onClearSelection,
+  showNeedsAttention,
+  enrichableCount = 0,
+  onEnrich,
+  isEnriching = false,
 }: DesktopTableProps) {
   const parentRef = useRef<HTMLDivElement>(null)
 
   const virtualizer = useVirtualizer({
     count: events.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 64, // Estimated row height
+    estimateSize: () => 64,
     overscan: 10,
   })
 
   return (
     <div className="hidden sm:block bg-card/50 rounded-xl border border-border/50 overflow-hidden">
-      {/* Header wrapper - relative for overlay positioning */}
+      {/* Header wrapper */}
       <div className="relative">
         {/* Normal header */}
         <div className="flex items-center gap-4 px-4 py-3 border-b border-border/50 bg-muted/20">
@@ -730,7 +842,7 @@ function DesktopEventTable({
           <div className="w-32 shrink-0 text-muted-foreground font-medium text-sm text-right">Actions</div>
         </div>
 
-        {/* Overlay bulk action bar - slides over header when items selected */}
+        {/* Overlay bulk action bar */}
         <BulkActionBar
           selectedCount={selectedIds.size}
           filteredEventsLength={events.length}
@@ -738,13 +850,16 @@ function DesktopEventTable({
           onSetBulkAction={onSetBulkAction}
           onClearSelection={onClearSelection}
           overlay
+          enrichableCount={enrichableCount}
+          onEnrich={onEnrich}
+          isEnriching={isEnriching}
         />
       </div>
 
       {/* Virtualized rows */}
       <div
         ref={parentRef}
-        className="h-[calc(100vh-400px)] overflow-auto"
+        className="h-[calc(100vh-420px)] overflow-auto"
       >
         <div
           style={{
@@ -775,6 +890,7 @@ function DesktopEventTable({
                   onDelete={onDelete}
                   isApproving={isApproving}
                   isRejecting={isRejecting}
+                  showNeedsAttention={showNeedsAttention}
                 />
               </div>
             )
