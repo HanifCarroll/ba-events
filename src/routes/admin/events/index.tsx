@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2, Calendar, MapPin, Search, X, Filter, Upload, Clock, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -28,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { listEvents, deleteEventAction } from '@/lib/admin'
+import { listEvents, deleteEventAction, bulkUpdateEventStatusAction, bulkDeleteEventsAction } from '@/lib/admin'
 import type { EventWithVenue, EventStatus } from '@/lib/types'
 
 export const Route = createFileRoute('/admin/events/')({
@@ -49,6 +50,11 @@ function EventListPage() {
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'all'>('all')
   const [venueFilter, setVenueFilter] = useState<string | undefined>(undefined)
   const [showFilters, setShowFilters] = useState(false)
+
+  // Selection state for bulk actions
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkAction, setBulkAction] = useState<'delete' | 'past' | 'cancelled' | null>(null)
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false)
 
   // Get unique venues for filter dropdown
   const venueOptions = useMemo(() => {
@@ -106,6 +112,55 @@ function EventListPage() {
     }
   }
 
+  // Selection helpers
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === filteredEvents.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredEvents.map((e) => e.id)))
+    }
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set())
+  }
+
+  // Bulk action handlers
+  async function handleBulkAction() {
+    if (!bulkAction || selectedIds.size === 0) return
+    setIsBulkProcessing(true)
+
+    try {
+      const ids = Array.from(selectedIds)
+
+      if (bulkAction === 'delete') {
+        await bulkDeleteEventsAction({ data: ids })
+      } else if (bulkAction === 'past' || bulkAction === 'cancelled') {
+        await bulkUpdateEventStatusAction({ data: { eventIds: ids, status: bulkAction } })
+      }
+
+      setSelectedIds(new Set())
+      setBulkAction(null)
+      router.invalidate()
+    } catch (err) {
+      console.error('Bulk action failed:', err)
+    } finally {
+      setIsBulkProcessing(false)
+    }
+  }
+
   function formatDate(dateString: string) {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-US', {
@@ -130,6 +185,10 @@ function EventListPage() {
       postponed: {
         className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
         label: 'Postponed',
+      },
+      past: {
+        className: 'bg-muted/50 text-muted-foreground border-border/50',
+        label: 'Past',
       },
     }
     const variant = variants[status] || variants.scheduled
@@ -224,6 +283,7 @@ function EventListPage() {
                 <SelectItem value="scheduled">Scheduled</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
                 <SelectItem value="postponed">Postponed</SelectItem>
+                <SelectItem value="past">Past</SelectItem>
               </SelectContent>
             </Select>
 
@@ -249,6 +309,59 @@ function EventListPage() {
               Clear filters
             </Button>
           )}
+        </div>
+      )}
+
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg animate-fade-in-up">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={selectedIds.size === filteredEvents.length}
+              onCheckedChange={toggleSelectAll}
+            />
+            <span className="text-sm font-medium text-foreground">
+              {selectedIds.size} selected
+            </span>
+          </div>
+          <div className="flex-1" />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkAction('past')}
+              className="border-border/50"
+            >
+              <Clock className="h-4 w-4 mr-1.5" />
+              Mark Past
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkAction('cancelled')}
+              className="border-border/50"
+            >
+              <XCircle className="h-4 w-4 mr-1.5" />
+              Mark Cancelled
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkAction('delete')}
+              className="border-destructive/50 text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4 mr-1.5" />
+              Delete
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearSelection}
+              className="text-muted-foreground"
+            >
+              Clear
+            </Button>
+          </div>
         </div>
       )}
 
@@ -281,11 +394,19 @@ function EventListPage() {
             {filteredEvents.map((event) => (
               <div
                 key={event.id}
-                className="bg-card/50 rounded-xl border border-border/50 p-4 space-y-3"
+                className={`bg-card/50 rounded-xl border border-border/50 p-4 space-y-3 ${
+                  selectedIds.has(event.id) ? 'border-primary/50 bg-primary/5' : ''
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">{event.name}</p>
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <Checkbox
+                      checked={selectedIds.has(event.id)}
+                      onCheckedChange={() => toggleSelect(event.id)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground truncate">{event.name}</p>
                     {event.categories.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {event.categories.slice(0, 2).map((cat) => (
@@ -304,6 +425,7 @@ function EventListPage() {
                         )}
                       </div>
                     )}
+                    </div>
                   </div>
                   {getStatusBadge(event.status)}
                 </div>
@@ -352,6 +474,12 @@ function EventListPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-border/50 hover:bg-transparent">
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={selectedIds.size === filteredEvents.length && filteredEvents.length > 0}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead className="text-muted-foreground font-medium">Event</TableHead>
                   <TableHead className="text-muted-foreground font-medium">Venue</TableHead>
                   <TableHead className="text-muted-foreground font-medium">Date</TableHead>
@@ -363,8 +491,16 @@ function EventListPage() {
                 {filteredEvents.map((event) => (
                   <TableRow
                     key={event.id}
-                    className="border-border/30 hover:bg-muted/30 transition-colors"
+                    className={`border-border/30 hover:bg-muted/30 transition-colors ${
+                      selectedIds.has(event.id) ? 'bg-primary/5' : ''
+                    }`}
                   >
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.has(event.id)}
+                        onCheckedChange={() => toggleSelect(event.id)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div>
                         <p className="font-medium text-foreground">{event.name}</p>
@@ -456,6 +592,58 @@ function EventListPage() {
               disabled={isDeleting}
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk action confirmation dialog */}
+      <Dialog open={!!bulkAction} onOpenChange={() => setBulkAction(null)}>
+        <DialogContent className="bg-card border-border/50">
+          <DialogHeader>
+            <DialogTitle className="font-display text-foreground">
+              {bulkAction === 'delete' && 'Delete Events'}
+              {bulkAction === 'past' && 'Mark Events as Past'}
+              {bulkAction === 'cancelled' && 'Mark Events as Cancelled'}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {bulkAction === 'delete' && (
+                <>
+                  Are you sure you want to delete <strong>{selectedIds.size} events</strong>?
+                  This action cannot be undone.
+                </>
+              )}
+              {bulkAction === 'past' && (
+                <>
+                  Mark <strong>{selectedIds.size} events</strong> as past?
+                  They will no longer appear in the main event list.
+                </>
+              )}
+              {bulkAction === 'cancelled' && (
+                <>
+                  Mark <strong>{selectedIds.size} events</strong> as cancelled?
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="ghost"
+              onClick={() => setBulkAction(null)}
+              className="text-muted-foreground"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={bulkAction === 'delete' ? 'destructive' : 'default'}
+              onClick={handleBulkAction}
+              disabled={isBulkProcessing}
+            >
+              {isBulkProcessing
+                ? 'Processing...'
+                : bulkAction === 'delete'
+                  ? 'Delete'
+                  : 'Confirm'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -12,9 +12,11 @@ import {
   createEvents,
   updateEvent,
   deleteEvent,
+  bulkUpdateEventStatus,
+  bulkDeleteEvents,
 } from './supabase'
 import { generateEmbedding } from './embeddings'
-import type { VenueInsert, VenueUpdate, EventInsert, EventUpdate, EventWithVenue } from './types'
+import type { VenueInsert, VenueUpdate, EventInsert, EventUpdate, EventWithVenue, EventStatus } from './types'
 
 // ============================================================================
 // STATS
@@ -185,6 +187,26 @@ export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
     return {
       success: true,
       count: created.length,
+    }
+  })
+
+export const bulkUpdateEventStatusAction = createServerFn({ method: 'POST' })
+  .inputValidator((input: { eventIds: string[]; status: EventStatus }) => input)
+  .handler(async ({ data: { eventIds, status } }) => {
+    const updated = await bulkUpdateEventStatus(eventIds, status)
+    return {
+      success: true,
+      count: updated.length,
+    }
+  })
+
+export const bulkDeleteEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((eventIds: string[]) => eventIds)
+  .handler(async ({ data: eventIds }) => {
+    await bulkDeleteEvents(eventIds)
+    return {
+      success: true,
+      count: eventIds.length,
     }
   })
 

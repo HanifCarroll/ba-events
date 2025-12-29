@@ -6,6 +6,7 @@ import type {
   EventSearchResult,
   EventWithVenue,
   EventFilters,
+  EventStatus,
   Venue,
   VenueInsert,
   VenueUpdate,
@@ -222,6 +223,22 @@ export async function updateEvent(id: string, updates: EventUpdate) {
 
 export async function deleteEvent(id: string) {
   const { error } = await supabase.from('events').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function bulkUpdateEventStatus(eventIds: string[], status: EventStatus) {
+  const { data, error } = await supabase
+    .from('events')
+    .update({ status })
+    .in('id', eventIds)
+    .select()
+
+  if (error) throw error
+  return data as Event[]
+}
+
+export async function bulkDeleteEvents(eventIds: string[]) {
+  const { error } = await supabase.from('events').delete().in('id', eventIds)
   if (error) throw error
 }
 

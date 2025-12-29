@@ -29,6 +29,7 @@ const statusLabels: Record<EventStatus, string> = {
   scheduled: 'Scheduled',
   cancelled: 'Cancelled',
   postponed: 'Postponed',
+  past: 'Past',
 }
 
 function toLocalDatetime(isoString: string | null | undefined): string {
