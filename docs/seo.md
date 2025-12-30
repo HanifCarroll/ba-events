@@ -1,8 +1,8 @@
-# SEO Strategy for BA Events
+# SEO Strategy for BA Eventos
 
 ## Overview
 
-BA Events is a **conversational AI application** for discovering events in Buenos Aires. Unlike traditional event listing sites, this app has a single public-facing chat interface rather than individual event pages.
+BA Eventos is a **conversational AI application** for discovering events in Buenos Aires. Unlike traditional event listing sites, this app has a single public-facing chat interface rather than individual event pages.
 
 ### Key Architectural Considerations
 
@@ -97,7 +97,7 @@ Disallow: /register
 {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  "name": "BA Events",
+  "name": "BA Eventos",
   "description": "AI-powered event discovery for Buenos Aires",
   "applicationCategory": "EventApplication",
   "operatingSystem": "Web",
@@ -201,7 +201,7 @@ Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or h
 - Added canonical URL link tag
 - Created 1200x630px OG image (`public/og-image.png`) with Buenos Aires nightlife theme
 - Updated `public/robots.txt` to block /admin/, /saved, /profile, /api/, /login, /register, /auth/
-- Updated `public/manifest.json` with BA Events branding and dark theme colors (#1a1612)
+- Updated `public/manifest.json` with BA Eventos branding and dark theme colors (#1a1612)
 - Added SEO info section to `SuggestedPrompts.tsx` with H2 heading and descriptive text
 - Added i18n keys for EN/ES (home_about_title, home_about_text)
 
