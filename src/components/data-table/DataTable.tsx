@@ -166,6 +166,10 @@ export interface DataTableProps<TData extends { id: string }> {
   columnFilters?: ColumnFiltersState
   onColumnFiltersChange?: (filters: ColumnFiltersState) => void
 
+  // Sorting (controlled, optional)
+  sorting?: SortingState
+  onSortingChange?: (sorting: SortingState) => void
+
   // Persistence
   tableId?: string
 
@@ -197,6 +201,8 @@ export function DataTable<TData extends { id: string }>({
   onSelectionChange,
   columnFilters: controlledColumnFilters,
   onColumnFiltersChange,
+  sorting: controlledSorting,
+  onSortingChange,
   tableId = 'default',
   estimatedRowHeight = 64,
   containerHeight = 'calc(100vh - 420px)',
@@ -208,9 +214,23 @@ export function DataTable<TData extends { id: string }>({
   // Preferences (persisted)
   const preferences = useColumnPreferences(tableId)
 
-  // Local state
-  const [sorting, setSorting] = useState<SortingState>([])
+  // Local state for uncontrolled modes
+  const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [internalColumnFilters, setInternalColumnFilters] = useState<ColumnFiltersState>([])
+
+  // Support both controlled and uncontrolled sorting
+  const sorting = controlledSorting ?? internalSorting
+  const setSorting = useCallback(
+    (updater: SortingState | ((prev: SortingState) => SortingState)) => {
+      const newSorting = typeof updater === 'function' ? updater(sorting) : updater
+      if (onSortingChange) {
+        onSortingChange(newSorting)
+      } else {
+        setInternalSorting(newSorting)
+      }
+    },
+    [sorting, onSortingChange]
+  )
 
   // Support both controlled and uncontrolled column filters
   const columnFilters = controlledColumnFilters ?? internalColumnFilters

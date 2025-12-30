@@ -39,10 +39,64 @@ import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import type { EventWithVenue } from '@/lib/types'
 
 import { z } from 'zod'
+import type { ColumnFiltersState, SortingState } from '@tanstack/react-table'
 
+// Schema for URL search params
 const eventSearchSchema = z.object({
+  // Tab filter
   tab: z.enum(['all', 'needs_attention', 'pending_review', 'past']).optional().catch('all'),
+  // Column filters (stored as key-value pairs)
+  name: z.string().optional(),
+  venue_name: z.string().optional(),
+  source: z.string().optional(),
+  status: z.string().optional(),
+  // Sorting (column and direction)
+  sortBy: z.string().optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
 })
+
+type EventSearchParams = z.infer<typeof eventSearchSchema>
+
+// Convert URL params to TanStack Table column filters
+function paramsToColumnFilters(params: EventSearchParams): ColumnFiltersState {
+  const filters: ColumnFiltersState = []
+  if (params.name) filters.push({ id: 'name', value: params.name })
+  if (params.venue_name) filters.push({ id: 'venue', value: params.venue_name })
+  if (params.source) filters.push({ id: 'source', value: params.source })
+  if (params.status) filters.push({ id: 'status', value: params.status })
+  return filters
+}
+
+// Convert TanStack Table column filters to URL params
+function columnFiltersToParams(filters: ColumnFiltersState): Partial<EventSearchParams> {
+  const params: Partial<EventSearchParams> = {}
+  for (const filter of filters) {
+    if (filter.id === 'name' && typeof filter.value === 'string') params.name = filter.value
+    if (filter.id === 'venue' && typeof filter.value === 'string') params.venue_name = filter.value
+    if (filter.id === 'source' && typeof filter.value === 'string') params.source = filter.value
+    if (filter.id === 'status' && typeof filter.value === 'string') params.status = filter.value
+  }
+  return params
+}
+
+// Convert URL params to TanStack Table sorting state
+function paramsToSorting(params: EventSearchParams): SortingState {
+  if (params.sortBy) {
+    return [{ id: params.sortBy, desc: params.sortDir === 'desc' }]
+  }
+  return []
+}
+
+// Convert TanStack Table sorting to URL params
+function sortingToParams(sorting: SortingState): Partial<EventSearchParams> {
+  if (sorting.length > 0) {
+    return {
+      sortBy: sorting[0].id,
+      sortDir: sorting[0].desc ? 'desc' : 'asc',
+    }
+  }
+  return { sortBy: undefined, sortDir: undefined }
+}
 
 export const Route = createFileRoute('/admin/events/')({
   validateSearch: eventSearchSchema,
@@ -88,11 +142,50 @@ function getStatusBadge(status: string) {
 
 function EventListPage() {
   const events = Route.useLoaderData()
-  const { tab } = Route.useSearch()
+  const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
 
   // Use URL param for tab, defaulting to 'all'
-  const activeTab = (tab || 'all') as EventTab
+  const activeTab = (searchParams.tab || 'all') as EventTab
+
+  // Derive TanStack Table state from URL params
+  const columnFilters = useMemo(() => paramsToColumnFilters(searchParams), [searchParams])
+  const sorting = useMemo(() => paramsToSorting(searchParams), [searchParams])
+
+  // Update URL when column filters change
+  const handleColumnFiltersChange = useCallback(
+    (newFilters: ColumnFiltersState) => {
+      const filterParams = columnFiltersToParams(newFilters)
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          // Clear old filter params and set new ones
+          name: filterParams.name,
+          venue_name: filterParams.venue_name,
+          source: filterParams.source,
+          status: filterParams.status,
+        }),
+        replace: true, // Don't add to history for every keystroke
+      })
+    },
+    [navigate]
+  )
+
+  // Update URL when sorting changes
+  const handleSortingChange = useCallback(
+    (newSorting: SortingState) => {
+      const sortParams = sortingToParams(newSorting)
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          sortBy: sortParams.sortBy,
+          sortDir: sortParams.sortDir,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
 
   const { filtering, bulk, markPast, singleActions } = useEventAdmin(events, activeTab)
   const backgroundEnrichment = useBackgroundEnrichment()
@@ -142,7 +235,19 @@ function EventListPage() {
 
   const handleTabChange = (value: string) => {
     // Update URL search params to persist tab across router invalidations
-    navigate({ search: { tab: value as EventTab } })
+    // Clear column filters and sorting when switching tabs
+    navigate({
+      search: {
+        tab: value as EventTab,
+        // Clear all filter/sort params
+        name: undefined,
+        venue_name: undefined,
+        source: undefined,
+        status: undefined,
+        sortBy: undefined,
+        sortDir: undefined,
+      },
+    })
     // Clear other filters when switching tabs
     filtering.clearFilters()
   }
@@ -395,6 +500,10 @@ function EventListPage() {
                 enableColumnResizing={true}
                 enableColumnReordering={true}
                 enableColumnFiltering={true}
+                columnFilters={columnFilters}
+                onColumnFiltersChange={handleColumnFiltersChange}
+                sorting={sorting}
+                onSortingChange={handleSortingChange}
                 enableMultiSort={true}
                 enableVirtualization={true}
                 estimatedRowHeight={64}
