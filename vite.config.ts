@@ -8,6 +8,14 @@ import { nitro } from 'nitro/vite'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
 const config = defineConfig({
+  resolve: {
+    alias: [
+      // Polyfill Node.js stream modules for browser compatibility
+      // Fixes TanStack Router SSR code being bundled in client build
+      { find: 'node:stream', replacement: 'stream-browserify' },
+      { find: 'node:stream/web', replacement: 'web-streams-polyfill/ponyfill' },
+    ],
+  },
   plugins: [
     paraglideVitePlugin({
       project: './project.inlang',

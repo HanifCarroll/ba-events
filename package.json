@@ -68,6 +68,8 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
+    "stream-browserify": "^3.0.0",
+    "web-streams-polyfill": "^4.1.0",
     "@tanstack/devtools-vite": "^0.3.11",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.2.0",
