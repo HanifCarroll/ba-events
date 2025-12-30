@@ -1,7 +1,7 @@
 // Re-export all admin modules for convenience
 
-// Utils
-export { requireAdminAccess, mapToNeighborhood } from './utils'
+// Utils (note: requireAdminAccess is not exported - it's server-only and used internally)
+export { mapToNeighborhood } from './utils'
 
 // Stats
 export { getAdminStats } from './stats'

@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getEventsWithVenues, updateEvent, deleteEvent } from '../supabase'
+import { getEventsWithVenues, updateEvent, deleteEvent } from '../db/client'
+import { requireAdminAccess } from './utils'
 import type { EventWithVenue, EventUpdate } from '../types'
 
 export const getPendingEventsAction = createServerFn({ method: 'GET' }).handler(
@@ -12,17 +13,19 @@ export const getPendingEventsAction = createServerFn({ method: 'GET' }).handler(
 export const approveEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { eventId: string; venueId?: string }) => data)
   .handler(async ({ data: { eventId, venueId } }) => {
+    const client = await requireAdminAccess()
     const updates: EventUpdate = { status: 'scheduled' }
     if (venueId) {
       updates.venue_id = venueId
     }
-    await updateEvent(eventId, updates)
+    await updateEvent(eventId, updates, client)
     return { success: true }
   })
 
 export const rejectEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { eventId: string }) => data)
   .handler(async ({ data: { eventId } }) => {
-    await deleteEvent(eventId)
+    const client = await requireAdminAccess()
+    await deleteEvent(eventId, client)
     return { success: true }
   })

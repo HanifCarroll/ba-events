@@ -1,15 +1,21 @@
-import { getSessionUser } from '../session'
+import { getSessionUser } from '../auth/session'
+import { createSupabaseServerClient } from '../db/server'
+import type { SupabaseClient } from '../db/client'
 import type { Neighborhood } from '../types'
 import { NEIGHBORHOODS } from '../types'
 
 /**
- * Helper to validate admin access in server functions
+ * Validates admin access and returns authenticated Supabase client.
+ * Throws if user is not authenticated or not an admin.
+ * The returned client has the user's session context, enabling RLS policies.
  */
-export async function requireAdminAccess(): Promise<void> {
+export async function requireAdminAccess(): Promise<SupabaseClient> {
   const session = await getSessionUser()
   if (!session?.isAdmin) {
     throw new Error('Unauthorized: Admin access required')
   }
+  // Return authenticated client for database operations with RLS
+  return createSupabaseServerClient()
 }
 
 /**

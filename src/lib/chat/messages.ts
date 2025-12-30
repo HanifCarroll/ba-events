@@ -1,5 +1,5 @@
-import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category } from './types'
-import { CATEGORIES, NEIGHBORHOODS } from './types'
+import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category } from '../types'
+import { CATEGORIES, NEIGHBORHOODS } from '../types'
 
 // Generate unique ID for messages
 export function generateId(): string {

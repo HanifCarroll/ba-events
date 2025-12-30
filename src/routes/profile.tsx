@@ -37,7 +37,7 @@ import {
   useUpdatePassword,
   useDeleteAccount,
 } from '@/hooks/useProfileMutations'
-import { requireAuth } from '@/lib/session'
+import { requireAuth } from '@/lib/auth/session'
 
 export const Route = createFileRoute('/profile')({
   beforeLoad: async () => {

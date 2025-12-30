@@ -6,7 +6,7 @@ import {
   createVenues,
   updateVenue,
   deleteVenue,
-} from '../supabase'
+} from '../db/client'
 import { requireAdminAccess } from './utils'
 import type { VenueInsert, VenueUpdate } from '../types'
 
@@ -32,30 +32,30 @@ export const getVenuesForSelect = createServerFn({ method: 'GET' }).handler(asyn
 export const createVenueAction = createServerFn({ method: 'POST' })
   .inputValidator((data: VenueInsert) => data)
   .handler(async ({ data }) => {
-    await requireAdminAccess()
-    return createVenue(data)
+    const client = await requireAdminAccess()
+    return createVenue(data, client)
   })
 
 export const updateVenueAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: string; data: VenueUpdate }) => input)
   .handler(async ({ data: { id, data } }) => {
-    await requireAdminAccess()
-    return updateVenue(id, data)
+    const client = await requireAdminAccess()
+    return updateVenue(id, data, client)
   })
 
 export const deleteVenueAction = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
-    await requireAdminAccess()
-    await deleteVenue(id)
+    const client = await requireAdminAccess()
+    await deleteVenue(id, client)
     return { success: true }
   })
 
 export const bulkCreateVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: VenueInsert[]) => data)
   .handler(async ({ data: venues }) => {
-    await requireAdminAccess()
-    const created = await createVenues(venues)
+    const client = await requireAdminAccess()
+    const created = await createVenues(venues, client)
     return {
       success: true,
       count: created.length,

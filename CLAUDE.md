@@ -126,13 +126,13 @@ See `supabase/schema.sql` for the complete schema including:
 
 ## AI/LLM
 
-Use the Anthropic SDK with Claude for the AI agent. The agent is in `src/lib/ai.ts`.
+Use the Anthropic SDK with Claude for the AI agent. The agent is in `src/lib/ai/agent.ts`.
 
 Tools available to Claude:
 - `search_events` - Semantic and filtered event search
 - `get_venue_details` - Venue information lookup
 
-For embeddings, use OpenAI via `src/lib/embeddings.ts`.
+For embeddings, use OpenAI via `src/lib/ai/embeddings.ts`.
 
 ## Internationalization (i18n)
 
@@ -209,26 +209,44 @@ src/
 │   ├── useBackgroundEnrichment.ts # Track enrichment progress
 │   └── useAuthContext.ts      # Auth context hook
 ├── lib/
-│   ├── ai.ts            # Claude agent with tools
-│   ├── admin.ts         # Admin server functions
-│   ├── auth.ts          # Supabase auth functions
-│   ├── supabase.ts      # Database queries
-│   ├── embeddings.ts    # OpenAI embeddings
-│   ├── enrichment.ts    # Event description enrichment
-│   ├── schemas.ts       # Zod validation schemas
-│   ├── types.ts         # TypeScript types
+│   ├── ai/              # AI/LLM code
+│   │   ├── agent.ts     # Claude agent with tools
+│   │   ├── embeddings.ts # OpenAI embeddings
+│   │   └── enrichment.ts # Event description enrichment
+│   ├── admin/           # Admin server functions
+│   │   ├── index.ts     # Main exports
+│   │   ├── events.ts    # Event CRUD
+│   │   ├── venues.ts    # Venue CRUD
+│   │   ├── moderation.ts # Event moderation
+│   │   ├── enrichment.ts # Batch enrichment
+│   │   ├── stats.ts     # Dashboard stats
+│   │   ├── utils.ts     # Shared utilities
+│   │   └── sources/     # Import source handlers
+│   ├── auth/            # Authentication
+│   │   ├── client.ts    # Browser-side Supabase auth
+│   │   ├── session.ts   # Server session management
+│   │   └── rate-limit.ts # Upstash Redis rate limiting
+│   ├── chat/            # Chat feature
+│   │   ├── messages.ts  # Message utilities
+│   │   └── saved.ts     # Saved events logic
+│   ├── db/              # Database layer
+│   │   ├── client.ts    # Supabase queries
+│   │   └── server.ts    # Server-side Supabase client
+│   ├── scrapers/        # Event source scrapers
+│   │   ├── passline/
+│   │   ├── eventbrite/
+│   │   ├── ba-tourism/
+│   │   ├── meetup/
+│   │   ├── index.ts
+│   │   └── venue-matcher.ts
+│   ├── utils/           # Shared utilities
+│   │   ├── index.ts     # General utilities (cn, etc.)
+│   │   └── formatting.ts # Date/time formatting
+│   ├── analytics.ts     # PostHog tracking
 │   ├── query.ts         # React Query setup
-│   ├── utils.ts         # Utility functions
-│   ├── rate-limit.ts    # Upstash Redis rate limiting
-│   ├── saved-events.ts  # Saved events logic
+│   ├── schemas.ts       # Zod validation schemas
 │   ├── source-metadata.ts # Data gaps per source
-│   └── scrapers/        # Event source scrapers
-│       ├── passline/
-│       ├── eventbrite/
-│       ├── ba-tourism/
-│       ├── meetup/
-│       ├── index.ts
-│       └── venue-matcher.ts
+│   └── types.ts         # TypeScript types
 ├── paraglide/           # i18n (auto-generated)
 ├── routes/              # TanStack Router pages
 ├── styles.css           # Global styles

@@ -5,9 +5,9 @@ import {
 } from '../../scrapers/passline'
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
-import { upsertEvents, updateEvent, createVenue } from '../../supabase'
-import { generateEmbedding } from '../../embeddings'
-import { mapToNeighborhood } from '../utils'
+import { upsertEvents, updateEvent, createVenue } from '../../db/client'
+import { generateEmbedding } from '../../ai/embeddings'
+import { mapToNeighborhood, requireAdminAccess } from '../utils'
 import type { EventInsert, Neighborhood } from '../../types'
 
 export interface PasslinePreviewEvent {
@@ -56,6 +56,8 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
     (data: { events: Array<{ passlineEvent: PasslineEvent; venueId: string | null }> }) => data
   )
   .handler(async ({ data }) => {
+    const client = await requireAdminAccess()
+
     if (data.events.length === 0) {
       return { success: true, inserted: 0, updated: 0, venuesCreated: 0 }
     }
@@ -101,7 +103,7 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
     }
 
     // Upsert events (insert new, update existing)
-    const result = await upsertEvents(eventsWithEmbeddings)
+    const result = await upsertEvents(eventsWithEmbeddings, client)
 
     return {
       success: true,
@@ -136,6 +138,7 @@ interface PasslineVenueEnrichmentOutput {
 export const enrichPasslineVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: PasslineVenueEnrichmentInput[] }) => data)
   .handler(async ({ data }): Promise<PasslineVenueEnrichmentOutput> => {
+    const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
@@ -192,14 +195,14 @@ export const enrichPasslineVenuesAction = createServerFn({ method: 'POST' })
             name: event.venueName,
             address: fullAddress,
             neighborhood,
-          })
+          }, client)
           venueId = newVenue.id
           venuesCreated++
           console.log(`[Admin] Created new venue: ${event.venueName} (${fullAddress || 'no address'})`)
         }
 
         // Update event with venue_id
-        await updateEvent(event.id, { venue_id: venueId })
+        await updateEvent(event.id, { venue_id: venueId }, client)
         enriched++
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'

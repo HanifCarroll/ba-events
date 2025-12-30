@@ -1,8 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 import { redirect } from '@tanstack/react-router'
-import { createSupabaseServerClient } from './supabase-server'
+import { createSupabaseServerClient } from '../db/server'
 import type { User } from '@supabase/supabase-js'
-import type { Profile } from './types'
+import type { Profile } from '../types'
 
 export interface SessionUser {
   user: User

@@ -2,8 +2,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { createServerFn } from '@tanstack/react-start'
 import { useState, useEffect, useCallback } from 'react'
 import type { Session, User, EmailOtpType } from '@supabase/supabase-js'
-import type { Locale, Profile } from './types'
-import { createSupabaseServerClient } from './supabase-server'
+import type { Locale, Profile } from '../types'
+import { createSupabaseServerClient } from '../db/server'
 
 // Browser-side Supabase client for auth
 // Note: These are public keys, safe to expose to browser

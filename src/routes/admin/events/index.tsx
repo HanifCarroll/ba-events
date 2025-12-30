@@ -33,7 +33,7 @@ import {
 import { Combobox } from '@/components/ui/combobox'
 import { DataTable, getEventColumns } from '@/components/data-table'
 import { listEvents } from '@/lib/admin'
-import { formatDateTime } from '@/lib/formatting'
+import { formatDateTime } from '@/lib/utils/formatting'
 import { useEventAdmin, useBackgroundEnrichment, useVenueEnrichment, type EventTab, type DataGapType } from '@/hooks'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import type { EventWithVenue } from '@/lib/types'

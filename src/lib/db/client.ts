@@ -15,8 +15,8 @@ import type {
   VenueInsert,
   VenueUpdate,
   Neighborhood,
-} from './types'
-import { generateEmbedding } from './embeddings'
+} from '../types'
+import { generateEmbedding } from '../ai/embeddings'
 
 // Lazy-initialize Supabase client (only when needed, server-side only)
 let supabaseInstance: SupabaseClient | null = null

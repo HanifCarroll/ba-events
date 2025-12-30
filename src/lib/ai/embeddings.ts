@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
 import { createServerFn } from '@tanstack/react-start'
-import { supabase } from './supabase'
-import type { Event, EventWithVenue } from './types'
+import { supabase } from '../db/client'
+import type { Event, EventWithVenue } from '../types'
 
 // Lazy-initialize OpenAI client (only when needed, server-side only)
 let openai: OpenAI | null = null

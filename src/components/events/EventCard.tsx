@@ -6,8 +6,8 @@ import {
 } from '@/components/ui/collapsible'
 import { EventActions } from './EventActions'
 import { SaveEventButton } from '@/components/SaveEventButton'
-import { formatPrice } from '@/lib/chat'
-import { formatShortDate, formatTime, formatEventTime } from '@/lib/formatting'
+import { formatPrice } from '@/lib/chat/messages'
+import { formatShortDate, formatTime, formatEventTime } from '@/lib/utils/formatting'
 import { track } from '@/lib/analytics'
 import type { EventWithVenue } from '@/lib/types'
 

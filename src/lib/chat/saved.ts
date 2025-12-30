@@ -1,5 +1,5 @@
-import { getSupabaseBrowserClient } from './auth'
-import type { EventWithVenue } from './types'
+import { getSupabaseBrowserClient } from '../auth/client'
+import type { EventWithVenue } from '../types'
 
 // Get all saved events for the current user
 export async function getSavedEvents(): Promise<EventWithVenue[]> {

@@ -1,7 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getEventsWithVenues, getEventById, updateEvent } from '../supabase'
-import { generateEmbedding } from '../embeddings'
-import { enrichEventDescriptionBilingual } from '../enrichment'
+import { getEventsWithVenues, getEventById, updateEvent } from '../db/client'
+import { generateEmbedding } from '../ai/embeddings'
+import { enrichEventDescriptionBilingual } from '../ai/enrichment'
+import { requireAdminAccess } from './utils'
 import type { EventWithVenue } from '../types'
 
 /**
@@ -14,6 +15,7 @@ export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
     (data: { events: Array<{ id: string; link: string }> }) => data
   )
   .handler(async ({ data: { events } }) => {
+    const client = await requireAdminAccess()
     console.log(`[server] enrichEventDescriptionsAction called with ${events.length} events`)
     let enriched = 0
     const errors: Array<{ id: string; error: string }> = []
@@ -49,7 +51,7 @@ export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
           description_es: bilingual.description_es,
           description_en: bilingual.description_en,
           embedding,
-        })
+        }, client)
 
         enriched++
       } catch (error) {
@@ -88,6 +90,7 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
     (data: { updates: Array<{ id: string; description_es: string; description_en: string }> }) => data
   )
   .handler(async ({ data: { updates } }) => {
+    const client = await requireAdminAccess()
     let updated = 0
 
     for (const { id, description_es, description_en } of updates) {
@@ -111,7 +114,7 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
           description_es,
           description_en,
           embedding,
-        })
+        }, client)
 
         updated++
       } catch (error) {

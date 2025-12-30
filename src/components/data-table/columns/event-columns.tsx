@@ -4,7 +4,7 @@ import { Pencil, Trash2, MapPin, CheckCircle2, XCircle, ExternalLink } from 'luc
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTableColumnHeader } from '../DataTableColumnHeader'
-import { formatDateTime } from '@/lib/formatting'
+import { formatDateTime } from '@/lib/utils/formatting'
 import type { EventWithVenue } from '@/lib/types'
 
 function getSourceBadge(source: string) {

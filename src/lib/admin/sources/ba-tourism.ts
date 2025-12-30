@@ -9,8 +9,8 @@ import {
 import { extractBATourismVenuesBatch } from '../../scrapers/ba-tourism/enrichment'
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
-import { upsertEvents, supabase, updateEvent, createVenue, createVenues, findVenuesByExactNames } from '../../supabase'
-import { generateEmbedding } from '../../embeddings'
+import { upsertEvents, supabase, updateEvent, createVenue, createVenues, findVenuesByExactNames } from '../../db/client'
+import { generateEmbedding } from '../../ai/embeddings'
 import { mapToNeighborhood, requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
 
@@ -73,6 +73,8 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
     }) => data
   )
   .handler(async ({ data }) => {
+    const client = await requireAdminAccess()
+
     // Step 1: Collect unique venue names that need to be created
     const venueDataMap = new Map<
       string,
@@ -115,7 +117,7 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
 
     if (venuesToCreate.length > 0) {
       try {
-        newVenues = await createVenues(venuesToCreate)
+        newVenues = await createVenues(venuesToCreate, client)
         venuesCreated = newVenues.length
         console.log(`[Admin] Auto-created ${venuesCreated} venues for BA Tourism import`)
       } catch (error) {
@@ -170,7 +172,7 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
       eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
-    const result = await upsertEvents(eventsWithEmbeddings)
+    const result = await upsertEvents(eventsWithEmbeddings, client)
 
     return {
       success: true,
@@ -226,6 +228,7 @@ export const getBATourismEventsNeedingEnrichmentAction = createServerFn({ method
 export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: BATourismEnrichmentInput[] }) => data)
   .handler(async ({ data }): Promise<BATourismEnrichmentOutput> => {
+    const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
@@ -268,14 +271,14 @@ export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
             name: result.venueName,
             neighborhood: null,
             address: null,
-          })
+          }, client)
           venueId = newVenue.id
           venuesCreated++
           console.log(`[Admin] Created new venue: ${result.venueName}`)
         }
 
         // Update event with venue_id
-        await updateEvent(result.id, { venue_id: venueId })
+        await updateEvent(result.id, { venue_id: venueId }, client)
         enriched++
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'

@@ -9,8 +9,9 @@ import {
 import { enrichEventbriteEventsBatch, extractEventbriteVenuesBatch } from '../../scrapers/eventbrite/enrichment'
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
-import { upsertEvents, supabase, getEventById, updateEvent, createVenue } from '../../supabase'
-import { generateEmbedding } from '../../embeddings'
+import { upsertEvents, supabase, getEventById, updateEvent, createVenue } from '../../db/client'
+import { generateEmbedding } from '../../ai/embeddings'
+import { requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
 
 export interface EventbritePreviewEvent {
@@ -102,6 +103,8 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
     (data: { events: Array<{ eventbriteEvent: EventbriteEvent; venueId: string | null }> }) => data
   )
   .handler(async ({ data }) => {
+    const client = await requireAdminAccess()
+
     if (data.events.length === 0) {
       return { success: true, inserted: 0, updated: 0, venuesCreated: 0 }
     }
@@ -134,7 +137,7 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
               neighborhood: null, // Could try to infer from addressLocality
               address: addressParts.length > 0 ? addressParts.join(', ') : null,
               // Note: lat/lng not stored - could add to Venue schema in future
-            })
+            }, client)
             finalVenueId = newVenue.id
             venuesCreated++
             console.log(`[Admin] Auto-created venue for Eventbrite: "${venueName}"`)
@@ -166,7 +169,7 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
     }
 
     // Upsert events (insert new, update existing)
-    const result = await upsertEvents(eventsWithEmbeddings)
+    const result = await upsertEvents(eventsWithEmbeddings, client)
 
     return {
       success: true,
@@ -223,6 +226,7 @@ export interface EventbriteEnrichmentOutput {
 export const enrichEventbriteEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: EventbriteEnrichmentInput[] }) => data)
   .handler(async ({ data }): Promise<EventbriteEnrichmentOutput> => {
+    const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
@@ -265,7 +269,7 @@ export const enrichEventbriteEventsAction = createServerFn({ method: 'POST' })
           is_free: result.is_free,
           categories: result.categories,
           embedding,
-        })
+        }, client)
 
         enriched++
       } catch (error) {
@@ -307,6 +311,7 @@ interface EventbriteVenueEnrichmentOutput {
 export const enrichEventbriteVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: EventbriteVenueEnrichmentInput[] }) => data)
   .handler(async ({ data }): Promise<EventbriteVenueEnrichmentOutput> => {
+    const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
@@ -350,14 +355,14 @@ export const enrichEventbriteVenuesAction = createServerFn({ method: 'POST' })
             address: result.venue.address,
             neighborhood: null,
             // Note: lat/lng not stored - could add to Venue schema in future
-          })
+          }, client)
           venueId = newVenue.id
           venuesCreated++
           console.log(`[Admin] Created new venue: ${result.venue.name}`)
         }
 
         // Update event with venue_id
-        await updateEvent(result.id, { venue_id: venueId })
+        await updateEvent(result.id, { venue_id: venueId }, client)
         enriched++
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'

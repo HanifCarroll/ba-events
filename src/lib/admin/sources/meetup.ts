@@ -8,8 +8,9 @@ import {
 } from '../../scrapers/meetup'
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
-import { upsertEvents, supabase, updateEvent, createVenue } from '../../supabase'
-import { generateEmbedding } from '../../embeddings'
+import { upsertEvents, supabase, updateEvent, createVenue } from '../../db/client'
+import { generateEmbedding } from '../../ai/embeddings'
+import { requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
 
 export interface MeetupPreviewEvent {
@@ -107,6 +108,8 @@ export const importMeetupEventsBatchAction = createServerFn({ method: 'POST' })
     }) => data
   )
   .handler(async ({ data }) => {
+    const client = await requireAdminAccess()
+
     const eventsToImport: EventInsert[] = data.events.flatMap(({ meetupEvent, venueId }) =>
       transformMeetupEventWithExpansion(meetupEvent, venueId, 4)
     )
@@ -133,7 +136,7 @@ export const importMeetupEventsBatchAction = createServerFn({ method: 'POST' })
       eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
-    const result = await upsertEvents(eventsWithEmbeddings)
+    const result = await upsertEvents(eventsWithEmbeddings, client)
 
     return {
       success: true,
@@ -192,6 +195,7 @@ export interface MeetupEnrichmentOutput {
 export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: MeetupEnrichmentInput[] }) => data)
   .handler(async ({ data }): Promise<MeetupEnrichmentOutput> => {
+    const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
@@ -238,14 +242,14 @@ export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
             name: result.venue.name,
             address: result.venue.address,
             neighborhood: null,
-          })
+          }, client)
           venueId = newVenue.id
           venuesCreated++
           console.log(`[Admin] Created new venue: ${result.venue.name}`)
         }
 
         // Update event with venue_id
-        await updateEvent(result.eventId, { venue_id: venueId })
+        await updateEvent(result.eventId, { venue_id: venueId }, client)
         enriched++
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'

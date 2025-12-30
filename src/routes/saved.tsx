@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Bookmark, Calendar, Clock, ArrowLeft, Sparkles } from 'lucide-react'
 import { useAuthContext } from '@/hooks/useAuthContext'
-import { getSavedEvents } from '@/lib/saved-events'
+import { getSavedEvents } from '@/lib/chat/saved'
 import { EventCard } from '@/components/events/EventCard'
 import { Button } from '@/components/ui/button'
 import type { EventWithVenue } from '@/lib/types'
 import * as m from '@/paraglide/messages'
-import { requireAuth } from '@/lib/session'
+import { requireAuth } from '@/lib/auth/session'
 
 export const Route = createFileRoute('/saved')({
   beforeLoad: async () => {

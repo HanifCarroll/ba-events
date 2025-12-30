@@ -4,10 +4,10 @@ import { getRequestHeader } from '@tanstack/react-start/server'
 import { z } from 'zod'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
-import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from './supabase'
-import { checkRateLimit } from './rate-limit'
-import { CATEGORIES, NEIGHBORHOODS } from './types'
-import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue } from './types'
+import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from '../db/client'
+import { checkRateLimit } from '../auth/rate-limit'
+import { CATEGORIES, NEIGHBORHOODS } from '../types'
+import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue } from '../types'
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({

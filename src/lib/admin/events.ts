@@ -10,8 +10,8 @@ import {
   bulkDeleteEvents,
   markPastEvents,
   countPastEvents,
-} from '../supabase'
-import { generateEmbedding } from '../embeddings'
+} from '../db/client'
+import { generateEmbedding } from '../ai/embeddings'
 import { requireAdminAccess } from './utils'
 import type { EventInsert, EventUpdate, EventWithVenue, EventStatus } from '../types'
 
@@ -28,7 +28,7 @@ export const getEventAction = createServerFn({ method: 'GET' })
 export const createEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert) => data)
   .handler(async ({ data }) => {
-    await requireAdminAccess()
+    const client = await requireAdminAccess()
     // Generate embedding from name and Spanish description (cross-lingual model)
     const textForEmbedding = [
       data.name,
@@ -43,13 +43,13 @@ export const createEventAction = createServerFn({ method: 'POST' })
     return createEvent({
       ...data,
       embedding,
-    })
+    }, client)
   })
 
 export const updateEventAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: string; data: EventUpdate }) => input)
   .handler(async ({ data: { id, data } }) => {
-    await requireAdminAccess()
+    const client = await requireAdminAccess()
     // If name, description_es, or categories changed, regenerate embedding
     const existingEvent = await getEventById(id)
     const needsNewEmbedding =
@@ -75,21 +75,21 @@ export const updateEventAction = createServerFn({ method: 'POST' })
     return updateEvent(id, {
       ...data,
       ...(embedding && { embedding }),
-    })
+    }, client)
   })
 
 export const deleteEventAction = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
-    await requireAdminAccess()
-    await deleteEvent(id)
+    const client = await requireAdminAccess()
+    await deleteEvent(id, client)
     return { success: true }
   })
 
 export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert[]) => data)
   .handler(async ({ data: events }) => {
-    await requireAdminAccess()
+    const client = await requireAdminAccess()
     // Generate embeddings for all events using Spanish description
     const eventsWithEmbeddings = await Promise.all(
       events.map(async (event) => {
@@ -111,7 +111,7 @@ export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
     )
 
     // Insert all events
-    const created = await createEvents(eventsWithEmbeddings)
+    const created = await createEvents(eventsWithEmbeddings, client)
 
     return {
       success: true,
@@ -122,8 +122,8 @@ export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
 export const bulkUpdateEventStatusAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { eventIds: string[]; status: EventStatus }) => input)
   .handler(async ({ data: { eventIds, status } }) => {
-    await requireAdminAccess()
-    const updated = await bulkUpdateEventStatus(eventIds, status)
+    const client = await requireAdminAccess()
+    const updated = await bulkUpdateEventStatus(eventIds, status, client)
     return {
       success: true,
       count: updated.length,
@@ -133,8 +133,8 @@ export const bulkUpdateEventStatusAction = createServerFn({ method: 'POST' })
 export const bulkDeleteEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((eventIds: string[]) => eventIds)
   .handler(async ({ data: eventIds }) => {
-    await requireAdminAccess()
-    await bulkDeleteEvents(eventIds)
+    const client = await requireAdminAccess()
+    await bulkDeleteEvents(eventIds, client)
     return {
       success: true,
       count: eventIds.length,
@@ -147,7 +147,8 @@ export const countPastEventsAction = createServerFn({ method: 'GET' }).handler(a
 })
 
 export const markPastEventsAction = createServerFn({ method: 'POST' }).handler(async () => {
-  const updated = await markPastEvents()
+  const client = await requireAdminAccess()
+  const updated = await markPastEvents(client)
   return {
     success: true,
     count: updated.length,

@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getVenues, getEventsWithVenues } from '../supabase'
+import { getVenues, getEventsWithVenues } from '../db/client'
 
 export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () => {
   const [venues, events] = await Promise.all([

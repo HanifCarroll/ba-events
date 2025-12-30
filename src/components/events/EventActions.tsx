@@ -6,7 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { toggleFavorite, isFavorite } from '@/lib/chat'
+import { toggleFavorite, isFavorite } from '@/lib/chat/messages'
 import { track } from '@/lib/analytics'
 import type { EventWithVenue } from '@/lib/types'
 
