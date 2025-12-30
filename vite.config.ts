@@ -4,19 +4,10 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
-import { nitro } from 'nitro/vite'
+import netlify from '@netlify/vite-plugin-tanstack-start'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
 const config = defineConfig({
-  resolve: {
-    alias: [
-      // Polyfill Node.js stream modules for browser compatibility
-      // Fixes TanStack Router SSR code being bundled in client build
-      // Order matters: more specific paths first, use regex for exact matching
-      { find: /^node:stream\/web$/, replacement: 'web-streams-polyfill/ponyfill' },
-      { find: /^node:stream$/, replacement: 'stream-browserify' },
-    ],
-  },
   plugins: [
     paraglideVitePlugin({
       project: './project.inlang',
@@ -24,9 +15,7 @@ const config = defineConfig({
       strategy: ['cookie', 'preferredLanguage', 'baseLocale'],
     }),
     devtools(),
-    nitro({
-      preset: 'netlify',
-    }),
+    netlify(),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
       projects: ['./tsconfig.json'],
