@@ -125,7 +125,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           }
         `}
       >
-        <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-primary' : ''} ${item.action ? 'group-hover:rotate-12 transition-transform duration-300' : ''}`} />
+        <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-primary' : ''}`} />
         {showLabel && <span className="font-medium truncate">{item.label}</span>}
         {showLabel && active && (
           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
