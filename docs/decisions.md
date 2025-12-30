@@ -26,6 +26,40 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Single-Search with Relevance Filtering for Chat Agent
+
+**Date:** 2025-12-30
+
+**Decision:** Replace the agentic loop (up to 5 iterations) with a single-search model where Claude makes ONE tool call per message, filters results for relevance, and refinement suggestions help users iterate.
+
+**Alternatives Considered:**
+- Keep agentic loop with better sync: Complex to fix text/events mismatch when Claude retries
+- Show all semantic search results: Overwhelms users with loosely related events
+- Stricter similarity threshold in database: Less flexible, Claude can't apply contextual filtering
+
+**Rationale:**
+1. **Text/events mismatch**: The agentic loop caused Claude's text to describe different events than what was displayed (events sent immediately on tool execution, but Claude might retry and describe different results)
+2. **Relevance filtering**: Semantic search returns loosely related results. Having Claude explicitly specify which events are relevant (via `RELEVANT:["id1","id2"]` marker) ensures only contextually appropriate events are shown
+3. **User-driven refinement**: Instead of AI guessing how to refine searches, suggestion chips let users drive iteration (augment mode for results found, replace mode for zero results)
+4. **UX research**: Industry best practice is "fewer, more relevant results" over showing everything
+
+---
+
+### 4-Hour Default Duration for Events Without End Times
+
+**Date:** 2025-12-30
+
+**Decision:** Mark events as "past" 4 hours after their start time if they have no end time specified.
+
+**Alternatives Considered:**
+- Wait until next calendar day: Too conservative - a 9pm event would still show until midnight
+- Hide immediately when start time passes: Too aggressive - users might still want to discover ongoing events
+- 2-hour default: Too short for concerts and club nights typical in Buenos Aires
+
+**Rationale:** Research into event platforms (Eventbrite, Meetup, The Events Calendar) showed varying approaches. For Buenos Aires nightlife/events, 4 hours balances discoverability with relevance: concerts (2-4 hrs), club nights (4-6+ hrs), cultural events (1-3 hrs). A concert at 9pm hides by 1am; a club night at 11pm hides by 3am.
+
+---
+
 ### Unified Collapsible Sidebar Navigation
 
 **Date:** 2025-12-29
