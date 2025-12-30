@@ -67,8 +67,18 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
         })}
       </div>
 
+      {/* SEO Info Section - provides indexable content for search engines */}
+      <section className="mt-8 max-w-xl text-center">
+        <h2 className="text-sm font-medium text-muted-foreground/70 mb-2">
+          {m.home_about_title()}
+        </h2>
+        <p className="text-xs text-muted-foreground/50 leading-relaxed">
+          {m.home_about_text()}
+        </p>
+      </section>
+
       {/* Footer hint - hidden on mobile to save space */}
-      <div className="hidden sm:block mt-8 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+      <div className="hidden sm:block mt-6 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
           {m.home_hint()}
           <span className="block mt-1 text-primary/70">

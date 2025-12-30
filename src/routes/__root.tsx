@@ -40,43 +40,35 @@ if (typeof window !== 'undefined') {
 export const Route = createRootRoute({
   head: () => ({
     meta: [
-      {
-        charSet: 'utf-8',
-      },
-      {
-        name: 'viewport',
-        content: 'width=device-width, initial-scale=1',
-      },
-      {
-        title: 'BA Events - Discover Buenos Aires',
-      },
-      {
-        name: 'description',
-        content: 'AI-powered event discovery for Buenos Aires. Find techno nights, jazz bars, tango milongas, and more.',
-      },
-      {
-        name: 'theme-color',
-        content: '#1a1612',
-      },
+      // Core meta tags
+      { charSet: 'utf-8' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { title: 'BA Events - Discover Buenos Aires' },
+      { name: 'description', content: 'AI-powered event discovery for Buenos Aires. Find techno nights, jazz bars, tango milongas, and more.' },
+      { name: 'theme-color', content: '#1a1612' },
+
+      // Open Graph tags
+      { property: 'og:type', content: 'website' },
+      { property: 'og:site_name', content: 'BA Events' },
+      { property: 'og:title', content: 'BA Events - Discover Buenos Aires' },
+      { property: 'og:description', content: 'AI-powered event discovery for Buenos Aires. Find techno nights, jazz bars, tango milongas, and more.' },
+      { property: 'og:image', content: 'https://ba-events.app/og-image.png' },
+      { property: 'og:url', content: 'https://ba-events.app' },
+      { property: 'og:locale', content: 'en_US' },
+      { property: 'og:locale:alternate', content: 'es_AR' },
+
+      // Twitter Card tags
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'twitter:title', content: 'BA Events - Discover Buenos Aires' },
+      { name: 'twitter:description', content: 'AI-powered event discovery for Buenos Aires. Find techno nights, jazz bars, tango milongas, and more.' },
+      { name: 'twitter:image', content: 'https://ba-events.app/og-image.png' },
     ],
     links: [
-      {
-        rel: 'preconnect',
-        href: 'https://fonts.googleapis.com',
-      },
-      {
-        rel: 'preconnect',
-        href: 'https://fonts.gstatic.com',
-        crossOrigin: 'anonymous',
-      },
-      {
-        rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap',
-      },
-      {
-        rel: 'stylesheet',
-        href: appCss,
-      },
+      { rel: 'canonical', href: 'https://ba-events.app' },
+      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+      { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
+      { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap' },
+      { rel: 'stylesheet', href: appCss },
     ],
   }),
 

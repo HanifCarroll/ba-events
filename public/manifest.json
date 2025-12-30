@@ -1,6 +1,7 @@
 {
-  "short_name": "TanStack App",
-  "name": "Create TanStack App Sample",
+  "short_name": "BA Events",
+  "name": "BA Events - Discover Buenos Aires",
+  "description": "AI-powered event discovery for Buenos Aires",
   "icons": [
     {
       "src": "favicon.ico",
@@ -20,6 +21,6 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#1a1612",
+  "background_color": "#1a1612"
 }
