@@ -1,6 +1,6 @@
 import { ColumnDef } from '@tanstack/react-table'
 import { Link } from '@tanstack/react-router'
-import { Pencil, Trash2, MapPin, CheckCircle2, XCircle } from 'lucide-react'
+import { Pencil, Trash2, MapPin, CheckCircle2, XCircle, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTableColumnHeader } from '../DataTableColumnHeader'
@@ -174,6 +174,31 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
         <DataTableColumnHeader column={column} title="Source" />
       ),
       cell: ({ row }) => getSourceBadge(row.original.source),
+    },
+    {
+      id: 'link',
+      accessorKey: 'link',
+      size: 80,
+      minSize: 60,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Link" />
+      ),
+      cell: ({ row }) => {
+        const link = row.original.link
+        return link ? (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors"
+            title={link}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      },
     },
     {
       id: 'status',
