@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, ReactNode, CSSProperties } from 'react'
+import { useState, useMemo, useCallback, useRef, ReactNode, CSSProperties, MouseEvent } from 'react'
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -15,6 +15,7 @@ import {
   useReactTable,
   Row,
   RowSelectionState,
+  Table,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
@@ -58,6 +59,94 @@ function rowSelectionToSet(state: RowSelectionState): Set<string> {
     }
   })
   return ids
+}
+
+// Helper to get row range between two row IDs for shift-click selection
+function getRowRange<T>(rows: Row<T>[], idA: string, idB: string): Row<T>[] {
+  const range: Row<T>[] = []
+  let foundStart = false
+  let foundEnd = false
+
+  for (const row of rows) {
+    if (row.id === idA || row.id === idB) {
+      if (foundStart) {
+        foundEnd = true
+      }
+      if (!foundStart) {
+        foundStart = true
+      }
+    }
+
+    if (foundStart) {
+      range.push(row)
+    }
+
+    if (foundEnd) {
+      break
+    }
+  }
+
+  return range
+}
+
+// Selection checkbox cell with shift-click support
+function SelectCell<T>({
+  row,
+  table,
+  lastSelectedIdRef,
+}: {
+  row: Row<T>
+  table: Table<T>
+  lastSelectedIdRef: React.MutableRefObject<string | null>
+}) {
+  const handleCheckedChange = useCallback(
+    (checked: boolean) => {
+      // Normal toggle - this handles keyboard and non-shift clicks
+      row.toggleSelected(checked)
+      lastSelectedIdRef.current = row.id
+    },
+    [row, lastSelectedIdRef]
+  )
+
+  const handleClick = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      if (e.shiftKey && lastSelectedIdRef.current && lastSelectedIdRef.current !== row.id) {
+        // Prevent default checkbox behavior - we'll handle selection manually
+        e.preventDefault()
+
+        // Shift-click: select range
+        const { rows } = table.getRowModel()
+        const rowsInRange = getRowRange(rows, row.id, lastSelectedIdRef.current)
+
+        if (rowsInRange.length > 0) {
+          // Determine selection state based on the last selected row
+          const lastRow = rows.find((r) => r.id === lastSelectedIdRef.current)
+          const shouldSelect = lastRow ? lastRow.getIsSelected() : true
+
+          // Apply selection to all rows in range
+          rowsInRange.forEach((r) => {
+            if (r.getIsSelected() !== shouldSelect) {
+              r.toggleSelected(shouldSelect)
+            }
+          })
+        }
+
+        // Update last selected reference
+        lastSelectedIdRef.current = row.id
+      }
+      // For non-shift clicks, let onCheckedChange handle it
+    },
+    [row, table, lastSelectedIdRef]
+  )
+
+  return (
+    <Checkbox
+      checked={row.getIsSelected()}
+      onClick={handleClick}
+      onCheckedChange={handleCheckedChange}
+      aria-label="Select row"
+    />
+  )
 }
 
 // Drag handle for column reordering - positioned absolutely to not affect content alignment
@@ -214,6 +303,9 @@ export function DataTable<TData extends { id: string }>({
   // Preferences (persisted)
   const preferences = useColumnPreferences(tableId)
 
+  // Track last selected row for shift-click range selection
+  const lastSelectedIdRef = useRef<string | null>(null)
+
   // Local state for uncontrolled modes
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [internalColumnFilters, setInternalColumnFilters] = useState<ColumnFiltersState>([])
@@ -309,12 +401,8 @@ export function DataTable<TData extends { id: string }>({
           aria-label="Select all"
         />
       ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
-        />
+      cell: ({ row, table }) => (
+        <SelectCell row={row} table={table} lastSelectedIdRef={lastSelectedIdRef} />
       ),
     }
 
