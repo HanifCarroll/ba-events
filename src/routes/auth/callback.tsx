@@ -15,6 +15,7 @@ function AuthCallbackPage() {
     const handleCallback = async () => {
       try {
         const client = getSupabaseBrowserClient()
+        setStatus('Reading callback...')
 
         // Helper to redirect
         const redirectTo = (path: string) => {
@@ -29,15 +30,17 @@ function AuthCallbackPage() {
           redirectTo(profile?.role === 'admin' ? '/admin' : '/')
         }
 
-        // First, check if we already have a session (page refresh after auth)
-        const { data: existingSession } = await client.auth.getSession()
-        if (existingSession.session?.user) {
-          setStatus('Session found, redirecting...')
-          await completeAuth(existingSession.session.user.id)
+        const urlParams = new URLSearchParams(window.location.search)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+
+        // Check for error params
+        const errorParam = urlParams.get('error') || hashParams.get('error')
+        const errorDescription = urlParams.get('error_description') || hashParams.get('error_description')
+
+        if (errorParam) {
+          setError(errorDescription || errorParam)
           return
         }
-
-        const urlParams = new URLSearchParams(window.location.search)
 
         // Method 1: token_hash (Magic Link with PKCE - recommended for SSR)
         const tokenHash = urlParams.get('token_hash')
@@ -82,7 +85,6 @@ function AuthCallbackPage() {
         }
 
         // Method 3: hash-based params (implicit flow - legacy)
-        const hashParams = new URLSearchParams(window.location.hash.substring(1))
         const accessToken = hashParams.get('access_token')
         const refreshToken = hashParams.get('refresh_token')
 
@@ -108,12 +110,12 @@ function AuthCallbackPage() {
           return
         }
 
-        // Check for error params
-        const errorParam = urlParams.get('error') || hashParams.get('error')
-        const errorDescription = urlParams.get('error_description') || hashParams.get('error_description')
-
-        if (errorParam) {
-          setError(errorDescription || errorParam)
+        // Finally, check if we already have a session (page refresh after auth)
+        setStatus('Checking existing session...')
+        const { data: existingSession } = await client.auth.getSession()
+        if (existingSession.session?.user) {
+          setStatus('Session found, redirecting...')
+          await completeAuth(existingSession.session.user.id)
           return
         }
 
