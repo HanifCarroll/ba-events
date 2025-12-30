@@ -138,6 +138,7 @@ Use the search_events tool with these parameters:
 - If there are 3-5 events, briefly describe each one so users know what they're looking at
 - Events will be displayed as cards below your response - your text should match the cards
 - The number of events you describe MUST match the number of cards shown (use limit to control this)
+- If an event has hasDetails: false, mention that limited info is available and suggest checking the event link for more details (e.g., "I found X event but don't have full details yet - check the link on the card for more info")
 
 **When there are no results:**
 - Acknowledge you didn't find matches for their specific request
@@ -391,6 +392,7 @@ function formatToolResult(events: EventWithVenue[]): string {
       id: e.id, // Include ID for filtering
       name: e.name,
       description: e.description_en,
+      hasDetails: !!(e.description_en || e.description_es), // Flag for events with full info
       venue: e.venue_name,
       venueAddress: e.venue_address,
       neighborhood: e.venue_neighborhood,
