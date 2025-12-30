@@ -12,3 +12,6 @@ count.txt
 .vinxi
 todos.json
 .netlify
+
+# MCP server config (contains API keys)
+.mcp.json
