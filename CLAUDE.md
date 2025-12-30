@@ -123,3 +123,12 @@ src/
 - Use TanStack Query for data fetching (integrated via router)
 - **After each code change, run `bunx tsc --noEmit` to check for TypeScript errors and fix them immediately** - don't leave errors for later
 - **NEVER add backwards compatibility shims or legacy exports** - when changing APIs, update all callsites instead. Only add compatibility layers if explicitly requested.
+
+## Documentation
+
+- **Update docs when making relevant changes** - if you modify a system that has documentation in `docs/`, update the docs to reflect those changes
+- **Record architectural decisions** - when making important architectural decisions, add them to `docs/decisions.md` with:
+  - Date
+  - What was decided
+  - Alternatives considered (if applicable)
+  - Rationale for the decision
