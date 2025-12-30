@@ -166,22 +166,22 @@ Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or h
 ## Progress Tracker
 
 ### Critical Priority
-- [ ] Landing page static content and H1
-- [ ] Open Graph meta tags
-- [ ] Twitter Card meta tags
-- [ ] Core meta tags (title, description)
+- [x] Landing page static content and H1
+- [x] Open Graph meta tags
+- [x] Twitter Card meta tags
+- [x] Core meta tags (title, description)
 
 ### High Priority
-- [ ] robots.txt configuration
-- [ ] Hreflang implementation
-- [ ] PWA manifest
-- [ ] Favicon set
+- [x] robots.txt configuration
+- [ ] Hreflang implementation (deferred)
+- [x] PWA manifest
+- [ ] Favicon set (uses existing)
 
 ### Medium Priority
 - [ ] Core Web Vitals audit
 - [ ] Performance optimizations
 - [ ] Organization schema (JSON-LD)
-- [ ] Canonical URLs
+- [x] Canonical URLs
 
 ### Lower Priority
 - [ ] About page
@@ -193,23 +193,19 @@ Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or h
 
 ## Implementation Notes
 
-_Add notes here as you implement each item._
-
-### Date: ____
-**Item**:
+### Date: 2024-12-30
+**Item**: Core SEO Implementation (Phase 1)
 **Changes Made**:
+- Added Open Graph tags (og:type, og:site_name, og:title, og:description, og:image, og:url, og:locale) to `__root.tsx`
+- Added Twitter Card tags (summary_large_image) to `__root.tsx`
+- Added canonical URL link tag
+- Created 1200x630px OG image (`public/og-image.png`) with Buenos Aires nightlife theme
+- Updated `public/robots.txt` to block /admin/, /saved, /profile, /api/, /login, /register, /auth/
+- Updated `public/manifest.json` with BA Events branding and dark theme colors (#1a1612)
+- Added SEO info section to `SuggestedPrompts.tsx` with H2 heading and descriptive text
+- Added i18n keys for EN/ES (home_about_title, home_about_text)
+
 **Notes**:
-
----
-
-### Date: ____
-**Item**:
-**Changes Made**:
-**Notes**:
-
----
-
-### Date: ____
-**Item**:
-**Changes Made**:
-**Notes**:
+- OG image generated using Playwright to render HTML template to PNG
+- Hreflang deferred as it requires URL-based language routing (current setup uses cookies/headers)
+- SEO section styled to be subtle (muted-foreground/50) so it doesn't compete with main UI
