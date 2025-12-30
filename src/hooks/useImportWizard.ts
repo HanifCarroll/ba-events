@@ -6,7 +6,7 @@ import { track } from '@/lib/analytics'
 import {
   processPasslineEventsAction,
   importPasslineEventsBatchAction,
-  processEventbriteEventsAction,
+  fetchEventbriteEventsAction,
   importEventbriteEventsBatchAction,
   fetchBATourismEventsAction,
   importBATourismEventsBatchAction,
@@ -29,11 +29,6 @@ import {
   filterCABAEventsClient,
   filterByDateRangeClient,
 } from '@/lib/scrapers/passline/client'
-import {
-  fetchEventbriteEvents,
-  filterInPersonEvents,
-  filterByDateRange as filterEventbriteByDateRange,
-} from '@/lib/scrapers/eventbrite'
 import { CATEGORIES, VIBES, EVENT_STATUSES } from '@/lib/types'
 import type { Neighborhood, Category, Vibe, EventStatus, EventInsert } from '@/lib/types'
 
@@ -416,17 +411,8 @@ export function useImportWizard(
     setError(null)
 
     try {
-      // Fetch all events from Eventbrite JSON-LD
-      const allEvents = await fetchEventbriteEvents()
-
-      // Filter for in-person events only
-      const inPersonEvents = filterInPersonEvents(allEvents)
-
-      // Filter by date range
-      const filteredEvents = filterEventbriteByDateRange(inPersonEvents, startDate, endDate)
-
-      // Process events on server (venue matching + transformation)
-      const data = await processEventbriteEventsAction({ data: { events: filteredEvents } })
+      // Fetch, filter, and process events server-side (avoids CORS/bot protection)
+      const { events: data } = await fetchEventbriteEventsAction({ data: { startDate, endDate } })
 
       setEventbriteEvents(data)
 

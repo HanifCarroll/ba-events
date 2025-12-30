@@ -94,7 +94,8 @@ function extractJsonLd(html: string): EventbriteJsonLdResponse | null {
 
   try {
     const data = JSON.parse(jsonLdMatch[1])
-    if (data['@type'] === 'ItemList') {
+    // Check for ItemList structure - either explicit @type or just itemListElement array
+    if (data['@type'] === 'ItemList' || Array.isArray(data.itemListElement)) {
       return data as EventbriteJsonLdResponse
     }
     return null

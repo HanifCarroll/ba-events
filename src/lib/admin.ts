@@ -515,6 +515,9 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
 import {
   type EventbriteEvent,
   transformEventbriteEvent,
+  fetchEventbriteEvents,
+  filterInPersonEvents,
+  filterByDateRange as filterEventbriteByDateRange,
 } from './scrapers/eventbrite'
 import { enrichEventbriteEventsBatch } from './scrapers/eventbrite/enrichment'
 
@@ -528,8 +531,50 @@ export interface EventbritePreviewEvent {
 export type { EventbriteEvent }
 
 /**
+ * Fetch Eventbrite events server-side (to avoid CORS/bot protection)
+ * Includes filtering for in-person events and date range, plus venue matching
+ */
+export const fetchEventbriteEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { startDate: string; endDate: string }) => data)
+  .handler(async ({ data: { startDate, endDate } }): Promise<{ events: EventbritePreviewEvent[] }> => {
+    console.log('[Admin] Fetching Eventbrite events server-side...')
+
+    // Fetch all events from Eventbrite (server-side to avoid 503 blocking)
+    const allEvents = await fetchEventbriteEvents()
+    console.log(`[Admin] Fetched ${allEvents.length} total events from Eventbrite`)
+
+    // Filter for in-person events only
+    const inPersonEvents = filterInPersonEvents(allEvents)
+    console.log(`[Admin] ${inPersonEvents.length} in-person events after filtering`)
+
+    // Filter by date range
+    const filteredEvents = filterEventbriteByDateRange(inPersonEvents, startDate, endDate)
+    console.log(`[Admin] ${filteredEvents.length} events in date range ${startDate} to ${endDate}`)
+
+    // Match venues and transform events
+    const previews: EventbritePreviewEvent[] = await Promise.all(
+      filteredEvents.map(async (event) => {
+        const venueName = event.location?.name || ''
+        const venueMatch = await matchVenue(venueName)
+        const transformed = transformEventbriteEvent(
+          event,
+          venueMatch.venue?.id || null
+        )
+
+        return {
+          eventbrite: event,
+          transformed,
+          venueMatch,
+        }
+      })
+    )
+
+    return { events: previews }
+  })
+
+/**
  * Process raw Eventbrite events and do venue matching
- * Events are fetched directly in the browser (JSON-LD from listing page)
+ * @deprecated Use fetchEventbriteEventsAction instead which fetches server-side
  */
 export const processEventbriteEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: EventbriteEvent[] }) => data)
