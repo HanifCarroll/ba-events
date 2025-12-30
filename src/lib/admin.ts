@@ -357,19 +357,37 @@ export const processPasslineEventsAction = createServerFn({ method: 'POST' })
 /**
  * Import a batch of events from client-provided Passline data
  * Processes events in small batches to avoid timeouts
+ * Auto-creates venues when no match found (Passline has venue name but no address)
  */
 export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: { events: Array<{ passlineEvent: PasslineEvent; venueId: string | null }> }) => data
   )
   .handler(async ({ data }) => {
-    // Transform events
-    const eventsToImport: EventInsert[] = data.events.map(({ passlineEvent, venueId }) =>
-      transformPasslineEvent(passlineEvent, venueId)
-    )
+    if (data.events.length === 0) {
+      return { success: true, inserted: 0, updated: 0, venuesCreated: 0 }
+    }
 
-    if (eventsToImport.length === 0) {
-      return { success: true, inserted: 0, updated: 0 }
+    let venuesCreated = 0
+
+    // Transform events, matching to existing venues only
+    // Note: We don't auto-create venues from Passline's "lugar" field because it's unreliable
+    // (can be venue name, address, or combination like "Chacabuco 947, San Telmo")
+    // Events without venue matches should use "Fill Venues" to extract proper data from detail pages
+    const eventsToImport: EventInsert[] = []
+    for (const { passlineEvent, venueId } of data.events) {
+      let finalVenueId = venueId
+
+      // If no venue matched but we have a venue name, try to match existing venue only
+      if (!finalVenueId && passlineEvent.lugar && passlineEvent.lugar !== 'VARIAS LOCACIONES') {
+        const venueMatch = await matchVenue(passlineEvent.lugar)
+        if (venueMatch.venue) {
+          finalVenueId = venueMatch.venue.id
+        }
+        // Don't auto-create venues - leave venue_id null for client-side enrichment
+      }
+
+      eventsToImport.push(transformPasslineEvent(passlineEvent, finalVenueId))
     }
 
     // Generate embeddings sequentially to avoid rate limits
@@ -395,6 +413,7 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
     return {
       success: true,
       ...result,
+      venuesCreated,
     }
   })
 
@@ -659,13 +678,49 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
     (data: { events: Array<{ eventbriteEvent: EventbriteEvent; venueId: string | null }> }) => data
   )
   .handler(async ({ data }) => {
-    // Transform events
-    const eventsToImport: EventInsert[] = data.events.map(({ eventbriteEvent, venueId }) =>
-      transformEventbriteEvent(eventbriteEvent, venueId)
-    )
+    if (data.events.length === 0) {
+      return { success: true, inserted: 0, updated: 0, venuesCreated: 0 }
+    }
 
-    if (eventsToImport.length === 0) {
-      return { success: true, inserted: 0, updated: 0 }
+    let venuesCreated = 0
+
+    // Transform events, auto-creating venues when needed
+    const eventsToImport: EventInsert[] = []
+    for (const { eventbriteEvent, venueId } of data.events) {
+      let finalVenueId = venueId
+
+      // If no venue matched but we have venue data, try to match or create
+      if (!finalVenueId && eventbriteEvent.location?.name) {
+        const venueName = eventbriteEvent.location.name
+        // Try to match venue by name first
+        const venueMatch = await matchVenue(venueName)
+        if (venueMatch.venue) {
+          finalVenueId = venueMatch.venue.id
+        } else {
+          // Auto-create venue with full details from JSON-LD
+          try {
+            const address = eventbriteEvent.location.address
+            const addressParts = [
+              address?.streetAddress,
+              address?.addressLocality,
+            ].filter(Boolean)
+
+            const newVenue = await createVenue({
+              name: venueName,
+              neighborhood: null, // Could try to infer from addressLocality
+              address: addressParts.length > 0 ? addressParts.join(', ') : null,
+              // Note: lat/lng not stored - could add to Venue schema in future
+            })
+            finalVenueId = newVenue.id
+            venuesCreated++
+            console.log(`[Admin] Auto-created venue for Eventbrite: "${venueName}"`)
+          } catch (error) {
+            console.error(`[Admin] Failed to create venue "${venueName}":`, error)
+          }
+        }
+      }
+
+      eventsToImport.push(transformEventbriteEvent(eventbriteEvent, finalVenueId))
     }
 
     // Generate embeddings sequentially to avoid rate limits
@@ -691,6 +746,7 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
     return {
       success: true,
       ...result,
+      venuesCreated,
     }
   })
 
@@ -1052,6 +1108,208 @@ export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
     }
 
     console.log(`[Admin] BA Tourism venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
+
+    return {
+      success: true,
+      enriched,
+      venuesCreated,
+      total: events.length,
+      errors,
+    }
+  })
+
+// ============================================================================
+// EVENTBRITE VENUE ENRICHMENT
+// ============================================================================
+
+import { extractEventbriteVenuesBatch } from './scrapers/eventbrite/enrichment'
+
+interface EventbriteVenueEnrichmentInput {
+  id: string
+  link: string
+}
+
+interface EventbriteVenueEnrichmentOutput {
+  success: boolean
+  enriched: number
+  venuesCreated: number
+  total: number
+  errors: Array<{ id: string; error: string }>
+}
+
+/**
+ * Enrich Eventbrite events with venue data from detail pages (JSON-LD)
+ */
+export const enrichEventbriteVenuesAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { events: EventbriteVenueEnrichmentInput[] }) => data)
+  .handler(async ({ data }): Promise<EventbriteVenueEnrichmentOutput> => {
+    const { events } = data
+
+    if (events.length === 0) {
+      return { success: true, enriched: 0, venuesCreated: 0, total: 0, errors: [] }
+    }
+
+    console.log(`[Admin] Starting Eventbrite venue enrichment for ${events.length} events...`)
+
+    // Extract venue info from detail pages
+    const extractionResults = await extractEventbriteVenuesBatch(events, 500)
+
+    let enriched = 0
+    let venuesCreated = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    // Process each result
+    for (const result of extractionResults) {
+      if (result.error) {
+        errors.push({ id: result.id, error: result.error })
+        continue
+      }
+
+      if (!result.venue) {
+        errors.push({ id: result.id, error: 'Could not extract venue from page JSON-LD' })
+        continue
+      }
+
+      try {
+        // Try to match to existing venue
+        const venueMatch = await matchVenue(result.venue.name)
+
+        let venueId: string
+
+        if (venueMatch.venue) {
+          // Use existing venue
+          venueId = venueMatch.venue.id
+        } else {
+          // Create new venue with full details from JSON-LD
+          const newVenue = await createVenue({
+            name: result.venue.name,
+            address: result.venue.address,
+            neighborhood: null,
+            // Note: lat/lng not stored - could add to Venue schema in future
+          })
+          venueId = newVenue.id
+          venuesCreated++
+          console.log(`[Admin] Created new venue: ${result.venue.name}`)
+        }
+
+        // Update event with venue_id
+        await updateEvent(result.id, { venue_id: venueId })
+        enriched++
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+        errors.push({ id: result.id, error: errorMsg })
+      }
+    }
+
+    console.log(`[Admin] Eventbrite venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
+
+    return {
+      success: true,
+      enriched,
+      venuesCreated,
+      total: events.length,
+      errors,
+    }
+  })
+
+// ============================================================================
+// PASSLINE VENUE ENRICHMENT (receives pre-extracted data from client)
+// ============================================================================
+
+interface PasslineVenueEnrichmentInput {
+  id: string
+  venueName: string
+  address: string | null // Street address like "Blvd. Pellegrini y Av. López y Planes"
+  location: string | null // City/region like "Santa Fe, SANTA FE"
+}
+
+interface PasslineVenueEnrichmentOutput {
+  success: boolean
+  enriched: number
+  venuesCreated: number
+  total: number
+  errors: Array<{ id: string; error: string }>
+}
+
+/**
+ * Enrich Passline events with venue data
+ * Receives pre-extracted venue data from client (Cloudflare blocks server-side fetch)
+ */
+export const enrichPasslineVenuesAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { events: PasslineVenueEnrichmentInput[] }) => data)
+  .handler(async ({ data }): Promise<PasslineVenueEnrichmentOutput> => {
+    const { events } = data
+
+    if (events.length === 0) {
+      return { success: true, enriched: 0, venuesCreated: 0, total: 0, errors: [] }
+    }
+
+    console.log(`[Admin] Starting Passline venue enrichment for ${events.length} events...`)
+
+    let enriched = 0
+    let venuesCreated = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    // Process each event with pre-extracted venue data
+    for (const event of events) {
+      if (!event.venueName) {
+        errors.push({ id: event.id, error: 'No venue name provided' })
+        continue
+      }
+
+      try {
+        // Try to match to existing venue
+        const venueMatch = await matchVenue(event.venueName)
+
+        let venueId: string
+
+        if (venueMatch.venue) {
+          // Use existing venue
+          venueId = venueMatch.venue.id
+        } else {
+          // Build full address from street address and location
+          // e.g., "Blvd. Pellegrini y Av. López y Planes, Santa Fe, SANTA FE"
+          let fullAddress: string | null = null
+          if (event.address && event.location) {
+            fullAddress = `${event.address}, ${event.location}`
+          } else if (event.address) {
+            fullAddress = event.address
+          } else if (event.location) {
+            fullAddress = event.location
+          }
+
+          // Try to extract neighborhood from location if it's Buenos Aires
+          let neighborhood: Neighborhood | null = null
+          if (event.location) {
+            // Location format: "City, NEIGHBORHOOD" or "Buenos Aires, PALERMO"
+            const parts = event.location.split(',')
+            if (parts.length >= 2) {
+              const possibleNeighborhood = parts[1].trim()
+              neighborhood = mapToNeighborhood(possibleNeighborhood)
+            }
+          }
+
+          // Create new venue with extracted info
+          const newVenue = await createVenue({
+            name: event.venueName,
+            address: fullAddress,
+            neighborhood,
+          })
+          venueId = newVenue.id
+          venuesCreated++
+          console.log(`[Admin] Created new venue: ${event.venueName} (${fullAddress || 'no address'})`)
+        }
+
+        // Update event with venue_id
+        await updateEvent(event.id, { venue_id: venueId })
+        enriched++
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+        errors.push({ id: event.id, error: errorMsg })
+      }
+    }
+
+    console.log(`[Admin] Passline venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
 
     return {
       success: true,

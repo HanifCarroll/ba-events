@@ -314,3 +314,143 @@ export async function enrichEventbriteEventsBatch(
 
   return results
 }
+
+// ---------------------------------------------------------------------------
+// Venue Extraction (for events imported without venue data)
+// ---------------------------------------------------------------------------
+
+export interface EventbriteVenueInfo {
+  name: string
+  address: string | null
+  latitude: number | null
+  longitude: number | null
+}
+
+/**
+ * Extract venue info from Eventbrite event page JSON-LD
+ */
+export async function extractEventbriteVenueInfo(
+  link: string
+): Promise<EventbriteVenueInfo | null> {
+  try {
+    const response = await fetch(link, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
+      },
+    })
+
+    if (!response.ok) {
+      console.error(`[Eventbrite] Failed to fetch ${link}: ${response.status}`)
+      return null
+    }
+
+    const html = await response.text()
+
+    // Extract JSON-LD script tag
+    const jsonLdMatch = html.match(
+      /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i
+    )
+
+    if (!jsonLdMatch) {
+      return null
+    }
+
+    try {
+      const data = JSON.parse(jsonLdMatch[1])
+
+      // Handle different JSON-LD structures
+      interface JsonLdEvent {
+        '@type': string
+        location?: {
+          name?: string
+          address?: {
+            streetAddress?: string
+            addressLocality?: string
+          }
+          geo?: {
+            latitude: string
+            longitude: string
+          }
+        }
+      }
+
+      let eventData: JsonLdEvent | null = null
+
+      if (data['@type'] === 'Event') {
+        eventData = data
+      } else if (Array.isArray(data)) {
+        eventData = data.find((item) => item['@type'] === 'Event')
+      } else if (data['@graph']) {
+        eventData = data['@graph'].find((item: JsonLdEvent) => item['@type'] === 'Event')
+      }
+
+      if (!eventData?.location?.name) {
+        return null
+      }
+
+      const location = eventData.location
+      const address = location.address
+      const geo = location.geo
+
+      const addressParts = [address?.streetAddress, address?.addressLocality].filter(
+        (part): part is string => Boolean(part)
+      )
+
+      return {
+        name: location.name!,
+        address: addressParts.length > 0 ? addressParts.join(', ') : null,
+        latitude: geo?.latitude ? parseFloat(geo.latitude) : null,
+        longitude: geo?.longitude ? parseFloat(geo.longitude) : null,
+      }
+    } catch {
+      console.error(`[Eventbrite] Failed to parse JSON-LD from ${link}`)
+      return null
+    }
+  } catch (error) {
+    console.error(`[Eventbrite] Error fetching ${link}:`, error)
+    return null
+  }
+}
+
+/**
+ * Batch extract venue info from multiple Eventbrite events
+ */
+export async function extractEventbriteVenuesBatch(
+  events: Array<{ id: string; link: string }>,
+  delayMs: number = 500
+): Promise<
+  Array<{
+    id: string
+    venue: EventbriteVenueInfo | null
+    error?: string
+  }>
+> {
+  const results: Array<{
+    id: string
+    venue: EventbriteVenueInfo | null
+    error?: string
+  }> = []
+
+  for (const event of events) {
+    try {
+      const venue = await extractEventbriteVenueInfo(event.link)
+      results.push({ id: event.id, venue })
+    } catch (error) {
+      results.push({
+        id: event.id,
+        venue: null,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+
+    // Rate limiting delay
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+
+  return results
+}
