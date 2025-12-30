@@ -12,8 +12,9 @@ const config = defineConfig({
     alias: [
       // Polyfill Node.js stream modules for browser compatibility
       // Fixes TanStack Router SSR code being bundled in client build
-      { find: 'node:stream', replacement: 'stream-browserify' },
-      { find: 'node:stream/web', replacement: 'web-streams-polyfill/ponyfill' },
+      // Order matters: more specific paths first, use regex for exact matching
+      { find: /^node:stream\/web$/, replacement: 'web-streams-polyfill/ponyfill' },
+      { find: /^node:stream$/, replacement: 'stream-browserify' },
     ],
   },
   plugins: [
