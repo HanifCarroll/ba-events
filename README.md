@@ -4,15 +4,30 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
 
 ## Features
 
+### User Experience
 - **Conversational AI**: Chat interface powered by Claude for natural language event discovery
-- **Smart Search**: Semantic search with filters for date, category, neighborhood, price, and vibe
-- **Venue Details**: Get info about venues including Instagram, website, capacity, and location
-- **Real-time Streaming**: Responses stream as they're generated for a responsive UX
+- **Semantic Search**: Vector similarity search using pgvector with smart filters (date, category, neighborhood, price, vibe)
+- **Bilingual Interface**: Full English/Spanish support with automatic browser language detection
+- **Saved Events**: Create an account to save and track your favorite events
+- **Real-time Streaming**: Claude responses stream as they're generated
+
+### Admin Dashboard
+- **Event Management**: Create, edit, and bulk manage events
+- **Venue Management**: Manage venues with Instagram, website, capacity info
+- **7-Step Import Wizard**: Import events from multiple sources with preview and validation
+- **Background Enrichment**: AI-powered description enhancement with progress tracking
+- **Data Tables**: Sortable, filterable tables with column preferences
+
+### Event Sources
+- **Passline**: Ticketing platform for concerts and nightlife
+- **Eventbrite**: Event platform with detailed descriptions
+- **BA Tourism**: Official Buenos Aires tourism website
+- **Meetup**: Community events and gatherings
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|------------|
+| Category | Technology |
+|----------|------------|
 | Runtime | Bun |
 | Framework | TanStack Start (React 19 + Vite + Nitro) |
 | AI | Claude (Anthropic SDK) |
@@ -20,15 +35,20 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
 | Embeddings | OpenAI |
 | Styling | Tailwind CSS v4 |
 | UI Components | shadcn/ui + Radix |
+| Forms | React Hook Form + Zod |
+| i18n | Paraglide JS |
+| Rate Limiting | Upstash Redis |
+| Browser Automation | Playwright |
 
 ## Getting Started
 
 ### Prerequisites
 
 - [Bun](https://bun.sh) installed
-- Supabase project with events database
+- Supabase project with the schema from `supabase/schema.sql`
 - Anthropic API key
 - OpenAI API key (for embeddings)
+- Upstash Redis (for rate limiting)
 
 ### Setup
 
@@ -50,13 +70,31 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
 
 4. Add your API keys to `.env`:
    ```
+   # Supabase (server-side)
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_ANON_KEY=your-anon-key
+
+   # Supabase (browser-side)
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+
+   # AI APIs
    OPENAI_API_KEY=sk-your-openai-key
    ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
+
+   # Rate Limiting
+   UPSTASH_REDIS_REST_URL=your-upstash-url
+   UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+
+   # Admin API
+   ADMIN_API_KEY=your-admin-api-key
    ```
 
-5. Start the dev server:
+5. Set up the database:
+   - Run `supabase/schema.sql` in your Supabase SQL editor
+   - Optionally run `supabase/seed.sql` for sample data
+
+6. Start the dev server:
    ```bash
    bun run dev
    ```
@@ -77,16 +115,33 @@ bun test         # Run tests
 ```
 src/
 ├── components/
-│   ├── chat/       # Chat UI components
-│   ├── events/     # Event card and list components
-│   └── ui/         # shadcn/ui components
+│   ├── admin/        # Admin dashboard components
+│   │   └── import/   # 7-step import wizard
+│   ├── chat/         # Chat UI components
+│   ├── data-table/   # Reusable data tables
+│   ├── events/       # Event card and list components
+│   └── ui/           # shadcn/ui components
+├── hooks/            # Custom React hooks
 ├── lib/
-│   ├── ai.ts       # Claude agent with tools
-│   ├── supabase.ts # Database queries
+│   ├── ai.ts         # Claude agent with tools
+│   ├── admin.ts      # Admin server functions
+│   ├── auth.ts       # Authentication functions
 │   ├── embeddings.ts # OpenAI embeddings
-│   └── types.ts    # TypeScript types
-├── routes/         # TanStack Router pages
-└── styles.css      # Global styles
+│   ├── enrichment.ts # Event description enrichment
+│   ├── supabase.ts   # Database queries
+│   ├── schemas.ts    # Zod validation schemas
+│   └── scrapers/     # Event source scrapers
+├── paraglide/        # i18n translations (auto-generated)
+├── routes/
+│   ├── admin/        # Admin routes
+│   ├── auth/         # OAuth callbacks
+│   └── api/          # API endpoints
+├── styles.css        # Global styles
+└── router.tsx        # Router configuration
+
+messages/             # i18n translation files (en.json, es.json)
+supabase/             # Database schema and seeds
+docs/                 # Project documentation
 ```
 
 ## AI Agent Tools
@@ -98,13 +153,40 @@ The Claude agent has access to:
 
 ## Data Model
 
-Events include:
-- Name, description, date/time
-- Venue with neighborhood and address
+### Events
+- Name, bilingual descriptions (Spanish/English)
+- Date/time, venue with neighborhood
 - Categories (techno, jazz, art, comedy, etc.)
 - Vibes (underground, chill, romantic, etc.)
 - Price and age restrictions
-- Links to tickets and more info
+- Vector embeddings for semantic search
+
+### Venues
+- Name, address, neighborhood
+- Type (club, bar, theater, gallery, etc.)
+- Website, Instagram handle
+- Capacity
+
+## Routes
+
+### Public
+- `/` - Home/chat page
+- `/login`, `/register` - Authentication
+- `/saved` - Saved events (authenticated)
+- `/profile` - User profile
+
+### Admin (requires admin role)
+- `/admin/` - Dashboard
+- `/admin/events/` - Event management
+- `/admin/events/import` - Import wizard
+- `/admin/venues/` - Venue management
+
+## Documentation
+
+See the `docs/` folder for detailed documentation:
+- `decisions.md` - Architectural decisions
+- `event-import-enrichment.md` - Import sources and enrichment process
+- `prd.md` - Product requirements
 
 ## License
 

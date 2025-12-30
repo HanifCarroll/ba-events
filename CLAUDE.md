@@ -20,6 +20,7 @@ Bun automatically loads `.env` files - don't use dotenv.
 
 This is a **TanStack Start** project with:
 - TanStack Router (file-based routing in `src/routes/`)
+- TanStack Query for data fetching
 - React 19
 - Vite + Nitro
 - Tailwind CSS v4
@@ -30,13 +31,33 @@ Routes are in `src/routes/`. The route tree is auto-generated in `src/routeTree.
 
 ```
 src/routes/
-├── __root.tsx      # Root layout
-├── index.tsx       # Home page (/)
-└── about.tsx       # About page (/about)
+├── __root.tsx           # Root layout with auth provider
+├── index.tsx            # Home/chat page (/)
+├── login.tsx            # Login page
+├── register.tsx         # Registration page
+├── saved.tsx            # Saved events
+├── profile.tsx          # User profile
+├── admin/
+│   ├── index.tsx        # Admin dashboard
+│   ├── login.tsx        # Admin login
+│   ├── events/
+│   │   ├── index.tsx    # Event list
+│   │   ├── new.tsx      # Create event
+│   │   ├── $id.tsx      # Edit event
+│   │   └── import.tsx   # Import wizard
+│   └── venues/
+│       ├── index.tsx    # Venue list
+│       ├── new.tsx      # Create venue
+│       ├── $id.tsx      # Edit venue
+│       └── import.tsx   # CSV import
+├── auth/
+│   └── callback.tsx     # OAuth callback
+└── api/
+    └── events.ts        # External event submission API
 ```
 
 Create new routes by adding files to `src/routes/`. Dynamic routes use `$param` syntax:
-- `src/routes/events/$id.tsx` → `/events/:id`
+- `src/routes/admin/events/$id.tsx` → `/admin/events/:id`
 
 ### Server Functions
 
@@ -78,21 +99,82 @@ Use `lucide-react` for icons (already installed).
 
 ## Styling
 
-Tailwind CSS v4 is configured. Import styles in components:
+Tailwind CSS v4 is configured with a custom "Noche Porteña" theme (warm noir/dark aesthetic inspired by Buenos Aires nightlife).
 
-```tsx
-import '../styles.css'
-```
-
-Use Tailwind utility classes. Follow shadcn's conventions for component styling.
+Key design elements:
+- Dark backgrounds with warm amber/gold accents
+- Display font (Fraunces) for headers, DM Sans for body
+- Grain texture overlay on backgrounds
+- Glow effects (`glow-gold-subtle`)
 
 ## Database
 
 Use Supabase (PostgreSQL + pgvector) for the database. Use the Supabase JS client, not raw pg drivers.
 
+### Key Tables
+- `events` - Event data with embeddings
+- `venues` - Venue information
+- `profiles` - User profiles (extends Supabase auth)
+- `saved_events` - User saved events
+
+### Schema Reference
+See `supabase/schema.sql` for the complete schema including:
+- Neighborhood enum (48 CABA neighborhoods)
+- Venue type enum
+- Event status enum
+- pgvector indexes for semantic search
+
 ## AI/LLM
 
-Use the Anthropic SDK with Claude for the AI agent.
+Use the Anthropic SDK with Claude for the AI agent. The agent is in `src/lib/ai.ts`.
+
+Tools available to Claude:
+- `search_events` - Semantic and filtered event search
+- `get_venue_details` - Venue information lookup
+
+For embeddings, use OpenAI via `src/lib/embeddings.ts`.
+
+## Internationalization (i18n)
+
+Uses Paraglide JS with English (en) and Spanish (es) locales.
+
+### Usage
+```tsx
+import * as m from '@/paraglide/messages'
+
+// In components
+<h1>{m.nav_home()}</h1>
+```
+
+### Adding translations
+Edit `messages/en.json` and `messages/es.json`. Keys are organized by feature:
+- `nav_*` - Navigation
+- `auth_*`, `login_*`, `register_*` - Authentication
+- `chat_*`, `prompt_*` - Chat interface
+- `admin_*` - Admin dashboard
+- `common_*` - Shared strings
+- `saved_*` - Saved events
+
+Runtime locale access:
+```tsx
+import { getLocale } from '@/paraglide/runtime'
+const locale = getLocale() // 'en' or 'es'
+```
+
+## Authentication
+
+Uses Supabase Auth with the `AuthProvider` context.
+
+```tsx
+import { useAuthContext } from '@/components/AuthProvider'
+
+function Component() {
+  const { user, isAdmin, signOut } = useAuthContext()
+  // ...
+}
+```
+
+Roles are stored in `profiles.role` ('user' or 'admin').
 
 ## Testing
 
@@ -107,12 +189,63 @@ Tests use Vitest with React Testing Library.
 
 ```
 src/
-├── components/       # React components
-│   └── ui/          # shadcn components (auto-generated)
-├── routes/          # TanStack Router pages
-├── data/            # Data utilities
-├── styles.css       # Global styles
-└── router.tsx       # Router configuration
+├── components/
+│   ├── ui/              # shadcn components (auto-generated)
+│   ├── admin/           # Admin dashboard components
+│   │   └── import/      # 7-step import wizard components
+│   ├── chat/            # Chat UI components
+│   ├── data-table/      # Reusable data table components
+│   ├── events/          # Event display components
+│   ├── AuthProvider.tsx # Auth context
+│   ├── MainLayout.tsx   # Sidebar navigation layout
+│   └── LanguageSwitcher.tsx
+├── hooks/               # Custom React hooks
+│   ├── useEventAdmin.ts       # Event admin orchestration
+│   ├── useEventFiltering.ts   # Event filtering logic
+│   ├── useEventMutations.ts   # Event CRUD mutations
+│   ├── useVenueMutations.ts   # Venue CRUD mutations
+│   ├── useBulkActions.ts      # Bulk select/edit/delete
+│   ├── useImportWizard.ts     # Multi-step import wizard state
+│   ├── useBackgroundEnrichment.ts # Track enrichment progress
+│   └── useAuthContext.ts      # Auth context hook
+├── lib/
+│   ├── ai.ts            # Claude agent with tools
+│   ├── admin.ts         # Admin server functions
+│   ├── auth.ts          # Supabase auth functions
+│   ├── supabase.ts      # Database queries
+│   ├── embeddings.ts    # OpenAI embeddings
+│   ├── enrichment.ts    # Event description enrichment
+│   ├── schemas.ts       # Zod validation schemas
+│   ├── types.ts         # TypeScript types
+│   ├── query.ts         # React Query setup
+│   ├── utils.ts         # Utility functions
+│   ├── rate-limit.ts    # Upstash Redis rate limiting
+│   ├── saved-events.ts  # Saved events logic
+│   ├── source-metadata.ts # Data gaps per source
+│   └── scrapers/        # Event source scrapers
+│       ├── passline/
+│       ├── eventbrite/
+│       ├── ba-tourism/
+│       ├── meetup/
+│       ├── index.ts
+│       └── venue-matcher.ts
+├── paraglide/           # i18n (auto-generated)
+├── routes/              # TanStack Router pages
+├── styles.css           # Global styles
+└── router.tsx           # Router configuration
+
+messages/                # i18n translation files
+├── en.json
+└── es.json
+
+supabase/                # Database
+├── schema.sql           # Full schema
+└── seed.sql             # Sample data
+
+docs/                    # Documentation
+├── decisions.md         # Architectural decisions
+├── event-import-enrichment.md
+└── prd.md
 ```
 
 ## Best Practices
@@ -121,6 +254,7 @@ src/
 - Use TypeScript strictly - no `any` types
 - Prefer server functions over client-side API calls
 - Use TanStack Query for data fetching (integrated via router)
+- Use React Hook Form + Zod for forms
 - **After each code change, run `bunx tsc --noEmit` to check for TypeScript errors and fix them immediately** - don't leave errors for later
 - **NEVER add backwards compatibility shims or legacy exports** - when changing APIs, update all callsites instead. Only add compatibility layers if explicitly requested.
 
@@ -132,3 +266,17 @@ src/
   - What was decided
   - Alternatives considered (if applicable)
   - Rationale for the decision
+
+## Event Import & Enrichment
+
+The app supports importing events from 4 sources via a 7-step wizard:
+
+1. **Source Selection** - Choose Passline, Eventbrite, BA Tourism, or Meetup
+2. **Configuration** - Set source-specific options
+3. **Venue Mapping** - Match to existing venues or create new ones
+4. **Event Selection** - Preview and filter events to import
+5. **Confirmation** - Review before import
+6. **Enrichment** - Optional AI description enhancement
+7. **Summary** - Import completion details
+
+See `docs/event-import-enrichment.md` for detailed information about each source and the enrichment process.
