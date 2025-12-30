@@ -59,14 +59,13 @@ const extractionScript = () => {
       const beforeNeighborhood = text.slice(0, lastCommaIdx).trim()
       const doubleSpaceIdx = beforeNeighborhood.indexOf('  ')
       if (doubleSpaceIdx > 0) {
-        return {
-          venueName: beforeNeighborhood.slice(0, doubleSpaceIdx).trim(),
-          neighborhood,
-        }
+        const venueName = beforeNeighborhood.slice(0, doubleSpaceIdx).trim()
+        const address = beforeNeighborhood.slice(doubleSpaceIdx).trim()
+        return { venueName, address: address || null, neighborhood }
       }
-      return { venueName: beforeNeighborhood, neighborhood }
+      return { venueName: beforeNeighborhood, address: null, neighborhood }
     }
-    return { venueName: text.trim(), neighborhood: 'CABA' }
+    return { venueName: text.trim(), address: null, neighborhood: 'CABA' }
   }
 
   const extractCoordinates = (url: string | null) => {
@@ -101,12 +100,13 @@ const extractionScript = () => {
       }
     }
 
-    const { venueName, neighborhood } = parseVenueText(dondeText)
+    const { venueName, address: parsedAddress, neighborhood } = parseVenueText(dondeText)
 
     const mapsLink = card.querySelector('a[href*="google.com/maps"]') as HTMLAnchorElement | null
-    const address = mapsLink?.textContent?.trim() || null
+    const mapsAddress = mapsLink?.textContent?.trim() || null
     const mapsHref = mapsLink?.getAttribute('href') || null
     const coordinates = extractCoordinates(mapsHref)
+    const address = parsedAddress || mapsAddress
 
     let moreInfoUrl = ''
     const links = card.querySelectorAll('a')

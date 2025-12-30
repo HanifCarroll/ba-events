@@ -9,9 +9,9 @@ import {
 import { extractBATourismVenuesBatch } from '../../scrapers/ba-tourism/enrichment'
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
-import { upsertEvents, supabase, updateEvent, createVenue } from '../../supabase'
+import { upsertEvents, supabase, updateEvent, createVenue, createVenues, findVenuesByExactNames } from '../../supabase'
 import { generateEmbedding } from '../../embeddings'
-import { mapToNeighborhood } from '../utils'
+import { mapToNeighborhood, requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
 
 export interface BATourismPreviewEvent {
@@ -73,29 +73,75 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
     }) => data
   )
   .handler(async ({ data }) => {
-    let venuesCreated = 0
+    // Step 1: Collect unique venue names that need to be created
+    const venueDataMap = new Map<
+      string,
+      { name: string; neighborhood: string | null; address: string | null }
+    >()
 
-    // Process events and auto-create venues when needed
+    for (const { baTourismEvent, venueId } of data.events) {
+      if (!venueId && baTourismEvent.venueName && baTourismEvent.venueName !== 'Ubicación no especificada') {
+        // Use venue name as key, store the richest data (first occurrence wins)
+        if (!venueDataMap.has(baTourismEvent.venueName)) {
+          venueDataMap.set(baTourismEvent.venueName, {
+            name: baTourismEvent.venueName,
+            neighborhood: baTourismEvent.neighborhood || null,
+            address: baTourismEvent.address || null,
+          })
+        }
+      }
+    }
+
+    // Step 2: Check which venues already exist in database
+    const venueNames = Array.from(venueDataMap.keys())
+    const existingVenues = venueNames.length > 0 ? await findVenuesByExactNames(venueNames) : []
+    const existingVenueNames = new Set(existingVenues.map((v) => v.name))
+
+    // Step 3: Create missing venues
+    const venuesToCreate = venueNames
+      .filter((name) => !existingVenueNames.has(name))
+      .map((name) => {
+        const venueData = venueDataMap.get(name)!
+        return {
+          name: venueData.name,
+          neighborhood: mapToNeighborhood(venueData.neighborhood),
+          address: venueData.address,
+          type: 'other' as const,
+        }
+      })
+
+    let venuesCreated = 0
+    let newVenues: Array<{ id: string; name: string }> = []
+
+    if (venuesToCreate.length > 0) {
+      try {
+        newVenues = await createVenues(venuesToCreate)
+        venuesCreated = newVenues.length
+        console.log(`[Admin] Auto-created ${venuesCreated} venues for BA Tourism import`)
+      } catch (error) {
+        console.error('[Admin] Failed to create venues:', error)
+        // Continue without the new venues
+      }
+    }
+
+    // Step 4: Build venue name -> ID lookup
+    const venueNameToId = new Map<string, string>()
+    for (const venue of existingVenues) {
+      venueNameToId.set(venue.name, venue.id)
+    }
+    for (const venue of newVenues) {
+      venueNameToId.set(venue.name, venue.id)
+    }
+
+    // Step 5: Process events with correct venue IDs
     const eventsToImport: EventInsert[] = []
 
     for (const { baTourismEvent, venueId, weekContext } of data.events) {
       let finalVenueId = venueId
 
-      // Auto-create venue if no match found and venue data exists
-      if (!venueId && baTourismEvent.venueName) {
-        try {
-          const newVenue = await createVenue({
-            name: baTourismEvent.venueName,
-            neighborhood: mapToNeighborhood(baTourismEvent.neighborhood),
-            address: baTourismEvent.address || null,
-          })
-          finalVenueId = newVenue.id
-          venuesCreated++
-          console.log(`[Admin] Auto-created venue: ${baTourismEvent.venueName}`)
-        } catch (error) {
-          console.error(`[Admin] Failed to create venue ${baTourismEvent.venueName}:`, error)
-          // Continue with null venue_id if creation fails
-        }
+      // Look up venue ID from our map if not already set
+      if (!finalVenueId && baTourismEvent.venueName) {
+        finalVenueId = venueNameToId.get(baTourismEvent.venueName) || null
       }
 
       const transformed = transformBATourismEvent(baTourismEvent, weekContext, finalVenueId, new Date())

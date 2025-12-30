@@ -1,4 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+
+// Re-export SupabaseClient type for use in other modules
+export type { SupabaseClient }
+
 import type {
   Event,
   EventInsert,
@@ -87,8 +91,21 @@ export async function searchVenuesByName(query: string) {
   return data as Venue[]
 }
 
-export async function createVenue(venue: VenueInsert) {
+export async function findVenuesByExactNames(names: string[]) {
+  if (names.length === 0) return []
+
   const { data, error } = await supabase
+    .from('venues')
+    .select('*')
+    .in('name', names)
+
+  if (error) throw error
+  return data as Venue[]
+}
+
+export async function createVenue(venue: VenueInsert, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
     .from('venues')
     .insert(venue)
     .select()
@@ -98,8 +115,9 @@ export async function createVenue(venue: VenueInsert) {
   return data as Venue
 }
 
-export async function createVenues(venues: VenueInsert[]) {
-  const { data, error } = await supabase
+export async function createVenues(venues: VenueInsert[], client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
     .from('venues')
     .insert(venues)
     .select()
@@ -108,8 +126,9 @@ export async function createVenues(venues: VenueInsert[]) {
   return data as Venue[]
 }
 
-export async function updateVenue(id: string, updates: VenueUpdate) {
-  const { data, error } = await supabase
+export async function updateVenue(id: string, updates: VenueUpdate, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
     .from('venues')
     .update(updates)
     .eq('id', id)
@@ -120,8 +139,9 @@ export async function updateVenue(id: string, updates: VenueUpdate) {
   return data as Venue
 }
 
-export async function deleteVenue(id: string) {
-  const { error } = await supabase.from('venues').delete().eq('id', id)
+export async function deleteVenue(id: string, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { error } = await db.from('venues').delete().eq('id', id)
   if (error) throw error
 }
 
@@ -203,8 +223,9 @@ export async function getEventsByVenue(venueId: string) {
   return data as Event[]
 }
 
-export async function createEvent(event: EventInsert) {
-  const { data, error } = await supabase
+export async function createEvent(event: EventInsert, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
     .from('events')
     .insert(event)
     .select()
@@ -214,8 +235,9 @@ export async function createEvent(event: EventInsert) {
   return data as Event
 }
 
-export async function createEvents(events: EventInsert[]) {
-  const { data, error } = await supabase
+export async function createEvents(events: EventInsert[], client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
     .from('events')
     .insert(events)
     .select()
@@ -224,8 +246,9 @@ export async function createEvents(events: EventInsert[]) {
   return data as Event[]
 }
 
-export async function updateEvent(id: string, updates: EventUpdate) {
-  const { data, error } = await supabase
+export async function updateEvent(id: string, updates: EventUpdate, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
     .from('events')
     .update(updates)
     .eq('id', id)
@@ -236,13 +259,15 @@ export async function updateEvent(id: string, updates: EventUpdate) {
   return data as Event
 }
 
-export async function deleteEvent(id: string) {
-  const { error } = await supabase.from('events').delete().eq('id', id)
+export async function deleteEvent(id: string, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { error } = await db.from('events').delete().eq('id', id)
   if (error) throw error
 }
 
-export async function bulkUpdateEventStatus(eventIds: string[], status: EventStatus) {
-  const { data, error } = await supabase
+export async function bulkUpdateEventStatus(eventIds: string[], status: EventStatus, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
     .from('events')
     .update({ status })
     .in('id', eventIds)
@@ -252,19 +277,21 @@ export async function bulkUpdateEventStatus(eventIds: string[], status: EventSta
   return data as Event[]
 }
 
-export async function bulkDeleteEvents(eventIds: string[]) {
-  const { error } = await supabase.from('events').delete().in('id', eventIds)
+export async function bulkDeleteEvents(eventIds: string[], client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { error } = await db.from('events').delete().in('id', eventIds)
   if (error) throw error
 }
 
 // Mark all ended events as past
 // - If ends_at exists: mark past when ends_at < now
 // - If ends_at is NULL: mark past when entire start day has passed (conservative for late-night events)
-export async function markPastEvents() {
+export async function markPastEvents(client?: SupabaseClient) {
+  const db = client ?? supabase
   const now = new Date().toISOString()
   const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('events')
     .update({ status: 'past' as EventStatus })
     .eq('status', 'scheduled')
@@ -471,16 +498,17 @@ export async function checkEventExists(
  * Upsert events - insert new events, update existing ones
  * Uses source + external_id for deduplication
  */
-export async function upsertEvents(events: EventInsert[]): Promise<{
+export async function upsertEvents(events: EventInsert[], client?: SupabaseClient): Promise<{
   inserted: number
   updated: number
 }> {
+  const db = client ?? supabase
   let inserted = 0
   let updated = 0
 
   for (const event of events) {
     // Check if event already exists
-    const { data: existing } = await supabase
+    const { data: existing } = await db
       .from('events')
       .select('id')
       .eq('source', event.source)
@@ -489,7 +517,7 @@ export async function upsertEvents(events: EventInsert[]): Promise<{
 
     if (existing) {
       // Update existing event
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .update(event)
         .eq('id', existing.id)
@@ -497,7 +525,7 @@ export async function upsertEvents(events: EventInsert[]): Promise<{
       if (!error) updated++
     } else {
       // Insert new event
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .insert(event)
 

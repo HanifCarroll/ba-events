@@ -43,9 +43,12 @@ function parseCategoryHeading(text: string): { category: string; isFree: boolean
 }
 
 /**
- * Extract venue name and neighborhood from venue text
+ * Extract venue name, address, and neighborhood from venue text
+ * Format: "Venue Name  Street Address, Neighborhood"
+ * - Double space separates venue name from address
+ * - Last comma separates address from neighborhood
  */
-function parseVenueText(text: string): { venueName: string; neighborhood: string } {
+function parseVenueText(text: string): { venueName: string; address: string | null; neighborhood: string } {
   const lastCommaIdx = text.lastIndexOf(',')
 
   if (lastCommaIdx > 0) {
@@ -54,20 +57,27 @@ function parseVenueText(text: string): { venueName: string; neighborhood: string
 
     const doubleSpaceIdx = beforeNeighborhood.indexOf('  ')
     if (doubleSpaceIdx > 0) {
+      const venueName = beforeNeighborhood.slice(0, doubleSpaceIdx).trim()
+      const address = beforeNeighborhood.slice(doubleSpaceIdx).trim()
       return {
-        venueName: beforeNeighborhood.slice(0, doubleSpaceIdx).trim(),
+        venueName,
+        address: address || null,
         neighborhood,
       }
     }
 
+    // No double space - the entire text before comma is the venue name
     return {
       venueName: beforeNeighborhood,
+      address: null,
       neighborhood,
     }
   }
 
+  // No comma - just venue name
   return {
     venueName: text.trim(),
+    address: null,
     neighborhood: 'CABA',
   }
 }
@@ -137,14 +147,17 @@ export function extractEventsFromDOM(): BATourismEvent[] {
       }
     }
 
-    // Parse venue info
-    const { venueName, neighborhood } = parseVenueText(dondeText)
+    // Parse venue info (includes address from donde text)
+    const { venueName, address: parsedAddress, neighborhood } = parseVenueText(dondeText)
 
-    // Get Google Maps link
+    // Get Google Maps link for coordinates (and fallback address)
     const mapsLink = card.querySelector('a[href*="google.com/maps"]') as HTMLAnchorElement | null
-    const address = mapsLink?.textContent?.trim() || null
+    const mapsAddress = mapsLink?.textContent?.trim() || null
     const mapsHref = mapsLink?.getAttribute('href') || ''
     const coordinates = extractCoordinates(mapsHref)
+
+    // Use parsed address from donde text, or fall back to Google Maps link text
+    const address = parsedAddress || mapsAddress
 
     // Get "Más información" link
     let moreInfoUrl = ''
@@ -234,14 +247,13 @@ export function getExtractEventsScript(): string {
           const beforeNeighborhood = text.slice(0, lastCommaIdx).trim();
           const doubleSpaceIdx = beforeNeighborhood.indexOf('  ');
           if (doubleSpaceIdx > 0) {
-            return {
-              venueName: beforeNeighborhood.slice(0, doubleSpaceIdx).trim(),
-              neighborhood
-            };
+            const venueName = beforeNeighborhood.slice(0, doubleSpaceIdx).trim();
+            const address = beforeNeighborhood.slice(doubleSpaceIdx).trim();
+            return { venueName, address: address || null, neighborhood };
           }
-          return { venueName: beforeNeighborhood, neighborhood };
+          return { venueName: beforeNeighborhood, address: null, neighborhood };
         }
-        return { venueName: text.trim(), neighborhood: 'CABA' };
+        return { venueName: text.trim(), address: null, neighborhood: 'CABA' };
       };
 
       const extractCoordinates = (url) => {
@@ -273,12 +285,13 @@ export function getExtractEventsScript(): string {
           }
         }
 
-        const { venueName, neighborhood } = parseVenueText(dondeText);
+        const { venueName, address: parsedAddress, neighborhood } = parseVenueText(dondeText);
 
         const mapsLink = card.querySelector('a[href*="google.com/maps"]');
-        const address = mapsLink?.textContent?.trim() || null;
+        const mapsAddress = mapsLink?.textContent?.trim() || null;
         const mapsHref = mapsLink?.getAttribute('href') || '';
         const coordinates = extractCoordinates(mapsHref);
+        const address = parsedAddress || mapsAddress;
 
         let moreInfoUrl = '';
         const links = card.querySelectorAll('a');

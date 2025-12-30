@@ -64,10 +64,12 @@ function parseCategoryHeading(text: string): { category: string; isFree: boolean
 }
 
 /**
- * Extract venue name and neighborhood from venue text
+ * Extract venue name, address, and neighborhood from venue text
  * Format: "Teatro Colón  Cerrito 618, San Nicolás" or "La Rural  Av Santa Fe y Thames, Palermo"
+ * - Double space separates venue name from address
+ * - Last comma separates address from neighborhood
  */
-function parseVenueText(text: string): { venueName: string; neighborhood: string } {
+function parseVenueText(text: string): { venueName: string; address: string | null; neighborhood: string } {
   // The format is: "VenueName  Address, Neighborhood"
   // First, split by the last comma to get neighborhood
   const lastCommaIdx = text.lastIndexOf(',')
@@ -80,20 +82,25 @@ function parseVenueText(text: string): { venueName: string; neighborhood: string
     // Look for double space which separates venue from address
     const doubleSpaceIdx = beforeNeighborhood.indexOf('  ')
     if (doubleSpaceIdx > 0) {
+      const venueName = beforeNeighborhood.slice(0, doubleSpaceIdx).trim()
+      const address = beforeNeighborhood.slice(doubleSpaceIdx).trim()
       return {
-        venueName: beforeNeighborhood.slice(0, doubleSpaceIdx).trim(),
+        venueName,
+        address: address || null,
         neighborhood,
       }
     }
 
     return {
       venueName: beforeNeighborhood,
+      address: null,
       neighborhood,
     }
   }
 
   return {
     venueName: text.trim(),
+    address: null,
     neighborhood: 'CABA',
   }
 }
@@ -159,13 +166,16 @@ export function parseBATourismEvents(html: string): BATourismEvent[] {
       }
     })
 
-    // Parse venue info
-    const { venueName, neighborhood } = parseVenueText(dondeText)
+    // Parse venue info (includes address from donde text)
+    const { venueName, address: parsedAddress, neighborhood } = parseVenueText(dondeText)
 
-    // Get Google Maps link for address and coordinates
+    // Get Google Maps link for coordinates (and fallback address)
     const mapsLink = $card.find('a[href*="google.com/maps"]').first()
-    const address = mapsLink.text().trim() || null
+    const mapsAddress = mapsLink.text().trim() || null
     const coordinates = extractCoordinates(mapsLink.attr('href'))
+
+    // Use parsed address from donde text, or fall back to Google Maps link text
+    const address = parsedAddress || mapsAddress
 
     // Get "Más información" link
     let moreInfoUrl = ''
