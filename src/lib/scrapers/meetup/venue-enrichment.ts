@@ -18,11 +18,13 @@ export interface MeetupVenueInfo {
  */
 const venueExtractionScript = (): { name: string | null; address: string | null } => {
   // Method 1: JSON-LD structured data (most reliable)
+  // Meetup uses both "Event" and "BusinessEvent" types
   const scripts = document.querySelectorAll('script[type="application/ld+json"]')
   for (const script of scripts) {
     try {
       const data = JSON.parse(script.textContent || '')
-      if (data['@type'] === 'Event' && data.location) {
+      const isEventType = data['@type'] === 'Event' || data['@type'] === 'BusinessEvent'
+      if (isEventType && data.location) {
         const loc = data.location
         if (loc['@type'] === 'Place' && loc.name) {
           const address = typeof loc.address === 'string'
@@ -75,12 +77,13 @@ export async function fetchMeetupVenueFromDetailPage(
 ): Promise<MeetupVenueInfo | null> {
   try {
     await page.goto(eventUrl, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 30000,
     })
 
-    // Wait for content to load
-    await page.waitForTimeout(2000)
+    // Wait for JSON-LD scripts to be present (they're in initial HTML)
+    // Use state: 'attached' since script tags are never visible
+    await page.waitForSelector('script[type="application/ld+json"]', { timeout: 5000, state: 'attached' })
 
     const venueInfo = await page.evaluate(venueExtractionScript)
 
