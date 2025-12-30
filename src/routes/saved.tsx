@@ -27,13 +27,18 @@ function SavedEventsPage() {
 
   // Fetch saved events
   useEffect(() => {
-    if (user) {
-      setLoading(true)
-      getSavedEvents()
-        .then(setEvents)
-        .finally(() => setLoading(false))
+    if (!authLoading) {
+      if (user) {
+        setLoading(true)
+        getSavedEvents()
+          .then(setEvents)
+          .catch(console.error)
+          .finally(() => setLoading(false))
+      } else {
+        setLoading(false)
+      }
     }
-  }, [user])
+  }, [user, authLoading])
 
   // Listen for save/unsave events to refresh the list
   useEffect(() => {
