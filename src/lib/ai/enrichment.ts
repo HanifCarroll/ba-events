@@ -14,6 +14,13 @@ import Anthropic from '@anthropic-ai/sdk'
 const anthropic = new Anthropic()
 
 /**
+ * Language detection prompt - quick classification
+ */
+const LANGUAGE_DETECTION_PROMPT = `What is the primary language of the main content in this text?
+Ignore navigation, headers, and boilerplate. Focus on the event description content.
+Reply with ONLY one word: "spanish" or "english" (lowercase, no punctuation).`
+
+/**
  * Spanish extraction prompt - focused on semantic/experiential content
  * Avoids redundant structured data (dates, venues, prices) that's already in DB fields
  */
@@ -39,9 +46,40 @@ Escribe SOLO la descripción en español como texto plano, sin formato markdown 
 Mantén menos de 200 palabras. Enfócate en conceptos buscables.`
 
 /**
+ * English extraction prompt - same focus as Spanish version
+ */
+const EXTRACTION_PROMPT_EN = `Extract a semantic description of this event for search indexing.
+
+Focus on:
+- The TYPE of experience (concert, workshop, screening, party, etc.)
+- The ATMOSPHERE and vibe (intimate, energetic, casual, elegant, etc.)
+- What makes it UNIQUE or special
+- WHO it's ideal for (music lovers, couples, families, etc.)
+- What attendees will DO or experience
+- What's INCLUDED (food, drinks, materials, etc.)
+
+DO NOT include:
+- Specific dates, times, or days of the week
+- Venue names or addresses (we have those separately)
+- Exact prices (we have those separately)
+- Ticket purchase instructions
+- Contact information
+
+Ignore navigation menus, footers, legal text, and other generic content.
+Write ONLY the description in English as plain text, no markdown formatting or headers.
+Keep under 200 words. Focus on searchable concepts.`
+
+/**
  * Translation prompt - Spanish to English
  */
-const TRANSLATION_PROMPT = `Translate this Spanish event description to English.
+const TRANSLATION_ES_TO_EN = `Translate this Spanish event description to English.
+Maintain the same tone, meaning, and style. Keep it concise.
+Output ONLY the translated text, no explanations or additional commentary.`
+
+/**
+ * Translation prompt - English to Spanish
+ */
+const TRANSLATION_EN_TO_ES = `Translate this English event description to Spanish.
 Maintain the same tone, meaning, and style. Keep it concise.
 Output ONLY the translated text, no explanations or additional commentary.`
 
@@ -71,13 +109,55 @@ export async function fetchWithJina(url: string): Promise<string | null> {
   }
 }
 
+type DetectedLanguage = 'spanish' | 'english'
+
 /**
- * Extract a semantic event description in Spanish from markdown using Haiku 4.5
+ * Detect the primary language of markdown content using Haiku 4.5
+ * Uses a small sample to minimize tokens
  */
-export async function extractDescriptionInSpanish(markdown: string): Promise<string | null> {
+export async function detectLanguage(markdown: string): Promise<DetectedLanguage> {
+  try {
+    // Use a smaller sample for language detection (first 3k chars)
+    const sample = markdown.slice(0, 3000)
+
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 10,
+      messages: [
+        {
+          role: 'user',
+          content: `${LANGUAGE_DETECTION_PROMPT}\n\n---\n${sample}\n---`,
+        },
+      ],
+    })
+
+    const textBlock = message.content.find((block) => block.type === 'text')
+    const response = textBlock?.text?.toLowerCase().trim() ?? ''
+
+    // Default to Spanish for Buenos Aires events if unclear
+    if (response.includes('english')) {
+      return 'english'
+    }
+    return 'spanish'
+  } catch (error) {
+    console.error(`Language detection error:`, error)
+    // Default to Spanish for Buenos Aires context
+    return 'spanish'
+  }
+}
+
+/**
+ * Extract a semantic event description from markdown using Haiku 4.5
+ * Extracts in the specified language
+ */
+export async function extractDescription(
+  markdown: string,
+  language: DetectedLanguage
+): Promise<string | null> {
   try {
     // Truncate markdown to avoid excessive tokens (keep first 15k chars)
     const truncatedMarkdown = markdown.slice(0, 15000)
+    const prompt = language === 'spanish' ? EXTRACTION_PROMPT_ES : EXTRACTION_PROMPT_EN
 
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -85,7 +165,7 @@ export async function extractDescriptionInSpanish(markdown: string): Promise<str
       messages: [
         {
           role: 'user',
-          content: `${EXTRACTION_PROMPT_ES}\n\n---\n${truncatedMarkdown}\n---`,
+          content: `${prompt}\n\n---\n${truncatedMarkdown}\n---`,
         },
       ],
     })
@@ -99,17 +179,22 @@ export async function extractDescriptionInSpanish(markdown: string): Promise<str
 }
 
 /**
- * Translate Spanish text to English using Haiku 4.5
+ * Translate text between Spanish and English using Haiku 4.5
  */
-export async function translateToEnglish(spanishText: string): Promise<string | null> {
+export async function translateText(
+  text: string,
+  direction: 'es-to-en' | 'en-to-es'
+): Promise<string | null> {
   try {
+    const prompt = direction === 'es-to-en' ? TRANSLATION_ES_TO_EN : TRANSLATION_EN_TO_ES
+
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
       messages: [
         {
           role: 'user',
-          content: `${TRANSLATION_PROMPT}\n\n---\n${spanishText}\n---`,
+          content: `${prompt}\n\n---\n${text}\n---`,
         },
       ],
     })
@@ -122,13 +207,20 @@ export async function translateToEnglish(spanishText: string): Promise<string | 
   }
 }
 
+
 export interface BilingualDescription {
   description_es: string | null
   description_en: string | null
 }
 
 /**
- * Combined bilingual pipeline: Jina fetch + Spanish extraction + English translation
+ * Combined bilingual pipeline with language detection
+ * 1. Jina Reader fetches page as markdown
+ * 2. Detect source language (Spanish or English)
+ * 3. Extract description in source language
+ * 4. Translate to other language
+ *
+ * This avoids wasteful Spanish→English→Spanish round-trips for English sources
  */
 export async function enrichEventDescriptionBilingual(url: string): Promise<BilingualDescription | null> {
   console.log(`[enrichment] Starting bilingual enrichment for: ${url}`)
@@ -142,19 +234,35 @@ export async function enrichEventDescriptionBilingual(url: string): Promise<Bili
   }
   console.log(`[enrichment] Jina returned ${markdown.length} chars`)
 
-  // Step 2: Extract description in Spanish
-  console.log(`[enrichment] Extracting Spanish description with Haiku...`)
-  const descriptionEs = await extractDescriptionInSpanish(markdown)
-  if (!descriptionEs) {
-    console.log(`[enrichment] Spanish extraction failed`)
+  // Step 2: Detect source language
+  console.log(`[enrichment] Detecting language...`)
+  const sourceLanguage = await detectLanguage(markdown)
+  console.log(`[enrichment] Detected language: ${sourceLanguage}`)
+
+  // Step 3: Extract description in source language
+  console.log(`[enrichment] Extracting ${sourceLanguage} description with Haiku...`)
+  const sourceDescription = await extractDescription(markdown, sourceLanguage)
+  if (!sourceDescription) {
+    console.log(`[enrichment] ${sourceLanguage} extraction failed`)
     return null
   }
-  console.log(`[enrichment] Spanish: ${descriptionEs.substring(0, 100)}...`)
+  console.log(`[enrichment] ${sourceLanguage}: ${sourceDescription.substring(0, 100)}...`)
 
-  // Step 3: Translate to English
-  console.log(`[enrichment] Translating to English with Haiku...`)
-  const descriptionEn = await translateToEnglish(descriptionEs)
-  console.log(`[enrichment] English: ${descriptionEn ? descriptionEn.substring(0, 100) + '...' : 'null'}`)
+  // Step 4: Translate to other language
+  let descriptionEs: string | null
+  let descriptionEn: string | null
+
+  if (sourceLanguage === 'spanish') {
+    descriptionEs = sourceDescription
+    console.log(`[enrichment] Translating to English with Haiku...`)
+    descriptionEn = await translateText(sourceDescription, 'es-to-en')
+    console.log(`[enrichment] English: ${descriptionEn ? descriptionEn.substring(0, 100) + '...' : 'null'}`)
+  } else {
+    descriptionEn = sourceDescription
+    console.log(`[enrichment] Translating to Spanish with Haiku...`)
+    descriptionEs = await translateText(sourceDescription, 'en-to-es')
+    console.log(`[enrichment] Spanish: ${descriptionEs ? descriptionEs.substring(0, 100) + '...' : 'null'}`)
+  }
 
   return {
     description_es: descriptionEs,
@@ -162,50 +270,3 @@ export async function enrichEventDescriptionBilingual(url: string): Promise<Bili
   }
 }
 
-export interface BilingualEnrichmentResult {
-  id: string
-  description_es: string | null
-  description_en: string | null
-  error?: string
-}
-
-/**
- * Batch enrich multiple events with bilingual descriptions
- * Processes sequentially to avoid rate limiting
- */
-export async function enrichEventDescriptionsBatchBilingual(
-  events: Array<{ id: string; link: string }>,
-  onProgress?: (current: number, total: number) => void,
-  delayMs: number = 500
-): Promise<BilingualEnrichmentResult[]> {
-  const results: BilingualEnrichmentResult[] = []
-
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i]
-    onProgress?.(i + 1, events.length)
-
-    try {
-      const bilingual = await enrichEventDescriptionBilingual(event.link)
-      results.push({
-        id: event.id,
-        description_es: bilingual?.description_es ?? null,
-        description_en: bilingual?.description_en ?? null,
-        error: bilingual?.description_es ? undefined : 'Failed to extract description',
-      })
-    } catch (error) {
-      results.push({
-        id: event.id,
-        description_es: null,
-        description_en: null,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-
-    // Add delay between requests to avoid rate limiting
-    if (i < events.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
-    }
-  }
-
-  return results
-}

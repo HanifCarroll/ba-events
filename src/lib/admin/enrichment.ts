@@ -6,9 +6,61 @@ import { requireAdminAccess } from './utils'
 import type { EventWithVenue } from '../types'
 
 /**
+ * Process a single event enrichment
+ * Returns result object with success/error info
+ */
+async function enrichSingleEvent(
+  id: string,
+  link: string,
+  client: Awaited<ReturnType<typeof requireAdminAccess>>
+): Promise<{ id: string; success: boolean; error?: string }> {
+  console.log(`[server] Processing event ${id}: ${link}`)
+  try {
+    // Fetch and extract bilingual descriptions using Jina + Haiku
+    // Now with language detection - handles both Spanish and English sources
+    const bilingual = await enrichEventDescriptionBilingual(link)
+    console.log(`[server] Got descriptions for ${id}: ES=${bilingual?.description_es ? 'yes' : 'no'}, EN=${bilingual?.description_en ? 'yes' : 'no'}`)
+
+    if (!bilingual?.description_es) {
+      return { id, success: false, error: 'Failed to extract description' }
+    }
+
+    // Get existing event to merge with new description
+    const existingEvent = await getEventById(id)
+
+    // Generate new embedding with Spanish description (cross-lingual model)
+    const textForEmbedding = [
+      existingEvent.name,
+      bilingual.description_es,
+      ...(existingEvent.categories || []),
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    const embedding = await generateEmbedding(textForEmbedding)
+
+    // Update event with both descriptions and new embedding
+    await updateEvent(id, {
+      description_es: bilingual.description_es,
+      description_en: bilingual.description_en,
+      embedding,
+    }, client)
+
+    return { id, success: true }
+  } catch (error) {
+    console.error(`Failed to enrich event ${id}:`, error)
+    return {
+      id,
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+/**
  * Enrich event descriptions using Jina Reader + Haiku 4.5
- * Extracts semantic description in Spanish, translates to English
- * Uses Spanish description for embedding (cross-lingual model handles it)
+ * Processes events in parallel within each batch for faster throughput
+ * Detects source language and translates appropriately
  */
 export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
   .inputValidator(
@@ -16,52 +68,17 @@ export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
   )
   .handler(async ({ data: { events } }) => {
     const client = await requireAdminAccess()
-    console.log(`[server] enrichEventDescriptionsAction called with ${events.length} events`)
-    let enriched = 0
-    const errors: Array<{ id: string; error: string }> = []
+    console.log(`[server] enrichEventDescriptionsAction called with ${events.length} events (parallel processing)`)
 
-    for (const { id, link } of events) {
-      console.log(`[server] Processing event ${id}: ${link}`)
-      try {
-        // Fetch and extract bilingual descriptions using Jina + Haiku
-        const bilingual = await enrichEventDescriptionBilingual(link)
-        console.log(`[server] Got descriptions for ${id}: ES=${bilingual?.description_es ? 'yes' : 'no'}, EN=${bilingual?.description_en ? 'yes' : 'no'}`)
+    // Process all events in the batch in parallel
+    const results = await Promise.all(
+      events.map(({ id, link }) => enrichSingleEvent(id, link, client))
+    )
 
-        if (!bilingual?.description_es) {
-          errors.push({ id, error: 'Failed to extract description' })
-          continue
-        }
-
-        // Get existing event to merge with new description
-        const existingEvent = await getEventById(id)
-
-        // Generate new embedding with Spanish description (cross-lingual model)
-        const textForEmbedding = [
-          existingEvent.name,
-          bilingual.description_es,
-          ...(existingEvent.categories || []),
-        ]
-          .filter(Boolean)
-          .join(' ')
-
-        const embedding = await generateEmbedding(textForEmbedding)
-
-        // Update event with both descriptions and new embedding
-        await updateEvent(id, {
-          description_es: bilingual.description_es,
-          description_en: bilingual.description_en,
-          embedding,
-        }, client)
-
-        enriched++
-      } catch (error) {
-        console.error(`Failed to enrich event ${id}:`, error)
-        errors.push({
-          id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        })
-      }
-    }
+    const enriched = results.filter(r => r.success).length
+    const errors = results
+      .filter(r => !r.success)
+      .map(r => ({ id: r.id, error: r.error || 'Unknown error' }))
 
     return {
       success: true,
