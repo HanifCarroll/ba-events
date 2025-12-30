@@ -1,18 +1,19 @@
 import { Calendar, Music, Ticket, MapPin, Sparkles } from 'lucide-react'
-import { SUGGESTED_PROMPTS } from '@/lib/types'
-
-const iconMap = {
-  calendar: Calendar,
-  music: Music,
-  ticket: Ticket,
-  'map-pin': MapPin,
-}
+import * as m from '@/paraglide/messages'
 
 interface SuggestedPromptsProps {
   onSelectPrompt: (prompt: string) => void
 }
 
 export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
+  // Use translated prompts
+  const prompts = [
+    { text: m.prompt_tonight(), icon: Calendar },
+    { text: m.prompt_techno(), icon: Music },
+    { text: m.prompt_free(), icon: Ticket },
+    { text: m.prompt_jazz(), icon: MapPin },
+  ]
+
   return (
     <div className="flex flex-col items-center justify-center h-full px-4 sm:px-6 py-4 sm:py-8">
       {/* Hero section */}
@@ -26,12 +27,12 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
 
         <h1 className="font-display text-2xl sm:text-4xl md:text-5xl font-semibold mb-2 sm:mb-4 tracking-tight">
           <span className="bg-gradient-to-r from-foreground via-foreground to-primary bg-clip-text text-transparent">
-            Discover Buenos Aires
+            {m.home_title()}
           </span>
         </h1>
 
         <p className="text-muted-foreground text-sm sm:text-lg max-w-md mx-auto leading-relaxed">
-          Your AI guide to the city's hidden gems and unforgettable experiences.
+          {m.home_subtitle()}
         </p>
 
         {/* Decorative line - hidden on mobile */}
@@ -40,8 +41,8 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
 
       {/* Prompt cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full max-w-xl stagger-children">
-        {SUGGESTED_PROMPTS.map((prompt) => {
-          const Icon = iconMap[prompt.icon]
+        {prompts.map((prompt) => {
+          const Icon = prompt.icon
           return (
             <button
               key={prompt.text}
@@ -69,9 +70,9 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
       {/* Footer hint - hidden on mobile to save space */}
       <div className="hidden sm:block mt-8 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-          Ask about events, venues, neighborhoods, or specific vibes.
+          {m.home_hint()}
           <span className="block mt-1 text-primary/70">
-            Techno nights • Jazz bars • Free markets • Tango milongas
+            {m.home_examples()}
           </span>
         </p>
       </div>

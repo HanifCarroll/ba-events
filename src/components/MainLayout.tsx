@@ -19,6 +19,8 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuthContext } from '@/components/AuthProvider'
 import { signOut } from '@/lib/auth'
+import { LanguageSwitcher } from '@/components/LanguageSwitcher'
+import * as m from '@/paraglide/messages'
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -86,16 +88,16 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   const mainNavItems: NavItem[] = [
-    { to: '/', label: 'Home', icon: Home },
-    { label: 'New Chat', icon: MessageSquarePlus, action: handleNewChat, showWhenHasMessages: true },
-    { to: '/saved', label: 'Saved', icon: Bookmark, requiresAuth: true },
-    { to: '/profile', label: 'Settings', icon: Settings, requiresAuth: true },
+    { to: '/', label: m.nav_home(), icon: Home },
+    { label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat, showWhenHasMessages: true },
+    { to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
+    { to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
   ]
 
   const adminNavItems: NavItem[] = [
-    { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, adminOnly: true, exact: true },
-    { to: '/admin/events', label: 'Events', icon: Calendar, adminOnly: true },
-    { to: '/admin/venues', label: 'Venues', icon: MapPin, adminOnly: true },
+    { to: '/admin', label: m.nav_dashboard(), icon: LayoutDashboard, adminOnly: true, exact: true },
+    { to: '/admin/events', label: m.nav_events(), icon: Calendar, adminOnly: true },
+    { to: '/admin/venues', label: m.nav_venues(), icon: MapPin, adminOnly: true },
   ]
 
   const filterNavItems = (items: NavItem[]) => items.filter((item) => {
@@ -211,7 +213,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           <button
             onClick={() => setCollapsed(!collapsed)}
             className={`hidden lg:flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-200 ${collapsed ? 'absolute right-2' : ''}`}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? m.sidebar_expand() : m.sidebar_collapse()}
           >
             {collapsed ? (
               <ChevronRight className="h-4 w-4" />
@@ -257,7 +259,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <div className="space-y-1 pt-3 mt-3 border-t border-border/50">
               {/* Admin section label */}
               <div className={`px-3 py-1 transition-all duration-300 ${collapsed && !mobileMenuOpen ? 'opacity-0 h-0' : 'opacity-100'}`}>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Admin</span>
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{m.nav_admin()}</span>
               </div>
               {filteredAdminNavItems.map((item) => {
                 const showLabel = !collapsed || mobileMenuOpen
@@ -285,6 +287,11 @@ export function MainLayout({ children }: MainLayoutProps) {
           )}
         </nav>
 
+        {/* Language switcher */}
+        <div className="px-3 pb-2">
+          <LanguageSwitcher collapsed={collapsed && !mobileMenuOpen} />
+        </div>
+
         {/* Decorative line */}
         <div className={`mx-3 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent ${collapsed && !mobileMenuOpen ? 'mx-2' : ''}`} />
 
@@ -294,7 +301,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <div className="space-y-2">
               {/* User info - only show when expanded */}
               <div className={`overflow-hidden transition-all duration-300 ${collapsed && !mobileMenuOpen ? 'h-0 opacity-0' : 'h-auto opacity-100 px-3 py-2'}`}>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider">Signed in as</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">{m.auth_signed_in_as()}</p>
                 <p className="text-sm text-foreground truncate">{profile?.display_name || user.email?.split('@')[0]}</p>
               </div>
               {/* Sign out button */}
@@ -311,7 +318,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="font-medium">
-                    {isSigningOut ? 'Signing out...' : 'Sign out'}
+                    {isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}
                   </TooltipContent>
                 </Tooltip>
               ) : (
@@ -323,7 +330,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 >
                   <LogOut className="h-5 w-5" />
                   <span className={`transition-all duration-300 ${collapsed && !mobileMenuOpen ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-                    {isSigningOut ? 'Signing out...' : 'Sign out'}
+                    {isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}
                   </span>
                 </Button>
               )}
@@ -343,7 +350,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   </Link>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="font-medium">
-                  Sign In
+                  {m.auth_sign_in()}
                 </TooltipContent>
               </Tooltip>
             ) : (
@@ -353,7 +360,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   className="w-full justify-start gap-3 px-4 border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
                 >
                   <User className="h-5 w-5" />
-                  <span>Sign In</span>
+                  <span>{m.auth_sign_in()}</span>
                 </Button>
               </Link>
             )

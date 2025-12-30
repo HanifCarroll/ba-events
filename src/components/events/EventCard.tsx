@@ -6,7 +6,8 @@ import {
 } from '@/components/ui/collapsible'
 import { EventActions } from './EventActions'
 import { SaveEventButton } from '@/components/SaveEventButton'
-import { formatPrice, formatEventTime } from '@/lib/chat'
+import { formatPrice } from '@/lib/chat'
+import { formatShortDate, formatTime, formatEventTime } from '@/lib/formatting'
 import type { EventWithVenue } from '@/lib/types'
 
 interface EventCardProps {
@@ -17,15 +18,8 @@ export function EventCard({ event }: EventCardProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const startDate = new Date(event.starts_at)
-  const dateStr = startDate.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
-  const timeStr = startDate.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const dateStr = formatShortDate(startDate)
+  const timeStr = formatTime(startDate)
 
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free

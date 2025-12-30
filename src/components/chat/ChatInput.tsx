@@ -1,16 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Sparkles } from 'lucide-react'
+import * as m from '@/paraglide/messages'
 
 interface ChatInputProps {
   onSend: (message: string) => void
   disabled?: boolean
-  placeholder?: string
 }
 
 export function ChatInput({
   onSend,
   disabled = false,
-  placeholder = 'Ask about events in Buenos Aires...',
 }: ChatInputProps) {
   const [value, setValue] = useState('')
   const [isFocused, setIsFocused] = useState(false)
@@ -70,7 +69,7 @@ export function ChatInput({
               onKeyDown={handleKeyDown}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              placeholder={placeholder}
+              placeholder={m.chat_placeholder()}
               disabled={disabled}
               autoComplete="off"
               className={`
@@ -95,13 +94,13 @@ export function ChatInput({
               `}
             >
               <Send className="h-4 w-4" />
-              <span className="sr-only">Send message</span>
+              <span className="sr-only">{m.chat_send()}</span>
             </button>
           </div>
 
           {/* Powered by hint */}
           <p className="text-[10px] text-muted-foreground/50 text-center mt-2 tracking-wide">
-            Powered by AI • Discover what's happening tonight
+            {m.chat_powered()}
           </p>
         </div>
       </form>

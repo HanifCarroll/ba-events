@@ -6,6 +6,7 @@ import { useAuthContext } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/register')({
   component: RegisterPage,
@@ -34,12 +35,12 @@ function RegisterPage() {
     setError(null)
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match')
+      setError(m.register_error_mismatch())
       return
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+      setError(m.register_error_length())
       return
     }
 
@@ -83,11 +84,11 @@ function RegisterPage() {
           <div className="inline-flex items-center gap-2 mb-4">
             <div className="w-1 h-8 bg-gradient-to-b from-accent to-primary rounded-full" />
             <h1 className="font-display text-3xl font-semibold tracking-tight">
-              Join BA Events
+              {m.register_title()}
             </h1>
           </div>
           <p className="text-muted-foreground text-sm">
-            Create an account to save your favorite events
+            {m.register_subtitle()}
           </p>
         </div>
 
@@ -98,19 +99,19 @@ function RegisterPage() {
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-4">
                 <Check className="h-6 w-6 text-primary" />
               </div>
-              <h3 className="font-display text-lg font-medium mb-2">Check your email</h3>
+              <h3 className="font-display text-lg font-medium mb-2">{m.register_check_email()}</h3>
               <p className="text-muted-foreground text-sm mb-4">
-                We sent a confirmation link to <span className="text-foreground">{email}</span>
+                {m.register_confirm_sent({ email })}
               </p>
               <p className="text-xs text-muted-foreground">
-                Click the link in your email to activate your account
+                {m.register_click_link()}
               </p>
             </div>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm text-muted-foreground">
-                  Email
+                  {m.login_email()}
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -128,7 +129,7 @@ function RegisterPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm text-muted-foreground">
-                  Password
+                  {m.login_password()}
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -147,7 +148,7 @@ function RegisterPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="confirm-password" className="text-sm text-muted-foreground">
-                  Confirm Password
+                  {m.register_confirm_password()}
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -179,14 +180,14 @@ function RegisterPage() {
                   <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    Create Account
+                    {m.register_submit()}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 )}
               </Button>
 
               <p className="text-xs text-muted-foreground text-center">
-                By creating an account, you agree to our terms of service
+                {m.register_terms()}
               </p>
             </form>
           )}
@@ -195,12 +196,12 @@ function RegisterPage() {
         {/* Footer */}
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
-            Already have an account?{' '}
+            {m.register_has_account()}{' '}
             <Link
               to="/login"
               className="text-primary hover:text-primary/80 font-medium transition-colors"
             >
-              Sign in
+              {m.register_signin_link()}
             </Link>
           </p>
         </div>

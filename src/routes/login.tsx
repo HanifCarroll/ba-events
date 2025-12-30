@@ -6,6 +6,7 @@ import { useAuthContext } from '@/components/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -88,11 +89,11 @@ function LoginPage() {
           <div className="inline-flex items-center gap-2 mb-4">
             <div className="w-1 h-8 bg-gradient-to-b from-primary to-accent rounded-full" />
             <h1 className="font-display text-3xl font-semibold tracking-tight">
-              Welcome Back
+              {m.login_welcome()}
             </h1>
           </div>
           <p className="text-muted-foreground text-sm">
-            Sign in to discover Buenos Aires
+            {m.login_subtitle()}
           </p>
         </div>
 
@@ -108,7 +109,7 @@ function LoginPage() {
             }`}
           >
             <Lock className="h-4 w-4" />
-            Password
+            {m.login_password_tab()}
           </button>
           <button
             type="button"
@@ -120,7 +121,7 @@ function LoginPage() {
             }`}
           >
             <Sparkles className="h-4 w-4" />
-            Magic Link
+            {m.login_magic_tab()}
           </button>
         </div>
 
@@ -130,7 +131,7 @@ function LoginPage() {
             <form onSubmit={handlePasswordLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm text-muted-foreground">
-                  Email
+                  {m.login_email()}
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -148,7 +149,7 @@ function LoginPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm text-muted-foreground">
-                  Password
+                  {m.login_password()}
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -179,7 +180,7 @@ function LoginPage() {
                   <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
-                    Sign In
+                    {m.login_submit()}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 )}
@@ -192,23 +193,23 @@ function LoginPage() {
                   <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-4">
                     <Check className="h-6 w-6 text-primary" />
                   </div>
-                  <h3 className="font-display text-lg font-medium mb-2">Check your email</h3>
+                  <h3 className="font-display text-lg font-medium mb-2">{m.login_check_email()}</h3>
                   <p className="text-muted-foreground text-sm">
-                    We sent a magic link to <span className="text-foreground">{email}</span>
+                    {m.login_magic_sent({ email })}
                   </p>
                   <button
                     type="button"
                     onClick={() => setMagicLinkSent(false)}
                     className="mt-4 text-sm text-primary hover:text-primary/80 transition-colors"
                   >
-                    Send another link
+                    {m.login_send_another()}
                   </button>
                 </div>
               ) : (
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="magic-email" className="text-sm text-muted-foreground">
-                      Email
+                      {m.login_email()}
                     </Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -225,7 +226,7 @@ function LoginPage() {
                   </div>
 
                   <p className="text-xs text-muted-foreground">
-                    We'll send you a magic link to sign in instantly — no password needed.
+                    {m.login_magic_description()}
                   </p>
 
                   {error && (
@@ -243,7 +244,7 @@ function LoginPage() {
                       <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <>
-                        Send Magic Link
+                        {m.login_magic_submit()}
                         <Sparkles className="ml-2 h-4 w-4" />
                       </>
                     )}
@@ -257,12 +258,12 @@ function LoginPage() {
         {/* Footer */}
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
-            Don't have an account?{' '}
+            {m.login_no_account()}{' '}
             <Link
               to="/register"
               className="text-primary hover:text-primary/80 font-medium transition-colors"
             >
-              Create one
+              {m.login_create_one()}
             </Link>
           </p>
         </div>

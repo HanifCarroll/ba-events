@@ -16,6 +16,7 @@ import {
   FileText,
   Tags,
 } from 'lucide-react'
+import * as m from '@/paraglide/messages'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -32,6 +33,7 @@ import {
 import { Combobox } from '@/components/ui/combobox'
 import { DataTable, getEventColumns } from '@/components/data-table'
 import { listEvents } from '@/lib/admin'
+import { formatDateTime } from '@/lib/formatting'
 import { useEventAdmin, useBackgroundEnrichment, type EventTab, type DataGapType } from '@/hooks'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import type { EventWithVenue } from '@/lib/types'
@@ -50,44 +52,36 @@ export const Route = createFileRoute('/admin/events/')({
   component: EventListPage,
 })
 
-function formatDate(dateString: string) {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
 function getStatusBadge(status: string) {
-  const variants: Record<string, { className: string; label: string }> = {
+  const statusLabels: Record<string, () => string> = {
+    scheduled: () => m.admin_status_scheduled(),
+    pending_review: () => m.admin_status_pending(),
+    cancelled: () => m.admin_status_cancelled(),
+    postponed: () => m.admin_status_postponed(),
+    past: () => m.admin_status_past(),
+  }
+  const variants: Record<string, { className: string }> = {
     scheduled: {
       className: 'bg-green-500/10 text-green-400 border-green-500/30',
-      label: 'Scheduled',
     },
     pending_review: {
       className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-      label: 'Pending',
     },
     cancelled: {
       className: 'bg-destructive/10 text-destructive border-destructive/30',
-      label: 'Cancelled',
     },
     postponed: {
       className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
-      label: 'Postponed',
     },
     past: {
       className: 'bg-muted/50 text-muted-foreground border-border/50',
-      label: 'Past',
     },
   }
   const variant = variants[status] || variants.scheduled
+  const label = statusLabels[status]?.() || statusLabels.scheduled()
   return (
     <Badge variant="outline" className={variant.className}>
-      {variant.label}
+      {label}
     </Badge>
   )
 }
@@ -120,10 +114,10 @@ function EventListPage() {
   // Smart "Mark Past" toast on page load
   useEffect(() => {
     if (markPast.pastEventsCount > 0) {
-      toast.info(`${markPast.pastEventsCount} events have ended`, {
-        description: 'These events can be marked as past.',
+      toast.info(m.admin_events_ended_toast({ count: markPast.pastEventsCount }), {
+        description: m.admin_events_ended_desc(),
         action: {
-          label: 'Mark Past',
+          label: m.admin_mark_past_dialog(),
           onClick: () => markPast.handleMarkPastEvents(),
         },
         duration: 10000,
@@ -173,12 +167,12 @@ function EventListPage() {
         <div>
           <h1 className="font-display text-2xl font-semibold text-foreground flex items-center gap-2">
             <Calendar className="h-6 w-6 text-primary" />
-            Events
+            {m.admin_events_title()}
           </h1>
           <p className="text-muted-foreground mt-1">
             {filtering.hasActiveFilters
-              ? `${filtering.filteredEvents.length} of ${events.length} events`
-              : `${events.length} events in database`}
+              ? m.admin_events_filtered({ filtered: filtering.filteredEvents.length, total: events.length })
+              : m.admin_events_count({ count: events.length })}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -186,7 +180,7 @@ function EventListPage() {
           <Button asChild variant="outline" className="border-border/50">
             <Link to="/admin/events/import">
               <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Import
+              {m.admin_import()}
             </Link>
           </Button>
 
@@ -194,7 +188,7 @@ function EventListPage() {
           <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Link to="/admin/events/new">
               <Plus className="h-4 w-4 mr-2" />
-              Add Event
+              {m.admin_add_event()}
             </Link>
           </Button>
         </div>
@@ -211,7 +205,7 @@ function EventListPage() {
                 value="all"
                 className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary px-4 py-2"
               >
-                All Events
+                {m.admin_tab_all()}
                 <span className="ml-2 text-xs opacity-70">({filtering.tabCounts.all})</span>
               </TabsTrigger>
               <TabsTrigger
@@ -219,7 +213,7 @@ function EventListPage() {
                 className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400 px-4 py-2"
               >
                 <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
-                Needs Attention
+                {m.admin_tab_needs_attention()}
                 {filtering.tabCounts.needs_attention > 0 && (
                   <span className="ml-2 text-xs bg-orange-500/30 px-1.5 py-0.5 rounded-full">
                     {filtering.tabCounts.needs_attention}
@@ -230,7 +224,7 @@ function EventListPage() {
                 value="pending_review"
                 className="data-[state=active]:bg-yellow-500/20 data-[state=active]:text-yellow-400 px-4 py-2"
               >
-                Pending Review
+                {m.admin_tab_pending()}
                 {filtering.tabCounts.pending_review > 0 && (
                   <span className="ml-2 text-xs bg-yellow-500/30 px-1.5 py-0.5 rounded-full">
                     {filtering.tabCounts.pending_review}
@@ -241,7 +235,7 @@ function EventListPage() {
                 value="past"
                 className="data-[state=active]:bg-muted data-[state=active]:text-muted-foreground px-4 py-2"
               >
-                Past
+                {m.admin_tab_past()}
                 <span className="ml-2 text-xs opacity-70">({filtering.tabCounts.past})</span>
               </TabsTrigger>
             </TabsList>
@@ -250,17 +244,17 @@ function EventListPage() {
           {/* Data gap filter chips - only show on needs_attention tab */}
           {filtering.activeTab === 'needs_attention' && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-muted-foreground mr-1">Filter by:</span>
+              <span className="text-sm text-muted-foreground mr-1">{m.admin_filter_by()}</span>
               <DataGapChip
                 type="all"
-                label="All Gaps"
+                label={m.admin_all_gaps()}
                 count={filtering.dataGapCounts.all}
                 isActive={filtering.dataGapFilter === 'all'}
                 onClick={() => filtering.setDataGapFilter('all')}
               />
               <DataGapChip
                 type="missing_description"
-                label="Missing Description"
+                label={m.admin_missing_description()}
                 count={filtering.dataGapCounts.missing_description}
                 isActive={filtering.dataGapFilter === 'missing_description'}
                 onClick={() => filtering.setDataGapFilter('missing_description')}
@@ -268,7 +262,7 @@ function EventListPage() {
               />
               <DataGapChip
                 type="missing_venue"
-                label="Missing Venue"
+                label={m.admin_missing_venue()}
                 count={filtering.dataGapCounts.missing_venue}
                 isActive={filtering.dataGapFilter === 'missing_venue'}
                 onClick={() => filtering.setDataGapFilter('missing_venue')}
@@ -276,7 +270,7 @@ function EventListPage() {
               />
               <DataGapChip
                 type="missing_categories"
-                label="Missing Categories"
+                label={m.admin_missing_categories()}
                 count={filtering.dataGapCounts.missing_categories}
                 isActive={filtering.dataGapFilter === 'missing_categories'}
                 onClick={() => filtering.setDataGapFilter('missing_categories')}
@@ -290,7 +284,7 @@ function EventListPage() {
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search events..."
+                placeholder={m.admin_search_events()}
                 value={filtering.search}
                 onChange={(e) => filtering.setSearch(e.target.value)}
                 className="pl-9 bg-background/50 border-border/50"
@@ -300,8 +294,8 @@ function EventListPage() {
               options={filtering.venueOptions}
               value={filtering.venueFilter}
               onValueChange={filtering.setVenueFilter}
-              placeholder="All Venues"
-              emptyText="No venues found"
+              placeholder={m.admin_all_venues()}
+              emptyText={m.admin_no_venues_found()}
               className="w-48"
             />
             {filtering.hasActiveFilters && (
@@ -311,7 +305,7 @@ function EventListPage() {
                 onClick={filtering.clearFilters}
                 className="text-muted-foreground hover:text-foreground"
               >
-                Clear
+                {m.common_clear()}
               </Button>
             )}
           </div>
@@ -393,10 +387,9 @@ function EventListPage() {
       <Dialog open={!!singleActions.deleteTarget} onOpenChange={() => singleActions.setDeleteTarget(null)}>
         <DialogContent className="bg-card border-border/50">
           <DialogHeader>
-            <DialogTitle className="font-display text-foreground">Delete Event</DialogTitle>
+            <DialogTitle className="font-display text-foreground">{m.admin_delete_event()}</DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Are you sure you want to delete <strong>{singleActions.deleteTarget?.name}</strong>?
-              This action cannot be undone.
+              {m.admin_delete_event_confirm({ name: singleActions.deleteTarget?.name || '' })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -405,14 +398,14 @@ function EventListPage() {
               onClick={() => singleActions.setDeleteTarget(null)}
               className="text-muted-foreground"
             >
-              Cancel
+              {m.common_cancel()}
             </Button>
             <Button
               variant="destructive"
               onClick={singleActions.handleDelete}
               disabled={singleActions.isDeleting}
             >
-              {singleActions.isDeleting ? 'Deleting...' : 'Delete'}
+              {singleActions.isDeleting ? m.common_deleting() : m.common_delete()}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -423,28 +416,14 @@ function EventListPage() {
         <DialogContent className="bg-card border-border/50">
           <DialogHeader>
             <DialogTitle className="font-display text-foreground">
-              {bulk.bulkAction === 'delete' && 'Delete Events'}
-              {bulk.bulkAction === 'past' && 'Mark Events as Past'}
-              {bulk.bulkAction === 'cancelled' && 'Mark Events as Cancelled'}
+              {bulk.bulkAction === 'delete' && m.admin_delete_events()}
+              {bulk.bulkAction === 'past' && m.admin_mark_past()}
+              {bulk.bulkAction === 'cancelled' && m.admin_mark_cancelled()}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {bulk.bulkAction === 'delete' && (
-                <>
-                  Are you sure you want to delete <strong>{bulk.selectedIds.size} events</strong>?
-                  This action cannot be undone.
-                </>
-              )}
-              {bulk.bulkAction === 'past' && (
-                <>
-                  Mark <strong>{bulk.selectedIds.size} events</strong> as past?
-                  They will no longer appear in the main event list.
-                </>
-              )}
-              {bulk.bulkAction === 'cancelled' && (
-                <>
-                  Mark <strong>{bulk.selectedIds.size} events</strong> as cancelled?
-                </>
-              )}
+              {bulk.bulkAction === 'delete' && m.admin_delete_events_confirm({ count: bulk.selectedIds.size })}
+              {bulk.bulkAction === 'past' && m.admin_mark_past_confirm({ count: bulk.selectedIds.size })}
+              {bulk.bulkAction === 'cancelled' && m.admin_mark_cancelled_confirm({ count: bulk.selectedIds.size })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -453,7 +432,7 @@ function EventListPage() {
               onClick={() => bulk.setBulkAction(null)}
               className="text-muted-foreground"
             >
-              Cancel
+              {m.common_cancel()}
             </Button>
             <Button
               variant={bulk.bulkAction === 'delete' ? 'destructive' : 'default'}
@@ -461,10 +440,10 @@ function EventListPage() {
               disabled={bulk.isBulkProcessing}
             >
               {bulk.isBulkProcessing
-                ? 'Processing...'
+                ? m.common_processing()
                 : bulk.bulkAction === 'delete'
-                  ? 'Delete'
-                  : 'Confirm'}
+                  ? m.common_delete()
+                  : m.common_confirm()}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -474,16 +453,12 @@ function EventListPage() {
       <Dialog open={markPast.showMarkPastDialog} onOpenChange={markPast.setShowMarkPastDialog}>
         <DialogContent className="bg-card border-border/50">
           <DialogHeader>
-            <DialogTitle className="font-display text-foreground">Mark Past Events</DialogTitle>
+            <DialogTitle className="font-display text-foreground">{m.admin_mark_past_dialog()}</DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {markPast.pastEventsCount === 0 ? (
-                <>No events to mark as past. All scheduled events are still upcoming.</>
+                m.admin_no_past_events()
               ) : (
-                <>
-                  Found <strong>{markPast.pastEventsCount} ended events</strong> to mark as past.
-                  Events are considered ended when their end time has passed, or if no end time
-                  is set, when the entire start day has passed.
-                </>
+                m.admin_found_past_events({ count: markPast.pastEventsCount })
               )}
             </DialogDescription>
           </DialogHeader>
@@ -493,13 +468,13 @@ function EventListPage() {
               onClick={() => markPast.setShowMarkPastDialog(false)}
               className="text-muted-foreground"
             >
-              Cancel
+              {m.common_cancel()}
             </Button>
             <Button
               onClick={markPast.handleMarkPastEvents}
               disabled={markPast.isMarkingPast || markPast.pastEventsCount === 0}
             >
-              {markPast.isMarkingPast ? 'Marking...' : `Mark ${markPast.pastEventsCount} Past`}
+              {markPast.isMarkingPast ? m.admin_marking() : m.admin_mark_count_past({ count: markPast.pastEventsCount })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -515,12 +490,12 @@ function EmptyState() {
   return (
     <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
       <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-      <h3 className="font-display text-lg font-medium text-foreground mb-2">No events yet</h3>
-      <p className="text-muted-foreground mb-4">Get started by adding your first event.</p>
+      <h3 className="font-display text-lg font-medium text-foreground mb-2">{m.admin_no_events()}</h3>
+      <p className="text-muted-foreground mb-4">{m.admin_no_events_desc()}</p>
       <Button asChild className="bg-primary text-primary-foreground">
         <Link to="/admin/events/new">
           <Plus className="h-4 w-4 mr-2" />
-          Add Event
+          {m.admin_add_event()}
         </Link>
       </Button>
     </div>
@@ -531,10 +506,10 @@ function NoMatchesState({ onClearFilters }: { onClearFilters: () => void }) {
   return (
     <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
       <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-      <h3 className="font-display text-lg font-medium text-foreground mb-2">No matching events</h3>
-      <p className="text-muted-foreground mb-4">Try adjusting your filters.</p>
+      <h3 className="font-display text-lg font-medium text-foreground mb-2">{m.admin_no_matching_events()}</h3>
+      <p className="text-muted-foreground mb-4">{m.admin_no_matching_desc()}</p>
       <Button variant="outline" onClick={onClearFilters}>
-        Clear filters
+        {m.common_clear_filters()}
       </Button>
     </div>
   )
@@ -627,7 +602,7 @@ const MobileEventCard = memo(function MobileEventCard({
                   variant="outline"
                   className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
                 >
-                  No Description
+                  {m.admin_no_description()}
                 </Badge>
               )}
               {event.categories.slice(0, 2).map((cat) => (
@@ -659,7 +634,7 @@ const MobileEventCard = memo(function MobileEventCard({
         )}
         <div className="flex items-center gap-1.5">
           <Calendar className="h-3.5 w-3.5 shrink-0" />
-          <span>{formatDate(event.starts_at)}</span>
+          <span>{formatDateTime(event.starts_at)}</span>
         </div>
       </div>
 
@@ -674,7 +649,7 @@ const MobileEventCard = memo(function MobileEventCard({
               disabled={isApproving === event.id}
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              Approve
+              {m.admin_approve()}
             </Button>
             <Button
               variant="ghost"
@@ -684,7 +659,7 @@ const MobileEventCard = memo(function MobileEventCard({
               disabled={isRejecting === event.id}
             >
               <XCircle className="h-4 w-4 mr-2" />
-              Reject
+              {m.admin_reject()}
             </Button>
           </>
         ) : (
@@ -697,7 +672,7 @@ const MobileEventCard = memo(function MobileEventCard({
             >
               <Link to="/admin/events/$id" params={{ id: event.id }}>
                 <Pencil className="h-4 w-4 mr-2" />
-                Edit
+                {m.common_edit()}
               </Link>
             </Button>
             <Button
@@ -707,7 +682,7 @@ const MobileEventCard = memo(function MobileEventCard({
               onClick={() => onDelete(event)}
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Delete
+              {m.common_delete()}
             </Button>
           </>
         )}

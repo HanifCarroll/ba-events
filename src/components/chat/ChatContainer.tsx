@@ -5,6 +5,7 @@ import { chat } from '@/lib/ai'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { SuggestedPrompts } from './SuggestedPrompts'
+import { getLocale } from '@/paraglide/runtime'
 
 export function ChatContainer() {
   const [state, setState] = useState<ChatState>({
@@ -72,8 +73,11 @@ export function ChatContainer() {
       // This includes tool_use and tool_result blocks, not just text
       const history = state.apiHistory
 
-      // Call the server function with full API history
-      const stream = await chat({ data: { message: content, history } })
+      // Get the current locale
+      const locale = getLocale() as 'en' | 'es'
+
+      // Call the server function with full API history and locale
+      const stream = await chat({ data: { message: content, history, locale } })
 
       if (!stream) {
         throw new Error('No response stream received')

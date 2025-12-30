@@ -3,6 +3,7 @@ import { Calendar, MapPin, Plus, Clock, CheckCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getAdminStats } from '@/lib/admin'
+import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/admin/')({
   loader: async () => {
@@ -16,34 +17,34 @@ function AdminDashboard() {
 
   const statCards = [
     {
-      title: 'Total Events',
+      title: m.admin_total_events(),
       value: stats.eventCount,
       icon: Calendar,
-      description: 'Events in database',
+      description: m.admin_events_in_db(),
       color: 'text-blue-400',
       bgColor: 'bg-blue-500/10',
     },
     {
-      title: 'Upcoming Events',
+      title: m.admin_upcoming_events(),
       value: stats.upcomingCount,
       icon: Clock,
-      description: 'Starting in the future',
+      description: m.admin_starting_future(),
       color: 'text-primary',
       bgColor: 'bg-primary/10',
     },
     {
-      title: 'Scheduled',
+      title: m.admin_scheduled(),
       value: stats.scheduledCount,
       icon: CheckCircle,
-      description: 'Active & confirmed',
+      description: m.admin_active_confirmed(),
       color: 'text-green-400',
       bgColor: 'bg-green-500/10',
     },
     {
-      title: 'Venues',
+      title: m.admin_venues(),
       value: stats.venueCount,
       icon: MapPin,
-      description: 'Registered venues',
+      description: m.admin_registered_venues(),
       color: 'text-accent',
       bgColor: 'bg-accent/10',
     },
@@ -53,8 +54,8 @@ function AdminDashboard() {
     <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
       {/* Header */}
       <div>
-        <h1 className="font-display text-3xl font-semibold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Manage your events and venues</p>
+        <h1 className="font-display text-3xl font-semibold text-foreground">{m.admin_dashboard()}</h1>
+        <p className="text-muted-foreground mt-1">{m.admin_dashboard_subtitle()}</p>
         <div className="deco-line w-24 mt-4" />
       </div>
 
@@ -96,15 +97,15 @@ function AdminDashboard() {
               </div>
               <div className="flex-1">
                 <h3 className="font-display text-lg font-semibold text-foreground mb-1">
-                  Add New Event
+                  {m.admin_add_new_event()}
                 </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Create a new event with details, venue, and categories.
+                  {m.admin_add_event_desc()}
                 </p>
                 <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Link to="/admin/events/new">
                     <Plus className="h-4 w-4 mr-2" />
-                    New Event
+                    {m.admin_new_event()}
                   </Link>
                 </Button>
               </div>
@@ -121,15 +122,15 @@ function AdminDashboard() {
               </div>
               <div className="flex-1">
                 <h3 className="font-display text-lg font-semibold text-foreground mb-1">
-                  Add New Venue
+                  {m.admin_add_new_venue()}
                 </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Register a new venue with location and contact info.
+                  {m.admin_add_venue_desc()}
                 </p>
                 <Button asChild variant="outline" className="border-accent/50 text-accent hover:bg-accent/10 hover:border-accent">
                   <Link to="/admin/venues/new">
                     <Plus className="h-4 w-4 mr-2" />
-                    New Venue
+                    {m.admin_new_venue()}
                   </Link>
                 </Button>
               </div>
@@ -141,13 +142,13 @@ function AdminDashboard() {
       {/* Quick links */}
       <div className="flex flex-wrap gap-3">
         <Button asChild variant="ghost" className="text-muted-foreground hover:text-foreground">
-          <Link to="/admin/events">View all events</Link>
+          <Link to="/admin/events">{m.admin_view_all_events()}</Link>
         </Button>
         <Button asChild variant="ghost" className="text-muted-foreground hover:text-foreground">
-          <Link to="/admin/venues">View all venues</Link>
+          <Link to="/admin/venues">{m.admin_view_all_venues()}</Link>
         </Button>
         <Button asChild variant="ghost" className="text-muted-foreground hover:text-foreground">
-          <Link to="/">Go to main site</Link>
+          <Link to="/">{m.admin_go_to_site()}</Link>
         </Button>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query'
 import { MainLayout } from '@/components/MainLayout'
+import { getLocale } from '@/paraglide/runtime'
 
 import appCss from '../styles.css?url'
 
@@ -56,7 +57,7 @@ export const Route = createRootRoute({
 
 function RootDocument() {
   return (
-    <html lang="en" className="dark">
+    <html lang={getLocale()} className="dark">
       <head>
         <HeadContent />
       </head>

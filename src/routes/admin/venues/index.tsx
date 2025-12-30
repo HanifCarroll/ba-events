@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
 import { Plus, MapPin, Search, X, Filter, Users, Upload } from 'lucide-react'
+import * as m from '@/paraglide/messages'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -32,15 +33,18 @@ export const Route = createFileRoute('/admin/venues/')({
   component: VenueListPage,
 })
 
-const venueTypeLabels: Record<string, string> = {
-  club: 'Club',
-  bar: 'Bar',
-  theater: 'Theater',
-  gallery: 'Gallery',
-  cultural_center: 'Cultural Center',
-  outdoor: 'Outdoor',
-  restaurant: 'Restaurant',
-  other: 'Other',
+function getVenueTypeLabel(type: string): string {
+  const labels: Record<string, () => string> = {
+    club: () => m.admin_venue_type_club(),
+    bar: () => m.admin_venue_type_bar(),
+    theater: () => m.admin_venue_type_theater(),
+    gallery: () => m.admin_venue_type_gallery(),
+    cultural_center: () => m.admin_venue_type_cultural_center(),
+    outdoor: () => m.admin_venue_type_outdoor(),
+    restaurant: () => m.admin_venue_type_restaurant(),
+    other: () => m.admin_venue_type_other(),
+  }
+  return labels[type]?.() || type
 }
 
 function VenueListPage() {
@@ -115,25 +119,25 @@ function VenueListPage() {
         <div>
           <h1 className="font-display text-2xl font-semibold text-foreground flex items-center gap-2">
             <MapPin className="h-6 w-6 text-primary" />
-            Venues
+            {m.admin_venues_title()}
           </h1>
           <p className="text-muted-foreground mt-1">
             {hasActiveFilters
-              ? `${filteredVenues.length} of ${venues.length} venues`
-              : `${venues.length} venues registered`}
+              ? m.admin_venues_filtered({ filtered: filteredVenues.length, total: venues.length })
+              : m.admin_venues_count({ count: venues.length })}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" className="border-border/50">
             <Link to="/admin/venues/import">
               <Upload className="h-4 w-4 mr-2" />
-              Import CSV
+              {m.admin_import_csv()}
             </Link>
           </Button>
           <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Link to="/admin/venues/new">
               <Plus className="h-4 w-4 mr-2" />
-              Add Venue
+              {m.admin_add_venue()}
             </Link>
           </Button>
         </div>
@@ -153,15 +157,15 @@ function VenueListPage() {
             >
               <span className="flex items-center gap-2">
                 <Filter className="h-4 w-4" />
-                Filters
+                {m.common_filters()}
                 {hasActiveFilters && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                    Active
+                    {m.common_active()}
                   </Badge>
                 )}
               </span>
               <span className="text-muted-foreground text-xs">
-                {showFilters ? 'Hide' : 'Show'}
+                {showFilters ? m.common_hide() : m.common_show()}
               </span>
             </Button>
           </div>
@@ -174,7 +178,7 @@ function VenueListPage() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search venues..."
+                placeholder={m.admin_search_venues()}
                 className="pl-9 bg-background/50 border-border/50"
               />
             </div>
@@ -184,8 +188,8 @@ function VenueListPage() {
               options={neighborhoodOptions}
               value={neighborhoodFilter}
               onValueChange={(v) => setNeighborhoodFilter(v as Neighborhood | undefined)}
-              placeholder="All Neighborhoods"
-              emptyText="No neighborhood found"
+              placeholder={m.admin_all_neighborhoods()}
+              emptyText={m.admin_no_neighborhood()}
             />
 
             {/* Type filter */}
@@ -197,10 +201,10 @@ function VenueListPage() {
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="all">{m.admin_all_types()}</SelectItem>
                 {VENUE_TYPES.map((t) => (
                   <SelectItem key={t} value={t}>
-                    {venueTypeLabels[t] || t}
+                    {getVenueTypeLabel(t)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -216,7 +220,7 @@ function VenueListPage() {
               className="text-muted-foreground hover:text-foreground"
             >
               <X className="h-3.5 w-3.5 mr-1.5" />
-              Clear filters
+              {m.common_clear_filters()}
             </Button>
           )}
         </div>
@@ -226,22 +230,22 @@ function VenueListPage() {
       {venues.length === 0 ? (
         <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
           <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="font-display text-lg font-medium text-foreground mb-2">No venues yet</h3>
-          <p className="text-muted-foreground mb-4">Get started by adding your first venue.</p>
+          <h3 className="font-display text-lg font-medium text-foreground mb-2">{m.admin_no_venues()}</h3>
+          <p className="text-muted-foreground mb-4">{m.admin_no_venues_desc()}</p>
           <Button asChild className="bg-primary text-primary-foreground">
             <Link to="/admin/venues/new">
               <Plus className="h-4 w-4 mr-2" />
-              Add Venue
+              {m.admin_add_venue()}
             </Link>
           </Button>
         </div>
       ) : filteredVenues.length === 0 ? (
         <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
           <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="font-display text-lg font-medium text-foreground mb-2">No matching venues</h3>
-          <p className="text-muted-foreground mb-4">Try adjusting your filters.</p>
+          <h3 className="font-display text-lg font-medium text-foreground mb-2">{m.admin_no_matching_venues()}</h3>
+          <p className="text-muted-foreground mb-4">{m.admin_no_matching_desc()}</p>
           <Button variant="outline" onClick={clearFilters}>
-            Clear filters
+            {m.common_clear_filters()}
           </Button>
         </div>
       ) : (
@@ -277,10 +281,9 @@ function VenueListPage() {
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent className="bg-card border-border/50">
           <DialogHeader>
-            <DialogTitle className="font-display text-foreground">Delete Venue</DialogTitle>
+            <DialogTitle className="font-display text-foreground">{m.admin_delete_venue()}</DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>?
-              This action cannot be undone.
+              {m.admin_delete_venue_confirm({ name: deleteTarget?.name || '' })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -289,14 +292,14 @@ function VenueListPage() {
               onClick={() => setDeleteTarget(null)}
               className="text-muted-foreground"
             >
-              Cancel
+              {m.common_cancel()}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDelete}
               disabled={isDeleting}
             >
-              {isDeleting ? 'Deleting...' : 'Delete'}
+              {isDeleting ? m.common_deleting() : m.common_delete()}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -323,7 +326,7 @@ function MobileVenueCard({
           </Badge>
         </div>
         <Badge variant="outline" className="shrink-0 border-border/50 text-muted-foreground">
-          {venueTypeLabels[venue.type] || venue.type}
+          {getVenueTypeLabel(venue.type)}
         </Badge>
       </div>
 
@@ -331,7 +334,7 @@ function MobileVenueCard({
         {venue.capacity && (
           <div className="flex items-center gap-1.5">
             <Users className="h-3.5 w-3.5 shrink-0" />
-            <span>Capacity: {venue.capacity}</span>
+            <span>{m.admin_capacity({ count: venue.capacity })}</span>
           </div>
         )}
       </div>
@@ -344,7 +347,7 @@ function MobileVenueCard({
           className="flex-1 text-muted-foreground hover:text-foreground"
         >
           <Link to="/admin/venues/$id" params={{ id: venue.id }}>
-            Edit
+            {m.common_edit()}
           </Link>
         </Button>
         <Button
@@ -353,7 +356,7 @@ function MobileVenueCard({
           className="flex-1 text-muted-foreground hover:text-destructive"
           onClick={onDelete}
         >
-          Delete
+          {m.common_delete()}
         </Button>
       </div>
     </div>

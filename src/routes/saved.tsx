@@ -6,6 +6,7 @@ import { getSavedEvents } from '@/lib/saved-events'
 import { EventCard } from '@/components/events/EventCard'
 import { Button } from '@/components/ui/button'
 import type { EventWithVenue } from '@/lib/types'
+import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/saved')({
   component: SavedEventsPage,
@@ -101,7 +102,7 @@ function SavedEventsPage() {
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to discover
+            {m.saved_back()}
           </Link>
 
           <div className="flex items-start justify-between">
@@ -111,16 +112,16 @@ function SavedEventsPage() {
                   <Bookmark className="h-5 w-5 text-primary" />
                 </div>
                 <h1 className="font-display text-2xl font-semibold tracking-tight">
-                  Saved Events
+                  {m.saved_title()}
                 </h1>
               </div>
               <p className="text-muted-foreground text-sm">
                 {events.length === 0 ? (
-                  'No events saved yet'
+                  m.saved_none()
+                ) : events.length === 1 ? (
+                  m.saved_count({ count: events.length })
                 ) : (
-                  <>
-                    {events.length} event{events.length !== 1 ? 's' : ''} saved
-                  </>
+                  m.saved_count_plural({ count: events.length })
                 )}
               </p>
             </div>
@@ -138,7 +139,7 @@ function SavedEventsPage() {
                 }`}
               >
                 <Calendar className="h-4 w-4" />
-                Upcoming
+                {m.saved_upcoming()}
                 {upcomingCount > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-primary/20 text-primary">
                     {upcomingCount}
@@ -154,7 +155,7 @@ function SavedEventsPage() {
                 }`}
               >
                 <Clock className="h-4 w-4" />
-                Past
+                {m.saved_past()}
                 {pastCount > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 rounded text-xs bg-muted-foreground/20 text-muted-foreground">
                     {pastCount}
@@ -172,7 +173,7 @@ function SavedEventsPage() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-              <p className="text-sm text-muted-foreground">Loading saved events...</p>
+              <p className="text-sm text-muted-foreground">{m.saved_loading()}</p>
             </div>
           ) : events.length === 0 ? (
             <EmptyState />
@@ -186,17 +187,17 @@ function SavedEventsPage() {
                 )}
               </div>
               <h3 className="font-display text-lg font-medium mb-2">
-                No {filter} events
+                {filter === 'upcoming' ? m.saved_no_upcoming() : m.saved_no_past()}
               </h3>
               <p className="text-muted-foreground text-sm max-w-sm mx-auto">
                 {filter === 'upcoming'
-                  ? "You don't have any upcoming events saved. Discover new events to add to your list."
-                  : "You don't have any past events in your saved list."}
+                  ? m.saved_no_upcoming_desc()
+                  : m.saved_no_past_desc()}
               </p>
               {filter === 'upcoming' && (
                 <Link to="/">
                   <Button variant="outline" className="mt-4">
-                    Discover Events
+                    {m.saved_discover()}
                   </Button>
                 </Link>
               )}
@@ -233,16 +234,16 @@ function EmptyState() {
         </div>
 
         <h2 className="font-display text-2xl font-semibold mb-3">
-          No saved events yet
+          {m.saved_empty_title()}
         </h2>
         <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
-          When you find events you're interested in, save them here to keep track of everything in one place.
+          {m.saved_empty_desc()}
         </p>
 
         <Link to="/">
           <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
             <Sparkles className="mr-2 h-4 w-4" />
-            Discover Events
+            {m.saved_discover()}
           </Button>
         </Link>
 

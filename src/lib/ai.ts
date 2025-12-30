@@ -44,6 +44,7 @@ const apiMessageSchema = z.object({
 const chatRequestSchema = z.object({
   message: z.string(),
   history: z.array(apiMessageSchema).default([]),
+  locale: z.enum(['en', 'es']).default('en'),
 })
 
 // Tool input schema for search_events
@@ -69,7 +70,12 @@ const getVenueDetailsInputSchema = z.object({
 type GetVenueDetailsInput = z.infer<typeof getVenueDetailsInputSchema>
 
 // System prompt for the events assistant
-const SYSTEM_PROMPT = `You are a friendly and knowledgeable Buenos Aires events assistant. You help users discover events happening in the city - from techno nights and jazz bars to tango milongas, art exhibitions, and food markets.
+const getSystemPrompt = (locale: 'en' | 'es') => {
+  const languageInstruction = locale === 'es'
+    ? '\n\n## IMPORTANT: Language\nYou MUST respond in Spanish. All your responses should be in Spanish, not English.'
+    : ''
+
+  return `You are a friendly and knowledgeable Buenos Aires events assistant. You help users discover events happening in the city - from techno nights and jazz bars to tango milongas, art exhibitions, and food markets.${languageInstruction}
 
 ## Your Personality
 - Warm and enthusiastic about Buenos Aires nightlife and culture
@@ -140,6 +146,7 @@ Use the search_events tool with these parameters:
 - Keep it positive and helpful
 
 Remember: You're helping people have a great time in Buenos Aires!`
+}
 
 // Tool definition for Claude
 const tools: Anthropic.Tool[] = [
@@ -500,7 +507,7 @@ function createRateLimitErrorStream(resetTimestamp: number): ReadableStream<Uint
 export const chat = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => chatRequestSchema.parse(data))
   .handler(async ({ data }): Promise<ReadableStream<Uint8Array>> => {
-    const { message, history } = data
+    const { message, history, locale } = data
     const encoder = new TextEncoder()
 
     // Check rate limit
@@ -541,7 +548,7 @@ export const chat = createServerFn({ method: 'POST' })
             const response = await anthropic.messages.create({
               model: 'claude-haiku-4-5-20251001',
               max_tokens: 1024,
-              system: SYSTEM_PROMPT,
+              system: getSystemPrompt(locale),
               tools,
               messages,
               stream: true,

@@ -4,18 +4,8 @@ import { Pencil, Trash2, MapPin, CheckCircle2, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTableColumnHeader } from '../DataTableColumnHeader'
+import { formatDateTime } from '@/lib/formatting'
 import type { EventWithVenue } from '@/lib/types'
-
-function formatDate(dateString: string) {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
 
 function getSourceBadge(source: string) {
   const variants: Record<string, { className: string; label: string }> = {
@@ -171,7 +161,7 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
       ),
       cell: ({ row }) => (
         <span className="text-muted-foreground text-sm">
-          {formatDate(row.original.starts_at)}
+          {formatDateTime(row.original.starts_at)}
         </span>
       ),
     },
