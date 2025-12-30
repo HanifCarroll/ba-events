@@ -148,8 +148,15 @@ export function useAuth() {
     }
 
     let subscription: { unsubscribe: () => void } | null = null
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
 
     const initAuth = async () => {
+      // Safety timeout - ensure loading is set to false even if something hangs
+      timeoutId = setTimeout(() => {
+        console.warn('Auth initialization timeout - forcing loading to false')
+        setLoading(false)
+      }, 5000)
+
       try {
         const client = getSupabaseBrowserClient()
 
@@ -181,6 +188,9 @@ export function useAuth() {
       } catch (err) {
         console.error('Error initializing auth:', err)
       } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
         setLoading(false)
       }
     }
@@ -188,6 +198,9 @@ export function useAuth() {
     initAuth()
 
     return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
       subscription?.unsubscribe()
     }
   }, [loadProfile])
