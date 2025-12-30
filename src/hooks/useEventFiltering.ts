@@ -5,6 +5,8 @@ export type EventTab = 'all' | 'needs_attention' | 'pending_review' | 'past'
 
 export type DataGapType = 'all' | 'missing_description' | 'missing_venue' | 'missing_categories'
 
+export type CompletenessFilter = 'incomplete' | 'complete'
+
 export interface VenueOption {
   value: string
   label: string
@@ -12,6 +14,7 @@ export interface VenueOption {
 
 export interface DataGapCounts {
   all: number
+  complete: number
   missing_description: number
   missing_venue: number
   missing_categories: number
@@ -30,6 +33,7 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
   const [venueFilter, setVenueFilter] = useState<string | undefined>(undefined)
   const [showFilters, setShowFilters] = useState(false)
   const [dataGapFilter, setDataGapFilter] = useState<DataGapType>('all')
+  const [completenessFilter, setCompletenessFilter] = useState<CompletenessFilter>('incomplete')
 
   // Get unique venues for filter dropdown
   const venueOptions = useMemo(() => {
@@ -45,40 +49,47 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
     }))
   }, [events])
 
-  // Compute data gap counts for "needs attention" tab
+  // Helper to check if an event has any data gaps
+  const hasDataGap = (event: EventWithVenue): boolean => {
+    return (
+      (!event.description_es && !!event.link) ||
+      !event.venue_id ||
+      !event.categories ||
+      event.categories.length === 0
+    )
+  }
+
+  // Compute data gap counts for "data quality" tab
   const dataGapCounts = useMemo<DataGapCounts>(() => {
     let missingDescription = 0
     let missingVenue = 0
     let missingCategories = 0
+    let complete = 0
+    let incomplete = 0
 
     events.forEach((event) => {
       // Only count scheduled/upcoming events
       if (event.status !== 'scheduled') return
 
-      if (!event.description_es && event.link) {
-        missingDescription++
-      }
-      if (!event.venue_id) {
-        missingVenue++
-      }
-      if (!event.categories || event.categories.length === 0) {
-        missingCategories++
+      if (hasDataGap(event)) {
+        incomplete++
+        if (!event.description_es && event.link) {
+          missingDescription++
+        }
+        if (!event.venue_id) {
+          missingVenue++
+        }
+        if (!event.categories || event.categories.length === 0) {
+          missingCategories++
+        }
+      } else {
+        complete++
       }
     })
 
-    // "all" is union of all gaps (event can have multiple gaps)
-    const eventsWithAnyGap = events.filter((event) => {
-      if (event.status !== 'scheduled') return false
-      return (
-        (!event.description_es && event.link) ||
-        !event.venue_id ||
-        !event.categories ||
-        event.categories.length === 0
-      )
-    }).length
-
     return {
-      all: eventsWithAnyGap,
+      all: incomplete,
+      complete,
       missing_description: missingDescription,
       missing_venue: missingVenue,
       missing_categories: missingCategories,
@@ -107,7 +118,7 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
     }
   }, [events, dataGapCounts.all])
 
-  // Filter events based on tab + search + venue + data gap
+  // Filter events based on tab + search + venue + data gap + completeness
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
       // Tab filter
@@ -115,21 +126,22 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
         // Must be scheduled
         if (event.status !== 'scheduled') return false
 
-        // Apply data gap filter
-        if (dataGapFilter === 'all') {
-          // Any gap counts
-          const hasAnyGap =
-            (!event.description_es && event.link) ||
-            !event.venue_id ||
-            !event.categories ||
-            event.categories.length === 0
-          if (!hasAnyGap) return false
-        } else if (dataGapFilter === 'missing_description') {
-          if (event.description_es || !event.link) return false
-        } else if (dataGapFilter === 'missing_venue') {
-          if (event.venue_id) return false
-        } else if (dataGapFilter === 'missing_categories') {
-          if (event.categories && event.categories.length > 0) return false
+        // Apply completeness filter first
+        if (completenessFilter === 'complete') {
+          // Show only complete events (no data gaps)
+          if (hasDataGap(event)) return false
+        } else {
+          // Show incomplete events, apply data gap filter
+          if (dataGapFilter === 'all') {
+            // Any gap counts
+            if (!hasDataGap(event)) return false
+          } else if (dataGapFilter === 'missing_description') {
+            if (event.description_es || !event.link) return false
+          } else if (dataGapFilter === 'missing_venue') {
+            if (event.venue_id) return false
+          } else if (dataGapFilter === 'missing_categories') {
+            if (event.categories && event.categories.length > 0) return false
+          }
         }
       } else if (activeTab === 'pending_review') {
         if (event.status !== 'pending_review') return false
@@ -150,15 +162,21 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
       }
       return true
     })
-  }, [events, activeTab, search, statusFilter, venueFilter, dataGapFilter])
+  }, [events, activeTab, search, statusFilter, venueFilter, dataGapFilter, completenessFilter])
 
-  const hasActiveFilters = !!(search || (activeTab === 'all' && statusFilter !== 'all') || venueFilter || (activeTab === 'needs_attention' && dataGapFilter !== 'all'))
+  const hasActiveFilters = !!(
+    search ||
+    (activeTab === 'all' && statusFilter !== 'all') ||
+    venueFilter ||
+    (activeTab === 'needs_attention' && completenessFilter === 'incomplete' && dataGapFilter !== 'all')
+  )
 
   function clearFilters() {
     setSearch('')
     setStatusFilter('all')
     setVenueFilter(undefined)
     setDataGapFilter('all')
+    setCompletenessFilter('incomplete')
   }
 
   return {
@@ -179,6 +197,8 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
     dataGapFilter,
     setDataGapFilter,
     dataGapCounts,
+    completenessFilter,
+    setCompletenessFilter,
   }
 }
 

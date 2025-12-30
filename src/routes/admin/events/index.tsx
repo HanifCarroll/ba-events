@@ -361,41 +361,71 @@ function EventListPage() {
             </TabsList>
           </Tabs>
 
-          {/* Data gap filter chips - only show on needs_attention tab */}
+          {/* Data quality filters - only show on needs_attention tab */}
           {filtering.activeTab === 'needs_attention' && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-muted-foreground mr-1">{m.admin_filter_by()}</span>
-              <DataGapChip
-                type="all"
-                label={m.admin_all_gaps()}
-                count={filtering.dataGapCounts.all}
-                isActive={filtering.dataGapFilter === 'all'}
-                onClick={() => filtering.setDataGapFilter('all')}
-              />
-              <DataGapChip
-                type="missing_description"
-                label={m.admin_missing_description()}
-                count={filtering.dataGapCounts.missing_description}
-                isActive={filtering.dataGapFilter === 'missing_description'}
-                onClick={() => filtering.setDataGapFilter('missing_description')}
-                icon={<FileText className="h-3.5 w-3.5" />}
-              />
-              <DataGapChip
-                type="missing_venue"
-                label={m.admin_missing_venue()}
-                count={filtering.dataGapCounts.missing_venue}
-                isActive={filtering.dataGapFilter === 'missing_venue'}
-                onClick={() => filtering.setDataGapFilter('missing_venue')}
-                icon={<MapPin className="h-3.5 w-3.5" />}
-              />
-              <DataGapChip
-                type="missing_categories"
-                label={m.admin_missing_categories()}
-                count={filtering.dataGapCounts.missing_categories}
-                isActive={filtering.dataGapFilter === 'missing_categories'}
-                onClick={() => filtering.setDataGapFilter('missing_categories')}
-                icon={<Tags className="h-3.5 w-3.5" />}
-              />
+            <div className="space-y-3">
+              {/* Completeness toggle */}
+              <div className="flex items-center gap-3">
+                <Tabs
+                  value={filtering.completenessFilter}
+                  onValueChange={(v) => filtering.setCompletenessFilter(v as 'incomplete' | 'complete')}
+                >
+                  <TabsList className="bg-card/50 border border-border/50 p-0.5 h-auto">
+                    <TabsTrigger
+                      value="incomplete"
+                      className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400 px-3 py-1.5 text-sm"
+                    >
+                      Incomplete
+                      <span className="ml-1.5 text-xs opacity-70">({filtering.dataGapCounts.all})</span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="complete"
+                      className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400 px-3 py-1.5 text-sm"
+                    >
+                      Complete
+                      <span className="ml-1.5 text-xs opacity-70">({filtering.dataGapCounts.complete})</span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+
+              {/* Data gap filter chips - only show when viewing incomplete */}
+              {filtering.completenessFilter === 'incomplete' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-muted-foreground mr-1">{m.admin_filter_by()}</span>
+                  <DataGapChip
+                    type="all"
+                    label={m.admin_all_gaps()}
+                    count={filtering.dataGapCounts.all}
+                    isActive={filtering.dataGapFilter === 'all'}
+                    onClick={() => filtering.setDataGapFilter('all')}
+                  />
+                  <DataGapChip
+                    type="missing_description"
+                    label={m.admin_missing_description()}
+                    count={filtering.dataGapCounts.missing_description}
+                    isActive={filtering.dataGapFilter === 'missing_description'}
+                    onClick={() => filtering.setDataGapFilter('missing_description')}
+                    icon={<FileText className="h-3.5 w-3.5" />}
+                  />
+                  <DataGapChip
+                    type="missing_venue"
+                    label={m.admin_missing_venue()}
+                    count={filtering.dataGapCounts.missing_venue}
+                    isActive={filtering.dataGapFilter === 'missing_venue'}
+                    onClick={() => filtering.setDataGapFilter('missing_venue')}
+                    icon={<MapPin className="h-3.5 w-3.5" />}
+                  />
+                  <DataGapChip
+                    type="missing_categories"
+                    label={m.admin_missing_categories()}
+                    count={filtering.dataGapCounts.missing_categories}
+                    isActive={filtering.dataGapFilter === 'missing_categories'}
+                    onClick={() => filtering.setDataGapFilter('missing_categories')}
+                    icon={<Tags className="h-3.5 w-3.5" />}
+                  />
+                </div>
+              )}
             </div>
           )}
 
