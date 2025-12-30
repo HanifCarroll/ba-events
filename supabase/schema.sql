@@ -94,13 +94,13 @@ create index on venues (neighborhood);
 create table events (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  description text,
+  description_es text, -- Spanish description (primary, used for embedding)
+  description_en text, -- English description (for display)
   starts_at timestamptz not null,
   ends_at timestamptz,
   is_all_day boolean not null default false,
   venue_id uuid references venues(id) on delete set null,
   categories text[] not null default '{}',
-  vibes text[] not null default '{}',
   price integer, -- in ARS, null means price not available
   is_free boolean not null default false,
   min_age integer, -- null means all ages
@@ -108,6 +108,7 @@ create table events (
   link text,
   ticket_url text,
   source text not null,
+  external_id text, -- ID from external source for deduplication
   status event_status not null default 'scheduled',
   embedding vector(1536),
   created_at timestamptz not null default now(),
@@ -160,13 +161,13 @@ create or replace function match_events(
 returns table (
   id uuid,
   name text,
-  description text,
+  description_es text,
+  description_en text,
   starts_at timestamptz,
   ends_at timestamptz,
   is_all_day boolean,
   venue_id uuid,
   categories text[],
-  vibes text[],
   price integer,
   is_free boolean,
   min_age integer,
@@ -174,6 +175,7 @@ returns table (
   link text,
   ticket_url text,
   source text,
+  external_id text,
   status event_status,
   similarity float
 )
@@ -182,13 +184,13 @@ as $$
   select
     events.id,
     events.name,
-    events.description,
+    events.description_es,
+    events.description_en,
     events.starts_at,
     events.ends_at,
     events.is_all_day,
     events.venue_id,
     events.categories,
-    events.vibes,
     events.price,
     events.is_free,
     events.min_age,
@@ -196,6 +198,7 @@ as $$
     events.link,
     events.ticket_url,
     events.source,
+    events.external_id,
     events.status,
     1 - (events.embedding <=> query_embedding) as similarity
   from events
