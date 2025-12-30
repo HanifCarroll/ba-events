@@ -2,15 +2,19 @@ import ReactMarkdown from 'react-markdown'
 import { cn } from '@/lib/utils'
 import type { ChatMessage as ChatMessageType } from '@/lib/types'
 import { EventList } from '@/components/events/EventList'
+import { RefinementSuggestions } from './RefinementSuggestions'
 
 interface ChatMessageProps {
   message: ChatMessageType
+  onSuggestionSelect?: (prompt: string) => void
+  suggestionsDisabled?: boolean
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onSuggestionSelect, suggestionsDisabled }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const hasContent = message.content.trim().length > 0
   const hasEvents = message.events && message.events.length > 0
+  const hasSuggestions = message.suggestions && message.suggestions.length > 0
 
   // Don't render empty assistant messages that are still streaming (waiting for tool results)
   // The loading indicator in MessageList handles this state
@@ -56,6 +60,15 @@ export function ChatMessage({ message }: ChatMessageProps) {
           <div className={hasContent ? 'mt-4' : ''}>
             <EventList events={message.events!} />
           </div>
+        )}
+
+        {/* Refinement suggestions - show after events when not streaming */}
+        {!isUser && hasSuggestions && !message.isStreaming && onSuggestionSelect && (
+          <RefinementSuggestions
+            suggestions={message.suggestions!}
+            onSelect={onSuggestionSelect}
+            disabled={suggestionsDisabled}
+          />
         )}
 
         {/* Timestamp - only show when there's content or message is complete */}

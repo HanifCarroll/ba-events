@@ -7,7 +7,7 @@ import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fn
 import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from '../db/client'
 import { checkRateLimit } from '../auth/rate-limit'
 import { CATEGORIES, NEIGHBORHOODS } from '../types'
-import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue } from '../types'
+import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue, RefinementSuggestion, StreamEvent } from '../types'
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -109,9 +109,10 @@ Use the search_events tool with these parameters:
 3. **Use 'limit' to control how many events are returned:**
    - If user asks for "top 3 events" → set limit=3
    - If user asks for "5 recommendations" → set limit=5
-   - If user asks for "a few options" → set limit=3-4
-   - If user doesn't specify → default to 5-6 events
-   - IMPORTANT: The limit controls how many event cards are displayed. Always match it to what the user asked for.
+   - If user asks for "a few options" → set limit=3
+   - For very specific queries (e.g., "BA Digital Nomad events") → use limit=3 to get only the most relevant
+   - For broader queries (e.g., "what's happening tonight") → use limit=5-6
+   - CRITICAL: The limit controls how many event cards are displayed. You MUST describe all events that will be shown - your text must match the cards.
 
 4. **Combine parameters for best results:**
    - query="underground techno" + timeFilter="weekend" + limit=3
@@ -126,20 +127,23 @@ Use the search_events tool with these parameters:
 
 ## Response Format
 
-**IMPORTANT - Do NOT narrate your tool use:**
-- Do NOT say things like "I'll search for events..." or "Let me look that up..."
-- Just use the search_events tool silently, then respond naturally with results
-- If there are no results, go straight to "I didn't find any events matching..." and offer alternatives
+**IMPORTANT - Single Search Model:**
+- You make ONE search per user message - no retrying or iterating
+- After your search, refinement suggestions will be shown automatically to help the user
+- Do NOT say things like "I'll search for events..." or "Let me try another search..."
+- Just use the search_events tool, then respond naturally with what you found
 
 **When presenting results:**
-- Start with a brief, friendly summary of what you found
-- Events will be displayed as cards automatically - no need to list them in detail
-- Offer helpful follow-up suggestions if relevant
+- Start with a brief summary that mentions ALL the events returned
+- If there are 3-5 events, briefly describe each one so users know what they're looking at
+- Events will be displayed as cards below your response - your text should match the cards
+- The number of events you describe MUST match the number of cards shown (use limit to control this)
 
 **When there are no results:**
-- Don't apologize excessively
-- Immediately offer alternatives (different time period, related categories, or broader search)
-- Keep it positive and helpful
+- Acknowledge you didn't find matches for their specific request
+- Mention that they can try the suggestions below to explore other options
+- Keep it brief and positive - don't apologize excessively
+- Do NOT try to search again - let the user choose from the suggestions
 
 Remember: You're helping people have a great time in Buenos Aires!`
 }
@@ -356,7 +360,7 @@ function formatVenueResult(venue: Venue | null): string {
 // Execute the search_events tool
 async function executeSearchEvents(input: SearchEventsInput): Promise<EventWithVenue[]> {
   const filters = toolInputToFilters(input)
-  const limit = input.limit ?? 10 // Default to 10 if not specified
+  const limit = input.limit ?? 5 // Default to 5 - matches system prompt instruction
   console.log('[DEBUG] Tool input:', JSON.stringify(input))
   console.log('[DEBUG] Filters:', JSON.stringify(filters))
   console.log('[DEBUG] Limit:', limit)
@@ -379,19 +383,12 @@ async function executeSearchEvents(input: SearchEventsInput): Promise<EventWithV
   return results
 }
 
-// Stream event types - includes history for client to store full conversation
-export type StreamEvent =
-  | { type: 'text'; content: string }
-  | { type: 'events'; data: EventWithVenue[] }
-  | { type: 'history'; messages: APIMessage[] }
-  | { type: 'error'; message: string }
-  | { type: 'done' }
-
 // Format tool result for Claude
 function formatToolResult(events: EventWithVenue[]): string {
   return JSON.stringify({
     count: events.length,
     events: events.slice(0, 10).map(e => ({
+      id: e.id, // Include ID for filtering
       name: e.name,
       description: e.description_en,
       venue: e.venue_name,
@@ -404,7 +401,130 @@ function formatToolResult(events: EventWithVenue[]): string {
       minAge: e.min_age,
       ticketUrl: e.ticket_url,
     })),
+    _instruction: 'IMPORTANT: At the END of your response, add exactly this format on its own line: RELEVANT:[\"id1\",\"id2\"] listing ONLY the event IDs that are actually relevant to the user\'s query. Do NOT include events that are loosely related.',
   })
+}
+
+// Parse relevant event IDs from Claude's response
+function parseRelevantIds(text: string): { cleanText: string; relevantIds: string[] } {
+  const match = text.match(/RELEVANT:\s*\[(.*?)\]\s*$/s)
+  if (!match) {
+    return { cleanText: text, relevantIds: [] }
+  }
+
+  try {
+    // Parse the JSON array of IDs
+    const idsJson = `[${match[1]}]`
+    const relevantIds = JSON.parse(idsJson) as string[]
+    // Remove the RELEVANT line from the text
+    const cleanText = text.replace(/\n?RELEVANT:\s*\[.*?\]\s*$/s, '').trim()
+    return { cleanText, relevantIds }
+  } catch {
+    return { cleanText: text, relevantIds: [] }
+  }
+}
+
+// Generate refinement suggestions based on search context
+interface SuggestionContext {
+  originalQuery: string
+  toolInput: SearchEventsInput
+  results: EventWithVenue[]
+  locale: 'en' | 'es'
+}
+
+function generateSuggestions(context: SuggestionContext): RefinementSuggestion[] {
+  const { originalQuery, toolInput, results, locale } = context
+  const suggestions: RefinementSuggestion[] = []
+  const hasResults = results.length > 0
+
+  if (hasResults) {
+    // AUGMENT MODE: refine existing query
+
+    // Time suggestions (if no time filter was used)
+    if (!toolInput.timeFilter) {
+      suggestions.push({
+        id: 'tonight',
+        label: locale === 'es' ? 'Esta noche' : 'Tonight',
+        prompt: `${originalQuery} tonight`,
+        icon: 'moon',
+        type: 'time',
+      })
+      suggestions.push({
+        id: 'weekend',
+        label: locale === 'es' ? 'Este finde' : 'This weekend',
+        prompt: `${originalQuery} this weekend`,
+        icon: 'calendar',
+        type: 'time',
+      })
+    }
+
+    // Price suggestion (if results have paid events and not already filtering free)
+    const hasPaidEvents = results.some(e => !e.is_free)
+    if (hasPaidEvents && !toolInput.isFree) {
+      suggestions.push({
+        id: 'free',
+        label: locale === 'es' ? 'Solo gratis' : 'Free only',
+        prompt: `free ${originalQuery}`,
+        icon: 'ticket',
+        type: 'price',
+      })
+    }
+
+    // Neighborhood suggestion (from most common in results)
+    const neighborhoodCounts = new Map<string, number>()
+    results.forEach(e => {
+      if (e.venue_neighborhood) {
+        neighborhoodCounts.set(e.venue_neighborhood, (neighborhoodCounts.get(e.venue_neighborhood) || 0) + 1)
+      }
+    })
+    if (neighborhoodCounts.size > 0 && !toolInput.neighborhood) {
+      const topNeighborhood = [...neighborhoodCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+      suggestions.push({
+        id: `neighborhood-${topNeighborhood}`,
+        label: locale === 'es' ? `En ${topNeighborhood}` : `In ${topNeighborhood}`,
+        prompt: `${originalQuery} in ${topNeighborhood}`,
+        icon: 'map-pin',
+        type: 'neighborhood',
+      })
+    }
+  } else {
+    // REPLACE MODE: pivot to new search (escape hatches)
+    suggestions.push({
+      id: 'tonight',
+      label: locale === 'es' ? "¿Qué hay esta noche?" : "What's tonight?",
+      prompt: locale === 'es' ? "qué hay esta noche" : "what's happening tonight",
+      icon: 'moon',
+      type: 'broader',
+    })
+    suggestions.push({
+      id: 'browse-all',
+      label: locale === 'es' ? 'Ver todos' : 'Browse all',
+      prompt: locale === 'es' ? 'eventos esta semana' : 'events this week',
+      icon: 'calendar',
+      type: 'broader',
+    })
+
+    // Suggest some categories
+    const categoriesToSuggest = ['music', 'food', 'arts'] as const
+    const categoryLabels: Record<string, { en: string; es: string }> = {
+      music: { en: 'Live music', es: 'Música en vivo' },
+      food: { en: 'Food & dining', es: 'Gastronomía' },
+      arts: { en: 'Arts & culture', es: 'Arte y cultura' },
+    }
+
+    for (const cat of categoriesToSuggest.slice(0, 2)) {
+      suggestions.push({
+        id: `category-${cat}`,
+        label: locale === 'es' ? categoryLabels[cat].es : categoryLabels[cat].en,
+        prompt: locale === 'es' ? `${categoryLabels[cat].es} esta semana` : `${categoryLabels[cat].en} this week`,
+        icon: 'sparkles',
+        type: 'category',
+      })
+    }
+  }
+
+  // Return max 4 suggestions
+  return suggestions.slice(0, 4)
 }
 
 // Process stream and collect response data
@@ -416,7 +536,8 @@ interface StreamResult {
 
 async function processStream(
   response: AsyncIterable<Anthropic.MessageStreamEvent>,
-  sendEvent: (event: StreamEvent) => void
+  sendEvent: (event: StreamEvent) => void,
+  streamText: boolean = true // Only stream text if true (false for first call with potential tool use)
 ): Promise<StreamResult> {
   let text = ''
   const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
@@ -435,7 +556,9 @@ async function processStream(
     } else if (event.type === 'content_block_delta') {
       if (event.delta.type === 'text_delta') {
         text += event.delta.text
-        sendEvent({ type: 'text', content: event.delta.text })
+        if (streamText) {
+          sendEvent({ type: 'text', content: event.delta.text })
+        }
       } else if (event.delta.type === 'input_json_delta' && currentToolUse) {
         currentToolUse.inputJson += event.delta.partial_json
       }
@@ -523,179 +646,166 @@ export const chat = createServerFn({ method: 'POST' })
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
         }
 
-        const MAX_ITERATIONS = 5
-        let iterations = 0
-
         try {
-          // Agentic loop - continues until Claude responds without tool use or max iterations
-          while (iterations < MAX_ITERATIONS) {
-            iterations++
-            console.log(`[DEBUG] Agentic loop iteration ${iterations}`)
+          // SINGLE SEARCH MODEL: One Claude call, if tool use then execute and get response
+          console.log('[DEBUG] Single search - first Claude call')
 
-            const response = await anthropic.messages.create({
+          const response1 = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            system: getSystemPrompt(locale),
+            tools,
+            messages,
+            stream: true,
+          })
+
+          // Process the first response - DON'T stream text yet (might be tool use)
+          const result1 = await processStream(response1, sendEvent, false)
+          console.log(`[DEBUG] First response - stop reason: ${result1.stopReason}, tool uses: ${result1.toolUses.length}`)
+
+          // If Claude responded without tool use, we're done - now send the text
+          if (result1.stopReason === 'end_turn' || result1.stopReason === 'max_tokens') {
+            console.log('[DEBUG] Claude responded without tool use')
+            if (result1.text) {
+              // Now send the text since there's no tool use
+              sendEvent({ type: 'text', content: result1.text })
+              newMessages.push({ role: 'assistant', content: result1.text })
+            }
+            sendEvent({ type: 'history', messages: newMessages })
+            sendEvent({ type: 'done' })
+            return
+          }
+
+          // Handle tool use
+          if (result1.stopReason === 'tool_use' && result1.toolUses.length > 0) {
+            // Build assistant message content
+            const assistantContent: ContentBlock[] = []
+            if (result1.text) {
+              assistantContent.push({ type: 'text', text: result1.text })
+            }
+            for (const toolUse of result1.toolUses) {
+              assistantContent.push({
+                type: 'tool_use',
+                id: toolUse.id,
+                name: toolUse.name,
+                input: toolUse.input,
+              })
+            }
+
+            messages.push({ role: 'assistant', content: assistantContent as Anthropic.ContentBlockParam[] })
+            newMessages.push({ role: 'assistant', content: assistantContent })
+
+            // Execute tools and collect results
+            const toolResults: Anthropic.ToolResultBlockParam[] = []
+            const toolResultsForHistory: ContentBlock[] = []
+            let searchEvents: EventWithVenue[] = []
+            let searchInput: SearchEventsInput | null = null
+
+            for (const toolUse of result1.toolUses) {
+              if (toolUse.name === 'search_events') {
+                try {
+                  const input = toolUse.input as SearchEventsInput
+                  searchInput = input
+                  const events = await executeSearchEvents(input)
+                  searchEvents = events
+
+                  // DON'T send events yet - wait for Claude to filter them
+
+                  const resultContent = formatToolResult(events)
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+
+                  console.log(`[DEBUG] search_events returned ${events.length} events`)
+                } catch (toolError) {
+                  console.error('Tool execution error:', toolError)
+                  const errorContent = JSON.stringify({ error: 'Failed to search for events' })
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
+                }
+              } else if (toolUse.name === 'get_venue_details') {
+                try {
+                  const input = toolUse.input as GetVenueDetailsInput
+                  const venue = await executeGetVenueDetails(input)
+
+                  const resultContent = formatVenueResult(venue)
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+
+                  console.log(`[DEBUG] get_venue_details returned: ${venue?.name ?? 'not found'}`)
+                } catch (toolError) {
+                  console.error('Tool execution error:', toolError)
+                  const errorContent = JSON.stringify({ error: 'Failed to get venue details' })
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
+                }
+              }
+            }
+
+            // Add tool results to conversation
+            messages.push({ role: 'user', content: toolResults })
+            newMessages.push({ role: 'user', content: toolResultsForHistory })
+
+            // Second Claude call to get response to tool results (NO MORE TOOL USE)
+            console.log('[DEBUG] Single search - second Claude call for response')
+            const response2 = await anthropic.messages.create({
               model: 'claude-haiku-4-5-20251001',
               max_tokens: 1024,
               system: getSystemPrompt(locale),
               tools,
               messages,
               stream: true,
+              tool_choice: { type: 'none' }, // Force no tool use - just respond
             })
 
-            // Process the stream
-            const { text, toolUses, stopReason } = await processStream(response, sendEvent)
-            console.log(`[DEBUG] Stop reason: ${stopReason}, tool uses: ${toolUses.length}`)
+            // DON'T stream text yet - we need to parse and filter first
+            const result2 = await processStream(response2, sendEvent, false)
+            console.log(`[DEBUG] Second response - text length: ${result2.text.length}`)
 
-            // Check stop reason to determine next action
-            if (stopReason === 'end_turn' || stopReason === 'max_tokens') {
-              // Claude is done - no more tool calls needed
-              console.log('[DEBUG] Claude finished (end_turn or max_tokens)')
+            if (result2.text) {
+              // Parse out the RELEVANT marker and get clean text
+              const { cleanText, relevantIds } = parseRelevantIds(result2.text)
+              console.log(`[DEBUG] Parsed ${relevantIds.length} relevant IDs:`, relevantIds)
 
-              // Record assistant's final text response
-              if (text) {
-                newMessages.push({
-                  role: 'assistant',
-                  content: text,
+              // Filter events to only relevant ones
+              let filteredEvents = searchEvents
+              if (relevantIds.length > 0) {
+                filteredEvents = searchEvents.filter(e => relevantIds.includes(e.id))
+                console.log(`[DEBUG] Filtered from ${searchEvents.length} to ${filteredEvents.length} events`)
+              } else if (searchEvents.length > 0) {
+                // Fallback: if no IDs parsed, show all (shouldn't happen often)
+                console.log('[DEBUG] No relevant IDs found, showing all events')
+              }
+
+              // NOW send events (filtered)
+              if (filteredEvents.length > 0) {
+                sendEvent({ type: 'events', data: filteredEvents })
+              }
+
+              // Generate and send suggestions based on FILTERED events
+              if (searchInput) {
+                const suggestions = generateSuggestions({
+                  originalQuery: message,
+                  toolInput: searchInput,
+                  results: filteredEvents,
+                  locale,
                 })
-              }
-              break
-            }
-
-            if (stopReason === 'tool_use' && toolUses.length > 0) {
-              // Build assistant message content with text (if any) and tool uses
-              const assistantContent: ContentBlock[] = []
-              if (text) {
-                assistantContent.push({ type: 'text', text })
-              }
-              for (const toolUse of toolUses) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: toolUse.name,
-                  input: toolUse.input,
-                })
-              }
-
-              // Add assistant message to conversation
-              messages.push({
-                role: 'assistant',
-                content: assistantContent as Anthropic.ContentBlockParam[],
-              })
-              newMessages.push({
-                role: 'assistant',
-                content: assistantContent,
-              })
-
-              // Execute each tool and collect results
-              const toolResults: Anthropic.ToolResultBlockParam[] = []
-              const toolResultsForHistory: ContentBlock[] = []
-
-              for (const toolUse of toolUses) {
-                if (toolUse.name === 'search_events') {
-                  try {
-                    const input = toolUse.input as SearchEventsInput
-                    const events = await executeSearchEvents(input)
-
-                    // Send events to client for display
-                    sendEvent({ type: 'events', data: events })
-
-                    const resultContent = formatToolResult(events)
-                    toolResults.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: resultContent,
-                    })
-                    toolResultsForHistory.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: resultContent,
-                    })
-
-                    console.log(`[DEBUG] Tool ${toolUse.name} returned ${events.length} events`)
-                  } catch (toolError) {
-                    console.error('Tool execution error:', toolError)
-                    const errorContent = JSON.stringify({ error: 'Failed to search for events' })
-                    toolResults.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: errorContent,
-                      is_error: true,
-                    })
-                    toolResultsForHistory.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: errorContent,
-                    })
-                  }
-                } else if (toolUse.name === 'get_venue_details') {
-                  try {
-                    const input = toolUse.input as GetVenueDetailsInput
-                    const venue = await executeGetVenueDetails(input)
-
-                    const resultContent = formatVenueResult(venue)
-                    toolResults.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: resultContent,
-                    })
-                    toolResultsForHistory.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: resultContent,
-                    })
-
-                    console.log(`[DEBUG] Tool ${toolUse.name} returned venue: ${venue?.name ?? 'not found'}`)
-                  } catch (toolError) {
-                    console.error('Tool execution error:', toolError)
-                    const errorContent = JSON.stringify({ error: 'Failed to get venue details' })
-                    toolResults.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: errorContent,
-                      is_error: true,
-                    })
-                    toolResultsForHistory.push({
-                      type: 'tool_result',
-                      tool_use_id: toolUse.id,
-                      content: errorContent,
-                    })
-                  }
+                if (suggestions.length > 0) {
+                  sendEvent({ type: 'suggestions', data: suggestions })
+                  console.log(`[DEBUG] Generated ${suggestions.length} suggestions`)
                 }
               }
 
-              // Add tool results as user message (per Anthropic format)
-              messages.push({
-                role: 'user',
-                content: toolResults,
-              })
-              newMessages.push({
-                role: 'user',
-                content: toolResultsForHistory,
-              })
-
-              // Add visual separator before Claude's response to tool results
-              if (text) {
-                sendEvent({ type: 'text', content: '\n\n' })
+              // Send clean text (without RELEVANT marker)
+              if (cleanText) {
+                sendEvent({ type: 'text', content: cleanText })
               }
 
-              // Continue loop - Claude will process tool results
-              continue
+              // Store clean text in history
+              newMessages.push({ role: 'assistant', content: cleanText || result2.text })
             }
-
-            // Unexpected stop reason - break to avoid infinite loop
-            console.log(`[DEBUG] Unexpected stop reason: ${stopReason}`)
-            break
           }
 
-          if (iterations >= MAX_ITERATIONS) {
-            console.log('[DEBUG] Max iterations reached')
-            sendEvent({
-              type: 'text',
-              content:
-                '\n\nI apologize, but I need to stop here to avoid getting stuck in a loop. Please try rephrasing your question.',
-            })
-          }
-
-          // Send history event so client can store full conversation for follow-ups
+          // Send history and done
           sendEvent({ type: 'history', messages: newMessages })
           sendEvent({ type: 'done' })
         } catch (error) {

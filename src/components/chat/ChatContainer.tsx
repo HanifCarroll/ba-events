@@ -153,6 +153,16 @@ export function ChatContainer() {
                       : m
                   ),
                 }))
+              } else if (event.type === 'suggestions') {
+                // Add refinement suggestions to the message
+                setState(prev => ({
+                  ...prev,
+                  messages: prev.messages.map(m =>
+                    m.id === assistantMessage.id
+                      ? { ...m, suggestions: event.data }
+                      : m
+                  ),
+                }))
               } else if (event.type === 'error') {
                 // Track stream error
                 track('chat:error', {
@@ -249,7 +259,11 @@ export function ChatContainer() {
       {/* Message area - scrollable */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {hasMessages ? (
-          <MessageList messages={state.messages} isLoading={state.isLoading} />
+          <MessageList
+            messages={state.messages}
+            isLoading={state.isLoading}
+            onSuggestionSelect={handleSendMessage}
+          />
         ) : (
           <SuggestedPrompts onSelectPrompt={handleSendMessage} />
         )}

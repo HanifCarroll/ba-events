@@ -215,6 +215,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string // Display text
   events?: EventWithVenue[]
+  suggestions?: RefinementSuggestion[]
   timestamp: Date
   isStreaming?: boolean
 }
@@ -225,10 +226,20 @@ export interface ChatState {
   isLoading: boolean
 }
 
+// Refinement suggestion for quick search refinement
+export interface RefinementSuggestion {
+  id: string
+  label: string
+  prompt: string
+  icon?: string
+  type: 'time' | 'price' | 'category' | 'neighborhood' | 'broader'
+}
+
 // Streaming event types
 export type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'events'; data: EventWithVenue[] }
+  | { type: 'suggestions'; data: RefinementSuggestion[] }
   | { type: 'history'; messages: APIMessage[] }
   | { type: 'error'; message: string }
   | { type: 'done' }

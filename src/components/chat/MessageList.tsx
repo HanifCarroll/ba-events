@@ -6,9 +6,10 @@ import type { ChatMessage as ChatMessageType } from '@/lib/types'
 interface MessageListProps {
   messages: ChatMessageType[]
   isLoading?: boolean
+  onSuggestionSelect?: (prompt: string) => void
 }
 
-export function MessageList({ messages, isLoading = false }: MessageListProps) {
+export function MessageList({ messages, isLoading = false, onSuggestionSelect }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const prevMessageCountRef = useRef(messages.length)
 
@@ -29,7 +30,12 @@ export function MessageList({ messages, isLoading = false }: MessageListProps) {
     <div className="p-4 sm:p-6">
       <div className="max-w-3xl mx-auto">
         {messages.map((message) => (
-          <ChatMessage key={message.id} message={message} />
+          <ChatMessage
+            key={message.id}
+            message={message}
+            onSuggestionSelect={onSuggestionSelect}
+            suggestionsDisabled={isLoading}
+          />
         ))}
 
         {/* Loading indicator */}
