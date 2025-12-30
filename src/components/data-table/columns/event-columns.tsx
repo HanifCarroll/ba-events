@@ -7,6 +7,24 @@ import { DataTableColumnHeader } from '../DataTableColumnHeader'
 import { formatDateTime } from '@/lib/utils/formatting'
 import type { EventWithVenue } from '@/lib/types'
 
+// Label maps for select filters (value -> display label)
+const sourceLabelMap: Record<string, string> = {
+  passline: 'Passline',
+  eventbrite: 'Eventbrite',
+  'ba-tourism': 'BA Tourism',
+  meetup: 'Meetup',
+  manual: 'Manual',
+  csv: 'CSV',
+}
+
+const statusLabelMap: Record<string, string> = {
+  scheduled: 'Scheduled',
+  pending_review: 'Pending',
+  cancelled: 'Cancelled',
+  postponed: 'Postponed',
+  past: 'Past',
+}
+
 function getSourceBadge(source: string) {
   const variants: Record<string, { className: string; label: string }> = {
     passline: {
@@ -16,6 +34,14 @@ function getSourceBadge(source: string) {
     eventbrite: {
       className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
       label: 'Eventbrite',
+    },
+    'ba-tourism': {
+      className: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
+      label: 'BA Tourism',
+    },
+    meetup: {
+      className: 'bg-red-500/10 text-red-400 border-red-500/30',
+      label: 'Meetup',
     },
     manual: {
       className: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
@@ -93,8 +119,15 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
       accessorKey: 'name',
       size: 280,
       minSize: 180,
+      enableColumnFilter: true,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Event" />
+        <DataTableColumnHeader
+          column={column}
+          title="Event"
+          enableFilter
+          filterType="text"
+          filterPlaceholder="Search events..."
+        />
       ),
       cell: ({ row }) => {
         const event = row.original
@@ -136,8 +169,15 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
       accessorKey: 'venue_name',
       size: 180,
       minSize: 120,
+      enableColumnFilter: true,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Venue" />
+        <DataTableColumnHeader
+          column={column}
+          title="Venue"
+          enableFilter
+          filterType="text"
+          filterPlaceholder="Search venues..."
+        />
       ),
       cell: ({ row }) => {
         const venueName = row.original.venue_name
@@ -170,8 +210,16 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
       accessorKey: 'source',
       size: 110,
       minSize: 90,
+      enableColumnFilter: true,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Source" />
+        <DataTableColumnHeader
+          column={column}
+          title="Source"
+          enableFilter
+          filterType="select"
+          filterLabelMap={sourceLabelMap}
+          filterPlaceholder="All sources"
+        />
       ),
       cell: ({ row }) => getSourceBadge(row.original.source),
     },
@@ -205,8 +253,16 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
       accessorKey: 'status',
       size: 110,
       minSize: 90,
+      enableColumnFilter: true,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Status" />
+        <DataTableColumnHeader
+          column={column}
+          title="Status"
+          enableFilter
+          filterType="select"
+          filterLabelMap={statusLabelMap}
+          filterPlaceholder="All statuses"
+        />
       ),
       cell: ({ row }) => getStatusBadge(row.original.status),
     },

@@ -394,6 +394,7 @@ function EventListPage() {
                 onSelectionChange={handleSelectionChange}
                 enableColumnResizing={true}
                 enableColumnReordering={true}
+                enableColumnFiltering={true}
                 enableMultiSort={true}
                 enableVirtualization={true}
                 estimatedRowHeight={64}

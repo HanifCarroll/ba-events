@@ -75,8 +75,8 @@ export async function fetchMeetupVenueFromDetailPage(
 ): Promise<MeetupVenueInfo | null> {
   try {
     await page.goto(eventUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 20000,
+      waitUntil: 'networkidle',
+      timeout: 30000,
     })
 
     // Wait for content to load

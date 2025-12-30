@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, Link } from '@tanstack/react-router'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Calendar, Loader2 } from 'lucide-react'
+import { ArrowLeft, Calendar, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -136,6 +136,17 @@ export function EventForm({ event, mode }: EventFormProps) {
     <div className="max-w-3xl mx-auto animate-fade-in-up">
       {/* Header */}
       <div className="mb-6">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="mb-4 -ml-2 text-muted-foreground hover:text-foreground"
+        >
+          <Link to="/admin/events">
+            <ArrowLeft className="h-4 w-4 mr-1.5" />
+            Back to Events
+          </Link>
+        </Button>
         <h1 className="font-display text-2xl font-semibold text-foreground flex items-center gap-2">
           <Calendar className="h-6 w-6 text-primary" />
           {mode === 'create' ? 'Add Event' : 'Edit Event'}

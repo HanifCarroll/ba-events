@@ -1,12 +1,16 @@
 import { useState, useMemo, useCallback, useRef, ReactNode, CSSProperties } from 'react'
 import {
   ColumnDef,
+  ColumnFiltersState,
   ColumnOrderState,
   ColumnSizingState,
   SortingState,
   VisibilityState,
   flexRender,
   getCoreRowModel,
+  getFacetedRowModel,
+  getFacetedUniqueValues,
+  getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
   Row,
@@ -150,12 +154,17 @@ export interface DataTableProps<TData extends { id: string }> {
   enableRowSelection?: boolean
   enableColumnResizing?: boolean
   enableColumnReordering?: boolean
+  enableColumnFiltering?: boolean
   enableMultiSort?: boolean
   enableVirtualization?: boolean
 
   // Selection (controlled)
   selectedIds?: Set<string>
   onSelectionChange?: (ids: Set<string>) => void
+
+  // Filtering (controlled, optional)
+  columnFilters?: ColumnFiltersState
+  onColumnFiltersChange?: (filters: ColumnFiltersState) => void
 
   // Persistence
   tableId?: string
@@ -181,10 +190,13 @@ export function DataTable<TData extends { id: string }>({
   enableRowSelection = false,
   enableColumnResizing = true,
   enableColumnReordering = true,
+  enableColumnFiltering = false,
   enableMultiSort = true,
   enableVirtualization = false,
   selectedIds,
   onSelectionChange,
+  columnFilters: controlledColumnFilters,
+  onColumnFiltersChange,
   tableId = 'default',
   estimatedRowHeight = 64,
   containerHeight = 'calc(100vh - 420px)',
@@ -198,6 +210,21 @@ export function DataTable<TData extends { id: string }>({
 
   // Local state
   const [sorting, setSorting] = useState<SortingState>([])
+  const [internalColumnFilters, setInternalColumnFilters] = useState<ColumnFiltersState>([])
+
+  // Support both controlled and uncontrolled column filters
+  const columnFilters = controlledColumnFilters ?? internalColumnFilters
+  const setColumnFilters = useCallback(
+    (updater: ColumnFiltersState | ((prev: ColumnFiltersState) => ColumnFiltersState)) => {
+      const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
+      if (onColumnFiltersChange) {
+        onColumnFiltersChange(newFilters)
+      } else {
+        setInternalColumnFilters(newFilters)
+      }
+    },
+    [columnFilters, onColumnFiltersChange]
+  )
 
   // Selection state
   const rowSelection = useMemo(() => {
@@ -311,12 +338,14 @@ export function DataTable<TData extends { id: string }>({
     columns,
     state: {
       sorting,
+      columnFilters,
       columnSizing,
       columnVisibility,
       columnOrder: enableRowSelection ? ['select', ...columnOrder] : columnOrder,
       rowSelection,
     },
     onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
     onColumnSizingChange: setColumnSizing,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnOrderChange: (order) => {
@@ -327,10 +356,14 @@ export function DataTable<TData extends { id: string }>({
     },
     onRowSelectionChange: handleSelectionChange,
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: enableColumnFiltering ? getFilteredRowModel() : undefined,
+    getFacetedRowModel: enableColumnFiltering ? getFacetedRowModel() : undefined,
+    getFacetedUniqueValues: enableColumnFiltering ? getFacetedUniqueValues() : undefined,
     getSortedRowModel: getSortedRowModel(),
     columnResizeMode: 'onChange',
     enableMultiSort,
     enableRowSelection,
+    enableColumnFilters: enableColumnFiltering,
     getRowId: (row) => row.id,
   })
 
