@@ -1,13 +1,41 @@
 import { HeadContent, Outlet, Scripts, createRootRoute, useLocation } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/components/AuthProvider'
+import { useAuthContext } from '@/hooks/useAuthContext'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query'
 import { MainLayout } from '@/components/MainLayout'
 import { getLocale } from '@/paraglide/runtime'
+import posthog from 'posthog-js'
+import { PostHogProvider, usePostHog } from 'posthog-js/react'
+import { useEffect } from 'react'
 
 import appCss from '../styles.css?url'
+
+// Initialize PostHog (client-side only)
+if (typeof window !== 'undefined') {
+  const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY
+  const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST
+
+  if (posthogKey) {
+    posthog.init(posthogKey, {
+      api_host: posthogHost || 'https://us.i.posthog.com',
+      // Use 2025 defaults for automatic SPA pageview tracking
+      defaults: '2025-05-24',
+      // Respect Do Not Track
+      respect_dnt: true,
+      // Capture performance metrics
+      capture_performance: true,
+      // Disable in development to avoid polluting data
+      loaded: (posthog) => {
+        if (import.meta.env.DEV) {
+          posthog.opt_out_capturing()
+        }
+      },
+    })
+  }
+}
 
 export const Route = createRootRoute({
   head: () => ({
@@ -62,18 +90,43 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body className="bg-background text-foreground antialiased overflow-hidden bg-grain">
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <TooltipProvider>
-              <RootLayout />
-            </TooltipProvider>
-          </AuthProvider>
-        </QueryClientProvider>
+        <PostHogProvider client={posthog}>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <TooltipProvider>
+                <PostHogIdentify />
+                <RootLayout />
+              </TooltipProvider>
+            </AuthProvider>
+          </QueryClientProvider>
+        </PostHogProvider>
         <Toaster position="bottom-right" richColors />
         <Scripts />
       </body>
     </html>
   )
+}
+
+// Identify users when auth state changes
+function PostHogIdentify() {
+  const { user, isAdmin } = useAuthContext()
+  const posthogClient = usePostHog()
+
+  useEffect(() => {
+    if (user) {
+      // Identify user with their ID (never use email as distinct_id)
+      posthogClient.identify(user.id, {
+        email: user.email,
+        locale: getLocale(),
+        is_admin: isAdmin,
+      })
+    } else {
+      // Reset on logout to unlink future anonymous events
+      posthogClient.reset()
+    }
+  }, [user, isAdmin, posthogClient])
+
+  return null
 }
 
 // Pages that should not have the main sidebar (auth pages only)
