@@ -191,7 +191,7 @@ export function useVenueEnrichment() {
       const enrichableEvents = getVenueEnrichableEvents(events, selectedIds)
 
       if (enrichableEvents.length === 0) {
-        toast.info('No events to enrich', {
+        toast.info('No events need venues', {
           description:
             'Selected events either have venues or are from unsupported sources.',
         })
@@ -210,7 +210,7 @@ export function useVenueEnrichment() {
 
       // Show initial toast
       toastIdRef.current = toast.loading(
-        `Filling venues for ${enrichableEvents.length} events...`,
+        `Adding venues to ${enrichableEvents.length} events...`,
         {
           description: `Sources: ${sourceNames}`,
         }
@@ -239,7 +239,7 @@ export function useVenueEnrichment() {
 
         // Final toast
         if (totalEnriched === 0) {
-          toast.error('No venues found', {
+          toast.error('No venues added', {
             id: toastIdRef.current,
             description: 'Could not extract venue info from any event pages.',
           })
@@ -249,7 +249,7 @@ export function useVenueEnrichment() {
               ? ` (${totalVenuesCreated} new venues created)`
               : ''
           toast.success(
-            `Filled venues for ${totalEnriched} events${venueMsg}`,
+            `Added venues to ${totalEnriched} events${venueMsg}`,
             {
               id: toastIdRef.current,
               description:
@@ -266,8 +266,8 @@ export function useVenueEnrichment() {
         // Call completion callback
         onComplete?.()
       } catch (error) {
-        console.error('Venue enrichment failed:', error)
-        toast.error('Venue enrichment failed', {
+        console.error('Failed to add venues:', error)
+        toast.error('Failed to add venues', {
           id: toastIdRef.current,
           description:
             error instanceof Error

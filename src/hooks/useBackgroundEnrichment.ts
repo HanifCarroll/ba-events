@@ -63,7 +63,7 @@ export function useBackgroundEnrichment() {
       const enrichableEvents = getEnrichableEvents(events, selectedIds)
 
       if (enrichableEvents.length === 0) {
-        toast.info('No events to enrich', {
+        toast.info('No events need descriptions', {
           description:
             'Selected events either have descriptions or no links to fetch from.',
         })
@@ -87,7 +87,7 @@ export function useBackgroundEnrichment() {
 
       // Show initial toast
       toastIdRef.current = toast.loading(
-        `Enriching ${enrichableEvents.length} events...`,
+        `Adding descriptions to ${enrichableEvents.length} events...`,
         {
           description: 'Using AI to extract descriptions. Click stop to pause.',
         }
@@ -110,7 +110,7 @@ export function useBackgroundEnrichment() {
 
           // Update toast with progress
           toast.loading(
-            `Enriching events (${processed}/${eventsToEnrich.length})...`,
+            `Adding descriptions (${processed}/${eventsToEnrich.length})...`,
             {
               id: toastIdRef.current,
               description: `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}. Click stop to pause.`,
@@ -137,18 +137,18 @@ export function useBackgroundEnrichment() {
 
         // Final toast
         if (wasStopped) {
-          toast.warning(`Enrichment stopped`, {
+          toast.warning(`Stopped adding descriptions`, {
             id: toastIdRef.current,
-            description: `Enriched ${totalEnriched} of ${eventsToEnrich.length} events. Click Enrich again to continue.`,
+            description: `Added descriptions to ${totalEnriched} of ${eventsToEnrich.length} events. Click Add Descriptions again to continue.`,
           })
         } else if (totalEnriched === 0) {
-          toast.error('No descriptions extracted', {
+          toast.error('No descriptions added', {
             id: toastIdRef.current,
             description:
               'Could not extract descriptions from any event pages.',
           })
         } else {
-          toast.success(`Enriched ${totalEnriched} events`, {
+          toast.success(`Added descriptions to ${totalEnriched} events`, {
             id: toastIdRef.current,
             description: `${totalEnriched} of ${eventsToEnrich.length} events now have AI-generated descriptions.`,
           })
@@ -157,8 +157,8 @@ export function useBackgroundEnrichment() {
         // Call completion callback
         onComplete?.()
       } catch (error) {
-        console.error('Enrichment failed:', error)
-        toast.error('Enrichment failed', {
+        console.error('Failed to add descriptions:', error)
+        toast.error('Failed to add descriptions', {
           id: toastIdRef.current,
           description:
             error instanceof Error

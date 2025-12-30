@@ -81,7 +81,7 @@ export function BulkActionBar({
               className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
             >
               <Sparkles className="h-4 w-4 mr-1.5" />
-              Enrich ({enrichableCount})
+              Add Descriptions ({enrichableCount})
             </Button>
           )}
           {isEnriching && onStopEnrich && (
@@ -103,7 +103,7 @@ export function BulkActionBar({
               className="text-orange-200 hover:text-orange-100 hover:bg-orange-500/20"
             >
               <DollarSign className="h-4 w-4 mr-1.5" />
-              Enrich Prices ({eventbriteEnrichableCount})
+              Add Prices ({eventbriteEnrichableCount})
             </Button>
           )}
           {isEventbriteEnriching && (
@@ -114,7 +114,7 @@ export function BulkActionBar({
               className="text-orange-200"
             >
               <Square className="h-4 w-4 mr-1.5 animate-pulse" />
-              Enriching...
+              Adding Prices...
             </Button>
           )}
           {showVenueEnrich && !isVenueEnriching && (
@@ -125,7 +125,7 @@ export function BulkActionBar({
               className="text-blue-200 hover:text-blue-100 hover:bg-blue-500/20"
             >
               <MapPin className="h-4 w-4 mr-1.5" />
-              Fill Venues ({venueEnrichableCount})
+              Add Venues ({venueEnrichableCount})
             </Button>
           )}
           {isVenueEnriching && (
@@ -136,7 +136,7 @@ export function BulkActionBar({
               className="text-blue-200"
             >
               <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
-              Filling Venues...
+              Adding Venues...
             </Button>
           )}
           <Button
@@ -200,7 +200,7 @@ export function BulkActionBar({
             className="border-primary/50 text-primary hover:bg-primary/10"
           >
             <Sparkles className="h-4 w-4 mr-1.5" />
-            Enrich ({enrichableCount})
+            Add Descriptions ({enrichableCount})
           </Button>
         )}
         {isEnriching && onStopEnrich && (
@@ -222,7 +222,7 @@ export function BulkActionBar({
             className="border-orange-500/50 text-orange-600 hover:bg-orange-500/10"
           >
             <DollarSign className="h-4 w-4 mr-1.5" />
-            Enrich Prices ({eventbriteEnrichableCount})
+            Add Prices ({eventbriteEnrichableCount})
           </Button>
         )}
         {isEventbriteEnriching && (
@@ -233,7 +233,7 @@ export function BulkActionBar({
             className="border-orange-500/50 text-orange-600"
           >
             <Square className="h-4 w-4 mr-1.5 animate-pulse" />
-            Enriching...
+            Adding Prices...
           </Button>
         )}
         {showVenueEnrich && !isVenueEnriching && (
@@ -244,7 +244,7 @@ export function BulkActionBar({
             className="border-blue-500/50 text-blue-600 hover:bg-blue-500/10"
           >
             <MapPin className="h-4 w-4 mr-1.5" />
-            Fill Venues ({venueEnrichableCount})
+            Add Venues ({venueEnrichableCount})
           </Button>
         )}
         {isVenueEnriching && (
@@ -255,7 +255,7 @@ export function BulkActionBar({
             className="border-blue-500/50 text-blue-600"
           >
             <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
-            Filling Venues...
+            Adding Venues...
           </Button>
         )}
         <Button
