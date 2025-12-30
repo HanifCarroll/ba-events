@@ -18,13 +18,13 @@ export interface MeetupVenueInfo {
  */
 const venueExtractionScript = (): { name: string | null; address: string | null } => {
   // Method 1: JSON-LD structured data (most reliable)
-  // Meetup uses both "Event" and "BusinessEvent" types
+  // Meetup uses various Schema.org event subtypes (FoodEvent, EducationEvent, SocialEvent, etc.)
+  // so we check for any JSON-LD with a location.@type === 'Place' rather than specific event types
   const scripts = document.querySelectorAll('script[type="application/ld+json"]')
   for (const script of scripts) {
     try {
       const data = JSON.parse(script.textContent || '')
-      const isEventType = data['@type'] === 'Event' || data['@type'] === 'BusinessEvent'
-      if (isEventType && data.location) {
+      if (data.location) {
         const loc = data.location
         if (loc['@type'] === 'Place' && loc.name) {
           const address = typeof loc.address === 'string'

@@ -122,7 +122,7 @@ export function BulkActionBar({
               variant="ghost"
               size="sm"
               onClick={onVenueEnrich}
-              className="text-blue-200 hover:text-blue-100 hover:bg-blue-500/20"
+              className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
             >
               <MapPin className="h-4 w-4 mr-1.5" />
               Add Venues ({venueEnrichableCount})
@@ -133,7 +133,7 @@ export function BulkActionBar({
               variant="ghost"
               size="sm"
               disabled
-              className="text-blue-200"
+              className="text-primary-foreground/70"
             >
               <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
               Adding Venues...
