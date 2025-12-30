@@ -2,7 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { createServerFn } from '@tanstack/react-start'
 import { useState, useEffect, useCallback } from 'react'
 import type { Session, User, EmailOtpType } from '@supabase/supabase-js'
-import type { Profile } from './types'
+import type { Locale, Profile } from './types'
 import { createSupabaseServerClient } from './supabase-server'
 
 // Browser-side Supabase client for auth
@@ -467,6 +467,32 @@ export const deleteAccountAction = createServerFn({ method: 'POST' })
 
     // Delete user from auth.users (CASCADE will handle profiles and saved_events)
     const { error } = await adminClient.auth.admin.deleteUser(data.userId)
+
+    if (error) {
+      throw error
+    }
+
+    return { success: true }
+  })
+
+/**
+ * Update locale preference in profiles table (server-side).
+ * Persists user's language preference across devices.
+ */
+export const updateLocalePreference = createServerFn({ method: 'POST' })
+  .inputValidator((locale: Locale) => locale)
+  .handler(async ({ data: locale }) => {
+    const supabase = createSupabaseServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      throw new Error('Must be logged in to update locale preference')
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ locale, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
 
     if (error) {
       throw error

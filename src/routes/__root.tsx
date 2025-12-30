@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query'
 import { MainLayout } from '@/components/MainLayout'
-import { getLocale } from '@/paraglide/runtime'
+import { getLocale, setLocale } from '@/paraglide/runtime'
 import posthog from 'posthog-js'
 import { PostHogProvider, usePostHog } from 'posthog-js/react'
 import { useEffect } from 'react'
@@ -69,6 +69,34 @@ export const Route = createRootRoute({
       { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
       { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap' },
       { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
+      { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
+      { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+    ],
+    scripts: [
+      {
+        type: 'application/ld+json',
+        children: JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'WebApplication',
+          'name': 'BA Eventos',
+          'description': 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.',
+          'url': 'https://baeventos.com',
+          'applicationCategory': 'EntertainmentApplication',
+          'operatingSystem': 'Web',
+          'availableLanguage': ['es', 'en'],
+          'offers': {
+            '@type': 'Offer',
+            'price': '0',
+            'priceCurrency': 'ARS',
+          },
+          'author': {
+            '@type': 'Organization',
+            'name': 'BA Eventos',
+            'url': 'https://baeventos.com',
+          },
+        }),
+      },
     ],
   }),
 
@@ -99,9 +127,9 @@ function RootDocument() {
   )
 }
 
-// Identify users when auth state changes
+// Identify users when auth state changes and sync locale preference
 function PostHogIdentify() {
-  const { user, isAdmin } = useAuthContext()
+  const { user, profile, isAdmin } = useAuthContext()
   const posthogClient = usePostHog()
 
   useEffect(() => {
@@ -112,11 +140,17 @@ function PostHogIdentify() {
         locale: getLocale(),
         is_admin: isAdmin,
       })
+
+      // Sync saved locale preference from database
+      // If user has a saved locale preference that differs from current, apply it
+      if (profile?.locale && profile.locale !== getLocale()) {
+        setLocale(profile.locale, { reload: true })
+      }
     } else {
       // Reset on logout to unlink future anonymous events
       posthogClient.reset()
     }
-  }, [user, isAdmin, posthogClient])
+  }, [user, profile?.locale, isAdmin, posthogClient])
 
   return null
 }

@@ -302,12 +302,16 @@ export const SUGGESTED_PROMPTS = [
 // User roles
 export type UserRole = 'admin' | 'user'
 
+// Supported locales
+export type Locale = 'es' | 'en'
+
 // User profile from profiles table
 export interface Profile {
   id: string
   email: string
   display_name: string | null
   role: UserRole
+  locale: Locale | null
   created_at: string
   updated_at: string
 }

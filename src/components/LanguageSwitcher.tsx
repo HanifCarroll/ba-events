@@ -8,6 +8,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useAuthContext } from '@/hooks/useAuthContext'
+import { updateLocalePreference } from '@/lib/auth'
+import type { Locale } from '@/lib/types'
 
 const LOCALE_CONFIG: Record<string, { label: string; flag: string }> = {
   en: { label: 'English', flag: '🇺🇸' },
@@ -19,10 +22,16 @@ interface LanguageSwitcherProps {
 }
 
 export function LanguageSwitcher({ collapsed = false }: LanguageSwitcherProps) {
+  const { user } = useAuthContext()
   const currentLocale = getLocale()
   const currentConfig = LOCALE_CONFIG[currentLocale] || LOCALE_CONFIG.en
 
   const handleLocaleChange = (locale: string) => {
+    // Save to database if user is logged in (fire and forget)
+    if (user) {
+      updateLocalePreference({ data: locale as Locale }).catch(console.error)
+    }
+    // Set locale (updates cookie and reloads page)
     setLocale(locale as (typeof locales)[number])
   }
 
