@@ -152,6 +152,14 @@ export function MainLayout({ children }: MainLayoutProps) {
     <div className="h-full flex flex-col lg:flex-row overflow-hidden">
       {/* Mobile header */}
       <header className="lg:hidden h-16 border-b border-border/50 bg-card/80 backdrop-blur-sm flex items-center justify-between px-4 shrink-0 z-30">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </Button>
         <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <div className="relative">
             <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent blur-sm" />
@@ -161,23 +169,8 @@ export function MainLayout({ children }: MainLayoutProps) {
             </div>
           </div>
         </Link>
-        <div className="flex items-center gap-2">
-          {!user && (
-            <Link to="/login">
-              <Button variant="outline" size="sm" className="text-xs">
-                Sign In
-              </Button>
-            </Link>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
-        </div>
+        {/* Empty div for centering the logo */}
+        <div className="w-10" />
       </header>
 
       {/* Mobile menu overlay */}

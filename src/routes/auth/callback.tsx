@@ -1,56 +1,123 @@
 import { useEffect, useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { exchangeCodeForSession, fetchProfile } from '@/lib/auth'
+import { createFileRoute } from '@tanstack/react-router'
+import type { EmailOtpType } from '@supabase/supabase-js'
+import { exchangeCodeForSession, fetchProfile, getSupabaseBrowserClient } from '@/lib/auth'
 
 export const Route = createFileRoute('/auth/callback')({
   component: AuthCallbackPage,
 })
 
 function AuthCallbackPage() {
-  const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState('Completing sign in...')
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Get the code from URL params
+        const client = getSupabaseBrowserClient()
+
+        // Helper to redirect
+        const redirectTo = (path: string) => {
+          setStatus('Redirecting...')
+          window.location.href = path
+        }
+
+        // Helper to complete auth and redirect
+        const completeAuth = async (userId: string) => {
+          setStatus('Fetching profile...')
+          const profile = await fetchProfile(userId)
+          redirectTo(profile?.role === 'admin' ? '/admin' : '/')
+        }
+
+        // First, check if we already have a session (page refresh after auth)
+        const { data: existingSession } = await client.auth.getSession()
+        if (existingSession.session?.user) {
+          setStatus('Session found, redirecting...')
+          await completeAuth(existingSession.session.user.id)
+          return
+        }
+
         const urlParams = new URLSearchParams(window.location.search)
-        const code = urlParams.get('code')
 
-        if (!code) {
-          // Check for hash-based params (Supabase sometimes uses this)
-          const hashParams = new URLSearchParams(window.location.hash.substring(1))
-          const accessToken = hashParams.get('access_token')
+        // Method 1: token_hash (Magic Link with PKCE - recommended for SSR)
+        const tokenHash = urlParams.get('token_hash')
+        const type = urlParams.get('type') as EmailOtpType | null
 
-          if (accessToken) {
-            // Token is already in the URL, Supabase client will handle it
-            // Just wait a moment for the auth state to update
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            navigate({ to: '/' })
+        if (tokenHash && type) {
+          setStatus('Verifying magic link...')
+          const { data, error: verifyError } = await client.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type,
+          })
+
+          if (verifyError) {
+            console.error('Error verifying OTP:', verifyError)
+            setError(verifyError.message || 'Failed to verify magic link')
             return
           }
 
-          setError('No authentication code found')
+          if (!data.session?.user) {
+            setError('Failed to create session')
+            return
+          }
+
+          await completeAuth(data.session.user.id)
           return
         }
 
-        // Exchange the code for a session
-        const { session } = await exchangeCodeForSession(code)
+        // Method 2: code (PKCE code exchange)
+        const code = urlParams.get('code')
 
-        if (!session?.user) {
-          setError('Failed to create session')
+        if (code) {
+          setStatus('Exchanging code for session...')
+          const { session } = await exchangeCodeForSession(code)
+
+          if (!session?.user) {
+            setError('Failed to create session')
+            return
+          }
+
+          await completeAuth(session.user.id)
           return
         }
 
-        // Fetch user profile to check role
-        const profile = await fetchProfile(session.user.id)
+        // Method 3: hash-based params (implicit flow - legacy)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const accessToken = hashParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token')
 
-        // Redirect based on role
-        if (profile?.role === 'admin') {
-          navigate({ to: '/admin' })
-        } else {
-          navigate({ to: '/' })
+        if (accessToken) {
+          setStatus('Setting session from token...')
+          const { data, error: sessionError } = await client.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || '',
+          })
+
+          if (sessionError) {
+            console.error('Error setting session:', sessionError)
+            setError('Failed to authenticate')
+            return
+          }
+
+          if (!data.session?.user) {
+            setError('Failed to create session')
+            return
+          }
+
+          await completeAuth(data.session.user.id)
+          return
         }
+
+        // Check for error params
+        const errorParam = urlParams.get('error') || hashParams.get('error')
+        const errorDescription = urlParams.get('error_description') || hashParams.get('error_description')
+
+        if (errorParam) {
+          setError(errorDescription || errorParam)
+          return
+        }
+
+        setError('No authentication token found. The link may have expired.')
       } catch (err) {
         console.error('Auth callback error:', err)
         setError(err instanceof Error ? err.message : 'Authentication failed')
@@ -58,7 +125,7 @@ function AuthCallbackPage() {
     }
 
     handleCallback()
-  }, [navigate])
+  }, [])
 
   if (error) {
     return (
@@ -84,7 +151,7 @@ function AuthCallbackPage() {
     <div className="h-full flex items-center justify-center p-6">
       <div className="text-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-muted-foreground text-sm">Completing sign in...</p>
+        <p className="text-muted-foreground text-sm">{status}</p>
       </div>
     </div>
   )

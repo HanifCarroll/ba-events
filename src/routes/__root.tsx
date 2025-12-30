@@ -76,7 +76,7 @@ function RootDocument() {
 }
 
 // Pages that should not have the main sidebar (auth pages only)
-const EXCLUDED_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password']
+const EXCLUDED_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password', '/auth/callback']
 
 function RootLayout() {
   const location = useLocation()
