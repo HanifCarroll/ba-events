@@ -332,9 +332,6 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
   if (filters.categories && filters.categories.length > 0) {
     query = query.overlaps('categories', filters.categories)
   }
-  if (filters.vibes && filters.vibes.length > 0) {
-    query = query.overlaps('vibes', filters.vibes)
-  }
   if (filters.isFree) {
     query = query.eq('is_free', true)
   }
@@ -442,11 +439,6 @@ export async function hybridEventSearch(
   if (filters.categories && filters.categories.length > 0) {
     filtered = filtered.filter(e =>
       e.categories.some(c => filters.categories!.includes(c))
-    )
-  }
-  if (filters.vibes && filters.vibes.length > 0) {
-    filtered = filtered.filter(e =>
-      e.vibes.some(v => filters.vibes!.includes(v))
     )
   }
 

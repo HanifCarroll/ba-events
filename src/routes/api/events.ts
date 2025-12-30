@@ -63,7 +63,6 @@ export const Route = createFileRoute('/api/events')({
             is_all_day: body.is_all_day ?? false,
             venue_id: body.venue_id ?? null,
             categories: body.categories ?? [],
-            vibes: body.vibes ?? [],
             price: body.price ?? null,
             is_free: body.is_free ?? false,
             min_age: body.min_age ?? null,
@@ -74,12 +73,11 @@ export const Route = createFileRoute('/api/events')({
             status: body.status ?? 'scheduled',
           }
 
-          // Generate embedding from name, description_es, categories, vibes
+          // Generate embedding from name, description_es, categories
           const textForEmbedding = [
             eventData.name,
             eventData.description_es,
             ...(eventData.categories || []),
-            ...(eventData.vibes || []),
           ]
             .filter(Boolean)
             .join(' ')

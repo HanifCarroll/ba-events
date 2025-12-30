@@ -3,13 +3,13 @@
  *
  * Enriches Eventbrite events with:
  * 1. Price (fetched from individual event pages)
- * 2. Categories + Vibes (inferred via AI from name + description)
+ * 2. Categories (inferred via AI from name + description)
  *
  * This runs as Phase 2, after the fast JSON-LD import.
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { Category, Vibe } from '@/lib/types'
+import type { Category } from '@/lib/types'
 
 const anthropic = new Anthropic()
 
@@ -100,128 +100,70 @@ function extractPriceFromHtml(html: string): EventbritePriceInfo {
 }
 
 // ---------------------------------------------------------------------------
-// AI-based Category & Vibe Inference
+// AI-based Category Inference
 // ---------------------------------------------------------------------------
 
-// Valid categories and vibes for the AI to choose from
-const VALID_CATEGORIES: readonly string[] = [
-  'techno',
-  'house',
-  'electronic',
-  'jazz',
-  'rock',
-  'indie',
-  'latin',
-  'tango',
-  'classical',
-  'hip-hop',
-  'reggaeton',
-  'folk',
-  'art',
-  'theatre',
-  'comedy',
-  'film',
-  'food',
-  'market',
-  'festival',
-  'workshop',
-  'networking',
-  'sports',
-  'other',
-]
-
-const VALID_VIBES: readonly string[] = [
-  'underground',
-  'mainstream',
-  'chill',
-  'high-energy',
-  'romantic',
-  'family-friendly',
-  'lgbtq-friendly',
-  'expat-friendly',
-  'local',
-  'touristy',
-  'intimate',
-  'massive',
-  'outdoor',
-  'rooftop',
-]
+// The 6 simplified categories
+const VALID_CATEGORIES: Category[] = ['music', 'arts', 'food', 'social', 'sports', 'festival']
 
 /**
- * Prompt for Haiku to infer categories and vibes
+ * Prompt for Haiku to categorize events
  */
-const INFERENCE_PROMPT = `Analyze this event and determine its categories and vibes.
+const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categories:
+- music: concerts, DJ sets, live performances, music festivals
+- arts: theater, comedy, film, exhibitions, galleries, workshops, cultural events
+- food: food markets, wine tastings, culinary events, restaurant events
+- social: networking, meetups, parties, social gatherings, expat events
+- sports: fitness, yoga, running, sports competitions, outdoor activities
+- festival: multi-day festivals, large celebrations, fairs, carnivals
 
-VALID CATEGORIES (choose 1-3):
-${VALID_CATEGORIES.join(', ')}
+Based on the event name and description, choose the SINGLE most appropriate category.
+If unclear, use "social" as the default.
 
-VALID VIBES (choose 1-4):
-${VALID_VIBES.join(', ')}
+Respond with ONLY the category name (lowercase), nothing else.`
 
-Based on the event name and description, identify:
-1. The most relevant categories (music genre, event type, etc.)
-2. The atmosphere/vibe of the event
-
-Respond in JSON format ONLY:
-{"categories": ["category1", "category2"], "vibes": ["vibe1", "vibe2"]}
-
-Only use values from the valid lists above. If unsure, use "other" for category.`
-
-export interface CategoryVibeInference {
-  categories: Category[]
-  vibes: Vibe[]
+export interface CategoryInference {
+  category: Category
 }
 
 /**
- * Infer categories and vibes from event name and description using AI
+ * Infer category from event name and description using AI
  */
-export async function inferCategoriesAndVibes(
+export async function inferCategory(
   name: string,
   description: string | null
-): Promise<CategoryVibeInference> {
+): Promise<Category> {
   try {
-    const eventContext = `Event: ${name}\n${description ? `Description: ${description}` : ''}`
+    const eventContext = `Event: ${name}${description ? `\nDescription: ${description}` : ''}`
 
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 150,
+      max_tokens: 20,
       messages: [
         {
           role: 'user',
-          content: `${INFERENCE_PROMPT}\n\n${eventContext}`,
+          content: `${CATEGORIZATION_PROMPT}\n\n${eventContext}`,
         },
       ],
     })
 
     const textBlock = message.content.find((block) => block.type === 'text')
     if (!textBlock?.text) {
-      return { categories: ['other'], vibes: [] }
+      return 'social'
     }
 
-    // Parse JSON response
-    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return { categories: ['other'], vibes: [] }
+    const category = textBlock.text.trim().toLowerCase() as Category
+
+    // Validate the response is a valid category
+    if (VALID_CATEGORIES.includes(category)) {
+      return category
     }
 
-    const parsed = JSON.parse(jsonMatch[0])
-
-    // Validate and filter to only valid values
-    const categories = (parsed.categories || [])
-      .filter((c: string) => VALID_CATEGORIES.includes(c))
-      .slice(0, 3) as Category[]
-
-    const vibes = (parsed.vibes || [])
-      .filter((v: string) => VALID_VIBES.includes(v))
-      .slice(0, 4) as Vibe[]
-
-    return {
-      categories: categories.length > 0 ? categories : ['other'],
-      vibes,
-    }
+    console.warn(`[eventbrite] Invalid category returned: "${textBlock.text}", defaulting to social`)
+    return 'social'
   } catch (error) {
     console.error('[eventbrite] AI inference error:', error)
-    return { categories: ['other'], vibes: [] }
+    return 'social'
   }
 }
 
@@ -233,11 +175,10 @@ export interface EventbriteEnrichmentResult {
   price: number | null
   is_free: boolean
   categories: Category[]
-  vibes: Vibe[]
 }
 
 /**
- * Fully enrich an Eventbrite event with price, categories, and vibes
+ * Fully enrich an Eventbrite event with price and category
  *
  * @param eventUrl - Event page URL for price fetching
  * @param name - Event name for AI inference
@@ -249,16 +190,15 @@ export async function enrichEventbriteEvent(
   description: string | null
 ): Promise<EventbriteEnrichmentResult> {
   // Run price fetch and AI inference in parallel
-  const [priceInfo, inference] = await Promise.all([
+  const [priceInfo, category] = await Promise.all([
     fetchEventbritePrice(eventUrl),
-    inferCategoriesAndVibes(name, description),
+    inferCategory(name, description),
   ])
 
   return {
     price: priceInfo?.price ?? null,
     is_free: priceInfo?.isFree ?? true,
-    categories: inference.categories,
-    vibes: inference.vibes,
+    categories: [category],
   }
 }
 
@@ -267,7 +207,6 @@ export interface BatchEnrichmentResult {
   price: number | null
   is_free: boolean
   categories: Category[]
-  vibes: Vibe[]
   error?: string
 }
 
@@ -300,8 +239,7 @@ export async function enrichEventbriteEventsBatch(
         id: event.id,
         price: null,
         is_free: true,
-        categories: ['other'],
-        vibes: [],
+        categories: ['social'],
         error: error instanceof Error ? error.message : 'Unknown error',
       })
     }

@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import {
   CATEGORIES,
-  VIBES,
   EVENT_STATUSES,
   NEIGHBORHOODS,
   VENUE_TYPES,
@@ -112,7 +111,6 @@ export const eventFormSchema = z.object({
   is_all_day: z.boolean(),
   venue_id: z.string(),
   categories: z.array(z.enum(CATEGORIES)),
-  vibes: z.array(z.enum(VIBES)),
   price: z.number().min(0).optional(),
   is_free: z.boolean(),
   min_age: z.number().min(0).optional(),
@@ -134,7 +132,6 @@ export const eventSchema = z.object({
   is_all_day: z.boolean().default(false),
   venue_id: optionalNullableString,
   categories: z.array(z.enum(CATEGORIES)).default([]),
-  vibes: z.array(z.enum(VIBES)).default([]),
   price: nullableNumber,
   is_free: z.boolean().default(false),
   min_age: nullableNumber,
@@ -210,7 +207,6 @@ export const eventFiltersSchema = z.object({
   neighborhood: z.enum(NEIGHBORHOODS).optional(),
   venueId: z.string().uuid().optional(),
   categories: z.array(z.enum(CATEGORIES)).optional(),
-  vibes: z.array(z.enum(VIBES)).optional(),
   isFree: z.boolean().optional(),
   maxPrice: z.number().min(0).optional(),
   minAge: z.number().min(0).max(99).optional(),

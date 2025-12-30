@@ -6,7 +6,7 @@ import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
 import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from './supabase'
 import { checkRateLimit } from './rate-limit'
-import { CATEGORIES, VIBES, NEIGHBORHOODS } from './types'
+import { CATEGORIES, NEIGHBORHOODS } from './types'
 import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue } from './types'
 
 // Initialize Anthropic client
@@ -51,7 +51,6 @@ const chatRequestSchema = z.object({
 const searchEventsInputSchema = z.object({
   query: z.string().optional(),
   categories: z.array(z.string()).optional(),
-  vibes: z.array(z.string()).optional(),
   neighborhood: z.string().optional(),
   isFree: z.boolean().optional(),
   maxPrice: z.number().optional(),
@@ -86,9 +85,6 @@ const getSystemPrompt = (locale: 'en' | 'es') => {
 ## Available Categories
 ${CATEGORIES.join(', ')}
 
-## Available Vibes
-${VIBES.join(', ')}
-
 ## Neighborhoods
 You know all 48 official CABA neighborhoods, including popular ones like Palermo, San Telmo, Recoleta, La Boca, and Villa Crespo.
 
@@ -108,7 +104,7 @@ Use the search_events tool with these parameters:
    - neighborhood: specific barrio
    - isFree: only free events
    - maxPrice: budget limit
-   - categories/vibes: when user explicitly mentions them
+   - categories: when user explicitly mentions them
 
 3. **Use 'limit' to control how many events are returned:**
    - If user asks for "top 3 events" → set limit=3
@@ -169,11 +165,6 @@ or descriptive searches like "romantic date spot", "high energy dance party",
           type: 'array',
           items: { type: 'string' },
           description: `Event categories to filter by. Options: ${CATEGORIES.join(', ')}`,
-        },
-        vibes: {
-          type: 'array',
-          items: { type: 'string' },
-          description: `Event vibes/atmosphere. Options: ${VIBES.join(', ')}`,
         },
         neighborhood: {
           type: 'string',
@@ -296,9 +287,6 @@ function toolInputToFilters(input: SearchEventsInput): EventFilters {
   if (input.categories?.length) {
     filters.categories = input.categories
   }
-  if (input.vibes?.length) {
-    filters.vibes = input.vibes
-  }
   if (input.neighborhood) {
     // Try to match neighborhood (case-insensitive)
     const match = NEIGHBORHOODS.find(
@@ -413,7 +401,6 @@ function formatToolResult(events: EventWithVenue[]): string {
       endsAt: e.ends_at ? formatInBA(e.ends_at) : null,
       price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
       categories: e.categories,
-      vibes: e.vibes,
       minAge: e.min_age,
       ticketUrl: e.ticket_url,
     })),

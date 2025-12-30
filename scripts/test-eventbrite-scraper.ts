@@ -132,7 +132,7 @@ async function testEnrichmentSample(events: EventbriteEvent[]) {
   }
 
   // Import enrichment functions dynamically to avoid API calls during import
-  const { fetchEventbritePrice, inferCategoriesAndVibes } = await import(
+  const { fetchEventbritePrice, inferCategory } = await import(
     '../src/lib/scrapers/eventbrite/enrichment'
   )
 
@@ -155,16 +155,15 @@ async function testEnrichmentSample(events: EventbriteEvent[]) {
     console.log(`  ❌ Price extraction error: ${error}`)
   }
 
-  // Test category/vibe inference
-  console.log('\n5b. Category/Vibe Inference (AI):')
+  // Test category inference
+  console.log('\n5b. Category Inference (AI):')
   console.log('-'.repeat(40))
   try {
-    const inference = await inferCategoriesAndVibes(
+    const category = await inferCategory(
       testEvent.name,
       testEvent.description || null
     )
-    console.log(`  Categories: ${inference.categories.join(', ')}`)
-    console.log(`  Vibes: ${inference.vibes.join(', ') || '(none)'}`)
+    console.log(`  Category: ${category}`)
   } catch (error) {
     console.log(`  ❌ Inference error: ${error}`)
   }

@@ -41,12 +41,6 @@ export {
   getEndTimeISO,
 } from './date-parser'
 
-// Category mapping
-export { mapBATourismCategory, getKnownBATourismCategories } from './category-map'
-
-// Vibe inference
-export { inferVibes } from './vibe-inference'
-
 // Enrichment (for filling missing venue data)
 export { extractBATourismVenueName, extractBATourismVenuesBatch } from './enrichment'
 

@@ -1,13 +1,12 @@
 /**
  * Data Transformer for Meetup Events
  *
- * Transforms raw Meetup event data into EventInsert format
+ * Transforms raw Meetup event data into EventInsert format.
+ * Categories are assigned via AI during import.
  */
 
 import type { EventInsert } from '@/lib/types'
 import type { MeetupEvent } from './types'
-import { mapMeetupCategory } from './category-map'
-import { inferVibes } from './vibe-inference'
 import { parseMeetupDate, expandRecurringEventWithIds } from './date-parser'
 
 /**
@@ -53,8 +52,7 @@ export function transformMeetupEvent(
     ends_at: endsAt,
     is_all_day: false,
     venue_id: venueId,
-    categories: mapMeetupCategory(event.category, event.name),
-    vibes: inferVibes(event),
+    categories: [], // Assigned via AI during import
     price: event.price,
     is_free: event.price === null || event.price === 0,
     min_age: null,
@@ -113,8 +111,7 @@ export function transformMeetupEventWithExpansion(
       ends_at: endsAt,
       is_all_day: false,
       venue_id: venueId,
-      categories: mapMeetupCategory(event.category, event.name),
-      vibes: inferVibes(event),
+      categories: [], // Assigned via AI during import
       price: event.price,
       is_free: event.price === null || event.price === 0,
       min_age: null,

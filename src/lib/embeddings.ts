@@ -34,11 +34,6 @@ export function buildEmbeddingText(event: Event | EventWithVenue): string {
     parts.push(`Categories: ${event.categories.join(', ')}`)
   }
 
-  // Vibes as natural language
-  if (event.vibes && event.vibes.length > 0) {
-    parts.push(`Vibes: ${event.vibes.join(', ')}`)
-  }
-
   // Venue context (from EventWithVenue)
   if ('venue_name' in event && event.venue_name) {
     const venueParts = [event.venue_name]

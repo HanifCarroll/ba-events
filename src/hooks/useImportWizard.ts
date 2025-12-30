@@ -29,8 +29,8 @@ import {
   filterCABAEventsClient,
   filterByDateRangeClient,
 } from '@/lib/scrapers/passline/client'
-import { CATEGORIES, VIBES, EVENT_STATUSES } from '@/lib/types'
-import type { Neighborhood, Category, Vibe, EventStatus, EventInsert } from '@/lib/types'
+import { CATEGORIES, EVENT_STATUSES } from '@/lib/types'
+import type { Neighborhood, Category, EventStatus, EventInsert } from '@/lib/types'
 
 export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'csv'
 export type WizardStep = 'source' | 'configure' | 'venues' | 'select' | 'confirm' | 'enrich' | 'summary'
@@ -59,7 +59,6 @@ interface CSVRow {
   ends_at?: string
   venue_name?: string
   categories?: string
-  vibes?: string
   price?: string
   is_free?: string
   min_age?: string
@@ -283,18 +282,6 @@ export function useImportWizard(
       }
     }
 
-    const vibes: Vibe[] = []
-    if (row.vibes?.trim()) {
-      const vs = row.vibes.split(',').map(v => v.trim().toLowerCase())
-      for (const vibe of vs) {
-        if (VIBES.includes(vibe as Vibe)) {
-          vibes.push(vibe as Vibe)
-        } else {
-          errors.push(`Invalid vibe: "${vibe}"`)
-        }
-      }
-    }
-
     let price: number | null = null
     if (row.price?.trim()) {
       const parsed = parseFloat(row.price)
@@ -336,7 +323,6 @@ export function useImportWizard(
         ends_at: row.ends_at?.trim() ? new Date(row.ends_at).toISOString() : null,
         venue_id: venueId,
         categories,
-        vibes,
         price: isFree ? null : price,
         is_free: isFree,
         min_age: minAge,

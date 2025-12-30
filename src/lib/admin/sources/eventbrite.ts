@@ -7,6 +7,7 @@ import {
   filterByDateRange as filterEventbriteByDateRange,
 } from '../../scrapers/eventbrite'
 import { enrichEventbriteEventsBatch, extractEventbriteVenuesBatch } from '../../scrapers/eventbrite/enrichment'
+import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
 import { upsertEvents, supabase, getEventById, updateEvent, createVenue } from '../../supabase'
 import { generateEmbedding } from '../../embeddings'
@@ -146,21 +147,22 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
       eventsToImport.push(transformEventbriteEvent(eventbriteEvent, finalVenueId))
     }
 
-    // Generate embeddings sequentially to avoid rate limits
-    // Eventbrite events already have description_es from JSON-LD
+    // AI categorize and generate embeddings sequentially to avoid rate limits
     const eventsWithEmbeddings: EventInsert[] = []
     for (const event of eventsToImport) {
+      // Categorize via AI
+      const category = await categorizeEvent(event.name, event.description_es)
+
       const textForEmbedding = [
         event.name,
         event.description_es,
-        ...(event.categories || []),
-        ...(event.vibes || []),
+        category,
       ]
         .filter(Boolean)
         .join(' ')
 
       const embedding = await generateEmbedding(textForEmbedding)
-      eventsWithEmbeddings.push({ ...event, embedding })
+      eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
     // Upsert events (insert new, update existing)
@@ -215,8 +217,8 @@ export interface EventbriteEnrichmentOutput {
 }
 
 /**
- * Enrich Eventbrite events with price, categories, and vibes
- * Uses web scraping for price and AI inference for categories/vibes
+ * Enrich Eventbrite events with price and categories
+ * Uses web scraping for price and AI inference for categories
  */
 export const enrichEventbriteEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: EventbriteEnrichmentInput[] }) => data)
@@ -246,12 +248,11 @@ export const enrichEventbriteEventsAction = createServerFn({ method: 'POST' })
         // Get existing event to regenerate embedding
         const existingEvent = await getEventById(result.id)
 
-        // Generate new embedding with updated categories/vibes
+        // Generate new embedding with updated categories
         const textForEmbedding = [
           existingEvent.name,
           existingEvent.description_es,
           ...result.categories,
-          ...result.vibes,
         ]
           .filter(Boolean)
           .join(' ')
@@ -263,7 +264,6 @@ export const enrichEventbriteEventsAction = createServerFn({ method: 'POST' })
           price: result.price,
           is_free: result.is_free,
           categories: result.categories,
-          vibes: result.vibes,
           embedding,
         })
 

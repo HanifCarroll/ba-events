@@ -21,12 +21,6 @@ export {
   getUniqueGroupNames,
 } from './transformer'
 
-// Category mapping
-export { mapMeetupCategory, getKnownMeetupCategories } from './category-map'
-
-// Vibe inference
-export { inferVibes } from './vibe-inference'
-
 // Date parsing
 export {
   parseMeetupDate,

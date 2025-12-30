@@ -1,5 +1,5 @@
-import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category, Vibe } from './types'
-import { CATEGORIES, VIBES, NEIGHBORHOODS } from './types'
+import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category } from './types'
+import { CATEGORIES, NEIGHBORHOODS } from './types'
 
 // Generate unique ID for messages
 export function generateId(): string {
@@ -31,7 +31,6 @@ export function createAssistantMessage(content: string, events?: EventWithVenue[
 interface ParsedIntent {
   timeFilter?: 'tonight' | 'tomorrow' | 'weekend' | 'week'
   categories?: Category[]
-  vibes?: Vibe[]
   neighborhood?: Neighborhood
   isFree?: boolean
   maxPrice?: number
@@ -61,19 +60,6 @@ export function parseUserIntent(message: string): ParsedIntent {
   }
   if (foundCategories.length > 0) {
     intent.categories = foundCategories
-  }
-
-  // Vibe patterns
-  const foundVibes: Vibe[] = []
-  for (const vibe of VIBES) {
-    // Handle hyphenated vibes
-    const vibePattern = vibe.replace('-', '[- ]?')
-    if (new RegExp(vibePattern, 'i').test(lowerMessage)) {
-      foundVibes.push(vibe)
-    }
-  }
-  if (foundVibes.length > 0) {
-    intent.vibes = foundVibes
   }
 
   // Neighborhood patterns
@@ -140,9 +126,6 @@ export function intentToFilters(intent: ParsedIntent): EventFilters {
   if (intent.categories) {
     filters.categories = intent.categories
   }
-  if (intent.vibes) {
-    filters.vibes = intent.vibes
-  }
   if (intent.neighborhood) {
     filters.neighborhood = intent.neighborhood
   }
@@ -187,12 +170,14 @@ export function generateResponse(intent: ParsedIntent, events: EventWithVenue[])
   // Add context based on intent
   if (intent.timeFilter === 'tonight') {
     response = `Here's what's happening tonight! ${response}`
-  } else if (intent.categories?.includes('techno') || intent.categories?.includes('electronic')) {
-    response = `🎧 ${response}`
-  } else if (intent.categories?.includes('jazz')) {
-    response = `🎷 ${response}`
-  } else if (intent.categories?.includes('tango')) {
-    response = `💃 ${response}`
+  } else if (intent.categories?.includes('music')) {
+    response = `🎵 ${response}`
+  } else if (intent.categories?.includes('arts')) {
+    response = `🎭 ${response}`
+  } else if (intent.categories?.includes('food')) {
+    response = `🍽️ ${response}`
+  } else if (intent.categories?.includes('festival')) {
+    response = `🎉 ${response}`
   } else if (intent.isFree) {
     response = `Free events alert! ${response}`
   }

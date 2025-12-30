@@ -28,8 +28,8 @@ import {
 import { getVenuesForSelect } from '@/lib/admin'
 import { useCreateEvent, useUpdateEvent } from '@/hooks/useEventMutations'
 import { eventFormSchema, type EventFormInput } from '@/lib/schemas'
-import { CATEGORIES, VIBES, EVENT_STATUSES } from '@/lib/types'
-import type { Event, EventStatus, Category, Vibe } from '@/lib/types'
+import { CATEGORIES, EVENT_STATUSES } from '@/lib/types'
+import type { Event, EventStatus, Category } from '@/lib/types'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query'
 
@@ -75,7 +75,6 @@ export function EventForm({ event, mode }: EventFormProps) {
       is_all_day: event?.is_all_day || false,
       venue_id: event?.venue_id || '_none',
       categories: (event?.categories || []) as Category[],
-      vibes: (event?.vibes || []) as Vibe[],
       price: event?.price ?? undefined,
       is_free: event?.is_free || false,
       min_age: event?.min_age ?? undefined,
@@ -109,7 +108,6 @@ export function EventForm({ event, mode }: EventFormProps) {
         is_all_day: data.is_all_day,
         venue_id: data.venue_id === '_none' ? null : data.venue_id,
         categories: data.categories,
-        vibes: data.vibes,
         price: data.price ?? null,
         is_free: data.is_free,
         min_age: data.min_age ?? null,
@@ -353,19 +351,18 @@ export function EventForm({ event, mode }: EventFormProps) {
             </CardContent>
           </Card>
 
-          {/* Categories & Vibes */}
+          {/* Categories */}
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
-              <CardTitle className="text-lg text-foreground">Categories & Vibes</CardTitle>
+              <CardTitle className="text-lg text-foreground">Categories</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
-              {/* Categories */}
+            <CardContent>
               <Controller
                 control={form.control}
                 name="categories"
                 render={({ field }) => (
                   <div className="space-y-3">
-                    <FormLabel>Categories</FormLabel>
+                    <FormLabel>Select category</FormLabel>
                     <div className="flex flex-wrap gap-2">
                       {CATEGORIES.map((cat) => {
                         const isSelected = field.value.includes(cat)
@@ -386,41 +383,6 @@ export function EventForm({ event, mode }: EventFormProps) {
                             }`}
                           >
                             {cat}
-                          </Badge>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              />
-
-              {/* Vibes */}
-              <Controller
-                control={form.control}
-                name="vibes"
-                render={({ field }) => (
-                  <div className="space-y-3">
-                    <FormLabel>Vibes</FormLabel>
-                    <div className="flex flex-wrap gap-2">
-                      {VIBES.map((vibe) => {
-                        const isSelected = field.value.includes(vibe)
-                        return (
-                          <Badge
-                            key={vibe}
-                            variant="outline"
-                            onClick={() => {
-                              const newValue = isSelected
-                                ? field.value.filter((v: string) => v !== vibe)
-                                : [...field.value, vibe]
-                              field.onChange(newValue)
-                            }}
-                            className={`cursor-pointer transition-all ${
-                              isSelected
-                                ? 'bg-accent/20 text-accent border-accent/50'
-                                : 'border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground'
-                            }`}
-                          >
-                            {vibe}
                           </Badge>
                         )
                       })}

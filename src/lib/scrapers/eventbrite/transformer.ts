@@ -79,7 +79,6 @@ export function transformEventbriteEvent(
     is_all_day: isMultiDayEvent(event.startDate, event.endDate),
     venue_id: venueId,
     categories: [], // Enriched later via AI
-    vibes: [], // Enriched later via AI
     price: null, // Enriched later via page fetch
     is_free: true, // Default to free, updated during enrichment
     min_age: null, // Not available from Eventbrite

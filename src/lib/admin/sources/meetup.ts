@@ -6,6 +6,7 @@ import {
   transformMeetupEventWithExpansion,
   enrichMeetupEventsWithVenues,
 } from '../../scrapers/meetup'
+import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
 import { upsertEvents, supabase, updateEvent, createVenue } from '../../supabase'
 import { generateEmbedding } from '../../embeddings'
@@ -114,19 +115,22 @@ export const importMeetupEventsBatchAction = createServerFn({ method: 'POST' })
       return { success: true, inserted: 0, updated: 0 }
     }
 
+    // AI categorize and generate embeddings
     const eventsWithEmbeddings: EventInsert[] = []
     for (const event of eventsToImport) {
+      // Categorize via AI
+      const category = await categorizeEvent(event.name, event.description_es)
+
       const textForEmbedding = [
         event.name,
         event.description_es,
-        ...(event.categories || []),
-        ...(event.vibes || []),
+        category,
       ]
         .filter(Boolean)
         .join(' ')
 
       const embedding = await generateEmbedding(textForEmbedding)
-      eventsWithEmbeddings.push({ ...event, embedding })
+      eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
     const result = await upsertEvents(eventsWithEmbeddings)

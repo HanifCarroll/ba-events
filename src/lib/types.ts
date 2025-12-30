@@ -71,54 +71,17 @@ export const EVENT_STATUSES = ['scheduled', 'cancelled', 'postponed', 'past', 'p
 
 export type EventStatus = (typeof EVENT_STATUSES)[number]
 
-// Common event categories
+// Simplified intent-based categories (reduced from 23 to 6)
 export const CATEGORIES = [
-  'techno',
-  'house',
-  'electronic',
-  'jazz',
-  'rock',
-  'indie',
-  'latin',
-  'tango',
-  'classical',
-  'hip-hop',
-  'reggaeton',
-  'folk',
-  'art',
-  'theatre',
-  'comedy',
-  'film',
+  'music',
+  'arts',
   'food',
-  'market',
-  'festival',
-  'workshop',
-  'networking',
+  'social',
   'sports',
-  'other',
+  'festival',
 ] as const
 
 export type Category = (typeof CATEGORIES)[number]
-
-// Event vibes
-export const VIBES = [
-  'underground',
-  'mainstream',
-  'chill',
-  'high-energy',
-  'romantic',
-  'family-friendly',
-  'lgbtq-friendly',
-  'expat-friendly',
-  'local',
-  'touristy',
-  'intimate',
-  'massive',
-  'outdoor',
-  'rooftop',
-] as const
-
-export type Vibe = (typeof VIBES)[number]
 
 // Database venue record
 export interface Venue {
@@ -159,7 +122,6 @@ export interface Event {
   is_all_day: boolean
   venue_id: string | null
   categories: string[]
-  vibes: string[]
   price: number | null // in ARS
   is_free: boolean
   min_age: number | null // null means all ages
@@ -192,7 +154,6 @@ export interface EventInsert {
   is_all_day?: boolean
   venue_id?: string | null
   categories?: string[]
-  vibes?: string[]
   price?: number | null
   is_free?: boolean
   min_age?: number | null
@@ -220,7 +181,6 @@ export interface EventFilters {
   neighborhood?: Neighborhood
   venueId?: string
   categories?: string[]
-  vibes?: string[]
   isFree?: boolean
   maxPrice?: number
   minAge?: number

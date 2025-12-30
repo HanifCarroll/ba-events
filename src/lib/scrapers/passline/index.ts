@@ -21,12 +21,6 @@ export {
   filterByDateRangeClient,
 } from './client'
 
-// Category mapping
-export { mapPasslineCategory, getKnownPasslineCategories } from './category-map'
-
-// Vibe inference
-export { inferVibes } from './vibe-inference'
-
 // Data transformer
 export {
   transformPasslineEvent,

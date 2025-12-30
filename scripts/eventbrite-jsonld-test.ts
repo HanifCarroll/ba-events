@@ -232,13 +232,7 @@ function analyzeFieldCoverage(event: EventbriteJsonLdEvent): {
     {
       field: 'categories',
       available: false,
-      source: 'NOT AVAILABLE - need to infer',
-      sample: null,
-    },
-    {
-      field: 'vibes',
-      available: false,
-      source: 'NOT AVAILABLE - need to infer',
+      source: 'NOT AVAILABLE - assigned via AI during import',
       sample: null,
     },
     {

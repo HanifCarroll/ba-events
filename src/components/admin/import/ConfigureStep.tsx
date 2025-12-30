@@ -7,13 +7,13 @@ import type { ImportSource } from '@/hooks/useImportWizard'
 import { getSourceMetadata, type DataStatus } from '@/lib/source-metadata'
 
 const CSV_HEADERS = [
-  'name', 'starts_at', 'ends_at', 'venue_name', 'categories', 'vibes',
+  'name', 'starts_at', 'ends_at', 'venue_name', 'categories',
   'price', 'is_free', 'min_age', 'link', 'ticket_url', 'description', 'status',
 ]
 
 const TEMPLATE_ROW = [
   'Example Techno Night', '2025-01-15T22:00:00', '2025-01-16T06:00:00',
-  'Club XYZ', 'techno,electronic', 'underground,high-energy', '5000',
+  'Club XYZ', 'music', '5000',
   'false', '18', 'https://example.com', 'https://tickets.example.com',
   'An underground techno party', 'scheduled',
 ]

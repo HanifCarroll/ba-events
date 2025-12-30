@@ -3,6 +3,7 @@ import {
   transformPasslineEvent,
   type PasslineEvent,
 } from '../../scrapers/passline'
+import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
 import { upsertEvents, updateEvent, createVenue } from '../../supabase'
 import { generateEmbedding } from '../../embeddings'
@@ -81,21 +82,22 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
       eventsToImport.push(transformPasslineEvent(passlineEvent, finalVenueId))
     }
 
-    // Generate embeddings sequentially to avoid rate limits
-    // Uses Spanish description for embedding (cross-lingual model)
+    // AI categorize and generate embeddings sequentially to avoid rate limits
     const eventsWithEmbeddings: EventInsert[] = []
     for (const event of eventsToImport) {
+      // Categorize via AI
+      const category = await categorizeEvent(event.name, event.description_es)
+
       const textForEmbedding = [
         event.name,
         event.description_es,
-        ...(event.categories || []),
-        ...(event.vibes || []),
+        category,
       ]
         .filter(Boolean)
         .join(' ')
 
       const embedding = await generateEmbedding(textForEmbedding)
-      eventsWithEmbeddings.push({ ...event, embedding })
+      eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
     // Upsert events (insert new, update existing)

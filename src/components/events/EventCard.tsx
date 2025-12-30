@@ -162,8 +162,8 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
                 )}
               </div>
 
-              {/* Categories & vibes */}
-              {(event.categories.length > 0 || event.vibes.length > 0) && (
+              {/* Categories */}
+              {event.categories.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {event.categories.slice(0, 3).map((cat) => (
                     <span
@@ -171,14 +171,6 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
                       className="px-2.5 py-1 rounded-lg text-xs bg-primary/10 text-primary/90 border border-primary/20"
                     >
                       {cat}
-                    </span>
-                  ))}
-                  {event.vibes.slice(0, 2).map((vibe) => (
-                    <span
-                      key={vibe}
-                      className="px-2.5 py-1 rounded-lg text-xs bg-muted text-muted-foreground border border-border/50"
-                    >
-                      {vibe}
                     </span>
                   ))}
                 </div>

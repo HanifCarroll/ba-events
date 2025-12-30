@@ -2,12 +2,11 @@
  * Data Transformer for BA Tourism Events
  *
  * Transforms scraped BA Tourism events into our EventInsert format.
+ * Categories are assigned via AI during import.
  */
 
 import type { EventInsert } from '@/lib/types'
 import type { BATourismEvent, WeekContext } from './types'
-import { mapBATourismCategory } from './category-map'
-import { inferVibes } from './vibe-inference'
 import { parseSpanishDate, toISODateTime, getEndTimeISO } from './date-parser'
 import { format } from 'date-fns'
 
@@ -56,8 +55,7 @@ export function transformBATourismEvent(
       ends_at: endsAt,
       is_all_day: !parsed.startTime,
       venue_id: venueId,
-      categories: mapBATourismCategory(event.category),
-      vibes: inferVibes(event),
+      categories: [], // Assigned via AI during import
       price: null, // BA Tourism doesn't provide specific prices
       is_free: event.isFree,
       min_age: null,

@@ -38,7 +38,6 @@ export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
           existingEvent.name,
           bilingual.description_es,
           ...(existingEvent.categories || []),
-          ...(existingEvent.vibes || []),
         ]
           .filter(Boolean)
           .join(' ')
@@ -101,7 +100,6 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
           existingEvent.name,
           description_es,
           ...(existingEvent.categories || []),
-          ...(existingEvent.vibes || []),
         ]
           .filter(Boolean)
           .join(' ')

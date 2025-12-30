@@ -2,12 +2,11 @@
  * Data Transformer for Passline Events
  *
  * Transforms Passline API responses into our EventInsert format.
+ * Categories are assigned via AI during import.
  */
 
 import type { EventInsert } from '@/lib/types'
 import type { PasslineEvent } from './api'
-import { mapPasslineCategory } from './category-map'
-import { inferVibes } from './vibe-inference'
 
 /**
  * Combine date and time strings into ISO datetime string
@@ -60,8 +59,7 @@ export function transformPasslineEvent(
         : null,
     is_all_day: false,
     venue_id: venueId,
-    categories: mapPasslineCategory(event.category_name),
-    vibes: inferVibes(event),
+    categories: [], // Assigned via AI during import
     price: price,
     is_free: price === 0 || price === null,
     min_age: null, // Passline doesn't provide this

@@ -34,7 +34,6 @@ export const createEventAction = createServerFn({ method: 'POST' })
       data.name,
       data.description_es,
       ...(data.categories || []),
-      ...(data.vibes || []),
     ]
       .filter(Boolean)
       .join(' ')
@@ -51,13 +50,12 @@ export const updateEventAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: string; data: EventUpdate }) => input)
   .handler(async ({ data: { id, data } }) => {
     await requireAdminAccess()
-    // If name, description_es, categories, or vibes changed, regenerate embedding
+    // If name, description_es, or categories changed, regenerate embedding
     const existingEvent = await getEventById(id)
     const needsNewEmbedding =
       data.name !== undefined ||
       data.description_es !== undefined ||
-      data.categories !== undefined ||
-      data.vibes !== undefined
+      data.categories !== undefined
 
     let embedding: number[] | undefined
 
@@ -67,7 +65,6 @@ export const updateEventAction = createServerFn({ method: 'POST' })
         data.name ?? existingEvent.name,
         data.description_es ?? existingEvent.description_es,
         ...(data.categories ?? existingEvent.categories),
-        ...(data.vibes ?? existingEvent.vibes),
       ]
         .filter(Boolean)
         .join(' ')
@@ -100,7 +97,6 @@ export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
           event.name,
           event.description_es,
           ...(event.categories || []),
-          ...(event.vibes || []),
         ]
           .filter(Boolean)
           .join(' ')
