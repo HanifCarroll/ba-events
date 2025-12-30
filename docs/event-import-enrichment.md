@@ -6,10 +6,10 @@ This document outlines the two-phase event import architecture: fast initial imp
 
 | Source | Missing from Initial Import | Auto-Enrich Default |
 |--------|----------------------------|---------------------|
-| Passline | Descriptions, categories/vibes | Yes |
+| Passline | Descriptions | Yes |
 | Eventbrite | Price, categories/vibes | No |
 | BA Tourism | Very little (most complete) | No |
-| Meetup | Venue details, categories/vibes | Yes |
+| Meetup | Descriptions, venue details | Yes |
 
 ## Source Details
 
@@ -21,10 +21,10 @@ This document outlines the two-phase event import architecture: fast initial imp
 - Price (min price)
 - Event URL, images
 - Artists, sold-out status
+- Categories/vibes (inferred from Passline's event metadata)
 
 **Missing (requires enrichment):**
-- Descriptions - must be scraped from individual event pages
-- Categories/vibes - inferred by AI from name + scraped description
+- Descriptions - must be scraped from individual event pages via Jina + Claude Haiku
 
 ### Eventbrite
 
@@ -55,17 +55,17 @@ This document outlines the two-phase event import architecture: fast initial imp
 ### Meetup
 
 **Initial import captures:**
-- Event name, description
+- Event name
 - Dates/times, timezone
 - Group name (organizer)
-- Price, attendee count
+- Price (free/paid), attendee count
 - Event URL, image
-- Category (Meetup's native categories)
+- Categories/vibes (mapped from Meetup's category system)
 - Recurring event patterns (expanded to multiple dates)
 
 **Missing (requires enrichment):**
+- Descriptions - must be scraped from individual event pages via Jina + Claude Haiku
 - Venue details - often null in list data, requires visiting individual event pages
-- Categories/vibes - needs remapping from Meetup's category system
 
 ## Enrichment Process
 
@@ -81,13 +81,15 @@ This document outlines the two-phase event import architecture: fast initial imp
 
 ### Phase 2: Enrichment (On-Demand)
 
-#### Description Enrichment (All Sources)
+#### Description Enrichment (Passline, Meetup)
 
-Used primarily for Passline events:
-1. Fetch webpage as markdown via Jina
+Used for events missing descriptions (primarily Passline and Meetup):
+1. Fetch webpage as markdown via Jina Reader
 2. Use Claude Haiku to extract semantic Spanish description
-3. Translate to English
+3. Use Claude Haiku to translate to English
 4. Re-generate embeddings with new descriptions
+
+Events are eligible for enrichment if they have `!description_es && !!link`.
 
 #### Eventbrite Enrichment
 
