@@ -17,6 +17,7 @@ import {
   bulkCreateVenuesAction,
   bulkCreateEventsAction,
   listVenues,
+  mapToNeighborhood,
   type PasslinePreviewEvent,
   type EventbritePreviewEvent,
   type BATourismPreviewEvent,
@@ -451,7 +452,11 @@ export function useImportWizard(
           .forEach(e => {
             const name = e.baTourism.venueName
             if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, skip: false })
+              edits.set(name, {
+                name,
+                neighborhood: mapToNeighborhood(e.baTourism.neighborhood),
+                skip: false,
+              })
             }
           })
         setVenueEdits(edits)

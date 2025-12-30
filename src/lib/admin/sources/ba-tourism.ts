@@ -135,41 +135,38 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
       venueNameToId.set(venue.name, venue.id)
     }
 
-    // Step 5: Process events with correct venue IDs
-    const eventsToImport: EventInsert[] = []
+    // Step 5: Process events - categorize and embed ONCE per source event, then expand to dates
+    const eventsWithEmbeddings: EventInsert[] = []
 
     for (const { baTourismEvent, venueId, weekContext } of data.events) {
-      let finalVenueId = venueId
-
-      // Look up venue ID from our map if not already set
-      if (!finalVenueId && baTourismEvent.venueName) {
-        finalVenueId = venueNameToId.get(baTourismEvent.venueName) || null
-      }
-
-      const transformed = transformBATourismEvent(baTourismEvent, weekContext, finalVenueId, new Date())
-      eventsToImport.push(...transformed)
-    }
-
-    if (eventsToImport.length === 0) {
-      return { success: true, inserted: 0, updated: 0, venuesCreated }
-    }
-
-    // AI categorize and generate embeddings
-    const eventsWithEmbeddings: EventInsert[] = []
-    for (const event of eventsToImport) {
-      // Categorize via AI
-      const category = await categorizeEvent(event.name, event.description_es)
-
+      // Categorize and generate embedding in PARALLEL, once per source event
       const textForEmbedding = [
-        event.name,
-        event.description_es,
-        category,
+        baTourismEvent.name,
+        baTourismEvent.description,
       ]
         .filter(Boolean)
         .join(' ')
 
-      const embedding = await generateEmbedding(textForEmbedding)
-      eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
+      const [category, embedding] = await Promise.all([
+        categorizeEvent(baTourismEvent.name, baTourismEvent.description),
+        generateEmbedding(textForEmbedding),
+      ])
+
+      // Look up venue ID from our map if not already set
+      let finalVenueId = venueId
+      if (!finalVenueId && baTourismEvent.venueName) {
+        finalVenueId = venueNameToId.get(baTourismEvent.venueName) || null
+      }
+
+      // Expand into date events and apply the same category/embedding to all
+      const transformed = transformBATourismEvent(baTourismEvent, weekContext, finalVenueId, new Date())
+      for (const event of transformed) {
+        eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
+      }
+    }
+
+    if (eventsWithEmbeddings.length === 0) {
+      return { success: true, inserted: 0, updated: 0, venuesCreated }
     }
 
     const result = await upsertEvents(eventsWithEmbeddings, client)

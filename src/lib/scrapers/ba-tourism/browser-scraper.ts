@@ -184,7 +184,7 @@ async function scrapeWithPlaywright(): Promise<{
 
     console.log('[BA Tourism] Navigating to page...')
     await page.goto(BA_TOURISM_URL, {
-      waitUntil: 'domcontentloaded',
+      waitUntil: 'networkidle',
       timeout: 90000,
     })
 

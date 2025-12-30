@@ -86,7 +86,7 @@ export function SelectStep({
   const baTourismData = useMemo((): BaTourismEventWithId[] => {
     return baTourismEvents.map((event) => ({
       ...event,
-      id: `${event.baTourism.name}-${event.baTourism.whenText}`.replace(/\s+/g, '-').toLowerCase(),
+      id: `ba-tourism-${event.baTourism.name}`,
     }))
   }, [baTourismEvents])
 
