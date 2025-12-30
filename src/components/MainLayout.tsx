@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuthContext } from '@/hooks/useAuthContext'
-import { signOutAction } from '@/lib/auth/client'
+import { signOutAction } from '@/lib/auth/server'
 import { track } from '@/lib/analytics'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import * as m from '@/paraglide/messages'

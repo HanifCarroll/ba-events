@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { exchangeCodeAction } from '@/lib/auth/client'
+import { exchangeCodeAction } from '@/lib/auth/server'
 
 export const Route = createFileRoute('/auth/callback')({
   component: AuthCallbackPage,

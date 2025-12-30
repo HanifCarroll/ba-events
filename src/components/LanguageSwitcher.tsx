@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAuthContext } from '@/hooks/useAuthContext'
-import { updateLocalePreference } from '@/lib/auth/client'
+import { updateLocalePreference } from '@/lib/auth/server'
 import type { Locale } from '@/lib/types'
 
 const LOCALE_CONFIG: Record<string, { label: string; flag: string }> = {

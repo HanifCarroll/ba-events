@@ -1,5 +1,4 @@
 import { getSessionUser } from '../auth/session'
-import { createSupabaseServerClient } from '../db/server'
 import type { SupabaseClient } from '../db/client'
 import type { Neighborhood } from '../types'
 import { NEIGHBORHOODS } from '../types'
@@ -14,6 +13,8 @@ export async function requireAdminAccess(): Promise<SupabaseClient> {
   if (!session?.isAdmin) {
     throw new Error('Unauthorized: Admin access required')
   }
+  // Dynamic import to avoid bundling server-only code in client
+  const { createSupabaseServerClient } = await import('../db/server')
   // Return authenticated client for database operations with RLS
   return createSupabaseServerClient()
 }

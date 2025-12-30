@@ -1,6 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
 import { redirect } from '@tanstack/react-router'
-import { createSupabaseServerClient } from '../db/server'
 import type { User } from '@supabase/supabase-js'
 import type { Profile } from '../types'
 
@@ -16,6 +15,7 @@ export interface SessionUser {
  */
 export const getSessionUser = createServerFn({ method: 'GET' }).handler(
   async (): Promise<SessionUser | null> => {
+    const { createSupabaseServerClient } = await import('../db/server')
     const supabase = createSupabaseServerClient()
 
     const {
