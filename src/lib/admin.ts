@@ -19,7 +19,8 @@ import {
 } from './supabase'
 import { generateEmbedding } from './embeddings'
 import { getSessionUser } from './session'
-import type { VenueInsert, VenueUpdate, EventInsert, EventUpdate, EventWithVenue, EventStatus } from './types'
+import type { VenueInsert, VenueUpdate, EventInsert, EventUpdate, EventWithVenue, EventStatus, Neighborhood } from './types'
+import { NEIGHBORHOODS } from './types'
 
 // Helper to validate admin access in server functions
 async function requireAdminAccess(): Promise<void> {
@@ -27,6 +28,54 @@ async function requireAdminAccess(): Promise<void> {
   if (!session?.isAdmin) {
     throw new Error('Unauthorized: Admin access required')
   }
+}
+
+/**
+ * Map scraped neighborhood string to valid Neighborhood type
+ * Handles exact matches, partial matches, and common aliases
+ */
+function mapToNeighborhood(scraped: string | null | undefined): Neighborhood | null {
+  if (!scraped) return null
+
+  const normalized = scraped.trim()
+
+  // Exact match (case-insensitive)
+  const exactMatch = NEIGHBORHOODS.find(
+    (n) => n.toLowerCase() === normalized.toLowerCase()
+  )
+  if (exactMatch) return exactMatch
+
+  // Partial match (neighborhood contains scraped or vice versa)
+  const partialMatch = NEIGHBORHOODS.find(
+    (n) =>
+      n.toLowerCase().includes(normalized.toLowerCase()) ||
+      normalized.toLowerCase().includes(n.toLowerCase())
+  )
+  if (partialMatch) return partialMatch
+
+  // Common aliases
+  const aliases: Record<string, Neighborhood> = {
+    microcentro: 'San Nicolás',
+    centro: 'San Nicolás',
+    congreso: 'Balvanera',
+    once: 'Balvanera',
+    abasto: 'Balvanera',
+    tribunales: 'San Nicolás',
+    'barrio norte': 'Recoleta',
+    'cañitas': 'Palermo',
+    'las cañitas': 'Palermo',
+    soho: 'Palermo',
+    'palermo soho': 'Palermo',
+    hollywood: 'Palermo',
+    'palermo hollywood': 'Palermo',
+    botanico: 'Palermo',
+    'puerto de frutos': 'Puerto Madero',
+  }
+
+  const aliasMatch = aliases[normalized.toLowerCase()]
+  if (aliasMatch) return aliasMatch
+
+  return null
 }
 
 // ============================================================================
@@ -839,12 +888,37 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
     }) => data
   )
   .handler(async ({ data }) => {
-    const eventsToImport: EventInsert[] = data.events.flatMap(({ baTourismEvent, venueId, weekContext }) =>
-      transformBATourismEvent(baTourismEvent, weekContext, venueId, new Date())
-    )
+    let venuesCreated = 0
+
+    // Process events and auto-create venues when needed
+    const eventsToImport: EventInsert[] = []
+
+    for (const { baTourismEvent, venueId, weekContext } of data.events) {
+      let finalVenueId = venueId
+
+      // Auto-create venue if no match found and venue data exists
+      if (!venueId && baTourismEvent.venueName) {
+        try {
+          const newVenue = await createVenue({
+            name: baTourismEvent.venueName,
+            neighborhood: mapToNeighborhood(baTourismEvent.neighborhood),
+            address: baTourismEvent.address || null,
+          })
+          finalVenueId = newVenue.id
+          venuesCreated++
+          console.log(`[Admin] Auto-created venue: ${baTourismEvent.venueName}`)
+        } catch (error) {
+          console.error(`[Admin] Failed to create venue ${baTourismEvent.venueName}:`, error)
+          // Continue with null venue_id if creation fails
+        }
+      }
+
+      const transformed = transformBATourismEvent(baTourismEvent, weekContext, finalVenueId, new Date())
+      eventsToImport.push(...transformed)
+    }
 
     if (eventsToImport.length === 0) {
-      return { success: true, inserted: 0, updated: 0 }
+      return { success: true, inserted: 0, updated: 0, venuesCreated }
     }
 
     const eventsWithEmbeddings: EventInsert[] = []
@@ -867,6 +941,124 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
     return {
       success: true,
       ...result,
+      venuesCreated,
+    }
+  })
+
+// ============================================================================
+// BA TOURISM VENUE ENRICHMENT
+// ============================================================================
+
+import { extractBATourismVenuesBatch } from './scrapers/ba-tourism/enrichment'
+
+export interface BATourismEnrichmentInput {
+  id: string
+  link: string
+}
+
+export interface BATourismEnrichmentOutput {
+  success: boolean
+  enriched: number
+  venuesCreated: number
+  total: number
+  errors: Array<{ id: string; error: string }>
+}
+
+/**
+ * Get BA Tourism events that need venue enrichment (no venue_id set)
+ */
+export const getBATourismEventsNeedingEnrichmentAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<{ events: Array<{ id: string; link: string }> }> => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('id, link')
+      .eq('source', 'ba-tourism')
+      .is('venue_id', null)
+      .not('link', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) {
+      console.error('[Admin] Error fetching BA Tourism events needing enrichment:', error)
+      return { events: [] }
+    }
+
+    return { events: data || [] }
+  }
+)
+
+/**
+ * Enrich BA Tourism events with venue information
+ * Fetches venue names from detail pages and matches/creates venues
+ */
+export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { events: BATourismEnrichmentInput[] }) => data)
+  .handler(async ({ data }): Promise<BATourismEnrichmentOutput> => {
+    const { events } = data
+
+    if (events.length === 0) {
+      return { success: true, enriched: 0, venuesCreated: 0, total: 0, errors: [] }
+    }
+
+    console.log(`[Admin] Starting BA Tourism venue enrichment for ${events.length} events...`)
+
+    // Extract venue names from detail pages
+    const extractionResults = await extractBATourismVenuesBatch(events, 500)
+
+    let enriched = 0
+    let venuesCreated = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    // Process each result
+    for (const result of extractionResults) {
+      if (result.error) {
+        errors.push({ id: result.id, error: result.error })
+        continue
+      }
+
+      if (!result.venueName) {
+        errors.push({ id: result.id, error: 'Could not extract venue name from page' })
+        continue
+      }
+
+      try {
+        // Try to match to existing venue
+        const venueMatch = await matchVenue(result.venueName)
+
+        let venueId: string
+
+        if (venueMatch.venue) {
+          // Use existing venue
+          venueId = venueMatch.venue.id
+        } else {
+          // Create new venue (with just the name since detail page doesn't have full address)
+          const newVenue = await createVenue({
+            name: result.venueName,
+            neighborhood: null,
+            address: null,
+          })
+          venueId = newVenue.id
+          venuesCreated++
+          console.log(`[Admin] Created new venue: ${result.venueName}`)
+        }
+
+        // Update event with venue_id
+        await updateEvent(result.id, { venue_id: venueId })
+        enriched++
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+        errors.push({ id: result.id, error: errorMsg })
+      }
+    }
+
+    console.log(`[Admin] BA Tourism venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
+
+    return {
+      success: true,
+      enriched,
+      venuesCreated,
+      total: events.length,
+      errors,
     }
   })
 

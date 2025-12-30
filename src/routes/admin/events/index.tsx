@@ -34,7 +34,7 @@ import { Combobox } from '@/components/ui/combobox'
 import { DataTable, getEventColumns } from '@/components/data-table'
 import { listEvents } from '@/lib/admin'
 import { formatDateTime } from '@/lib/formatting'
-import { useEventAdmin, useBackgroundEnrichment, type EventTab, type DataGapType } from '@/hooks'
+import { useEventAdmin, useBackgroundEnrichment, useVenueEnrichment, type EventTab, type DataGapType } from '@/hooks'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import type { EventWithVenue } from '@/lib/types'
 
@@ -96,13 +96,19 @@ function EventListPage() {
 
   const { filtering, bulk, markPast, singleActions } = useEventAdmin(events, activeTab)
   const backgroundEnrichment = useBackgroundEnrichment()
+  const venueEnrichment = useVenueEnrichment()
 
-  // Calculate enrichable count for selected events
+  // Calculate enrichable count for selected events (description enrichment)
   const enrichableCount = useMemo(() => {
     return backgroundEnrichment.getEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
   }, [backgroundEnrichment, filtering.filteredEvents, bulk.selectedIds])
 
-  // Handle enrichment with selection clear on complete
+  // Calculate venue enrichable count for selected events
+  const venueEnrichableCount = useMemo(() => {
+    return venueEnrichment.getVenueEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
+  }, [venueEnrichment, filtering.filteredEvents, bulk.selectedIds])
+
+  // Handle description enrichment with selection clear on complete
   const handleEnrich = useCallback(() => {
     backgroundEnrichment.enrichEvents(
       filtering.filteredEvents,
@@ -110,6 +116,15 @@ function EventListPage() {
       () => bulk.clearSelection()
     )
   }, [backgroundEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+
+  // Handle venue enrichment with selection clear on complete
+  const handleVenueEnrich = useCallback(() => {
+    venueEnrichment.enrichVenues(
+      filtering.filteredEvents,
+      bulk.selectedIds,
+      () => bulk.clearSelection()
+    )
+  }, [venueEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
 
   // Smart "Mark Past" toast on page load
   useEffect(() => {
@@ -331,6 +346,9 @@ function EventListPage() {
               onEnrich={handleEnrich}
               isEnriching={backgroundEnrichment.isEnriching}
               onStopEnrich={backgroundEnrichment.stopEnrichment}
+              venueEnrichableCount={venueEnrichableCount}
+              onVenueEnrich={handleVenueEnrich}
+              isVenueEnriching={venueEnrichment.isVenueEnriching}
             />
           </div>
           <MobileEventCards
@@ -361,6 +379,9 @@ function EventListPage() {
                   onEnrich={handleEnrich}
                   isEnriching={backgroundEnrichment.isEnriching}
                   onStopEnrich={backgroundEnrichment.stopEnrichment}
+                  venueEnrichableCount={venueEnrichableCount}
+                  onVenueEnrich={handleVenueEnrich}
+                  isVenueEnriching={venueEnrichment.isVenueEnriching}
                 />
               </div>
 

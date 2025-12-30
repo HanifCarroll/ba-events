@@ -47,6 +47,9 @@ export { mapBATourismCategory, getKnownBATourismCategories } from './category-ma
 // Vibe inference
 export { inferVibes } from './vibe-inference'
 
+// Enrichment (for filling missing venue data)
+export { extractBATourismVenueName, extractBATourismVenuesBatch } from './enrichment'
+
 // Types
 export type {
   BATourismEvent,

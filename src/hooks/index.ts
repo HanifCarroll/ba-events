@@ -4,5 +4,6 @@ export { useMarkPastEvents, type UseMarkPastEventsReturn } from './useMarkPastEv
 export { useSingleEventActions, type UseSingleEventActionsReturn } from './useSingleEventActions'
 export { useDescriptionEnrichment, type UseDescriptionEnrichmentReturn, type EnrichStep } from './useDescriptionEnrichment'
 export { useBackgroundEnrichment, type UseBackgroundEnrichmentReturn } from './useBackgroundEnrichment'
+export { useVenueEnrichment, type UseVenueEnrichmentReturn } from './useVenueEnrichment'
 export { useEventAdmin, type UseEventAdminReturn } from './useEventAdmin'
 export { useImportWizard, type UseImportWizardReturn, type ImportSource, type WizardStep } from './useImportWizard'

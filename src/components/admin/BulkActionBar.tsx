@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { BulkActionType } from '@/hooks/useBulkActions'
@@ -25,6 +25,12 @@ interface BulkActionBarProps {
   onEventbriteEnrich?: () => void
   /** Whether Eventbrite enrichment is currently running */
   isEventbriteEnriching?: boolean
+  /** Number of selected events missing venues */
+  venueEnrichableCount?: number
+  /** Callback to enrich events with missing venues */
+  onVenueEnrich?: () => void
+  /** Whether venue enrichment is currently running */
+  isVenueEnriching?: boolean
 }
 
 export function BulkActionBar({
@@ -41,11 +47,15 @@ export function BulkActionBar({
   eventbriteEnrichableCount = 0,
   onEventbriteEnrich,
   isEventbriteEnriching = false,
+  venueEnrichableCount = 0,
+  onVenueEnrich,
+  isVenueEnriching = false,
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
 
   const showEnrich = enrichableCount > 0 && onEnrich
   const showEventbriteEnrich = eventbriteEnrichableCount > 0 && onEventbriteEnrich
+  const showVenueEnrich = venueEnrichableCount > 0 && onVenueEnrich
 
   if (overlay) {
     // Overlay version - slides in over table header
@@ -105,6 +115,28 @@ export function BulkActionBar({
             >
               <Square className="h-4 w-4 mr-1.5 animate-pulse" />
               Enriching...
+            </Button>
+          )}
+          {showVenueEnrich && !isVenueEnriching && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onVenueEnrich}
+              className="text-blue-200 hover:text-blue-100 hover:bg-blue-500/20"
+            >
+              <MapPin className="h-4 w-4 mr-1.5" />
+              Fill Venues ({venueEnrichableCount})
+            </Button>
+          )}
+          {isVenueEnriching && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="text-blue-200"
+            >
+              <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
+              Filling Venues...
             </Button>
           )}
           <Button
@@ -202,6 +234,28 @@ export function BulkActionBar({
           >
             <Square className="h-4 w-4 mr-1.5 animate-pulse" />
             Enriching...
+          </Button>
+        )}
+        {showVenueEnrich && !isVenueEnriching && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onVenueEnrich}
+            className="border-blue-500/50 text-blue-600 hover:bg-blue-500/10"
+          >
+            <MapPin className="h-4 w-4 mr-1.5" />
+            Fill Venues ({venueEnrichableCount})
+          </Button>
+        )}
+        {isVenueEnriching && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="border-blue-500/50 text-blue-600"
+          >
+            <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
+            Filling Venues...
           </Button>
         )}
         <Button
