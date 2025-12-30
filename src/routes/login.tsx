@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Mail, Lock, Sparkles, ArrowRight, Check } from 'lucide-react'
 import { signInAction, signInWithMagicLink } from '@/lib/auth'
 import { getSessionUser } from '@/lib/session'
+import { track } from '@/lib/analytics'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,12 +39,15 @@ function LoginPage() {
 
     try {
       const result = await signInAction({ data: { email, password } })
+      track('auth:login_completed', { method: 'password' })
       // Invalidate session cache so sidebar updates
       await queryClient.invalidateQueries({ queryKey: ['session'] })
       // Server action sets cookies, navigate based on role
       navigate({ to: result.isAdmin ? '/admin' : '/' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to sign in'
+      track('auth:login_failed', { method: 'password', error: errorMessage })
+      setError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -56,9 +60,12 @@ function LoginPage() {
 
     try {
       await signInWithMagicLink(email)
+      track('auth:login_completed', { method: 'magic_link' })
       setMagicLinkSent(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send magic link')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to send magic link'
+      track('auth:login_failed', { method: 'magic_link', error: errorMessage })
+      setError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }

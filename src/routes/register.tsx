@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Mail, Lock, ArrowRight, Check } from 'lucide-react'
 import { signUpAction } from '@/lib/auth'
 import { getSessionUser } from '@/lib/session'
+import { track } from '@/lib/analytics'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,6 +50,7 @@ function RegisterPage() {
 
     try {
       const result = await signUpAction({ data: { email, password } })
+      track('auth:signup_completed')
       if (result.needsEmailConfirmation) {
         setSuccess(true)
       } else {
@@ -57,7 +59,9 @@ function RegisterPage() {
         navigate({ to: '/' })
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create account')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create account'
+      track('auth:signup_failed', { error: errorMessage })
+      setError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }

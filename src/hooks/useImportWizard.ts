@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import Papa from 'papaparse'
+import { track } from '@/lib/analytics'
 import {
   processPasslineEventsAction,
   importPasslineEventsBatchAction,
@@ -364,6 +365,7 @@ export function useImportWizard(
 
   // Actions
   const selectSource = useCallback((newSource: ImportSource) => {
+    track('admin:import_started', { source: newSource })
     setSource(newSource)
     setStep('configure')
     setError(null)
@@ -1035,6 +1037,13 @@ export function useImportWizard(
         withoutDescription,
         withCategories,
         withoutCategories,
+      })
+      track('admin:import_completed', {
+        source,
+        inserted: totalInserted,
+        updated: totalUpdated,
+        with_venue: withVenue,
+        without_venue: withoutVenue,
       })
       setStep('summary')
     } catch (err) {

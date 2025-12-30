@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createVenueAction, updateVenueAction, deleteVenueAction } from '@/lib/admin'
 import { queryKeys } from '@/lib/query'
+import { track } from '@/lib/analytics'
 import type { VenueInsert, VenueUpdate } from '@/lib/types'
 
 export function useCreateVenue() {
@@ -8,7 +9,11 @@ export function useCreateVenue() {
 
   return useMutation({
     mutationFn: (data: VenueInsert) => createVenueAction({ data }),
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
+      track('admin:venue_created', {
+        venue_id: result.id,
+        neighborhood: variables.neighborhood,
+      })
       queryClient.invalidateQueries({ queryKey: queryKeys.venues.all })
     },
   })

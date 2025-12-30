@@ -6,6 +6,7 @@ import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { SuggestedPrompts } from './SuggestedPrompts'
 import { getLocale } from '@/paraglide/runtime'
+import { track } from '@/lib/analytics'
 
 export function ChatContainer() {
   const [state, setState] = useState<ChatState>({
@@ -14,6 +15,8 @@ export function ChatContainer() {
     isLoading: false,
   })
   const abortControllerRef = useRef<AbortController | null>(null)
+  const startTimeRef = useRef<number>(0)
+  const eventsCountRef = useRef<number>(0)
 
   // Notify header about chat state changes
   useEffect(() => {
@@ -76,6 +79,14 @@ export function ChatContainer() {
       // Get the current locale
       const locale = getLocale() as 'en' | 'es'
 
+      // Track message sent
+      startTimeRef.current = Date.now()
+      eventsCountRef.current = 0
+      track('chat:message_sent', {
+        message_length: content.length,
+        has_history: history.length > 0,
+      })
+
       // Call the server function with full API history and locale
       const stream = await chat({ data: { message: content, history, locale } })
 
@@ -121,6 +132,15 @@ export function ChatContainer() {
                 }))
               } else if (event.type === 'events') {
                 events = event.data
+                eventsCountRef.current = event.data.length
+
+                // Track no results for content gap analysis
+                if (event.data.length === 0) {
+                  track('chat:no_results', {
+                    message_length: content.length,
+                  })
+                }
+
                 // Also hide loading when events arrive
                 const shouldHideLoading = !hasReceivedContent
                 hasReceivedContent = true
@@ -134,6 +154,12 @@ export function ChatContainer() {
                   ),
                 }))
               } else if (event.type === 'error') {
+                // Track stream error
+                track('chat:error', {
+                  error_type: 'stream_error',
+                  error_message: event.message,
+                })
+
                 accumulatedContent += `\n\n*Error: ${event.message}*`
                 setState(prev => ({
                   ...prev,
@@ -155,6 +181,13 @@ export function ChatContainer() {
                   ],
                 }))
               } else if (event.type === 'done') {
+                // Track response received with timing
+                track('chat:response_received', {
+                  duration_ms: Date.now() - startTimeRef.current,
+                  events_returned: eventsCountRef.current,
+                  has_text: accumulatedContent.length > 0,
+                })
+
                 // Mark streaming as complete
                 setState(prev => ({
                   ...prev,
@@ -185,6 +218,12 @@ export function ChatContainer() {
       }))
     } catch (error) {
       console.error('Chat error:', error)
+
+      // Track client-side error
+      track('chat:error', {
+        error_type: 'client_error',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+      })
 
       // Update assistant message with error
       setState(prev => ({

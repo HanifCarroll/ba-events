@@ -3,6 +3,7 @@ import { Heart } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useAuthContext } from '@/hooks/useAuthContext'
 import { saveEvent, unsaveEvent } from '@/lib/saved-events'
+import { track } from '@/lib/analytics'
 import { Button } from './ui/button'
 import {
   Tooltip,
@@ -16,6 +17,8 @@ interface SaveEventButtonProps {
   onSaveChange?: (saved: boolean) => void
   size?: 'sm' | 'md'
   className?: string
+  /** Source context for analytics */
+  source?: 'chat' | 'saved_page'
 }
 
 export function SaveEventButton({
@@ -24,6 +27,7 @@ export function SaveEventButton({
   onSaveChange,
   size = 'md',
   className = '',
+  source = 'chat',
 }: SaveEventButtonProps) {
   const { user, loading } = useAuthContext()
   const [isSaved, setIsSaved] = useState(initialSaved)
@@ -47,8 +51,10 @@ export function SaveEventButton({
     try {
       if (newSavedState) {
         await saveEvent(eventId)
+        track('event:saved', { event_id: eventId, source })
       } else {
         await unsaveEvent(eventId)
+        track('event:unsaved', { event_id: eventId, source })
       }
       onSaveChange?.(newSavedState)
     } catch (error) {

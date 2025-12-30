@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuthContext } from '@/hooks/useAuthContext'
 import { signOutAction } from '@/lib/auth'
+import { track } from '@/lib/analytics'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import * as m from '@/paraglide/messages'
 
@@ -80,6 +81,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     setIsSigningOut(true)
     try {
       await signOut()
+      track('auth:logout')
       queryClient.setQueryData(['session'], null)
       queryClient.invalidateQueries({ queryKey: ['session'] })
       navigate({ to: '/' })

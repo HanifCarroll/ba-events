@@ -12,8 +12,8 @@ export function EventList({ events, maxDisplay = 5 }: EventListProps) {
 
   return (
     <div className="space-y-3 stagger-children">
-      {displayEvents.map((event) => (
-        <EventCard key={event.id} event={event} />
+      {displayEvents.map((event, index) => (
+        <EventCard key={event.id} event={event} position={index} source="chat" />
       ))}
 
       {hasMore && (

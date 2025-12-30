@@ -193,8 +193,8 @@ function SavedEventsPage() {
             </div>
           ) : (
             <div className="space-y-3 animate-fade-in-up">
-              {filteredEvents.map((event) => (
-                <EventCard key={event.id} event={event} />
+              {filteredEvents.map((event, index) => (
+                <EventCard key={event.id} event={event} position={index} source="saved_page" />
               ))}
             </div>
           )}

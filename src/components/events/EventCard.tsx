@@ -8,13 +8,18 @@ import { EventActions } from './EventActions'
 import { SaveEventButton } from '@/components/SaveEventButton'
 import { formatPrice } from '@/lib/chat'
 import { formatShortDate, formatTime, formatEventTime } from '@/lib/formatting'
+import { track } from '@/lib/analytics'
 import type { EventWithVenue } from '@/lib/types'
 
 interface EventCardProps {
   event: EventWithVenue
+  /** Position in the list (0-indexed) for analytics */
+  position?: number
+  /** Source context for analytics */
+  source?: 'chat' | 'saved_page'
 }
 
-export function EventCard({ event }: EventCardProps) {
+export function EventCard({ event, position, source = 'chat' }: EventCardProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const startDate = new Date(event.starts_at)
@@ -24,7 +29,20 @@ export function EventCard({ event }: EventCardProps) {
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free
 
-  const handleToggle = () => setIsOpen(!isOpen)
+  const handleToggle = () => {
+    const willOpen = !isOpen
+    setIsOpen(willOpen)
+
+    // Track when user expands an event card
+    if (willOpen) {
+      track('chat:event_clicked', {
+        event_id: event.id,
+        event_name: event.name,
+        position,
+        source,
+      })
+    }
+  }
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -92,7 +110,7 @@ export function EventCard({ event }: EventCardProps) {
               </span>
 
               {/* Save button */}
-              <SaveEventButton eventId={event.id} size="sm" />
+              <SaveEventButton eventId={event.id} size="sm" source={source} />
 
               {/* Expand indicator - clickable */}
               <button
