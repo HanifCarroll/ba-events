@@ -170,5 +170,7 @@
   "admin_venue_type_cultural_center": "Centro Cultural",
   "admin_venue_type_outdoor": "Al Aire Libre",
   "admin_venue_type_restaurant": "Restaurante",
-  "admin_venue_type_other": "Otro"
+  "admin_venue_type_other": "Otro",
+  "admin_incomplete": "Incompleto",
+  "admin_complete": "Completo"
 }

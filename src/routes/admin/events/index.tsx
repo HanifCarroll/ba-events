@@ -45,6 +45,8 @@ import type { ColumnFiltersState, SortingState } from '@tanstack/react-table'
 const eventSearchSchema = z.object({
   // Tab filter
   tab: z.enum(['all', 'needs_attention', 'pending_review', 'past']).optional().catch('all'),
+  // Completeness filter for needs_attention tab
+  completeness: z.enum(['incomplete', 'complete']).optional().catch('incomplete'),
   // Column filters (stored as key-value pairs)
   name: z.string().optional(),
   venue_name: z.string().optional(),
@@ -187,7 +189,32 @@ function EventListPage() {
     [navigate]
   )
 
+  // Get completeness from URL, defaulting to 'incomplete'
+  const completenessFromUrl = (searchParams.completeness || 'incomplete') as 'incomplete' | 'complete'
+
   const { filtering, bulk, markPast, singleActions } = useEventAdmin(events, activeTab)
+
+  // Sync completeness filter from URL on mount/change
+  useEffect(() => {
+    if (filtering.completenessFilter !== completenessFromUrl) {
+      filtering.setCompletenessFilter(completenessFromUrl)
+    }
+  }, [completenessFromUrl])
+
+  // Handler to update both filter state and URL
+  const handleCompletenessChange = useCallback(
+    (value: 'incomplete' | 'complete') => {
+      filtering.setCompletenessFilter(value)
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          completeness: value,
+        }),
+        replace: true,
+      })
+    },
+    [filtering, navigate]
+  )
   const backgroundEnrichment = useBackgroundEnrichment()
   const venueEnrichment = useVenueEnrichment()
 
@@ -235,11 +262,12 @@ function EventListPage() {
 
   const handleTabChange = (value: string) => {
     // Update URL search params to persist tab across router invalidations
-    // Clear column filters and sorting when switching tabs
+    // Clear column filters, sorting, and completeness when switching tabs
     navigate({
       search: {
         tab: value as EventTab,
-        // Clear all filter/sort params
+        // Clear all filter/sort/completeness params
+        completeness: undefined,
         name: undefined,
         venue_name: undefined,
         source: undefined,
@@ -368,21 +396,21 @@ function EventListPage() {
               <div className="flex items-center gap-3">
                 <Tabs
                   value={filtering.completenessFilter}
-                  onValueChange={(v) => filtering.setCompletenessFilter(v as 'incomplete' | 'complete')}
+                  onValueChange={(v) => handleCompletenessChange(v as 'incomplete' | 'complete')}
                 >
                   <TabsList className="bg-card/50 border border-border/50 p-0.5 h-auto">
                     <TabsTrigger
                       value="incomplete"
                       className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400 px-3 py-1.5 text-sm"
                     >
-                      Incomplete
+                      {m.admin_incomplete()}
                       <span className="ml-1.5 text-xs opacity-70">({filtering.dataGapCounts.all})</span>
                     </TabsTrigger>
                     <TabsTrigger
                       value="complete"
                       className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400 px-3 py-1.5 text-sm"
                     >
-                      Complete
+                      {m.admin_complete()}
                       <span className="ml-1.5 text-xs opacity-70">({filtering.dataGapCounts.complete})</span>
                     </TabsTrigger>
                   </TabsList>

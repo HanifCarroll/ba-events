@@ -114,6 +114,8 @@
   "admin_tab_pending": "Pending Review",
   "admin_tab_past": "Past",
   "admin_filter_by": "Filter by:",
+  "admin_incomplete": "Incomplete",
+  "admin_complete": "Complete",
   "admin_all_gaps": "All Gaps",
   "admin_missing_description": "Missing Description",
   "admin_missing_venue": "Missing Venue",
