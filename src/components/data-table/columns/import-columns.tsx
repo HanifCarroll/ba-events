@@ -1,7 +1,7 @@
 import { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2, HelpCircle, AlertCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent } from '@/lib/admin'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent } from '@/lib/admin'
 
 interface ParsedCSVRow {
   rowNumber: number
@@ -18,6 +18,7 @@ interface ParsedCSVRow {
 export type PasslineEventWithId = PasslinePreviewEvent & { id: string }
 export type EventbriteEventWithId = EventbritePreviewEvent & { id: string }
 export type BaTourismEventWithId = BATourismPreviewEvent & { id: string }
+export type MeetupEventWithId = MeetupPreviewEvent & { id: string }
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
@@ -507,6 +508,133 @@ export function getBaTourismColumns(): ColumnDef<BaTourismEventWithId>[] {
           </Badge>
         ) : (
           <span className="text-muted-foreground text-sm">Paid</span>
+        )
+      ),
+    },
+  ]
+}
+
+function MeetupVenueMatchIndicator({ event }: { event: MeetupPreviewEvent }) {
+  const { matchType, confidence, venue } = event.venueMatch
+  const originalName = event.meetup.venue?.name || 'No venue'
+
+  if (matchType === 'exact') {
+    return (
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-green-500" />
+        <span className="text-sm">{venue?.name}</span>
+      </div>
+    )
+  }
+
+  if (matchType === 'fuzzy') {
+    return (
+      <div className="flex items-center gap-2">
+        <HelpCircle className="h-4 w-4 text-yellow-500" />
+        <span className="text-sm">
+          {venue?.name}
+          <span className="text-muted-foreground ml-1">
+            ({Math.round(confidence * 100)}%)
+          </span>
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <AlertCircle className="h-4 w-4 text-red-500" />
+      <span className="text-sm text-muted-foreground">{originalName}</span>
+    </div>
+  )
+}
+
+// Meetup events columns
+export function getMeetupColumns(): ColumnDef<MeetupEventWithId>[] {
+  return [
+    {
+      id: 'name',
+      accessorFn: (row) => row.meetup.name,
+      size: 280,
+      minSize: 180,
+      enableSorting: true,
+      header: 'Event',
+      cell: ({ row }) => {
+        const event = row.original
+        return (
+          <div className="flex flex-col gap-1">
+            <span className="font-medium line-clamp-1">
+              {event.meetup.name}
+            </span>
+            <span className="text-xs text-muted-foreground line-clamp-1">
+              by {event.meetup.group.name}
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      id: 'date',
+      accessorFn: (row) => row.meetup.dateTime,
+      size: 160,
+      minSize: 130,
+      enableSorting: true,
+      header: 'Date',
+      cell: ({ row }) => (
+        <span className="text-sm">
+          {formatDate(row.original.meetup.dateTime)}
+        </span>
+      ),
+    },
+    {
+      id: 'venue',
+      accessorFn: (row) => row.venueMatch.venue?.name || row.meetup.venue?.name || '',
+      size: 200,
+      minSize: 150,
+      enableSorting: true,
+      header: 'Venue',
+      cell: ({ row }) => <MeetupVenueMatchIndicator event={row.original} />,
+    },
+    {
+      id: 'attendees',
+      accessorFn: (row) => row.meetup.attendeeCount,
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Attendees',
+      cell: ({ row }) => (
+        <Badge variant="outline" className="text-xs">
+          {row.original.meetup.attendeeCount}
+        </Badge>
+      ),
+    },
+    {
+      id: 'dateCount',
+      accessorFn: (row) => row.dateCount,
+      size: 80,
+      minSize: 60,
+      enableSorting: true,
+      header: 'Dates',
+      cell: ({ row }) => (
+        <Badge variant="outline" className="text-xs">
+          {row.original.dateCount}
+        </Badge>
+      ),
+    },
+    {
+      id: 'recurring',
+      accessorFn: (row) => row.meetup.isRecurring ? 'Yes' : 'No',
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Recurring',
+      cell: ({ row }) => (
+        row.original.meetup.isRecurring ? (
+          <Badge variant="secondary" className="text-xs">
+            {row.original.meetup.recurrencePattern || 'Yes'}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground text-sm">-</span>
         )
       ),
     },

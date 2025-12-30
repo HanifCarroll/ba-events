@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, MapPin, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns } from '@/components/data-table'
-import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId } from '@/components/data-table'
-import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent } from '@/lib/admin'
+import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns } from '@/components/data-table'
+import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId } from '@/components/data-table'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent } from '@/lib/admin'
 import type { ImportSource } from '@/hooks/useImportWizard'
 
 interface ParsedCSVRow {
@@ -23,14 +23,17 @@ interface SelectStepProps {
   passlineEvents: PasslinePreviewEvent[]
   eventbriteEvents: EventbritePreviewEvent[]
   baTourismEvents: BATourismPreviewEvent[]
+  meetupEvents: MeetupPreviewEvent[]
   csvRows: ParsedCSVRow[]
   csvValidCount: number
   csvErrorCount: number
   csvAllValid: boolean
   selectedIds: Set<string>
+  unmatchedVenueCount: number
   onToggleSelect: (id: string) => void
   onToggleSelectAll: () => void
   onProceed: () => void
+  onHandleVenues?: () => void
 }
 
 export function SelectStep({
@@ -38,24 +41,30 @@ export function SelectStep({
   passlineEvents,
   eventbriteEvents,
   baTourismEvents,
+  meetupEvents,
   csvRows,
   csvErrorCount,
   csvAllValid,
   selectedIds,
+  unmatchedVenueCount,
   onToggleSelect,
   onProceed,
+  onHandleVenues,
 }: SelectStepProps) {
   const isPassline = source === 'passline'
   const isEventbrite = source === 'eventbrite'
   const isBaTourism = source === 'ba-tourism'
+  const isMeetup = source === 'meetup'
   const totalCount = isPassline
     ? passlineEvents.length
     : isEventbrite
       ? eventbriteEvents.length
       : isBaTourism
         ? baTourismEvents.length
-        : csvRows.length
-  const canProceed = (isPassline || isEventbrite || isBaTourism)
+        : isMeetup
+          ? meetupEvents.length
+          : csvRows.length
+  const canProceed = (isPassline || isEventbrite || isBaTourism || isMeetup)
     ? selectedIds.size > 0
     : (csvAllValid && selectedIds.size > 0)
 
@@ -81,6 +90,13 @@ export function SelectStep({
     }))
   }, [baTourismEvents])
 
+  const meetupData = useMemo((): MeetupEventWithId[] => {
+    return meetupEvents.map((event) => ({
+      ...event,
+      id: event.meetup.id,
+    }))
+  }, [meetupEvents])
+
   const csvData = useMemo((): ParsedCSVRowWithId[] => {
     return csvRows.map((row, index) => ({
       ...row,
@@ -92,6 +108,7 @@ export function SelectStep({
   const passlineColumns = useMemo(() => getPasslineColumns(), [])
   const eventbriteColumns = useMemo(() => getEventbriteColumns(), [])
   const baTourismColumns = useMemo(() => getBaTourismColumns(), [])
+  const meetupColumns = useMemo(() => getMeetupColumns(), [])
   const csvColumns = useMemo(() => getCSVColumns(), [])
 
   // Handle selection change
@@ -116,6 +133,34 @@ export function SelectStep({
         </p>
       </div>
 
+      {/* Venue Status Warning */}
+      {unmatchedVenueCount > 0 && (isPassline || isEventbrite || isBaTourism || isMeetup) && (
+        <div className="flex items-center justify-between px-4 py-3 bg-amber-500/10 rounded-xl border border-amber-500/30">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {unmatchedVenueCount} event{unmatchedVenueCount !== 1 ? 's' : ''} without venue match
+              </p>
+              <p className="text-xs text-muted-foreground">
+                These events will be imported without a venue. You can create venues now or assign them later.
+              </p>
+            </div>
+          </div>
+          {onHandleVenues && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onHandleVenues}
+              className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+            >
+              <MapPin className="h-4 w-4 mr-2" />
+              Handle Venues
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Summary & Proceed */}
       <div className="flex items-center justify-between px-4 py-3 bg-card/50 rounded-xl border border-border/50">
         <div className="flex items-center gap-4">
@@ -125,7 +170,7 @@ export function SelectStep({
           <span className="text-sm text-muted-foreground">
             of {totalCount} events
           </span>
-          {!isPassline && !isEventbrite && !isBaTourism && csvErrorCount > 0 && (
+          {!isPassline && !isEventbrite && !isBaTourism && !isMeetup && csvErrorCount > 0 && (
             <Badge variant="outline" className="border-destructive/30 text-destructive">
               {csvErrorCount} with errors
             </Badge>
@@ -173,6 +218,19 @@ export function SelectStep({
           columns={baTourismColumns}
           data={baTourismData}
           tableId="import-ba-tourism"
+          enableRowSelection={true}
+          selectedIds={selectedIds}
+          onSelectionChange={handleSelectionChange}
+          enableColumnResizing={true}
+          enableColumnReordering={true}
+          enableMultiSort={true}
+          enableVirtualization={false}
+        />
+      ) : isMeetup ? (
+        <DataTable
+          columns={meetupColumns}
+          data={meetupData}
+          tableId="import-meetup"
           enableRowSelection={true}
           selectedIds={selectedIds}
           onSelectionChange={handleSelectionChange}

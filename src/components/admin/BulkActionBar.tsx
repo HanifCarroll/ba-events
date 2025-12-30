@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X, Sparkles, Square } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { BulkActionType } from '@/hooks/useBulkActions'
@@ -19,6 +19,12 @@ interface BulkActionBarProps {
   isEnriching?: boolean
   /** Callback to stop enrichment */
   onStopEnrich?: () => void
+  /** Number of selected Eventbrite events that can be enriched (missing categories/price) */
+  eventbriteEnrichableCount?: number
+  /** Callback to enrich Eventbrite events */
+  onEventbriteEnrich?: () => void
+  /** Whether Eventbrite enrichment is currently running */
+  isEventbriteEnriching?: boolean
 }
 
 export function BulkActionBar({
@@ -32,10 +38,14 @@ export function BulkActionBar({
   onEnrich,
   isEnriching = false,
   onStopEnrich,
+  eventbriteEnrichableCount = 0,
+  onEventbriteEnrich,
+  isEventbriteEnriching = false,
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
 
   const showEnrich = enrichableCount > 0 && onEnrich
+  const showEventbriteEnrich = eventbriteEnrichableCount > 0 && onEventbriteEnrich
 
   if (overlay) {
     // Overlay version - slides in over table header
@@ -73,6 +83,28 @@ export function BulkActionBar({
             >
               <Square className="h-4 w-4 mr-1.5" />
               Stop
+            </Button>
+          )}
+          {showEventbriteEnrich && !isEventbriteEnriching && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onEventbriteEnrich}
+              className="text-orange-200 hover:text-orange-100 hover:bg-orange-500/20"
+            >
+              <DollarSign className="h-4 w-4 mr-1.5" />
+              Enrich Prices ({eventbriteEnrichableCount})
+            </Button>
+          )}
+          {isEventbriteEnriching && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="text-orange-200"
+            >
+              <Square className="h-4 w-4 mr-1.5 animate-pulse" />
+              Enriching...
             </Button>
           )}
           <Button
@@ -148,6 +180,28 @@ export function BulkActionBar({
           >
             <Square className="h-4 w-4 mr-1.5" />
             Stop
+          </Button>
+        )}
+        {showEventbriteEnrich && !isEventbriteEnriching && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEventbriteEnrich}
+            className="border-orange-500/50 text-orange-600 hover:bg-orange-500/10"
+          >
+            <DollarSign className="h-4 w-4 mr-1.5" />
+            Enrich Prices ({eventbriteEnrichableCount})
+          </Button>
+        )}
+        {isEventbriteEnriching && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="border-orange-500/50 text-orange-600"
+          >
+            <Square className="h-4 w-4 mr-1.5 animate-pulse" />
+            Enriching...
           </Button>
         )}
         <Button

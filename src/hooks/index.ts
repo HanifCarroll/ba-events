@@ -1,4 +1,4 @@
-export { useEventFiltering, type UseEventFilteringReturn, type VenueOption, type EventTab, type TabCounts } from './useEventFiltering'
+export { useEventFiltering, type UseEventFilteringReturn, type VenueOption, type EventTab, type TabCounts, type DataGapType, type DataGapCounts } from './useEventFiltering'
 export { useBulkActions, type UseBulkActionsReturn, type BulkActionType } from './useBulkActions'
 export { useMarkPastEvents, type UseMarkPastEventsReturn } from './useMarkPastEvents'
 export { useSingleEventActions, type UseSingleEventActionsReturn } from './useSingleEventActions'

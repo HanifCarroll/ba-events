@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Upload, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,8 @@ import {
   VenuesStep,
   SelectStep,
   ConfirmStep,
+  EnrichStep,
+  SummaryStep,
 } from '@/components/admin/import'
 
 export const Route = createFileRoute('/admin/events/import')({
@@ -24,19 +27,36 @@ const STEPS: { key: WizardStep; label: string }[] = [
   { key: 'venues', label: 'Venues' },
   { key: 'select', label: 'Select' },
   { key: 'confirm', label: 'Import' },
+  { key: 'enrich', label: 'Enrich' },
+  { key: 'summary', label: 'Complete' },
 ]
 
 function ImportEventsPage() {
   const venues = Route.useLoaderData()
   const wizard = useImportWizard(venues)
 
+  // Fetch events needing enrichment when entering enrich step
+  useEffect(() => {
+    if (wizard.step === 'enrich') {
+      wizard.fetchEventsNeedingEnrichment()
+    }
+  }, [wizard.step, wizard.fetchEventsNeedingEnrichment])
+
   // Determine which steps are visible based on source
   const visibleSteps = STEPS.filter((step) => {
     // Always show source and configure
     if (step.key === 'source' || step.key === 'configure') return true
-    // Show venues for passline, eventbrite, or ba-tourism with unmatched venues
+    // Show venues only when user is on venues step (optional flow)
     if (step.key === 'venues') {
-      return (wizard.source === 'passline' || wizard.source === 'eventbrite' || wizard.source === 'ba-tourism') && wizard.unmatchedVenues.length > 0
+      return wizard.step === 'venues'
+    }
+    // Show enrich only for meetup and only when on enrich step
+    if (step.key === 'enrich') {
+      return wizard.source === 'meetup' && wizard.step === 'enrich'
+    }
+    // Show summary only when on summary step
+    if (step.key === 'summary') {
+      return wizard.step === 'summary'
     }
     // Show select and confirm for all sources
     return true
@@ -75,7 +95,7 @@ function ImportEventsPage() {
             Import Events
           </h1>
           <p className="text-muted-foreground mt-1">
-            Import events from Passline or a CSV file
+            Import events from multiple sources
           </p>
         </div>
       </div>
@@ -148,6 +168,7 @@ function ImportEventsPage() {
             onFetchPassline={wizard.fetchPasslineEvents}
             onFetchEventbrite={wizard.fetchEventbriteEvents}
             onFetchBaTourism={wizard.fetchBaTourismEvents}
+            onFetchMeetup={wizard.fetchMeetupEvents}
             onCSVFile={wizard.handleCSVFile}
             onClearCSV={wizard.reset}
           />
@@ -167,7 +188,9 @@ function ImportEventsPage() {
                   ? wizard.eventbriteEvents.length
                   : wizard.source === 'ba-tourism'
                     ? wizard.baTourismEvents.length
-                    : 0
+                    : wizard.source === 'meetup'
+                      ? wizard.meetupEvents.length
+                      : 0
             }
             onUpdateVenueEdit={wizard.updateVenueEdit}
             onCreateVenues={wizard.createVenuesAndProceed}
@@ -181,14 +204,17 @@ function ImportEventsPage() {
             passlineEvents={wizard.passlineEvents}
             eventbriteEvents={wizard.eventbriteEvents}
             baTourismEvents={wizard.baTourismEvents}
+            meetupEvents={wizard.meetupEvents}
             csvRows={wizard.csvRows}
             csvValidCount={wizard.csvValidCount}
             csvErrorCount={wizard.csvErrorCount}
             csvAllValid={wizard.csvAllValid}
             selectedIds={wizard.selectedIds}
+            unmatchedVenueCount={wizard.unmatchedVenues.length}
             onToggleSelect={wizard.toggleSelect}
             onToggleSelectAll={wizard.toggleSelectAll}
             onProceed={wizard.proceedToConfirm}
+            onHandleVenues={wizard.unmatchedVenues.length > 0 ? wizard.goToVenues : undefined}
           />
         )}
 
@@ -199,6 +225,30 @@ function ImportEventsPage() {
             isImporting={wizard.isImporting}
             importProgress={wizard.importProgress}
             onImport={wizard.importEvents}
+          />
+        )}
+
+        {wizard.step === 'enrich' && (
+          <EnrichStep
+            eventsNeedingEnrichment={wizard.eventsNeedingEnrichment.length}
+            isEnriching={wizard.isEnriching}
+            enrichmentProgress={wizard.enrichmentProgress}
+            enrichmentResult={wizard.enrichmentResult}
+            onEnrich={wizard.enrichVenues}
+            onSkip={wizard.skipEnrichment}
+          />
+        )}
+
+        {wizard.step === 'summary' && wizard.source && wizard.importResult && (
+          <SummaryStep
+            source={wizard.source}
+            importResult={wizard.importResult}
+            autoEnrich={wizard.autoEnrich}
+            onAutoEnrichChange={wizard.setAutoEnrich}
+            onEnrichNow={() => {
+              // TODO: Navigate to events page with enrichment
+            }}
+            onImportMore={wizard.reset}
           />
         )}
       </div>

@@ -1,9 +1,10 @@
 import { useCallback } from 'react'
-import { Download, Upload, FileText, X, Loader2, Zap, Ticket, Landmark } from 'lucide-react'
+import { Download, Upload, FileText, X, Loader2, Zap, Ticket, Landmark, Users, CheckCircle2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { ImportSource } from '@/hooks/useImportWizard'
+import { getSourceMetadata, type DataStatus } from '@/lib/source-metadata'
 
 const CSV_HEADERS = [
   'name', 'starts_at', 'ends_at', 'venue_name', 'categories', 'vibes',
@@ -17,6 +18,51 @@ const TEMPLATE_ROW = [
   'An underground techno party', 'scheduled',
 ]
 
+function DataStatusIcon({ status }: { status: DataStatus }) {
+  if (status === 'included') {
+    return <CheckCircle2 className="h-4 w-4 text-green-500" />
+  }
+  if (status === 'requires_enrichment') {
+    return <AlertCircle className="h-4 w-4 text-amber-500" />
+  }
+  return <X className="h-4 w-4 text-muted-foreground" />
+}
+
+function DataExpectationsPanel({ source }: { source: ImportSource }) {
+  const metadata = getSourceMetadata(source)
+
+  const items = [
+    { label: 'Description', status: metadata.dataGaps.description },
+    { label: 'Venue', status: metadata.dataGaps.venue },
+    { label: 'Price', status: metadata.dataGaps.price },
+    { label: 'Categories', status: metadata.dataGaps.categories },
+  ]
+
+  return (
+    <div className="bg-muted/30 rounded-lg border border-border/30 p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <Info className="h-4 w-4 text-muted-foreground" />
+        Data Availability
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {items.map(({ label, status }) => (
+          <div key={label} className="flex items-center gap-2 text-sm">
+            <DataStatusIcon status={status} />
+            <span className={status === 'included' ? 'text-foreground' : 'text-muted-foreground'}>
+              {label}
+            </span>
+          </div>
+        ))}
+      </div>
+      {metadata.note && (
+        <p className="text-xs text-muted-foreground pt-1 border-t border-border/30">
+          {metadata.note}
+        </p>
+      )}
+    </div>
+  )
+}
+
 interface ConfigureStepProps {
   source: ImportSource
   startDate: string
@@ -28,6 +74,7 @@ interface ConfigureStepProps {
   onFetchPassline: () => void
   onFetchEventbrite: () => void
   onFetchBaTourism: () => void
+  onFetchMeetup: () => void
   onCSVFile: (file: File) => void
   onClearCSV: () => void
 }
@@ -43,6 +90,7 @@ export function ConfigureStep({
   onFetchPassline,
   onFetchEventbrite,
   onFetchBaTourism,
+  onFetchMeetup,
   onCSVFile,
   onClearCSV,
 }: ConfigureStepProps) {
@@ -122,6 +170,8 @@ export function ConfigureStep({
               </>
             )}
           </Button>
+
+          <DataExpectationsPanel source="passline" />
         </div>
 
         <p className="text-xs text-muted-foreground text-center">
@@ -184,12 +234,13 @@ export function ConfigureStep({
               </>
             )}
           </Button>
+
+          <DataExpectationsPanel source="eventbrite" />
         </div>
 
-        <div className="text-xs text-muted-foreground text-center space-y-1">
-          <p>Fetches events from Eventbrite Buenos Aires listing</p>
-          <p>Descriptions are included • Prices require enrichment</p>
-        </div>
+        <p className="text-xs text-muted-foreground text-center">
+          Fetches events from Eventbrite Buenos Aires listing
+        </p>
       </div>
     )
   }
@@ -229,12 +280,77 @@ export function ConfigureStep({
               </>
             )}
           </Button>
+
+          <DataExpectationsPanel source="ba-tourism" />
         </div>
 
-        <div className="text-xs text-muted-foreground text-center space-y-1">
-          <p>Source: turismo.buenosaires.gob.ar</p>
-          <p>Events are parsed from Spanish with date/time extraction</p>
+        <p className="text-xs text-muted-foreground text-center">
+          Source: turismo.buenosaires.gob.ar
+        </p>
+      </div>
+    )
+  }
+
+  if (source === 'meetup') {
+    return (
+      <div className="space-y-6 max-w-md mx-auto">
+        <div className="text-center space-y-2">
+          <h2 className="font-display text-xl font-semibold text-foreground">
+            Configure Date Range
+          </h2>
+          <p className="text-muted-foreground">
+            Select the date range to fetch events from Meetup
+          </p>
         </div>
+
+        <div className="bg-card/50 rounded-xl border border-border/50 p-6 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="start-date">From</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => onStartDateChange(e.target.value)}
+                className="bg-background/50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date">To</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => onEndDateChange(e.target.value)}
+                className="bg-background/50"
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={onFetchMeetup}
+            disabled={isFetching}
+            className="w-full bg-red-500 hover:bg-red-600 text-white"
+          >
+            {isFetching ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Fetching events...
+              </>
+            ) : (
+              <>
+                <Users className="h-4 w-4 mr-2" />
+                Fetch Events
+              </>
+            )}
+          </Button>
+
+          <DataExpectationsPanel source="meetup" />
+        </div>
+
+        <p className="text-xs text-muted-foreground text-center">
+          Recurring events are expanded to 4 weeks of occurrences
+        </p>
       </div>
     )
   }

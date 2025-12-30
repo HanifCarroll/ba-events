@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   AlertCircle,
+  FileText,
+  Tags,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,7 +32,7 @@ import {
 import { Combobox } from '@/components/ui/combobox'
 import { DataTable, getEventColumns } from '@/components/data-table'
 import { listEvents } from '@/lib/admin'
-import { useEventAdmin, useBackgroundEnrichment, type EventTab } from '@/hooks'
+import { useEventAdmin, useBackgroundEnrichment, type EventTab, type DataGapType } from '@/hooks'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import type { EventWithVenue } from '@/lib/types'
 
@@ -244,6 +246,44 @@ function EventListPage() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
+
+          {/* Data gap filter chips - only show on needs_attention tab */}
+          {filtering.activeTab === 'needs_attention' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-muted-foreground mr-1">Filter by:</span>
+              <DataGapChip
+                type="all"
+                label="All Gaps"
+                count={filtering.dataGapCounts.all}
+                isActive={filtering.dataGapFilter === 'all'}
+                onClick={() => filtering.setDataGapFilter('all')}
+              />
+              <DataGapChip
+                type="missing_description"
+                label="Missing Description"
+                count={filtering.dataGapCounts.missing_description}
+                isActive={filtering.dataGapFilter === 'missing_description'}
+                onClick={() => filtering.setDataGapFilter('missing_description')}
+                icon={<FileText className="h-3.5 w-3.5" />}
+              />
+              <DataGapChip
+                type="missing_venue"
+                label="Missing Venue"
+                count={filtering.dataGapCounts.missing_venue}
+                isActive={filtering.dataGapFilter === 'missing_venue'}
+                onClick={() => filtering.setDataGapFilter('missing_venue')}
+                icon={<MapPin className="h-3.5 w-3.5" />}
+              />
+              <DataGapChip
+                type="missing_categories"
+                label="Missing Categories"
+                count={filtering.dataGapCounts.missing_categories}
+                isActive={filtering.dataGapFilter === 'missing_categories'}
+                onClick={() => filtering.setDataGapFilter('missing_categories')}
+                icon={<Tags className="h-3.5 w-3.5" />}
+              />
+            </div>
+          )}
 
           {/* Search and Venue filter - compact row */}
           <div className="flex items-center gap-3">
@@ -497,6 +537,36 @@ function NoMatchesState({ onClearFilters }: { onClearFilters: () => void }) {
         Clear filters
       </Button>
     </div>
+  )
+}
+
+interface DataGapChipProps {
+  type: DataGapType
+  label: string
+  count: number
+  isActive: boolean
+  onClick: () => void
+  icon?: React.ReactNode
+}
+
+function DataGapChip({ label, count, isActive, onClick, icon }: DataGapChipProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
+        isActive
+          ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+          : 'bg-card/50 text-muted-foreground border border-border/50 hover:bg-card hover:text-foreground'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+      <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+        isActive ? 'bg-orange-500/30' : 'bg-muted/50'
+      }`}>
+        {count}
+      </span>
+    </button>
   )
 }
 

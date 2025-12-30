@@ -17,5 +17,9 @@ export { eventbrite }
 import * as baTourism from './ba-tourism'
 export { baTourism }
 
+// Meetup scraper - namespaced export
+import * as meetup from './meetup'
+export { meetup }
+
 // Shared utilities
 export { matchVenue, matchVenues, type VenueMatchResult } from './venue-matcher'

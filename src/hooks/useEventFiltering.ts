@@ -3,9 +3,18 @@ import type { EventWithVenue, EventStatus } from '@/lib/types'
 
 export type EventTab = 'all' | 'needs_attention' | 'pending_review' | 'past'
 
+export type DataGapType = 'all' | 'missing_description' | 'missing_venue' | 'missing_categories'
+
 export interface VenueOption {
   value: string
   label: string
+}
+
+export interface DataGapCounts {
+  all: number
+  missing_description: number
+  missing_venue: number
+  missing_categories: number
 }
 
 export interface TabCounts {
@@ -20,6 +29,7 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'all'>('all')
   const [venueFilter, setVenueFilter] = useState<string | undefined>(undefined)
   const [showFilters, setShowFilters] = useState(false)
+  const [dataGapFilter, setDataGapFilter] = useState<DataGapType>('all')
 
   // Get unique venues for filter dropdown
   const venueOptions = useMemo(() => {
@@ -35,17 +45,52 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
     }))
   }, [events])
 
+  // Compute data gap counts for "needs attention" tab
+  const dataGapCounts = useMemo<DataGapCounts>(() => {
+    let missingDescription = 0
+    let missingVenue = 0
+    let missingCategories = 0
+
+    events.forEach((event) => {
+      // Only count scheduled/upcoming events
+      if (event.status !== 'scheduled') return
+
+      if (!event.description_es && event.link) {
+        missingDescription++
+      }
+      if (!event.venue_id) {
+        missingVenue++
+      }
+      if (!event.categories || event.categories.length === 0) {
+        missingCategories++
+      }
+    })
+
+    // "all" is union of all gaps (event can have multiple gaps)
+    const eventsWithAnyGap = events.filter((event) => {
+      if (event.status !== 'scheduled') return false
+      return (
+        (!event.description_es && event.link) ||
+        !event.venue_id ||
+        !event.categories ||
+        event.categories.length === 0
+      )
+    }).length
+
+    return {
+      all: eventsWithAnyGap,
+      missing_description: missingDescription,
+      missing_venue: missingVenue,
+      missing_categories: missingCategories,
+    }
+  }, [events])
+
   // Compute tab counts
   const tabCounts = useMemo<TabCounts>(() => {
-    let needsAttention = 0
     let pendingReview = 0
     let past = 0
 
     events.forEach((event) => {
-      // Needs attention: missing description but has a link to fetch from
-      if (!event.description_es && event.link) {
-        needsAttention++
-      }
       if (event.status === 'pending_review') {
         pendingReview++
       }
@@ -56,18 +101,36 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
 
     return {
       all: events.length,
-      needs_attention: needsAttention,
+      needs_attention: dataGapCounts.all,
       pending_review: pendingReview,
       past: past,
     }
-  }, [events])
+  }, [events, dataGapCounts.all])
 
-  // Filter events based on tab + search + venue
+  // Filter events based on tab + search + venue + data gap
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
       // Tab filter
       if (activeTab === 'needs_attention') {
-        if (event.description_es || !event.link) return false
+        // Must be scheduled
+        if (event.status !== 'scheduled') return false
+
+        // Apply data gap filter
+        if (dataGapFilter === 'all') {
+          // Any gap counts
+          const hasAnyGap =
+            (!event.description_es && event.link) ||
+            !event.venue_id ||
+            !event.categories ||
+            event.categories.length === 0
+          if (!hasAnyGap) return false
+        } else if (dataGapFilter === 'missing_description') {
+          if (event.description_es || !event.link) return false
+        } else if (dataGapFilter === 'missing_venue') {
+          if (event.venue_id) return false
+        } else if (dataGapFilter === 'missing_categories') {
+          if (event.categories && event.categories.length > 0) return false
+        }
       } else if (activeTab === 'pending_review') {
         if (event.status !== 'pending_review') return false
       } else if (activeTab === 'past') {
@@ -87,14 +150,15 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
       }
       return true
     })
-  }, [events, activeTab, search, statusFilter, venueFilter])
+  }, [events, activeTab, search, statusFilter, venueFilter, dataGapFilter])
 
-  const hasActiveFilters = !!(search || (activeTab === 'all' && statusFilter !== 'all') || venueFilter)
+  const hasActiveFilters = !!(search || (activeTab === 'all' && statusFilter !== 'all') || venueFilter || (activeTab === 'needs_attention' && dataGapFilter !== 'all'))
 
   function clearFilters() {
     setSearch('')
     setStatusFilter('all')
     setVenueFilter(undefined)
+    setDataGapFilter('all')
   }
 
   return {
@@ -112,6 +176,9 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
     hasActiveFilters,
     clearFilters,
     tabCounts,
+    dataGapFilter,
+    setDataGapFilter,
+    dataGapCounts,
   }
 }
 

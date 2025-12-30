@@ -1,4 +1,4 @@
-import { Loader2, Download, CheckCircle2, Zap, FileSpreadsheet } from 'lucide-react'
+import { Loader2, Download, CheckCircle2, Zap, FileSpreadsheet, Ticket, Landmark, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ImportSource } from '@/hooks/useImportWizard'
 
@@ -10,6 +10,50 @@ interface ConfirmStepProps {
   onImport: () => void
 }
 
+const SOURCE_CONFIG: Record<ImportSource, {
+  name: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  bgColor: string
+  iconColor: string
+}> = {
+  passline: {
+    name: 'Passline Import',
+    label: 'Passline API',
+    icon: Zap,
+    bgColor: 'bg-primary/10',
+    iconColor: 'text-primary',
+  },
+  eventbrite: {
+    name: 'Eventbrite Import',
+    label: 'Eventbrite',
+    icon: Ticket,
+    bgColor: 'bg-orange-500/10',
+    iconColor: 'text-orange-500',
+  },
+  'ba-tourism': {
+    name: 'BA Tourism Import',
+    label: 'BA Tourism',
+    icon: Landmark,
+    bgColor: 'bg-sky-500/10',
+    iconColor: 'text-sky-500',
+  },
+  meetup: {
+    name: 'Meetup Import',
+    label: 'Meetup',
+    icon: Users,
+    bgColor: 'bg-red-500/10',
+    iconColor: 'text-red-500',
+  },
+  csv: {
+    name: 'CSV Import',
+    label: 'CSV File',
+    icon: FileSpreadsheet,
+    bgColor: 'bg-emerald-500/10',
+    iconColor: 'text-emerald-500',
+  },
+}
+
 export function ConfirmStep({
   source,
   selectedCount,
@@ -17,7 +61,8 @@ export function ConfirmStep({
   importProgress,
   onImport,
 }: ConfirmStepProps) {
-  const isPassline = source === 'passline'
+  const config = SOURCE_CONFIG[source]
+  const Icon = config.icon
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
@@ -33,18 +78,12 @@ export function ConfirmStep({
       <div className="bg-card/50 rounded-xl border border-border/50 p-6 space-y-6">
         {/* Source indicator */}
         <div className="flex items-center gap-3 pb-4 border-b border-border/30">
-          <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-            isPassline ? 'bg-primary/10' : 'bg-emerald-500/10'
-          }`}>
-            {isPassline ? (
-              <Zap className="h-5 w-5 text-primary" />
-            ) : (
-              <FileSpreadsheet className="h-5 w-5 text-emerald-500" />
-            )}
+          <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${config.bgColor}`}>
+            <Icon className={`h-5 w-5 ${config.iconColor}`} />
           </div>
           <div>
             <p className="font-medium text-foreground">
-              {isPassline ? 'Passline Import' : 'CSV Import'}
+              {config.name}
             </p>
             <p className="text-sm text-muted-foreground">
               {selectedCount} event{selectedCount !== 1 ? 's' : ''} selected
@@ -61,7 +100,7 @@ export function ConfirmStep({
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Source</span>
             <span className="font-medium text-foreground">
-              {isPassline ? 'Passline API' : 'CSV File'}
+              {config.label}
             </span>
           </div>
         </div>

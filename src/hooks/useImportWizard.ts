@@ -9,13 +9,19 @@ import {
   importEventbriteEventsBatchAction,
   fetchBATourismEventsAction,
   importBATourismEventsBatchAction,
+  fetchMeetupEventsAction,
+  importMeetupEventsBatchAction,
+  getMeetupEventsNeedingEnrichmentAction,
+  enrichMeetupVenuesAction,
   bulkCreateVenuesAction,
   bulkCreateEventsAction,
   listVenues,
   type PasslinePreviewEvent,
   type EventbritePreviewEvent,
   type BATourismPreviewEvent,
+  type MeetupPreviewEvent,
   type WeekContext,
+  type MeetupEnrichmentOutput,
 } from '@/lib/admin'
 import {
   fetchPasslineEventsClient,
@@ -30,8 +36,19 @@ import {
 import { CATEGORIES, VIBES, EVENT_STATUSES } from '@/lib/types'
 import type { Neighborhood, Category, Vibe, EventStatus, EventInsert } from '@/lib/types'
 
-export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'csv'
-export type WizardStep = 'source' | 'configure' | 'venues' | 'select' | 'confirm'
+export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'csv'
+export type WizardStep = 'source' | 'configure' | 'venues' | 'select' | 'confirm' | 'enrich' | 'summary'
+
+export interface ImportResult {
+  inserted: number
+  updated: number
+  withVenue: number
+  withoutVenue: number
+  withDescription: number
+  withoutDescription: number
+  withCategories: number
+  withoutCategories: number
+}
 
 interface VenueEdit {
   name: string
@@ -91,6 +108,7 @@ export function useImportWizard(
   const [eventbriteEvents, setEventbriteEvents] = useState<EventbritePreviewEvent[]>([])
   const [baTourismEvents, setBaTourismEvents] = useState<BATourismPreviewEvent[]>([])
   const [baTourismWeekContext, setBaTourismWeekContext] = useState<WeekContext | null>(null)
+  const [meetupEvents, setMeetupEvents] = useState<MeetupPreviewEvent[]>([])
 
   // CSV-specific state
   const [csvRows, setCsvRows] = useState<ParsedCSVRow[]>([])
@@ -107,6 +125,17 @@ export function useImportWizard(
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Enrichment state (for Meetup venue enrichment)
+  const [isEnriching, setIsEnriching] = useState(false)
+  const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number } | null>(null)
+  const [enrichmentResult, setEnrichmentResult] = useState<Omit<MeetupEnrichmentOutput, 'success'> | null>(null)
+  const [eventsNeedingEnrichment, setEventsNeedingEnrichment] = useState<Array<{ id: string; link: string }>>([])
+  const [isLoadingEnrichmentEvents, setIsLoadingEnrichmentEvents] = useState(false)
+
+  // Import result state (for summary step)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [autoEnrich, setAutoEnrich] = useState(false)
 
   // Venue name to ID lookup
   const venueNameToId = useMemo(() => {
@@ -170,8 +199,26 @@ export function useImportWizard(
       return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
     }
 
+    if (source === 'meetup') {
+      const venueMap = new Map<string, UnmatchedVenue>()
+      meetupEvents
+        .filter(e => e.venueMatch.matchType === 'none')
+        .forEach(e => {
+          const name = e.meetup.venue?.name || 'Unknown Venue'
+          const eventId = e.meetup.id
+          const existing = venueMap.get(name)
+          if (existing) {
+            existing.count++
+            existing.eventIds.push(eventId)
+          } else {
+            venueMap.set(name, { name, count: 1, eventIds: [eventId] })
+          }
+        })
+      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
+    }
+
     return []
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents])
+  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents])
 
   // Find similar venue names for merge suggestions
   const similarVenues = useMemo(() => {
@@ -334,9 +381,9 @@ export function useImportWizard(
 
       setPasslineEvents(data)
 
+      // Initialize venue edits for unmatched venues (for optional use later)
       const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
       if (hasUnmatched) {
-        // Initialize venue edits
         const edits = new Map<string, VenueEdit>()
         data
           .filter(e => e.venueMatch.matchType === 'none')
@@ -347,11 +394,11 @@ export function useImportWizard(
             }
           })
         setVenueEdits(edits)
-        setStep('venues')
-      } else {
-        setSelectedIds(new Set(data.map(e => e.passline.id)))
-        setStep('select')
       }
+
+      // Select all events and go directly to select step
+      setSelectedIds(new Set(data.map(e => e.passline.id)))
+      setStep('select')
 
       toast.success(`Found ${data.length} events`)
     } catch (err) {
@@ -381,9 +428,9 @@ export function useImportWizard(
 
       setEventbriteEvents(data)
 
+      // Initialize venue edits for unmatched venues (for optional use later)
       const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
       if (hasUnmatched) {
-        // Initialize venue edits
         const edits = new Map<string, VenueEdit>()
         data
           .filter(e => e.venueMatch.matchType === 'none')
@@ -394,11 +441,11 @@ export function useImportWizard(
             }
           })
         setVenueEdits(edits)
-        setStep('venues')
-      } else {
-        setSelectedIds(new Set(data.map(e => e.eventbrite.url)))
-        setStep('select')
       }
+
+      // Select all events and go directly to select step
+      setSelectedIds(new Set(data.map(e => e.eventbrite.url)))
+      setStep('select')
 
       toast.success(`Found ${data.length} events`)
     } catch (err) {
@@ -421,9 +468,9 @@ export function useImportWizard(
       setBaTourismEvents(data)
       setBaTourismWeekContext(weekContext)
 
+      // Initialize venue edits for unmatched venues (for optional use later)
       const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
       if (hasUnmatched) {
-        // Initialize venue edits
         const edits = new Map<string, VenueEdit>()
         data
           .filter(e => e.venueMatch.matchType === 'none')
@@ -434,11 +481,11 @@ export function useImportWizard(
             }
           })
         setVenueEdits(edits)
-        setStep('venues')
-      } else {
-        setSelectedIds(new Set(data.map(e => `ba-tourism-${e.baTourism.name}`)))
-        setStep('select')
       }
+
+      // Select all events and go directly to select step
+      setSelectedIds(new Set(data.map(e => `ba-tourism-${e.baTourism.name}`)))
+      setStep('select')
 
       // Calculate total events including multi-date expansion
       const totalExpanded = data.reduce((sum, e) => sum + e.dateCount, 0)
@@ -450,6 +497,47 @@ export function useImportWizard(
       setIsFetching(false)
     }
   }, [])
+
+  const fetchMeetupEventsHandler = useCallback(async () => {
+    setIsFetching(true)
+    setError(null)
+
+    try {
+      const { events: data } = await fetchMeetupEventsAction({
+        data: { startDate, endDate },
+      })
+
+      setMeetupEvents(data)
+
+      // Initialize venue edits for unmatched venues (for optional use later)
+      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
+      if (hasUnmatched) {
+        const edits = new Map<string, VenueEdit>()
+        data
+          .filter(e => e.venueMatch.matchType === 'none')
+          .forEach(e => {
+            const name = e.meetup.venue?.name || 'Unknown Venue'
+            if (!edits.has(name)) {
+              edits.set(name, { name, neighborhood: null, skip: false })
+            }
+          })
+        setVenueEdits(edits)
+      }
+
+      // Select all events and go directly to select step
+      setSelectedIds(new Set(data.map(e => e.meetup.id)))
+      setStep('select')
+
+      // Calculate total events including recurring event expansion
+      const totalExpanded = data.reduce((sum, e) => sum + e.dateCount, 0)
+      toast.success(`Found ${data.length} events (${totalExpanded} occurrences)`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch events')
+      toast.error('Failed to fetch Meetup events')
+    } finally {
+      setIsFetching(false)
+    }
+  }, [startDate, endDate])
 
   const handleCSVFile = useCallback((file: File) => {
     setCsvFileName(file.name)
@@ -637,6 +725,46 @@ export function useImportWizard(
             .filter(e => e.venueMatch.matchType !== 'none' || !venueEdits.get(e.baTourism.venueName)?.skip)
             .map(e => `ba-tourism-${e.baTourism.name}`)
         ))
+      } else if (source === 'meetup') {
+        // Update Meetup event venue matches
+        setMeetupEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const meetupName = event.meetup.venue?.name || ''
+            const edit = venueEdits.get(meetupName)
+            let targetName = meetupName
+            if (edit?.mergeInto) targetName = edit.mergeInto
+
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === targetName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: event.transformed.map(t => ({ ...t, venue_id: matchedVenue.id })),
+              }
+            }
+            return event
+          })
+        )
+
+        // Auto-select Meetup events with matched venues
+        setSelectedIds(new Set(
+          meetupEvents
+            .filter(e => {
+              const name = e.meetup.venue?.name || ''
+              return e.venueMatch.matchType !== 'none' || !venueEdits.get(name)?.skip
+            })
+            .map(e => e.meetup.id)
+        ))
       }
 
       setStep('select')
@@ -646,7 +774,7 @@ export function useImportWizard(
     } finally {
       setIsCreatingVenues(false)
     }
-  }, [source, venueEdits, passlineEvents, eventbriteEvents, baTourismEvents])
+  }, [source, venueEdits, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents])
 
   const skipVenues = useCallback(() => {
     if (source === 'passline') {
@@ -670,9 +798,16 @@ export function useImportWizard(
           .filter(e => e.venueMatch.matchType !== 'none')
           .map(e => `ba-tourism-${e.baTourism.name}`)
       ))
+    } else if (source === 'meetup') {
+      // Auto-select only Meetup events with matched venues
+      setSelectedIds(new Set(
+        meetupEvents
+          .filter(e => e.venueMatch.matchType !== 'none')
+          .map(e => e.meetup.id)
+      ))
     }
     setStep('select')
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents])
+  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -705,6 +840,12 @@ export function useImportWizard(
       } else {
         setSelectedIds(new Set(baTourismEvents.map(e => `ba-tourism-${e.baTourism.name}`)))
       }
+    } else if (source === 'meetup') {
+      if (selectedIds.size === meetupEvents.length) {
+        setSelectedIds(new Set())
+      } else {
+        setSelectedIds(new Set(meetupEvents.map(e => e.meetup.id)))
+      }
     } else {
       const validIds = csvRows.filter(r => r.errors.length === 0).map((_, i) => `csv-${i}`)
       if (selectedIds.size === validIds.length) {
@@ -713,7 +854,7 @@ export function useImportWizard(
         setSelectedIds(new Set(validIds))
       }
     }
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, csvRows, selectedIds.size])
+  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, csvRows, selectedIds.size])
 
   const proceedToConfirm = useCallback(() => {
     setStep('confirm')
@@ -727,18 +868,33 @@ export function useImportWizard(
     setImportProgress({ current: 0, total: selectedIds.size })
 
     try {
+      let totalInserted = 0
+      let totalUpdated = 0
+      let withVenue = 0
+      let withoutVenue = 0
+      let withDescription = 0
+      let withoutDescription = 0
+      let withCategories = 0
+      let withoutCategories = 0
+
       if (source === 'passline') {
-        const eventsToImport = passlineEvents
-          .filter(e => selectedIds.has(e.passline.id))
-          .map(e => ({
-            passlineEvent: e.passline,
-            venueId: e.venueMatch.venue?.id || null,
-          }))
+        const selectedEvents = passlineEvents.filter(e => selectedIds.has(e.passline.id))
+        const eventsToImport = selectedEvents.map(e => ({
+          passlineEvent: e.passline,
+          venueId: e.venueMatch.venue?.id || null,
+        }))
+
+        // Calculate quality stats from selected events
+        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
+        withoutVenue = selectedEvents.length - withVenue
+        // Passline events lack descriptions - all need enrichment
+        withDescription = 0
+        withoutDescription = selectedEvents.length
+        // Passline events lack categories - all need enrichment
+        withCategories = 0
+        withoutCategories = selectedEvents.length
 
         const BATCH_SIZE = 10
-        let totalInserted = 0
-        let totalUpdated = 0
-
         for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
           const batch = eventsToImport.slice(i, i + BATCH_SIZE)
           const result = await importPasslineEventsBatchAction({ data: { events: batch } })
@@ -749,17 +905,22 @@ export function useImportWizard(
 
         toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
       } else if (source === 'eventbrite') {
-        const eventsToImport = eventbriteEvents
-          .filter(e => selectedIds.has(e.eventbrite.url))
-          .map(e => ({
-            eventbriteEvent: e.eventbrite,
-            venueId: e.venueMatch.venue?.id || null,
-          }))
+        const selectedEvents = eventbriteEvents.filter(e => selectedIds.has(e.eventbrite.url))
+        const eventsToImport = selectedEvents.map(e => ({
+          eventbriteEvent: e.eventbrite,
+          venueId: e.venueMatch.venue?.id || null,
+        }))
+
+        // Calculate quality stats
+        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
+        withoutVenue = selectedEvents.length - withVenue
+        withDescription = selectedEvents.filter(e => e.eventbrite.description).length
+        withoutDescription = selectedEvents.length - withDescription
+        // Eventbrite lacks categories - need enrichment
+        withCategories = 0
+        withoutCategories = selectedEvents.length
 
         const BATCH_SIZE = 10
-        let totalInserted = 0
-        let totalUpdated = 0
-
         for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
           const batch = eventsToImport.slice(i, i + BATCH_SIZE)
           const result = await importEventbriteEventsBatchAction({ data: { events: batch } })
@@ -774,18 +935,23 @@ export function useImportWizard(
           throw new Error('Week context is missing')
         }
 
-        const eventsToImport = baTourismEvents
-          .filter(e => selectedIds.has(`ba-tourism-${e.baTourism.name}`))
-          .map(e => ({
-            baTourismEvent: e.baTourism,
-            venueId: e.venueMatch.venue?.id || null,
-            weekContext: baTourismWeekContext,
-          }))
+        const selectedEvents = baTourismEvents.filter(e => selectedIds.has(`ba-tourism-${e.baTourism.name}`))
+        const eventsToImport = selectedEvents.map(e => ({
+          baTourismEvent: e.baTourism,
+          venueId: e.venueMatch.venue?.id || null,
+          weekContext: baTourismWeekContext,
+        }))
+
+        // Calculate quality stats
+        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
+        withoutVenue = selectedEvents.length - withVenue
+        withDescription = selectedEvents.filter(e => e.baTourism.description).length
+        withoutDescription = selectedEvents.length - withDescription
+        // BA Tourism has categories from the source
+        withCategories = selectedEvents.length
+        withoutCategories = 0
 
         const BATCH_SIZE = 10
-        let totalInserted = 0
-        let totalUpdated = 0
-
         for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
           const batch = eventsToImport.slice(i, i + BATCH_SIZE)
           const result = await importBATourismEventsBatchAction({ data: { events: batch } })
@@ -795,19 +961,82 @@ export function useImportWizard(
         }
 
         toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+      } else if (source === 'meetup') {
+        const selectedEvents = meetupEvents.filter(e => selectedIds.has(e.meetup.id))
+        const eventsToImport = selectedEvents.map(e => ({
+          meetupEvent: e.meetup,
+          venueId: e.venueMatch.venue?.id || null,
+        }))
+
+        // Calculate quality stats
+        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
+        withoutVenue = selectedEvents.length - withVenue
+        withDescription = selectedEvents.filter(e => e.meetup.description).length
+        withoutDescription = selectedEvents.length - withDescription
+        // Meetup lacks categories - need enrichment
+        withCategories = 0
+        withoutCategories = selectedEvents.length
+
+        const BATCH_SIZE = 10
+        for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
+          const batch = eventsToImport.slice(i, i + BATCH_SIZE)
+          const result = await importMeetupEventsBatchAction({ data: { events: batch } })
+          totalInserted += result.inserted
+          totalUpdated += result.updated
+          setImportProgress({ current: Math.min(i + BATCH_SIZE, eventsToImport.length), total: eventsToImport.length })
+        }
+
+        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+
+        // If we imported events without venues, go to enrich step for Meetup
+        if (withoutVenue > 0 && totalInserted > 0) {
+          setImportResult({
+            inserted: totalInserted,
+            updated: totalUpdated,
+            withVenue,
+            withoutVenue,
+            withDescription,
+            withoutDescription,
+            withCategories,
+            withoutCategories,
+          })
+          setIsImporting(false)
+          setImportProgress(null)
+          setStep('enrich')
+          return
+        }
       } else {
         const events = csvRows
           .filter((_, i) => selectedIds.has(`csv-${i}`))
           .filter(r => r.event)
           .map(r => r.event!)
 
+        // CSV quality stats
+        withVenue = events.filter(e => e.venue_id).length
+        withoutVenue = events.length - withVenue
+        withDescription = events.filter(e => e.description_es).length
+        withoutDescription = events.length - withDescription
+        withCategories = events.filter(e => e.categories && e.categories.length > 0).length
+        withoutCategories = events.length - withCategories
+
         const result = await bulkCreateEventsAction({ data: events })
+        totalInserted = result.count
+        totalUpdated = 0
         toast.success(`Imported ${result.count} events`)
       }
 
-      setTimeout(() => {
-        router.navigate({ to: '/admin/events' })
-      }, 1500)
+      // Set import result and go to summary step
+      setImportResult({
+        inserted: totalInserted,
+        updated: totalUpdated,
+        withVenue,
+        withoutVenue,
+        withDescription,
+        withoutDescription,
+        withCategories,
+        withoutCategories,
+      })
+      setStep('summary')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import events')
       toast.error('Import failed')
@@ -815,24 +1044,87 @@ export function useImportWizard(
       setIsImporting(false)
       setImportProgress(null)
     }
-  }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, csvRows, router])
+  }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, meetupEvents, csvRows])
+
+  // Fetch events needing enrichment when entering enrich step
+  const fetchEventsNeedingEnrichment = useCallback(async () => {
+    setIsLoadingEnrichmentEvents(true)
+    try {
+      const result = await getMeetupEventsNeedingEnrichmentAction()
+      setEventsNeedingEnrichment(result.events)
+    } catch (err) {
+      console.error('Failed to fetch events needing enrichment:', err)
+      setEventsNeedingEnrichment([])
+    } finally {
+      setIsLoadingEnrichmentEvents(false)
+    }
+  }, [])
+
+  const enrichVenues = useCallback(async () => {
+    if (eventsNeedingEnrichment.length === 0) return
+
+    setIsEnriching(true)
+    setEnrichmentProgress({ current: 0, total: eventsNeedingEnrichment.length })
+    setError(null)
+
+    try {
+      const events = eventsNeedingEnrichment.map(e => ({
+        eventId: e.id,
+        eventUrl: e.link,
+      }))
+
+      const result = await enrichMeetupVenuesAction({ data: { events } })
+
+      setEnrichmentResult({
+        enriched: result.enriched,
+        venuesCreated: result.venuesCreated,
+        errors: result.errors,
+      })
+
+      if (result.enriched > 0) {
+        toast.success(`Enriched ${result.enriched} events with venue data`)
+      }
+
+      // Navigate to events page after a short delay
+      setTimeout(() => {
+        router.navigate({ to: '/admin/events' })
+      }, 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to enrich venues')
+      toast.error('Venue enrichment failed')
+    } finally {
+      setIsEnriching(false)
+      setEnrichmentProgress(null)
+    }
+  }, [eventsNeedingEnrichment, router])
+
+  const skipEnrichment = useCallback(() => {
+    router.navigate({ to: '/admin/events' })
+  }, [router])
+
+  const goToVenues = useCallback(() => {
+    if (unmatchedVenues.length > 0) {
+      setStep('venues')
+    }
+  }, [unmatchedVenues.length])
 
   const goBack = useCallback(() => {
     if (step === 'configure') {
       setStep('source')
       setSource(null)
     } else if (step === 'venues') {
-      setStep('configure')
+      // Go back to select step (venues is now optional)
+      setStep('select')
     } else if (step === 'select') {
-      if ((source === 'passline' || source === 'eventbrite' || source === 'ba-tourism') && unmatchedVenues.length > 0) {
-        setStep('venues')
-      } else {
-        setStep('configure')
-      }
+      // Always go back to configure from select
+      setStep('configure')
     } else if (step === 'confirm') {
       setStep('select')
+    } else if (step === 'enrich') {
+      // Don't allow going back from enrich step - events are already imported
+      // User can skip or complete enrichment
     }
-  }, [step, source, unmatchedVenues.length])
+  }, [step])
 
   const reset = useCallback(() => {
     setStep('source')
@@ -841,11 +1133,20 @@ export function useImportWizard(
     setEventbriteEvents([])
     setBaTourismEvents([])
     setBaTourismWeekContext(null)
+    setMeetupEvents([])
     setCsvRows([])
     setCsvFileName(null)
     setVenueEdits(new Map())
     setSelectedIds(new Set())
     setError(null)
+    // Reset enrichment state
+    setIsEnriching(false)
+    setEnrichmentProgress(null)
+    setEnrichmentResult(null)
+    setEventsNeedingEnrichment([])
+    // Reset import result state
+    setImportResult(null)
+    setAutoEnrich(false)
   }, [])
 
   return {
@@ -857,6 +1158,7 @@ export function useImportWizard(
     passlineEvents,
     eventbriteEvents,
     baTourismEvents,
+    meetupEvents,
     csvRows,
     csvFileName,
     venues,
@@ -874,6 +1176,17 @@ export function useImportWizard(
     importProgress,
     error,
 
+    // Enrichment state
+    isEnriching,
+    enrichmentProgress,
+    enrichmentResult,
+    eventsNeedingEnrichment,
+    isLoadingEnrichmentEvents,
+
+    // Import result state (for summary step)
+    importResult,
+    autoEnrich,
+
     // Actions
     selectSource,
     setStartDate,
@@ -881,6 +1194,7 @@ export function useImportWizard(
     fetchPasslineEvents: fetchPasslineEventsHandler,
     fetchEventbriteEvents: fetchEventbriteEventsHandler,
     fetchBaTourismEvents: fetchBaTourismEventsHandler,
+    fetchMeetupEvents: fetchMeetupEventsHandler,
     handleCSVFile,
     updateVenueEdit,
     createVenuesAndProceed,
@@ -889,8 +1203,17 @@ export function useImportWizard(
     toggleSelectAll,
     proceedToConfirm,
     importEvents,
+    goToVenues,
     goBack,
     reset,
+
+    // Enrichment actions
+    fetchEventsNeedingEnrichment,
+    enrichVenues,
+    skipEnrichment,
+
+    // Summary step actions
+    setAutoEnrich,
   }
 }
 
