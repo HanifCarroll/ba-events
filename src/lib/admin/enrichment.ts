@@ -6,19 +6,37 @@ import { requireAdminAccess } from './utils'
 import type { EventWithVenue } from '../types'
 
 /**
+ * Map event sources to known languages
+ * Returns undefined for sources that need detection
+ */
+function getKnownLanguageForSource(source: string): 'spanish' | 'english' | undefined {
+  switch (source) {
+    case 'passline':
+    case 'ba-tourism':
+      return 'spanish'
+    // Meetup and Eventbrite vary - need detection
+    default:
+      return undefined
+  }
+}
+
+/**
  * Process a single event enrichment
  * Returns result object with success/error info
  */
 async function enrichSingleEvent(
   id: string,
   link: string,
+  source: string,
   client: Awaited<ReturnType<typeof requireAdminAccess>>
 ): Promise<{ id: string; success: boolean; error?: string }> {
-  console.log(`[server] Processing event ${id}: ${link}`)
+  console.log(`[server] Processing event ${id}: ${link} (source: ${source})`)
   try {
+    // Get known language for source, or undefined to trigger detection
+    const knownLanguage = getKnownLanguageForSource(source)
+
     // Fetch and extract bilingual descriptions using Jina + Haiku
-    // Now with language detection - handles both Spanish and English sources
-    const bilingual = await enrichEventDescriptionBilingual(link)
+    const bilingual = await enrichEventDescriptionBilingual(link, knownLanguage)
     console.log(`[server] Got descriptions for ${id}: ES=${bilingual?.description_es ? 'yes' : 'no'}, EN=${bilingual?.description_en ? 'yes' : 'no'}`)
 
     if (!bilingual?.description_es) {
@@ -64,7 +82,7 @@ async function enrichSingleEvent(
  */
 export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
   .inputValidator(
-    (data: { events: Array<{ id: string; link: string }> }) => data
+    (data: { events: Array<{ id: string; link: string; source: string }> }) => data
   )
   .handler(async ({ data: { events } }) => {
     const client = await requireAdminAccess()
@@ -72,7 +90,7 @@ export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
 
     // Process all events in the batch in parallel
     const results = await Promise.all(
-      events.map(({ id, link }) => enrichSingleEvent(id, link, client))
+      events.map(({ id, link, source }) => enrichSingleEvent(id, link, source, client))
     )
 
     const enriched = results.filter(r => r.success).length

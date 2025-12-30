@@ -79,10 +79,11 @@ export function useBackgroundEnrichment() {
         total: enrichableEvents.length,
       })
 
-      // Prepare events for enrichment
+      // Prepare events for enrichment (include source for language hints)
       const eventsToEnrich = enrichableEvents.map((e) => ({
         id: e.id,
         link: e.link || '',
+        source: e.source,
       }))
 
       // Show initial toast

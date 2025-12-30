@@ -83,7 +83,7 @@ export function useDescriptionEnrichment() {
   async function handleEnrichDescriptions() {
     const selectedEvents = eventsWithoutDesc
       .filter((e) => enrichSelectedIds.has(e.id) && e.link)
-      .map((e) => ({ id: e.id, link: e.link! }))
+      .map((e) => ({ id: e.id, link: e.link!, source: e.source }))
 
     if (selectedEvents.length === 0) return
 

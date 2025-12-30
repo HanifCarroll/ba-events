@@ -214,16 +214,20 @@ export interface BilingualDescription {
 }
 
 /**
- * Combined bilingual pipeline with language detection
+ * Combined bilingual pipeline with optional language detection
  * 1. Jina Reader fetches page as markdown
- * 2. Detect source language (Spanish or English)
+ * 2. Use known language OR detect source language
  * 3. Extract description in source language
  * 4. Translate to other language
  *
- * This avoids wasteful Spanish→English→Spanish round-trips for English sources
+ * @param url - The event page URL
+ * @param knownLanguage - If provided, skip detection (e.g., 'spanish' for Passline/BA Tourism)
  */
-export async function enrichEventDescriptionBilingual(url: string): Promise<BilingualDescription | null> {
-  console.log(`[enrichment] Starting bilingual enrichment for: ${url}`)
+export async function enrichEventDescriptionBilingual(
+  url: string,
+  knownLanguage?: 'spanish' | 'english'
+): Promise<BilingualDescription | null> {
+  console.log(`[enrichment] Starting bilingual enrichment for: ${url}${knownLanguage ? ` (known: ${knownLanguage})` : ''}`)
 
   // Step 1: Fetch markdown via Jina
   console.log(`[enrichment] Fetching via Jina...`)
@@ -234,10 +238,16 @@ export async function enrichEventDescriptionBilingual(url: string): Promise<Bili
   }
   console.log(`[enrichment] Jina returned ${markdown.length} chars`)
 
-  // Step 2: Detect source language
-  console.log(`[enrichment] Detecting language...`)
-  const sourceLanguage = await detectLanguage(markdown)
-  console.log(`[enrichment] Detected language: ${sourceLanguage}`)
+  // Step 2: Use known language or detect
+  let sourceLanguage: 'spanish' | 'english'
+  if (knownLanguage) {
+    sourceLanguage = knownLanguage
+    console.log(`[enrichment] Using known language: ${sourceLanguage}`)
+  } else {
+    console.log(`[enrichment] Detecting language...`)
+    sourceLanguage = await detectLanguage(markdown)
+    console.log(`[enrichment] Detected language: ${sourceLanguage}`)
+  }
 
   // Step 3: Extract description in source language
   console.log(`[enrichment] Extracting ${sourceLanguage} description with Haiku...`)
