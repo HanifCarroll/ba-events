@@ -10,4 +10,4 @@ Disallow: /register
 Disallow: /auth/
 
 # Sitemap (future implementation)
-Sitemap: https://ba-events.app/sitemap.xml
+Sitemap: https://baeventos.com/sitemap.xml

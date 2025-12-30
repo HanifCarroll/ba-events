@@ -179,7 +179,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent blur-sm" />
             <div className="relative flex items-center gap-2">
               <div className="w-1 h-6 bg-gradient-to-b from-primary to-accent rounded-full" />
-              <span className="font-display text-lg font-semibold">BA Events</span>
+              <span className="font-display text-lg font-semibold">BA Eventos</span>
             </div>
           </div>
         </Link>
@@ -218,7 +218,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             </div>
             <div className={`overflow-hidden transition-all duration-300 ${collapsed ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'}`}>
               <span className="font-display text-lg font-semibold text-foreground whitespace-nowrap">
-                BA Events
+                BA Eventos
               </span>
             </div>
           </Link>

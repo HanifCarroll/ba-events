@@ -1,7 +1,7 @@
 {
-  "short_name": "BA Events",
-  "name": "BA Events - Discover Buenos Aires",
-  "description": "AI-powered event discovery for Buenos Aires",
+  "short_name": "BA Eventos",
+  "name": "BA Eventos - Descubrí Buenos Aires",
+  "description": "Descubrí eventos en Buenos Aires con inteligencia artificial",
   "icons": [
     {
       "src": "favicon.ico",
