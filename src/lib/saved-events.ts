@@ -10,14 +10,17 @@ export async function getSavedEvents(): Promise<EventWithVenue[]> {
     return []
   }
 
-  // Note: Type casting needed until Supabase types are regenerated
+  // Query saved_events joined with events and venues
   const { data, error } = await (client
     .from('saved_events')
     .select(`
       id,
       event_id,
       created_at,
-      events_with_venues (*)
+      events (
+        *,
+        venues (*)
+      )
     `)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false }) as any)
@@ -27,9 +30,20 @@ export async function getSavedEvents(): Promise<EventWithVenue[]> {
     return []
   }
 
-  // Extract the event data from the joined query
+  // Transform the nested data to match EventWithVenue type
   return (data || [])
-    .map((item: any) => item.events_with_venues)
+    .map((item: any) => {
+      if (!item.events) return null
+      const event = item.events
+      return {
+        ...event,
+        venue_name: event.venues?.name || null,
+        venue_address: event.venues?.address || null,
+        venue_neighborhood: event.venues?.neighborhood || null,
+        venue_latitude: event.venues?.latitude || null,
+        venue_longitude: event.venues?.longitude || null,
+      }
+    })
     .filter((event: any) => event !== null) as EventWithVenue[]
 }
 
