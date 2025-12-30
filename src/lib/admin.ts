@@ -18,7 +18,16 @@ import {
   countPastEvents,
 } from './supabase'
 import { generateEmbedding } from './embeddings'
+import { getSessionUser } from './session'
 import type { VenueInsert, VenueUpdate, EventInsert, EventUpdate, EventWithVenue, EventStatus } from './types'
+
+// Helper to validate admin access in server functions
+async function requireAdminAccess(): Promise<void> {
+  const session = await getSessionUser()
+  if (!session?.isAdmin) {
+    throw new Error('Unauthorized: Admin access required')
+  }
+}
 
 // ============================================================================
 // STATS
@@ -59,18 +68,21 @@ export const getVenue = createServerFn({ method: 'GET' })
 export const createVenueAction = createServerFn({ method: 'POST' })
   .inputValidator((data: VenueInsert) => data)
   .handler(async ({ data }) => {
+    await requireAdminAccess()
     return createVenue(data)
   })
 
 export const updateVenueAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: string; data: VenueUpdate }) => input)
   .handler(async ({ data: { id, data } }) => {
+    await requireAdminAccess()
     return updateVenue(id, data)
   })
 
 export const deleteVenueAction = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
+    await requireAdminAccess()
     await deleteVenue(id)
     return { success: true }
   })
@@ -78,6 +90,7 @@ export const deleteVenueAction = createServerFn({ method: 'POST' })
 export const bulkCreateVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: VenueInsert[]) => data)
   .handler(async ({ data: venues }) => {
+    await requireAdminAccess()
     const created = await createVenues(venues)
     return {
       success: true,
@@ -102,6 +115,7 @@ export const getEventAction = createServerFn({ method: 'GET' })
 export const createEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert) => data)
   .handler(async ({ data }) => {
+    await requireAdminAccess()
     // Generate embedding from name and Spanish description (cross-lingual model)
     const textForEmbedding = [
       data.name,
@@ -123,6 +137,7 @@ export const createEventAction = createServerFn({ method: 'POST' })
 export const updateEventAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: string; data: EventUpdate }) => input)
   .handler(async ({ data: { id, data } }) => {
+    await requireAdminAccess()
     // If name, description_es, categories, or vibes changed, regenerate embedding
     const existingEvent = await getEventById(id)
     const needsNewEmbedding =
@@ -156,6 +171,7 @@ export const updateEventAction = createServerFn({ method: 'POST' })
 export const deleteEventAction = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
+    await requireAdminAccess()
     await deleteEvent(id)
     return { success: true }
   })
@@ -163,6 +179,7 @@ export const deleteEventAction = createServerFn({ method: 'POST' })
 export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert[]) => data)
   .handler(async ({ data: events }) => {
+    await requireAdminAccess()
     // Generate embeddings for all events using Spanish description
     const eventsWithEmbeddings = await Promise.all(
       events.map(async (event) => {
@@ -196,6 +213,7 @@ export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
 export const bulkUpdateEventStatusAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { eventIds: string[]; status: EventStatus }) => input)
   .handler(async ({ data: { eventIds, status } }) => {
+    await requireAdminAccess()
     const updated = await bulkUpdateEventStatus(eventIds, status)
     return {
       success: true,
@@ -206,6 +224,7 @@ export const bulkUpdateEventStatusAction = createServerFn({ method: 'POST' })
 export const bulkDeleteEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((eventIds: string[]) => eventIds)
   .handler(async ({ data: eventIds }) => {
+    await requireAdminAccess()
     await bulkDeleteEvents(eventIds)
     return {
       success: true,

@@ -37,35 +37,29 @@ import {
   useUpdatePassword,
   useDeleteAccount,
 } from '@/hooks/useProfileMutations'
+import { requireAuth } from '@/lib/session'
 
 export const Route = createFileRoute('/profile')({
+  beforeLoad: async () => {
+    await requireAuth({ data: { redirectTo: '/profile' } })
+  },
   component: ProfilePage,
 })
 
 function ProfilePage() {
   const navigate = useNavigate()
-  const { user, profile, loading: authLoading } = useAuthContext()
+  const { user, profile } = useAuthContext()
 
   // Delete account state (kept separate since it's in a dialog)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate({ to: '/login' })
-    }
-  }, [user, authLoading, navigate])
-
-  if (authLoading) {
+  // Guard against edge case where context hasn't synced yet
+  if (!user) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     )
-  }
-
-  if (!user) {
-    return null
   }
 
   return (

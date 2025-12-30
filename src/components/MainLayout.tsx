@@ -1,5 +1,7 @@
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { useServerFn } from '@tanstack/react-start'
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Menu,
   X,
@@ -18,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuthContext } from '@/hooks/useAuthContext'
-import { signOut } from '@/lib/auth'
+import { signOutAction } from '@/lib/auth'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import * as m from '@/paraglide/messages'
 
@@ -39,6 +41,8 @@ interface NavItem {
 
 export function MainLayout({ children }: MainLayoutProps) {
   const location = useLocation()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { user, profile, isAdmin } = useAuthContext()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -49,6 +53,9 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
     return false
   })
+
+  // Wrap signOutAction with useServerFn for server-side sign-out
+  const signOut = useServerFn(signOutAction)
 
   // Listen for chat state changes
   useEffect(() => {
@@ -73,6 +80,9 @@ export function MainLayout({ children }: MainLayoutProps) {
     setIsSigningOut(true)
     try {
       await signOut()
+      queryClient.setQueryData(['session'], null)
+      queryClient.invalidateQueries({ queryKey: ['session'] })
+      navigate({ to: '/' })
     } catch (err) {
       console.error('Sign out error:', err)
     } finally {

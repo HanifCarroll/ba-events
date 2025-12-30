@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { Bookmark, Calendar, Clock, ArrowLeft, Sparkles } from 'lucide-react'
 import { useAuthContext } from '@/hooks/useAuthContext'
 import { getSavedEvents } from '@/lib/saved-events'
@@ -7,39 +7,31 @@ import { EventCard } from '@/components/events/EventCard'
 import { Button } from '@/components/ui/button'
 import type { EventWithVenue } from '@/lib/types'
 import * as m from '@/paraglide/messages'
+import { requireAuth } from '@/lib/session'
 
 export const Route = createFileRoute('/saved')({
+  beforeLoad: async () => {
+    await requireAuth({ data: { redirectTo: '/saved' } })
+  },
   component: SavedEventsPage,
 })
 
 function SavedEventsPage() {
-  const navigate = useNavigate()
-  const { user, loading: authLoading } = useAuthContext()
+  const { user } = useAuthContext()
   const [events, setEvents] = useState<EventWithVenue[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'upcoming' | 'past'>('upcoming')
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate({ to: '/login' })
-    }
-  }, [user, authLoading, navigate])
-
   // Fetch saved events
   useEffect(() => {
-    if (!authLoading) {
-      if (user) {
-        setLoading(true)
-        getSavedEvents()
-          .then(setEvents)
-          .catch(console.error)
-          .finally(() => setLoading(false))
-      } else {
-        setLoading(false)
-      }
+    if (user) {
+      setLoading(true)
+      getSavedEvents()
+        .then(setEvents)
+        .catch(console.error)
+        .finally(() => setLoading(false))
     }
-  }, [user, authLoading])
+  }, [user])
 
   // Listen for save/unsave events to refresh the list
   useEffect(() => {
@@ -66,16 +58,13 @@ function SavedEventsPage() {
   const upcomingCount = events.filter((e) => new Date(e.starts_at) >= now).length
   const pastCount = events.filter((e) => new Date(e.starts_at) < now).length
 
-  if (authLoading) {
+  // Guard against edge case where context hasn't synced yet
+  if (!user) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     )
-  }
-
-  if (!user) {
-    return null
   }
 
   return (

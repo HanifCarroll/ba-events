@@ -1,8 +1,9 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { createServerFn } from '@tanstack/react-start'
 import { useState, useEffect, useCallback } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
+import type { Session, User, EmailOtpType } from '@supabase/supabase-js'
 import type { Profile } from './types'
+import { createSupabaseServerClient } from './supabase-server'
 
 // Browser-side Supabase client for auth
 // Note: These are public keys, safe to expose to browser
@@ -297,13 +298,149 @@ export async function updatePassword(newPassword: string): Promise<void> {
   }
 }
 
-// Server-side session check (placeholder - relies on client-side auth)
+// ============================================
+// Server-side auth functions (cookie-based)
+// ============================================
+
+/**
+ * Sign in with email and password (server-side).
+ * Sets session cookies and returns user info for redirect decision.
+ */
+export const signInAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { email: string; password: string }) => data)
+  .handler(async ({ data }) => {
+    const supabase = createSupabaseServerClient()
+
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
+      email: data.email,
+      password: data.password,
+    })
+
+    if (error) {
+      throw error
+    }
+
+    // Fetch profile to determine redirect destination
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', authData.user.id)
+      .single()
+
+    return {
+      user: authData.user,
+      isAdmin: profile?.role === 'admin',
+    }
+  })
+
+/**
+ * Sign up with email and password (server-side).
+ * Sets session cookies if email confirmation is disabled.
+ */
+export const signUpAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { email: string; password: string }) => data)
+  .handler(async ({ data }) => {
+    const supabase = createSupabaseServerClient()
+
+    const { data: authData, error } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+    })
+
+    if (error) {
+      throw error
+    }
+
+    return {
+      user: authData.user,
+      session: authData.session,
+      // If session is null, email confirmation is required
+      needsEmailConfirmation: !authData.session,
+    }
+  })
+
+/**
+ * Sign out (server-side).
+ * Clears session cookies and redirects to home.
+ */
+export const signOutAction = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    const supabase = createSupabaseServerClient()
+    await supabase.auth.signOut()
+    return { success: true }
+  }
+)
+
+/**
+ * Exchange auth code or token hash for session (server-side).
+ * Used for magic link callback. Sets session cookies.
+ */
+export const exchangeCodeAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { code?: string; tokenHash?: string; type?: string }) => data
+  )
+  .handler(async ({ data }) => {
+    const supabase = createSupabaseServerClient()
+
+    // Handle PKCE code exchange
+    if (data.code) {
+      const { data: sessionData, error } =
+        await supabase.auth.exchangeCodeForSession(data.code)
+
+      if (error) {
+        throw error
+      }
+
+      // Fetch profile for redirect decision
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', sessionData.user.id)
+        .single()
+
+      return {
+        user: sessionData.user,
+        isAdmin: profile?.role === 'admin',
+      }
+    }
+
+    // Handle token hash (magic link with PKCE)
+    if (data.tokenHash && data.type) {
+      const { data: sessionData, error } = await supabase.auth.verifyOtp({
+        token_hash: data.tokenHash,
+        type: data.type as EmailOtpType,
+      })
+
+      if (error) {
+        throw error
+      }
+
+      if (!sessionData.user) {
+        throw new Error('Failed to verify magic link')
+      }
+
+      // Fetch profile for redirect decision
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', sessionData.user.id)
+        .single()
+
+      return {
+        user: sessionData.user,
+        isAdmin: profile?.role === 'admin',
+      }
+    }
+
+    throw new Error('No valid auth parameters provided')
+  })
+
+// Legacy server-side session check (kept for backwards compatibility)
 export const checkAuth = createServerFn({ method: 'GET' }).handler(
   async () => {
-    // For server-side, we can't use browser client
-    // We'll rely on the browser-side auth check for now
-    // In a production app, you'd validate JWT tokens server-side
-    return { authenticated: true }
+    const supabase = createSupabaseServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    return { authenticated: !!user }
   }
 )
 

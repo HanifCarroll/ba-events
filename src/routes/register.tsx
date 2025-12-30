@@ -1,20 +1,28 @@
-import { useState, useEffect } from 'react'
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { useState } from 'react'
+import { createFileRoute, useNavigate, Link, redirect } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Mail, Lock, ArrowRight, Check } from 'lucide-react'
-import { signUp } from '@/lib/auth'
-import { useAuthContext } from '@/hooks/useAuthContext'
+import { signUpAction } from '@/lib/auth'
+import { getSessionUser } from '@/lib/session'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/register')({
+  beforeLoad: async () => {
+    // Redirect to home if already logged in
+    const session = await getSessionUser()
+    if (session) {
+      throw redirect({ to: '/' })
+    }
+  },
   component: RegisterPage,
 })
 
 function RegisterPage() {
   const navigate = useNavigate()
-  const { user, loading } = useAuthContext()
+  const queryClient = useQueryClient()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,13 +30,6 @@ function RegisterPage() {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (!loading && user) {
-      navigate({ to: '/' })
-    }
-  }, [user, loading, navigate])
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,21 +48,19 @@ function RegisterPage() {
     setIsSubmitting(true)
 
     try {
-      await signUp(email, password)
-      setSuccess(true)
+      const result = await signUpAction({ data: { email, password } })
+      if (result.needsEmailConfirmation) {
+        setSuccess(true)
+      } else {
+        // Auto-confirmed, invalidate session and navigate to home
+        await queryClient.invalidateQueries({ queryKey: ['session'] })
+        navigate({ to: '/' })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create account')
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
   }
 
   return (

@@ -1,20 +1,28 @@
-import { useState, useEffect } from 'react'
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { useState } from 'react'
+import { createFileRoute, useNavigate, Link, redirect } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Mail, Lock, Sparkles, ArrowRight, Check } from 'lucide-react'
-import { signIn, signInWithMagicLink } from '@/lib/auth'
-import { useAuthContext } from '@/hooks/useAuthContext'
+import { signInAction, signInWithMagicLink } from '@/lib/auth'
+import { getSessionUser } from '@/lib/session'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/login')({
+  beforeLoad: async () => {
+    // Redirect to home if already logged in
+    const session = await getSessionUser()
+    if (session) {
+      throw redirect({ to: session.isAdmin ? '/admin' : '/' })
+    }
+  },
   component: LoginPage,
 })
 
 function LoginPage() {
   const navigate = useNavigate()
-  const { user, loading, isAdmin } = useAuthContext()
+  const queryClient = useQueryClient()
 
   const [mode, setMode] = useState<'password' | 'magic'>('password')
   const [email, setEmail] = useState('')
@@ -23,21 +31,17 @@ function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
 
-  // Redirect if already logged in
-  useEffect(() => {
-    if (!loading && user) {
-      navigate({ to: isAdmin ? '/admin' : '/' })
-    }
-  }, [user, loading, isAdmin, navigate])
-
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setIsSubmitting(true)
 
     try {
-      await signIn(email, password)
-      // Auth state change will trigger redirect
+      const result = await signInAction({ data: { email, password } })
+      // Invalidate session cache so sidebar updates
+      await queryClient.invalidateQueries({ queryKey: ['session'] })
+      // Server action sets cookies, navigate based on role
+      navigate({ to: result.isAdmin ? '/admin' : '/' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign in')
     } finally {
@@ -58,14 +62,6 @@ function LoginPage() {
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
   }
 
   return (
