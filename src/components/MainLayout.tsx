@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useAuthContext } from '@/components/AuthProvider'
+import { useAuthContext } from '@/hooks/useAuthContext'
 import { signOut } from '@/lib/auth'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import * as m from '@/paraglide/messages'

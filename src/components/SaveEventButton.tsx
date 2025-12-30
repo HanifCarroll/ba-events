@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Heart } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import { useAuthContext } from './AuthProvider'
+import { useAuthContext } from '@/hooks/useAuthContext'
 import { saveEvent, unsaveEvent } from '@/lib/saved-events'
 import { Button } from './ui/button'
 import {

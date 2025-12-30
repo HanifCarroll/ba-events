@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { createServerFn } from '@tanstack/react-start'
 import { useState, useEffect, useCallback } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
@@ -9,51 +9,104 @@ import type { Profile } from './types'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-let browserClient: ReturnType<typeof createClient> | null = null
+type BrowserClient = SupabaseClient
 
-export function getSupabaseBrowserClient() {
+let browserClient: BrowserClient | null = null
+
+function createBrowserClient(): BrowserClient {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
+  }
+  const client = createClient(supabaseUrl, supabaseAnonKey)
+
+  // Expose on window for debugging in development
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__supabase = client
+  }
+
+  return client
+}
+
+export function getSupabaseBrowserClient(): BrowserClient {
   if (typeof window === 'undefined') {
     throw new Error('getSupabaseBrowserClient should only be called on the client')
   }
 
   if (!browserClient) {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
-    }
-    browserClient = createClient(supabaseUrl, supabaseAnonKey)
+    browserClient = createBrowserClient()
   }
 
   return browserClient
 }
 
-// Sign up with email and password
-export async function signUp(email: string, password: string) {
-  const client = getSupabaseBrowserClient()
-  const { data, error } = await client.auth.signUp({
-    email,
-    password,
-  })
+// Reset the browser client (useful when connection goes stale)
+export function resetSupabaseBrowserClient() {
+  if (typeof window === 'undefined') return
+  browserClient = null
+}
 
-  if (error) {
-    throw error
+// Wrapper that adds timeout and retry logic for stale connections
+async function withConnectionRetry<T>(
+  operation: (client: BrowserClient) => Promise<T>,
+  timeoutMs = 10000
+): Promise<T> {
+  const attempt = async (isRetry = false): Promise<T> => {
+    if (isRetry) {
+      console.warn('Supabase connection appears stale, resetting client...')
+      resetSupabaseBrowserClient()
+    }
+
+    const client = getSupabaseBrowserClient()
+
+    // Race the operation against a timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Connection timeout')), timeoutMs)
+    })
+
+    try {
+      return await Promise.race([operation(client), timeoutPromise])
+    } catch (err) {
+      if (!isRetry && err instanceof Error && err.message === 'Connection timeout') {
+        return attempt(true)
+      }
+      throw err
+    }
   }
 
-  return data
+  return attempt()
+}
+
+// Sign up with email and password
+export async function signUp(email: string, password: string) {
+  return withConnectionRetry(async (client) => {
+    const { data, error } = await client.auth.signUp({
+      email,
+      password,
+    })
+
+    if (error) {
+      throw error
+    }
+
+    return data
+  })
 }
 
 // Sign in with email and password
 export async function signIn(email: string, password: string) {
-  const client = getSupabaseBrowserClient()
-  const { data, error } = await client.auth.signInWithPassword({
-    email,
-    password,
+  return withConnectionRetry(async (client) => {
+    const { data, error } = await client.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      throw error
+    }
+
+    return data
   })
-
-  if (error) {
-    throw error
-  }
-
-  return data
 }
 
 // Sign in with magic link (sends email)
@@ -85,31 +138,33 @@ export async function signOut() {
 
 // Get current session
 export async function getSession() {
-  const client = getSupabaseBrowserClient()
-  const { data: { session }, error } = await client.auth.getSession()
+  return withConnectionRetry(async (client) => {
+    const { data: { session }, error } = await client.auth.getSession()
 
-  if (error) {
-    throw error
-  }
+    if (error) {
+      throw error
+    }
 
-  return session
+    return session
+  })
 }
 
 // Fetch user profile from database
 export async function fetchProfile(userId: string): Promise<Profile | null> {
-  const client = getSupabaseBrowserClient()
-  const { data, error } = await client
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
+  return withConnectionRetry(async (client) => {
+    const { data, error } = await client
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
 
-  if (error) {
-    console.error('Error fetching profile:', error)
-    return null
-  }
+    if (error) {
+      console.error('Error fetching profile:', error)
+      return null
+    }
 
-  return data as Profile
+    return data as Profile
+  })
 }
 
 // Exchange auth code for session (for magic link callback)

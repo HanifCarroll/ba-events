@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { Bookmark, Calendar, Clock, ArrowLeft, Sparkles } from 'lucide-react'
-import { useAuthContext } from '@/components/AuthProvider'
+import { useAuthContext } from '@/hooks/useAuthContext'
 import { getSavedEvents } from '@/lib/saved-events'
 import { EventCard } from '@/components/events/EventCard'
 import { Button } from '@/components/ui/button'

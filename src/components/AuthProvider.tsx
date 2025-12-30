@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, type ReactNode } from 'react'
 import { useAuth } from '@/lib/auth'
 import type { Session, User } from '@supabase/supabase-js'
 import type { Profile } from '@/lib/types'
@@ -11,7 +11,8 @@ interface AuthContextValue {
   isAdmin: boolean
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null)
+// Export context for use in useAuthContext hook (separate file for HMR compatibility)
+export const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const auth = useAuth()
@@ -21,12 +22,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuthContext() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuthContext must be used within an AuthProvider')
-  }
-  return context
 }
