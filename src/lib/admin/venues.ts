@@ -6,6 +6,7 @@ import {
   createVenues,
   updateVenue,
   deleteVenue,
+  bulkDeleteVenues,
 } from '../db/client'
 import { requireAdminAccess } from './utils'
 import type { VenueInsert, VenueUpdate } from '../types'
@@ -60,4 +61,12 @@ export const bulkCreateVenuesAction = createServerFn({ method: 'POST' })
       success: true,
       count: created.length,
     }
+  })
+
+export const bulkDeleteVenuesAction = createServerFn({ method: 'POST' })
+  .inputValidator((ids: string[]) => ids)
+  .handler(async ({ data: ids }) => {
+    const client = await requireAdminAccess()
+    await bulkDeleteVenues(ids, client)
+    return { success: true, count: ids.length }
   })

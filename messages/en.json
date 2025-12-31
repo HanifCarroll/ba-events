@@ -164,6 +164,8 @@
   "admin_no_matching_venues": "No matching venues",
   "admin_delete_venue": "Delete Venue",
   "admin_delete_venue_confirm": "Are you sure you want to delete {name}? This action cannot be undone.",
+  "admin_delete_venues": "Delete Venues",
+  "admin_delete_venues_confirm": "Are you sure you want to delete {count} venues? This action cannot be undone.",
   "admin_capacity": "Capacity: {count}",
   "admin_venue_type_club": "Club",
   "admin_venue_type_bar": "Bar",

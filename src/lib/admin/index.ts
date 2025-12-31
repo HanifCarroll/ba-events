@@ -15,6 +15,7 @@ export {
   updateVenueAction,
   deleteVenueAction,
   bulkCreateVenuesAction,
+  bulkDeleteVenuesAction,
 } from './venues'
 
 // Events

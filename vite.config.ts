@@ -21,8 +21,12 @@ const config = defineConfig(({ isSsrBuild }) => ({
   },
   ssr: {
     // Bundle TanStack Start core to prevent AsyncLocalStorage context loss on Netlify
-    // Only bundle the start package, not router (which has problematic stream deps)
-    noExternal: ['@tanstack/react-start', '@tanstack/start'],
+    // See: https://github.com/TanStack/router/issues/4729
+    noExternal: ['@tanstack/react-start', '@tanstack/start', '@tanstack/start-storage-context'],
+    external: ['node:async_hooks'],
+  },
+  optimizeDeps: {
+    exclude: ['@tanstack/start-storage-context', 'node:async_hooks'],
   },
   plugins: [
     paraglideVitePlugin({

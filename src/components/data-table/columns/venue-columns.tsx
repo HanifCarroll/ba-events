@@ -34,11 +34,14 @@ export function getVenueColumns(options?: VenueColumnsOptions): ColumnDef<Venue>
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Neighborhood" />
       ),
-      cell: ({ row }) => (
-        <Badge variant="outline" className="border-primary/30 text-primary">
-          {row.original.neighborhood}
-        </Badge>
-      ),
+      cell: ({ row }) =>
+        row.original.neighborhood ? (
+          <Badge variant="outline" className="border-primary/30 text-primary">
+            {row.original.neighborhood}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
     },
     {
       id: 'actions',

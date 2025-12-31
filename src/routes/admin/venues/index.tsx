@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Plus, MapPin, Search, X, Filter, Upload } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/components/ui/button'
@@ -18,10 +18,12 @@ import {
 import { DataTable, getVenueColumns } from '@/components/data-table'
 import { VenueDuplicatesPanel } from '@/components/admin/VenueDuplicatesPanel'
 import { VenueAddressNamesPanel } from '@/components/admin/VenueAddressNamesPanel'
+import { VenueBulkActionBar } from '@/components/admin/VenueBulkActionBar'
 import { MergeVenueDialog } from '@/components/admin/MergeVenueDialog'
 import { RenameVenueDialog } from '@/components/admin/RenameVenueDialog'
 import { listVenues, deleteVenueAction } from '@/lib/admin'
 import { useVenueReview, type ReviewTab } from '@/hooks/useVenueReview'
+import { useVenueBulkActions } from '@/hooks'
 import { NEIGHBORHOODS } from '@/lib/types'
 import type { Venue, Neighborhood } from '@/lib/types'
 
@@ -66,6 +68,9 @@ function VenueListPage() {
     })
   }, [venues, search, neighborhoodFilter])
 
+  // Bulk actions
+  const bulk = useVenueBulkActions(filteredVenues)
+
   const hasActiveFilters = search || neighborhoodFilter
 
   function clearFilters() {
@@ -87,6 +92,14 @@ function VenueListPage() {
       setIsDeleting(false)
     }
   }
+
+  // Handle selection change from DataTable
+  const handleSelectionChange = useCallback(
+    (newIds: Set<string>) => {
+      bulk.handleSelectionChange(newIds)
+    },
+    [bulk]
+  )
 
   // Column definitions with delete handler
   const columns = useMemo(
@@ -252,16 +265,32 @@ function VenueListPage() {
 
           {/* Desktop Table View */}
           <div className="hidden sm:block">
-            <DataTable
-              columns={columns}
-              data={filteredVenues}
-              tableId="admin-venues"
-              enableRowSelection={false}
-              enableColumnResizing={true}
-              enableColumnReordering={true}
-              enableMultiSort={true}
-              enableVirtualization={false}
-            />
+            <div className="relative">
+              {/* Bulk action overlay */}
+              <div className="absolute top-0 left-0 right-0 z-20">
+                <VenueBulkActionBar
+                  selectedCount={bulk.selectedIds.size}
+                  filteredVenuesLength={filteredVenues.length}
+                  onToggleSelectAll={bulk.toggleSelectAll}
+                  onSetBulkAction={bulk.setBulkAction}
+                  onClearSelection={bulk.clearSelection}
+                  overlay
+                />
+              </div>
+
+              <DataTable
+                columns={columns}
+                data={filteredVenues}
+                tableId="admin-venues"
+                enableRowSelection={true}
+                selectedIds={bulk.selectedIds}
+                onSelectionChange={handleSelectionChange}
+                enableColumnResizing={true}
+                enableColumnReordering={true}
+                enableMultiSort={true}
+                enableVirtualization={false}
+              />
+            </div>
           </div>
         </>
       )}
@@ -337,6 +366,34 @@ function VenueListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk delete confirmation dialog */}
+      <Dialog open={bulk.bulkAction === 'delete'} onOpenChange={() => bulk.setBulkAction(null)}>
+        <DialogContent className="bg-card border-border/50">
+          <DialogHeader>
+            <DialogTitle className="font-display text-foreground">{m.admin_delete_venues()}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {m.admin_delete_venues_confirm({ count: bulk.selectedIds.size })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="ghost"
+              onClick={() => bulk.setBulkAction(null)}
+              className="text-muted-foreground"
+            >
+              {m.common_cancel()}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={bulk.handleBulkAction}
+              disabled={bulk.isBulkProcessing}
+            >
+              {bulk.isBulkProcessing ? m.common_deleting() : m.common_delete()}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -354,9 +411,15 @@ function MobileVenueCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="font-medium text-foreground truncate">{venue.name}</p>
-          <Badge variant="outline" className="mt-1 border-primary/30 text-primary">
-            {venue.neighborhood}
-          </Badge>
+          {venue.neighborhood ? (
+            <Badge variant="outline" className="mt-1 border-primary/30 text-primary">
+              {venue.neighborhood}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground mt-1 inline-block">
+              {m.admin_no_neighborhood()}
+            </span>
+          )}
         </div>
       </div>
 

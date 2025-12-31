@@ -145,6 +145,12 @@ export async function deleteVenue(id: string, client?: SupabaseClient) {
   if (error) throw error
 }
 
+export async function bulkDeleteVenues(ids: string[], client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { error } = await db.from('venues').delete().in('id', ids)
+  if (error) throw error
+}
+
 // ============================================================================
 // EVENT OPERATIONS
 // ============================================================================

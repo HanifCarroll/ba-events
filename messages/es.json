@@ -162,6 +162,8 @@
   "admin_no_matching_venues": "No hay lugares coincidentes",
   "admin_delete_venue": "Eliminar Lugar",
   "admin_delete_venue_confirm": "¿Estás seguro de que quieres eliminar {name}? Esta acción no se puede deshacer.",
+  "admin_delete_venues": "Eliminar Lugares",
+  "admin_delete_venues_confirm": "¿Estás seguro de que quieres eliminar {count} lugares? Esta acción no se puede deshacer.",
   "admin_capacity": "Capacidad: {count}",
   "admin_venue_type_club": "Club",
   "admin_venue_type_bar": "Bar",
