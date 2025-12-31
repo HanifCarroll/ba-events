@@ -94,3 +94,16 @@ export {
   type MeetupEnrichmentInput,
   type MeetupEnrichmentOutput,
 } from './sources/meetup'
+
+// Venue Review
+export {
+  getDuplicateVenueCandidatesAction,
+  detectAddressLikeNamesAction,
+  mergeVenuesAction,
+  getVenueEventCountsAction,
+  getVenueEventsAction,
+  type VenueDuplicatePair,
+  type AddressNameResult,
+  type MergeVenuesResult,
+  type VenueEventPreview,
+} from './venue-review'

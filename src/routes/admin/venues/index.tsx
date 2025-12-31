@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Combobox } from '@/components/ui/combobox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { DataTable, getVenueColumns } from '@/components/data-table'
+import { VenueDuplicatesPanel } from '@/components/admin/VenueDuplicatesPanel'
+import { VenueAddressNamesPanel } from '@/components/admin/VenueAddressNamesPanel'
+import { MergeVenueDialog } from '@/components/admin/MergeVenueDialog'
+import { RenameVenueDialog } from '@/components/admin/RenameVenueDialog'
 import { listVenues, deleteVenueAction } from '@/lib/admin'
+import { useVenueReview, type ReviewTab } from '@/hooks/useVenueReview'
 import { NEIGHBORHOODS } from '@/lib/types'
 import type { Venue, Neighborhood } from '@/lib/types'
 
@@ -31,6 +37,9 @@ function VenueListPage() {
   const router = useRouter()
   const [deleteTarget, setDeleteTarget] = useState<Venue | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Venue review system
+  const review = useVenueReview(venues)
 
   // Filter state
   const [search, setSearch] = useState('')
@@ -181,8 +190,33 @@ function VenueListPage() {
         </div>
       )}
 
-      {/* Content */}
-      {venues.length === 0 ? (
+      {/* Tabs */}
+      <Tabs value={review.activeTab} onValueChange={(v) => review.setActiveTab(v as ReviewTab)}>
+        <TabsList className="bg-muted/50 border border-border/50">
+          <TabsTrigger value="all" className="data-[state=active]:bg-background">
+            {m.admin_all_venues()}
+          </TabsTrigger>
+          <TabsTrigger value="duplicates" className="data-[state=active]:bg-background">
+            {m.admin_duplicates()}
+            {review.duplicateCount > 0 && (
+              <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs bg-amber-500/20 text-amber-400">
+                {review.duplicateCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="address_names" className="data-[state=active]:bg-background">
+            {m.admin_address_names()}
+            {review.addressNameCount > 0 && (
+              <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs bg-amber-500/20 text-amber-400">
+                {review.addressNameCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        {/* All Venues Tab */}
+        <TabsContent value="all" className="mt-4">
+          {venues.length === 0 ? (
         <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
           <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="font-display text-lg font-medium text-foreground mb-2">{m.admin_no_venues()}</h3>
@@ -231,6 +265,50 @@ function VenueListPage() {
           </div>
         </>
       )}
+        </TabsContent>
+
+        {/* Duplicates Tab */}
+        <TabsContent value="duplicates" className="mt-4">
+          <VenueDuplicatesPanel
+            groups={review.duplicateGroups}
+            eventCounts={review.eventCounts}
+            isLoading={review.isLoadingDuplicates}
+            onMerge={review.openMergeDialog}
+            onRefresh={review.refetchDuplicates}
+          />
+        </TabsContent>
+
+        {/* Address Names Tab */}
+        <TabsContent value="address_names" className="mt-4">
+          <VenueAddressNamesPanel
+            venues={review.addressLikeVenues}
+            venueEvents={review.addressVenueEvents}
+            isLoading={review.isLoadingAddressNames}
+            hasStarted={review.hasStartedAddressAnalysis}
+            onRename={review.openRenameDialog}
+            onRefresh={review.refetchAddressNames}
+            onStart={review.startAddressAnalysis}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Merge venue dialog */}
+      <MergeVenueDialog
+        group={review.selectedDuplicateGroup}
+        eventCounts={review.eventCounts}
+        onConfirm={review.handleMerge}
+        onCancel={review.closeMergeDialog}
+        isLoading={review.isMerging}
+      />
+
+      {/* Rename venue dialog */}
+      <RenameVenueDialog
+        venue={review.selectedAddressVenue?.venue ?? null}
+        suggestedName={review.selectedAddressVenue?.suggestedName}
+        onConfirm={review.handleRename}
+        onCancel={review.closeRenameDialog}
+        isLoading={review.isRenaming}
+      />
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
