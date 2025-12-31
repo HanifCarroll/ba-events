@@ -7,34 +7,15 @@ import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query'
 import { MainLayout } from '@/components/MainLayout'
 import { getLocale, setLocale } from '@/paraglide/runtime'
-import posthog from 'posthog-js'
-import { PostHogProvider, usePostHog } from 'posthog-js/react'
-import { useEffect } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import appCss from '../styles.css?url'
 
-// Initialize PostHog (client-side only)
-if (typeof window !== 'undefined') {
-  const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY
-  const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST
+// PostHog is loaded dynamically client-side only to avoid SSR issues
+let posthogInstance: typeof import('posthog-js').default | null = null
 
-  if (posthogKey) {
-    posthog.init(posthogKey, {
-      api_host: posthogHost || 'https://us.i.posthog.com',
-      // Use 2025 defaults for automatic SPA pageview tracking
-      defaults: '2025-05-24',
-      // Respect Do Not Track
-      respect_dnt: true,
-      // Capture performance metrics
-      capture_performance: true,
-      // Disable in development to avoid polluting data
-      loaded: (posthog) => {
-        if (import.meta.env.DEV) {
-          posthog.opt_out_capturing()
-        }
-      },
-    })
-  }
+function getPostHog() {
+  return posthogInstance
 }
 
 export const Route = createRootRoute({
@@ -103,6 +84,46 @@ export const Route = createRootRoute({
   component: RootDocument,
 })
 
+// Client-only PostHog provider that loads dynamically
+function ClientPostHogProvider({ children }: { children: ReactNode }) {
+  const [Provider, setProvider] = useState<React.ComponentType<{ client: typeof import('posthog-js').default; children: ReactNode }> | null>(null)
+
+  useEffect(() => {
+    // Dynamically import posthog-js only on client
+    Promise.all([
+      import('posthog-js'),
+      import('posthog-js/react'),
+    ]).then(([posthogModule, reactModule]) => {
+      const posthog = posthogModule.default
+      const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY
+      const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST
+
+      if (posthogKey && !posthogInstance) {
+        posthog.init(posthogKey, {
+          api_host: posthogHost || 'https://us.i.posthog.com',
+          defaults: '2025-05-24',
+          respect_dnt: true,
+          capture_performance: true,
+          loaded: (ph) => {
+            if (import.meta.env.DEV) {
+              ph.opt_out_capturing()
+            }
+          },
+        })
+        posthogInstance = posthog
+      }
+
+      setProvider(() => reactModule.PostHogProvider)
+    })
+  }, [])
+
+  if (!Provider || !posthogInstance) {
+    return <>{children}</>
+  }
+
+  return <Provider client={posthogInstance}>{children}</Provider>
+}
+
 function RootDocument() {
   return (
     <html lang={getLocale()} className="dark">
@@ -110,7 +131,7 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body className="bg-background text-foreground antialiased overflow-hidden bg-grain">
-        <PostHogProvider client={posthog}>
+        <ClientPostHogProvider>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
               <TooltipProvider>
@@ -119,7 +140,7 @@ function RootDocument() {
               </TooltipProvider>
             </AuthProvider>
           </QueryClientProvider>
-        </PostHogProvider>
+        </ClientPostHogProvider>
         <Toaster position="bottom-right" richColors />
         <Scripts />
       </body>
@@ -130,9 +151,11 @@ function RootDocument() {
 // Identify users when auth state changes and sync locale preference
 function PostHogIdentify() {
   const { user, profile, isAdmin } = useAuthContext()
-  const posthogClient = usePostHog()
 
   useEffect(() => {
+    const posthogClient = getPostHog()
+    if (!posthogClient) return
+
     if (user) {
       // Identify user with their ID (never use email as distinct_id)
       posthogClient.identify(user.id, {
@@ -150,7 +173,7 @@ function PostHogIdentify() {
       // Reset on logout to unlink future anonymous events
       posthogClient.reset()
     }
-  }, [user, profile?.locale, isAdmin, posthogClient])
+  }, [user, profile?.locale, isAdmin])
 
   return null
 }

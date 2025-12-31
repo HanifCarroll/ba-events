@@ -1,4 +1,3 @@
-import posthog from 'posthog-js'
 import { getLocale } from '@/paraglide/runtime'
 
 // Chat events - core feature tracking
@@ -38,19 +37,41 @@ export type AnalyticsEvent =
   | AuthEvent
   | AdminEvent
 
+// Lazy-loaded PostHog instance (client-side only)
+let posthogInstance: typeof import('posthog-js').default | null = null
+let posthogPromise: Promise<typeof import('posthog-js').default> | null = null
+
+async function getPostHog() {
+  if (typeof window === 'undefined') return null
+  if (posthogInstance) return posthogInstance
+
+  if (!posthogPromise) {
+    posthogPromise = import('posthog-js').then(m => {
+      posthogInstance = m.default
+      return m.default
+    })
+  }
+
+  return posthogPromise
+}
+
 /**
  * Track an analytics event with PostHog.
  * Automatically includes locale in all events.
+ * No-op during SSR.
  */
 export function track(
   event: AnalyticsEvent,
   properties?: Record<string, unknown>
 ) {
-  posthog.capture(event, {
-    ...properties,
-    locale: getLocale(),
+  if (typeof window === 'undefined') return
+
+  getPostHog().then(posthog => {
+    if (posthog) {
+      posthog.capture(event, {
+        ...properties,
+        locale: getLocale(),
+      })
+    }
   })
 }
-
-// Re-export posthog for direct access when needed
-export { posthog }
