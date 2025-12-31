@@ -1,48 +1,23 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { bulkDeleteVenuesAction } from '@/lib/admin'
+import { useBulkSelection } from './useBulkSelection'
 import type { Venue } from '@/lib/types'
 
 export type VenueBulkActionType = 'delete' | null
 
 export function useVenueBulkActions(filteredVenues: Venue[]) {
   const router = useRouter()
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const selection = useBulkSelection(filteredVenues)
   const [bulkAction, setBulkAction] = useState<VenueBulkActionType>(null)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
 
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }, [])
-
-  const toggleSelectAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      if (prev.size === filteredVenues.length) {
-        return new Set()
-      } else {
-        return new Set(filteredVenues.map((v) => v.id))
-      }
-    })
-  }, [filteredVenues])
-
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set())
-  }, [])
-
   const handleBulkAction = useCallback(async () => {
-    if (!bulkAction || selectedIds.size === 0) return
+    if (!bulkAction || selection.selectedIds.size === 0) return
     setIsBulkProcessing(true)
 
     try {
-      const ids = Array.from(selectedIds)
+      const ids = Array.from(selection.selectedIds)
 
       if (bulkAction === 'delete') {
         await bulkDeleteVenuesAction({ data: ids })
@@ -50,34 +25,29 @@ export function useVenueBulkActions(filteredVenues: Venue[]) {
         router.invalidate()
       }
 
-      setSelectedIds(new Set())
+      selection.clearSelection()
       setBulkAction(null)
     } catch (err) {
       console.error('Bulk action failed:', err)
     } finally {
       setIsBulkProcessing(false)
     }
-  }, [bulkAction, selectedIds, router])
-
-  // Handle selection change from DataTable
-  const handleSelectionChange = useCallback(
-    (newIds: Set<string>) => {
-      setSelectedIds(newIds)
-    },
-    []
-  )
+  }, [bulkAction, selection, router])
 
   return {
-    selectedIds,
-    setSelectedIds,
+    // Selection state and methods (spread from shared hook)
+    selectedIds: selection.selectedIds,
+    setSelectedIds: selection.setSelectedIds,
+    toggleSelect: selection.toggleSelect,
+    toggleSelectAll: selection.toggleSelectAll,
+    clearSelection: selection.clearSelection,
+    handleSelectionChange: selection.handleSelectionChange,
+    isAllSelected: selection.isAllSelected,
+    // Action state and methods (venue-specific)
     bulkAction,
     setBulkAction,
     isBulkProcessing,
-    toggleSelect,
-    toggleSelectAll,
-    clearSelection,
     handleBulkAction,
-    handleSelectionChange,
   }
 }
 

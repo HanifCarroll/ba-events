@@ -1,4 +1,4 @@
-import { RefreshCw, CheckCircle2, Pencil, Loader2, Play, Calendar, ExternalLink } from 'lucide-react'
+import { RefreshCw, CheckCircle2, Pencil, Loader2, Play, Calendar, ExternalLink, Link2 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -122,20 +122,32 @@ export function VenueAddressNamesPanel({
                     <Calendar className="h-3 w-3" />
                     {m.admin_events_at_venue({ count: events.length })}
                   </p>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {events.slice(0, 3).map((event) => (
-                      <Link
-                        key={event.id}
-                        to="/admin/events/$id"
-                        params={{ id: event.id }}
-                        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors group"
-                      >
-                        <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        <span className="truncate flex-1">{event.name}</span>
-                        <span className="text-xs opacity-60">
+                      <div key={event.id} className="flex items-center gap-2 text-sm">
+                        <Link
+                          to="/admin/events/$id"
+                          params={{ id: event.id }}
+                          className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors group flex-1 min-w-0"
+                        >
+                          <ExternalLink className="h-3 w-3 shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
+                          <span className="truncate">{event.name}</span>
+                        </Link>
+                        <span className="text-xs text-muted-foreground opacity-60 shrink-0">
                           {formatShortDate(event.starts_at)}
                         </span>
-                      </Link>
+                        {event.link && (
+                          <a
+                            href={event.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-primary transition-colors shrink-0"
+                            title={m.admin_view_source()}
+                          >
+                            <Link2 className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
                     ))}
                     {events.length > 3 && (
                       <p className="text-xs text-muted-foreground pl-5">

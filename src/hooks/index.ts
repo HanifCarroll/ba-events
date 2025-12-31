@@ -1,4 +1,5 @@
 export { useEventFiltering, type UseEventFilteringReturn, type UseEventFilteringOptions, type VenueOption, type EventTab, type TabCounts, type DataGapType, type DataGapCounts, type CompletenessFilter } from './useEventFiltering'
+export { useBulkSelection, type UseBulkSelectionReturn } from './useBulkSelection'
 export { useBulkActions, type UseBulkActionsReturn, type BulkActionType } from './useBulkActions'
 export { useVenueBulkActions, type UseVenueBulkActionsReturn, type VenueBulkActionType } from './useVenueBulkActions'
 export { useMarkPastEvents, type UseMarkPastEventsReturn } from './useMarkPastEvents'

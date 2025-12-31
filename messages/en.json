@@ -211,6 +211,7 @@
   "admin_use_suggested": "Use suggested: \"{name}\"",
   "admin_and_more_events": "...and {count} more events",
   "admin_events_at_venue": "{count} events at this venue",
+  "admin_view_source": "View source",
   "common_save": "Save",
   "common_saving": "Saving..."
 }

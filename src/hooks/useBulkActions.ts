@@ -2,48 +2,23 @@ import { useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { bulkUpdateEventStatusAction, bulkDeleteEventsAction } from '@/lib/admin'
 import { queryKeys } from '@/lib/query'
+import { useBulkSelection } from './useBulkSelection'
 import type { EventWithVenue, EventStatus } from '@/lib/types'
 
 export type BulkActionType = 'delete' | 'past' | 'cancelled' | null
 
 export function useBulkActions(filteredEvents: EventWithVenue[]) {
   const queryClient = useQueryClient()
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const selection = useBulkSelection(filteredEvents)
   const [bulkAction, setBulkAction] = useState<BulkActionType>(null)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
 
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }, [])
-
-  const toggleSelectAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      if (prev.size === filteredEvents.length) {
-        return new Set()
-      } else {
-        return new Set(filteredEvents.map((e) => e.id))
-      }
-    })
-  }, [filteredEvents])
-
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set())
-  }, [])
-
   const handleBulkAction = useCallback(async () => {
-    if (!bulkAction || selectedIds.size === 0) return
+    if (!bulkAction || selection.selectedIds.size === 0) return
     setIsBulkProcessing(true)
 
     try {
-      const ids = Array.from(selectedIds)
+      const ids = Array.from(selection.selectedIds)
 
       if (bulkAction === 'delete') {
         await bulkDeleteEventsAction({ data: ids })
@@ -64,24 +39,28 @@ export function useBulkActions(filteredEvents: EventWithVenue[]) {
         )
       }
 
-      setSelectedIds(new Set())
+      selection.clearSelection()
       setBulkAction(null)
     } catch (err) {
       console.error('Bulk action failed:', err)
     } finally {
       setIsBulkProcessing(false)
     }
-  }, [bulkAction, selectedIds, queryClient])
+  }, [bulkAction, selection, queryClient])
 
   return {
-    selectedIds,
-    setSelectedIds,
+    // Selection state and methods (spread from shared hook)
+    selectedIds: selection.selectedIds,
+    setSelectedIds: selection.setSelectedIds,
+    toggleSelect: selection.toggleSelect,
+    toggleSelectAll: selection.toggleSelectAll,
+    clearSelection: selection.clearSelection,
+    handleSelectionChange: selection.handleSelectionChange,
+    isAllSelected: selection.isAllSelected,
+    // Action state and methods (event-specific)
     bulkAction,
     setBulkAction,
     isBulkProcessing,
-    toggleSelect,
-    toggleSelectAll,
-    clearSelection,
     handleBulkAction,
   }
 }
