@@ -106,6 +106,13 @@ function ClientPostHogProvider({ children }: { children: ReactNode }) {
           capture_pageview: true,
           capture_pageleave: true,
           autocapture: true,
+          disable_session_recording: false,
+          session_recording: {
+            maskAllInputs: false,
+            maskInputOptions: {
+              password: true,
+            },
+          },
           loaded: (ph) => {
             if (import.meta.env.DEV) {
               ph.opt_out_capturing()
