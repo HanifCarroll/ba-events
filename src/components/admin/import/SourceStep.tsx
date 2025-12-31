@@ -38,14 +38,6 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
                 Fetch events directly from Passline API. Only events in Buenos Aires (CABA) will be imported.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
-                Automatic
-              </span>
-              <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
-                CABA only
-              </span>
-            </div>
           </div>
         </button>
 
@@ -68,14 +60,6 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
               <p className="text-sm text-muted-foreground">
                 Fetch events from Eventbrite Buenos Aires listing. Includes descriptions and venue data.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <span className="text-xs bg-orange-500/10 text-orange-500 px-2 py-1 rounded-full">
-                Automatic
-              </span>
-              <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
-                Buenos Aires
-              </span>
             </div>
           </div>
         </button>
@@ -100,14 +84,6 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
                 Fetch weekly events from the official Buenos Aires city tourism website.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <span className="text-xs bg-sky-500/10 text-sky-500 px-2 py-1 rounded-full">
-                Weekly
-              </span>
-              <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
-                Official
-              </span>
-            </div>
           </div>
         </button>
 
@@ -131,14 +107,6 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
                 Fetch events from Meetup Buenos Aires. Includes tech, social, and language exchange events.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <span className="text-xs bg-red-500/10 text-red-500 px-2 py-1 rounded-full">
-                Community
-              </span>
-              <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
-                Recurring
-              </span>
-            </div>
           </div>
         </button>
 
@@ -161,14 +129,6 @@ export function SourceStep({ onSelectSource }: SourceStepProps) {
               <p className="text-sm text-muted-foreground">
                 Upload a CSV file with event data. Download a template to see the required format.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <span className="text-xs bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full">
-                Manual
-              </span>
-              <span className="text-xs bg-muted/50 text-muted-foreground px-2 py-1 rounded-full">
-                Any location
-              </span>
             </div>
           </div>
         </button>
