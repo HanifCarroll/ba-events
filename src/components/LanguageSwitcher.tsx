@@ -12,9 +12,9 @@ import { useAuthContext } from '@/hooks/useAuthContext'
 import { updateLocalePreference } from '@/lib/auth/server'
 import type { Locale } from '@/lib/types'
 
-const LOCALE_CONFIG: Record<string, { label: string; flag: string }> = {
-  en: { label: 'English', flag: '🇺🇸' },
-  es: { label: 'Español', flag: '🇦🇷' },
+const LOCALE_CONFIG: Record<string, { label: string }> = {
+  en: { label: 'English' },
+  es: { label: 'Español' },
 }
 
 interface LanguageSwitcherProps {
@@ -45,10 +45,7 @@ export function LanguageSwitcher({ collapsed = false }: LanguageSwitcherProps) {
     >
       <Globe className="h-5 w-5 shrink-0" />
       {!collapsed && (
-        <>
-          <span className="text-base leading-none align-middle">{currentConfig.flag}</span>
-          <span className="text-sm leading-none">{currentConfig.label}</span>
-        </>
+        <span className="text-sm leading-none">{currentConfig.label}</span>
       )}
     </Button>
   )
@@ -58,7 +55,7 @@ export function LanguageSwitcher({ collapsed = false }: LanguageSwitcherProps) {
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent side={collapsed ? 'right' : 'top'} align="start" className="w-40">
         {locales.map((locale) => {
-          const config = LOCALE_CONFIG[locale] || { label: locale, flag: '🌐' }
+          const config = LOCALE_CONFIG[locale] || { label: locale }
           const isActive = locale === currentLocale
 
           return (
@@ -67,7 +64,6 @@ export function LanguageSwitcher({ collapsed = false }: LanguageSwitcherProps) {
               onClick={() => handleLocaleChange(locale)}
               className={`flex items-center gap-2 cursor-pointer ${isActive ? 'bg-primary/10 text-primary' : ''}`}
             >
-              <span>{config.flag}</span>
               <span>{config.label}</span>
               {isActive && <span className="ml-auto text-primary">✓</span>}
             </DropdownMenuItem>
