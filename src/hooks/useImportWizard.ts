@@ -1212,7 +1212,7 @@ export function useImportWizard(
     setError(null)
 
     // Get only the failed event IDs and their links
-    const failedEventIds = new Set(enrichmentResult.errors.map((e: { eventId: string; error: string }) => e.eventId))
+    const failedEventIds = new Set(enrichmentResult.errors.map((e: { id: string; error: string }) => e.id))
     const eventsToRetry = eventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
 
     if (eventsToRetry.length === 0) {

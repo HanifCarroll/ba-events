@@ -10,7 +10,7 @@ interface EnrichStepProps {
   enrichmentResult: {
     enriched: number
     venuesCreated: number
-    errors: Array<{ eventId: string; error: string }>
+    errors: Array<{ id: string; error: string }>
   } | null
   onEnrich: () => void
   onSkip: () => void
@@ -102,7 +102,7 @@ export function EnrichStep({
                   <div className="bg-destructive/10 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
                     {enrichmentResult.errors.map((err, i) => (
                       <div key={i} className="text-xs">
-                        <code className="text-destructive font-mono">{err.eventId}</code>
+                        <code className="text-destructive font-mono">{err.id}</code>
                         <p className="text-muted-foreground mt-0.5">{err.error}</p>
                       </div>
                     ))}

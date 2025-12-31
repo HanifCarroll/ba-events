@@ -2,6 +2,12 @@ import { createServerFn } from '@tanstack/react-start'
 import Anthropic from '@anthropic-ai/sdk'
 import { requireAdminAccess } from './utils'
 import { CLAUDE_MODEL } from '../ai/constants'
+import type {
+  AddressNameResult,
+  AddressDetectionProgress,
+  AddressDetectionComplete,
+  AddressDetectionUpdate,
+} from './streaming-types'
 
 // Types
 export interface VenueDuplicatePair {
@@ -14,13 +20,6 @@ export interface VenueDuplicatePair {
   similarity_score: number
 }
 
-export interface AddressNameResult {
-  venue_id: string
-  is_address_like: boolean
-  confidence: number
-  suggested_name?: string
-}
-
 export interface MergeVenuesResult {
   success: boolean
   events_reassigned: number
@@ -30,23 +29,8 @@ export interface MergeVenuesResult {
   target_venue_name: string
 }
 
-// Address detection streaming types
-export interface AddressDetectionProgress {
-  type: 'progress'
-  current: number
-  total: number
-  batchNumber: number
-  totalBatches: number
-  batchResults: AddressNameResult[]
-}
-
-export interface AddressDetectionComplete {
-  type: 'complete'
-  results: AddressNameResult[]
-  total: number
-}
-
-export type AddressDetectionUpdate = AddressDetectionProgress | AddressDetectionComplete
+// Re-export streaming types for backwards compatibility
+export type { AddressNameResult, AddressDetectionProgress, AddressDetectionComplete, AddressDetectionUpdate }
 
 // Get duplicate venue candidates using pg_trgm similarity
 export const getDuplicateVenueCandidatesAction = createServerFn({ method: 'GET' })

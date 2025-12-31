@@ -2,6 +2,11 @@ import { createServerFn } from '@tanstack/react-start'
 import { getVenues, updateVenue } from '../db/client'
 import { requireAdminAccess, mapToNeighborhood } from './utils'
 import type { Venue, Neighborhood } from '../types'
+import type {
+  NominatimEnrichProgress,
+  NominatimEnrichComplete,
+  NominatimEnrichUpdate,
+} from './streaming-types'
 
 // Nominatim API response types
 interface NominatimAddress {
@@ -35,24 +40,10 @@ export interface VenueEnrichmentOutput {
   errors: Array<{ venueId: string; venueName: string; error: string }>
 }
 
-// Streaming progress types
-export interface VenueEnrichmentProgress {
-  type: 'progress'
-  current: number
-  total: number
-  venueName: string
-  success: boolean
-  error?: string
-}
-
-export interface VenueEnrichmentComplete {
-  type: 'complete'
-  enriched: number
-  total: number
-  errors: Array<{ venueId: string; venueName: string; error: string }>
-}
-
-export type VenueEnrichmentUpdate = VenueEnrichmentProgress | VenueEnrichmentComplete
+// Re-export streaming types with backwards compatible names
+export type VenueEnrichmentProgress = NominatimEnrichProgress
+export type VenueEnrichmentComplete = NominatimEnrichComplete
+export type VenueEnrichmentUpdate = NominatimEnrichUpdate
 
 /**
  * Map Nominatim neighbourhood/suburb to valid CABA Neighborhood.

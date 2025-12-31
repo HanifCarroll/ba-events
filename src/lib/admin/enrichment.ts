@@ -4,61 +4,30 @@ import { generateEventEmbedding } from '../ai/embeddings'
 import { enrichEventDescriptionBilingual } from '../ai/enrichment'
 import { requireAdminAccess } from './utils'
 import type { EventWithVenue } from '../types'
+import type {
+  EmbeddingProgress,
+  EmbeddingComplete,
+  EmbeddingUpdate,
+  DescriptionUpdateProgress,
+  DescriptionUpdateComplete,
+  DescriptionUpdateUpdate,
+  DescriptionEnrichProgress,
+  DescriptionEnrichComplete,
+  DescriptionEnrichUpdate,
+} from './streaming-types'
 
-// Embedding regeneration streaming types
-export interface EmbeddingProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  success: boolean
-  error?: string
+// Re-export streaming types for backwards compatibility
+export type {
+  EmbeddingProgress,
+  EmbeddingComplete,
+  EmbeddingUpdate,
+  DescriptionUpdateProgress,
+  DescriptionUpdateComplete,
+  DescriptionUpdateUpdate,
+  DescriptionEnrichProgress,
+  DescriptionEnrichComplete,
+  DescriptionEnrichUpdate,
 }
-
-export interface EmbeddingComplete {
-  type: 'complete'
-  regenerated: number
-  total: number
-  errors?: Array<{ id: string; error: string }>
-}
-
-export type EmbeddingUpdate = EmbeddingProgress | EmbeddingComplete
-
-// Description update streaming types
-export interface DescriptionUpdateProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  success: boolean
-}
-
-export interface DescriptionUpdateComplete {
-  type: 'complete'
-  updated: number
-  total: number
-}
-
-export type DescriptionUpdateUpdate = DescriptionUpdateProgress | DescriptionUpdateComplete
-
-// Description enrichment streaming types
-export interface DescriptionEnrichProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  success: boolean
-  error?: string
-}
-
-export interface DescriptionEnrichComplete {
-  type: 'complete'
-  enriched: number
-  total: number
-  errors?: Array<{ id: string; error: string }>
-}
-
-export type DescriptionEnrichUpdate = DescriptionEnrichProgress | DescriptionEnrichComplete
 
 /**
  * Map event sources to known languages
