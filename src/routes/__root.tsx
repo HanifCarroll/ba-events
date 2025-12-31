@@ -103,7 +103,9 @@ function ClientPostHogProvider({ children }: { children: ReactNode }) {
           api_host: posthogHost || 'https://us.i.posthog.com',
           defaults: '2025-05-24',
           respect_dnt: true,
-          capture_performance: true,
+          capture_pageview: true,
+          capture_pageleave: true,
+          autocapture: true,
           loaded: (ph) => {
             if (import.meta.env.DEV) {
               ph.opt_out_capturing()
