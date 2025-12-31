@@ -19,6 +19,12 @@ const config = defineConfig(({ isSsrBuild }) => ({
       ...(!isSsrBuild ? [{ find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname }] : []),
     ],
   },
+  // Fix AsyncLocalStorage context loss on Netlify (GitHub issues #4408, #4409, #4729)
+  // Ensures @tanstack/start packages share the same server context
+  ssr: {
+    noExternal: ['@tanstack/start', '@tanstack/react-start', '@tanstack/start-storage-context'],
+    external: ['node:async_hooks'],
+  },
   plugins: [
     paraglideVitePlugin({
       project: './project.inlang',
