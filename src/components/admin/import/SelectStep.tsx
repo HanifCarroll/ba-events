@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ArrowRight, MapPin, AlertTriangle } from 'lucide-react'
+import { ArrowRight, MapPin, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns } from '@/components/data-table'
@@ -160,6 +160,25 @@ export function SelectStep({
           )}
         </div>
       )}
+
+      {/* Already Imported Info - Meetup only */}
+      {isMeetup && (() => {
+        const alreadyImportedCount = meetupEvents.filter(e => e.alreadyImported).length
+        if (alreadyImportedCount === 0) return null
+        return (
+          <div className="flex items-center gap-3 px-4 py-3 bg-blue-500/10 rounded-xl border border-blue-500/30">
+            <RefreshCw className="h-5 w-5 text-blue-500" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {alreadyImportedCount} event{alreadyImportedCount !== 1 ? 's' : ''} already imported
+              </p>
+              <p className="text-xs text-muted-foreground">
+                These events exist in your database and will be updated if re-imported.
+              </p>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Summary & Proceed */}
       <div className="flex items-center justify-between px-4 py-3 bg-card/50 rounded-xl border border-border/50">

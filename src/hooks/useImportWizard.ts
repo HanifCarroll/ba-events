@@ -85,13 +85,14 @@ interface UnmatchedVenue {
 }
 
 export function useImportWizard(
-  initialVenues: { id: string; name: string; neighborhood: string | null }[]
+  initialVenues: { id: string; name: string; neighborhood: string | null }[],
+  initialSource?: ImportSource
 ) {
   const router = useRouter()
 
-  // Core wizard state
-  const [step, setStep] = useState<WizardStep>('source')
-  const [source, setSource] = useState<ImportSource | null>(null)
+  // Core wizard state - if initialSource provided, start at configure step
+  const [step, setStep] = useState<WizardStep>(initialSource ? 'configure' : 'source')
+  const [source, setSource] = useState<ImportSource | null>(initialSource ?? null)
 
   // Passline/Eventbrite-specific state (shared date range)
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])

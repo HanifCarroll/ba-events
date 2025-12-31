@@ -12,6 +12,8 @@ export {
   getExtractionScript,
 } from './browser-scraper'
 
+export type { ScraperOptions } from './browser-scraper'
+
 // Transformer
 export {
   transformMeetupEvent,

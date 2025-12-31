@@ -1,5 +1,5 @@
 import { ColumnDef } from '@tanstack/react-table'
-import { CheckCircle2, HelpCircle, AlertCircle } from 'lucide-react'
+import { CheckCircle2, HelpCircle, AlertCircle, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent } from '@/lib/admin'
 
@@ -563,9 +563,17 @@ export function getMeetupColumns(): ColumnDef<MeetupEventWithId>[] {
         const event = row.original
         return (
           <div className="flex flex-col gap-1">
-            <span className="font-medium line-clamp-1">
-              {event.meetup.name}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium line-clamp-1">
+                {event.meetup.name}
+              </span>
+              {event.alreadyImported && (
+                <Badge variant="outline" className="text-xs shrink-0 border-blue-500/30 text-blue-500">
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Update
+                </Badge>
+              )}
+            </div>
             <span className="text-xs text-muted-foreground line-clamp-1">
               by {event.meetup.group.name}
             </span>

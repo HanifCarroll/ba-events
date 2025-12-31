@@ -15,15 +15,23 @@ async function main() {
   console.log('='.repeat(80))
   console.log()
 
+  // Default to next 7 days
+  const today = new Date()
+  const nextWeek = new Date(today)
+  nextWeek.setDate(nextWeek.getDate() + 7)
+
+  const startDate = today.toISOString().split('T')[0]
+  const endDate = nextWeek.toISOString().split('T')[0]
+
   try {
     // Step 1: Scrape events
     console.log('1. SCRAPING MEETUP EVENTS')
     console.log('-'.repeat(80))
-    console.log('   Fetching events from Meetup Buenos Aires...')
+    console.log(`   Fetching events from ${startDate} to ${endDate}...`)
     console.log()
 
     const startTime = Date.now()
-    const allEvents = await scrapeMeetupEvents()
+    const allEvents = await scrapeMeetupEvents({ startDate, endDate })
     const duration = ((Date.now() - startTime) / 1000).toFixed(1)
 
     console.log(`   Total events found: ${allEvents.length}`)

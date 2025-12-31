@@ -13,8 +13,61 @@ import type { Page } from 'playwright'
 import type { MeetupEvent, MeetupGraphQLEvent } from './types'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
 
-const MEETUP_BUENOS_AIRES_URL =
-  'https://www.meetup.com/find/?location=ar--Buenos%20Aires&source=EVENTS'
+const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
+
+/**
+ * Build a Meetup search URL for a specific date
+ * Uses customStartDate/customEndDate to get events for a single day
+ */
+function buildMeetupUrlForDate(date: Date): string {
+  // Start of day in Buenos Aires timezone (UTC-3)
+  const startOfDay = new Date(date)
+  startOfDay.setHours(0, 0, 0, 0)
+
+  // End of day
+  const endOfDay = new Date(date)
+  endOfDay.setHours(23, 59, 59, 999)
+
+  // Format as ISO string with timezone offset
+  const formatWithOffset = (d: Date): string => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    const seconds = String(d.getSeconds()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}-03:00`
+  }
+
+  const params = new URLSearchParams({
+    customStartDate: formatWithOffset(startOfDay),
+    customEndDate: formatWithOffset(endOfDay),
+    source: 'EVENTS',
+    eventType: 'inPerson',
+    distance: 'tenMiles',
+  })
+
+  return `${MEETUP_BASE_URL}?${params.toString()}`
+}
+
+/**
+ * Generate array of dates between start and end (inclusive)
+ */
+function getDateRange(startDate: Date, endDate: Date): Date[] {
+  const dates: Date[] = []
+  const current = new Date(startDate)
+  current.setHours(0, 0, 0, 0)
+
+  const end = new Date(endDate)
+  end.setHours(0, 0, 0, 0)
+
+  while (current <= end) {
+    dates.push(new Date(current))
+    current.setDate(current.getDate() + 1)
+  }
+
+  return dates
+}
 
 /**
  * Parse GraphQL response to extract events
@@ -286,10 +339,117 @@ async function autoScroll(page: Page, maxScrolls: number = 5): Promise<void> {
   await page.evaluate(() => window.scrollTo(0, 0))
 }
 
+export interface ScraperOptions {
+  startDate: string
+  endDate: string
+}
+
 /**
- * Scrape events using local Playwright
+ * Scrape a single page and collect events
  */
-async function scrapeWithPlaywright(): Promise<MeetupEvent[]> {
+async function scrapePageForEvents(
+  page: Page,
+  url: string,
+  seenIds: Set<string>,
+  collectedEvents: MeetupEvent[]
+): Promise<void> {
+  // Set up GraphQL interception for this page
+  const pageEvents: MeetupEvent[] = []
+
+  const responseHandler = async (response: { url: () => string; json: () => Promise<unknown> }) => {
+    const responseUrl = response.url()
+    if (responseUrl.includes('graphql') || responseUrl.includes('gql-')) {
+      try {
+        const json = await response.json()
+        const events = parseGraphQLResponse(json)
+        for (const event of events) {
+          if (!seenIds.has(event.id)) {
+            seenIds.add(event.id)
+            pageEvents.push(event)
+          }
+        }
+      } catch {
+        // Not JSON or parsing failed
+      }
+    }
+  }
+
+  page.on('response', responseHandler)
+
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    })
+
+    // Wait for content to load
+    await page.waitForTimeout(3000)
+
+    // Wait for event links
+    await page.waitForSelector('a[href*="/events/"]', {
+      timeout: 15000,
+    }).catch(() => {
+      // No events for this day
+    })
+
+    // Scroll to load more
+    await autoScroll(page, 3)
+
+    // Wait for pending requests
+    await page.waitForTimeout(2000)
+
+    // DOM fallback if GraphQL didn't capture events
+    if (pageEvents.length < 3) {
+      const domEvents = await page.evaluate(domExtractionScript)
+      for (const domEvent of domEvents) {
+        if (!seenIds.has(domEvent.id)) {
+          seenIds.add(domEvent.id)
+          pageEvents.push({
+            id: domEvent.id,
+            name: domEvent.name,
+            description: null,
+            dateTime: domEvent.dateTime,
+            endTime: null,
+            timezone: 'America/Argentina/Buenos_Aires',
+            eventUrl: domEvent.eventUrl,
+            imageUrl: domEvent.imageUrl,
+            isOnline: domEvent.isOnline,
+            venue: domEvent.venueName
+              ? {
+                  name: domEvent.venueName,
+                  address: null,
+                  city: 'Buenos Aires',
+                  lat: null,
+                  lng: null,
+                }
+              : null,
+            group: {
+              name: domEvent.groupName,
+              urlname: '',
+              rating: domEvent.groupRating,
+            },
+            attendeeCount: domEvent.attendeeCount,
+            category: domEvent.category,
+            isRecurring: isRecurringEvent(domEvent.dateTime),
+            recurrencePattern: extractRecurrencePattern(domEvent.dateTime),
+            price: null,
+            currency: null,
+          })
+        }
+      }
+    }
+
+    // Add to main collection
+    collectedEvents.push(...pageEvents)
+  } finally {
+    page.off('response', responseHandler)
+  }
+}
+
+/**
+ * Scrape events using local Playwright for a date range
+ */
+async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEvent[]> {
   const { chromium } = await import('playwright')
 
   const browser = await chromium.launch({
@@ -302,61 +462,85 @@ async function scrapeWithPlaywright(): Promise<MeetupEvent[]> {
   try {
     const page = await browser.newPage()
 
-    // Intercept GraphQL responses
-    page.on('response', async (response) => {
-      const url = response.url()
-      if (url.includes('graphql') || url.includes('gql-')) {
-        try {
-          const json = await response.json()
-          const events = parseGraphQLResponse(json)
-          for (const event of events) {
-            if (!seenIds.has(event.id)) {
-              seenIds.add(event.id)
-              collectedEvents.push(event)
-            }
-          }
-        } catch {
-          // Not JSON or parsing failed
-        }
-      }
-    })
+    const dates = getDateRange(new Date(options.startDate), new Date(options.endDate))
+    console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
 
-    console.log('[Meetup] Navigating to page...')
-    await page.goto(MEETUP_BUENOS_AIRES_URL, {
-      waitUntil: 'domcontentloaded',
+    for (let i = 0; i < dates.length; i++) {
+      const date = dates[i]
+      const url = buildMeetupUrlForDate(date)
+      const dateStr = date.toISOString().split('T')[0]
+
+      console.log(`[Meetup] Scraping day ${i + 1}/${dates.length}: ${dateStr}`)
+
+      await scrapePageForEvents(page, url, seenIds, collectedEvents)
+
+      console.log(`[Meetup] Total events so far: ${collectedEvents.length}`)
+
+      // Small delay between days to avoid rate limiting
+      if (i < dates.length - 1) {
+        await page.waitForTimeout(1000)
+      }
+    }
+
+    console.log(`[Meetup] Finished scraping. Total events: ${collectedEvents.length}`)
+    return collectedEvents
+  } finally {
+    await browser.close()
+  }
+}
+
+/**
+ * Scrape a single page using Puppeteer (Browserless)
+ */
+async function scrapeBrowserlessPage(
+  page: Awaited<ReturnType<Awaited<typeof import('puppeteer-core')>['default']['connect']>>['newPage'] extends () => Promise<infer P> ? P : never,
+  url: string,
+  seenIds: Set<string>,
+  collectedEvents: MeetupEvent[]
+): Promise<void> {
+  const pageEvents: MeetupEvent[] = []
+
+  const responseHandler = async (response: { url: () => string; json: () => Promise<unknown> }) => {
+    const responseUrl = response.url()
+    if (responseUrl.includes('graphql') || responseUrl.includes('gql-')) {
+      try {
+        const json = await response.json()
+        const events = parseGraphQLResponse(json)
+        for (const event of events) {
+          if (!seenIds.has(event.id)) {
+            seenIds.add(event.id)
+            pageEvents.push(event)
+          }
+        }
+      } catch {
+        // Not JSON or parsing failed
+      }
+    }
+  }
+
+  page.on('response', responseHandler)
+
+  try {
+    await page.goto(url, {
+      waitUntil: 'networkidle0',
       timeout: 60000,
     })
 
-    // Wait for additional content to load
-    await page.waitForTimeout(5000)
+    // Wait and scroll
+    await new Promise((r) => setTimeout(r, 3000))
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight))
+      await new Promise((r) => setTimeout(r, 1500))
+    }
+    await new Promise((r) => setTimeout(r, 2000))
 
-    // Wait for initial content - events are links with /events/ in href
-    console.log('[Meetup] Waiting for events to load...')
-    await page.waitForSelector('a[href*="/events/"]', {
-      timeout: 30000,
-    }).catch(() => {
-      console.log('[Meetup] Event links not found yet...')
-    })
-
-    // Scroll to trigger more GraphQL requests
-    console.log('[Meetup] Scrolling to load more events...')
-    await autoScroll(page, 5)
-
-    // Wait for any pending requests
-    await page.waitForTimeout(3000)
-
-    console.log(`[Meetup] Collected ${collectedEvents.length} events from GraphQL`)
-
-    // If GraphQL didn't capture many events, try DOM extraction
-    if (collectedEvents.length < 5) {
-      console.log('[Meetup] Trying DOM extraction fallback...')
+    // DOM fallback
+    if (pageEvents.length < 3) {
       const domEvents = await page.evaluate(domExtractionScript)
-      console.log(`[Meetup] DOM extraction found ${domEvents.length} events`)
-
       for (const domEvent of domEvents) {
         if (!seenIds.has(domEvent.id)) {
           seenIds.add(domEvent.id)
-          collectedEvents.push({
+          pageEvents.push({
             id: domEvent.id,
             name: domEvent.name,
             description: null,
@@ -391,16 +575,16 @@ async function scrapeWithPlaywright(): Promise<MeetupEvent[]> {
       }
     }
 
-    return collectedEvents
+    collectedEvents.push(...pageEvents)
   } finally {
-    await browser.close()
+    page.off('response', responseHandler)
   }
 }
 
 /**
- * Scrape events using Browserless (production/serverless mode)
+ * Scrape events using Browserless (production/serverless mode) for a date range
  */
-async function scrapeWithBrowserless(token: string): Promise<MeetupEvent[]> {
+async function scrapeWithBrowserless(token: string, options: ScraperOptions): Promise<MeetupEvent[]> {
   const puppeteer = await import('puppeteer-core')
 
   const browser = await puppeteer.default.connect({
@@ -413,79 +597,27 @@ async function scrapeWithBrowserless(token: string): Promise<MeetupEvent[]> {
   try {
     const page = await browser.newPage()
 
-    // Note: Puppeteer response handling is slightly different
-    page.on('response', async (response) => {
-      const url = response.url()
-      if (url.includes('graphql') || url.includes('gql-')) {
-        try {
-          const json = await response.json()
-          const events = parseGraphQLResponse(json)
-          for (const event of events) {
-            if (!seenIds.has(event.id)) {
-              seenIds.add(event.id)
-              collectedEvents.push(event)
-            }
-          }
-        } catch {
-          // Not JSON or parsing failed
-        }
-      }
-    })
+    const dates = getDateRange(new Date(options.startDate), new Date(options.endDate))
+    console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
 
-    await page.goto(MEETUP_BUENOS_AIRES_URL, {
-      waitUntil: 'networkidle0',
-      timeout: 60000,
-    })
+    for (let i = 0; i < dates.length; i++) {
+      const date = dates[i]
+      const url = buildMeetupUrlForDate(date)
+      const dateStr = date.toISOString().split('T')[0]
 
-    // Wait and scroll
-    await new Promise((r) => setTimeout(r, 3000))
-    for (let i = 0; i < 5; i++) {
-      await page.evaluate(() => window.scrollBy(0, window.innerHeight))
-      await new Promise((r) => setTimeout(r, 1500))
-    }
-    await new Promise((r) => setTimeout(r, 3000))
+      console.log(`[Meetup] Scraping day ${i + 1}/${dates.length}: ${dateStr}`)
 
-    // DOM fallback
-    if (collectedEvents.length < 5) {
-      const domEvents = await page.evaluate(domExtractionScript)
-      for (const domEvent of domEvents) {
-        if (!seenIds.has(domEvent.id)) {
-          seenIds.add(domEvent.id)
-          collectedEvents.push({
-            id: domEvent.id,
-            name: domEvent.name,
-            description: null,
-            dateTime: domEvent.dateTime,
-            endTime: null,
-            timezone: 'America/Argentina/Buenos_Aires',
-            eventUrl: domEvent.eventUrl,
-            imageUrl: domEvent.imageUrl,
-            isOnline: domEvent.isOnline,
-            venue: domEvent.venueName
-              ? {
-                  name: domEvent.venueName,
-                  address: null,
-                  city: 'Buenos Aires',
-                  lat: null,
-                  lng: null,
-                }
-              : null,
-            group: {
-              name: domEvent.groupName,
-              urlname: '',
-              rating: domEvent.groupRating,
-            },
-            attendeeCount: domEvent.attendeeCount,
-            category: domEvent.category,
-            isRecurring: isRecurringEvent(domEvent.dateTime),
-            recurrencePattern: extractRecurrencePattern(domEvent.dateTime),
-            price: null,
-            currency: null,
-          })
-        }
+      await scrapeBrowserlessPage(page, url, seenIds, collectedEvents)
+
+      console.log(`[Meetup] Total events so far: ${collectedEvents.length}`)
+
+      // Small delay between days
+      if (i < dates.length - 1) {
+        await new Promise((r) => setTimeout(r, 1000))
       }
     }
 
+    console.log(`[Meetup] Finished scraping. Total events: ${collectedEvents.length}`)
     return collectedEvents
   } finally {
     await browser.close()
@@ -497,17 +629,19 @@ async function scrapeWithBrowserless(token: string): Promise<MeetupEvent[]> {
  *
  * Uses Browserless if BROWSERLESS_TOKEN env var is set,
  * otherwise falls back to local Playwright.
+ *
+ * @param options - Date range to scrape (startDate and endDate required)
  */
-export async function scrapeMeetupEvents(): Promise<MeetupEvent[]> {
+export async function scrapeMeetupEvents(options: ScraperOptions): Promise<MeetupEvent[]> {
   const browserlessToken = process.env.BROWSERLESS_TOKEN
 
   if (browserlessToken) {
     console.log('[Meetup] Using Browserless for scraping')
-    return scrapeWithBrowserless(browserlessToken)
+    return scrapeWithBrowserless(browserlessToken, options)
   }
 
   console.log('[Meetup] Using local Playwright for scraping')
-  return scrapeWithPlaywright()
+  return scrapeWithPlaywright(options)
 }
 
 /**

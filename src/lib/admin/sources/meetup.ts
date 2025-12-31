@@ -2,7 +2,6 @@ import { createServerFn } from '@tanstack/react-start'
 import {
   type MeetupEvent,
   scrapeMeetupEvents,
-  filterInPersonEvents as filterMeetupInPersonEvents,
   transformMeetupEventWithExpansion,
   enrichMeetupEventsWithVenues,
 } from '../../scrapers/meetup'
@@ -18,6 +17,7 @@ export interface MeetupPreviewEvent {
   transformed: EventInsert[]
   venueMatch: VenueMatchResult
   dateCount: number
+  alreadyImported: boolean
 }
 
 export type { MeetupEvent }
@@ -40,6 +40,7 @@ export const processMeetupEventsAction = createServerFn({ method: 'POST' })
           transformed,
           venueMatch,
           dateCount: transformed.length,
+          alreadyImported: false, // This action doesn't check DB, so default to false
         }
       })
     )
@@ -48,31 +49,21 @@ export const processMeetupEventsAction = createServerFn({ method: 'POST' })
   })
 
 export const fetchMeetupEventsAction = createServerFn({ method: 'POST' })
-  .inputValidator((data: { startDate?: string; endDate?: string }) => data)
+  .inputValidator((data: { startDate: string; endDate: string }) => data)
   .handler(async ({ data }): Promise<{ events: MeetupPreviewEvent[] }> => {
     try {
-      console.log('[Admin] Starting Meetup fetch...')
-      const rawEvents = await scrapeMeetupEvents()
-      console.log(`[Admin] Scraped ${rawEvents.length} raw Meetup events`)
+      console.log(`[Admin] Starting Meetup fetch for ${data.startDate} to ${data.endDate}...`)
 
-      // Filter in-person events
-      const inPersonEvents = filterMeetupInPersonEvents(rawEvents)
-      console.log(`[Admin] ${inPersonEvents.length} in-person events`)
+      // Scraper now handles date range and in-person filtering via URL parameters
+      const rawEvents = await scrapeMeetupEvents({
+        startDate: data.startDate,
+        endDate: data.endDate,
+      })
+      console.log(`[Admin] Scraped ${rawEvents.length} in-person Meetup events`)
 
-      // Filter by date range if provided
-      let filteredEvents = inPersonEvents
-      if (data.startDate && data.endDate) {
-        const start = new Date(data.startDate)
-        const end = new Date(data.endDate)
-        filteredEvents = inPersonEvents.filter((event) => {
-          const eventDate = new Date(event.dateTime)
-          return eventDate >= start && eventDate <= end
-        })
-        console.log(`[Admin] ${filteredEvents.length} events in date range`)
-      }
-
-      const previews: MeetupPreviewEvent[] = await Promise.all(
-        filteredEvents.map(async (event) => {
+      // Transform events first to get external_ids
+      const previewsWithoutImportCheck = await Promise.all(
+        rawEvents.map(async (event) => {
           const venueName = event.venue?.name || ''
           const venueMatch = await matchVenue(venueName)
           const transformed = transformMeetupEventWithExpansion(
@@ -90,7 +81,39 @@ export const fetchMeetupEventsAction = createServerFn({ method: 'POST' })
         })
       )
 
-      console.log(`[Admin] Returning ${previews.length} Meetup preview events`)
+      // Collect all external_ids to check against database
+      const allExternalIds = previewsWithoutImportCheck.flatMap(
+        (p) => p.transformed.map((t) => t.external_id).filter(Boolean)
+      )
+
+      // Check which external_ids already exist in database
+      const existingIds = new Set<string>()
+      if (allExternalIds.length > 0) {
+        const { data: existingEvents } = await supabase
+          .from('events')
+          .select('external_id')
+          .eq('source', 'meetup')
+          .in('external_id', allExternalIds)
+
+        if (existingEvents) {
+          for (const e of existingEvents) {
+            if (e.external_id) existingIds.add(e.external_id)
+          }
+        }
+        console.log(`[Admin] Found ${existingIds.size} already imported events`)
+      }
+
+      // Add alreadyImported flag to each preview
+      const previews: MeetupPreviewEvent[] = previewsWithoutImportCheck.map((p) => {
+        // Check if ANY of the transformed events already exist
+        const alreadyImported = p.transformed.some(
+          (t) => t.external_id && existingIds.has(t.external_id)
+        )
+        return { ...p, alreadyImported }
+      })
+
+      const alreadyImportedCount = previews.filter((p) => p.alreadyImported).length
+      console.log(`[Admin] Returning ${previews.length} Meetup preview events (${alreadyImportedCount} already imported)`)
       return { events: previews }
     } catch (error) {
       console.error('[Admin] Meetup fetch error:', error)

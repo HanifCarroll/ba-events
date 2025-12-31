@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Upload, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getVenuesForSelect } from '@/lib/admin'
-import { useImportWizard, type WizardStep } from '@/hooks'
+import { useImportWizard, type WizardStep, type ImportSource } from '@/hooks'
 import {
   SourceStep,
   ConfigureStep,
@@ -14,7 +14,16 @@ import {
   SummaryStep,
 } from '@/components/admin/import'
 
+const validSources: ImportSource[] = ['passline', 'eventbrite', 'ba-tourism', 'meetup', 'csv']
+
 export const Route = createFileRoute('/admin/events/import')({
+  validateSearch: (search: Record<string, unknown>): { source?: ImportSource } => {
+    const source = search.source as string | undefined
+    if (source && validSources.includes(source as ImportSource)) {
+      return { source: source as ImportSource }
+    }
+    return {}
+  },
   loader: async () => {
     return getVenuesForSelect()
   },
@@ -33,7 +42,28 @@ const STEPS: { key: WizardStep; label: string }[] = [
 
 function ImportEventsPage() {
   const venues = Route.useLoaderData()
-  const wizard = useImportWizard(venues)
+  const { source: urlSource } = Route.useSearch()
+  const navigate = useNavigate()
+
+  const wizard = useImportWizard(venues, urlSource)
+
+  // Sync URL when source changes
+  useEffect(() => {
+    if (wizard.source && wizard.source !== urlSource) {
+      navigate({
+        to: '/admin/events/import',
+        search: { source: wizard.source },
+        replace: true,
+      })
+    } else if (!wizard.source && urlSource) {
+      // Clear URL if source is reset
+      navigate({
+        to: '/admin/events/import',
+        search: {},
+        replace: true,
+      })
+    }
+  }, [wizard.source, urlSource, navigate])
 
   // Fetch events needing enrichment when entering enrich step
   useEffect(() => {
