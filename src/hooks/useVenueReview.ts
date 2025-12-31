@@ -15,7 +15,7 @@ import type { VenueEventPreview } from '@/lib/admin/venue-review'
 import { queryKeys } from '@/lib/query'
 import type { Venue } from '@/lib/types'
 
-export type ReviewTab = 'all' | 'duplicates' | 'address_names'
+export type ReviewTab = 'all' | 'missing_neighborhood' | 'duplicates' | 'address_names'
 
 export interface DuplicateGroup {
   primaryVenue: Venue
@@ -31,9 +31,14 @@ export interface AddressLikeVenue {
   suggestedName?: string
 }
 
-export function useVenueReview(venues: Venue[]) {
+export interface UseVenueReviewOptions {
+  venues: Venue[]
+  activeTab: ReviewTab
+  setActiveTab: (tab: ReviewTab) => void
+}
+
+export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueReviewOptions) {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<ReviewTab>('all')
   const [selectedDuplicateGroup, setSelectedDuplicateGroup] = useState<DuplicateGroup | null>(null)
   const [selectedAddressVenue, setSelectedAddressVenue] = useState<{
     venue: Venue
@@ -305,6 +310,14 @@ export function useVenueReview(venues: Venue[]) {
   const duplicateCount = duplicateGroups.length
   const addressNameCount = addressLikeVenues.length
   const dismissedCount = dismissedDuplicates?.length ?? 0
+  const missingNeighborhoodCount = useMemo(
+    () => venues.filter((v) => !v.neighborhood).length,
+    [venues]
+  )
+  const missingNeighborhoodVenues = useMemo(
+    () => venues.filter((v) => !v.neighborhood),
+    [venues]
+  )
 
   return {
     // State
@@ -316,6 +329,7 @@ export function useVenueReview(venues: Venue[]) {
     // Data
     duplicateGroups,
     addressLikeVenues,
+    missingNeighborhoodVenues,
     eventCounts: eventCounts ?? {},
     addressVenueEvents: addressVenueEvents ?? {} as Record<string, VenueEventPreview[]>,
 
@@ -323,6 +337,7 @@ export function useVenueReview(venues: Venue[]) {
     duplicateCount,
     addressNameCount,
     dismissedCount,
+    missingNeighborhoodCount,
 
     // Loading states
     isLoading: isLoadingDuplicates || isLoadingAddresses,

@@ -230,5 +230,8 @@
   "admin_enrich_no_results": "No se enriquecieron lugares",
   "admin_enrich_estimated_time": "Tiempo estimado: ~{seconds} segundos",
   "admin_enrich_progress": "{current} de {total} lugares procesados",
-  "admin_enrich_done": "Listo"
+  "admin_enrich_done": "Listo",
+  "admin_tab_missing_neighborhood": "Sin Barrio",
+  "admin_no_missing_neighborhood": "Todos los Lugares Tienen Barrio",
+  "admin_no_missing_neighborhood_desc": "Todos los lugares tienen un barrio asignado."
 }

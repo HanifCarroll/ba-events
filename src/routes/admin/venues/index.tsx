@@ -1,5 +1,22 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
+import { z } from 'zod'
+
+// Simple debounce utility
+function debounce<T extends (...args: Parameters<T>) => void>(
+  func: T,
+  wait: number
+): T & { cancel: () => void } {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const debounced = (...args: Parameters<T>) => {
+    if (timeoutId) clearTimeout(timeoutId)
+    timeoutId = setTimeout(() => func(...args), wait)
+  }
+  debounced.cancel = () => {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+  return debounced as T & { cancel: () => void }
+}
 import { Plus, MapPin, Search, X, Filter, Upload, CheckCircle2, Loader2, AlertCircle, ChevronDown } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/components/ui/button'
@@ -28,12 +45,23 @@ import { MergeVenueDialog } from '@/components/admin/MergeVenueDialog'
 import { RenameVenueDialog } from '@/components/admin/RenameVenueDialog'
 import { DismissedDuplicatesDialog } from '@/components/admin/DismissedDuplicatesDialog'
 import { listVenues, deleteVenueAction } from '@/lib/admin'
-import { useVenueReview, type ReviewTab } from '@/hooks/useVenueReview'
+import { useVenueReview } from '@/hooks/useVenueReview'
 import { useVenueBulkActions, useVenueNominatimEnrichment } from '@/hooks'
 import { NEIGHBORHOODS } from '@/lib/types'
 import type { Venue, Neighborhood } from '@/lib/types'
+import type { ReviewTab } from '@/hooks/useVenueReview'
+
+// URL search params schema
+const venueSearchSchema = z.object({
+  tab: z.enum(['all', 'missing_neighborhood', 'duplicates', 'address_names']).optional().catch('all'),
+  search: z.string().optional(),
+  neighborhood: z.string().optional(),
+})
+
+export type VenueSearchParams = z.infer<typeof venueSearchSchema>
 
 export const Route = createFileRoute('/admin/venues/')({
+  validateSearch: venueSearchSchema,
   loader: async () => {
     return listVenues()
   },
@@ -43,16 +71,76 @@ export const Route = createFileRoute('/admin/venues/')({
 function VenueListPage() {
   const venues = Route.useLoaderData()
   const router = useRouter()
+  const searchParams = Route.useSearch()
+  const navigate = Route.useNavigate()
   const [deleteTarget, setDeleteTarget] = useState<Venue | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Venue review system
-  const review = useVenueReview(venues)
+  // URL-derived state
+  const activeTab = (searchParams.tab || 'all') as ReviewTab
+  const search = searchParams.search || ''
+  const neighborhoodFilter = searchParams.neighborhood as Neighborhood | undefined
 
-  // Filter state
-  const [search, setSearch] = useState('')
-  const [neighborhoodFilter, setNeighborhoodFilter] = useState<Neighborhood | undefined>(undefined)
+  // Tab change - clears filters
+  const setActiveTab = useCallback(
+    (tab: ReviewTab) => {
+      navigate({
+        search: { tab },
+      })
+      setSearchInput('')
+    },
+    [navigate]
+  )
+
+  // Venue review system
+  const review = useVenueReview({ venues, activeTab, setActiveTab })
+
+  // Local state for UI
   const [showFilters, setShowFilters] = useState(false)
+  const [searchInput, setSearchInput] = useState(search)
+
+  // Sync search input when URL changes
+  useEffect(() => {
+    setSearchInput(search)
+  }, [search])
+
+  // Debounced search update
+  const debouncedSearchUpdate = useMemo(
+    () =>
+      debounce((value: string) => {
+        navigate({
+          search: (prev) => ({ ...prev, search: value || undefined }),
+          replace: true,
+        })
+      }, 300),
+    [navigate]
+  )
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => debouncedSearchUpdate.cancel()
+  }, [debouncedSearchUpdate])
+
+  // Handle search input change
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value
+      setSearchInput(value)
+      debouncedSearchUpdate(value)
+    },
+    [debouncedSearchUpdate]
+  )
+
+  // Handle neighborhood filter change
+  const handleNeighborhoodChange = useCallback(
+    (value: string | undefined) => {
+      navigate({
+        search: (prev) => ({ ...prev, neighborhood: value }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
 
   // Neighborhood options for combobox
   const neighborhoodOptions = useMemo(() => {
@@ -88,10 +176,12 @@ function VenueListPage() {
     return enrichment.getEnrichableVenues(filteredVenues, bulk.selectedIds)
   }, [enrichment, filteredVenues, bulk.selectedIds])
 
-  function clearFilters() {
-    setSearch('')
-    setNeighborhoodFilter(undefined)
-  }
+  const clearFilters = useCallback(() => {
+    navigate({
+      search: { tab: activeTab },
+    })
+    setSearchInput('')
+  }, [navigate, activeTab])
 
   async function handleEnrichment() {
     await enrichment.enrichVenues(filteredVenues, bulk.selectedIds, () => {
@@ -198,8 +288,8 @@ function VenueListPage() {
             <div className="relative sm:col-span-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={handleSearchChange}
                 placeholder={m.admin_search_venues()}
                 className="pl-9 bg-background/50 border-border/50"
               />
@@ -209,7 +299,7 @@ function VenueListPage() {
             <Combobox
               options={neighborhoodOptions}
               value={neighborhoodFilter}
-              onValueChange={(v) => setNeighborhoodFilter(v as Neighborhood | undefined)}
+              onValueChange={handleNeighborhoodChange}
               placeholder={m.admin_all_neighborhoods()}
               emptyText={m.admin_no_neighborhood()}
             />
@@ -231,10 +321,18 @@ function VenueListPage() {
       )}
 
       {/* Tabs */}
-      <Tabs value={review.activeTab} onValueChange={(v) => review.setActiveTab(v as ReviewTab)}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReviewTab)}>
         <TabsList className="bg-muted/50 border border-border/50">
           <TabsTrigger value="all" className="data-[state=active]:bg-background">
             {m.admin_all_venues()}
+          </TabsTrigger>
+          <TabsTrigger value="missing_neighborhood" className="data-[state=active]:bg-background">
+            {m.admin_tab_missing_neighborhood()}
+            {review.missingNeighborhoodCount > 0 && (
+              <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs bg-amber-500/20 text-amber-400">
+                {review.missingNeighborhoodCount}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="duplicates" className="data-[state=active]:bg-background">
             {m.admin_duplicates()}
@@ -321,6 +419,69 @@ function VenueListPage() {
           </div>
         </>
       )}
+        </TabsContent>
+
+        {/* Missing Neighborhood Tab */}
+        <TabsContent value="missing_neighborhood" className="mt-4">
+          {review.missingNeighborhoodVenues.length === 0 ? (
+            <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
+              <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="font-display text-lg font-medium text-foreground mb-2">
+                {m.admin_no_missing_neighborhood()}
+              </h3>
+              <p className="text-muted-foreground">{m.admin_no_missing_neighborhood_desc()}</p>
+            </div>
+          ) : (
+            <>
+              {/* Mobile Card View */}
+              <div className="sm:hidden space-y-3">
+                {review.missingNeighborhoodVenues.map((venue) => (
+                  <MobileVenueCard
+                    key={venue.id}
+                    venue={venue}
+                    onDelete={() => setDeleteTarget(venue)}
+                  />
+                ))}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden sm:block">
+                <div className="relative">
+                  {/* Bulk action overlay */}
+                  <div className="absolute top-0 left-0 right-0 z-20">
+                    <VenueBulkActionBar
+                      selectedCount={bulk.selectedIds.size}
+                      isAllSelected={review.missingNeighborhoodVenues.length > 0 && bulk.selectedIds.size === review.missingNeighborhoodVenues.length}
+                      onToggleSelectAll={() => {
+                        if (bulk.selectedIds.size === review.missingNeighborhoodVenues.length) {
+                          bulk.clearSelection()
+                        } else {
+                          const allIds = new Set(review.missingNeighborhoodVenues.map(v => v.id))
+                          bulk.handleSelectionChange(allIds)
+                        }
+                      }}
+                      onSetBulkAction={bulk.setBulkAction}
+                      onClearSelection={bulk.clearSelection}
+                      overlay
+                    />
+                  </div>
+
+                  <DataTable
+                    columns={columns}
+                    data={review.missingNeighborhoodVenues}
+                    tableId="admin-venues-missing-neighborhood"
+                    enableRowSelection={true}
+                    selectedIds={bulk.selectedIds}
+                    onSelectionChange={handleSelectionChange}
+                    enableColumnResizing={true}
+                    enableColumnReordering={true}
+                    enableMultiSort={true}
+                    enableVirtualization={false}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </TabsContent>
 
         {/* Duplicates Tab */}

@@ -230,5 +230,8 @@
   "admin_enrich_no_results": "No venues enriched",
   "admin_enrich_estimated_time": "Estimated time: ~{seconds} seconds",
   "admin_enrich_progress": "{current} of {total} venues processed",
-  "admin_enrich_done": "Done"
+  "admin_enrich_done": "Done",
+  "admin_tab_missing_neighborhood": "Missing Neighborhood",
+  "admin_no_missing_neighborhood": "All Venues Have Neighborhoods",
+  "admin_no_missing_neighborhood_desc": "Every venue has a neighborhood assigned."
 }
