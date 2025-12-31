@@ -10,20 +10,14 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js'
 const config = defineConfig(({ isSsrBuild }) => ({
   resolve: {
     alias: [
-      // Polyfill/stub Node.js modules for browser compatibility - CLIENT BUILD ONLY
-      // Server build uses real Node.js modules
-      ...(!isSsrBuild ? [
-        { find: /^node:stream\/web$/, replacement: 'web-streams-polyfill' },
-        { find: /^node:stream$/, replacement: 'stream-browserify' },
-        { find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname },
-      ] : []),
+      // Polyfill/stub Node.js modules for browser compatibility
+      // Fixes TanStack Router SSR code being bundled in client build
+      // Order matters: more specific paths first, use regex for exact matching
+      { find: /^node:stream\/web$/, replacement: 'web-streams-polyfill' },
+      { find: /^node:stream$/, replacement: 'stream-browserify' },
+      // Stub async_hooks - only for client build, server needs the real module
+      ...(!isSsrBuild ? [{ find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname }] : []),
     ],
-  },
-  // Prevent TanStack Start packages from being externalized to ensure shared AsyncLocalStorage context
-  // Using specific patterns to avoid bundling incompatible packages
-  ssr: {
-    noExternal: [/^@tanstack\/.*start/, /^@tanstack\/router/],
-    external: ['node:stream', 'node:stream/web', 'node:async_hooks'],
   },
   plugins: [
     paraglideVitePlugin({
