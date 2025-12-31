@@ -102,7 +102,6 @@ function ClientPostHogProvider({ children }: { children: ReactNode }) {
         posthog.init(posthogKey, {
           api_host: posthogHost || 'https://us.i.posthog.com',
           defaults: '2025-05-24',
-          respect_dnt: true,
           capture_pageview: true,
           capture_pageleave: true,
           autocapture: true,
