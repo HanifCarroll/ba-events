@@ -270,7 +270,7 @@ function VenueListPage() {
               <div className="absolute top-0 left-0 right-0 z-20">
                 <VenueBulkActionBar
                   selectedCount={bulk.selectedIds.size}
-                  filteredVenuesLength={filteredVenues.length}
+                  isAllSelected={filteredVenues.length > 0 && bulk.selectedIds.size === filteredVenues.length}
                   onToggleSelectAll={bulk.toggleSelectAll}
                   onSetBulkAction={bulk.setBulkAction}
                   onClearSelection={bulk.clearSelection}

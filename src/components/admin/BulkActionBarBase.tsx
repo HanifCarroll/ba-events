@@ -5,7 +5,6 @@ import * as m from '@/paraglide/messages'
 
 interface BulkActionBarBaseProps {
   selectedCount: number
-  totalCount: number
   isAllSelected: boolean
   onToggleSelectAll: () => void
   onClearSelection: () => void
@@ -22,7 +21,6 @@ interface BulkActionBarBaseProps {
  */
 export function BulkActionBarBase({
   selectedCount,
-  totalCount,
   isAllSelected,
   onToggleSelectAll,
   onClearSelection,

@@ -6,7 +6,6 @@ import type { VenueBulkActionType } from '@/hooks/useVenueBulkActions'
 
 interface VenueBulkActionBarProps {
   selectedCount: number
-  filteredVenuesLength: number
   isAllSelected: boolean
   onToggleSelectAll: () => void
   onSetBulkAction: (action: VenueBulkActionType) => void
@@ -16,7 +15,6 @@ interface VenueBulkActionBarProps {
 
 export function VenueBulkActionBar({
   selectedCount,
-  filteredVenuesLength,
   isAllSelected,
   onToggleSelectAll,
   onSetBulkAction,
@@ -26,7 +24,6 @@ export function VenueBulkActionBar({
   return (
     <BulkActionBarBase
       selectedCount={selectedCount}
-      totalCount={filteredVenuesLength}
       isAllSelected={isAllSelected}
       onToggleSelectAll={onToggleSelectAll}
       onClearSelection={onClearSelection}

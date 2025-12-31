@@ -767,18 +767,18 @@ function TabEmptyState({ tab }: { tab: EventTab }) {
     },
     needs_attention: {
       icon: <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />,
-      title: m.admin_all_complete_title?.() ?? 'All events are complete!',
-      description: m.admin_all_complete_desc?.() ?? 'No events need attention right now.',
+      title: 'All events are complete!',
+      description: 'No events need attention right now.',
     },
     pending_review: {
       icon: <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />,
-      title: m.admin_no_pending_title?.() ?? 'No events pending review',
-      description: m.admin_no_pending_desc?.() ?? 'All imported events have been reviewed.',
+      title: 'No events pending review',
+      description: 'All imported events have been reviewed.',
     },
     past: {
       icon: <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />,
-      title: m.admin_no_past_title?.() ?? 'No past events',
-      description: m.admin_no_past_desc?.() ?? 'Past events will appear here after they end.',
+      title: 'No past events',
+      description: 'Past events will appear here after they end.',
     },
   }
 

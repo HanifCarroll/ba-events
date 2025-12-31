@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import { devtools } from '@tanstack/devtools-vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
@@ -7,23 +7,29 @@ import tailwindcss from '@tailwindcss/vite'
 import netlify from '@netlify/vite-plugin-tanstack-start'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
-const config = defineConfig(() => ({
-  environments: {
-    client: {
-      resolve: {
-        alias: [
-          // Polyfill/stub Node.js modules for browser compatibility
-          // Fixes TanStack Router SSR code being bundled in client build
-          // Order matters: more specific paths first, use regex for exact matching
-          { find: /^node:stream\/web$/, replacement: 'web-streams-polyfill' },
-          { find: /^node:stream$/, replacement: 'stream-browserify' },
-          // Stub async_hooks - client only, server must use the real module
-          { find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname },
-        ],
-      },
-    },
+const clientNodePolyfills = (): Plugin => ({
+  name: 'client-node-polyfills',
+  enforce: 'pre',
+  resolveId(id, _importer, options) {
+    if (options?.ssr) return null
+
+    if (id === 'node:async_hooks') {
+      return new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname
+    }
+    if (id === 'node:stream') {
+      return 'stream-browserify'
+    }
+    if (id === 'node:stream/web') {
+      return 'web-streams-polyfill'
+    }
+
+    return null
   },
+})
+
+const config = defineConfig(() => ({
   plugins: [
+    clientNodePolyfills(),
     paraglideVitePlugin({
       project: './project.inlang',
       outdir: './src/paraglide',
