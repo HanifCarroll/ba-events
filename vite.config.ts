@@ -8,6 +8,17 @@ import netlify from '@netlify/vite-plugin-tanstack-start'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
 const config = defineConfig({
+  resolve: {
+    alias: [
+      // Polyfill/stub Node.js modules for browser compatibility
+      // Fixes TanStack Router SSR code being bundled in client build
+      // Order matters: more specific paths first, use regex for exact matching
+      { find: /^node:stream\/web$/, replacement: 'web-streams-polyfill' },
+      { find: /^node:stream$/, replacement: 'stream-browserify' },
+      // Stub async_hooks - it's server-only but leaks into client bundle analysis
+      { find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname },
+    ],
+  },
   plugins: [
     paraglideVitePlugin({
       project: './project.inlang',
