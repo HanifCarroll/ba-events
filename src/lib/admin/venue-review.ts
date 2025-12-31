@@ -216,6 +216,7 @@ export interface VenueEventPreview {
   starts_at: string
   status: string
   link: string | null
+  source: string
 }
 
 // Get events for multiple venues (for merge preview)
@@ -228,7 +229,7 @@ export const getVenueEventsAction = createServerFn({ method: 'POST' })
 
     const { data, error } = await client
       .from('events')
-      .select('id, name, starts_at, status, link, venue_id')
+      .select('id, name, starts_at, status, link, source, venue_id')
       .in('venue_id', venueIds)
       .order('starts_at', { ascending: false })
 
@@ -247,6 +248,7 @@ export const getVenueEventsAction = createServerFn({ method: 'POST' })
           starts_at: event.starts_at,
           status: event.status,
           link: event.link,
+          source: event.source,
         })
       }
     }

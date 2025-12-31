@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { enrichVenuesWithNominatimAction } from '@/lib/admin'
+import { enrichVenuesWithNominatimAction, getVenueEventsAction } from '@/lib/admin'
+import type { VenueEventPreview } from '@/lib/admin/venue-review'
 import type { Venue } from '@/lib/types'
 import type { VenueEnrichmentOutput, VenueEnrichmentComplete } from '@/lib/admin/venue-enrichment'
 
@@ -11,6 +12,9 @@ interface EnrichmentState {
   total: number
 }
 
+// Events grouped by venue ID for display in summary
+export type VenueEventsMap = Record<string, VenueEventPreview[]>
+
 export function useVenueNominatimEnrichment() {
   const router = useRouter()
   const [state, setState] = useState<EnrichmentState>({
@@ -19,6 +23,7 @@ export function useVenueNominatimEnrichment() {
     total: 0,
   })
   const [result, setResult] = useState<VenueEnrichmentOutput | null>(null)
+  const [venueEvents, setVenueEvents] = useState<VenueEventsMap>({})
 
   // Keep track of the current toast ID so we can update it
   const toastIdRef = useRef<string | number | undefined>(undefined)
@@ -45,6 +50,7 @@ export function useVenueNominatimEnrichment() {
    */
   const clearResult = useCallback(() => {
     setResult(null)
+    setVenueEvents({})
   }, [])
 
   /**
@@ -135,6 +141,17 @@ export function useVenueNominatimEnrichment() {
             total: finalResult.total,
           })
 
+          // Fetch events for failed venues so user can see affected events
+          if (finalResult.errors.length > 0) {
+            const failedVenueIds = finalResult.errors.map((e) => e.venueId)
+            try {
+              const events = await getVenueEventsAction({ data: failedVenueIds })
+              setVenueEvents(events)
+            } catch (err) {
+              console.error('Failed to fetch events for failed venues:', err)
+            }
+          }
+
           // Show completion toast
           if (finalResult.enriched === 0) {
             toast.error('No venues enriched', {
@@ -183,6 +200,7 @@ export function useVenueNominatimEnrichment() {
     isEnriching: state.isEnriching,
     enrichProgress: state,
     enrichResult: result,
+    venueEvents,
     canEnrichVenue,
     getEnrichableVenues,
     enrichVenues,

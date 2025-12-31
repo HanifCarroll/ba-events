@@ -17,7 +17,7 @@ function debounce<T extends (...args: Parameters<T>) => void>(
   }
   return debounced as T & { cancel: () => void }
 }
-import { Plus, MapPin, Search, X, Filter, Upload, CheckCircle2, Loader2, AlertCircle, ChevronDown } from 'lucide-react'
+import { Plus, MapPin, Search, X, Filter, Upload, Loader2, AlertCircle, ChevronDown, ChevronRight, ExternalLink, Pencil } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -147,9 +147,19 @@ function VenueListPage() {
     return NEIGHBORHOODS.map((n) => ({ value: n, label: n }))
   }, [])
 
+  // Venue enrichment state (declare before filteredVenues since filter depends on it)
+  const enrichment = useVenueNominatimEnrichment()
+  const [enrichErrorsOpen, setEnrichErrorsOpen] = useState(false)
+  const [expandedVenues, setExpandedVenues] = useState<Set<string>>(new Set())
+  const [failedVenueFilter, setFailedVenueFilter] = useState<Set<string> | null>(null)
+
   // Filter venues
   const filteredVenues = useMemo(() => {
     return venues.filter((venue) => {
+      // Failed venue filter (from enrichment summary)
+      if (failedVenueFilter && !failedVenueFilter.has(venue.id)) {
+        return false
+      }
       // Search filter
       if (search && !venue.name.toLowerCase().includes(search.toLowerCase())) {
         return false
@@ -160,16 +170,12 @@ function VenueListPage() {
       }
       return true
     })
-  }, [venues, search, neighborhoodFilter])
+  }, [venues, search, neighborhoodFilter, failedVenueFilter])
 
   // Bulk actions
   const bulk = useVenueBulkActions(filteredVenues)
 
-  // Venue enrichment
-  const enrichment = useVenueNominatimEnrichment()
-  const [enrichErrorsOpen, setEnrichErrorsOpen] = useState(false)
-
-  const hasActiveFilters = search || neighborhoodFilter
+  const hasActiveFilters = search || neighborhoodFilter || failedVenueFilter
 
   // Get count of venues that can be enriched from selection
   const enrichableVenues = useMemo(() => {
@@ -181,6 +187,7 @@ function VenueListPage() {
       search: { tab: activeTab },
     })
     setSearchInput('')
+    setFailedVenueFilter(null)
   }, [navigate, activeTab])
 
   async function handleEnrichment() {
@@ -193,6 +200,26 @@ function VenueListPage() {
     bulk.setBulkAction(null)
     enrichment.clearResult()
     setEnrichErrorsOpen(false)
+    setExpandedVenues(new Set())
+  }
+
+  function handleViewFailedVenues() {
+    if (!enrichment.enrichResult) return
+    const failedIds = new Set(enrichment.enrichResult.errors.map((e) => e.venueId))
+    setFailedVenueFilter(failedIds)
+    handleCloseEnrichDialog()
+  }
+
+  function toggleVenueExpanded(venueId: string) {
+    setExpandedVenues((prev) => {
+      const next = new Set(prev)
+      if (next.has(venueId)) {
+        next.delete(venueId)
+      } else {
+        next.add(venueId)
+      }
+      return next
+    })
   }
 
   async function handleDelete() {
@@ -601,7 +628,7 @@ function VenueListPage() {
 
       {/* Venue enrichment dialog */}
       <Dialog open={bulk.bulkAction === 'enrich'} onOpenChange={handleCloseEnrichDialog}>
-        <DialogContent className="bg-card border-border/50">
+        <DialogContent className="bg-card border-border/50 max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display text-foreground flex items-center gap-2">
               <MapPin className="h-5 w-5 text-primary" />
@@ -609,9 +636,7 @@ function VenueListPage() {
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {enrichment.enrichResult
-                ? (enrichment.enrichResult.enriched > 0
-                    ? m.admin_enrich_success({ count: enrichment.enrichResult.enriched })
-                    : m.admin_enrich_no_results())
+                ? 'Enrichment complete'
                 : m.admin_enrich_venues_desc({ count: enrichableVenues.length })}
             </DialogDescription>
           </DialogHeader>
@@ -656,30 +681,113 @@ function VenueListPage() {
 
             {/* After enrichment: results summary */}
             {enrichment.enrichResult && (
-              <div className="space-y-3">
-                {/* Success count */}
-                <div className="flex items-center gap-2 text-green-500">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span className="text-sm font-medium">
-                    {m.admin_enrich_success({ count: enrichment.enrichResult.enriched })}
-                  </span>
+              <div className="space-y-4">
+                {/* Stats grid */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-3 bg-green-500/10 rounded-lg">
+                    <p className="text-2xl font-bold text-green-600">{enrichment.enrichResult.enriched}</p>
+                    <p className="text-xs text-muted-foreground">Enriched</p>
+                  </div>
+                  <div className="text-center p-3 bg-amber-500/10 rounded-lg">
+                    <p className="text-2xl font-bold text-amber-600">{enrichment.enrichResult.errors.length}</p>
+                    <p className="text-xs text-muted-foreground">Errors</p>
+                  </div>
                 </div>
 
-                {/* Errors */}
+                {/* Errors list with events */}
                 {enrichment.enrichResult.errors.length > 0 && (
                   <Collapsible open={enrichErrorsOpen} onOpenChange={setEnrichErrorsOpen}>
-                    <CollapsibleTrigger className="flex items-center gap-2 text-destructive text-sm hover:underline">
-                      <AlertCircle className="h-4 w-4" />
-                      {m.admin_enrich_errors({ count: enrichment.enrichResult.errors.length })}
-                      <ChevronDown className={`h-3 w-3 transition-transform ${enrichErrorsOpen ? 'rotate-180' : ''}`} />
+                    <CollapsibleTrigger className="flex items-center justify-between w-full text-sm p-2 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                      <span className="flex items-center gap-2 font-medium">
+                        {enrichErrorsOpen ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        Failed venues
+                      </span>
+                      <Badge variant="outline" className="text-amber-600 border-amber-500/30">
+                        {enrichment.enrichResult.errors.length}
+                      </Badge>
                     </CollapsibleTrigger>
-                    <CollapsibleContent className="mt-2 space-y-2 max-h-48 overflow-y-auto">
-                      {enrichment.enrichResult.errors.map((err, i) => (
-                        <div key={i} className="text-xs bg-muted/50 p-2 rounded">
-                          <code className="text-destructive font-medium">{err.venueName}</code>
-                          <p className="text-muted-foreground mt-0.5">{err.error}</p>
-                        </div>
-                      ))}
+                    <CollapsibleContent className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                      {enrichment.enrichResult.errors.map((err) => {
+                        const venueEventsList = enrichment.venueEvents[err.venueId] || []
+                        const isExpanded = expandedVenues.has(err.venueId)
+
+                        return (
+                          <div key={err.venueId} className="bg-muted/30 rounded-lg border border-border/30">
+                            {/* Venue header */}
+                            <div className="flex items-center justify-between p-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  {venueEventsList.length > 0 && (
+                                    <button
+                                      onClick={() => toggleVenueExpanded(err.venueId)}
+                                      className="text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronDown className="h-4 w-4" />
+                                      ) : (
+                                        <ChevronRight className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  )}
+                                  <span className="font-medium text-foreground truncate">{err.venueName}</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5 ml-6">{err.error}</p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                asChild
+                                className="text-muted-foreground hover:text-foreground shrink-0"
+                              >
+                                <Link to="/admin/venues/$id" params={{ id: err.venueId }}>
+                                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                                  Edit
+                                </Link>
+                              </Button>
+                            </div>
+
+                            {/* Events list (collapsible) */}
+                            {isExpanded && venueEventsList.length > 0 && (
+                              <div className="px-3 pb-3 pt-1 border-t border-border/30">
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  {venueEventsList.length} event{venueEventsList.length !== 1 ? 's' : ''} at this venue:
+                                </p>
+                                <div className="space-y-1.5">
+                                  {venueEventsList.slice(0, 5).map((event) => (
+                                    <div key={event.id} className="flex items-center justify-between text-xs">
+                                      <span className="truncate text-foreground">{event.name}</span>
+                                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                          {event.source}
+                                        </Badge>
+                                        {event.link && (
+                                          <a
+                                            href={event.link}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-primary hover:text-primary/80"
+                                          >
+                                            <ExternalLink className="h-3 w-3" />
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {venueEventsList.length > 5 && (
+                                    <p className="text-xs text-muted-foreground">
+                                      +{venueEventsList.length - 5} more events
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </CollapsibleContent>
                   </Collapsible>
                 )}
@@ -716,9 +824,21 @@ function VenueListPage() {
                 </Button>
               </>
             ) : (
-              <Button onClick={handleCloseEnrichDialog}>
-                {m.admin_enrich_done()}
-              </Button>
+              <div className="flex gap-2 w-full sm:w-auto">
+                {enrichment.enrichResult.errors.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={handleViewFailedVenues}
+                    className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                  >
+                    <Filter className="h-4 w-4 mr-2" />
+                    View Failed ({enrichment.enrichResult.errors.length})
+                  </Button>
+                )}
+                <Button onClick={handleCloseEnrichDialog}>
+                  {m.admin_enrich_done()}
+                </Button>
+              </div>
             )}
           </DialogFooter>
         </DialogContent>
