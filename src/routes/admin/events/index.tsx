@@ -1,5 +1,21 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { memo, useRef, useEffect, useMemo, useCallback } from 'react'
+import { memo, useRef, useEffect, useMemo, useCallback, useState } from 'react'
+
+// Simple debounce utility
+function debounce<T extends (...args: Parameters<T>) => void>(
+  fn: T,
+  delay: number
+): T & { cancel: () => void } {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const debounced = (...args: Parameters<T>) => {
+    if (timeoutId) clearTimeout(timeoutId)
+    timeoutId = setTimeout(() => fn(...args), delay)
+  }
+  debounced.cancel = () => {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+  return debounced as T & { cancel: () => void }
+}
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { toast } from 'sonner'
 import {
@@ -41,13 +57,18 @@ import type { EventWithVenue } from '@/lib/types'
 import { z } from 'zod'
 import type { ColumnFiltersState, SortingState } from '@tanstack/react-table'
 
-// Schema for URL search params
+// Schema for URL search params - single source of truth for all filter state
 const eventSearchSchema = z.object({
   // Tab filter
   tab: z.enum(['all', 'needs_attention', 'pending_review', 'past']).optional().catch('all'),
   // Completeness filter for needs_attention tab
   completeness: z.enum(['incomplete', 'complete']).optional().catch('incomplete'),
-  // Column filters (stored as key-value pairs)
+  // Data gap filter for needs_attention tab
+  dataGap: z.enum(['all', 'missing_description', 'missing_venue', 'missing_categories']).optional(),
+  // Quick filters (moved from React state to URL)
+  search: z.string().optional(),
+  venue: z.string().optional(), // venue ID filter
+  // Column filters (for DataTable)
   name: z.string().optional(),
   venue_name: z.string().optional(),
   source: z.string().optional(),
@@ -57,7 +78,7 @@ const eventSearchSchema = z.object({
   sortDir: z.enum(['asc', 'desc']).optional(),
 })
 
-type EventSearchParams = z.infer<typeof eventSearchSchema>
+export type EventSearchParams = z.infer<typeof eventSearchSchema>
 
 // Convert URL params to TanStack Table column filters
 function paramsToColumnFilters(params: EventSearchParams): ColumnFiltersState {
@@ -147,8 +168,57 @@ function EventListPage() {
   const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
 
-  // Use URL param for tab, defaulting to 'all'
-  const activeTab = (searchParams.tab || 'all') as EventTab
+  // Pass searchParams and navigate to the hook - URL is now single source of truth
+  const { filtering, bulk, markPast, singleActions } = useEventAdmin({
+    events,
+    searchParams,
+    navigate,
+  })
+
+  // Local state as write buffer for debounced search input
+  const [searchInput, setSearchInput] = useState(searchParams.search || '')
+
+  // Sync local input when URL changes (e.g., browser back/forward, clear filters)
+  useEffect(() => {
+    setSearchInput(searchParams.search || '')
+  }, [searchParams.search])
+
+  // Debounced URL update for search
+  const debouncedSearchUpdate = useMemo(
+    () =>
+      debounce((value: string) => {
+        navigate({
+          search: (prev) => ({ ...prev, search: value || undefined }),
+          replace: true,
+        })
+      }, 300),
+    [navigate]
+  )
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => debouncedSearchUpdate.cancel()
+  }, [debouncedSearchUpdate])
+
+  // Handle search input change - update local state immediately, debounce URL update
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value
+      setSearchInput(value)
+      debouncedSearchUpdate(value)
+    },
+    [debouncedSearchUpdate]
+  )
+
+  // Clear all filters - defined here where we have direct access to navigate
+  const handleClearFilters = useCallback(() => {
+    navigate({
+      search: {
+        tab: searchParams.tab || 'all',
+      },
+    })
+    setSearchInput('')
+  }, [navigate, searchParams.tab])
 
   // Derive TanStack Table state from URL params
   const columnFilters = useMemo(() => paramsToColumnFilters(searchParams), [searchParams])
@@ -187,33 +257,6 @@ function EventListPage() {
       })
     },
     [navigate]
-  )
-
-  // Get completeness from URL, defaulting to 'incomplete'
-  const completenessFromUrl = (searchParams.completeness || 'incomplete') as 'incomplete' | 'complete'
-
-  const { filtering, bulk, markPast, singleActions } = useEventAdmin(events, activeTab)
-
-  // Sync completeness filter from URL on mount/change
-  useEffect(() => {
-    if (filtering.completenessFilter !== completenessFromUrl) {
-      filtering.setCompletenessFilter(completenessFromUrl)
-    }
-  }, [completenessFromUrl])
-
-  // Handler to update both filter state and URL
-  const handleCompletenessChange = useCallback(
-    (value: 'incomplete' | 'complete') => {
-      filtering.setCompletenessFilter(value)
-      navigate({
-        search: (prev) => ({
-          ...prev,
-          completeness: value,
-        }),
-        replace: true,
-      })
-    },
-    [filtering, navigate]
   )
   const backgroundEnrichment = useBackgroundEnrichment()
   const venueEnrichment = useVenueEnrichment()
@@ -271,23 +314,16 @@ function EventListPage() {
   }, []) // Only run once on mount
 
   const handleTabChange = (value: string) => {
-    // Update URL search params to persist tab across router invalidations
-    // Clear column filters, sorting, and completeness when switching tabs
+    // Update URL - clears all filters when switching tabs
+    // Since all filter state is now in URL, this single navigate clears everything
     navigate({
       search: {
         tab: value as EventTab,
-        // Clear all filter/sort/completeness params
-        completeness: undefined,
-        name: undefined,
-        venue_name: undefined,
-        source: undefined,
-        status: undefined,
-        sortBy: undefined,
-        sortDir: undefined,
+        // All other params cleared by setting to undefined
       },
     })
-    // Clear other filters when switching tabs
-    filtering.clearFilters()
+    // Also clear the local search input state
+    setSearchInput('')
   }
 
   // Handle selection change from DataTable
@@ -334,19 +370,19 @@ function EventListPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Import button - links to unified wizard */}
-          <Button asChild variant="outline" className="border-border/50">
-            <Link to="/admin/events/import">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              {m.admin_import()}
-            </Link>
-          </Button>
-
           {/* Add Event button */}
-          <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button asChild variant="outline" size="lg" className="border-border/50">
             <Link to="/admin/events/new">
               <Plus className="h-4 w-4 mr-2" />
               {m.admin_add_event()}
+            </Link>
+          </Button>
+
+          {/* Import button - links to unified wizard */}
+          <Button asChild size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Link to="/admin/events/import">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              {m.admin_import()}
             </Link>
           </Button>
         </div>
@@ -406,7 +442,7 @@ function EventListPage() {
               <div className="flex items-center gap-3">
                 <Tabs
                   value={filtering.completenessFilter}
-                  onValueChange={(v) => handleCompletenessChange(v as 'incomplete' | 'complete')}
+                  onValueChange={(v) => filtering.setCompletenessFilter(v as 'incomplete' | 'complete')}
                 >
                   <TabsList className="bg-card/50 border border-border/50 p-0.5 h-auto">
                     <TabsTrigger
@@ -473,8 +509,8 @@ function EventListPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={m.admin_search_events()}
-                value={filtering.search}
-                onChange={(e) => filtering.setSearch(e.target.value)}
+                value={searchInput}
+                onChange={handleSearchChange}
                 className="pl-9 bg-background/50 border-border/50"
               />
             </div>
@@ -490,7 +526,7 @@ function EventListPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={filtering.clearFilters}
+                onClick={handleClearFilters}
                 className="text-muted-foreground hover:text-foreground"
               >
                 {m.common_clear()}
@@ -503,8 +539,12 @@ function EventListPage() {
       {/* Content */}
       {events.length === 0 ? (
         <EmptyState />
+      ) : filtering.tabCounts[filtering.activeTab] === 0 ? (
+        // Tab has no events at all - show tab-specific empty state
+        <TabEmptyState tab={filtering.activeTab} />
       ) : filtering.filteredEvents.length === 0 ? (
-        <NoMatchesState onClearFilters={filtering.clearFilters} />
+        // Tab has events but filters hide them
+        <NoMatchesState onClearFilters={handleClearFilters} />
       ) : (
         <>
           {/* Mobile Card View */}
@@ -714,6 +754,41 @@ function NoMatchesState({ onClearFilters }: { onClearFilters: () => void }) {
       <Button variant="outline" onClick={onClearFilters}>
         {m.common_clear_filters()}
       </Button>
+    </div>
+  )
+}
+
+function TabEmptyState({ tab }: { tab: EventTab }) {
+  const config: Record<EventTab, { icon: React.ReactNode; title: string; description: string }> = {
+    all: {
+      icon: <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />,
+      title: m.admin_no_events(),
+      description: m.admin_no_events_desc(),
+    },
+    needs_attention: {
+      icon: <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />,
+      title: m.admin_all_complete_title?.() ?? 'All events are complete!',
+      description: m.admin_all_complete_desc?.() ?? 'No events need attention right now.',
+    },
+    pending_review: {
+      icon: <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />,
+      title: m.admin_no_pending_title?.() ?? 'No events pending review',
+      description: m.admin_no_pending_desc?.() ?? 'All imported events have been reviewed.',
+    },
+    past: {
+      icon: <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />,
+      title: m.admin_no_past_title?.() ?? 'No past events',
+      description: m.admin_no_past_desc?.() ?? 'Past events will appear here after they end.',
+    },
+  }
+
+  const { icon, title, description } = config[tab]
+
+  return (
+    <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
+      {icon}
+      <h3 className="font-display text-lg font-medium text-foreground mb-2">{title}</h3>
+      <p className="text-muted-foreground">{description}</p>
     </div>
   )
 }
