@@ -219,38 +219,35 @@ const domExtractionScript = (): Array<{
       if (seenIds.has(id)) return
       seenIds.add(id)
 
-      // Parse the innerText line by line
+      // Get date from <time> element's datetime attribute (already ISO format!)
+      // Format: "2026-01-10T15:00:00-03:00[America/Argentina/Buenos_Aires]"
+      const timeEl = anchor.querySelector('time')
+      let dateTime = timeEl?.getAttribute('datetime') || ''
+      // Strip the [timezone] suffix if present
+      dateTime = dateTime.replace(/\[.*\]$/, '')
+      if (!dateTime) return
+
+      // Get event name from <h3> element
+      const h3El = anchor.querySelector('h3')
+      const name = h3El?.textContent?.trim() || ''
+      if (!name) return
+
+      // Parse innerText for additional info (group, rating, attendees, online status)
       const innerText = anchor.innerText || ''
       const lines = innerText
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l && l !== '•')
 
-      if (lines.length < 3) return
-
-      // First line is the date
-      let dateTime = lines[0] || ''
-      let isOnline = false
-      let eventNameIndex = 1
-
-      // Check if "Online" indicator is present
-      if (lines[1] === 'Online') {
-        isOnline = true
-        eventNameIndex = 2
-      }
-
-      // Event name
-      const name = lines[eventNameIndex] || ''
-      if (!name) return
+      // Check for online indicator
+      const isOnline = lines.some((line) => line === 'Online')
 
       // Group name - look for "by ..."
       let groupName = 'Unknown Group'
       let groupRating: number | null = null
       let attendeeCount = 0
 
-      for (let i = eventNameIndex + 1; i < lines.length; i++) {
-        const line = lines[i]
-
+      for (const line of lines) {
         if (line.startsWith('by ')) {
           groupName = line.slice(3).trim()
         } else if (/^\d\.\d$/.test(line)) {
@@ -267,38 +264,10 @@ const domExtractionScript = (): Array<{
       const imgEl = anchor.querySelector('img') as HTMLImageElement
       const imageUrl = imgEl?.src || null
 
-      // Parse the date string to ISO format if possible
-      let parsedDateTime = dateTime
-      // Try to parse dates like "Mon, Jan 5, 2026 · 7:00 PM ART"
-      const dateMatch = dateTime.match(
-        /(Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})\s+[·•]\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i
-      )
-      if (dateMatch) {
-        const [, , monthStr, day, year, hour, min, ampm] = dateMatch
-        const months: Record<string, number> = {
-          Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-          Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
-        }
-        let hours = parseInt(hour, 10)
-        if (ampm.toUpperCase() === 'PM' && hours !== 12) hours += 12
-        if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0
-
-        const date = new Date(
-          parseInt(year, 10),
-          months[monthStr],
-          parseInt(day, 10),
-          hours,
-          parseInt(min, 10)
-        )
-        if (!isNaN(date.getTime())) {
-          parsedDateTime = date.toISOString()
-        }
-      }
-
       events.push({
         id,
         name,
-        dateTime: parsedDateTime,
+        dateTime,
         eventUrl,
         imageUrl,
         venueName: null, // Not available in list view
