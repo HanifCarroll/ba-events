@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createEventAction, updateEventAction, deleteEventAction } from '@/lib/admin'
 import { queryKeys } from '@/lib/query'
 import { track } from '@/lib/analytics'
-import type { EventInsert, EventUpdate } from '@/lib/types'
+import type { EventInsert, EventUpdate, EventWithVenue } from '@/lib/types'
 
 export function useCreateEvent() {
   const queryClient = useQueryClient()
@@ -15,6 +15,7 @@ export function useCreateEvent() {
         has_venue: !!variables.venue_id,
         categories_count: variables.categories?.length ?? 0,
       })
+      // Invalidate to get fresh data with venue join
       queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
     },
   })
@@ -26,10 +27,18 @@ export function useUpdateEvent() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: EventUpdate }) =>
       updateEventAction({ data: { id, data } }),
-    onSuccess: (_, variables) => {
+    onSuccess: (updatedEvent, variables) => {
       track('admin:event_updated', { event_id: variables.id })
-      queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.events.detail(variables.id) })
+      // Update event in cache directly - merge with existing venue data
+      queryClient.setQueriesData<EventWithVenue[]>(
+        { queryKey: queryKeys.events.all },
+        (old) => old?.map((e) => (e.id === variables.id ? { ...e, ...updatedEvent } : e))
+      )
+      // Update detail cache if it exists
+      queryClient.setQueryData<EventWithVenue>(
+        queryKeys.events.detail(variables.id),
+        (old) => old ? { ...old, ...updatedEvent } : undefined
+      )
     },
   })
 }
@@ -41,7 +50,11 @@ export function useDeleteEvent() {
     mutationFn: (id: string) => deleteEventAction({ data: id }),
     onSuccess: (_, eventId) => {
       track('admin:event_deleted', { event_id: eventId })
-      queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
+      // Remove from cache directly - no refetch needed
+      queryClient.setQueriesData<EventWithVenue[]>(
+        { queryKey: queryKeys.events.all },
+        (old) => old?.filter((e) => e.id !== eventId)
+      )
     },
   })
 }

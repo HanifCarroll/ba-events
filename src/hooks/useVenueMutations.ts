@@ -2,19 +2,23 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createVenueAction, updateVenueAction, deleteVenueAction } from '@/lib/admin'
 import { queryKeys } from '@/lib/query'
 import { track } from '@/lib/analytics'
-import type { VenueInsert, VenueUpdate } from '@/lib/types'
+import type { Venue, VenueInsert, VenueUpdate } from '@/lib/types'
 
 export function useCreateVenue() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (data: VenueInsert) => createVenueAction({ data }),
-    onSuccess: (result, variables) => {
+    onSuccess: (newVenue, variables) => {
       track('admin:venue_created', {
-        venue_id: result.id,
+        venue_id: newVenue.id,
         neighborhood: variables.neighborhood,
       })
-      queryClient.invalidateQueries({ queryKey: queryKeys.venues.all })
+      // Add new venue to cache directly
+      queryClient.setQueriesData<Venue[]>(
+        { queryKey: queryKeys.venues.all },
+        (old) => old ? [newVenue, ...old] : [newVenue]
+      )
     },
   })
 }
@@ -25,9 +29,17 @@ export function useUpdateVenue() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: VenueUpdate }) =>
       updateVenueAction({ data: { id, data } }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.venues.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.venues.detail(variables.id) })
+    onSuccess: (updatedVenue, variables) => {
+      // Update venue in cache directly
+      queryClient.setQueriesData<Venue[]>(
+        { queryKey: queryKeys.venues.all },
+        (old) => old?.map((v) => (v.id === variables.id ? { ...v, ...updatedVenue } : v))
+      )
+      // Update detail cache if it exists
+      queryClient.setQueryData<Venue>(
+        queryKeys.venues.detail(variables.id),
+        (old) => old ? { ...old, ...updatedVenue } : undefined
+      )
     },
   })
 }
@@ -37,8 +49,12 @@ export function useDeleteVenue() {
 
   return useMutation({
     mutationFn: (id: string) => deleteVenueAction({ data: id }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.venues.all })
+    onSuccess: (_, venueId) => {
+      // Remove from cache directly - no refetch needed
+      queryClient.setQueriesData<Venue[]>(
+        { queryKey: queryKeys.venues.all },
+        (old) => old?.filter((v) => v.id !== venueId)
+      )
     },
   })
 }

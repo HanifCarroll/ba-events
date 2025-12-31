@@ -1,10 +1,11 @@
 import { useState, useCallback } from 'react'
-import { useRouter } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { deleteEventAction, approveEventAction, rejectEventAction } from '@/lib/admin'
+import { queryKeys } from '@/lib/query'
 import type { EventWithVenue } from '@/lib/types'
 
 export function useSingleEventActions() {
-  const router = useRouter()
+  const queryClient = useQueryClient()
   const [deleteTarget, setDeleteTarget] = useState<EventWithVenue | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isApproving, setIsApproving] = useState<string | null>(null)
@@ -16,38 +17,50 @@ export function useSingleEventActions() {
 
     try {
       await deleteEventAction({ data: deleteTarget.id })
+      // Remove from cache directly
+      queryClient.setQueriesData<EventWithVenue[]>(
+        { queryKey: queryKeys.events.all },
+        (old) => old?.filter((e) => e.id !== deleteTarget.id)
+      )
       setDeleteTarget(null)
-      router.invalidate()
     } catch (err) {
       console.error('Delete failed:', err)
     } finally {
       setIsDeleting(false)
     }
-  }, [deleteTarget, router])
+  }, [deleteTarget, queryClient])
 
   const handleApprove = useCallback(async (eventId: string) => {
     setIsApproving(eventId)
     try {
       await approveEventAction({ data: { eventId } })
-      router.invalidate()
+      // Update status in cache directly
+      queryClient.setQueriesData<EventWithVenue[]>(
+        { queryKey: queryKeys.events.all },
+        (old) => old?.map((e) => (e.id === eventId ? { ...e, status: 'scheduled' } : e))
+      )
     } catch (err) {
       console.error('Approve failed:', err)
     } finally {
       setIsApproving(null)
     }
-  }, [router])
+  }, [queryClient])
 
   const handleReject = useCallback(async (eventId: string) => {
     setIsRejecting(eventId)
     try {
       await rejectEventAction({ data: { eventId } })
-      router.invalidate()
+      // Update status in cache directly
+      queryClient.setQueriesData<EventWithVenue[]>(
+        { queryKey: queryKeys.events.all },
+        (old) => old?.map((e) => (e.id === eventId ? { ...e, status: 'cancelled' } : e))
+      )
     } catch (err) {
       console.error('Reject failed:', err)
     } finally {
       setIsRejecting(null)
     }
-  }, [router])
+  }, [queryClient])
 
   return {
     deleteTarget,

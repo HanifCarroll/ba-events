@@ -1,12 +1,13 @@
 import { useState, useCallback } from 'react'
-import { useRouter } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { bulkUpdateEventStatusAction, bulkDeleteEventsAction } from '@/lib/admin'
-import type { EventWithVenue } from '@/lib/types'
+import { queryKeys } from '@/lib/query'
+import type { EventWithVenue, EventStatus } from '@/lib/types'
 
 export type BulkActionType = 'delete' | 'past' | 'cancelled' | null
 
 export function useBulkActions(filteredEvents: EventWithVenue[]) {
-  const router = useRouter()
+  const queryClient = useQueryClient()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkAction, setBulkAction] = useState<BulkActionType>(null)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
@@ -46,19 +47,31 @@ export function useBulkActions(filteredEvents: EventWithVenue[]) {
 
       if (bulkAction === 'delete') {
         await bulkDeleteEventsAction({ data: ids })
+        // Remove deleted events from cache
+        const idsSet = new Set(ids)
+        queryClient.setQueriesData<EventWithVenue[]>(
+          { queryKey: queryKeys.events.all },
+          (old) => old?.filter((e) => !idsSet.has(e.id))
+        )
       } else if (bulkAction === 'past' || bulkAction === 'cancelled') {
         await bulkUpdateEventStatusAction({ data: { eventIds: ids, status: bulkAction } })
+        // Update status in cache
+        const idsSet = new Set(ids)
+        const newStatus: EventStatus = bulkAction
+        queryClient.setQueriesData<EventWithVenue[]>(
+          { queryKey: queryKeys.events.all },
+          (old) => old?.map((e) => (idsSet.has(e.id) ? { ...e, status: newStatus } : e))
+        )
       }
 
       setSelectedIds(new Set())
       setBulkAction(null)
-      router.invalidate()
     } catch (err) {
       console.error('Bulk action failed:', err)
     } finally {
       setIsBulkProcessing(false)
     }
-  }, [bulkAction, selectedIds, router])
+  }, [bulkAction, selectedIds, queryClient])
 
   return {
     selectedIds,
