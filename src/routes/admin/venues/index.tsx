@@ -636,7 +636,7 @@ function VenueListPage() {
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {enrichment.enrichResult
-                ? 'Enrichment complete'
+                ? m.admin_enrich_complete()
                 : m.admin_enrich_venues_desc({ count: enrichableVenues.length })}
             </DialogDescription>
           </DialogHeader>
@@ -686,11 +686,11 @@ function VenueListPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-3 bg-green-500/10 rounded-lg">
                     <p className="text-2xl font-bold text-green-600">{enrichment.enrichResult.enriched}</p>
-                    <p className="text-xs text-muted-foreground">Enriched</p>
+                    <p className="text-xs text-muted-foreground">{m.admin_enrich_stat_enriched()}</p>
                   </div>
                   <div className="text-center p-3 bg-amber-500/10 rounded-lg">
                     <p className="text-2xl font-bold text-amber-600">{enrichment.enrichResult.errors.length}</p>
-                    <p className="text-xs text-muted-foreground">Errors</p>
+                    <p className="text-xs text-muted-foreground">{m.admin_enrich_stat_errors()}</p>
                   </div>
                 </div>
 
@@ -704,7 +704,7 @@ function VenueListPage() {
                         ) : (
                           <ChevronRight className="h-4 w-4" />
                         )}
-                        Failed venues
+                        {m.admin_enrich_failed_venues()}
                       </span>
                       <Badge variant="outline" className="text-amber-600 border-amber-500/30">
                         {enrichment.enrichResult.errors.length}
@@ -745,7 +745,7 @@ function VenueListPage() {
                               >
                                 <Link to="/admin/venues/$id" params={{ id: err.venueId }}>
                                   <Pencil className="h-3.5 w-3.5 mr-1" />
-                                  Edit
+                                  {m.common_edit()}
                                 </Link>
                               </Button>
                             </div>
@@ -754,7 +754,7 @@ function VenueListPage() {
                             {isExpanded && venueEventsList.length > 0 && (
                               <div className="px-3 pb-3 pt-1 border-t border-border/30">
                                 <p className="text-xs text-muted-foreground mb-2">
-                                  {venueEventsList.length} event{venueEventsList.length !== 1 ? 's' : ''} at this venue:
+                                  {m.admin_enrich_events_at_venue({ count: venueEventsList.length })}
                                 </p>
                                 <div className="space-y-1.5">
                                   {venueEventsList.slice(0, 5).map((event) => (
@@ -779,7 +779,7 @@ function VenueListPage() {
                                   ))}
                                   {venueEventsList.length > 5 && (
                                     <p className="text-xs text-muted-foreground">
-                                      +{venueEventsList.length - 5} more events
+                                      {m.admin_enrich_more_events({ count: venueEventsList.length - 5 })}
                                     </p>
                                   )}
                                 </div>
@@ -832,7 +832,7 @@ function VenueListPage() {
                     className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
                   >
                     <Filter className="h-4 w-4 mr-2" />
-                    View Failed ({enrichment.enrichResult.errors.length})
+                    {m.admin_enrich_view_failed()} ({enrichment.enrichResult.errors.length})
                   </Button>
                 )}
                 <Button onClick={handleCloseEnrichDialog}>
