@@ -10,17 +10,19 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js'
 const clientNodePolyfills = (): Plugin => ({
   name: 'client-node-polyfills',
   enforce: 'pre',
-  resolveId(id, _importer, options) {
+  async resolveId(id, importer, options) {
     if (options?.ssr) return null
 
     if (id === 'node:async_hooks') {
       return new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname
     }
     if (id === 'node:stream') {
-      return 'stream-browserify'
+      const resolved = await this.resolve('stream-browserify', importer, { skipSelf: true })
+      return resolved?.id ?? null
     }
     if (id === 'node:stream/web') {
-      return 'web-streams-polyfill'
+      const resolved = await this.resolve('web-streams-polyfill', importer, { skipSelf: true })
+      return resolved?.id ?? null
     }
 
     return null
