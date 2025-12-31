@@ -120,4 +120,7 @@ export {
   mapNominatimNeighborhood,
   type VenueEnrichmentInput,
   type VenueEnrichmentOutput,
+  type VenueEnrichmentProgress,
+  type VenueEnrichmentComplete,
+  type VenueEnrichmentUpdate,
 } from './venue-enrichment'

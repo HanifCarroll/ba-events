@@ -35,6 +35,25 @@ export interface VenueEnrichmentOutput {
   errors: Array<{ venueId: string; venueName: string; error: string }>
 }
 
+// Streaming progress types
+export interface VenueEnrichmentProgress {
+  type: 'progress'
+  current: number
+  total: number
+  venueName: string
+  success: boolean
+  error?: string
+}
+
+export interface VenueEnrichmentComplete {
+  type: 'complete'
+  enriched: number
+  total: number
+  errors: Array<{ venueId: string; venueName: string; error: string }>
+}
+
+export type VenueEnrichmentUpdate = VenueEnrichmentProgress | VenueEnrichmentComplete
+
 /**
  * Map Nominatim neighbourhood/suburb to valid CABA Neighborhood.
  * Uses the neighbourhood field first (more specific), then falls back to suburb.
@@ -212,10 +231,11 @@ export const getVenuesNeedingEnrichmentAction = createServerFn({ method: 'GET' }
 /**
  * Enrich venues with address and neighborhood from Nominatim API
  * Processes sequentially with 1 second delay to respect rate limits
+ * Uses async generator to stream progress updates to the client
  */
 export const enrichVenuesWithNominatimAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { venues: VenueEnrichmentInput[] }) => data)
-  .handler(async ({ data: { venues } }): Promise<VenueEnrichmentOutput> => {
+  .handler(async function* ({ data: { venues } }): AsyncGenerator<VenueEnrichmentUpdate> {
     const client = await requireAdminAccess()
     console.log(`[venue-enrichment] Starting enrichment for ${venues.length} venues`)
 
@@ -238,6 +258,16 @@ export const enrichVenuesWithNominatimAction = createServerFn({ method: 'POST' }
         })
       }
 
+      // Yield progress update after each venue
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total: venues.length,
+        venueName: result.venueName,
+        success: result.success,
+        error: result.error,
+      } as VenueEnrichmentProgress
+
       // Rate limiting: wait 1 second between requests (except for last one)
       if (i < venues.length - 1) {
         await delay(1000)
@@ -246,10 +276,11 @@ export const enrichVenuesWithNominatimAction = createServerFn({ method: 'POST' }
 
     console.log(`[venue-enrichment] Completed: ${enriched}/${venues.length} enriched, ${errors.length} errors`)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       enriched,
       total: venues.length,
       errors,
-    }
+    } as VenueEnrichmentComplete
   })

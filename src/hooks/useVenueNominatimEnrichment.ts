@@ -3,7 +3,7 @@ import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { enrichVenuesWithNominatimAction } from '@/lib/admin'
 import type { Venue } from '@/lib/types'
-import type { VenueEnrichmentOutput } from '@/lib/admin/venue-enrichment'
+import type { VenueEnrichmentOutput, VenueEnrichmentComplete } from '@/lib/admin/venue-enrichment'
 
 interface EnrichmentState {
   isEnriching: boolean
@@ -49,8 +49,7 @@ export function useVenueNominatimEnrichment() {
 
   /**
    * Enrich selected venues using Nominatim API
-   * Note: Processing happens server-side with rate limiting
-   * We poll progress by checking the response
+   * Uses streaming to show real-time progress updates
    */
   const enrichVenues = useCallback(
     async (
@@ -80,49 +79,82 @@ export function useVenueNominatimEnrichment() {
         venueName: v.name,
       }))
 
-      // Show initial toast with estimated time
-      const estimatedSeconds = enrichableVenues.length
+      // Show initial toast
       toastIdRef.current = toast.loading(
-        `Enriching ${enrichableVenues.length} venues...`,
+        `Enriching 0/${enrichableVenues.length} venues...`,
         {
-          description: `Looking up addresses on OpenStreetMap. ~${estimatedSeconds}s remaining.`,
+          description: 'Looking up addresses on OpenStreetMap...',
         }
       )
 
       try {
-        // Call server action (handles rate limiting internally)
-        const enrichResult = await enrichVenuesWithNominatimAction({
+        // Call server action and stream progress updates
+        const stream = await enrichVenuesWithNominatimAction({
           data: { venues: venuesToEnrich },
         })
 
-        setResult(enrichResult)
+        let finalResult: VenueEnrichmentComplete | null = null
 
-        // Update state to show completion
-        setState({
-          isEnriching: false,
-          current: enrichResult.total,
-          total: enrichResult.total,
-        })
+        // Iterate through streamed updates
+        for await (const update of stream) {
+          if (update.type === 'progress') {
+            // Update state in real-time
+            setState({
+              isEnriching: true,
+              current: update.current,
+              total: update.total,
+            })
 
-        // Show completion toast
-        if (enrichResult.enriched === 0) {
-          toast.error('No venues enriched', {
-            id: toastIdRef.current,
-            description: 'Could not find address data for any selected venues.',
+            // Update toast with current progress
+            toast.loading(
+              `Enriching ${update.current}/${update.total}: ${update.venueName}`,
+              {
+                id: toastIdRef.current,
+                description: update.success
+                  ? 'Found address data'
+                  : update.error || 'Processing...',
+              }
+            )
+          } else if (update.type === 'complete') {
+            finalResult = update
+          }
+        }
+
+        // Handle completion
+        if (finalResult) {
+          setResult({
+            success: true,
+            enriched: finalResult.enriched,
+            total: finalResult.total,
+            errors: finalResult.errors,
           })
-        } else if (enrichResult.errors.length > 0) {
-          toast.warning(
-            `Enriched ${enrichResult.enriched} of ${enrichResult.total} venues`,
-            {
+
+          setState({
+            isEnriching: false,
+            current: finalResult.total,
+            total: finalResult.total,
+          })
+
+          // Show completion toast
+          if (finalResult.enriched === 0) {
+            toast.error('No venues enriched', {
               id: toastIdRef.current,
-              description: `${enrichResult.errors.length} venues had errors. Check the dialog for details.`,
-            }
-          )
-        } else {
-          toast.success(`Enriched ${enrichResult.enriched} venues`, {
-            id: toastIdRef.current,
-            description: 'Address and neighborhood data has been added.',
-          })
+              description: 'Could not find address data for any selected venues.',
+            })
+          } else if (finalResult.errors.length > 0) {
+            toast.warning(
+              `Enriched ${finalResult.enriched} of ${finalResult.total} venues`,
+              {
+                id: toastIdRef.current,
+                description: `${finalResult.errors.length} venues had errors. Check the dialog for details.`,
+              }
+            )
+          } else {
+            toast.success(`Enriched ${finalResult.enriched} venues`, {
+              id: toastIdRef.current,
+              description: 'Address and neighborhood data has been added.',
+            })
+          }
         }
 
         // Refresh UI to show new data
