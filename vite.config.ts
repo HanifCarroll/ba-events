@@ -15,7 +15,6 @@ const config = defineConfig({
       strategy: ['cookie', 'preferredLanguage', 'baseLocale'],
     }),
     devtools(),
-    netlify(),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
       projects: ['./tsconfig.json'],
@@ -23,6 +22,7 @@ const config = defineConfig({
     tailwindcss(),
     tanstackStart(),
     viteReact(),
+    netlify(),
   ],
 })
 
