@@ -112,3 +112,12 @@ export {
   type VenueEventPreview,
   type DismissedDuplicate,
 } from './venue-review'
+
+// Venue Enrichment (Nominatim)
+export {
+  getVenuesNeedingEnrichmentAction,
+  enrichVenuesWithNominatimAction,
+  mapNominatimNeighborhood,
+  type VenueEnrichmentInput,
+  type VenueEnrichmentOutput,
+} from './venue-enrichment'

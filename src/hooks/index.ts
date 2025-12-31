@@ -7,6 +7,7 @@ export { useSingleEventActions, type UseSingleEventActionsReturn } from './useSi
 export { useDescriptionEnrichment, type UseDescriptionEnrichmentReturn, type EnrichStep } from './useDescriptionEnrichment'
 export { useBackgroundEnrichment, type UseBackgroundEnrichmentReturn } from './useBackgroundEnrichment'
 export { useVenueEnrichment, type UseVenueEnrichmentReturn } from './useVenueEnrichment'
+export { useVenueNominatimEnrichment, type UseVenueNominatimEnrichmentReturn } from './useVenueNominatimEnrichment'
 export { useEmbeddingRegeneration, type UseEmbeddingRegenerationReturn } from './useEmbeddingRegeneration'
 export { useEventAdmin, type UseEventAdminReturn } from './useEventAdmin'
 export { useImportWizard, type UseImportWizardReturn, type ImportSource, type WizardStep } from './useImportWizard'

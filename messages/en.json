@@ -220,5 +220,15 @@
   "admin_dismissed_at": "Dismissed {date}",
   "admin_restore": "Restore",
   "common_save": "Save",
-  "common_saving": "Saving..."
+  "common_saving": "Saving...",
+  "admin_enrich_address": "Enrich Address",
+  "admin_enrich_venues": "Enrich Venue Addresses",
+  "admin_enrich_venues_desc": "Look up address and neighborhood data for {count} venue(s) using OpenStreetMap. This takes approximately 1 second per venue.",
+  "admin_enriching_venues": "Enriching...",
+  "admin_enrich_success": "Enriched {count} venues",
+  "admin_enrich_errors": "{count} venues had errors",
+  "admin_enrich_no_results": "No venues enriched",
+  "admin_enrich_estimated_time": "Estimated time: ~{seconds} seconds",
+  "admin_enrich_progress": "{current} of {total} venues processed",
+  "admin_enrich_done": "Done"
 }

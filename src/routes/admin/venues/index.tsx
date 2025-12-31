@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo, useCallback } from 'react'
-import { Plus, MapPin, Search, X, Filter, Upload } from 'lucide-react'
+import { Plus, MapPin, Search, X, Filter, Upload, CheckCircle2, Loader2, AlertCircle, ChevronDown } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { DataTable, getVenueColumns } from '@/components/data-table'
 import { VenueDuplicatesPanel } from '@/components/admin/VenueDuplicatesPanel'
 import { VenueAddressNamesPanel } from '@/components/admin/VenueAddressNamesPanel'
@@ -24,7 +29,7 @@ import { RenameVenueDialog } from '@/components/admin/RenameVenueDialog'
 import { DismissedDuplicatesDialog } from '@/components/admin/DismissedDuplicatesDialog'
 import { listVenues, deleteVenueAction } from '@/lib/admin'
 import { useVenueReview, type ReviewTab } from '@/hooks/useVenueReview'
-import { useVenueBulkActions } from '@/hooks'
+import { useVenueBulkActions, useVenueNominatimEnrichment } from '@/hooks'
 import { NEIGHBORHOODS } from '@/lib/types'
 import type { Venue, Neighborhood } from '@/lib/types'
 
@@ -72,11 +77,32 @@ function VenueListPage() {
   // Bulk actions
   const bulk = useVenueBulkActions(filteredVenues)
 
+  // Venue enrichment
+  const enrichment = useVenueNominatimEnrichment()
+  const [enrichErrorsOpen, setEnrichErrorsOpen] = useState(false)
+
   const hasActiveFilters = search || neighborhoodFilter
+
+  // Get count of venues that can be enriched from selection
+  const enrichableVenues = useMemo(() => {
+    return enrichment.getEnrichableVenues(filteredVenues, bulk.selectedIds)
+  }, [enrichment, filteredVenues, bulk.selectedIds])
 
   function clearFilters() {
     setSearch('')
     setNeighborhoodFilter(undefined)
+  }
+
+  async function handleEnrichment() {
+    await enrichment.enrichVenues(filteredVenues, bulk.selectedIds, () => {
+      // Keep dialog open to show results
+    })
+  }
+
+  function handleCloseEnrichDialog() {
+    bulk.setBulkAction(null)
+    enrichment.clearResult()
+    setEnrichErrorsOpen(false)
   }
 
   async function handleDelete() {
@@ -406,6 +432,132 @@ function VenueListPage() {
             >
               {bulk.isBulkProcessing ? m.common_deleting() : m.common_delete()}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Venue enrichment dialog */}
+      <Dialog open={bulk.bulkAction === 'enrich'} onOpenChange={handleCloseEnrichDialog}>
+        <DialogContent className="bg-card border-border/50">
+          <DialogHeader>
+            <DialogTitle className="font-display text-foreground flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-blue-500" />
+              {m.admin_enrich_venues()}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {enrichment.enrichResult
+                ? (enrichment.enrichResult.enriched > 0
+                    ? m.admin_enrich_success({ count: enrichment.enrichResult.enriched })
+                    : m.admin_enrich_no_results())
+                : m.admin_enrich_venues_desc({ count: enrichableVenues.length })}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {/* Pre-enrichment: show estimated time */}
+            {!enrichment.isEnriching && !enrichment.enrichResult && enrichableVenues.length > 0 && (
+              <div className="text-sm text-muted-foreground">
+                {m.admin_enrich_estimated_time({ seconds: enrichableVenues.length })}
+              </div>
+            )}
+
+            {/* No venues to enrich */}
+            {!enrichment.isEnriching && !enrichment.enrichResult && enrichableVenues.length === 0 && (
+              <div className="flex items-center gap-2 text-amber-500">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">All selected venues already have address and neighborhood data.</span>
+              </div>
+            )}
+
+            {/* During enrichment: progress bar */}
+            {enrichment.isEnriching && (
+              <div className="space-y-3">
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-300"
+                    style={{
+                      width: enrichment.enrichProgress.total > 0
+                        ? `${(enrichment.enrichProgress.current / enrichment.enrichProgress.total) * 100}%`
+                        : '0%'
+                    }}
+                  />
+                </div>
+                <p className="text-sm text-center text-muted-foreground">
+                  {m.admin_enrich_progress({
+                    current: enrichment.enrichProgress.current,
+                    total: enrichment.enrichProgress.total
+                  })}
+                </p>
+              </div>
+            )}
+
+            {/* After enrichment: results summary */}
+            {enrichment.enrichResult && (
+              <div className="space-y-3">
+                {/* Success count */}
+                <div className="flex items-center gap-2 text-green-500">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">
+                    {m.admin_enrich_success({ count: enrichment.enrichResult.enriched })}
+                  </span>
+                </div>
+
+                {/* Errors */}
+                {enrichment.enrichResult.errors.length > 0 && (
+                  <Collapsible open={enrichErrorsOpen} onOpenChange={setEnrichErrorsOpen}>
+                    <CollapsibleTrigger className="flex items-center gap-2 text-destructive text-sm hover:underline">
+                      <AlertCircle className="h-4 w-4" />
+                      {m.admin_enrich_errors({ count: enrichment.enrichResult.errors.length })}
+                      <ChevronDown className={`h-3 w-3 transition-transform ${enrichErrorsOpen ? 'rotate-180' : ''}`} />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                      {enrichment.enrichResult.errors.map((err, i) => (
+                        <div key={i} className="text-xs bg-muted/50 p-2 rounded">
+                          <code className="text-destructive font-medium">{err.venueName}</code>
+                          <p className="text-muted-foreground mt-0.5">{err.error}</p>
+                        </div>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            {!enrichment.enrichResult ? (
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={handleCloseEnrichDialog}
+                  disabled={enrichment.isEnriching}
+                  className="text-muted-foreground"
+                >
+                  {m.common_cancel()}
+                </Button>
+                <Button
+                  onClick={handleEnrichment}
+                  disabled={enrichment.isEnriching || enrichableVenues.length === 0}
+                  className="bg-blue-600 text-white hover:bg-blue-500"
+                >
+                  {enrichment.isEnriching ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {m.admin_enriching_venues()}
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="h-4 w-4 mr-2" />
+                      {m.admin_enrich_address()}
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={handleCloseEnrichDialog}>
+                {m.admin_enrich_done()}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

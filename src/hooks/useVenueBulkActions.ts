@@ -4,7 +4,7 @@ import { bulkDeleteVenuesAction } from '@/lib/admin'
 import { useBulkSelection } from './useBulkSelection'
 import type { Venue } from '@/lib/types'
 
-export type VenueBulkActionType = 'delete' | null
+export type VenueBulkActionType = 'delete' | 'enrich' | null
 
 export function useVenueBulkActions(filteredVenues: Venue[]) {
   const router = useRouter()

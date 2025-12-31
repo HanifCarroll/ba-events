@@ -220,5 +220,15 @@
   "admin_dismissed_at": "Descartado {date}",
   "admin_restore": "Restaurar",
   "common_save": "Guardar",
-  "common_saving": "Guardando..."
+  "common_saving": "Guardando...",
+  "admin_enrich_address": "Enriquecer Dirección",
+  "admin_enrich_venues": "Enriquecer Direcciones de Lugares",
+  "admin_enrich_venues_desc": "Buscar datos de dirección y barrio para {count} lugar(es) usando OpenStreetMap. Esto toma aproximadamente 1 segundo por lugar.",
+  "admin_enriching_venues": "Enriqueciendo...",
+  "admin_enrich_success": "Se enriquecieron {count} lugares",
+  "admin_enrich_errors": "{count} lugares tuvieron errores",
+  "admin_enrich_no_results": "No se enriquecieron lugares",
+  "admin_enrich_estimated_time": "Tiempo estimado: ~{seconds} segundos",
+  "admin_enrich_progress": "{current} de {total} lugares procesados",
+  "admin_enrich_done": "Listo"
 }
