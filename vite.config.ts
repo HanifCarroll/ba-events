@@ -21,6 +21,9 @@ const config = defineConfig(({ isSsrBuild }) => ({
   },
   // Fix AsyncLocalStorage context loss on Netlify (GitHub issues #4408, #4409, #4729)
   // Ensures @tanstack/start packages share the same server context
+  optimizeDeps: {
+    exclude: ['@tanstack/start-storage-context', 'node:async_hooks'],
+  },
   ssr: {
     noExternal: ['@tanstack/start', '@tanstack/react-start', '@tanstack/start-storage-context'],
     external: ['node:async_hooks'],
