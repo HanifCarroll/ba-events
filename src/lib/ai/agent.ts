@@ -7,6 +7,8 @@ import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fn
 import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from '../db/client'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '../auth/rate-limit'
 import { CATEGORIES, NEIGHBORHOODS } from '../types'
+import { CLAUDE_MODEL } from './constants'
+import { BA_TIMEZONE } from '../constants'
 import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue, RefinementSuggestion, StreamEvent } from '../types'
 
 // Initialize Anthropic client
@@ -219,7 +221,6 @@ or descriptive searches like "romantic date spot", "high energy dance party",
   },
 ]
 
-const BA_TIMEZONE = 'America/Argentina/Buenos_Aires'
 
 // Get current time in Buenos Aires
 function getNowInBA(): Date {
@@ -589,7 +590,7 @@ function createRateLimitErrorStream(resetTimestamp: number): ReadableStream<Uint
   const resetDate = new Date(resetTimestamp)
   // Format time in Buenos Aires timezone since this is a BA-focused app
   const resetTimeStr = resetDate.toLocaleTimeString('es-AR', {
-    timeZone: 'America/Argentina/Buenos_Aires',
+    timeZone: BA_TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -642,7 +643,7 @@ export const chat = createServerFn({ method: 'POST' })
           console.log('[DEBUG] Single search - first Claude call')
 
           const response1 = await anthropic.messages.create({
-            model: 'claude-haiku-4-5-20251001',
+            model: CLAUDE_MODEL,
             max_tokens: 1024,
             system: getSystemPrompt(locale),
             tools,
@@ -739,7 +740,7 @@ export const chat = createServerFn({ method: 'POST' })
             // Second Claude call to get response to tool results (NO MORE TOOL USE)
             console.log('[DEBUG] Single search - second Claude call for response')
             const response2 = await anthropic.messages.create({
-              model: 'claude-haiku-4-5-20251001',
+              model: CLAUDE_MODEL,
               max_tokens: 1024,
               system: getSystemPrompt(locale),
               tools,

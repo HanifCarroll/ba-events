@@ -10,6 +10,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { CLAUDE_MODEL } from './constants'
 
 const anthropic = new Anthropic()
 
@@ -121,7 +122,7 @@ export async function detectLanguage(markdown: string): Promise<DetectedLanguage
     const sample = markdown.slice(0, 3000)
 
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_MODEL,
       max_tokens: 10,
       messages: [
         {
@@ -160,7 +161,7 @@ export async function extractDescription(
     const prompt = language === 'spanish' ? EXTRACTION_PROMPT_ES : EXTRACTION_PROMPT_EN
 
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_MODEL,
       max_tokens: 400,
       messages: [
         {
@@ -189,7 +190,7 @@ export async function translateText(
     const prompt = direction === 'es-to-en' ? TRANSLATION_ES_TO_EN : TRANSLATION_EN_TO_ES
 
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_MODEL,
       max_tokens: 400,
       messages: [
         {

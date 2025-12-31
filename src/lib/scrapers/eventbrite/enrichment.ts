@@ -10,6 +10,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import type { Category } from '@/lib/types'
+import { CLAUDE_MODEL } from '@/lib/ai/constants'
 
 const anthropic = new Anthropic()
 
@@ -137,7 +138,7 @@ export async function inferCategory(
     const eventContext = `Event: ${name}${description ? `\nDescription: ${description}` : ''}`
 
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_MODEL,
       max_tokens: 20,
       messages: [
         {

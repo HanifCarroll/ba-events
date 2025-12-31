@@ -10,7 +10,7 @@ import { enrichEventbriteEventsBatch, extractEventbriteVenuesBatch } from '../..
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
 import { upsertEvents, supabase, getEventById, updateEvent, createVenue } from '../../db/client'
-import { generateEmbedding } from '../../ai/embeddings'
+import { generateEventEmbedding } from '../../ai/embeddings'
 import { requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
 
@@ -217,15 +217,11 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
         phase: 'embedding',
       } as ImportProgress
 
-      const textForEmbedding = [
-        event.name,
-        event.description_es,
-        category,
-      ]
-        .filter(Boolean)
-        .join(' ')
-
-      const embedding = await generateEmbedding(textForEmbedding)
+      const embedding = await generateEventEmbedding({
+        name: event.name,
+        description_es: event.description_es,
+        categories: [category],
+      })
       eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
@@ -324,15 +320,11 @@ export const enrichEventbriteEventsAction = createServerFn({ method: 'POST' })
         const existingEvent = await getEventById(result.id)
 
         // Generate new embedding with updated categories
-        const textForEmbedding = [
-          existingEvent.name,
-          existingEvent.description_es,
-          ...result.categories,
-        ]
-          .filter(Boolean)
-          .join(' ')
-
-        const embedding = await generateEmbedding(textForEmbedding)
+        const embedding = await generateEventEmbedding({
+          name: existingEvent.name,
+          description_es: existingEvent.description_es,
+          categories: result.categories,
+        })
 
         // Update event with enriched data
         await updateEvent(result.id, {

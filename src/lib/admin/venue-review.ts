@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import Anthropic from '@anthropic-ai/sdk'
 import { requireAdminAccess } from './utils'
+import { CLAUDE_MODEL } from '../ai/constants'
 
 // Types
 export interface VenueDuplicatePair {
@@ -89,7 +90,7 @@ export const detectAddressLikeNamesAction = createServerFn({ method: 'POST' })
 
       try {
         const message = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: CLAUDE_MODEL,
           max_tokens: 1000,
           messages: [
             {

@@ -6,7 +6,7 @@ import {
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
 import { upsertEvents, updateEvent, createVenue } from '../../db/client'
-import { generateEmbedding } from '../../ai/embeddings'
+import { generateEventEmbedding } from '../../ai/embeddings'
 import { mapToNeighborhood, requireAdminAccess } from '../utils'
 import type { EventInsert, Neighborhood } from '../../types'
 
@@ -151,15 +151,11 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
         phase: 'embedding',
       } as ImportProgress
 
-      const textForEmbedding = [
-        event.name,
-        event.description_es,
-        category,
-      ]
-        .filter(Boolean)
-        .join(' ')
-
-      const embedding = await generateEmbedding(textForEmbedding)
+      const embedding = await generateEventEmbedding({
+        name: event.name,
+        description_es: event.description_es,
+        categories: [category],
+      })
       eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 

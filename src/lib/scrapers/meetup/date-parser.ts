@@ -10,8 +10,7 @@
 import { parse, parseISO, isValid, addWeeks, format } from 'date-fns'
 import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import type { ParsedMeetupDateTime } from './types'
-
-const ARGENTINA_TZ = 'America/Argentina/Buenos_Aires'
+import { BA_TIMEZONE } from '@/lib/constants'
 
 /**
  * Day name to day of week mapping (0 = Sunday, 6 = Saturday)
@@ -51,7 +50,7 @@ export function parseMeetupDate(dateStr: string): string {
   const isoDate = parseISO(dateStr)
   if (isValid(isoDate)) {
     // Assume Argentina timezone
-    const utcDate = fromZonedTime(isoDate, ARGENTINA_TZ)
+    const utcDate = fromZonedTime(isoDate, BA_TIMEZONE)
     return utcDate.toISOString()
   }
 
@@ -78,7 +77,7 @@ export function parseMeetupDate(dateStr: string): string {
       const parsed = parse(cleanedStr, fmt, new Date())
       if (isValid(parsed)) {
         // Convert from Argentina time to UTC
-        const utcDate = fromZonedTime(parsed, ARGENTINA_TZ)
+        const utcDate = fromZonedTime(parsed, BA_TIMEZONE)
         return utcDate.toISOString()
       }
     } catch {
@@ -219,6 +218,6 @@ export function formatArgentinaDate(isoDate: string, formatStr: string = 'EEE, M
   const date = parseISO(isoDate)
   if (!isValid(date)) return isoDate
 
-  const argentinaDate = toZonedTime(date, ARGENTINA_TZ)
+  const argentinaDate = toZonedTime(date, BA_TIMEZONE)
   return format(argentinaDate, formatStr)
 }

@@ -11,7 +11,7 @@ import {
   markPastEvents,
   countPastEvents,
 } from '../db/client'
-import { generateEmbedding } from '../ai/embeddings'
+import { generateEventEmbedding } from '../ai/embeddings'
 import { requireAdminAccess } from './utils'
 import type { EventInsert, EventUpdate, EventWithVenue, EventStatus } from '../types'
 
@@ -29,16 +29,7 @@ export const createEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert) => data)
   .handler(async ({ data }) => {
     const client = await requireAdminAccess()
-    // Generate embedding from name and Spanish description (cross-lingual model)
-    const textForEmbedding = [
-      data.name,
-      data.description_es,
-      ...(data.categories || []),
-    ]
-      .filter(Boolean)
-      .join(' ')
-
-    const embedding = await generateEmbedding(textForEmbedding)
+    const embedding = await generateEventEmbedding(data)
 
     return createEvent({
       ...data,
@@ -60,16 +51,11 @@ export const updateEventAction = createServerFn({ method: 'POST' })
     let embedding: number[] | undefined
 
     if (needsNewEmbedding) {
-      // Use Spanish description for embedding (cross-lingual model)
-      const textForEmbedding = [
-        data.name ?? existingEvent.name,
-        data.description_es ?? existingEvent.description_es,
-        ...(data.categories ?? existingEvent.categories),
-      ]
-        .filter(Boolean)
-        .join(' ')
-
-      embedding = await generateEmbedding(textForEmbedding)
+      embedding = await generateEventEmbedding({
+        name: data.name ?? existingEvent.name,
+        description_es: data.description_es ?? existingEvent.description_es,
+        categories: data.categories ?? existingEvent.categories,
+      })
     }
 
     return updateEvent(id, {
@@ -90,23 +76,11 @@ export const bulkCreateEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert[]) => data)
   .handler(async ({ data: events }) => {
     const client = await requireAdminAccess()
-    // Generate embeddings for all events using Spanish description
+    // Generate embeddings for all events
     const eventsWithEmbeddings = await Promise.all(
       events.map(async (event) => {
-        const textForEmbedding = [
-          event.name,
-          event.description_es,
-          ...(event.categories || []),
-        ]
-          .filter(Boolean)
-          .join(' ')
-
-        const embedding = await generateEmbedding(textForEmbedding)
-
-        return {
-          ...event,
-          embedding,
-        }
+        const embedding = await generateEventEmbedding(event)
+        return { ...event, embedding }
       })
     )
 

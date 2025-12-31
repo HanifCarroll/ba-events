@@ -13,6 +13,7 @@ import type { Page } from 'playwright'
 import { parseISO, eachDayOfInterval } from 'date-fns'
 import type { MeetupEvent, MeetupGraphQLEvent } from './types'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
+import { BA_TIMEZONE } from '@/lib/constants'
 
 const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
 
@@ -146,7 +147,7 @@ function transformGraphQLEvent(gqlEvent: MeetupGraphQLEvent): MeetupEvent | null
     description: gqlEvent.description || null,
     dateTime: dateTimeStr,
     endTime: gqlEvent.endTime || null,
-    timezone: gqlEvent.timezone || 'America/Argentina/Buenos_Aires',
+    timezone: gqlEvent.timezone || BA_TIMEZONE,
     eventUrl: gqlEvent.eventUrl,
     imageUrl: gqlEvent.imageUrl || null,
     isOnline: gqlEvent.isOnline ?? false,
@@ -225,7 +226,7 @@ const domExtractionScript = (): Array<{
       seenIds.add(id)
 
       // Get date from <time> element's datetime attribute (already ISO format!)
-      // Format: "2026-01-10T15:00:00-03:00[America/Argentina/Buenos_Aires]"
+      // Format: "2026-01-10T15:00:00-03:00[${BA_TIMEZONE}]"
       const timeEl = anchor.querySelector('time')
       let dateTime = timeEl?.getAttribute('datetime') || ''
       // Strip the [timezone] suffix if present
@@ -376,7 +377,7 @@ async function scrapePageForEvents(
             description: null,
             dateTime: domEvent.dateTime,
             endTime: null,
-            timezone: 'America/Argentina/Buenos_Aires',
+            timezone: BA_TIMEZONE,
             eventUrl: domEvent.eventUrl,
             imageUrl: domEvent.imageUrl,
             isOnline: domEvent.isOnline,
@@ -512,7 +513,7 @@ async function scrapeBrowserlessPage(
             description: null,
             dateTime: domEvent.dateTime,
             endTime: null,
-            timezone: 'America/Argentina/Buenos_Aires',
+            timezone: BA_TIMEZONE,
             eventUrl: domEvent.eventUrl,
             imageUrl: domEvent.imageUrl,
             isOnline: domEvent.isOnline,

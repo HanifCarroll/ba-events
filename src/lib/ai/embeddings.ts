@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { createServerFn } from '@tanstack/react-start'
 import { supabase } from '../db/client'
 import type { Event, EventWithVenue } from '../types'
+import { EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from './constants'
 
 // Lazy-initialize OpenAI client (only when needed, server-side only)
 let openai: OpenAI | null = null
@@ -18,9 +19,19 @@ function getOpenAI(): OpenAI {
   return openai
 }
 
+// Minimal data needed for embedding text generation (for import scenarios)
+export interface EmbeddingEventData {
+  name: string
+  description_es?: string | null
+  categories?: string[] | null
+}
+
 // Build embedding text from event data
 // Uses Spanish description for cross-lingual semantic search
-export function buildEmbeddingText(event: Event | EventWithVenue): string {
+// Accepts full Event/EventWithVenue or minimal {name, description_es, categories}
+export function buildEmbeddingText(
+  event: Event | EventWithVenue | EmbeddingEventData
+): string {
   const parts: string[] = []
 
   // Event name and Spanish description (core content for embedding)
@@ -43,10 +54,10 @@ export function buildEmbeddingText(event: Event | EventWithVenue): string {
     parts.push(`Venue: ${venueParts.join(' ')}`)
   }
 
-  // Price context
-  if (event.is_free) {
+  // Price context (only available on full Event types)
+  if ('is_free' in event && event.is_free) {
     parts.push('This is a free event')
-  } else if (event.price) {
+  } else if ('price' in event && event.price) {
     parts.push(`Price: ${event.price} ARS`)
   }
 
@@ -56,16 +67,16 @@ export function buildEmbeddingText(event: Event | EventWithVenue): string {
 // Generate embedding using OpenAI
 export async function generateEmbedding(text: string): Promise<number[]> {
   const response = await getOpenAI().embeddings.create({
-    model: 'text-embedding-3-small',
+    model: EMBEDDING_MODEL,
     input: text,
-    dimensions: 1536,
+    dimensions: EMBEDDING_DIMENSIONS,
   })
   return response.data[0].embedding
 }
 
-// Generate embedding for an event
+// Generate embedding for an event (accepts full Event or minimal data)
 export async function generateEventEmbedding(
-  event: Event | EventWithVenue
+  event: Event | EventWithVenue | EmbeddingEventData
 ): Promise<number[]> {
   const text = buildEmbeddingText(event)
   return generateEmbedding(text)

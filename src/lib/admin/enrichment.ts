@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getEventsWithVenues, getEventById, updateEvent } from '../db/client'
-import { generateEmbedding } from '../ai/embeddings'
+import { generateEventEmbedding } from '../ai/embeddings'
 import { enrichEventDescriptionBilingual } from '../ai/enrichment'
 import { requireAdminAccess } from './utils'
 import type { EventWithVenue } from '../types'
@@ -101,16 +101,12 @@ async function enrichSingleEvent(
     // Get existing event to merge with new description
     const existingEvent = await getEventById(id)
 
-    // Generate new embedding with Spanish description (cross-lingual model)
-    const textForEmbedding = [
-      existingEvent.name,
-      bilingual.description_es,
-      ...(existingEvent.categories || []),
-    ]
-      .filter(Boolean)
-      .join(' ')
-
-    const embedding = await generateEmbedding(textForEmbedding)
+    // Generate new embedding with Spanish description
+    const embedding = await generateEventEmbedding({
+      name: existingEvent.name,
+      description_es: bilingual.description_es,
+      categories: existingEvent.categories,
+    })
 
     // Update event with both descriptions and new embedding
     await updateEvent(id, {
@@ -217,16 +213,8 @@ export const regenerateEmbeddingsAction = createServerFn({ method: 'POST' })
         const event = await getEventById(id)
         eventName = event.name
 
-        // Build text for embedding from current event data
-        const textForEmbedding = [
-          event.name,
-          event.description_es,
-          ...(event.categories || []),
-        ]
-          .filter(Boolean)
-          .join(' ')
-
-        const embedding = await generateEmbedding(textForEmbedding)
+        // Generate embedding from current event data
+        const embedding = await generateEventEmbedding(event)
 
         await updateEvent(id, { embedding }, client)
         regenerated++
@@ -288,16 +276,12 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
         const existingEvent = await getEventById(id)
         eventName = existingEvent.name
 
-        // Generate new embedding with Spanish description (cross-lingual model)
-        const textForEmbedding = [
-          existingEvent.name,
+        // Generate new embedding with Spanish description
+        const embedding = await generateEventEmbedding({
+          name: existingEvent.name,
           description_es,
-          ...(existingEvent.categories || []),
-        ]
-          .filter(Boolean)
-          .join(' ')
-
-        const embedding = await generateEmbedding(textForEmbedding)
+          categories: existingEvent.categories,
+        })
 
         // Update event with both descriptions and new embedding
         await updateEvent(id, {
