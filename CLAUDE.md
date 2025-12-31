@@ -284,6 +284,7 @@ docs/                    # Documentation
   - What was decided
   - Alternatives considered (if applicable)
   - Rationale for the decision
+- **NEVER modify old decisions** - decisions are a historical record. When a decision is superseded or reversed, create a NEW decision entry that references the old one (e.g., "Related Decision: [Old Decision Name] (Date)"). This preserves the decision history and rationale evolution.
 
 ## Event Import & Enrichment
 

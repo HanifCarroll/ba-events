@@ -7,7 +7,7 @@ import tailwindcss from '@tailwindcss/vite'
 import netlify from '@netlify/vite-plugin-tanstack-start'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
-const config = defineConfig({
+const config = defineConfig(({ isSsrBuild }) => ({
   resolve: {
     alias: [
       // Polyfill/stub Node.js modules for browser compatibility
@@ -15,8 +15,8 @@ const config = defineConfig({
       // Order matters: more specific paths first, use regex for exact matching
       { find: /^node:stream\/web$/, replacement: 'web-streams-polyfill' },
       { find: /^node:stream$/, replacement: 'stream-browserify' },
-      // Stub async_hooks - it's server-only but leaks into client bundle analysis
-      { find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname },
+      // Stub async_hooks - only for client build, server needs the real module
+      ...(!isSsrBuild ? [{ find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname }] : []),
     ],
   },
   plugins: [
@@ -35,6 +35,6 @@ const config = defineConfig({
     viteReact(),
     netlify(),
   ],
-})
+}))
 
 export default config
