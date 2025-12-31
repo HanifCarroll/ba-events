@@ -10,9 +10,17 @@ import { extractBATourismVenuesBatch } from '../../scrapers/ba-tourism/enrichmen
 import { categorizeEvent } from '../../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../../scrapers/venue-matcher'
 import { upsertEvents, supabase, updateEvent, createVenue, createVenues, findVenuesByExactNames } from '../../db/client'
-import { generateEmbedding } from '../../ai/embeddings'
+import { generateEventEmbedding } from '../../ai/embeddings'
 import { mapToNeighborhood, requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
+import type {
+  ImportProgress,
+  ImportComplete,
+  ImportUpdate,
+  VenueEnrichProgress,
+  VenueEnrichComplete,
+  VenueEnrichUpdate,
+} from '../streaming-types'
 
 export interface BATourismPreviewEvent {
   baTourism: BATourismEvent
@@ -23,43 +31,8 @@ export interface BATourismPreviewEvent {
 
 export type { BATourismEvent, WeekContext }
 
-// Import streaming types
-export interface ImportProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  phase: 'categorizing' | 'embedding' | 'importing'
-}
-
-export interface ImportComplete {
-  type: 'complete'
-  inserted: number
-  updated: number
-  venuesCreated: number
-}
-
-export type ImportUpdate = ImportProgress | ImportComplete
-
-// Venue enrichment streaming types
-export interface VenueEnrichProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  action: 'matched' | 'created' | 'error'
-  venueName?: string
-}
-
-export interface VenueEnrichComplete {
-  type: 'complete'
-  enriched: number
-  venuesCreated: number
-  total: number
-  errors: Array<{ id: string; error: string }>
-}
-
-export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+// Re-export streaming types for backwards compatibility
+export type { ImportProgress, ImportComplete, ImportUpdate, VenueEnrichProgress, VenueEnrichComplete, VenueEnrichUpdate }
 
 export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { weekContextText?: string }) => data)
@@ -194,16 +167,12 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
       } as ImportProgress
 
       // Categorize and generate embedding in PARALLEL, once per source event
-      const textForEmbedding = [
-        baTourismEvent.name,
-        baTourismEvent.description,
-      ]
-        .filter(Boolean)
-        .join(' ')
-
       const [category, embedding] = await Promise.all([
         categorizeEvent(baTourismEvent.name, baTourismEvent.description),
-        generateEmbedding(textForEmbedding),
+        generateEventEmbedding({
+          name: baTourismEvent.name,
+          description_es: baTourismEvent.description,
+        }),
       ])
 
       // Yield embedding progress (after parallel completion)

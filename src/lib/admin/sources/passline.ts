@@ -9,6 +9,14 @@ import { upsertEvents, updateEvent, createVenue } from '../../db/client'
 import { generateEventEmbedding } from '../../ai/embeddings'
 import { mapToNeighborhood, requireAdminAccess } from '../utils'
 import type { EventInsert, Neighborhood } from '../../types'
+import type {
+  ImportProgress,
+  ImportComplete,
+  ImportUpdate,
+  VenueEnrichProgress,
+  VenueEnrichComplete,
+  VenueEnrichUpdate,
+} from '../streaming-types'
 
 export interface PasslinePreviewEvent {
   passline: PasslineEvent
@@ -19,43 +27,8 @@ export interface PasslinePreviewEvent {
 // Re-export PasslineEvent type for client use
 export type { PasslineEvent }
 
-// Import streaming types
-export interface ImportProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  phase: 'categorizing' | 'embedding' | 'importing'
-}
-
-export interface ImportComplete {
-  type: 'complete'
-  inserted: number
-  updated: number
-  venuesCreated: number
-}
-
-export type ImportUpdate = ImportProgress | ImportComplete
-
-// Venue enrichment streaming types
-export interface VenueEnrichProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  action: 'matched' | 'created' | 'error'
-  venueName?: string
-}
-
-export interface VenueEnrichComplete {
-  type: 'complete'
-  enriched: number
-  venuesCreated: number
-  total: number
-  errors: Array<{ id: string; error: string }>
-}
-
-export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+// Re-export streaming types for backwards compatibility
+export type { ImportProgress, ImportComplete, ImportUpdate, VenueEnrichProgress, VenueEnrichComplete, VenueEnrichUpdate }
 
 /**
  * Process raw Passline events (client-side fetched) and do venue matching

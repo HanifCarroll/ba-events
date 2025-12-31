@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createEvent, getEventsWithVenues } from '@/lib/db/client'
-import { generateEmbedding } from '@/lib/ai/embeddings'
+import { generateEventEmbedding } from '@/lib/ai/embeddings'
 import type { EventInsert } from '@/lib/types'
 
 // Simple API key auth - set ADMIN_API_KEY in your .env
@@ -73,16 +73,8 @@ export const Route = createFileRoute('/api/events')({
             status: body.status ?? 'scheduled',
           }
 
-          // Generate embedding from name, description_es, categories
-          const textForEmbedding = [
-            eventData.name,
-            eventData.description_es,
-            ...(eventData.categories || []),
-          ]
-            .filter(Boolean)
-            .join(' ')
-
-          const embedding = await generateEmbedding(textForEmbedding)
+          // Generate embedding from event data
+          const embedding = await generateEventEmbedding(eventData)
 
           // Create the event
           const event = await createEvent({

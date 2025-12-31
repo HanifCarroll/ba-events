@@ -13,6 +13,14 @@ import { upsertEvents, supabase, getEventById, updateEvent, createVenue } from '
 import { generateEventEmbedding } from '../../ai/embeddings'
 import { requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
+import type {
+  ImportProgress,
+  ImportComplete,
+  ImportUpdate,
+  VenueEnrichProgress,
+  VenueEnrichComplete,
+  VenueEnrichUpdate,
+} from '../streaming-types'
 
 export interface EventbritePreviewEvent {
   eventbrite: EventbriteEvent
@@ -23,43 +31,8 @@ export interface EventbritePreviewEvent {
 // Re-export EventbriteEvent type for client use
 export type { EventbriteEvent }
 
-// Import streaming types
-export interface ImportProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  phase: 'categorizing' | 'embedding' | 'importing'
-}
-
-export interface ImportComplete {
-  type: 'complete'
-  inserted: number
-  updated: number
-  venuesCreated: number
-}
-
-export type ImportUpdate = ImportProgress | ImportComplete
-
-// Venue enrichment streaming types
-export interface VenueEnrichProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  action: 'matched' | 'created' | 'error'
-  venueName?: string
-}
-
-export interface VenueEnrichComplete {
-  type: 'complete'
-  enriched: number
-  venuesCreated: number
-  total: number
-  errors: Array<{ id: string; error: string }>
-}
-
-export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+// Re-export streaming types for backwards compatibility
+export type { ImportProgress, ImportComplete, ImportUpdate, VenueEnrichProgress, VenueEnrichComplete, VenueEnrichUpdate }
 
 /**
  * Fetch Eventbrite events server-side (to avoid CORS/bot protection)

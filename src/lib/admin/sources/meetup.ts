@@ -11,6 +11,14 @@ import { upsertEvents, supabase, updateEvent, createVenue } from '../../db/clien
 import { generateEventEmbedding } from '../../ai/embeddings'
 import { requireAdminAccess } from '../utils'
 import type { EventInsert } from '../../types'
+import type {
+  ImportProgress,
+  ImportComplete,
+  ImportUpdate,
+  VenueEnrichProgress,
+  VenueEnrichComplete,
+  VenueEnrichUpdate,
+} from '../streaming-types'
 
 export interface MeetupPreviewEvent {
   meetup: MeetupEvent
@@ -22,43 +30,8 @@ export interface MeetupPreviewEvent {
 
 export type { MeetupEvent }
 
-// Import streaming types
-export interface ImportProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  phase: 'categorizing' | 'embedding' | 'importing'
-}
-
-export interface ImportComplete {
-  type: 'complete'
-  inserted: number
-  updated: number
-  venuesCreated: number
-}
-
-export type ImportUpdate = ImportProgress | ImportComplete
-
-// Venue enrichment streaming types
-export interface VenueEnrichProgress {
-  type: 'progress'
-  current: number
-  total: number
-  eventName: string
-  action: 'matched' | 'created' | 'error'
-  venueName?: string
-}
-
-export interface VenueEnrichComplete {
-  type: 'complete'
-  enriched: number
-  venuesCreated: number
-  total: number
-  errors: Array<{ eventId: string; error: string }>
-}
-
-export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+// Re-export streaming types for backwards compatibility
+export type { ImportProgress, ImportComplete, ImportUpdate, VenueEnrichProgress, VenueEnrichComplete, VenueEnrichUpdate }
 
 export const processMeetupEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: MeetupEvent[] }) => data)
@@ -303,14 +276,14 @@ export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
 
     let enriched = 0
     let venuesCreated = 0
-    const errors: Array<{ eventId: string; error: string }> = []
+    const errors: Array<{ id: string; error: string }> = []
 
     // Process each result
     for (let i = 0; i < enrichmentResults.length; i++) {
       const result = enrichmentResults[i]
 
       if (result.error) {
-        errors.push({ eventId: result.eventId, error: result.error })
+        errors.push({ id: result.eventId, error: result.error })
         yield {
           type: 'progress',
           current: i + 1,
@@ -322,7 +295,7 @@ export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
       }
 
       if (!result.venue) {
-        errors.push({ eventId: result.eventId, error: 'No venue found on detail page' })
+        errors.push({ id: result.eventId, error: 'No venue found on detail page' })
         yield {
           type: 'progress',
           current: i + 1,
@@ -371,7 +344,7 @@ export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
         } as VenueEnrichProgress
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-        errors.push({ eventId: result.eventId, error: errorMsg })
+        errors.push({ id: result.eventId, error: errorMsg })
 
         // Yield error progress
         yield {
