@@ -212,6 +212,13 @@
   "admin_and_more_events": "...and {count} more events",
   "admin_events_at_venue": "{count} events at this venue",
   "admin_view_source": "View source",
+  "admin_not_duplicate": "Not a Duplicate",
+  "admin_dismissed_duplicates": "Dismissed Duplicates",
+  "admin_dismissed_duplicates_desc": "These venue pairs were marked as not being duplicates and will not appear in duplicate detection.",
+  "admin_view_dismissed": "View {count} dismissed",
+  "admin_no_dismissed_duplicates": "No dismissed duplicates",
+  "admin_dismissed_at": "Dismissed {date}",
+  "admin_restore": "Restore",
   "common_save": "Save",
   "common_saving": "Saving..."
 }

@@ -7,6 +7,9 @@ import {
   getVenueEventCountsAction,
   getVenueEventsAction,
   updateVenueAction,
+  dismissDuplicatePairAction,
+  getDismissedDuplicatesAction,
+  restoreDismissedPairAction,
 } from '@/lib/admin'
 import type { VenueEventPreview } from '@/lib/admin/venue-review'
 import { queryKeys } from '@/lib/query'
@@ -37,6 +40,7 @@ export function useVenueReview(venues: Venue[]) {
     suggestedName?: string
   } | null>(null)
   const [addressAnalysisEnabled, setAddressAnalysisEnabled] = useState(false)
+  const [showDismissedDialog, setShowDismissedDialog] = useState(false)
 
   // Fetch duplicate candidates
   const {
@@ -103,6 +107,17 @@ export function useVenueReview(venues: Venue[]) {
     queryKey: ['venue-events-for-address', addressLikeVenueIds.join(',')],
     queryFn: () => getVenueEventsAction({ data: addressLikeVenueIds }),
     enabled: addressLikeVenueIds.length > 0,
+    staleTime: 2 * 60 * 1000,
+  })
+
+  // Fetch dismissed duplicates (only when dialog is open)
+  const {
+    data: dismissedDuplicates,
+    isLoading: isLoadingDismissed,
+  } = useQuery({
+    queryKey: ['dismissed-venue-duplicates'],
+    queryFn: () => getDismissedDuplicatesAction(),
+    enabled: showDismissedDialog,
     staleTime: 2 * 60 * 1000,
   })
 
@@ -192,6 +207,54 @@ export function useVenueReview(venues: Venue[]) {
     },
   })
 
+  // Dismiss duplicate pair mutation with optimistic update
+  const dismissMutation = useMutation({
+    mutationFn: (input: { venueId1: string; venueId2: string }) =>
+      dismissDuplicatePairAction({ data: input }),
+    onMutate: async (variables) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['venue-duplicates'] })
+
+      // Snapshot the previous value
+      const previousPairs = queryClient.getQueryData<typeof duplicatePairs>(['venue-duplicates'])
+
+      // Optimistically remove the dismissed pair from the cache
+      queryClient.setQueryData<typeof duplicatePairs>(['venue-duplicates'], (old) => {
+        if (!old) return old
+        return old.filter((pair) => {
+          // Filter out pairs that match either direction
+          const matches =
+            (pair.venue_id === variables.venueId1 && pair.similar_venue_id === variables.venueId2) ||
+            (pair.venue_id === variables.venueId2 && pair.similar_venue_id === variables.venueId1)
+          return !matches
+        })
+      })
+
+      // Return context with the previous value for rollback
+      return { previousPairs }
+    },
+    onError: (_err, _variables, context) => {
+      // Rollback to the previous value on error
+      if (context?.previousPairs) {
+        queryClient.setQueryData(['venue-duplicates'], context.previousPairs)
+      }
+    },
+    onSettled: () => {
+      // Always refetch after error or success to ensure server state
+      queryClient.invalidateQueries({ queryKey: ['venue-duplicates'] })
+      queryClient.invalidateQueries({ queryKey: ['dismissed-venue-duplicates'] })
+    },
+  })
+
+  // Restore dismissed pair mutation
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => restoreDismissedPairAction({ data: id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['venue-duplicates'] })
+      queryClient.invalidateQueries({ queryKey: ['dismissed-venue-duplicates'] })
+    },
+  })
+
   // Dialog helpers
   const openMergeDialog = useCallback((group: DuplicateGroup) => {
     setSelectedDuplicateGroup(group)
@@ -224,9 +287,24 @@ export function useVenueReview(venues: Venue[]) {
     [selectedAddressVenue, renameMutation]
   )
 
+  const handleDismiss = useCallback(
+    (venueId1: string, venueId2: string) => {
+      dismissMutation.mutate({ venueId1, venueId2 })
+    },
+    [dismissMutation]
+  )
+
+  const handleRestore = useCallback(
+    (id: string) => {
+      restoreMutation.mutate(id)
+    },
+    [restoreMutation]
+  )
+
   // Counts for badges
   const duplicateCount = duplicateGroups.length
   const addressNameCount = addressLikeVenues.length
+  const dismissedCount = dismissedDuplicates?.length ?? 0
 
   return {
     // State
@@ -244,11 +322,13 @@ export function useVenueReview(venues: Venue[]) {
     // Counts
     duplicateCount,
     addressNameCount,
+    dismissedCount,
 
     // Loading states
     isLoading: isLoadingDuplicates || isLoadingAddresses,
     isLoadingDuplicates,
     isLoadingAddressNames: isLoadingAddresses,
+    isLoadingDismissed,
 
     // Actions
     refetchDuplicates,
@@ -265,6 +345,15 @@ export function useVenueReview(venues: Venue[]) {
     mergeError: mergeMutation.error,
     isRenaming: renameMutation.isPending,
     renameError: renameMutation.error,
+
+    // Dismissed duplicates
+    dismissedDuplicates: dismissedDuplicates ?? [],
+    showDismissedDialog,
+    setShowDismissedDialog,
+    handleDismiss,
+    handleRestore,
+    isDismissing: dismissMutation.isPending,
+    isRestoring: restoreMutation.isPending,
   }
 }
 

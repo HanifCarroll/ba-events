@@ -253,3 +253,96 @@ export const getVenueEventsAction = createServerFn({ method: 'POST' })
 
     return eventsByVenue
   })
+
+// Types for dismissed duplicates
+export interface DismissedDuplicate {
+  id: string
+  venue_id_1: string
+  venue_id_2: string
+  venue_1_name: string
+  venue_2_name: string
+  dismissed_at: string
+}
+
+// Dismiss a duplicate pair (mark as "not a duplicate")
+export const dismissDuplicatePairAction = createServerFn({ method: 'POST' })
+  .inputValidator((input: { venueId1: string; venueId2: string }) => input)
+  .handler(async ({ data }): Promise<{ success: boolean }> => {
+    const client = await requireAdminAccess()
+
+    // Get current user ID for audit
+    const {
+      data: { user },
+    } = await client.auth.getUser()
+
+    // Normalize the order (smaller UUID first to match CHECK constraint)
+    const [id1, id2] =
+      data.venueId1 < data.venueId2 ? [data.venueId1, data.venueId2] : [data.venueId2, data.venueId1]
+
+    const { error } = await client.from('dismissed_venue_duplicates').insert({
+      venue_id_1: id1,
+      venue_id_2: id2,
+      dismissed_by: user?.id,
+    })
+
+    if (error) {
+      // Handle unique constraint violation (already dismissed)
+      if (error.code === '23505') {
+        return { success: true } // Already dismissed, treat as success
+      }
+      throw error
+    }
+
+    return { success: true }
+  })
+
+// Get list of dismissed duplicates (for viewing/undoing)
+export const getDismissedDuplicatesAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<DismissedDuplicate[]> => {
+    const client = await requireAdminAccess()
+
+    // Query dismissed pairs with venue names
+    const { data, error } = await client
+      .from('dismissed_venue_duplicates')
+      .select(
+        `
+        id,
+        venue_id_1,
+        venue_id_2,
+        dismissed_at,
+        venue_1:venues!dismissed_venue_duplicates_venue_id_1_fkey(name),
+        venue_2:venues!dismissed_venue_duplicates_venue_id_2_fkey(name)
+      `
+      )
+      .order('dismissed_at', { ascending: false })
+
+    if (error) throw error
+
+    // Transform to flat structure
+    return (data ?? []).map((row) => {
+      // Supabase returns single objects for foreign key references
+      const venue1 = row.venue_1 as unknown as { name: string } | null
+      const venue2 = row.venue_2 as unknown as { name: string } | null
+      return {
+        id: row.id,
+        venue_id_1: row.venue_id_1,
+        venue_id_2: row.venue_id_2,
+        venue_1_name: venue1?.name ?? 'Unknown',
+        venue_2_name: venue2?.name ?? 'Unknown',
+        dismissed_at: row.dismissed_at,
+      }
+    })
+  }
+)
+
+// Restore a dismissed pair (undo dismissal)
+export const restoreDismissedPairAction = createServerFn({ method: 'POST' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }): Promise<{ success: boolean }> => {
+    const client = await requireAdminAccess()
+
+    const { error } = await client.from('dismissed_venue_duplicates').delete().eq('id', id)
+
+    if (error) throw error
+    return { success: true }
+  })

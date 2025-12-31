@@ -103,8 +103,12 @@ export {
   mergeVenuesAction,
   getVenueEventCountsAction,
   getVenueEventsAction,
+  dismissDuplicatePairAction,
+  getDismissedDuplicatesAction,
+  restoreDismissedPairAction,
   type VenueDuplicatePair,
   type AddressNameResult,
   type MergeVenuesResult,
   type VenueEventPreview,
+  type DismissedDuplicate,
 } from './venue-review'

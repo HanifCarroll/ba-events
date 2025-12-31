@@ -212,6 +212,13 @@
   "admin_and_more_events": "...y {count} eventos más",
   "admin_events_at_venue": "{count} eventos en este lugar",
   "admin_view_source": "Ver fuente",
+  "admin_not_duplicate": "No es Duplicado",
+  "admin_dismissed_duplicates": "Duplicados Descartados",
+  "admin_dismissed_duplicates_desc": "Estos pares de lugares fueron marcados como no duplicados y no aparecerán en la detección de duplicados.",
+  "admin_view_dismissed": "Ver {count} descartados",
+  "admin_no_dismissed_duplicates": "No hay duplicados descartados",
+  "admin_dismissed_at": "Descartado {date}",
+  "admin_restore": "Restaurar",
   "common_save": "Guardar",
   "common_saving": "Guardando..."
 }

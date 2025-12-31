@@ -21,6 +21,7 @@ import { VenueAddressNamesPanel } from '@/components/admin/VenueAddressNamesPane
 import { VenueBulkActionBar } from '@/components/admin/VenueBulkActionBar'
 import { MergeVenueDialog } from '@/components/admin/MergeVenueDialog'
 import { RenameVenueDialog } from '@/components/admin/RenameVenueDialog'
+import { DismissedDuplicatesDialog } from '@/components/admin/DismissedDuplicatesDialog'
 import { listVenues, deleteVenueAction } from '@/lib/admin'
 import { useVenueReview, type ReviewTab } from '@/hooks/useVenueReview'
 import { useVenueBulkActions } from '@/hooks'
@@ -304,6 +305,10 @@ function VenueListPage() {
             isLoading={review.isLoadingDuplicates}
             onMerge={review.openMergeDialog}
             onRefresh={review.refetchDuplicates}
+            onDismiss={review.handleDismiss}
+            onShowDismissed={() => review.setShowDismissedDialog(true)}
+            dismissedCount={review.dismissedCount}
+            isDismissing={review.isDismissing}
           />
         </TabsContent>
 
@@ -337,6 +342,16 @@ function VenueListPage() {
         onConfirm={review.handleRename}
         onCancel={review.closeRenameDialog}
         isLoading={review.isRenaming}
+      />
+
+      {/* Dismissed duplicates dialog */}
+      <DismissedDuplicatesDialog
+        open={review.showDismissedDialog}
+        onOpenChange={review.setShowDismissedDialog}
+        dismissedPairs={review.dismissedDuplicates}
+        isLoading={review.isLoadingDismissed}
+        onRestore={review.handleRestore}
+        isRestoring={review.isRestoring}
       />
 
       {/* Delete confirmation dialog */}

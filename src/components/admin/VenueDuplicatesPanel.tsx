@@ -1,4 +1,4 @@
-import { RefreshCw, CheckCircle2, GitMerge, Loader2 } from 'lucide-react'
+import { RefreshCw, CheckCircle2, GitMerge, Loader2, X, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,10 @@ interface VenueDuplicatesPanelProps {
   isLoading: boolean
   onMerge: (group: DuplicateGroup) => void
   onRefresh: () => void
+  onDismiss: (venueId1: string, venueId2: string) => void
+  onShowDismissed: () => void
+  dismissedCount: number
+  isDismissing: boolean
 }
 
 export function VenueDuplicatesPanel({
@@ -19,6 +23,10 @@ export function VenueDuplicatesPanel({
   isLoading,
   onMerge,
   onRefresh,
+  onDismiss,
+  onShowDismissed,
+  dismissedCount,
+  isDismissing,
 }: VenueDuplicatesPanelProps) {
   if (isLoading) {
     return (
@@ -48,9 +56,22 @@ export function VenueDuplicatesPanel({
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-muted-foreground">
-          {m.admin_duplicates_found({ count: groups.length })}
-        </p>
+        <div className="flex items-center gap-4">
+          <p className="text-muted-foreground">
+            {m.admin_duplicates_found({ count: groups.length })}
+          </p>
+          {dismissedCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onShowDismissed}
+            >
+              <Eye className="h-4 w-4 mr-1" />
+              {m.admin_view_dismissed({ count: dismissedCount })}
+            </Button>
+          )}
+        </div>
         <Button variant="outline" size="sm" onClick={() => onRefresh()}>
           <RefreshCw className="h-4 w-4 mr-2" />
           {m.admin_re_analyze()}
@@ -96,6 +117,16 @@ export function VenueDuplicatesPanel({
                     <Badge variant="secondary">
                       {m.admin_similarity({ percent: Math.round(dup.similarity * 100) })}
                     </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => onDismiss(group.primaryVenue.id, dup.venue.id)}
+                      disabled={isDismissing}
+                      title={m.admin_not_duplicate()}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
