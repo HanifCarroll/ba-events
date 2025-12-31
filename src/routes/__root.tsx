@@ -181,7 +181,7 @@ function PostHogIdentify() {
 }
 
 // Pages that should not have the main sidebar (auth pages only)
-const EXCLUDED_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password', '/auth/callback']
+const EXCLUDED_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password', '/auth/callback']
 
 function RootLayout() {
   const location = useLocation()
