@@ -26,6 +26,30 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Node.js Module Polyfills for Vite Client Build
+
+**Date:** 2025-12-31
+
+**Decision:** Use Vite resolve aliases to polyfill/stub Node.js modules (`node:stream`, `node:stream/web`, `node:async_hooks`) that leak into the client bundle from TanStack packages.
+
+**Alternatives Considered:**
+- Specific import paths (e.g., `@tanstack/start-client-core/createServerFn`): Package doesn't export individual modules; barrel exports pull in SSR code regardless
+- Using `serverOnly()` directive and dedicated server-only files: Investigated but the import chain is in TanStack packages themselves, not our code
+- Waiting for upstream fix: GitHub issues #4022 and #6185 addressed different aspects; the barrel export issue persists in v1.144+
+- Netlify plugin configuration: Plugin is a thin wrapper with no special handling for Node.js module externalization
+
+**Rationale:**
+1. **Root cause**: TanStack Start's barrel exports (`export * from "@tanstack/start-client-core"`) defeat tree-shaking. Even though packages have separate `./ssr/server` and `./ssr/client` exports, the main exports pull in modules that import `node:stream`.
+2. **Import chain traced**:
+   - `@tanstack/react-start` → `@tanstack/start-client-core`
+   - `@tanstack/start-client-core/index.js` → imports from `@tanstack/router-core/ssr/client`
+   - `createServerFn.js` → imports `mergeHeaders` from `@tanstack/router-core/ssr/client`
+   - Chain eventually reaches `transformStreamWithRouter.js` which imports `{ Readable } from "node:stream"`
+3. **Polyfill solution**: `stream-browserify` and `web-streams-polyfill` provide browser-compatible implementations. Custom stub for `async_hooks` provides no-op implementations.
+4. **Pragmatic choice**: Polyfills add ~15KB gzipped but work reliably. The alternative is waiting for TanStack to restructure their exports, which may not happen.
+
+---
+
 ### Client-Side Chunked Batching for Meetup Scraper
 
 **Date:** 2025-12-31
