@@ -1,15 +1,14 @@
-import { useEventFiltering, type EventTab } from './useEventFiltering'
+import { useEventFiltering, type UseEventFilteringOptions } from './useEventFiltering'
 import { useBulkActions } from './useBulkActions'
 import { useMarkPastEvents } from './useMarkPastEvents'
 import { useSingleEventActions } from './useSingleEventActions'
 import { useDescriptionEnrichment } from './useDescriptionEnrichment'
-import type { EventWithVenue } from '@/lib/types'
 
 /**
  * Orchestrating hook that combines all event admin functionality
  */
-export function useEventAdmin(events: EventWithVenue[], activeTab: EventTab = 'all') {
-  const filtering = useEventFiltering(events, activeTab)
+export function useEventAdmin(options: UseEventFilteringOptions) {
+  const filtering = useEventFiltering(options)
   const bulk = useBulkActions(filtering.filteredEvents)
   const markPast = useMarkPastEvents()
   const singleActions = useSingleEventActions()

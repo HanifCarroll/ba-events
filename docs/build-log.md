@@ -1,0 +1,157 @@
+# BA Events Build Log
+
+Free-flowing notes from each work session. Ask Claude to summarize into tweets/posts.
+
+---
+
+## 2025-12-30
+
+- Add English/Spanish i18n with Paraglide JS
+    - Add favicon and hybrid locale persistence
+- Fix stale Supabase connections and HMR invalidation
+- Add project documentation for import sources, enrichment, and architectural decisions
+    - Update README and CLAUDE.md with comprehensive project documentation
+    - Add SEO strategy documentation
+    - Document single-search chat agent architecture decision
+- Implement PostHog analytics
+    - Add PostHog analytics documentation and setup
+    - Implement PostHog analytics in root layout
+    - Add PostHog analytics events across the application
+- Fix phishing filter rejection in email change template
+- Refactor auth to TanStack Start patterns with cookie-based sessions
+- Implement core SEO improvements
+    - Rebrand to BA Eventos with Spanish metadata
+- Fix Eventbrite import by moving fetch to server-side
+- Add Link column to admin events table
+- Improve venue enrichment for BA Tourism and Passline scrapers
+    - Add BA Tourism venue enrichment and auto-create venues
+    - Add client-side Passline venue enrichment, remove auto-venue creation
+    - Fix BA Tourism venue auto-creation with address parsing
+    - Fix BA Tourism scraper and optimize import performance
+- Modularize admin.ts into domain-focused modules
+- Reorganize src/lib into domain-focused folders
+- Simplify categories to 6 and remove vibes
+- Update schema.sql with bilingual descriptions and external_id
+- Fix server-only code leaking into client bundle
+- Rename enrichment buttons for clarity
+- Add column filters and back button to admin events
+- Sync table filters and sorting with URL params
+- Fix Meetup venue extraction for BusinessEvent type
+- Parallelize enrichment and add language detection
+    - Skip language detection for known Spanish sources
+- Add completeness toggle to Data Quality tab
+    - Add translations and URL state for completeness filter
+- Add shift-click range selection to DataTable
+- Implement single-search with smart suggestions and relevance filtering
+- Fix Meetup venue enrichment and bulk action bar styling
+- Add hasDetails flag for events with incomplete info
+- Fix Netlify build error with Node.js stream imports
+    - Fix alias matching for node:stream modules
+    - Replace nitro with official Netlify TanStack Start plugin
+- Use direct cache updates instead of refetching after mutations
+- Improve Meetup import with date-based scraping and duplicate detection
+    - Add chunked batching for Meetup scraper to avoid timeouts
+    - Fix Meetup date parsing by using `<time>` element's datetime attribute
+    - Remove pills from import source selection cards
+
+---
+
+## 2025-12-29
+
+- Add automatic "Mark Past Events" button with smart detection for ended events
+- Add Passline event scraper module for importing events from passlineapp.com
+- Add automated daily Passline import with pending queue system
+- Fix API route to use direct function call and add browser headers to bypass blocks
+- Refactor Passline scraper to client-side fetch to bypass Cloudflare blocking
+    - Implement 3-step import flow: fetch → venue preview → import
+    - Make venue neighborhoods nullable for progressive data enrichment
+    - Add batched event import (10 at a time) with progress bar
+    - Auto-skip "VARIAS LOCACIONES" events (venue rental ads)
+- Add description enrichment flow with client-side scraper
+    - Fetch descriptions from Passline event pages
+    - Regenerate embeddings when descriptions are updated
+- Refactor events admin page from 1187 to ~630 lines
+    - Extract hooks: useEventFiltering, useBulkActions, useMarkPastEvents, etc.
+    - Extract components: EventFilterBar, BulkActionBar, EnrichDescriptionsDialog
+- Add View link with external icon to event cards for quick access to source
+- Add user authentication, saved events, and profile management
+    - Email/password and magic link auth
+    - User profiles with admin role support
+    - Saved events functionality with /saved page
+    - Profile settings with password change and account deletion
+    - Fix RLS infinite recursion with SECURITY DEFINER is_admin() function
+- Add navigation loading states and 404 page with route preloading on hover
+- Improve events table performance with virtualization (mobile cards + desktop table)
+    - Memoize event row components to reduce re-renders
+    - Add floating overlay bulk action bar (no layout shift)
+- Redesign events admin UX
+    - Tab-based filtering (All, Needs Attention, Pending Review, Past)
+    - Background enrichment with progress toasts (non-blocking)
+    - Unified import wizard for both Passline and CSV imports
+- Add React Query and React Hook Form infrastructure
+    - QueryClientProvider, query keys factory, Zod schemas
+    - Convert profile, EventForm, VenueForm to React Hook Form
+    - Create mutation hooks with cache invalidation
+- Fix checkbox border visibility in dark mode
+- Add TanStack Table with column resizing, reordering, and sorting
+    - DataTable component with drag-and-drop column reordering
+    - Multi-column sorting, column visibility toggles, virtualization
+    - localStorage persistence for column preferences
+    - Migrate events, venues, and import wizard tables
+
+---
+
+## 2025-12-28
+
+- Created folder
+- Researched Tanstack Start vs next for this project, chose Tanstack Start
+- Create CLAUDE.md outlining bun and shadcn usage
+- Create supabase project, set up supabase MCP, get anthropic and openai api keys
+- Fix bug where similarity threshold was too high for semantic search to return results (short-query-to-long-document-matching)
+    - Short queries like "romantic evening" naturally have lower similarity scores against full event descriptions
+- Add chat UI with mock AI responses and Supabase schema
+- Integrate real Claude AI with tool calling and streaming
+- Add semantic search with pgvector and fix tool use best practices
+- Improve chat UI with new features and layout fixes
+- Redesign UI with "Noche Porteña" warm noir aesthetic
+- Fix UX issues: remove tool narration from responses, hide loading indicator when streaming starts
+- Add get_venue_details tool and fix high CPU usage
+- Remove TanStack Start demo routes
+- Fix UI issues: remove corner accent, fix CSS @import warning
+- Replace boilerplate README with project documentation
+- Add rate limiting with Upstash Redis
+- Configure Netlify deployment preset
+- Fix mobile viewport layout issues
+- Fix mobile viewport with proper height chain
+- Make SuggestedPrompts responsive for mobile
+- Fix auto-scroll to only trigger on new messages
+- Add admin interface with CRUD for events and venues
+- Add inline typeahead combobox for venue and neighborhood selects
+- Add filters and mobile responsiveness to admin list pages
+- Fix mobile viewport scrolling issue in chat interface
+- Fix mobile layout with fixed positioning for header/content
+- Make header logo a link to home page
+- Fix mobile chat layout scroll
+- Move New Chat button to header
+- Fix header layout - wrap content in flex container
+- Fix mobile input zoom by using 16px font size
+- Add Import CSV on events and venues admin pages for bulk add
+- Implement bilingual event descriptions (Spanish/English)
+- Add Eventbrite scraper with 2-phase import pattern
+- Fix Anthropic SDK browser error by separating server-only exports
+- Add source column to events admin table
+- Refactor DataTable to use native HTML table with sticky header
+    - Fix horizontal scroll sync between header and body
+    - Fix table UI alignment and bulk action bar visibility
+- Add BA Tourism scraper with Playwright browser automation
+- Improve import wizard UX with non-blocking venues and summary step
+- Replace header bar with unified collapsible sidebar navigation
+    - Mobile hamburger menu on left side
+    - Collapsible desktop sidebar with localStorage persistence
+    - Unified admin and main navigation
+- Add Meetup scraper test script
+- Fix auth loading issues
+    - Add timeout to auth initialization to prevent infinite loading
+    - Fix saved events page loading state when not logged in
+    - Fix magic link auth to use verifyOtp with token_hash for PKCE flow
+    - Add magic link email template for Supabase

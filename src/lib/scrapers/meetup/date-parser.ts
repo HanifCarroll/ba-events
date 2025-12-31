@@ -38,8 +38,9 @@ const DAY_NAME_TO_NUMBER: Record<string, number> = {
  * Handles both human-readable and ISO formats
  */
 export function parseMeetupDate(dateStr: string): string {
-  // Already ISO format (from GraphQL)
-  if (dateStr.includes('T') && (dateStr.endsWith('Z') || dateStr.includes('+'))) {
+  // Already ISO format (from GraphQL or DOM datetime attribute)
+  // Check for timezone offset pattern: Z, +HH:MM, or -HH:MM at the end
+  if (dateStr.includes('T') && /([Zz]|[+-]\d{2}:\d{2})$/.test(dateStr)) {
     const isoDate = parseISO(dateStr)
     if (isValid(isoDate)) {
       return isoDate.toISOString()

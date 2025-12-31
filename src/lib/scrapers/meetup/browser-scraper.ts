@@ -120,7 +120,12 @@ function isEventLike(obj: unknown): boolean {
 function transformGraphQLEvent(gqlEvent: MeetupGraphQLEvent): MeetupEvent | null {
   if (!gqlEvent.title && !gqlEvent.id) return null
 
-  const dateTimeStr = gqlEvent.dateTime || ''
+  // GraphQL may use either dateTime or startDateTime
+  const dateTimeStr = gqlEvent.dateTime || (gqlEvent as unknown as { startDateTime?: string }).startDateTime || ''
+  if (!dateTimeStr) {
+    console.warn(`[Meetup] Event missing dateTime: ${gqlEvent.title || gqlEvent.id}`)
+    return null
+  }
   const isRecurring = isRecurringEvent(dateTimeStr)
   const recurrencePattern = isRecurring ? extractRecurrencePattern(dateTimeStr) : null
 
@@ -139,7 +144,7 @@ function transformGraphQLEvent(gqlEvent: MeetupGraphQLEvent): MeetupEvent | null
     id: gqlEvent.id || `meetup-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     name: gqlEvent.title,
     description: gqlEvent.description || null,
-    dateTime: gqlEvent.dateTime,
+    dateTime: dateTimeStr,
     endTime: gqlEvent.endTime || null,
     timezone: gqlEvent.timezone || 'America/Argentina/Buenos_Aires',
     eventUrl: gqlEvent.eventUrl,

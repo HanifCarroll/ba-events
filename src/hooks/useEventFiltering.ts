@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import type { EventWithVenue, EventStatus } from '@/lib/types'
+import type { EventSearchParams } from '@/routes/admin/events/index'
 
 export type EventTab = 'all' | 'needs_attention' | 'pending_review' | 'past'
 
@@ -27,13 +28,92 @@ export interface TabCounts {
   past: number
 }
 
-export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab = 'all') {
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<EventStatus | 'all'>('all')
-  const [venueFilter, setVenueFilter] = useState<string | undefined>(undefined)
+// Type for the navigate function's search updater
+type SearchUpdater = (prev: EventSearchParams) => Partial<EventSearchParams>
+
+export interface UseEventFilteringOptions {
+  events: EventWithVenue[]
+  searchParams: EventSearchParams
+  navigate: (opts: { search: Partial<EventSearchParams> | SearchUpdater; replace?: boolean }) => void
+}
+
+export function useEventFiltering({ events, searchParams, navigate }: UseEventFilteringOptions) {
+  // Only UI-only state remains in React
   const [showFilters, setShowFilters] = useState(false)
-  const [dataGapFilter, setDataGapFilter] = useState<DataGapType>('all')
-  const [completenessFilter, setCompletenessFilter] = useState<CompletenessFilter>('incomplete')
+
+  // All filter values derived from URL params
+  const activeTab = (searchParams.tab || 'all') as EventTab
+  const completenessFilter = (searchParams.completeness || 'incomplete') as CompletenessFilter
+  const dataGapFilter = (searchParams.dataGap || 'all') as DataGapType
+  const search = searchParams.search || ''
+  const venueFilter = searchParams.venue
+  const statusFilter = (searchParams.status || 'all') as EventStatus | 'all'
+
+  // Setters that update URL
+  const setSearch = useCallback(
+    (value: string) => {
+      navigate({
+        search: (prev) => ({ ...prev, search: value || undefined }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const setVenueFilter = useCallback(
+    (value: string | undefined) => {
+      navigate({
+        search: (prev) => ({ ...prev, venue: value }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const setDataGapFilter = useCallback(
+    (value: DataGapType) => {
+      navigate({
+        search: (prev) => ({ ...prev, dataGap: value === 'all' ? undefined : value }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const setCompletenessFilter = useCallback(
+    (value: CompletenessFilter) => {
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          completeness: value === 'incomplete' ? undefined : value,
+          // Reset dataGap when switching to 'complete'
+          dataGap: value === 'complete' ? undefined : prev.dataGap,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const setStatusFilter = useCallback(
+    (value: EventStatus | 'all') => {
+      navigate({
+        search: (prev) => ({ ...prev, status: value === 'all' ? undefined : value }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  // clearFilters - pass object directly to replace all search params (not a function updater)
+  const clearFilters = useCallback(() => {
+    navigate({
+      search: {
+        tab: activeTab,
+        // All other params cleared by omission when passing object directly
+      },
+    })
+  }, [navigate, activeTab])
 
   // Get unique venues for filter dropdown
   const venueOptions = useMemo(() => {
@@ -164,20 +244,18 @@ export function useEventFiltering(events: EventWithVenue[], activeTab: EventTab 
     })
   }, [events, activeTab, search, statusFilter, venueFilter, dataGapFilter, completenessFilter])
 
+  // Check if any filters are active (for showing "Clear" button)
   const hasActiveFilters = !!(
     search ||
     (activeTab === 'all' && statusFilter !== 'all') ||
     venueFilter ||
-    (activeTab === 'needs_attention' && completenessFilter === 'incomplete' && dataGapFilter !== 'all')
+    (activeTab === 'needs_attention' && completenessFilter === 'incomplete' && dataGapFilter !== 'all') ||
+    // Also check URL column filters and sorting
+    searchParams.name ||
+    searchParams.venue_name ||
+    searchParams.source ||
+    searchParams.sortBy
   )
-
-  function clearFilters() {
-    setSearch('')
-    setStatusFilter('all')
-    setVenueFilter(undefined)
-    setDataGapFilter('all')
-    setCompletenessFilter('incomplete')
-  }
 
   return {
     search,
