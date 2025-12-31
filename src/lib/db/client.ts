@@ -165,7 +165,6 @@ export async function getEventsWithVenues(limit = 50) {
   const { data, error } = await supabase
     .from('events_with_venues')
     .select('*')
-    .eq('status', 'scheduled')
     .order('starts_at', { ascending: true })
     .limit(limit)
 
