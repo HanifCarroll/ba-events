@@ -400,6 +400,7 @@ function VenueListPage() {
                   onSetBulkAction={bulk.setBulkAction}
                   onClearSelection={bulk.clearSelection}
                   overlay
+                  enrichableCount={enrichableVenues.length}
                 />
               </div>
 
@@ -463,6 +464,7 @@ function VenueListPage() {
                       onSetBulkAction={bulk.setBulkAction}
                       onClearSelection={bulk.clearSelection}
                       overlay
+                      enrichableCount={enrichableVenues.length}
                     />
                   </div>
 
@@ -602,7 +604,7 @@ function VenueListPage() {
         <DialogContent className="bg-card border-border/50">
           <DialogHeader>
             <DialogTitle className="font-display text-foreground flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-blue-500" />
+              <MapPin className="h-5 w-5 text-primary" />
               {m.admin_enrich_venues()}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
@@ -635,7 +637,7 @@ function VenueListPage() {
               <div className="space-y-3">
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-blue-500 transition-all duration-300"
+                    className="h-full bg-primary transition-all duration-300"
                     style={{
                       width: enrichment.enrichProgress.total > 0
                         ? `${(enrichment.enrichProgress.current / enrichment.enrichProgress.total) * 100}%`
@@ -699,7 +701,6 @@ function VenueListPage() {
                 <Button
                   onClick={handleEnrichment}
                   disabled={enrichment.isEnriching || enrichableVenues.length === 0}
-                  className="bg-blue-600 text-white hover:bg-blue-500"
                 >
                   {enrichment.isEnriching ? (
                     <>
@@ -709,7 +710,7 @@ function VenueListPage() {
                   ) : (
                     <>
                       <MapPin className="h-4 w-4 mr-2" />
-                      {m.admin_enrich_address()}
+                      Add Neighborhoods ({enrichableVenues.length})
                     </>
                   )}
                 </Button>

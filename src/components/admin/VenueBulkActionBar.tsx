@@ -11,6 +11,8 @@ interface VenueBulkActionBarProps {
   onSetBulkAction: (action: VenueBulkActionType) => void
   onClearSelection: () => void
   overlay?: boolean
+  /** Number of selected venues that can be enriched (missing neighborhood) */
+  enrichableCount?: number
 }
 
 export function VenueBulkActionBar({
@@ -20,7 +22,10 @@ export function VenueBulkActionBar({
   onSetBulkAction,
   onClearSelection,
   overlay = false,
+  enrichableCount,
 }: VenueBulkActionBarProps) {
+  const enrichLabel = enrichableCount !== undefined ? `Add Neighborhoods (${enrichableCount})` : 'Add Neighborhoods'
+
   return (
     <BulkActionBarBase
       selectedCount={selectedCount}
@@ -32,12 +37,13 @@ export function VenueBulkActionBar({
       {overlay ? (
         <>
           <Button
+            variant="ghost"
             size="sm"
             onClick={() => onSetBulkAction('enrich')}
-            className="bg-blue-600 text-white hover:bg-blue-500"
+            className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
           >
             <MapPin className="h-4 w-4 mr-1.5" />
-            {m.admin_enrich_address()}
+            {enrichLabel}
           </Button>
           <Button
             size="sm"
@@ -54,10 +60,10 @@ export function VenueBulkActionBar({
             variant="outline"
             size="sm"
             onClick={() => onSetBulkAction('enrich')}
-            className="border-blue-500/50 text-blue-500 hover:bg-blue-500/10"
+            className="border-blue-500/50 text-blue-600 hover:bg-blue-500/10"
           >
             <MapPin className="h-4 w-4 mr-1.5" />
-            {m.admin_enrich_address()}
+            {enrichLabel}
           </Button>
           <Button
             variant="outline"
