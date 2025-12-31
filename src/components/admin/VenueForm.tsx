@@ -4,13 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { MapPin, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Combobox } from '@/components/ui/combobox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -23,23 +16,12 @@ import {
 } from '@/components/ui/form'
 import { useCreateVenue, useUpdateVenue } from '@/hooks/useVenueMutations'
 import { venueFormSchema, type VenueFormInput } from '@/lib/schemas'
-import { NEIGHBORHOODS, VENUE_TYPES } from '@/lib/types'
+import { NEIGHBORHOODS } from '@/lib/types'
 import type { Venue, Neighborhood } from '@/lib/types'
 
 interface VenueFormProps {
   venue?: Venue
   mode: 'create' | 'edit'
-}
-
-const venueTypeLabels: Record<string, string> = {
-  club: 'Club',
-  bar: 'Bar',
-  theater: 'Theater',
-  gallery: 'Gallery',
-  cultural_center: 'Cultural Center',
-  outdoor: 'Outdoor',
-  restaurant: 'Restaurant',
-  other: 'Other',
 }
 
 export function VenueForm({ venue, mode }: VenueFormProps) {
@@ -55,8 +37,6 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
       address: venue?.address || '',
       website: venue?.website || '',
       instagram_handle: venue?.instagram_handle || '',
-      capacity: venue?.capacity ?? undefined,
-      type: venue?.type || 'other',
     },
   })
 
@@ -68,8 +48,6 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
         address: data.address || null,
         website: data.website || null,
         instagram_handle: data.instagram_handle || null,
-        capacity: data.capacity ?? null,
-        type: data.type,
       }
 
       if (mode === 'create') {
@@ -130,58 +108,29 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
                 )}
               />
 
-              {/* Neighborhood and Type row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Neighborhood */}
-                <FormField
-                  control={form.control}
-                  name="neighborhood"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        Neighborhood <span className="text-destructive">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Combobox
-                          options={NEIGHBORHOODS.map((n) => ({ value: n, label: n }))}
-                          value={field.value || undefined}
-                          onValueChange={(value) => field.onChange(value as Neighborhood)}
-                          placeholder="Select neighborhood"
-                          searchPlaceholder="Search neighborhoods..."
-                          emptyText="No neighborhood found."
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Type */}
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Type</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger className="bg-background/50 border-border/50">
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {VENUE_TYPES.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {venueTypeLabels[t] || t}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              {/* Neighborhood */}
+              <FormField
+                control={form.control}
+                name="neighborhood"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Neighborhood <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Combobox
+                        options={NEIGHBORHOODS.map((n) => ({ value: n, label: n }))}
+                        value={field.value || undefined}
+                        onValueChange={(value) => field.onChange(value as Neighborhood)}
+                        placeholder="Select neighborhood"
+                        searchPlaceholder="Search neighborhoods..."
+                        emptyText="No neighborhood found."
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               {/* Address */}
               <FormField
@@ -243,30 +192,6 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
                   )}
                 />
               </div>
-
-              {/* Capacity */}
-              <FormField
-                control={form.control}
-                name="capacity"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Capacity</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={field.value ?? ''}
-                        onChange={(e) =>
-                          field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)
-                        }
-                        placeholder="Maximum capacity"
-                        className="bg-background/50 border-border/50 max-w-[200px]"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
               {/* Error message */}
               {error && (

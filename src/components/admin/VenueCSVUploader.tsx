@@ -11,8 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { NEIGHBORHOODS, VENUE_TYPES } from '@/lib/types'
-import type { VenueInsert, Neighborhood, VenueType } from '@/lib/types'
+import { NEIGHBORHOODS } from '@/lib/types'
+import type { VenueInsert, Neighborhood } from '@/lib/types'
 
 interface CSVRow {
   name?: string
@@ -20,8 +20,6 @@ interface CSVRow {
   address?: string
   website?: string
   instagram_handle?: string
-  capacity?: string
-  type?: string
 }
 
 interface ParsedRow {
@@ -42,8 +40,6 @@ const CSV_HEADERS = [
   'address',
   'website',
   'instagram_handle',
-  'capacity',
-  'type',
 ]
 
 const TEMPLATE_ROW = [
@@ -52,8 +48,6 @@ const TEMPLATE_ROW = [
   'Av. Santa Fe 1234',
   'https://clubexample.com',
   '@clubexample',
-  '500',
-  'club',
 ]
 
 export function VenueCSVUploader({ onImport, isImporting }: VenueCSVUploaderProps) {
@@ -96,28 +90,6 @@ export function VenueCSVUploader({ onImport, isImporting }: VenueCSVUploaderProp
       }
     }
 
-    // Validate capacity (optional)
-    let capacity: number | null = null
-    if (row.capacity?.trim()) {
-      const parsed = parseInt(row.capacity, 10)
-      if (isNaN(parsed) || parsed <= 0) {
-        errors.push('Capacity must be a positive integer')
-      } else {
-        capacity = parsed
-      }
-    }
-
-    // Validate type (optional)
-    let venueType: VenueType | undefined
-    if (row.type?.trim()) {
-      const t = row.type.trim().toLowerCase()
-      if (VENUE_TYPES.includes(t as VenueType)) {
-        venueType = t as VenueType
-      } else {
-        errors.push(`Invalid type: "${row.type}"`)
-      }
-    }
-
     // Build venue if no errors
     let venue: VenueInsert | undefined
     if (errors.length === 0 && neighborhood) {
@@ -127,8 +99,6 @@ export function VenueCSVUploader({ onImport, isImporting }: VenueCSVUploaderProp
         address: row.address?.trim() || null,
         website: row.website?.trim() || null,
         instagram_handle: row.instagram_handle?.trim() || null,
-        capacity,
-        type: venueType,
       }
     }
 
@@ -242,7 +212,6 @@ export function VenueCSVUploader({ onImport, isImporting }: VenueCSVUploaderProp
                     <TableHead className="text-muted-foreground font-medium w-12">Status</TableHead>
                     <TableHead className="text-muted-foreground font-medium">Name</TableHead>
                     <TableHead className="text-muted-foreground font-medium">Neighborhood</TableHead>
-                    <TableHead className="text-muted-foreground font-medium">Type</TableHead>
                     <TableHead className="text-muted-foreground font-medium">Errors</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -265,9 +234,6 @@ export function VenueCSVUploader({ onImport, isImporting }: VenueCSVUploaderProp
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {row.data.neighborhood || '—'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {row.data.type || '—'}
                       </TableCell>
                       <TableCell>
                         {row.errors.length > 0 && (

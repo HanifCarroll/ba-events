@@ -3,7 +3,6 @@ import {
   CATEGORIES,
   EVENT_STATUSES,
   NEIGHBORHOODS,
-  VENUE_TYPES,
 } from './types'
 
 // =============================================================================
@@ -165,8 +164,6 @@ export const venueFormSchema = z.object({
   address: z.string(),
   website: z.string(),
   instagram_handle: z.string(),
-  capacity: z.number().min(0).optional(),
-  type: z.enum(VENUE_TYPES),
 })
 
 export type VenueFormInput = z.infer<typeof venueFormSchema>
@@ -185,8 +182,6 @@ export const venueSchema = z.object({
       // Remove @ prefix if present
       return val.startsWith('@') ? val.slice(1) : val
     }),
-  capacity: nullableNumber,
-  type: z.enum(VENUE_TYPES).default('other'),
 })
 
 export type VenueInput = z.infer<typeof venueSchema>

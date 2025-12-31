@@ -1,17 +1,10 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
-import { Plus, MapPin, Search, X, Filter, Users, Upload } from 'lucide-react'
+import { Plus, MapPin, Search, X, Filter, Upload } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Combobox } from '@/components/ui/combobox'
 import {
   Dialog,
@@ -23,8 +16,8 @@ import {
 } from '@/components/ui/dialog'
 import { DataTable, getVenueColumns } from '@/components/data-table'
 import { listVenues, deleteVenueAction } from '@/lib/admin'
-import { NEIGHBORHOODS, VENUE_TYPES } from '@/lib/types'
-import type { Venue, Neighborhood, VenueType } from '@/lib/types'
+import { NEIGHBORHOODS } from '@/lib/types'
+import type { Venue, Neighborhood } from '@/lib/types'
 
 export const Route = createFileRoute('/admin/venues/')({
   loader: async () => {
@@ -32,20 +25,6 @@ export const Route = createFileRoute('/admin/venues/')({
   },
   component: VenueListPage,
 })
-
-function getVenueTypeLabel(type: string): string {
-  const labels: Record<string, () => string> = {
-    club: () => m.admin_venue_type_club(),
-    bar: () => m.admin_venue_type_bar(),
-    theater: () => m.admin_venue_type_theater(),
-    gallery: () => m.admin_venue_type_gallery(),
-    cultural_center: () => m.admin_venue_type_cultural_center(),
-    outdoor: () => m.admin_venue_type_outdoor(),
-    restaurant: () => m.admin_venue_type_restaurant(),
-    other: () => m.admin_venue_type_other(),
-  }
-  return labels[type]?.() || type
-}
 
 function VenueListPage() {
   const venues = Route.useLoaderData()
@@ -56,7 +35,6 @@ function VenueListPage() {
   // Filter state
   const [search, setSearch] = useState('')
   const [neighborhoodFilter, setNeighborhoodFilter] = useState<Neighborhood | undefined>(undefined)
-  const [typeFilter, setTypeFilter] = useState<VenueType | 'all'>('all')
   const [showFilters, setShowFilters] = useState(false)
 
   // Neighborhood options for combobox
@@ -75,20 +53,15 @@ function VenueListPage() {
       if (neighborhoodFilter && venue.neighborhood !== neighborhoodFilter) {
         return false
       }
-      // Type filter
-      if (typeFilter !== 'all' && venue.type !== typeFilter) {
-        return false
-      }
       return true
     })
-  }, [venues, search, neighborhoodFilter, typeFilter])
+  }, [venues, search, neighborhoodFilter])
 
-  const hasActiveFilters = search || neighborhoodFilter || typeFilter !== 'all'
+  const hasActiveFilters = search || neighborhoodFilter
 
   function clearFilters() {
     setSearch('')
     setNeighborhoodFilter(undefined)
-    setTypeFilter('all')
   }
 
   async function handleDelete() {
@@ -171,7 +144,7 @@ function VenueListPage() {
           </div>
 
           {/* Filter controls */}
-          <div className={`grid gap-3 ${showFilters ? 'grid' : 'hidden'} sm:grid sm:grid-cols-4`}>
+          <div className={`grid gap-3 ${showFilters ? 'grid' : 'hidden'} sm:grid sm:grid-cols-3`}>
             {/* Search */}
             <div className="relative sm:col-span-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -191,24 +164,6 @@ function VenueListPage() {
               placeholder={m.admin_all_neighborhoods()}
               emptyText={m.admin_no_neighborhood()}
             />
-
-            {/* Type filter */}
-            <Select
-              value={typeFilter}
-              onValueChange={(v) => setTypeFilter(v as VenueType | 'all')}
-            >
-              <SelectTrigger className="bg-background/50 border-border/50">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{m.admin_all_types()}</SelectItem>
-                {VENUE_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {getVenueTypeLabel(t)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           {/* Clear filters */}
@@ -325,18 +280,6 @@ function MobileVenueCard({
             {venue.neighborhood}
           </Badge>
         </div>
-        <Badge variant="outline" className="shrink-0 border-border/50 text-muted-foreground">
-          {getVenueTypeLabel(venue.type)}
-        </Badge>
-      </div>
-
-      <div className="text-sm text-muted-foreground">
-        {venue.capacity && (
-          <div className="flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5 shrink-0" />
-            <span>{m.admin_capacity({ count: venue.capacity })}</span>
-          </div>
-        )}
       </div>
 
       <div className="flex items-center gap-2 pt-2 border-t border-border/30">

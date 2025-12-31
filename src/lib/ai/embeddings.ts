@@ -41,10 +41,6 @@ export function buildEmbeddingText(event: Event | EventWithVenue): string {
       venueParts.push(`in ${event.venue_neighborhood}`)
     }
     parts.push(`Venue: ${venueParts.join(' ')}`)
-
-    if (event.venue_type && event.venue_type !== 'other') {
-      parts.push(`Venue type: ${event.venue_type}`)
-    }
   }
 
   // Price context

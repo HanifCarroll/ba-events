@@ -202,7 +202,7 @@ or descriptive searches like "romantic date spot", "high energy dance party",
   },
   {
     name: 'get_venue_details',
-    description: `Get detailed information about a specific venue, including website, Instagram, capacity, and address. Use this when users ask about a venue's website, contact info, or want more details about where an event is held.`,
+    description: `Get detailed information about a specific venue, including website, Instagram, and address. Use this when users ask about a venue's website, contact info, or want more details about where an event is held.`,
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -357,8 +357,6 @@ function formatVenueResult(venue: Venue | null): string {
       address: venue.address,
       website: venue.website,
       instagram: venue.instagram_handle,
-      capacity: venue.capacity,
-      type: venue.type,
     },
   })
 }

@@ -6,17 +6,6 @@ import { Button } from '@/components/ui/button'
 import { DataTableColumnHeader } from '../DataTableColumnHeader'
 import type { Venue } from '@/lib/types'
 
-const venueTypeLabels: Record<string, string> = {
-  club: 'Club',
-  bar: 'Bar',
-  theater: 'Theater',
-  gallery: 'Gallery',
-  cultural_center: 'Cultural Center',
-  outdoor: 'Outdoor',
-  restaurant: 'Restaurant',
-  other: 'Other',
-}
-
 interface VenueColumnsOptions {
   onDelete?: (venue: Venue) => void
 }
@@ -49,34 +38,6 @@ export function getVenueColumns(options?: VenueColumnsOptions): ColumnDef<Venue>
         <Badge variant="outline" className="border-primary/30 text-primary">
           {row.original.neighborhood}
         </Badge>
-      ),
-    },
-    {
-      id: 'type',
-      accessorKey: 'type',
-      size: 140,
-      minSize: 100,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Type" />
-      ),
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">
-          {venueTypeLabels[row.original.type] || row.original.type}
-        </span>
-      ),
-    },
-    {
-      id: 'capacity',
-      accessorKey: 'capacity',
-      size: 100,
-      minSize: 80,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Capacity" />
-      ),
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">
-          {row.original.capacity || '—'}
-        </span>
       ),
     },
     {

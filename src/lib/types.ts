@@ -52,20 +52,6 @@ export const NEIGHBORHOODS = [
 
 export type Neighborhood = (typeof NEIGHBORHOODS)[number]
 
-// Venue types
-export const VENUE_TYPES = [
-  'club',
-  'bar',
-  'theater',
-  'gallery',
-  'cultural_center',
-  'outdoor',
-  'restaurant',
-  'other',
-] as const
-
-export type VenueType = (typeof VENUE_TYPES)[number]
-
 // Event status
 export const EVENT_STATUSES = ['scheduled', 'cancelled', 'postponed', 'past', 'pending_review'] as const
 
@@ -91,8 +77,6 @@ export interface Venue {
   address: string | null
   website: string | null
   instagram_handle: string | null
-  capacity: number | null
-  type: VenueType
   created_at: string
   updated_at: string
 }
@@ -104,8 +88,6 @@ export interface VenueInsert {
   address?: string | null
   website?: string | null
   instagram_handle?: string | null
-  capacity?: number | null
-  type?: VenueType
 }
 
 // For updating venues
@@ -141,7 +123,6 @@ export interface EventWithVenue extends Event {
   venue_name: string | null
   venue_neighborhood: Neighborhood | null
   venue_address: string | null
-  venue_type: VenueType | null
 }
 
 // For inserting new events
