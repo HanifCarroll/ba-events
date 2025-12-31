@@ -1,10 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { enrichEventDescriptionsAction } from '@/lib/admin'
+import { enrichEventDescriptionsAction, type DescriptionEnrichComplete } from '@/lib/admin'
 import type { EventWithVenue } from '@/lib/types'
-
-const BATCH_SIZE = 3
 
 interface EnrichmentState {
   isEnriching: boolean
@@ -52,7 +50,7 @@ export function useBackgroundEnrichment() {
 
   /**
    * Enrich selected events using Jina Reader + Haiku 4.5
-   * Processes in batches with progress updates and stop capability
+   * Streams real-time progress updates from the server
    */
   const enrichEvents = useCallback(
     async (
@@ -79,11 +77,12 @@ export function useBackgroundEnrichment() {
         total: enrichableEvents.length,
       })
 
-      // Prepare events for enrichment (include source for language hints)
+      // Prepare events for enrichment (include source for language hints and name for progress display)
       const eventsToEnrich = enrichableEvents.map((e) => ({
         id: e.id,
         link: e.link || '',
         source: e.source,
+        name: e.name,
       }))
 
       // Show initial toast
@@ -95,46 +94,55 @@ export function useBackgroundEnrichment() {
       )
 
       let totalEnriched = 0
-      let processed = 0
       let wasStopped = false
 
       try {
-        // Process in batches
-        for (let i = 0; i < eventsToEnrich.length; i += BATCH_SIZE) {
+        const stream = await enrichEventDescriptionsAction({
+          data: { events: eventsToEnrich },
+        })
+
+        let finalResult: DescriptionEnrichComplete | null = null
+
+        for await (const update of stream) {
           // Check if stopped
           if (shouldStopRef.current) {
             wasStopped = true
             break
           }
 
-          const batch = eventsToEnrich.slice(i, i + BATCH_SIZE)
+          if (update.type === 'progress') {
+            // Update progress state
+            setState((prev) => ({
+              ...prev,
+              current: update.current,
+            }))
 
-          // Update toast with progress
-          toast.loading(
-            `Adding descriptions (${processed}/${eventsToEnrich.length})...`,
-            {
-              id: toastIdRef.current,
-              description: `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}. Click stop to pause.`,
+            // Update toast with progress
+            toast.loading(
+              `Adding descriptions (${update.current}/${update.total})...`,
+              {
+                id: toastIdRef.current,
+                description: update.eventName
+                  ? `Processing: ${update.eventName.substring(0, 40)}${update.eventName.length > 40 ? '...' : ''}`
+                  : 'Processing...',
+              }
+            )
+
+            if (update.success) {
+              totalEnriched++
             }
-          )
-
-          // Enrich this batch
-          const result = await enrichEventDescriptionsAction({
-            data: { events: batch },
-          })
-
-          totalEnriched += result.enriched
-          processed += batch.length
-
-          // Update progress state
-          setState((prev) => ({
-            ...prev,
-            current: processed,
-          }))
-
-          // Refresh UI to show new descriptions immediately
-          router.invalidate()
+          } else if (update.type === 'complete') {
+            finalResult = update
+          }
         }
+
+        // If we broke out early due to stop, use current count
+        if (!wasStopped && finalResult) {
+          totalEnriched = finalResult.enriched
+        }
+
+        // Refresh UI to show new descriptions
+        router.invalidate()
 
         // Final toast
         if (wasStopped) {

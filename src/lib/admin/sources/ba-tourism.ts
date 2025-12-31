@@ -23,6 +23,44 @@ export interface BATourismPreviewEvent {
 
 export type { BATourismEvent, WeekContext }
 
+// Import streaming types
+export interface ImportProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  phase: 'categorizing' | 'embedding' | 'importing'
+}
+
+export interface ImportComplete {
+  type: 'complete'
+  inserted: number
+  updated: number
+  venuesCreated: number
+}
+
+export type ImportUpdate = ImportProgress | ImportComplete
+
+// Venue enrichment streaming types
+export interface VenueEnrichProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  action: 'matched' | 'created' | 'error'
+  venueName?: string
+}
+
+export interface VenueEnrichComplete {
+  type: 'complete'
+  enriched: number
+  venuesCreated: number
+  total: number
+  errors: Array<{ id: string; error: string }>
+}
+
+export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+
 export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { weekContextText?: string }) => data)
   .handler(async ({ data }): Promise<{ events: BATourismPreviewEvent[]; weekContext: WeekContext }> => {
@@ -62,6 +100,10 @@ export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
     }
   })
 
+/**
+ * Import a batch of events from BA Tourism data
+ * Uses async generator to stream progress updates to the client
+ */
 export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: {
@@ -72,7 +114,7 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
       }>
     }) => data
   )
-  .handler(async ({ data }) => {
+  .handler(async function* ({ data }): AsyncGenerator<ImportUpdate> {
     const client = await requireAdminAccess()
 
     // Step 1: Collect unique venue names that need to be created
@@ -137,8 +179,20 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
 
     // Step 5: Process events - categorize and embed ONCE per source event, then expand to dates
     const eventsWithEmbeddings: EventInsert[] = []
+    const total = data.events.length
 
-    for (const { baTourismEvent, venueId, weekContext } of data.events) {
+    for (let i = 0; i < data.events.length; i++) {
+      const { baTourismEvent, venueId, weekContext } = data.events[i]
+
+      // Yield categorizing progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: baTourismEvent.name,
+        phase: 'categorizing',
+      } as ImportProgress
+
       // Categorize and generate embedding in PARALLEL, once per source event
       const textForEmbedding = [
         baTourismEvent.name,
@@ -151,6 +205,15 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
         categorizeEvent(baTourismEvent.name, baTourismEvent.description),
         generateEmbedding(textForEmbedding),
       ])
+
+      // Yield embedding progress (after parallel completion)
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: baTourismEvent.name,
+        phase: 'embedding',
+      } as ImportProgress
 
       // Look up venue ID from our map if not already set
       let finalVenueId = venueId
@@ -166,16 +229,27 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
     }
 
     if (eventsWithEmbeddings.length === 0) {
-      return { success: true, inserted: 0, updated: 0, venuesCreated }
+      yield { type: 'complete', inserted: 0, updated: 0, venuesCreated } as ImportComplete
+      return
     }
+
+    // Yield importing progress
+    yield {
+      type: 'progress',
+      current: total,
+      total,
+      eventName: 'Saving to database...',
+      phase: 'importing',
+    } as ImportProgress
 
     const result = await upsertEvents(eventsWithEmbeddings, client)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       ...result,
       venuesCreated,
-    }
+    } as ImportComplete
   })
 
 // ============================================================================
@@ -185,14 +259,6 @@ export const importBATourismEventsBatchAction = createServerFn({ method: 'POST' 
 export interface BATourismEnrichmentInput {
   id: string
   link: string
-}
-
-export interface BATourismEnrichmentOutput {
-  success: boolean
-  enriched: number
-  venuesCreated: number
-  total: number
-  errors: Array<{ id: string; error: string }>
 }
 
 /**
@@ -221,15 +287,17 @@ export const getBATourismEventsNeedingEnrichmentAction = createServerFn({ method
 /**
  * Enrich BA Tourism events with venue information
  * Fetches venue names from detail pages and matches/creates venues
+ * Uses async generator to stream progress updates to the client
  */
 export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: BATourismEnrichmentInput[] }) => data)
-  .handler(async ({ data }): Promise<BATourismEnrichmentOutput> => {
+  .handler(async function* ({ data }): AsyncGenerator<VenueEnrichUpdate> {
     const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
-      return { success: true, enriched: 0, venuesCreated: 0, total: 0, errors: [] }
+      yield { type: 'complete', enriched: 0, venuesCreated: 0, total: 0, errors: [] } as VenueEnrichComplete
+      return
     }
 
     console.log(`[Admin] Starting BA Tourism venue enrichment for ${events.length} events...`)
@@ -242,14 +310,30 @@ export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
     const errors: Array<{ id: string; error: string }> = []
 
     // Process each result
-    for (const result of extractionResults) {
+    for (let i = 0; i < extractionResults.length; i++) {
+      const result = extractionResults[i]
+
       if (result.error) {
         errors.push({ id: result.id, error: result.error })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action: 'error',
+        } as VenueEnrichProgress
         continue
       }
 
       if (!result.venueName) {
         errors.push({ id: result.id, error: 'Could not extract venue name from page' })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action: 'error',
+        } as VenueEnrichProgress
         continue
       }
 
@@ -258,6 +342,7 @@ export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
         const venueMatch = await matchVenue(result.venueName)
 
         let venueId: string
+        let action: 'matched' | 'created' = 'matched'
 
         if (venueMatch.venue) {
           // Use existing venue
@@ -271,25 +356,47 @@ export const enrichBATourismVenuesAction = createServerFn({ method: 'POST' })
           }, client)
           venueId = newVenue.id
           venuesCreated++
+          action = 'created'
           console.log(`[Admin] Created new venue: ${result.venueName}`)
         }
 
         // Update event with venue_id
         await updateEvent(result.id, { venue_id: venueId }, client)
         enriched++
+
+        // Yield progress update
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action,
+          venueName: result.venueName,
+        } as VenueEnrichProgress
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         errors.push({ id: result.id, error: errorMsg })
+
+        // Yield error progress
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action: 'error',
+          venueName: result.venueName,
+        } as VenueEnrichProgress
       }
     }
 
     console.log(`[Admin] BA Tourism venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       enriched,
       venuesCreated,
       total: events.length,
       errors,
-    }
+    } as VenueEnrichComplete
   })

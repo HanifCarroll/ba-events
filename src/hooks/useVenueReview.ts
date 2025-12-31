@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   getDuplicateVenueCandidatesAction,
   detectAddressLikeNamesAction,
@@ -11,7 +12,7 @@ import {
   getDismissedDuplicatesAction,
   restoreDismissedPairAction,
 } from '@/lib/admin'
-import type { VenueEventPreview } from '@/lib/admin/venue-review'
+import type { VenueEventPreview, AddressNameResult, AddressDetectionComplete } from '@/lib/admin/venue-review'
 import { queryKeys } from '@/lib/query'
 import type { Venue } from '@/lib/types'
 
@@ -47,6 +48,12 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
   const [addressAnalysisEnabled, setAddressAnalysisEnabled] = useState(false)
   const [showDismissedDialog, setShowDismissedDialog] = useState(false)
 
+  // Address analysis state (streaming)
+  const [addressResults, setAddressResults] = useState<AddressNameResult[] | null>(null)
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(false)
+  const [addressProgress, setAddressProgress] = useState<{ current: number; total: number } | null>(null)
+  const toastIdRef = useRef<string | number | undefined>(undefined)
+
   // Fetch duplicate candidates
   const {
     data: duplicatePairs,
@@ -58,25 +65,61 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  // Fetch address-like names (manually triggered)
-  const {
-    data: addressResults,
-    isLoading: isLoadingAddresses,
-    refetch: refetchAddresses,
-  } = useQuery({
-    queryKey: ['venue-address-names', venues.map((v) => v.id).join(',')],
-    queryFn: () =>
-      detectAddressLikeNamesAction({
-        data: venues.map((v) => ({ id: v.id, name: v.name })),
-      }),
-    enabled: addressAnalysisEnabled && venues.length > 0,
-    staleTime: 10 * 60 * 1000, // 10 minutes (AI analysis)
-  })
+  // Function to start address analysis with streaming
+  const startAddressAnalysis = useCallback(async () => {
+    if (venues.length === 0) return
 
-  // Function to start address analysis
-  const startAddressAnalysis = useCallback(() => {
     setAddressAnalysisEnabled(true)
-  }, [])
+    setIsLoadingAddresses(true)
+    setAddressProgress({ current: 0, total: venues.length })
+
+    toastIdRef.current = toast.loading(`Analyzing 0/${venues.length} venue names...`)
+
+    try {
+      const stream = await detectAddressLikeNamesAction({
+        data: venues.map((v) => ({ id: v.id, name: v.name })),
+      })
+
+      let finalResult: AddressDetectionComplete | null = null
+
+      for await (const update of stream) {
+        if (update.type === 'progress') {
+          setAddressProgress({ current: update.current, total: update.total })
+          toast.loading(
+            `Analyzing batch ${update.batchNumber}/${update.totalBatches} (${update.current}/${update.total} venues)`,
+            { id: toastIdRef.current }
+          )
+        } else if (update.type === 'complete') {
+          finalResult = update
+        }
+      }
+
+      if (finalResult) {
+        setAddressResults(finalResult.results)
+        const addressLikeCount = finalResult.results.filter(r => r.is_address_like && r.confidence > 0.7).length
+        toast.success(
+          `Found ${addressLikeCount} address-like venue names`,
+          { id: toastIdRef.current }
+        )
+      }
+    } catch (error) {
+      console.error('Address analysis failed:', error)
+      toast.error('Failed to analyze venue names', {
+        id: toastIdRef.current,
+        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
+      })
+    } finally {
+      setIsLoadingAddresses(false)
+      setAddressProgress(null)
+      toastIdRef.current = undefined
+    }
+  }, [venues])
+
+  // Function to re-run address analysis
+  const refetchAddresses = useCallback(() => {
+    setAddressResults(null)
+    startAddressAnalysis()
+  }, [startAddressAnalysis])
 
   // Get IDs of venues that have issues (for fetching event counts)
   const venueIdsWithIssues = useMemo(() => {
@@ -344,6 +387,7 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     isLoadingDuplicates,
     isLoadingAddressNames: isLoadingAddresses,
     isLoadingDismissed,
+    addressProgress,
 
     // Actions
     refetchDuplicates,

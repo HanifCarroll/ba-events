@@ -45,6 +45,15 @@ export {
   getEventsWithoutDescriptions,
   updateEventDescriptionsAction,
   regenerateEmbeddingsAction,
+  type EmbeddingProgress,
+  type EmbeddingComplete,
+  type EmbeddingUpdate,
+  type DescriptionUpdateProgress,
+  type DescriptionUpdateComplete,
+  type DescriptionUpdateUpdate,
+  type DescriptionEnrichProgress,
+  type DescriptionEnrichComplete,
+  type DescriptionEnrichUpdate,
 } from './enrichment'
 
 // Passline
@@ -67,7 +76,12 @@ export {
   type EventbritePreviewEvent,
   type EventbriteEvent,
   type EventbriteEnrichmentInput,
-  type EventbriteEnrichmentOutput,
+  type ImportProgress as EventbriteImportProgress,
+  type ImportComplete as EventbriteImportComplete,
+  type ImportUpdate as EventbriteImportUpdate,
+  type VenueEnrichProgress as EventbriteVenueEnrichProgress,
+  type VenueEnrichComplete as EventbriteVenueEnrichComplete,
+  type VenueEnrichUpdate as EventbriteVenueEnrichUpdate,
 } from './sources/eventbrite'
 
 // BA Tourism
@@ -80,7 +94,12 @@ export {
   type BATourismEvent,
   type WeekContext,
   type BATourismEnrichmentInput,
-  type BATourismEnrichmentOutput,
+  type ImportProgress as BATourismImportProgress,
+  type ImportComplete as BATourismImportComplete,
+  type ImportUpdate as BATourismImportUpdate,
+  type VenueEnrichProgress as BATourismVenueEnrichProgress,
+  type VenueEnrichComplete as BATourismVenueEnrichComplete,
+  type VenueEnrichUpdate as BATourismVenueEnrichUpdate,
 } from './sources/ba-tourism'
 
 // Meetup
@@ -93,7 +112,12 @@ export {
   type MeetupPreviewEvent,
   type MeetupEvent,
   type MeetupEnrichmentInput,
-  type MeetupEnrichmentOutput,
+  type ImportProgress as MeetupImportProgress,
+  type ImportComplete as MeetupImportComplete,
+  type ImportUpdate as MeetupImportUpdate,
+  type VenueEnrichProgress as MeetupVenueEnrichProgress,
+  type VenueEnrichComplete as MeetupVenueEnrichComplete,
+  type VenueEnrichUpdate as MeetupVenueEnrichUpdate,
 } from './sources/meetup'
 
 // Venue Review
@@ -111,6 +135,9 @@ export {
   type MergeVenuesResult,
   type VenueEventPreview,
   type DismissedDuplicate,
+  type AddressDetectionProgress,
+  type AddressDetectionComplete,
+  type AddressDetectionUpdate,
 } from './venue-review'
 
 // Venue Enrichment (Nominatim)

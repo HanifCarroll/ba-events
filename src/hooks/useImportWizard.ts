@@ -23,8 +23,11 @@ import {
   type BATourismPreviewEvent,
   type MeetupPreviewEvent,
   type WeekContext,
-  type MeetupEnrichmentOutput,
 } from '@/lib/admin'
+import type { ImportComplete } from '@/lib/admin/sources/passline'
+import type { ImportComplete as EventbriteImportComplete } from '@/lib/admin/sources/eventbrite'
+import type { ImportComplete as BATourismImportComplete } from '@/lib/admin/sources/ba-tourism'
+import type { ImportComplete as MeetupImportComplete, VenueEnrichComplete as MeetupVenueEnrichComplete } from '@/lib/admin/sources/meetup'
 import {
   fetchPasslineEventsClient,
   filterCABAEventsClient,
@@ -131,7 +134,7 @@ export function useImportWizard(
   // Enrichment state (for Meetup venue enrichment)
   const [isEnriching, setIsEnriching] = useState(false)
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number } | null>(null)
-  const [enrichmentResult, setEnrichmentResult] = useState<Omit<MeetupEnrichmentOutput, 'success'> | null>(null)
+  const [enrichmentResult, setEnrichmentResult] = useState<Pick<MeetupVenueEnrichComplete, 'enriched' | 'venuesCreated' | 'errors'> | null>(null)
   const [eventsNeedingEnrichment, setEventsNeedingEnrichment] = useState<Array<{ id: string; link: string }>>([])
   const [isLoadingEnrichmentEvents, setIsLoadingEnrichmentEvents] = useState(false)
 
@@ -946,16 +949,23 @@ export function useImportWizard(
         withCategories = 0
         withoutCategories = selectedEvents.length
 
-        const BATCH_SIZE = 10
-        for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
-          const batch = eventsToImport.slice(i, i + BATCH_SIZE)
-          const result = await importPasslineEventsBatchAction({ data: { events: batch } })
-          totalInserted += result.inserted
-          totalUpdated += result.updated
-          setImportProgress({ current: Math.min(i + BATCH_SIZE, eventsToImport.length), total: eventsToImport.length })
+        // Import all events in one call with streaming progress
+        const stream = await importPasslineEventsBatchAction({ data: { events: eventsToImport } })
+        let finalResult: ImportComplete | null = null
+
+        for await (const update of stream) {
+          if (update.type === 'progress') {
+            setImportProgress({ current: update.current, total: update.total })
+          } else if (update.type === 'complete') {
+            finalResult = update
+          }
         }
 
-        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        if (finalResult) {
+          totalInserted = finalResult.inserted
+          totalUpdated = finalResult.updated
+          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        }
       } else if (source === 'eventbrite') {
         const selectedEvents = eventbriteEvents.filter(e => selectedIds.has(e.eventbrite.url))
         const eventsToImport = selectedEvents.map(e => ({
@@ -972,16 +982,23 @@ export function useImportWizard(
         withCategories = 0
         withoutCategories = selectedEvents.length
 
-        const BATCH_SIZE = 10
-        for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
-          const batch = eventsToImport.slice(i, i + BATCH_SIZE)
-          const result = await importEventbriteEventsBatchAction({ data: { events: batch } })
-          totalInserted += result.inserted
-          totalUpdated += result.updated
-          setImportProgress({ current: Math.min(i + BATCH_SIZE, eventsToImport.length), total: eventsToImport.length })
+        // Import all events in one call with streaming progress
+        const stream = await importEventbriteEventsBatchAction({ data: { events: eventsToImport } })
+        let finalResult: EventbriteImportComplete | null = null
+
+        for await (const update of stream) {
+          if (update.type === 'progress') {
+            setImportProgress({ current: update.current, total: update.total })
+          } else if (update.type === 'complete') {
+            finalResult = update
+          }
         }
 
-        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        if (finalResult) {
+          totalInserted = finalResult.inserted
+          totalUpdated = finalResult.updated
+          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        }
       } else if (source === 'ba-tourism') {
         if (!baTourismWeekContext) {
           throw new Error('Week context is missing')
@@ -1003,16 +1020,23 @@ export function useImportWizard(
         withCategories = selectedEvents.length
         withoutCategories = 0
 
-        const BATCH_SIZE = 10
-        for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
-          const batch = eventsToImport.slice(i, i + BATCH_SIZE)
-          const result = await importBATourismEventsBatchAction({ data: { events: batch } })
-          totalInserted += result.inserted
-          totalUpdated += result.updated
-          setImportProgress({ current: Math.min(i + BATCH_SIZE, eventsToImport.length), total: eventsToImport.length })
+        // Import all events in one call with streaming progress
+        const baTourismStream = await importBATourismEventsBatchAction({ data: { events: eventsToImport } })
+        let baTourismFinalResult: BATourismImportComplete | null = null
+
+        for await (const update of baTourismStream) {
+          if (update.type === 'progress') {
+            setImportProgress({ current: update.current, total: update.total })
+          } else if (update.type === 'complete') {
+            baTourismFinalResult = update
+          }
         }
 
-        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        if (baTourismFinalResult) {
+          totalInserted = baTourismFinalResult.inserted
+          totalUpdated = baTourismFinalResult.updated
+          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        }
       } else if (source === 'meetup') {
         const selectedEvents = meetupEvents.filter(e => selectedIds.has(e.meetup.id))
         const eventsToImport = selectedEvents.map(e => ({
@@ -1029,16 +1053,23 @@ export function useImportWizard(
         withCategories = 0
         withoutCategories = selectedEvents.length
 
-        const BATCH_SIZE = 10
-        for (let i = 0; i < eventsToImport.length; i += BATCH_SIZE) {
-          const batch = eventsToImport.slice(i, i + BATCH_SIZE)
-          const result = await importMeetupEventsBatchAction({ data: { events: batch } })
-          totalInserted += result.inserted
-          totalUpdated += result.updated
-          setImportProgress({ current: Math.min(i + BATCH_SIZE, eventsToImport.length), total: eventsToImport.length })
+        // Import all events in one call with streaming progress
+        const meetupStream = await importMeetupEventsBatchAction({ data: { events: eventsToImport } })
+        let meetupFinalResult: MeetupImportComplete | null = null
+
+        for await (const update of meetupStream) {
+          if (update.type === 'progress') {
+            setImportProgress({ current: update.current, total: update.total })
+          } else if (update.type === 'complete') {
+            meetupFinalResult = update
+          }
         }
 
-        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        if (meetupFinalResult) {
+          totalInserted = meetupFinalResult.inserted
+          totalUpdated = meetupFinalResult.updated
+          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        }
 
         // If we imported events without venues, go to enrich step for Meetup
         if (withoutVenue > 0 && totalInserted > 0) {
@@ -1132,16 +1163,28 @@ export function useImportWizard(
         eventUrl: e.link,
       }))
 
-      const result = await enrichMeetupVenuesAction({ data: { events } })
+      // Consume streaming response
+      const enrichStream = await enrichMeetupVenuesAction({ data: { events } })
+      let enrichFinalResult: MeetupVenueEnrichComplete | null = null
 
-      setEnrichmentResult({
-        enriched: result.enriched,
-        venuesCreated: result.venuesCreated,
-        errors: result.errors,
-      })
+      for await (const update of enrichStream) {
+        if (update.type === 'progress') {
+          setEnrichmentProgress({ current: update.current, total: update.total })
+        } else if (update.type === 'complete') {
+          enrichFinalResult = update
+        }
+      }
 
-      if (result.enriched > 0) {
-        toast.success(`Enriched ${result.enriched} events with venue data`)
+      if (enrichFinalResult) {
+        setEnrichmentResult({
+          enriched: enrichFinalResult.enriched,
+          venuesCreated: enrichFinalResult.venuesCreated,
+          errors: enrichFinalResult.errors,
+        })
+
+        if (enrichFinalResult.enriched > 0) {
+          toast.success(`Enriched ${enrichFinalResult.enriched} events with venue data`)
+        }
       }
 
       // No auto-redirect - let user see results and decide what to do
@@ -1169,7 +1212,7 @@ export function useImportWizard(
     setError(null)
 
     // Get only the failed event IDs and their links
-    const failedEventIds = new Set(enrichmentResult.errors.map(e => e.eventId))
+    const failedEventIds = new Set(enrichmentResult.errors.map((e: { eventId: string; error: string }) => e.eventId))
     const eventsToRetry = eventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
 
     if (eventsToRetry.length === 0) {
@@ -1186,22 +1229,34 @@ export function useImportWizard(
         eventUrl: e.link,
       }))
 
-      const result = await enrichMeetupVenuesAction({ data: { events } })
+      // Consume streaming response
+      const retryStream = await enrichMeetupVenuesAction({ data: { events } })
+      let retryFinalResult: MeetupVenueEnrichComplete | null = null
 
-      // Combine previous success with new results
-      const previousEnriched = enrichmentResult.enriched
-      const previousVenuesCreated = enrichmentResult.venuesCreated
+      for await (const update of retryStream) {
+        if (update.type === 'progress') {
+          setEnrichmentProgress({ current: update.current, total: update.total })
+        } else if (update.type === 'complete') {
+          retryFinalResult = update
+        }
+      }
 
-      setEnrichmentResult({
-        enriched: previousEnriched + result.enriched,
-        venuesCreated: previousVenuesCreated + result.venuesCreated,
-        errors: result.errors, // Only keep the new errors
-      })
+      if (retryFinalResult) {
+        // Combine previous success with new results
+        const previousEnriched = enrichmentResult.enriched
+        const previousVenuesCreated = enrichmentResult.venuesCreated
 
-      if (result.enriched > 0) {
-        toast.success(`Retry successful: enriched ${result.enriched} more events`)
-      } else if (result.errors.length > 0) {
-        toast.error(`Retry failed: ${result.errors.length} events still have errors`)
+        setEnrichmentResult({
+          enriched: previousEnriched + retryFinalResult.enriched,
+          venuesCreated: previousVenuesCreated + retryFinalResult.venuesCreated,
+          errors: retryFinalResult.errors, // Only keep the new errors
+        })
+
+        if (retryFinalResult.enriched > 0) {
+          toast.success(`Retry successful: enriched ${retryFinalResult.enriched} more events`)
+        } else if (retryFinalResult.errors.length > 0) {
+          toast.error(`Retry failed: ${retryFinalResult.errors.length} events still have errors`)
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to retry enrichment')

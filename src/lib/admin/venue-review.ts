@@ -29,6 +29,24 @@ export interface MergeVenuesResult {
   target_venue_name: string
 }
 
+// Address detection streaming types
+export interface AddressDetectionProgress {
+  type: 'progress'
+  current: number
+  total: number
+  batchNumber: number
+  totalBatches: number
+  batchResults: AddressNameResult[]
+}
+
+export interface AddressDetectionComplete {
+  type: 'complete'
+  results: AddressNameResult[]
+  total: number
+}
+
+export type AddressDetectionUpdate = AddressDetectionProgress | AddressDetectionComplete
+
 // Get duplicate venue candidates using pg_trgm similarity
 export const getDuplicateVenueCandidatesAction = createServerFn({ method: 'GET' })
   .inputValidator((threshold?: number) => threshold ?? 0.5)
@@ -44,22 +62,30 @@ export const getDuplicateVenueCandidatesAction = createServerFn({ method: 'GET' 
   })
 
 // Detect address-like venue names using Claude Haiku
+// Uses async generator to stream progress updates to the client
 export const detectAddressLikeNamesAction = createServerFn({ method: 'POST' })
   .inputValidator((venues: Array<{ id: string; name: string }>) => venues)
-  .handler(async ({ data: venues }): Promise<AddressNameResult[]> => {
+  .handler(async function* ({ data: venues }): AsyncGenerator<AddressDetectionUpdate> {
     await requireAdminAccess()
 
-    if (venues.length === 0) return []
+    if (venues.length === 0) {
+      yield { type: 'complete', results: [], total: 0 } as AddressDetectionComplete
+      return
+    }
 
     const anthropic = new Anthropic()
     const results: AddressNameResult[] = []
 
     // Process in batches to manage token limits
     const BATCH_SIZE = 20
+    const totalBatches = Math.ceil(venues.length / BATCH_SIZE)
+    let venuesProcessed = 0
 
     for (let i = 0; i < venues.length; i += BATCH_SIZE) {
+      const batchNumber = Math.floor(i / BATCH_SIZE) + 1
       const batch = venues.slice(i, i + BATCH_SIZE)
       const venueList = batch.map((v, idx) => `${idx + 1}. "${v.name}"`).join('\n')
+      const batchResults: AddressNameResult[] = []
 
       try {
         const message = await anthropic.messages.create({
@@ -123,12 +149,14 @@ Respond ONLY with the JSON array, no other text.`,
             for (const result of parsed) {
               const venue = batch[result.index - 1]
               if (venue) {
-                results.push({
+                const addressResult: AddressNameResult = {
                   venue_id: venue.id,
                   is_address_like: result.is_address,
                   confidence: result.confidence,
                   suggested_name: result.suggested_name,
-                })
+                }
+                batchResults.push(addressResult)
+                results.push(addressResult)
               }
             }
           } catch (parseError) {
@@ -136,11 +164,13 @@ Respond ONLY with the JSON array, no other text.`,
             console.error('[venue-review] Raw response:', textBlock.text.substring(0, 500))
             // Add all venues in batch as not address-like if parsing fails
             for (const venue of batch) {
-              results.push({
+              const addressResult: AddressNameResult = {
                 venue_id: venue.id,
                 is_address_like: false,
                 confidence: 0,
-              })
+              }
+              batchResults.push(addressResult)
+              results.push(addressResult)
             }
           }
         }
@@ -148,13 +178,27 @@ Respond ONLY with the JSON array, no other text.`,
         console.error('[venue-review] Haiku API error:', apiError)
         // Add all venues in batch as not address-like if API fails
         for (const venue of batch) {
-          results.push({
+          const addressResult: AddressNameResult = {
             venue_id: venue.id,
             is_address_like: false,
             confidence: 0,
-          })
+          }
+          batchResults.push(addressResult)
+          results.push(addressResult)
         }
       }
+
+      venuesProcessed += batch.length
+
+      // Yield progress update after each batch
+      yield {
+        type: 'progress',
+        current: venuesProcessed,
+        total: venues.length,
+        batchNumber,
+        totalBatches,
+        batchResults,
+      } as AddressDetectionProgress
 
       // Small delay between batches to avoid rate limiting
       if (i + BATCH_SIZE < venues.length) {
@@ -162,7 +206,12 @@ Respond ONLY with the JSON array, no other text.`,
       }
     }
 
-    return results
+    // Yield final completion result
+    yield {
+      type: 'complete',
+      results,
+      total: venues.length,
+    } as AddressDetectionComplete
   })
 
 // Merge two venues (reassign events from source to target, delete source)

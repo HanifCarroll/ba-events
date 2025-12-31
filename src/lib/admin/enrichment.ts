@@ -5,6 +5,61 @@ import { enrichEventDescriptionBilingual } from '../ai/enrichment'
 import { requireAdminAccess } from './utils'
 import type { EventWithVenue } from '../types'
 
+// Embedding regeneration streaming types
+export interface EmbeddingProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  success: boolean
+  error?: string
+}
+
+export interface EmbeddingComplete {
+  type: 'complete'
+  regenerated: number
+  total: number
+  errors?: Array<{ id: string; error: string }>
+}
+
+export type EmbeddingUpdate = EmbeddingProgress | EmbeddingComplete
+
+// Description update streaming types
+export interface DescriptionUpdateProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  success: boolean
+}
+
+export interface DescriptionUpdateComplete {
+  type: 'complete'
+  updated: number
+  total: number
+}
+
+export type DescriptionUpdateUpdate = DescriptionUpdateProgress | DescriptionUpdateComplete
+
+// Description enrichment streaming types
+export interface DescriptionEnrichProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  success: boolean
+  error?: string
+}
+
+export interface DescriptionEnrichComplete {
+  type: 'complete'
+  enriched: number
+  total: number
+  errors?: Array<{ id: string; error: string }>
+}
+
+export type DescriptionEnrichUpdate = DescriptionEnrichProgress | DescriptionEnrichComplete
+
 /**
  * Map event sources to known languages
  * Returns undefined for sources that need detection
@@ -77,33 +132,56 @@ async function enrichSingleEvent(
 
 /**
  * Enrich event descriptions using Jina Reader + Haiku 4.5
- * Processes events in parallel within each batch for faster throughput
+ * Processes events sequentially to enable real-time progress streaming
  * Detects source language and translates appropriately
+ * Uses async generator to stream progress updates to the client
  */
 export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
   .inputValidator(
-    (data: { events: Array<{ id: string; link: string; source: string }> }) => data
+    (data: { events: Array<{ id: string; link: string; source: string; name?: string }> }) => data
   )
-  .handler(async ({ data: { events } }) => {
+  .handler(async function* ({ data: { events } }): AsyncGenerator<DescriptionEnrichUpdate> {
     const client = await requireAdminAccess()
-    console.log(`[server] enrichEventDescriptionsAction called with ${events.length} events (parallel processing)`)
+    console.log(`[server] enrichEventDescriptionsAction called with ${events.length} events (streaming)`)
 
-    // Process all events in the batch in parallel
-    const results = await Promise.all(
-      events.map(({ id, link, source }) => enrichSingleEvent(id, link, source, client))
-    )
+    let enriched = 0
+    const errors: Array<{ id: string; error: string }> = []
 
-    const enriched = results.filter(r => r.success).length
-    const errors = results
-      .filter(r => !r.success)
-      .map(r => ({ id: r.id, error: r.error || 'Unknown error' }))
+    for (let i = 0; i < events.length; i++) {
+      const { id, link, source, name } = events[i]
+      const eventName = name || 'Unknown'
 
-    return {
-      success: true,
+      const result = await enrichSingleEvent(id, link, source, client)
+
+      if (result.success) {
+        enriched++
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName,
+          success: true,
+        } as DescriptionEnrichProgress
+      } else {
+        errors.push({ id, error: result.error || 'Unknown error' })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName,
+          success: false,
+          error: result.error,
+        } as DescriptionEnrichProgress
+      }
+    }
+
+    // Yield final completion result
+    yield {
+      type: 'complete',
       enriched,
       total: events.length,
       errors: errors.length > 0 ? errors : undefined,
-    }
+    } as DescriptionEnrichComplete
   })
 
 /**
@@ -120,19 +198,24 @@ export const getEventsWithoutDescriptions = createServerFn({ method: 'GET' }).ha
  * Regenerate embeddings for events using their current name/description
  * Use this when event names or descriptions have been manually corrected
  * and embeddings need to be updated to match
+ * Uses async generator to stream progress updates to the client
  */
 export const regenerateEmbeddingsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { eventIds: string[] }) => data)
-  .handler(async ({ data: { eventIds } }) => {
+  .handler(async function* ({ data: { eventIds } }): AsyncGenerator<EmbeddingUpdate> {
     const client = await requireAdminAccess()
     console.log(`[server] regenerateEmbeddingsAction called for ${eventIds.length} events`)
 
     let regenerated = 0
     const errors: Array<{ id: string; error: string }> = []
 
-    for (const id of eventIds) {
+    for (let i = 0; i < eventIds.length; i++) {
+      const id = eventIds[i]
+      let eventName = 'Unknown'
+
       try {
         const event = await getEventById(id)
+        eventName = event.name
 
         // Build text for embedding from current event data
         const textForEmbedding = [
@@ -148,37 +231,62 @@ export const regenerateEmbeddingsAction = createServerFn({ method: 'POST' })
         await updateEvent(id, { embedding }, client)
         regenerated++
         console.log(`[server] Regenerated embedding for: ${event.name.substring(0, 50)}...`)
+
+        // Yield progress update
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: eventIds.length,
+          eventName,
+          success: true,
+        } as EmbeddingProgress
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         console.error(`[server] Failed to regenerate embedding for ${id}:`, errorMsg)
         errors.push({ id, error: errorMsg })
+
+        // Yield progress update for error
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: eventIds.length,
+          eventName,
+          success: false,
+          error: errorMsg,
+        } as EmbeddingProgress
       }
     }
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       regenerated,
       total: eventIds.length,
       errors: errors.length > 0 ? errors : undefined,
-    }
+    } as EmbeddingComplete
   })
 
 /**
  * Update event descriptions in batch (bilingual)
  * Regenerates embeddings for each updated event using Spanish description
+ * Uses async generator to stream progress updates to the client
  */
 export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: { updates: Array<{ id: string; description_es: string; description_en: string }> }) => data
   )
-  .handler(async ({ data: { updates } }) => {
+  .handler(async function* ({ data: { updates } }): AsyncGenerator<DescriptionUpdateUpdate> {
     const client = await requireAdminAccess()
     let updated = 0
 
-    for (const { id, description_es, description_en } of updates) {
+    for (let i = 0; i < updates.length; i++) {
+      const { id, description_es, description_en } = updates[i]
+      let eventName = 'Unknown'
+
       try {
         // Get existing event to merge with new description
         const existingEvent = await getEventById(id)
+        eventName = existingEvent.name
 
         // Generate new embedding with Spanish description (cross-lingual model)
         const textForEmbedding = [
@@ -199,14 +307,33 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
         }, client)
 
         updated++
+
+        // Yield progress update
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: updates.length,
+          eventName,
+          success: true,
+        } as DescriptionUpdateProgress
       } catch (error) {
         console.error(`Failed to update description for event ${id}:`, error)
+
+        // Yield progress update for error
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: updates.length,
+          eventName,
+          success: false,
+        } as DescriptionUpdateProgress
       }
     }
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       updated,
       total: updates.length,
-    }
+    } as DescriptionUpdateComplete
   })

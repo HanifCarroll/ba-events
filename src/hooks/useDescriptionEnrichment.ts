@@ -3,6 +3,7 @@ import { useRouter } from '@tanstack/react-router'
 import {
   getEventsWithoutDescriptions,
   enrichEventDescriptionsAction,
+  type DescriptionEnrichComplete,
 } from '@/lib/admin'
 import type { EventWithVenue } from '@/lib/types'
 
@@ -79,11 +80,12 @@ export function useDescriptionEnrichment() {
 
   /**
    * Enrich selected events using Jina Reader + Haiku 4.5
+   * Streams progress updates in real-time
    */
   async function handleEnrichDescriptions() {
     const selectedEvents = eventsWithoutDesc
       .filter((e) => enrichSelectedIds.has(e.id) && e.link)
-      .map((e) => ({ id: e.id, link: e.link!, source: e.source }))
+      .map((e) => ({ id: e.id, link: e.link!, source: e.source, name: e.name }))
 
     if (selectedEvents.length === 0) return
 
@@ -91,13 +93,25 @@ export function useDescriptionEnrichment() {
     setEnrichProgress({ current: 0, total: selectedEvents.length })
 
     try {
-      const result = await enrichEventDescriptionsAction({
+      const stream = await enrichEventDescriptionsAction({
         data: { events: selectedEvents },
       })
 
-      setEnrichResult({ enriched: result.enriched, total: result.total })
-      setEnrichStep('complete')
-      router.invalidate()
+      let finalResult: DescriptionEnrichComplete | null = null
+
+      for await (const update of stream) {
+        if (update.type === 'progress') {
+          setEnrichProgress({ current: update.current, total: update.total })
+        } else if (update.type === 'complete') {
+          finalResult = update
+        }
+      }
+
+      if (finalResult) {
+        setEnrichResult({ enriched: finalResult.enriched, total: finalResult.total })
+        setEnrichStep('complete')
+        router.invalidate()
+      }
     } catch (err) {
       console.error('Enrichment failed:', err)
       setEnrichStep('select')

@@ -7,6 +7,10 @@ import {
   enrichEventbriteVenuesAction,
   enrichPasslineVenuesAction,
 } from '@/lib/admin'
+import type { VenueEnrichComplete } from '@/lib/admin/sources/passline'
+import type { VenueEnrichComplete as BATourismVenueEnrichComplete } from '@/lib/admin/sources/ba-tourism'
+import type { VenueEnrichComplete as MeetupVenueEnrichComplete } from '@/lib/admin/sources/meetup'
+import type { VenueEnrichComplete as EventbriteVenueEnrichComplete } from '@/lib/admin/sources/eventbrite'
 import { extractPasslineVenuesBatchClient } from '@/lib/scrapers/passline/client-enrichment'
 import type { EventWithVenue } from '@/lib/types'
 
@@ -101,13 +105,26 @@ export function useVenueEnrichment() {
 
       switch (source) {
         case 'ba-tourism': {
-          const result = await enrichBATourismVenuesAction({
+          // Consume streaming response
+          const baTourismStream = await enrichBATourismVenuesAction({
             data: { events: eventsToEnrich },
           })
+
+          let baTourismFinalResult: BATourismVenueEnrichComplete | null = null
+          for await (const update of baTourismStream) {
+            if (update.type === 'complete') {
+              baTourismFinalResult = update
+            }
+          }
+
+          if (!baTourismFinalResult) {
+            return { enriched: 0, venuesCreated: 0, errors: eventsToEnrich.length }
+          }
+
           return {
-            enriched: result.enriched,
-            venuesCreated: result.venuesCreated,
-            errors: result.errors.length,
+            enriched: baTourismFinalResult.enriched,
+            venuesCreated: baTourismFinalResult.venuesCreated,
+            errors: baTourismFinalResult.errors.length,
           }
         }
         case 'meetup': {
@@ -115,23 +132,50 @@ export function useVenueEnrichment() {
             eventId: e.id,
             eventUrl: e.link || '',
           }))
-          const result = await enrichMeetupVenuesAction({
+
+          // Consume streaming response
+          const meetupStream = await enrichMeetupVenuesAction({
             data: { events: meetupEvents },
           })
+
+          let meetupFinalResult: MeetupVenueEnrichComplete | null = null
+          for await (const update of meetupStream) {
+            if (update.type === 'complete') {
+              meetupFinalResult = update
+            }
+          }
+
+          if (!meetupFinalResult) {
+            return { enriched: 0, venuesCreated: 0, errors: meetupEvents.length }
+          }
+
           return {
-            enriched: result.enriched,
-            venuesCreated: result.venuesCreated,
-            errors: result.errors.length,
+            enriched: meetupFinalResult.enriched,
+            venuesCreated: meetupFinalResult.venuesCreated,
+            errors: meetupFinalResult.errors.length,
           }
         }
         case 'eventbrite': {
-          const result = await enrichEventbriteVenuesAction({
+          // Consume streaming response
+          const eventbriteStream = await enrichEventbriteVenuesAction({
             data: { events: eventsToEnrich },
           })
+
+          let eventbriteFinalResult: EventbriteVenueEnrichComplete | null = null
+          for await (const update of eventbriteStream) {
+            if (update.type === 'complete') {
+              eventbriteFinalResult = update
+            }
+          }
+
+          if (!eventbriteFinalResult) {
+            return { enriched: 0, venuesCreated: 0, errors: eventsToEnrich.length }
+          }
+
           return {
-            enriched: result.enriched,
-            venuesCreated: result.venuesCreated,
-            errors: result.errors.length,
+            enriched: eventbriteFinalResult.enriched,
+            venuesCreated: eventbriteFinalResult.venuesCreated,
+            errors: eventbriteFinalResult.errors.length,
           }
         }
         case 'passline': {
@@ -162,14 +206,26 @@ export function useVenueEnrichment() {
             }
           }
 
-          const result = await enrichPasslineVenuesAction({
+          // Consume streaming response
+          const stream = await enrichPasslineVenuesAction({
             data: { events: venueData },
           })
 
+          let finalResult: VenueEnrichComplete | null = null
+          for await (const update of stream) {
+            if (update.type === 'complete') {
+              finalResult = update
+            }
+          }
+
+          if (!finalResult) {
+            return { enriched: 0, venuesCreated: 0, errors: venueData.length }
+          }
+
           return {
-            enriched: result.enriched,
-            venuesCreated: result.venuesCreated,
-            errors: result.errors.length + (extractedVenues.length - venueData.length),
+            enriched: finalResult.enriched,
+            venuesCreated: finalResult.venuesCreated,
+            errors: finalResult.errors.length + (extractedVenues.length - venueData.length),
           }
         }
         default:

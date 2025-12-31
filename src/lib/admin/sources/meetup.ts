@@ -22,6 +22,44 @@ export interface MeetupPreviewEvent {
 
 export type { MeetupEvent }
 
+// Import streaming types
+export interface ImportProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  phase: 'categorizing' | 'embedding' | 'importing'
+}
+
+export interface ImportComplete {
+  type: 'complete'
+  inserted: number
+  updated: number
+  venuesCreated: number
+}
+
+export type ImportUpdate = ImportProgress | ImportComplete
+
+// Venue enrichment streaming types
+export interface VenueEnrichProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  action: 'matched' | 'created' | 'error'
+  venueName?: string
+}
+
+export interface VenueEnrichComplete {
+  type: 'complete'
+  enriched: number
+  venuesCreated: number
+  total: number
+  errors: Array<{ eventId: string; error: string }>
+}
+
+export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+
 export const processMeetupEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: MeetupEvent[] }) => data)
   .handler(async ({ data: { events } }): Promise<MeetupPreviewEvent[]> => {
@@ -121,6 +159,10 @@ export const fetchMeetupEventsAction = createServerFn({ method: 'POST' })
     }
   })
 
+/**
+ * Import a batch of events from Meetup data
+ * Uses async generator to stream progress updates to the client
+ */
 export const importMeetupEventsBatchAction = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: {
@@ -130,7 +172,7 @@ export const importMeetupEventsBatchAction = createServerFn({ method: 'POST' })
       }>
     }) => data
   )
-  .handler(async ({ data }) => {
+  .handler(async function* ({ data }): AsyncGenerator<ImportUpdate> {
     const client = await requireAdminAccess()
 
     const eventsToImport: EventInsert[] = data.events.flatMap(({ meetupEvent, venueId }) =>
@@ -138,14 +180,37 @@ export const importMeetupEventsBatchAction = createServerFn({ method: 'POST' })
     )
 
     if (eventsToImport.length === 0) {
-      return { success: true, inserted: 0, updated: 0 }
+      yield { type: 'complete', inserted: 0, updated: 0, venuesCreated: 0 } as ImportComplete
+      return
     }
+
+    const total = eventsToImport.length
 
     // AI categorize and generate embeddings
     const eventsWithEmbeddings: EventInsert[] = []
-    for (const event of eventsToImport) {
+    for (let i = 0; i < eventsToImport.length; i++) {
+      const event = eventsToImport[i]
+
+      // Yield categorizing progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'categorizing',
+      } as ImportProgress
+
       // Categorize via AI
       const category = await categorizeEvent(event.name, event.description_es)
+
+      // Yield embedding progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'embedding',
+      } as ImportProgress
 
       const textForEmbedding = [
         event.name,
@@ -159,12 +224,23 @@ export const importMeetupEventsBatchAction = createServerFn({ method: 'POST' })
       eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
+    // Yield importing progress
+    yield {
+      type: 'progress',
+      current: total,
+      total,
+      eventName: 'Saving to database...',
+      phase: 'importing',
+    } as ImportProgress
+
     const result = await upsertEvents(eventsWithEmbeddings, client)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       ...result,
-    }
+      venuesCreated: 0,
+    } as ImportComplete
   })
 
 // ============================================================================
@@ -199,16 +275,10 @@ export interface MeetupEnrichmentInput {
   eventUrl: string
 }
 
-export interface MeetupEnrichmentOutput {
-  success: boolean
-  enriched: number
-  venuesCreated: number
-  errors: Array<{ eventId: string; error: string }>
-}
-
 /**
  * Enrich Meetup events with venue information by visiting detail pages.
  * This is Phase 2 of the two-phase import process.
+ * Uses async generator to stream progress updates to the client
  *
  * For each event:
  * 1. Fetches venue info from the Meetup event detail page
@@ -217,12 +287,13 @@ export interface MeetupEnrichmentOutput {
  */
 export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: MeetupEnrichmentInput[] }) => data)
-  .handler(async ({ data }): Promise<MeetupEnrichmentOutput> => {
+  .handler(async function* ({ data }): AsyncGenerator<VenueEnrichUpdate> {
     const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
-      return { success: true, enriched: 0, venuesCreated: 0, errors: [] }
+      yield { type: 'complete', enriched: 0, venuesCreated: 0, total: 0, errors: [] } as VenueEnrichComplete
+      return
     }
 
     console.log(`[Admin] Starting Meetup venue enrichment for ${events.length} events...`)
@@ -239,14 +310,30 @@ export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
     const errors: Array<{ eventId: string; error: string }> = []
 
     // Process each result
-    for (const result of enrichmentResults) {
+    for (let i = 0; i < enrichmentResults.length; i++) {
+      const result = enrichmentResults[i]
+
       if (result.error) {
         errors.push({ eventId: result.eventId, error: result.error })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.eventId,
+          action: 'error',
+        } as VenueEnrichProgress
         continue
       }
 
       if (!result.venue) {
         errors.push({ eventId: result.eventId, error: 'No venue found on detail page' })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.eventId,
+          action: 'error',
+        } as VenueEnrichProgress
         continue
       }
 
@@ -255,6 +342,7 @@ export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
         const venueMatch = await matchVenue(result.venue.name)
 
         let venueId: string
+        let action: 'matched' | 'created' = 'matched'
 
         if (venueMatch.venue) {
           // Use existing venue
@@ -268,24 +356,47 @@ export const enrichMeetupVenuesAction = createServerFn({ method: 'POST' })
           }, client)
           venueId = newVenue.id
           venuesCreated++
+          action = 'created'
           console.log(`[Admin] Created new venue: ${result.venue.name}`)
         }
 
         // Update event with venue_id
         await updateEvent(result.eventId, { venue_id: venueId }, client)
         enriched++
+
+        // Yield progress update
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.eventId,
+          action,
+          venueName: result.venue.name,
+        } as VenueEnrichProgress
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         errors.push({ eventId: result.eventId, error: errorMsg })
+
+        // Yield error progress
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.eventId,
+          action: 'error',
+          venueName: result.venue.name,
+        } as VenueEnrichProgress
       }
     }
 
     console.log(`[Admin] Meetup venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       enriched,
       venuesCreated,
+      total: events.length,
       errors,
-    }
+    } as VenueEnrichComplete
   })

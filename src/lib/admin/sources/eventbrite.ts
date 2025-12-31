@@ -23,6 +23,44 @@ export interface EventbritePreviewEvent {
 // Re-export EventbriteEvent type for client use
 export type { EventbriteEvent }
 
+// Import streaming types
+export interface ImportProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  phase: 'categorizing' | 'embedding' | 'importing'
+}
+
+export interface ImportComplete {
+  type: 'complete'
+  inserted: number
+  updated: number
+  venuesCreated: number
+}
+
+export type ImportUpdate = ImportProgress | ImportComplete
+
+// Venue enrichment streaming types
+export interface VenueEnrichProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  action: 'matched' | 'created' | 'error'
+  venueName?: string
+}
+
+export interface VenueEnrichComplete {
+  type: 'complete'
+  enriched: number
+  venuesCreated: number
+  total: number
+  errors: Array<{ id: string; error: string }>
+}
+
+export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+
 /**
  * Fetch Eventbrite events server-side (to avoid CORS/bot protection)
  * Includes filtering for in-person events and date range, plus venue matching
@@ -97,19 +135,22 @@ export const processEventbriteEventsAction = createServerFn({ method: 'POST' })
 /**
  * Import a batch of events from Eventbrite data
  * Processes events in small batches to avoid timeouts
+ * Uses async generator to stream progress updates to the client
  */
 export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: { events: Array<{ eventbriteEvent: EventbriteEvent; venueId: string | null }> }) => data
   )
-  .handler(async ({ data }) => {
+  .handler(async function* ({ data }): AsyncGenerator<ImportUpdate> {
     const client = await requireAdminAccess()
 
     if (data.events.length === 0) {
-      return { success: true, inserted: 0, updated: 0, venuesCreated: 0 }
+      yield { type: 'complete', inserted: 0, updated: 0, venuesCreated: 0 } as ImportComplete
+      return
     }
 
     let venuesCreated = 0
+    const total = data.events.length
 
     // Transform events, auto-creating venues when needed
     const eventsToImport: EventInsert[] = []
@@ -152,9 +193,29 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
 
     // AI categorize and generate embeddings sequentially to avoid rate limits
     const eventsWithEmbeddings: EventInsert[] = []
-    for (const event of eventsToImport) {
+    for (let i = 0; i < eventsToImport.length; i++) {
+      const event = eventsToImport[i]
+
+      // Yield categorizing progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'categorizing',
+      } as ImportProgress
+
       // Categorize via AI
       const category = await categorizeEvent(event.name, event.description_es)
+
+      // Yield embedding progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'embedding',
+      } as ImportProgress
 
       const textForEmbedding = [
         event.name,
@@ -168,14 +229,24 @@ export const importEventbriteEventsBatchAction = createServerFn({ method: 'POST'
       eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
+    // Yield importing progress
+    yield {
+      type: 'progress',
+      current: total,
+      total,
+      eventName: 'Saving to database...',
+      phase: 'importing',
+    } as ImportProgress
+
     // Upsert events (insert new, update existing)
     const result = await upsertEvents(eventsWithEmbeddings, client)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       ...result,
       venuesCreated,
-    }
+    } as ImportComplete
   })
 
 // ============================================================================
@@ -297,25 +368,19 @@ interface EventbriteVenueEnrichmentInput {
   link: string
 }
 
-interface EventbriteVenueEnrichmentOutput {
-  success: boolean
-  enriched: number
-  venuesCreated: number
-  total: number
-  errors: Array<{ id: string; error: string }>
-}
-
 /**
  * Enrich Eventbrite events with venue data from detail pages (JSON-LD)
+ * Uses async generator to stream progress updates to the client
  */
 export const enrichEventbriteVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: EventbriteVenueEnrichmentInput[] }) => data)
-  .handler(async ({ data }): Promise<EventbriteVenueEnrichmentOutput> => {
+  .handler(async function* ({ data }): AsyncGenerator<VenueEnrichUpdate> {
     const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
-      return { success: true, enriched: 0, venuesCreated: 0, total: 0, errors: [] }
+      yield { type: 'complete', enriched: 0, venuesCreated: 0, total: 0, errors: [] } as VenueEnrichComplete
+      return
     }
 
     console.log(`[Admin] Starting Eventbrite venue enrichment for ${events.length} events...`)
@@ -328,14 +393,30 @@ export const enrichEventbriteVenuesAction = createServerFn({ method: 'POST' })
     const errors: Array<{ id: string; error: string }> = []
 
     // Process each result
-    for (const result of extractionResults) {
+    for (let i = 0; i < extractionResults.length; i++) {
+      const result = extractionResults[i]
+
       if (result.error) {
         errors.push({ id: result.id, error: result.error })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action: 'error',
+        } as VenueEnrichProgress
         continue
       }
 
       if (!result.venue) {
         errors.push({ id: result.id, error: 'Could not extract venue from page JSON-LD' })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action: 'error',
+        } as VenueEnrichProgress
         continue
       }
 
@@ -344,6 +425,7 @@ export const enrichEventbriteVenuesAction = createServerFn({ method: 'POST' })
         const venueMatch = await matchVenue(result.venue.name)
 
         let venueId: string
+        let action: 'matched' | 'created' = 'matched'
 
         if (venueMatch.venue) {
           // Use existing venue
@@ -358,25 +440,47 @@ export const enrichEventbriteVenuesAction = createServerFn({ method: 'POST' })
           }, client)
           venueId = newVenue.id
           venuesCreated++
+          action = 'created'
           console.log(`[Admin] Created new venue: ${result.venue.name}`)
         }
 
         // Update event with venue_id
         await updateEvent(result.id, { venue_id: venueId }, client)
         enriched++
+
+        // Yield progress update
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action,
+          venueName: result.venue.name,
+        } as VenueEnrichProgress
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         errors.push({ id: result.id, error: errorMsg })
+
+        // Yield error progress
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: result.id,
+          action: 'error',
+          venueName: result.venue.name,
+        } as VenueEnrichProgress
       }
     }
 
     console.log(`[Admin] Eventbrite venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       enriched,
       venuesCreated,
       total: events.length,
       errors,
-    }
+    } as VenueEnrichComplete
   })

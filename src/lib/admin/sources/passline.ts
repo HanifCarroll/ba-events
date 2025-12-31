@@ -19,6 +19,44 @@ export interface PasslinePreviewEvent {
 // Re-export PasslineEvent type for client use
 export type { PasslineEvent }
 
+// Import streaming types
+export interface ImportProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  phase: 'categorizing' | 'embedding' | 'importing'
+}
+
+export interface ImportComplete {
+  type: 'complete'
+  inserted: number
+  updated: number
+  venuesCreated: number
+}
+
+export type ImportUpdate = ImportProgress | ImportComplete
+
+// Venue enrichment streaming types
+export interface VenueEnrichProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  action: 'matched' | 'created' | 'error'
+  venueName?: string
+}
+
+export interface VenueEnrichComplete {
+  type: 'complete'
+  enriched: number
+  venuesCreated: number
+  total: number
+  errors: Array<{ id: string; error: string }>
+}
+
+export type VenueEnrichUpdate = VenueEnrichProgress | VenueEnrichComplete
+
 /**
  * Process raw Passline events (client-side fetched) and do venue matching
  * This is used when the browser fetches events directly to bypass Cloudflare
@@ -50,19 +88,22 @@ export const processPasslineEventsAction = createServerFn({ method: 'POST' })
  * Import a batch of events from client-provided Passline data
  * Processes events in small batches to avoid timeouts
  * Auto-creates venues when no match found (Passline has venue name but no address)
+ * Uses async generator to stream progress updates to the client
  */
 export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: { events: Array<{ passlineEvent: PasslineEvent; venueId: string | null }> }) => data
   )
-  .handler(async ({ data }) => {
+  .handler(async function* ({ data }): AsyncGenerator<ImportUpdate> {
     const client = await requireAdminAccess()
 
     if (data.events.length === 0) {
-      return { success: true, inserted: 0, updated: 0, venuesCreated: 0 }
+      yield { type: 'complete', inserted: 0, updated: 0, venuesCreated: 0 } as ImportComplete
+      return
     }
 
     const venuesCreated = 0
+    const total = data.events.length
 
     // Transform events, matching to existing venues only
     // Note: We don't auto-create venues from Passline's "lugar" field because it's unreliable
@@ -86,9 +127,29 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
 
     // AI categorize and generate embeddings sequentially to avoid rate limits
     const eventsWithEmbeddings: EventInsert[] = []
-    for (const event of eventsToImport) {
+    for (let i = 0; i < eventsToImport.length; i++) {
+      const event = eventsToImport[i]
+
+      // Yield categorizing progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'categorizing',
+      } as ImportProgress
+
       // Categorize via AI
       const category = await categorizeEvent(event.name, event.description_es)
+
+      // Yield embedding progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'embedding',
+      } as ImportProgress
 
       const textForEmbedding = [
         event.name,
@@ -102,14 +163,24 @@ export const importPasslineEventsBatchAction = createServerFn({ method: 'POST' }
       eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
     }
 
+    // Yield importing progress
+    yield {
+      type: 'progress',
+      current: total,
+      total,
+      eventName: 'Saving to database...',
+      phase: 'importing',
+    } as ImportProgress
+
     // Upsert events (insert new, update existing)
     const result = await upsertEvents(eventsWithEmbeddings, client)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       ...result,
       venuesCreated,
-    }
+    } as ImportComplete
   })
 
 // ============================================================================
@@ -123,26 +194,20 @@ interface PasslineVenueEnrichmentInput {
   location: string | null // City/region like "Santa Fe, SANTA FE"
 }
 
-interface PasslineVenueEnrichmentOutput {
-  success: boolean
-  enriched: number
-  venuesCreated: number
-  total: number
-  errors: Array<{ id: string; error: string }>
-}
-
 /**
  * Enrich Passline events with venue data
  * Receives pre-extracted venue data from client (Cloudflare blocks server-side fetch)
+ * Uses async generator to stream progress updates to the client
  */
 export const enrichPasslineVenuesAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: PasslineVenueEnrichmentInput[] }) => data)
-  .handler(async ({ data }): Promise<PasslineVenueEnrichmentOutput> => {
+  .handler(async function* ({ data }): AsyncGenerator<VenueEnrichUpdate> {
     const client = await requireAdminAccess()
     const { events } = data
 
     if (events.length === 0) {
-      return { success: true, enriched: 0, venuesCreated: 0, total: 0, errors: [] }
+      yield { type: 'complete', enriched: 0, venuesCreated: 0, total: 0, errors: [] } as VenueEnrichComplete
+      return
     }
 
     console.log(`[Admin] Starting Passline venue enrichment for ${events.length} events...`)
@@ -152,9 +217,18 @@ export const enrichPasslineVenuesAction = createServerFn({ method: 'POST' })
     const errors: Array<{ id: string; error: string }> = []
 
     // Process each event with pre-extracted venue data
-    for (const event of events) {
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i]
+
       if (!event.venueName) {
         errors.push({ id: event.id, error: 'No venue name provided' })
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: event.id,
+          action: 'error',
+        } as VenueEnrichProgress
         continue
       }
 
@@ -163,6 +237,7 @@ export const enrichPasslineVenuesAction = createServerFn({ method: 'POST' })
         const venueMatch = await matchVenue(event.venueName)
 
         let venueId: string
+        let action: 'matched' | 'created' = 'matched'
 
         if (venueMatch.venue) {
           // Use existing venue
@@ -198,25 +273,47 @@ export const enrichPasslineVenuesAction = createServerFn({ method: 'POST' })
           }, client)
           venueId = newVenue.id
           venuesCreated++
+          action = 'created'
           console.log(`[Admin] Created new venue: ${event.venueName} (${fullAddress || 'no address'})`)
         }
 
         // Update event with venue_id
         await updateEvent(event.id, { venue_id: venueId }, client)
         enriched++
+
+        // Yield progress update
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: event.id,
+          action,
+          venueName: event.venueName,
+        } as VenueEnrichProgress
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error'
         errors.push({ id: event.id, error: errorMsg })
+
+        // Yield error progress
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: event.id,
+          action: 'error',
+          venueName: event.venueName,
+        } as VenueEnrichProgress
       }
     }
 
     console.log(`[Admin] Passline venue enrichment complete: ${enriched} enriched, ${venuesCreated} venues created, ${errors.length} errors`)
 
-    return {
-      success: true,
+    // Yield final completion result
+    yield {
+      type: 'complete',
       enriched,
       venuesCreated,
       total: events.length,
       errors,
-    }
+    } as VenueEnrichComplete
   })
