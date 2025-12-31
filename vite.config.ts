@@ -19,26 +19,9 @@ const config = defineConfig(({ isSsrBuild }) => ({
       ...(!isSsrBuild ? [{ find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname }] : []),
     ],
   },
-  // Prevent TanStack Start packages from being externalized to ensure shared AsyncLocalStorage context
+  // Prevent ALL TanStack packages from being externalized to ensure shared AsyncLocalStorage context
   ssr: {
-    noExternal: [
-      '@tanstack/react-start',
-      '@tanstack/start',
-      '@tanstack/start-client',
-      '@tanstack/start-server',
-      '@tanstack/start-server-core',
-      '@tanstack/start-server-functions-client',
-      '@tanstack/start-server-functions-fetcher',
-      '@tanstack/start-server-functions-handler',
-      '@tanstack/start-server-functions-server',
-      '@tanstack/react-start-client',
-      '@tanstack/react-start-server',
-      '@tanstack/start-config',
-      '@tanstack/start-plugin-core',
-      '@tanstack/react-start-plugin',
-      '@tanstack/start-router-manifest',
-      '@tanstack/start-storage-context',
-    ],
+    noExternal: [/^@tanstack\//],
   },
   plugins: [
     paraglideVitePlugin({
