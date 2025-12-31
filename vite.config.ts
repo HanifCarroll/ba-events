@@ -19,9 +19,10 @@ const config = defineConfig(({ isSsrBuild }) => ({
       ...(!isSsrBuild ? [{ find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname }] : []),
     ],
   },
-  // Prevent ALL TanStack packages from being externalized to ensure shared AsyncLocalStorage context
+  // Prevent TanStack Start packages from being externalized to ensure shared AsyncLocalStorage context
+  // Using specific patterns to avoid bundling incompatible packages
   ssr: {
-    noExternal: [/^@tanstack\//],
+    noExternal: [/^@tanstack\/.*start/, /^@tanstack\/router/],
   },
   plugins: [
     paraglideVitePlugin({
