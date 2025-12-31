@@ -118,6 +118,11 @@ export function useImportWizard(
 
   // Loading states
   const [isFetching, setIsFetching] = useState(false)
+  const [meetupFetchProgress, setMeetupFetchProgress] = useState<{
+    currentBatch: number
+    totalBatches: number
+    eventsFound: number
+  } | null>(null)
   const [isCreatingVenues, setIsCreatingVenues] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null)
@@ -478,15 +483,81 @@ export function useImportWizard(
     }
   }, [])
 
+  // Helper: chunk a date range into batches of N days
+  const chunkDateRange = useCallback((start: string, end: string, daysPerChunk = 7): Array<{ start: string; end: string }> => {
+    const chunks: Array<{ start: string; end: string }> = []
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+
+    let currentStart = new Date(startDate)
+    while (currentStart <= endDate) {
+      const currentEnd = new Date(currentStart)
+      currentEnd.setDate(currentEnd.getDate() + daysPerChunk - 1)
+
+      // Don't go past the overall end date
+      const actualEnd = currentEnd > endDate ? endDate : currentEnd
+
+      chunks.push({
+        start: currentStart.toISOString().split('T')[0],
+        end: actualEnd.toISOString().split('T')[0],
+      })
+
+      // Move to next chunk
+      currentStart = new Date(actualEnd)
+      currentStart.setDate(currentStart.getDate() + 1)
+    }
+
+    return chunks
+  }, [])
+
+  // Helper: dedupe events by meetup.id
+  const dedupeByMeetupId = useCallback((events: MeetupPreviewEvent[]): MeetupPreviewEvent[] => {
+    const seen = new Map<string, MeetupPreviewEvent>()
+    for (const event of events) {
+      // Keep the first occurrence (or update if we have a better venue match)
+      const existing = seen.get(event.meetup.id)
+      if (!existing || (event.venueMatch.venue && !existing.venueMatch.venue)) {
+        seen.set(event.meetup.id, event)
+      }
+    }
+    return Array.from(seen.values())
+  }, [])
+
   const fetchMeetupEventsHandler = useCallback(async () => {
     setIsFetching(true)
     setError(null)
+    setMeetupFetchProgress(null)
 
     try {
-      const { events: data } = await fetchMeetupEventsAction({
-        data: { startDate, endDate },
-      })
+      // Chunk the date range into 7-day batches to avoid HTTP timeout
+      const chunks = chunkDateRange(startDate, endDate, 7)
+      const allEvents: MeetupPreviewEvent[] = []
 
+      for (let i = 0; i < chunks.length; i++) {
+        // Update progress before each batch
+        setMeetupFetchProgress({
+          currentBatch: i + 1,
+          totalBatches: chunks.length,
+          eventsFound: allEvents.length,
+        })
+
+        try {
+          const { events } = await fetchMeetupEventsAction({
+            data: { startDate: chunks[i].start, endDate: chunks[i].end },
+          })
+          allEvents.push(...events)
+        } catch (batchErr) {
+          // If a batch fails, log it but continue with other batches
+          console.error(`Batch ${i + 1}/${chunks.length} failed:`, batchErr)
+          // If we have some events, continue; otherwise re-throw
+          if (allEvents.length === 0 && i === chunks.length - 1) {
+            throw batchErr
+          }
+        }
+      }
+
+      // Dedupe events that may appear in multiple batches
+      const data = dedupeByMeetupId(allEvents)
       setMeetupEvents(data)
 
       // Initialize venue edits for unmatched venues (for optional use later)
@@ -516,8 +587,9 @@ export function useImportWizard(
       toast.error('Failed to fetch Meetup events')
     } finally {
       setIsFetching(false)
+      setMeetupFetchProgress(null)
     }
-  }, [startDate, endDate])
+  }, [startDate, endDate, chunkDateRange, dedupeByMeetupId])
 
   const handleCSVFile = useCallback((file: File) => {
     setCsvFileName(file.name)
@@ -1158,6 +1230,7 @@ export function useImportWizard(
     csvErrorCount,
     csvAllValid,
     isFetching,
+    meetupFetchProgress,
     isCreatingVenues,
     isImporting,
     importProgress,

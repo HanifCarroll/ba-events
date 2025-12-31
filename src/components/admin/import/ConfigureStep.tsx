@@ -69,6 +69,11 @@ interface ConfigureStepProps {
   endDate: string
   csvFileName: string | null
   isFetching: boolean
+  meetupFetchProgress?: {
+    currentBatch: number
+    totalBatches: number
+    eventsFound: number
+  } | null
   onStartDateChange: (date: string) => void
   onEndDateChange: (date: string) => void
   onFetchPassline: () => void
@@ -85,6 +90,7 @@ export function ConfigureStep({
   endDate,
   csvFileName,
   isFetching,
+  meetupFetchProgress,
   onStartDateChange,
   onEndDateChange,
   onFetchPassline,
@@ -332,7 +338,13 @@ export function ConfigureStep({
             disabled={isFetching}
             className="w-full bg-red-500 hover:bg-red-600 text-white"
           >
-            {isFetching ? (
+            {isFetching && meetupFetchProgress ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Batch {meetupFetchProgress.currentBatch}/{meetupFetchProgress.totalBatches}
+                {meetupFetchProgress.eventsFound > 0 && ` (${meetupFetchProgress.eventsFound} events)`}
+              </>
+            ) : isFetching ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Fetching events...

@@ -26,6 +26,27 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Client-Side Chunked Batching for Meetup Scraper
+
+**Date:** 2025-12-31
+
+**Decision:** Chunk Meetup date ranges into 7-day batches on the client side to avoid HTTP request timeouts when scraping large date ranges.
+
+**Alternatives Considered:**
+- Background jobs: Would require additional infrastructure (job queue, worker processes), harder to show real-time progress
+- Streaming responses: Complex to implement, TanStack server functions don't support streaming well
+- Increasing server timeout: Doesn't address root cause, just delays the problem
+
+**Rationale:**
+1. **Root cause**: HTTP request timeouts (~60-120s) kill long-running requests before Meetup scraping completes. A 31-day range takes ~4 minutes.
+2. **7-day chunks**: Each batch completes in ~30-40 seconds, well under timeout limits
+3. **Progress UI**: Users see "Batch 2/5 (35 events)" - better UX than a spinner for 4 minutes
+4. **Error resilience**: If one batch fails, we show partial results + continue with other batches
+5. **Deduplication**: Events appearing in multiple batches are deduped by `meetup.id`
+6. **No infrastructure changes**: Works with existing serverless architecture
+
+---
+
 ### Single-Search with Relevance Filtering for Chat Agent
 
 **Date:** 2025-12-30

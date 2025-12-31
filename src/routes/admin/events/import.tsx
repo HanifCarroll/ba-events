@@ -193,6 +193,7 @@ function ImportEventsPage() {
             endDate={wizard.endDate}
             csvFileName={wizard.csvFileName}
             isFetching={wizard.isFetching}
+            meetupFetchProgress={wizard.meetupFetchProgress}
             onStartDateChange={wizard.setStartDate}
             onEndDateChange={wizard.setEndDate}
             onFetchPassline={wizard.fetchPasslineEvents}

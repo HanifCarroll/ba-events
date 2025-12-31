@@ -10,6 +10,7 @@
  */
 
 import type { Page } from 'playwright'
+import { parseISO, eachDayOfInterval } from 'date-fns'
 import type { MeetupEvent, MeetupGraphQLEvent } from './types'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
 
@@ -53,20 +54,11 @@ function buildMeetupUrlForDate(date: Date): string {
 /**
  * Generate array of dates between start and end (inclusive)
  */
-function getDateRange(startDate: Date, endDate: Date): Date[] {
-  const dates: Date[] = []
-  const current = new Date(startDate)
-  current.setHours(0, 0, 0, 0)
-
-  const end = new Date(endDate)
-  end.setHours(0, 0, 0, 0)
-
-  while (current <= end) {
-    dates.push(new Date(current))
-    current.setDate(current.getDate() + 1)
-  }
-
-  return dates
+function getDateRange(startDateStr: string, endDateStr: string): Date[] {
+  // parseISO correctly handles YYYY-MM-DD as local time
+  const start = parseISO(startDateStr)
+  const end = parseISO(endDateStr)
+  return eachDayOfInterval({ start, end })
 }
 
 /**
@@ -462,7 +454,7 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
   try {
     const page = await browser.newPage()
 
-    const dates = getDateRange(new Date(options.startDate), new Date(options.endDate))
+    const dates = getDateRange(options.startDate, options.endDate)
     console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
 
     for (let i = 0; i < dates.length; i++) {
@@ -597,7 +589,7 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
   try {
     const page = await browser.newPage()
 
-    const dates = getDateRange(new Date(options.startDate), new Date(options.endDate))
+    const dates = getDateRange(options.startDate, options.endDate)
     console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
 
     for (let i = 0; i < dates.length; i++) {
