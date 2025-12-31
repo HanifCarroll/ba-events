@@ -1,5 +1,7 @@
-import { Loader2, MapPin, CheckCircle2, AlertCircle, Users } from 'lucide-react'
+import { useState } from 'react'
+import { Loader2, MapPin, CheckCircle2, AlertCircle, Users, ChevronDown, ChevronRight, RotateCcw, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
 interface EnrichStepProps {
   eventsNeedingEnrichment: number
@@ -12,6 +14,8 @@ interface EnrichStepProps {
   } | null
   onEnrich: () => void
   onSkip: () => void
+  onRetryFailed?: () => void
+  onViewEvents?: () => void
 }
 
 export function EnrichStep({
@@ -21,8 +25,12 @@ export function EnrichStep({
   enrichmentResult,
   onEnrich,
   onSkip,
+  onRetryFailed,
+  onViewEvents,
 }: EnrichStepProps) {
   const hasCompleted = enrichmentResult !== null
+  const [errorsOpen, setErrorsOpen] = useState(false)
+  const hasErrors = hasCompleted && enrichmentResult.errors.length > 0
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
@@ -72,14 +80,35 @@ export function EnrichStep({
                 {enrichmentResult.venuesCreated}
               </span>
             </div>
-            {enrichmentResult.errors.length > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Errors</span>
-                <span className="font-medium text-destructive flex items-center gap-1.5">
-                  <AlertCircle className="h-4 w-4" />
-                  {enrichmentResult.errors.length}
-                </span>
-              </div>
+            {hasErrors && (
+              <Collapsible open={errorsOpen} onOpenChange={setErrorsOpen}>
+                <CollapsibleTrigger asChild>
+                  <button className="flex items-center justify-between text-sm w-full hover:bg-muted/50 -mx-2 px-2 py-1 rounded transition-colors">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      {errorsOpen ? (
+                        <ChevronDown className="h-3 w-3" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3" />
+                      )}
+                      Failed events
+                    </span>
+                    <span className="font-medium text-destructive flex items-center gap-1.5">
+                      <AlertCircle className="h-4 w-4" />
+                      {enrichmentResult.errors.length}
+                    </span>
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-2">
+                  <div className="bg-destructive/10 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                    {enrichmentResult.errors.map((err, i) => (
+                      <div key={i} className="text-xs">
+                        <code className="text-destructive font-mono">{err.eventId}</code>
+                        <p className="text-muted-foreground mt-0.5">{err.error}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             )}
           </div>
         ) : (
@@ -143,11 +172,38 @@ export function EnrichStep({
           </div>
         )}
 
-        {/* Success message */}
+        {/* Completion actions */}
         {hasCompleted && (
-          <div className="flex items-center justify-center gap-2 text-sm text-green-600">
-            <CheckCircle2 className="h-4 w-4" />
-            <span>Venue enrichment complete</span>
+          <div className="space-y-3">
+            <div className="flex items-center justify-center gap-2 text-sm text-green-600">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Venue enrichment complete</span>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {/* Retry failed button - only show if there were errors and retry handler exists */}
+              {hasErrors && onRetryFailed && (
+                <Button
+                  onClick={onRetryFailed}
+                  variant="outline"
+                  className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Retry {enrichmentResult.errors.length} Failed Event{enrichmentResult.errors.length !== 1 ? 's' : ''}
+                </Button>
+              )}
+
+              {/* View events button */}
+              {onViewEvents && (
+                <Button
+                  onClick={onViewEvents}
+                  className="w-full bg-gold-500 hover:bg-gold-600 text-background"
+                >
+                  <ArrowRight className="h-4 w-4 mr-2" />
+                  View Events
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>

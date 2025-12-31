@@ -267,6 +267,8 @@ function ImportEventsPage() {
             enrichmentResult={wizard.enrichmentResult}
             onEnrich={wizard.enrichVenues}
             onSkip={wizard.skipEnrichment}
+            onRetryFailed={wizard.retryFailedEnrichment}
+            onViewEvents={wizard.viewEvents}
           />
         )}
 

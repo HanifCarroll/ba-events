@@ -1144,10 +1144,7 @@ export function useImportWizard(
         toast.success(`Enriched ${result.enriched} events with venue data`)
       }
 
-      // Navigate to events page after a short delay
-      setTimeout(() => {
-        router.navigate({ to: '/admin/events' })
-      }, 2000)
+      // No auto-redirect - let user see results and decide what to do
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to enrich venues')
       toast.error('Venue enrichment failed')
@@ -1160,6 +1157,60 @@ export function useImportWizard(
   const skipEnrichment = useCallback(() => {
     router.navigate({ to: '/admin/events' })
   }, [router])
+
+  const viewEvents = useCallback(() => {
+    router.navigate({ to: '/admin/events' })
+  }, [router])
+
+  const retryFailedEnrichment = useCallback(async () => {
+    if (!enrichmentResult || enrichmentResult.errors.length === 0) return
+
+    setIsEnriching(true)
+    setError(null)
+
+    // Get only the failed event IDs and their links
+    const failedEventIds = new Set(enrichmentResult.errors.map(e => e.eventId))
+    const eventsToRetry = eventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
+
+    if (eventsToRetry.length === 0) {
+      toast.error('Could not find event links for failed events')
+      setIsEnriching(false)
+      return
+    }
+
+    setEnrichmentProgress({ current: 0, total: eventsToRetry.length })
+
+    try {
+      const events = eventsToRetry.map(e => ({
+        eventId: e.id,
+        eventUrl: e.link,
+      }))
+
+      const result = await enrichMeetupVenuesAction({ data: { events } })
+
+      // Combine previous success with new results
+      const previousEnriched = enrichmentResult.enriched
+      const previousVenuesCreated = enrichmentResult.venuesCreated
+
+      setEnrichmentResult({
+        enriched: previousEnriched + result.enriched,
+        venuesCreated: previousVenuesCreated + result.venuesCreated,
+        errors: result.errors, // Only keep the new errors
+      })
+
+      if (result.enriched > 0) {
+        toast.success(`Retry successful: enriched ${result.enriched} more events`)
+      } else if (result.errors.length > 0) {
+        toast.error(`Retry failed: ${result.errors.length} events still have errors`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry enrichment')
+      toast.error('Retry failed')
+    } finally {
+      setIsEnriching(false)
+      setEnrichmentProgress(null)
+    }
+  }, [enrichmentResult, eventsNeedingEnrichment])
 
   const goToVenues = useCallback(() => {
     if (unmatchedVenues.length > 0) {
@@ -1271,6 +1322,8 @@ export function useImportWizard(
     fetchEventsNeedingEnrichment,
     enrichVenues,
     skipEnrichment,
+    retryFailedEnrichment,
+    viewEvents,
 
     // Summary step actions
     setAutoEnrich,
