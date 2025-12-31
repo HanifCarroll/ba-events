@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { BulkActionType } from '@/hooks/useBulkActions'
@@ -31,6 +31,10 @@ interface BulkActionBarProps {
   onVenueEnrich?: () => void
   /** Whether venue enrichment is currently running */
   isVenueEnriching?: boolean
+  /** Callback to regenerate embeddings for selected events */
+  onRegenerateEmbeddings?: () => void
+  /** Whether embedding regeneration is currently running */
+  isRegeneratingEmbeddings?: boolean
 }
 
 export function BulkActionBar({
@@ -50,6 +54,8 @@ export function BulkActionBar({
   venueEnrichableCount = 0,
   onVenueEnrich,
   isVenueEnriching = false,
+  onRegenerateEmbeddings,
+  isRegeneratingEmbeddings = false,
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
 
@@ -137,6 +143,28 @@ export function BulkActionBar({
             >
               <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
               Adding Venues...
+            </Button>
+          )}
+          {onRegenerateEmbeddings && !isRegeneratingEmbeddings && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRegenerateEmbeddings}
+              className="text-purple-200 hover:text-purple-100 hover:bg-purple-500/20"
+            >
+              <RefreshCw className="h-4 w-4 mr-1.5" />
+              Regen Embeddings
+            </Button>
+          )}
+          {isRegeneratingEmbeddings && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="text-purple-200"
+            >
+              <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
+              Regenerating...
             </Button>
           )}
           <Button
@@ -256,6 +284,28 @@ export function BulkActionBar({
           >
             <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
             Adding Venues...
+          </Button>
+        )}
+        {onRegenerateEmbeddings && !isRegeneratingEmbeddings && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRegenerateEmbeddings}
+            className="border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
+          >
+            <RefreshCw className="h-4 w-4 mr-1.5" />
+            Regen Embeddings
+          </Button>
+        )}
+        {isRegeneratingEmbeddings && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="border-purple-500/50 text-purple-600"
+          >
+            <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
+            Regenerating...
           </Button>
         )}
         <Button

@@ -34,7 +34,7 @@ import { Combobox } from '@/components/ui/combobox'
 import { DataTable, getEventColumns } from '@/components/data-table'
 import { listEvents } from '@/lib/admin'
 import { formatDateTime } from '@/lib/utils/formatting'
-import { useEventAdmin, useBackgroundEnrichment, useVenueEnrichment, type EventTab, type DataGapType } from '@/hooks'
+import { useEventAdmin, useBackgroundEnrichment, useVenueEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/hooks'
 import { BulkActionBar } from '@/components/admin/BulkActionBar'
 import type { EventWithVenue } from '@/lib/types'
 
@@ -217,6 +217,7 @@ function EventListPage() {
   )
   const backgroundEnrichment = useBackgroundEnrichment()
   const venueEnrichment = useVenueEnrichment()
+  const embeddingRegeneration = useEmbeddingRegeneration()
 
   // Calculate enrichable count for selected events (description enrichment)
   const enrichableCount = useMemo(() => {
@@ -245,6 +246,15 @@ function EventListPage() {
       () => bulk.clearSelection()
     )
   }, [venueEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+
+  // Handle embedding regeneration with selection clear on complete
+  const handleRegenerateEmbeddings = useCallback(() => {
+    embeddingRegeneration.regenerateEmbeddings(
+      filtering.filteredEvents,
+      bulk.selectedIds,
+      () => bulk.clearSelection()
+    )
+  }, [embeddingRegeneration, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
 
   // Smart "Mark Past" toast on page load
   useEffect(() => {
@@ -512,6 +522,8 @@ function EventListPage() {
               venueEnrichableCount={venueEnrichableCount}
               onVenueEnrich={handleVenueEnrich}
               isVenueEnriching={venueEnrichment.isVenueEnriching}
+              onRegenerateEmbeddings={handleRegenerateEmbeddings}
+              isRegeneratingEmbeddings={embeddingRegeneration.isRegenerating}
             />
           </div>
           <MobileEventCards
@@ -545,6 +557,8 @@ function EventListPage() {
                   venueEnrichableCount={venueEnrichableCount}
                   onVenueEnrich={handleVenueEnrich}
                   isVenueEnriching={venueEnrichment.isVenueEnriching}
+                  onRegenerateEmbeddings={handleRegenerateEmbeddings}
+                  isRegeneratingEmbeddings={embeddingRegeneration.isRegenerating}
                 />
               </div>
 

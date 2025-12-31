@@ -117,6 +117,53 @@ export const getEventsWithoutDescriptions = createServerFn({ method: 'GET' }).ha
 )
 
 /**
+ * Regenerate embeddings for events using their current name/description
+ * Use this when event names or descriptions have been manually corrected
+ * and embeddings need to be updated to match
+ */
+export const regenerateEmbeddingsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { eventIds: string[] }) => data)
+  .handler(async ({ data: { eventIds } }) => {
+    const client = await requireAdminAccess()
+    console.log(`[server] regenerateEmbeddingsAction called for ${eventIds.length} events`)
+
+    let regenerated = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    for (const id of eventIds) {
+      try {
+        const event = await getEventById(id)
+
+        // Build text for embedding from current event data
+        const textForEmbedding = [
+          event.name,
+          event.description_es,
+          ...(event.categories || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+
+        const embedding = await generateEmbedding(textForEmbedding)
+
+        await updateEvent(id, { embedding }, client)
+        regenerated++
+        console.log(`[server] Regenerated embedding for: ${event.name.substring(0, 50)}...`)
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+        console.error(`[server] Failed to regenerate embedding for ${id}:`, errorMsg)
+        errors.push({ id, error: errorMsg })
+      }
+    }
+
+    return {
+      success: true,
+      regenerated,
+      total: eventIds.length,
+      errors: errors.length > 0 ? errors : undefined,
+    }
+  })
+
+/**
  * Update event descriptions in batch (bilingual)
  * Regenerates embeddings for each updated event using Spanish description
  */

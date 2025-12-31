@@ -43,6 +43,7 @@ export {
   enrichEventDescriptionsAction,
   getEventsWithoutDescriptions,
   updateEventDescriptionsAction,
+  regenerateEmbeddingsAction,
 } from './enrichment'
 
 // Passline
