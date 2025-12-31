@@ -75,18 +75,18 @@ When adding a new decision, use this format:
 
 **Date:** 2025-12-30
 
-**Decision:** Replace the agentic loop (up to 5 iterations) with a single-search model where Claude makes ONE tool call per message, filters results for relevance, and refinement suggestions help users iterate.
+**Decision:** Replace the agentic loop (up to 5 iterations) with a single-search model where Claude makes ONE tool call per message, and refinement suggestions help users iterate.
 
 **Alternatives Considered:**
 - Keep agentic loop with better sync: Complex to fix text/events mismatch when Claude retries
-- Show all semantic search results: Overwhelms users with loosely related events
-- Stricter similarity threshold in database: Less flexible, Claude can't apply contextual filtering
+- Stricter similarity threshold in database: Less flexible for different query types
 
 **Rationale:**
 1. **Text/events mismatch**: The agentic loop caused Claude's text to describe different events than what was displayed (events sent immediately on tool execution, but Claude might retry and describe different results)
-2. **Relevance filtering**: Semantic search returns loosely related results. Having Claude explicitly specify which events are relevant (via `RELEVANT:["id1","id2"]` marker) ensures only contextually appropriate events are shown
-3. **User-driven refinement**: Instead of AI guessing how to refine searches, suggestion chips let users drive iteration (augment mode for results found, replace mode for zero results)
-4. **UX research**: Industry best practice is "fewer, more relevant results" over showing everything
+2. **User-driven refinement**: Instead of AI guessing how to refine searches, suggestion chips let users drive iteration (augment mode for results found, replace mode for zero results)
+3. **Search quality**: Semantic search with filters returns relevant results; additional AI filtering added complexity without proportionate benefit
+
+**Update (2025-12-31):** Removed the `RELEVANT:["id1","id2"]` marker system. This caused text/card mismatches when Claude described N events but marked fewer as "relevant". Now all search results are shown directly - simpler and more reliable.
 
 ---
 

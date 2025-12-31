@@ -7,7 +7,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query'
 import { MainLayout } from '@/components/MainLayout'
 import { getLocale, setLocale } from '@/paraglide/runtime'
-import { useEffect, useState, type ReactNode } from 'react'
+import React, { useEffect, useState, type ReactNode } from 'react'
 
 import appCss from '../styles.css?url'
 

@@ -403,27 +403,7 @@ function formatToolResult(events: EventWithVenue[]): string {
       minAge: e.min_age,
       ticketUrl: e.ticket_url,
     })),
-    _instruction: 'IMPORTANT: At the END of your response, add exactly this format on its own line: RELEVANT:[\"id1\",\"id2\"] listing ONLY the event IDs that are actually relevant to the user\'s query. Do NOT include events that are loosely related.',
   })
-}
-
-// Parse relevant event IDs from Claude's response
-function parseRelevantIds(text: string): { cleanText: string; relevantIds: string[] } {
-  const match = text.match(/RELEVANT:\s*\[(.*?)\]\s*$/s)
-  if (!match) {
-    return { cleanText: text, relevantIds: [] }
-  }
-
-  try {
-    // Parse the JSON array of IDs
-    const idsJson = `[${match[1]}]`
-    const relevantIds = JSON.parse(idsJson) as string[]
-    // Remove the RELEVANT line from the text
-    const cleanText = text.replace(/\n?RELEVANT:\s*\[.*?\]\s*$/s, '').trim()
-    return { cleanText, relevantIds }
-  } catch {
-    return { cleanText: text, relevantIds: [] }
-  }
 }
 
 // Generate refinement suggestions based on search context
@@ -764,31 +744,18 @@ export const chat = createServerFn({ method: 'POST' })
             console.log(`[DEBUG] Second response - text length: ${result2.text.length}`)
 
             if (result2.text) {
-              // Parse out the RELEVANT marker and get clean text
-              const { cleanText, relevantIds } = parseRelevantIds(result2.text)
-              console.log(`[DEBUG] Parsed ${relevantIds.length} relevant IDs:`, relevantIds)
-
-              // Filter events to only relevant ones
-              let filteredEvents = searchEvents
-              if (relevantIds.length > 0) {
-                filteredEvents = searchEvents.filter(e => relevantIds.includes(e.id))
-                console.log(`[DEBUG] Filtered from ${searchEvents.length} to ${filteredEvents.length} events`)
-              } else if (searchEvents.length > 0) {
-                // Fallback: if no IDs parsed, show all (shouldn't happen often)
-                console.log('[DEBUG] No relevant IDs found, showing all events')
+              // Send all search events (no filtering)
+              if (searchEvents.length > 0) {
+                sendEvent({ type: 'events', data: searchEvents })
+                console.log(`[DEBUG] Showing ${searchEvents.length} events`)
               }
 
-              // NOW send events (filtered)
-              if (filteredEvents.length > 0) {
-                sendEvent({ type: 'events', data: filteredEvents })
-              }
-
-              // Generate and send suggestions based on FILTERED events
+              // Generate and send suggestions
               if (searchInput) {
                 const suggestions = generateSuggestions({
                   originalQuery: message,
                   toolInput: searchInput,
-                  results: filteredEvents,
+                  results: searchEvents,
                   locale,
                 })
                 if (suggestions.length > 0) {
@@ -797,13 +764,11 @@ export const chat = createServerFn({ method: 'POST' })
                 }
               }
 
-              // Send clean text (without RELEVANT marker)
-              if (cleanText) {
-                sendEvent({ type: 'text', content: cleanText })
-              }
+              // Send response text
+              sendEvent({ type: 'text', content: result2.text })
 
-              // Store clean text in history
-              newMessages.push({ role: 'assistant', content: cleanText || result2.text })
+              // Store in history
+              newMessages.push({ role: 'assistant', content: result2.text })
             }
           }
 
