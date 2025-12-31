@@ -19,6 +19,11 @@ const config = defineConfig(({ isSsrBuild }) => ({
       ...(!isSsrBuild ? [{ find: /^node:async_hooks$/, replacement: new URL('./src/lib/stubs/async-hooks.ts', import.meta.url).pathname }] : []),
     ],
   },
+  ssr: {
+    // Bundle TanStack Start core to prevent AsyncLocalStorage context loss on Netlify
+    // Only bundle the start package, not router (which has problematic stream deps)
+    noExternal: ['@tanstack/react-start', '@tanstack/start'],
+  },
   plugins: [
     paraglideVitePlugin({
       project: './project.inlang',
