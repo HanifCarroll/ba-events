@@ -150,7 +150,7 @@ export function BulkActionBar({
               variant="ghost"
               size="sm"
               onClick={onRegenerateEmbeddings}
-              className="text-purple-200 hover:text-purple-100 hover:bg-purple-500/20"
+              className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
             >
               <RefreshCw className="h-4 w-4 mr-1.5" />
               Regen Embeddings
@@ -161,7 +161,7 @@ export function BulkActionBar({
               variant="ghost"
               size="sm"
               disabled
-              className="text-purple-200"
+              className="text-primary-foreground/70"
             >
               <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
               Regenerating...
@@ -291,7 +291,7 @@ export function BulkActionBar({
             variant="outline"
             size="sm"
             onClick={onRegenerateEmbeddings}
-            className="border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
+            className="border-border/50"
           >
             <RefreshCw className="h-4 w-4 mr-1.5" />
             Regen Embeddings
@@ -302,7 +302,7 @@ export function BulkActionBar({
             variant="outline"
             size="sm"
             disabled
-            className="border-purple-500/50 text-purple-600"
+            className="border-border/50"
           >
             <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
             Regenerating...
