@@ -23,6 +23,7 @@ const config = defineConfig(({ isSsrBuild }) => ({
   // Using specific patterns to avoid bundling incompatible packages
   ssr: {
     noExternal: [/^@tanstack\/.*start/, /^@tanstack\/router/],
+    external: ['node:stream', 'node:stream/web', 'node:async_hooks'],
   },
   plugins: [
     paraglideVitePlugin({
