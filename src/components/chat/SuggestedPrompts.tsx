@@ -39,15 +39,17 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
         <div className="deco-line w-32 mx-auto mt-4 sm:mt-6 hidden sm:block" />
       </div>
 
-      {/* Prompt cards */}
+      {/* Prompt cards - show only 2 on mobile, all 4 on larger screens */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 w-full max-w-xl stagger-children">
-        {prompts.map((prompt) => {
+        {prompts.map((prompt, index) => {
           const Icon = prompt.icon
+          // Hide 3rd and 4th prompts on mobile
+          const mobileHidden = index >= 2 ? 'hidden sm:flex' : ''
           return (
             <button
               key={prompt.text}
               onClick={() => onSelectPrompt(prompt.text)}
-              className="group relative overflow-hidden rounded-xl border border-border/50 bg-card p-3 sm:p-5 text-left transition-all duration-300 hover:border-primary/30 hover:bg-card/90 hover:glow-gold-subtle"
+              className={`group relative overflow-hidden rounded-xl border border-border/50 bg-card p-3 sm:p-5 text-left transition-all duration-300 hover:border-primary/30 hover:bg-card/90 hover:glow-gold-subtle ${mobileHidden}`}
             >
               {/* Hover gradient */}
               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -67,8 +69,8 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
         })}
       </div>
 
-      {/* SEO Info Section - provides indexable content for search engines */}
-      <section className="mt-8 max-w-xl text-center">
+      {/* SEO Info Section - provides indexable content for search engines (hidden on mobile) */}
+      <section className="hidden md:block mt-8 max-w-xl text-center">
         <h2 className="text-sm font-medium text-muted-foreground/70 mb-2">
           {m.home_about_title()}
         </h2>
