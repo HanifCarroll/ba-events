@@ -10,11 +10,15 @@ const redis =
       })
     : null
 
-// Create rate limiter: 10 requests per hour per IP
+// Rate limit configuration
+export const RATE_LIMIT_REQUESTS = 30
+export const RATE_LIMIT_WINDOW = '1 h'
+
+// Create rate limiter: 30 requests per hour per IP
 const rateLimiter = redis
   ? new Ratelimit({
       redis,
-      limiter: Ratelimit.slidingWindow(10, '1 h'),
+      limiter: Ratelimit.slidingWindow(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW),
       analytics: true,
       prefix: 'ba-events',
     })

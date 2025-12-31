@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
 import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from '../db/client'
-import { checkRateLimit } from '../auth/rate-limit'
+import { checkRateLimit, RATE_LIMIT_REQUESTS } from '../auth/rate-limit'
 import { CATEGORIES, NEIGHBORHOODS } from '../types'
 import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue, RefinementSuggestion, StreamEvent } from '../types'
 
@@ -587,7 +587,13 @@ function getClientIP(): string {
 function createRateLimitErrorStream(resetTimestamp: number): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
   const resetDate = new Date(resetTimestamp)
-  const message = `You've reached the rate limit (10 requests per hour). Please try again after ${resetDate.toLocaleTimeString()}.`
+  // Format time in Buenos Aires timezone since this is a BA-focused app
+  const resetTimeStr = resetDate.toLocaleTimeString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const message = `You've reached the rate limit (${RATE_LIMIT_REQUESTS} requests per hour). Please try again after ${resetTimeStr}.`
 
   return new ReadableStream({
     start(controller) {
