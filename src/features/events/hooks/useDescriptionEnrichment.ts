@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import {
   getEventsWithoutDescriptions,
   enrichEventDescriptionsAction,
@@ -44,6 +45,7 @@ export function useDescriptionEnrichment() {
       setEnrichSelectedIds(new Set(events.map((e) => e.id)))
     } catch (err) {
       console.error('Failed to load events:', err)
+      toast.error('Failed to load events for enrichment')
     } finally {
       setIsLoadingEvents(false)
     }
@@ -114,6 +116,7 @@ export function useDescriptionEnrichment() {
       }
     } catch (err) {
       console.error('Enrichment failed:', err)
+      toast.error('Failed to enrich event descriptions')
       setEnrichStep('select')
     }
   }

@@ -4,6 +4,7 @@ import { AuthProvider } from '@/shared/providers/AuthProvider'
 import { useAuthContext } from '@/features/auth'
 import { TooltipProvider } from '@/shared/ui/tooltip'
 import { Toaster } from '@/shared/ui/sonner'
+import { ErrorBoundary } from '@/shared/ui/ErrorBoundary'
 import { queryClient } from '@/shared/lib/query'
 import { MainLayout } from '@/shared/ui/MainLayout'
 import { getLocale, setLocale } from '@/paraglide/runtime'
@@ -139,16 +140,18 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body className="bg-background text-foreground antialiased overflow-hidden bg-grain">
-        <ClientPostHogProvider>
-          <QueryClientProvider client={queryClient}>
-            <AuthProvider>
-              <TooltipProvider>
-                <PostHogIdentify />
-                <RootLayout />
-              </TooltipProvider>
-            </AuthProvider>
-          </QueryClientProvider>
-        </ClientPostHogProvider>
+        <ErrorBoundary>
+          <ClientPostHogProvider>
+            <QueryClientProvider client={queryClient}>
+              <AuthProvider>
+                <TooltipProvider>
+                  <PostHogIdentify />
+                  <RootLayout />
+                </TooltipProvider>
+              </AuthProvider>
+            </QueryClientProvider>
+          </ClientPostHogProvider>
+        </ErrorBoundary>
         <Toaster position="bottom-right" richColors />
         <Scripts />
       </body>

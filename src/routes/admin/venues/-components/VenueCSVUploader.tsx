@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import Papa from 'papaparse'
 import { Upload, Download, FileText, AlertCircle, CheckCircle2, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import {
@@ -115,12 +116,46 @@ export function VenueCSVUploader({ onImport, isImporting }: VenueCSVUploaderProp
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
+        // Check for missing required columns
+        const headers = results.meta.fields || []
+        const missingColumns = ['name', 'neighborhood'].filter(col => !headers.includes(col))
+
+        if (missingColumns.length > 0) {
+          const errorMessage = `Missing required columns: ${missingColumns.join(', ')}`
+          console.error('CSV validation error:', errorMessage)
+          toast.error(errorMessage)
+          setParsedRows([])
+          setFileName(null)
+          return
+        }
+
+        // Check if CSV has any data rows
+        if (results.data.length === 0) {
+          console.error('CSV parsing error: File is empty or contains only headers')
+          toast.error('CSV file is empty or contains only headers')
+          setParsedRows([])
+          setFileName(null)
+          return
+        }
+
         const rows = results.data.map((row, index) => validateRow(row, index + 2))
         setParsedRows(rows)
+
+        // Show summary toast with row errors if any
+        const errorCount = rows.filter(r => r.errors.length > 0).length
+        const validCount = rows.filter(r => r.errors.length === 0).length
+
+        if (errorCount > 0) {
+          toast.warning(`Parsed ${rows.length} rows: ${validCount} valid, ${errorCount} with errors`)
+        } else {
+          toast.success(`Parsed ${rows.length} rows successfully`)
+        }
       },
       error: (error) => {
         console.error('CSV parsing error:', error)
+        toast.error(`Failed to parse CSV: ${error.message || 'Invalid file format'}`)
         setParsedRows([])
+        setFileName(null)
       },
     })
 

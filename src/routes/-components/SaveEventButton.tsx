@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Heart } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { useAuthContext } from '@/features/auth'
 import { saveEvent, unsaveEvent } from '@/features/chat'
 import { track } from '@/lib/analytics'
@@ -61,6 +62,7 @@ export function SaveEventButton({
       // Revert on error
       setIsSaved(!newSavedState)
       console.error('Failed to update saved state:', error)
+      toast.error('Failed to update saved status')
     } finally {
       setIsUpdating(false)
     }

@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Upload, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/shared/ui/button'
 import { VenueCSVUploader } from './-components/VenueCSVUploader'
 import { bulkCreateVenuesAction } from '@/features/venues'
@@ -29,6 +30,7 @@ function ImportVenuesPage() {
       }, 2000)
     } catch (error) {
       console.error('Import failed:', error)
+      toast.error('Failed to import venues')
       setImportResult({ success: false, count: 0 })
     } finally {
       setIsImporting(false)

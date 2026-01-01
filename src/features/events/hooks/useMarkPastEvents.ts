@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { countPastEventsAction, markPastEventsAction } from '../api/crud'
+import { toast } from 'sonner'
+import { countPastEventsQuery, markPastEventsAction } from '../api/crud'
 
 export function useMarkPastEvents() {
   const router = useRouter()
@@ -9,7 +10,7 @@ export function useMarkPastEvents() {
   const [isMarkingPast, setIsMarkingPast] = useState(false)
 
   async function handleOpenMarkPastDialog() {
-    const { count } = await countPastEventsAction()
+    const { count } = await countPastEventsQuery()
     setPastEventsCount(count)
     setShowMarkPastDialog(true)
   }
@@ -22,6 +23,7 @@ export function useMarkPastEvents() {
       router.invalidate()
     } catch (err) {
       console.error('Mark past failed:', err)
+      toast.error('Failed to mark past events')
     } finally {
       setIsMarkingPast(false)
     }

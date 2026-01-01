@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Bookmark, Calendar, Clock, ArrowLeft, Sparkles } from 'lucide-react'
+import { toast } from 'sonner'
 import { useAuthContext } from '@/features/auth'
 import { getSavedEvents } from '@/features/chat'
 import { EventCard } from '@/routes/-components/events/EventCard'
@@ -28,7 +29,10 @@ function SavedEventsPage() {
       setLoading(true)
       getSavedEvents()
         .then(setEvents)
-        .catch(console.error)
+        .catch((error) => {
+          console.error('Failed to fetch saved events:', error)
+          toast.error('Failed to load saved events')
+        })
         .finally(() => setLoading(false))
     }
   }, [user])
