@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip'
+import { SkipLink } from '@/shared/ui/SkipLink'
 import { useAuthContext } from '@/features/auth'
 import { signOutAction } from '@/features/auth'
 import { track } from '@/lib/analytics'
@@ -164,6 +165,8 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <div className="h-full flex flex-col lg:flex-row overflow-hidden">
+      <SkipLink />
+
       {/* Mobile header */}
       <header className="lg:hidden h-16 border-b border-border/50 bg-card/80 backdrop-blur-sm flex items-center gap-3 px-4 shrink-0 z-30">
         <Button
@@ -379,7 +382,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 h-full overflow-hidden relative">
+      <main id="main-content" className="flex-1 h-full overflow-hidden relative">
         {/* Background gradient */}
         <div className="fixed inset-0 bg-gradient-to-br from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none" />
 

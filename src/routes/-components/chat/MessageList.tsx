@@ -28,7 +28,12 @@ export function MessageList({ messages, isLoading = false, onSuggestionSelect }:
 
   return (
     <div className="p-4 sm:p-6">
-      <div className="max-w-3xl mx-auto">
+      <div
+        className="max-w-3xl mx-auto"
+        role="log"
+        aria-live="polite"
+        aria-label="Chat messages"
+      >
         {messages.map((message) => (
           <ChatMessage
             key={message.id}

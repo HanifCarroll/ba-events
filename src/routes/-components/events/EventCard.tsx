@@ -59,7 +59,10 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
               tabIndex={0}
               onClick={handleToggle}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle() }}}
-              className="flex-1 min-w-0 cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary/20 rounded"
+              className="flex-1 min-w-0 cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-ring rounded"
+              aria-expanded={isOpen}
+              aria-controls={`event-details-${event.id}`}
+              aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
             >
               <h3 className="font-display font-medium text-base text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-1">
                 {event.name}
@@ -116,11 +119,12 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
               <button
                 onClick={handleToggle}
                 className={`
-                  p-1 rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-primary/20
+                  p-1 rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-ring
                   ${isOpen ? 'bg-primary/10 text-primary rotate-180' : 'text-muted-foreground hover:text-foreground'}
                 `}
                 aria-expanded={isOpen}
-                aria-label={isOpen ? 'Collapse details' : 'Expand details'}
+                aria-controls={`event-details-${event.id}`}
+                aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
               >
                 <ChevronDown className="h-4 w-4" />
               </button>
@@ -129,7 +133,7 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
         </div>
 
         <CollapsibleContent>
-          <div className="px-4 pb-4">
+          <div id={`event-details-${event.id}`} className="px-4 pb-4">
             {/* Separator */}
             <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-4" />
 

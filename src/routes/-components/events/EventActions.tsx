@@ -68,7 +68,7 @@ export function EventActions({ event }: EventActionsProps) {
   const actionButtonClass = `
     p-2 rounded-lg transition-all duration-200
     text-muted-foreground hover:text-primary hover:bg-primary/10
-    focus:outline-none focus:ring-2 focus:ring-primary/20
+    focus:outline-none focus:ring-2 focus:ring-ring
   `
 
   return (
