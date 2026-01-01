@@ -48,8 +48,8 @@ export function sanitizeError(input: unknown): string {
     message = input.message
     // Also check the stack trace for sensitive data
     if (input.stack) {
-      message = `${message}\n${sanitizeString(input.stack)}`
-      return message
+      // Sanitize both message and stack trace
+      return `${sanitizeString(message)}\n${sanitizeString(input.stack)}`
     }
   } else if (typeof input === 'string') {
     message = input

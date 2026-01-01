@@ -186,9 +186,9 @@ export function BulkActionBar({
             Mark Cancelled
           </Button>
           <Button
+            variant="destructive"
             size="sm"
             onClick={() => onSetBulkAction('delete')}
-            className="bg-red-600 text-white hover:bg-red-500"
           >
             <Trash2 className="h-4 w-4 mr-1.5" />
             Delete

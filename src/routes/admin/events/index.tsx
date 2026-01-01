@@ -48,6 +48,7 @@ import {
 } from '@/shared/ui/dialog'
 import { Combobox } from '@/shared/ui/combobox'
 import { DataTable, getEventColumns } from '@/shared/ui/data-table'
+import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState } from '@/shared/ui/EmptyState'
 import { listEvents } from '@/features/events'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
 import { useEventAdmin, useBackgroundEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/features/events'
@@ -732,52 +733,49 @@ function EventListPage() {
 
 function EmptyState() {
   return (
-    <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
-      <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-      <h3 className="font-display text-lg font-medium text-foreground mb-2">{m.admin_no_events()}</h3>
-      <p className="text-muted-foreground mb-4">{m.admin_no_events_desc()}</p>
-      <Button asChild className="bg-primary text-primary-foreground">
-        <Link to="/admin/events/new">
-          <Plus className="h-4 w-4 mr-2" />
-          {m.admin_add_event()}
-        </Link>
-      </Button>
-    </div>
+    <SharedEmptyState
+      icon={<Calendar className="h-12 w-12 text-muted-foreground" />}
+      title={m.admin_no_events()}
+      description={m.admin_no_events_desc()}
+      action={{
+        label: m.admin_add_event(),
+        href: '/admin/events/new',
+        icon: <Plus className="h-4 w-4" />,
+      }}
+    />
   )
 }
 
 function NoMatchesState({ onClearFilters }: { onClearFilters: () => void }) {
   return (
-    <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
-      <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-      <h3 className="font-display text-lg font-medium text-foreground mb-2">{m.admin_no_matching_events()}</h3>
-      <p className="text-muted-foreground mb-4">{m.admin_no_matching_desc()}</p>
-      <Button variant="outline" onClick={onClearFilters}>
-        {m.common_clear_filters()}
-      </Button>
-    </div>
+    <SharedNoMatchesState
+      title={m.admin_no_matching_events()}
+      description={m.admin_no_matching_desc()}
+      onClearFilters={onClearFilters}
+      clearLabel={m.common_clear_filters()}
+    />
   )
 }
 
 function TabEmptyState({ tab }: { tab: EventTab }) {
   const config: Record<EventTab, { icon: React.ReactNode; title: string; description: string }> = {
     all: {
-      icon: <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />,
+      icon: <Calendar className="h-12 w-12 text-muted-foreground" />,
       title: m.admin_no_events(),
       description: m.admin_no_events_desc(),
     },
     needs_attention: {
-      icon: <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />,
+      icon: <CheckCircle2 className="h-12 w-12 text-green-500" />,
       title: 'All events are complete!',
       description: 'No events need attention right now.',
     },
     pending_review: {
-      icon: <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />,
+      icon: <CheckCircle2 className="h-12 w-12 text-green-500" />,
       title: 'No events pending review',
       description: 'All imported events have been reviewed.',
     },
     past: {
-      icon: <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />,
+      icon: <Calendar className="h-12 w-12 text-muted-foreground" />,
       title: 'No past events',
       description: 'Past events will appear here after they end.',
     },
@@ -786,11 +784,11 @@ function TabEmptyState({ tab }: { tab: EventTab }) {
   const { icon, title, description } = config[tab]
 
   return (
-    <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
-      {icon}
-      <h3 className="font-display text-lg font-medium text-foreground mb-2">{title}</h3>
-      <p className="text-muted-foreground">{description}</p>
-    </div>
+    <SharedEmptyState
+      icon={icon}
+      title={title}
+      description={description}
+    />
   )
 }
 

@@ -35,6 +35,7 @@ export function useUpdateVenue() {
     mutationFn: ({ id, data }: { id: string; data: VenueUpdate }) =>
       updateVenueAction({ data: { id, data } }),
     onSuccess: (updatedVenue, variables) => {
+      track('admin:venue_updated', { venue_id: variables.id })
       // Update venue in cache directly
       queryClient.setQueriesData<Venue[]>(
         { queryKey: queryKeys.venues.all },
@@ -59,6 +60,7 @@ export function useDeleteVenue() {
   return useMutation({
     mutationFn: (id: string) => deleteVenueAction({ data: id }),
     onSuccess: (_, venueId) => {
+      track('admin:venue_deleted', { venue_id: venueId })
       // Remove from cache directly - no refetch needed
       queryClient.setQueriesData<Venue[]>(
         { queryKey: queryKeys.venues.all },

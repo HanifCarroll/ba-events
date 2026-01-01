@@ -28,6 +28,8 @@ export type AdminEvent =
   | 'admin:event_updated'
   | 'admin:event_deleted'
   | 'admin:venue_created'
+  | 'admin:venue_updated'
+  | 'admin:venue_deleted'
   | 'admin:import_started'
   | 'admin:import_completed'
 
