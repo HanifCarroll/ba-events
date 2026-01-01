@@ -33,11 +33,11 @@ import {
   Tags,
 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/shared/ui/button'
+import { Badge } from '@/shared/ui/badge'
+import { Checkbox } from '@/shared/ui/checkbox'
+import { Input } from '@/shared/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -45,14 +45,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Combobox } from '@/components/ui/combobox'
-import { DataTable, getEventColumns } from '@/components/data-table'
-import { listEvents } from '@/lib/admin'
-import { formatDateTime } from '@/lib/utils/formatting'
-import { useEventAdmin, useBackgroundEnrichment, useVenueEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/hooks'
-import { BulkActionBar } from '@/components/admin/BulkActionBar'
-import type { EventWithVenue } from '@/lib/types'
+} from '@/shared/ui/dialog'
+import { Combobox } from '@/shared/ui/combobox'
+import { DataTable, getEventColumns } from '@/shared/ui/data-table'
+import { listEvents } from '@/features/events'
+import { formatDateTime } from '@/shared/lib/utils/formatting'
+import { useEventAdmin, useBackgroundEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/features/events'
+import { useVenueEnrichment } from '@/features/venues'
+import { BulkActionBar } from './-components/BulkActionBar'
+import type { EventWithVenue } from '@/shared/lib/types'
 
 import { z } from 'zod'
 import type { ColumnFiltersState, SortingState } from '@tanstack/react-table'

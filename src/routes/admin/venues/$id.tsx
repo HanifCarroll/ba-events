@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { VenueForm } from '@/components/admin/VenueForm'
-import { getVenue } from '@/lib/admin'
+import { VenueForm } from './-components/VenueForm'
+import { getVenue } from '@/features/venues'
 
 export const Route = createFileRoute('/admin/venues/$id')({
   loader: async ({ params }) => {

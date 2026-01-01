@@ -1,4 +1,4 @@
-import type { ImportSource } from '@/hooks/useImportWizard'
+import type { ImportSource } from '@/features/import'
 
 export type DataStatus = 'included' | 'requires_enrichment' | 'not_available'
 

@@ -18,7 +18,7 @@ import {
   getUniqueVenueNames,
   getAllVenueInfo,
   type EventbriteEvent,
-} from '../src/lib/scrapers/eventbrite'
+} from '../src/features/import/scrapers/eventbrite'
 
 async function testFetch() {
   console.log('='.repeat(80))
@@ -133,7 +133,7 @@ async function testEnrichmentSample(events: EventbriteEvent[]) {
 
   // Import enrichment functions dynamically to avoid API calls during import
   const { fetchEventbritePrice, inferCategory } = await import(
-    '../src/lib/scrapers/eventbrite/enrichment'
+    '../src/features/import/scrapers/eventbrite/enrichment'
   )
 
   const testEvent = events[0]

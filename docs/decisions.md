@@ -26,6 +26,55 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Vertical Slice Architecture Restructuring
+
+**Date:** 2025-12-31
+
+**Decision:** Restructure the codebase from technical-type organization to a Vertical Slice architecture with:
+1. `features/` directory for business logic modules (events, venues, import, chat, auth)
+2. `shared/` directory for truly shared code (UI components, database, utilities)
+3. Route colocation using TanStack Router's `-components/` pattern for route-specific UI
+
+**Alternatives Considered:**
+- Feature-Sliced Design (FSD): 7-layer architecture with strict dependency rules - too rigid for this project size, adds complexity with layers like "entities" and "widgets" that would be overkill
+- Features in routes: Embedding all feature code directly in route folders - rejected because business logic (hooks, API functions) is often shared across multiple routes
+- Continue with current structure: Technical-type organization (`components/`, `hooks/`, `lib/`) was becoming hard to navigate as the codebase grew
+
+**Rationale:**
+1. **Maintainability focus**: Everything for a feature is in one place - no more hunting across `components/`, `hooks/`, `lib/` for related code
+2. **Clear public APIs**: Each feature has an `index.ts` that exports only what's needed, reducing coupling
+3. **Route colocation**: Using `-components/` folders keeps route-specific UI close to routes while keeping routes thin
+4. **Shared code discipline**: Only code used by 3+ features goes in `shared/`, preventing premature abstraction
+5. **TanStack Router native**: Uses the `-prefix` convention for files/folders the router should ignore
+
+**Structure:**
+```
+src/
+├── features/           # Feature modules with business logic
+│   ├── events/         # Event management
+│   │   ├── api/        # Server functions
+│   │   └── hooks/      # React hooks
+│   ├── venues/         # Venue management
+│   ├── import/         # Import wizard
+│   ├── chat/           # Chat/AI feature
+│   └── auth/           # Authentication
+├── shared/             # Truly shared code
+│   ├── ui/             # shadcn + custom UI
+│   ├── lib/            # Utils, DB, types
+│   └── providers/      # Context providers
+└── routes/             # Thin route files
+    └── admin/events/
+        ├── index.tsx   # Route (composition only)
+        └── -components/ # Route-specific UI
+```
+
+**References:**
+- [TanStack Router File-Based Routing](https://tanstack.com/router/v1/docs/framework/react/routing/file-based-routing)
+- [Tips from 8 months of TanStack/Router in production](https://swizec.com/blog/tips-from-8-months-of-tan-stack-router-in-production/)
+- [Vertical Slice Architecture](https://www.jimmybogard.com/vertical-slice-architecture/)
+
+---
+
 ### Node.js Module Polyfills for Vite Client Build
 
 **Date:** 2025-12-31

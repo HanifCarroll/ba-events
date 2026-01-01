@@ -19,11 +19,11 @@ function debounce<T extends (...args: Parameters<T>) => void>(
 }
 import { Plus, MapPin, Search, X, Filter, Upload, Loader2, AlertCircle, ChevronDown, ChevronRight, ExternalLink, Pencil } from 'lucide-react'
 import * as m from '@/paraglide/messages'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Combobox } from '@/components/ui/combobox'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/shared/ui/button'
+import { Badge } from '@/shared/ui/badge'
+import { Input } from '@/shared/ui/input'
+import { Combobox } from '@/shared/ui/combobox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -31,25 +31,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@/shared/ui/dialog'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { DataTable, getVenueColumns } from '@/components/data-table'
-import { VenueDuplicatesPanel } from '@/components/admin/VenueDuplicatesPanel'
-import { VenueAddressNamesPanel } from '@/components/admin/VenueAddressNamesPanel'
-import { VenueBulkActionBar } from '@/components/admin/VenueBulkActionBar'
-import { MergeVenueDialog } from '@/components/admin/MergeVenueDialog'
-import { RenameVenueDialog } from '@/components/admin/RenameVenueDialog'
-import { DismissedDuplicatesDialog } from '@/components/admin/DismissedDuplicatesDialog'
-import { listVenues, deleteVenueAction } from '@/lib/admin'
-import { useVenueReview } from '@/hooks/useVenueReview'
-import { useVenueBulkActions, useVenueNominatimEnrichment } from '@/hooks'
-import { NEIGHBORHOODS } from '@/lib/types'
-import type { Venue, Neighborhood } from '@/lib/types'
-import type { ReviewTab } from '@/hooks/useVenueReview'
+} from '@/shared/ui/collapsible'
+import { DataTable, getVenueColumns } from '@/shared/ui/data-table'
+import { VenueDuplicatesPanel } from './-components/VenueDuplicatesPanel'
+import { VenueAddressNamesPanel } from './-components/VenueAddressNamesPanel'
+import { VenueBulkActionBar } from './-components/VenueBulkActionBar'
+import { MergeVenueDialog } from './-components/MergeVenueDialog'
+import { RenameVenueDialog } from './-components/RenameVenueDialog'
+import { DismissedDuplicatesDialog } from './-components/DismissedDuplicatesDialog'
+import { listVenues, deleteVenueAction, useVenueReview, useVenueBulkActions, useVenueNominatimEnrichment } from '@/features/venues'
+import { NEIGHBORHOODS } from '@/shared/lib/types'
+import type { Venue, Neighborhood } from '@/shared/lib/types'
+import type { ReviewTab } from '@/features/venues'
 
 // URL search params schema
 const venueSearchSchema = z.object({

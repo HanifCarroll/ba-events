@@ -6,8 +6,8 @@
  * Run with: bun scripts/test-meetup.ts
  */
 
-import { scrapeMeetupEvents, filterInPersonEvents } from '../src/lib/scrapers/meetup/browser-scraper'
-import { expandRecurringEventWithIds, formatArgentinaDate } from '../src/lib/scrapers/meetup/date-parser'
+import { scrapeMeetupEvents, filterInPersonEvents } from '../src/features/import/scrapers/meetup/browser-scraper'
+import { expandRecurringEventWithIds, formatArgentinaDate } from '../src/features/import/scrapers/meetup/date-parser'
 
 async function main() {
   console.log('='.repeat(80))

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { VenueForm } from '@/components/admin/VenueForm'
+import { VenueForm } from './-components/VenueForm'
 
 export const Route = createFileRoute('/admin/venues/new')({
   component: NewVenuePage,

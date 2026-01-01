@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Upload, Check } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { getVenuesForSelect } from '@/lib/admin'
-import { useImportWizard, type WizardStep, type ImportSource } from '@/hooks'
+import { Button } from '@/shared/ui/button'
+import { getVenuesForSelect } from '@/features/venues'
+import { useImportWizard, type WizardStep, type ImportSource } from '@/features/import'
 import {
   SourceStep,
   ConfigureStep,
@@ -12,7 +12,7 @@ import {
   ConfirmStep,
   EnrichStep,
   SummaryStep,
-} from '@/components/admin/import'
+} from './-components/import'
 
 const validSources: ImportSource[] = ['passline', 'eventbrite', 'ba-tourism', 'meetup', 'csv']
 

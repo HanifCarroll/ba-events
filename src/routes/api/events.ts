@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { createEvent, getEventsWithVenues } from '@/lib/db/client'
-import { generateEventEmbedding } from '@/lib/ai/embeddings'
-import type { EventInsert } from '@/lib/types'
+import { createEvent, getEventsWithVenues } from '@/shared/lib/db/client'
+import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import type { EventInsert } from '@/shared/lib/types'
 
 // Simple API key auth - set ADMIN_API_KEY in your .env
 const API_KEY = process.env.ADMIN_API_KEY

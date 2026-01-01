@@ -7,7 +7,7 @@
  * Run with: bun scripts/eventbrite-jsonld-test.ts
  */
 
-import type { EventInsert } from '../src/lib/types'
+import type { EventInsert } from '../src/shared/lib/types'
 
 // JSON-LD Event structure from Eventbrite
 interface EventbriteJsonLdEvent {
@@ -300,7 +300,7 @@ async function main() {
     const avail = field.available ? '✅' : '❌'
     const sample = field.sample ? field.sample.substring(0, 25) : '-'
     console.log(
-      `${field.field.padEnd(20)} | ${avail.padEnd(9)} | ${field.source.padEnd(25)} | ${sample}`
+      `${String(field.field).padEnd(20)} | ${avail.padEnd(9)} | ${field.source.padEnd(25)} | ${sample}`
     )
   }
   console.log()

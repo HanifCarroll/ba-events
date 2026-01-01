@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Calendar, MapPin, Plus, Clock, CheckCircle } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { getAdminStats } from '@/lib/admin'
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card'
+import { Button } from '@/shared/ui/button'
+import { getAdminStats } from '@/features/events'
 import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/admin/')({

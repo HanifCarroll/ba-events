@@ -3,10 +3,10 @@ import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { User, Mail, Lock, Trash2, ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react'
-import { useAuthContext } from '@/hooks/useAuthContext'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { useAuthContext } from '@/features/auth'
+import { Button } from '@/shared/ui/button'
+import { Input } from '@/shared/ui/input'
+import { Label } from '@/shared/ui/label'
 import {
   Form,
   FormControl,
@@ -14,7 +14,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form'
+} from '@/shared/ui/form'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,19 +25,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
+} from '@/shared/ui/alert-dialog'
 import {
   displayNameSchema,
   changePasswordSchema,
   type DisplayNameInput,
   type ChangePasswordInput,
-} from '@/lib/schemas'
+} from '@/shared/lib/schemas'
 import {
   useUpdateDisplayName,
   useUpdatePassword,
   useDeleteAccount,
-} from '@/hooks/useProfileMutations'
-import { requireAuth } from '@/lib/auth/session'
+} from '@/features/auth'
+import { requireAuth } from '@/features/auth'
 
 export const Route = createFileRoute('/profile')({
   beforeLoad: async () => {

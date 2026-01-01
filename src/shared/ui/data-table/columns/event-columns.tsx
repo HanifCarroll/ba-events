@@ -1,0 +1,332 @@
+import { ColumnDef } from '@tanstack/react-table'
+import { Link } from '@tanstack/react-router'
+import { Pencil, Trash2, MapPin, CheckCircle2, XCircle, ExternalLink } from 'lucide-react'
+import { Badge } from '@/shared/ui/badge'
+import { Button } from '@/shared/ui/button'
+import { DataTableColumnHeader } from '../DataTableColumnHeader'
+import { formatDateTime } from '@/shared/lib/utils/formatting'
+import type { EventWithVenue } from '@/shared/lib/types'
+
+// Label maps for select filters (value -> display label)
+const sourceLabelMap: Record<string, string> = {
+  passline: 'Passline',
+  eventbrite: 'Eventbrite',
+  'ba-tourism': 'BA Tourism',
+  meetup: 'Meetup',
+  manual: 'Manual',
+  csv: 'CSV',
+}
+
+const statusLabelMap: Record<string, string> = {
+  scheduled: 'Scheduled',
+  pending_review: 'Pending',
+  cancelled: 'Cancelled',
+  postponed: 'Postponed',
+  past: 'Past',
+}
+
+function getSourceBadge(source: string) {
+  const variants: Record<string, { className: string; label: string }> = {
+    passline: {
+      className: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+      label: 'Passline',
+    },
+    eventbrite: {
+      className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+      label: 'Eventbrite',
+    },
+    'ba-tourism': {
+      className: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
+      label: 'BA Tourism',
+    },
+    meetup: {
+      className: 'bg-red-500/10 text-red-400 border-red-500/30',
+      label: 'Meetup',
+    },
+    manual: {
+      className: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+      label: 'Manual',
+    },
+    csv: {
+      className: 'bg-slate-500/10 text-slate-400 border-slate-500/30',
+      label: 'CSV',
+    },
+  }
+  const variant = variants[source] || {
+    className: 'bg-muted/50 text-muted-foreground border-border/50',
+    label: source || 'Unknown',
+  }
+  return (
+    <Badge variant="outline" className={variant.className}>
+      {variant.label}
+    </Badge>
+  )
+}
+
+function getStatusBadge(status: string) {
+  const variants: Record<string, { className: string; label: string }> = {
+    scheduled: {
+      className: 'bg-green-500/10 text-green-400 border-green-500/30',
+      label: 'Scheduled',
+    },
+    pending_review: {
+      className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+      label: 'Pending',
+    },
+    cancelled: {
+      className: 'bg-destructive/10 text-destructive border-destructive/30',
+      label: 'Cancelled',
+    },
+    postponed: {
+      className: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
+      label: 'Postponed',
+    },
+    past: {
+      className: 'bg-muted/50 text-muted-foreground border-border/50',
+      label: 'Past',
+    },
+  }
+  const variant = variants[status] || variants.scheduled
+  return (
+    <Badge variant="outline" className={variant.className}>
+      {variant.label}
+    </Badge>
+  )
+}
+
+interface EventColumnsOptions {
+  onDelete?: (event: EventWithVenue) => void
+  onApprove?: (id: string) => void
+  onReject?: (id: string) => void
+  isApproving?: string | null
+  isRejecting?: string | null
+  showNeedsAttention?: boolean
+}
+
+export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventWithVenue>[] {
+  const {
+    onDelete,
+    onApprove,
+    onReject,
+    isApproving,
+    isRejecting,
+    showNeedsAttention,
+  } = options || {}
+
+  return [
+    {
+      id: 'name',
+      accessorKey: 'name',
+      size: 280,
+      minSize: 180,
+      enableColumnFilter: true,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title="Event"
+          enableFilter
+          filterType="text"
+          filterPlaceholder="Search events..."
+        />
+      ),
+      cell: ({ row }) => {
+        const event = row.original
+        const needsDescription = !event.description_es && event.link
+
+        return (
+          <div className="min-w-0">
+            <p className="font-medium text-foreground truncate">{event.name}</p>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {showNeedsAttention && needsDescription && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30"
+                >
+                  No Description
+                </Badge>
+              )}
+              {event.categories.slice(0, 2).map((cat) => (
+                <Badge
+                  key={cat}
+                  variant="outline"
+                  className="text-xs border-border/50 text-muted-foreground"
+                >
+                  {cat}
+                </Badge>
+              ))}
+              {event.categories.length > 2 && (
+                <span className="text-xs text-muted-foreground">
+                  +{event.categories.length - 2}
+                </span>
+              )}
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      id: 'venue',
+      accessorKey: 'venue_name',
+      size: 180,
+      minSize: 120,
+      enableColumnFilter: true,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title="Venue"
+          enableFilter
+          filterType="text"
+          filterPlaceholder="Search venues..."
+        />
+      ),
+      cell: ({ row }) => {
+        const venueName = row.original.venue_name
+        return venueName ? (
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{venueName}</span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      },
+    },
+    {
+      id: 'date',
+      accessorKey: 'starts_at',
+      size: 160,
+      minSize: 130,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Date" />
+      ),
+      cell: ({ row }) => (
+        <span className="text-muted-foreground text-sm">
+          {formatDateTime(row.original.starts_at)}
+        </span>
+      ),
+    },
+    {
+      id: 'source',
+      accessorKey: 'source',
+      size: 110,
+      minSize: 90,
+      enableColumnFilter: true,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title="Source"
+          enableFilter
+          filterType="select"
+          filterLabelMap={sourceLabelMap}
+          filterPlaceholder="All sources"
+        />
+      ),
+      cell: ({ row }) => getSourceBadge(row.original.source),
+    },
+    {
+      id: 'link',
+      accessorKey: 'link',
+      size: 80,
+      minSize: 60,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Link" />
+      ),
+      cell: ({ row }) => {
+        const link = row.original.link
+        return link ? (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors"
+            title={link}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      },
+    },
+    {
+      id: 'status',
+      accessorKey: 'status',
+      size: 110,
+      minSize: 90,
+      enableColumnFilter: true,
+      header: ({ column }) => (
+        <DataTableColumnHeader
+          column={column}
+          title="Status"
+          enableFilter
+          filterType="select"
+          filterLabelMap={statusLabelMap}
+          filterPlaceholder="All statuses"
+        />
+      ),
+      cell: ({ row }) => getStatusBadge(row.original.status),
+    },
+    {
+      id: 'actions',
+      size: 140,
+      minSize: 140,
+      maxSize: 140,
+      enableResizing: false,
+      enableSorting: false,
+      enableHiding: false,
+      header: () => <span className="text-right w-full block">Actions</span>,
+      cell: ({ row }) => {
+        const event = row.original
+
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {event.status === 'pending_review' && onApprove && onReject && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                  onClick={() => onApprove(event.id)}
+                  disabled={isApproving === event.id}
+                  title="Approve"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => onReject(event.id)}
+                  disabled={isRejecting === event.id}
+                  title="Reject"
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            >
+              <Link to="/admin/events/$id" params={{ id: event.id }}>
+                <Pencil className="h-4 w-4" />
+              </Link>
+            </Button>
+            {onDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                onClick={() => onDelete(event)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        )
+      },
+    },
+  ]
+}

@@ -1,10 +1,10 @@
 import { createFileRoute, useRouter, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Upload, ArrowLeft, CheckCircle2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { VenueCSVUploader } from '@/components/admin/VenueCSVUploader'
-import { bulkCreateVenuesAction } from '@/lib/admin'
-import type { VenueInsert } from '@/lib/types'
+import { Button } from '@/shared/ui/button'
+import { VenueCSVUploader } from './-components/VenueCSVUploader'
+import { bulkCreateVenuesAction } from '@/features/venues'
+import type { VenueInsert } from '@/shared/lib/types'
 
 export const Route = createFileRoute('/admin/venues/import')({
   component: ImportVenuesPage,
