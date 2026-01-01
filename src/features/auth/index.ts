@@ -22,7 +22,10 @@ export {
 export {
   RATE_LIMIT_REQUESTS,
   RATE_LIMIT_WINDOW,
+  API_RATE_LIMIT_REQUESTS,
+  API_RATE_LIMIT_WINDOW,
   checkRateLimit,
+  checkApiRateLimit,
 } from './api/rate-limit'
 
 // Server-side auth actions

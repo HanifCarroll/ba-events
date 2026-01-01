@@ -14,6 +14,7 @@ import { parseISO, eachDayOfInterval } from 'date-fns'
 import type { MeetupEvent, MeetupGraphQLEvent } from './types'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
+import { sanitizeError } from '@/shared/lib/security'
 
 const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
 
@@ -554,9 +555,16 @@ async function scrapeBrowserlessPage(
 async function scrapeWithBrowserless(token: string, options: ScraperOptions): Promise<MeetupEvent[]> {
   const puppeteer = await import('puppeteer-core')
 
-  const browser = await puppeteer.default.connect({
-    browserWSEndpoint: `wss://chrome.browserless.io?token=${token}`,
-  })
+  let browser
+  try {
+    browser = await puppeteer.default.connect({
+      browserWSEndpoint: `wss://chrome.browserless.io?token=${token}`,
+    })
+  } catch (error) {
+    // Sanitize error to prevent token leakage in logs
+    console.error('[Meetup] Failed to connect to Browserless:', sanitizeError(error))
+    throw new Error('Failed to connect to browser service')
+  }
 
   const collectedEvents: MeetupEvent[] = []
   const seenIds = new Set<string>()
@@ -574,7 +582,13 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
 
       console.log(`[Meetup] Scraping day ${i + 1}/${dates.length}: ${dateStr}`)
 
-      await scrapeBrowserlessPage(page, url, seenIds, collectedEvents)
+      try {
+        await scrapeBrowserlessPage(page, url, seenIds, collectedEvents)
+      } catch (error) {
+        // Sanitize error to prevent any sensitive data leakage
+        console.error(`[Meetup] Error scraping page for ${dateStr}:`, sanitizeError(error))
+        // Continue with next date rather than failing entirely
+      }
 
       console.log(`[Meetup] Total events so far: ${collectedEvents.length}`)
 
@@ -586,6 +600,10 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
 
     console.log(`[Meetup] Finished scraping. Total events: ${collectedEvents.length}`)
     return collectedEvents
+  } catch (error) {
+    // Sanitize any error that might contain connection details
+    console.error('[Meetup] Error during scraping:', sanitizeError(error))
+    throw new Error('Scraping failed')
   } finally {
     await browser.close()
   }
