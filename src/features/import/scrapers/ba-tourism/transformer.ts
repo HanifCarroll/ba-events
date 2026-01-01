@@ -8,24 +8,12 @@
 import type { EventInsert } from '@/shared/lib/types'
 import type { BATourismEvent, WeekContext } from './types'
 import { parseSpanishDate, toISODateTime, getEndTimeISO } from './date-parser'
-import { format } from 'date-fns'
-
-/**
- * Generate a unique external ID for deduplication
- * Format: ba-tourism-{normalized-name}-{date}
- */
-function generateExternalId(name: string, date: Date): string {
-  const normalizedName = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .substring(0, 50)
-
-  const dateStr = format(date, 'yyyy-MM-dd')
-
-  return `ba-tourism-${normalizedName}-${dateStr}`
-}
+import {
+  normalizeTitle,
+  normalizeDescription,
+  normalizeUrl,
+  generateExternalId,
+} from '../shared/normalization'
 
 /**
  * Transform a single BA Tourism event into EventInsert entries
@@ -48,8 +36,8 @@ export function transformBATourismEvent(
     const endsAt = getEndTimeISO(parsed)
 
     const eventInsert: EventInsert = {
-      name: event.name,
-      description_es: event.description || null,
+      name: normalizeTitle(event.name),
+      description_es: normalizeDescription(event.description),
       description_en: null, // Will be enriched later
       starts_at: startsAt,
       ends_at: endsAt,
@@ -60,10 +48,10 @@ export function transformBATourismEvent(
       is_free: event.isFree,
       min_age: null,
       image_url: null, // Could be scraped from detail page later
-      link: event.moreInfoUrl || null,
-      ticket_url: event.moreInfoUrl || null,
+      link: normalizeUrl(event.moreInfoUrl),
+      ticket_url: normalizeUrl(event.moreInfoUrl),
       source: 'ba-tourism',
-      external_id: generateExternalId(event.name, parsed.date),
+      external_id: generateExternalId('ba-tourism', event.name, parsed.date),
       status: 'scheduled',
     }
 

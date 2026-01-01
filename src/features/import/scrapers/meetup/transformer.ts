@@ -8,11 +8,18 @@
 import type { EventInsert } from '@/shared/lib/types'
 import type { MeetupEvent } from './types'
 import { parseMeetupDate, expandRecurringEventWithIds } from './date-parser'
+import {
+  normalizeTitle,
+  normalizeDescription,
+  normalizeUrl,
+  normalizePrice,
+  normalizeImageUrl,
+} from '../shared/normalization'
 
 /**
  * Generate unique external ID for a Meetup event
  */
-function generateExternalId(event: MeetupEvent, dateStr?: string): string {
+function generateMeetupExternalId(event: MeetupEvent, dateStr?: string): string {
   // Use Meetup's event ID if available
   if (event.id) {
     if (dateStr) {
@@ -43,24 +50,25 @@ export function transformMeetupEvent(
 ): EventInsert {
   const startsAt = parseMeetupDate(event.dateTime)
   const endsAt = event.endTime ? parseMeetupDate(event.endTime) : null
+  const price = normalizePrice(event.price)
 
   return {
-    name: event.name,
-    description_es: event.description,
-    description_en: event.description, // Meetup events are often in English
+    name: normalizeTitle(event.name),
+    description_es: normalizeDescription(event.description),
+    description_en: normalizeDescription(event.description), // Meetup events are often in English
     starts_at: startsAt,
     ends_at: endsAt,
     is_all_day: false,
     venue_id: venueId,
     categories: [], // Assigned via AI during import
-    price: event.price,
-    is_free: event.price === null || event.price === 0,
+    price: price,
+    is_free: price === null || price === 0,
     min_age: null,
-    image_url: event.imageUrl,
-    link: event.eventUrl,
-    ticket_url: event.eventUrl,
+    image_url: normalizeImageUrl(event.imageUrl),
+    link: normalizeUrl(event.eventUrl),
+    ticket_url: normalizeUrl(event.eventUrl),
     source: 'meetup',
-    external_id: generateExternalId(event),
+    external_id: generateMeetupExternalId(event),
     status: 'scheduled',
   }
 }
@@ -92,6 +100,8 @@ export function transformMeetupEventWithExpansion(
     weeksAhead
   )
 
+  const price = normalizePrice(event.price)
+
   return expanded.map(({ date, id: expandedId }) => {
     const startsAt = date
     // Calculate end time if available (same duration as original)
@@ -104,20 +114,20 @@ export function transformMeetupEventWithExpansion(
     }
 
     return {
-      name: event.name,
-      description_es: event.description,
-      description_en: event.description,
+      name: normalizeTitle(event.name),
+      description_es: normalizeDescription(event.description),
+      description_en: normalizeDescription(event.description),
       starts_at: startsAt,
       ends_at: endsAt,
       is_all_day: false,
       venue_id: venueId,
       categories: [], // Assigned via AI during import
-      price: event.price,
-      is_free: event.price === null || event.price === 0,
+      price: price,
+      is_free: price === null || price === 0,
       min_age: null,
-      image_url: event.imageUrl,
-      link: event.eventUrl,
-      ticket_url: event.eventUrl,
+      image_url: normalizeImageUrl(event.imageUrl),
+      link: normalizeUrl(event.eventUrl),
+      ticket_url: normalizeUrl(event.eventUrl),
       source: 'meetup',
       external_id: `meetup-${expandedId}`,
       status: 'scheduled',

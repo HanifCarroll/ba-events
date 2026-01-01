@@ -7,6 +7,12 @@
 
 import type { EventInsert } from '@/shared/lib/types'
 import type { PasslineEvent } from './api'
+import {
+  normalizeTitle,
+  normalizePrice,
+  normalizeUrl,
+  normalizeImageUrl,
+} from '../shared/normalization'
 
 /**
  * Combine date and time strings into ISO datetime string
@@ -30,26 +36,16 @@ function combineDateTime(date: string, time: string): string {
 }
 
 /**
- * Parse price from Passline format
- */
-function parsePrice(precioMin: string | null): number | null {
-  if (!precioMin) return null
-
-  const price = parseFloat(precioMin)
-  return isNaN(price) ? null : price
-}
-
-/**
  * Transform a Passline event into our EventInsert format
  */
 export function transformPasslineEvent(
   event: PasslineEvent,
   venueId: string | null
 ): EventInsert {
-  const price = parsePrice(event.precio_min)
+  const price = normalizePrice(event.precio_min)
 
   return {
-    name: event.nombre,
+    name: normalizeTitle(event.nombre),
     description_es: null, // Fetched separately via description enrichment flow
     description_en: null,
     starts_at: combineDateTime(event.fecha_inicio, event.hora_inicio),
@@ -63,9 +59,9 @@ export function transformPasslineEvent(
     price: price,
     is_free: price === 0 || price === null,
     min_age: null, // Passline doesn't provide this
-    image_url: event.recorte || event.miniatura || null,
-    link: event.url,
-    ticket_url: event.url,
+    image_url: normalizeImageUrl(event.recorte || event.miniatura || null),
+    link: normalizeUrl(event.url),
+    ticket_url: normalizeUrl(event.url),
     source: 'passline',
     external_id: event.id,
     status: 'scheduled',

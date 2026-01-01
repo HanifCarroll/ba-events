@@ -1,24 +1,63 @@
-import { useState, useCallback, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { regenerateEmbeddingsAction, type EmbeddingComplete } from '../api/enrichment'
+import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
+import {
+  regenerateEmbeddingsAction,
+  type EmbeddingComplete,
+} from '../api/enrichment'
+import type { EmbeddingProgress } from '../api/streaming-types'
 import { queryKeys } from '@/shared/lib/query'
 import type { EventWithVenue } from '@/shared/lib/types'
 
-interface RegenerationState {
-  isRegenerating: boolean
-  current: number
-  total: number
-}
-
 export function useEmbeddingRegeneration() {
   const queryClient = useQueryClient()
-  const [state, setState] = useState<RegenerationState>({
-    isRegenerating: false,
-    current: 0,
-    total: 0,
-  })
   const toastIdRef = useRef<string | number | undefined>(undefined)
+
+  const { state, processStream } = useStreamingProgress<
+    EmbeddingProgress,
+    EmbeddingComplete
+  >({
+    onProgress: (update) => {
+      toast.loading(
+        `Regenerating ${update.current}/${update.total}: ${update.eventName.substring(0, 40)}...`,
+        {
+          id: toastIdRef.current,
+          description: update.success
+            ? 'Generated embedding'
+            : update.error || 'Processing...',
+        }
+      )
+    },
+    onComplete: (result) => {
+      if (result.errors && result.errors.length > 0) {
+        toast.warning(
+          `Regenerated ${result.regenerated}/${result.total} embeddings`,
+          {
+            id: toastIdRef.current,
+            description: `${result.errors.length} errors occurred`,
+          }
+        )
+      } else {
+        toast.success(
+          `Regenerated embeddings for ${result.regenerated} events`,
+          { id: toastIdRef.current }
+        )
+      }
+
+      // Invalidate events cache to refresh data
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
+    },
+    onError: (error) => {
+      console.error('Embedding regeneration failed:', error)
+      toast.error('Failed to regenerate embeddings', {
+        id: toastIdRef.current,
+        description: error.message || 'An unexpected error occurred.',
+      })
+    },
+    getCurrentFromProgress: (p) => p.current,
+    getTotalFromProgress: (p) => p.total,
+  })
 
   /**
    * Regenerate embeddings for selected events
@@ -37,12 +76,6 @@ export function useEmbeddingRegeneration() {
         return
       }
 
-      setState({
-        isRegenerating: true,
-        current: 0,
-        total: selectedEvents.length,
-      })
-
       toastIdRef.current = toast.loading(
         `Regenerating embeddings 0/${selectedEvents.length}...`
       )
@@ -52,70 +85,26 @@ export function useEmbeddingRegeneration() {
           data: { eventIds: selectedEvents.map((e) => e.id) },
         })
 
-        let finalResult: EmbeddingComplete | null = null
+        await processStream(
+          stream,
+          (update): update is EmbeddingProgress => update.type === 'progress'
+        )
 
-        for await (const update of stream) {
-          if (update.type === 'progress') {
-            setState({
-              isRegenerating: true,
-              current: update.current,
-              total: update.total,
-            })
-
-            toast.loading(
-              `Regenerating ${update.current}/${update.total}: ${update.eventName.substring(0, 40)}...`,
-              {
-                id: toastIdRef.current,
-                description: update.success
-                  ? 'Generated embedding'
-                  : update.error || 'Processing...',
-              }
-            )
-          } else if (update.type === 'complete') {
-            finalResult = update
-          }
-        }
-
-        if (finalResult) {
-          if (finalResult.errors && finalResult.errors.length > 0) {
-            toast.warning(
-              `Regenerated ${finalResult.regenerated}/${finalResult.total} embeddings`,
-              {
-                id: toastIdRef.current,
-                description: `${finalResult.errors.length} errors occurred`,
-              }
-            )
-          } else {
-            toast.success(
-              `Regenerated embeddings for ${finalResult.regenerated} events`,
-              { id: toastIdRef.current }
-            )
-          }
-        }
-
-        // Invalidate events cache to refresh data
-        queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
         onComplete?.()
-      } catch (error) {
-        console.error('Embedding regeneration failed:', error)
-        toast.error('Failed to regenerate embeddings', {
-          id: toastIdRef.current,
-          description:
-            error instanceof Error
-              ? error.message
-              : 'An unexpected error occurred.',
-        })
       } finally {
-        setState({ isRegenerating: false, current: 0, total: 0 })
         toastIdRef.current = undefined
       }
     },
-    [queryClient]
+    [processStream]
   )
 
   return {
-    isRegenerating: state.isRegenerating,
-    regenerationProgress: state,
+    isRegenerating: state.isProcessing,
+    regenerationProgress: {
+      isRegenerating: state.isProcessing,
+      current: state.current,
+      total: state.total,
+    },
     regenerateEmbeddings,
   }
 }

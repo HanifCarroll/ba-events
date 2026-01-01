@@ -1,28 +1,77 @@
-import { useState, useCallback, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { enrichEventDescriptionsAction, type DescriptionEnrichComplete } from '../api/enrichment'
+import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
+import {
+  enrichEventDescriptionsAction,
+  type DescriptionEnrichComplete,
+} from '../api/enrichment'
+import type { DescriptionEnrichProgress } from '../api/streaming-types'
 import type { EventWithVenue } from '@/shared/lib/types'
-
-interface EnrichmentState {
-  isEnriching: boolean
-  current: number
-  total: number
-}
 
 export function useBackgroundEnrichment() {
   const router = useRouter()
-  const [state, setState] = useState<EnrichmentState>({
-    isEnriching: false,
-    current: 0,
-    total: 0,
-  })
 
   // Keep track of the current toast ID so we can update it
   const toastIdRef = useRef<string | number | undefined>(undefined)
+  const totalEnrichedRef = useRef(0)
+  const totalToProcessRef = useRef(0)
 
-  // Signal to stop enrichment between batches
-  const shouldStopRef = useRef(false)
+  const { state, processStream, stop } = useStreamingProgress<
+    DescriptionEnrichProgress,
+    DescriptionEnrichComplete
+  >({
+    onProgress: (update) => {
+      // Update toast with progress
+      toast.loading(`Adding descriptions (${update.current}/${update.total})...`, {
+        id: toastIdRef.current,
+        description: update.eventName
+          ? `Processing: ${update.eventName.substring(0, 40)}${update.eventName.length > 40 ? '...' : ''}`
+          : 'Processing...',
+      })
+
+      if (update.success) {
+        totalEnrichedRef.current++
+      }
+    },
+    onComplete: (result) => {
+      totalEnrichedRef.current = result.enriched
+
+      // Refresh UI to show new descriptions
+      router.invalidate()
+
+      // Final toast
+      if (result.enriched === 0) {
+        toast.error('No descriptions added', {
+          id: toastIdRef.current,
+          description: 'Could not extract descriptions from any event pages.',
+        })
+      } else {
+        toast.success(`Added descriptions to ${result.enriched} events`, {
+          id: toastIdRef.current,
+          description: `${result.enriched} of ${result.total} events now have AI-generated descriptions.`,
+        })
+      }
+    },
+    onError: (error) => {
+      console.error('Failed to add descriptions:', error)
+      toast.error('Failed to add descriptions', {
+        id: toastIdRef.current,
+        description: error.message || 'An unexpected error occurred.',
+      })
+    },
+    onStop: () => {
+      // Refresh UI to show new descriptions
+      router.invalidate()
+
+      toast.warning(`Stopped adding descriptions`, {
+        id: toastIdRef.current,
+        description: `Added descriptions to ${totalEnrichedRef.current} of ${totalToProcessRef.current} events. Click Add Descriptions again to continue.`,
+      })
+    },
+    getCurrentFromProgress: (p) => p.current,
+    getTotalFromProgress: (p) => p.total,
+  })
 
   /**
    * Check if an event can be enriched (missing description but has a link)
@@ -40,13 +89,6 @@ export function useBackgroundEnrichment() {
     },
     [canEnrichEvent]
   )
-
-  /**
-   * Stop the current enrichment process (will stop after current batch completes)
-   */
-  const stopEnrichment = useCallback(() => {
-    shouldStopRef.current = true
-  }, [])
 
   /**
    * Enrich selected events using Jina Reader + Haiku 4.5
@@ -68,14 +110,9 @@ export function useBackgroundEnrichment() {
         return
       }
 
-      // Reset stop signal
-      shouldStopRef.current = false
-
-      setState({
-        isEnriching: true,
-        current: 0,
-        total: enrichableEvents.length,
-      })
+      // Reset counters
+      totalEnrichedRef.current = 0
+      totalToProcessRef.current = enrichableEvents.length
 
       // Prepare events for enrichment (include source for language hints and name for progress display)
       const eventsToEnrich = enrichableEvents.map((e) => ({
@@ -93,106 +130,37 @@ export function useBackgroundEnrichment() {
         }
       )
 
-      let totalEnriched = 0
-      let wasStopped = false
-
       try {
         const stream = await enrichEventDescriptionsAction({
           data: { events: eventsToEnrich },
         })
 
-        let finalResult: DescriptionEnrichComplete | null = null
-
-        for await (const update of stream) {
-          // Check if stopped
-          if (shouldStopRef.current) {
-            wasStopped = true
-            break
-          }
-
-          if (update.type === 'progress') {
-            // Update progress state
-            setState((prev) => ({
-              ...prev,
-              current: update.current,
-            }))
-
-            // Update toast with progress
-            toast.loading(
-              `Adding descriptions (${update.current}/${update.total})...`,
-              {
-                id: toastIdRef.current,
-                description: update.eventName
-                  ? `Processing: ${update.eventName.substring(0, 40)}${update.eventName.length > 40 ? '...' : ''}`
-                  : 'Processing...',
-              }
-            )
-
-            if (update.success) {
-              totalEnriched++
-            }
-          } else if (update.type === 'complete') {
-            finalResult = update
-          }
-        }
-
-        // If we broke out early due to stop, use current count
-        if (!wasStopped && finalResult) {
-          totalEnriched = finalResult.enriched
-        }
-
-        // Refresh UI to show new descriptions
-        router.invalidate()
-
-        // Final toast
-        if (wasStopped) {
-          toast.warning(`Stopped adding descriptions`, {
-            id: toastIdRef.current,
-            description: `Added descriptions to ${totalEnriched} of ${eventsToEnrich.length} events. Click Add Descriptions again to continue.`,
-          })
-        } else if (totalEnriched === 0) {
-          toast.error('No descriptions added', {
-            id: toastIdRef.current,
-            description:
-              'Could not extract descriptions from any event pages.',
-          })
-        } else {
-          toast.success(`Added descriptions to ${totalEnriched} events`, {
-            id: toastIdRef.current,
-            description: `${totalEnriched} of ${eventsToEnrich.length} events now have AI-generated descriptions.`,
-          })
-        }
+        await processStream(
+          stream,
+          (update): update is DescriptionEnrichProgress => update.type === 'progress'
+        )
 
         // Call completion callback
         onComplete?.()
-      } catch (error) {
-        console.error('Failed to add descriptions:', error)
-        toast.error('Failed to add descriptions', {
-          id: toastIdRef.current,
-          description:
-            error instanceof Error
-              ? error.message
-              : 'An unexpected error occurred.',
-        })
       } finally {
-        setState({ isEnriching: false, current: 0, total: 0 })
         toastIdRef.current = undefined
-        shouldStopRef.current = false
       }
     },
-    [getEnrichableEvents, router]
+    [getEnrichableEvents, processStream]
   )
 
   return {
-    isEnriching: state.isEnriching,
-    enrichProgress: state,
+    isEnriching: state.isProcessing,
+    enrichProgress: {
+      isEnriching: state.isProcessing,
+      current: state.current,
+      total: state.total,
+    },
     canEnrichEvent,
     getEnrichableEvents,
     enrichEvents,
-    stopEnrichment,
+    stopEnrichment: stop,
   }
 }
 
-export type UseBackgroundEnrichmentReturn = ReturnType<
-  typeof useBackgroundEnrichment
->
+export type UseBackgroundEnrichmentReturn = ReturnType<typeof useBackgroundEnrichment>

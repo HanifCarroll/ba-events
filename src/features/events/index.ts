@@ -44,7 +44,6 @@ export {
   type UseEventFilteringOptions,
 } from './hooks/useEventFiltering'
 export { useBulkActions, type BulkActionType, type UseBulkActionsReturn } from './hooks/useBulkActions'
-export { useBulkSelection } from './hooks/useBulkSelection'
 export { useDescriptionEnrichment, type EnrichStep } from './hooks/useDescriptionEnrichment'
 export { useBackgroundEnrichment } from './hooks/useBackgroundEnrichment'
 export { useEmbeddingRegeneration } from './hooks/useEmbeddingRegeneration'

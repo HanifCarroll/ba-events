@@ -6,6 +6,12 @@
 
 import type { EventInsert } from '@/shared/lib/types'
 import type { EventbriteEvent } from './api'
+import {
+  normalizeTitle,
+  normalizeDescription,
+  normalizeUrl,
+  normalizeImageUrl,
+} from '../shared/normalization'
 
 /**
  * Convert Eventbrite date (YYYY-MM-DD) to ISO datetime string
@@ -71,8 +77,8 @@ export function transformEventbriteEvent(
   const endsAt = event.endDate ? dateToIsoDatetime(event.endDate) : null
 
   return {
-    name: event.name,
-    description_es: event.description || null, // Already available in JSON-LD!
+    name: normalizeTitle(event.name),
+    description_es: normalizeDescription(event.description ?? null), // Already available in JSON-LD!
     description_en: null,
     starts_at: startsAt,
     ends_at: endsAt,
@@ -82,9 +88,9 @@ export function transformEventbriteEvent(
     price: null, // Enriched later via page fetch
     is_free: true, // Default to free, updated during enrichment
     min_age: null, // Not available from Eventbrite
-    image_url: event.image || null,
-    link: event.url,
-    ticket_url: event.url, // Same as event URL for Eventbrite
+    image_url: normalizeImageUrl(event.image ?? null),
+    link: normalizeUrl(event.url),
+    ticket_url: normalizeUrl(event.url), // Same as event URL for Eventbrite
     source: 'eventbrite',
     external_id: extractExternalId(event.url),
     status: 'scheduled',
