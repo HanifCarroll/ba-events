@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { countPastEventsQuery, markPastEventsAction } from '../api/crud'
+import { countPastEventsAction, markPastEventsAction } from '../api/crud'
 
 export function useMarkPastEvents() {
   const router = useRouter()
@@ -10,7 +10,7 @@ export function useMarkPastEvents() {
   const [isMarkingPast, setIsMarkingPast] = useState(false)
 
   async function handleOpenMarkPastDialog() {
-    const { count } = await countPastEventsQuery()
+    const { count } = await countPastEventsAction()
     setPastEventsCount(count)
     setShowMarkPastDialog(true)
   }
