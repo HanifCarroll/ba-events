@@ -18,7 +18,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as ApiEventsRouteImport } from './routes/api/events'
-import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/index'
 import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/index'
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
@@ -73,11 +72,6 @@ const ApiEventsRoute = ApiEventsRouteImport.update({
   path: '/api/events',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminLoginRoute = AdminLoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminVenuesIndexRoute = AdminVenuesIndexRouteImport.update({
   id: '/venues/',
   path: '/venues/',
@@ -126,7 +120,6 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/saved': typeof SavedRoute
-  '/admin/login': typeof AdminLoginRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
@@ -145,7 +138,6 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/saved': typeof SavedRoute
-  '/admin/login': typeof AdminLoginRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin': typeof AdminIndexRoute
@@ -166,7 +158,6 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/saved': typeof SavedRoute
-  '/admin/login': typeof AdminLoginRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
@@ -188,7 +179,6 @@ export interface FileRouteTypes {
     | '/profile'
     | '/register'
     | '/saved'
-    | '/admin/login'
     | '/api/events'
     | '/auth/callback'
     | '/admin/'
@@ -207,7 +197,6 @@ export interface FileRouteTypes {
     | '/profile'
     | '/register'
     | '/saved'
-    | '/admin/login'
     | '/api/events'
     | '/auth/callback'
     | '/admin'
@@ -227,7 +216,6 @@ export interface FileRouteTypes {
     | '/profile'
     | '/register'
     | '/saved'
-    | '/admin/login'
     | '/api/events'
     | '/auth/callback'
     | '/admin/'
@@ -317,13 +305,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/login': {
-      id: '/admin/login'
-      path: '/login'
-      fullPath: '/admin/login'
-      preLoaderRoute: typeof AdminLoginRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/venues/': {
       id: '/admin/venues/'
       path: '/venues'
@@ -384,7 +365,6 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
-  AdminLoginRoute: typeof AdminLoginRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminEventsIdRoute: typeof AdminEventsIdRoute
   AdminEventsImportRoute: typeof AdminEventsImportRoute
@@ -397,7 +377,6 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminLoginRoute: AdminLoginRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminEventsIdRoute: AdminEventsIdRoute,
   AdminEventsImportRoute: AdminEventsImportRoute,
