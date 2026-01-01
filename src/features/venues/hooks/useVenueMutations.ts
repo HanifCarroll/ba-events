@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { createVenueAction, updateVenueAction, deleteVenueAction } from '../api/crud'
 import { queryKeys } from '@/shared/lib/query'
 import { track } from '@/lib/analytics'
@@ -19,6 +20,10 @@ export function useCreateVenue() {
         { queryKey: queryKeys.venues.all },
         (old) => old ? [newVenue, ...old] : [newVenue]
       )
+      toast.success('Venue created successfully')
+    },
+    onError: () => {
+      toast.error('Failed to create venue')
     },
   })
 }
@@ -40,6 +45,10 @@ export function useUpdateVenue() {
         queryKeys.venues.detail(variables.id),
         (old) => old ? { ...old, ...updatedVenue } : undefined
       )
+      toast.success('Venue updated successfully')
+    },
+    onError: () => {
+      toast.error('Failed to update venue')
     },
   })
 }
@@ -55,6 +64,10 @@ export function useDeleteVenue() {
         { queryKey: queryKeys.venues.all },
         (old) => old?.filter((v) => v.id !== venueId)
       )
+      toast.success('Venue deleted successfully')
+    },
+    onError: () => {
+      toast.error('Failed to delete venue')
     },
   })
 }

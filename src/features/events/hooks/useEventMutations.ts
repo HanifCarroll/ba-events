@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { createEventAction, updateEventAction, deleteEventAction } from '../api/crud'
 import { queryKeys } from '@/shared/lib/query'
 import { track } from '@/lib/analytics'
@@ -17,6 +18,10 @@ export function useCreateEvent() {
       })
       // Invalidate to get fresh data with venue join
       queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
+      toast.success('Event created successfully')
+    },
+    onError: () => {
+      toast.error('Failed to create event')
     },
   })
 }
@@ -39,6 +44,10 @@ export function useUpdateEvent() {
         queryKeys.events.detail(variables.id),
         (old) => old ? { ...old, ...updatedEvent } : undefined
       )
+      toast.success('Event updated successfully')
+    },
+    onError: () => {
+      toast.error('Failed to update event')
     },
   })
 }
@@ -55,6 +64,10 @@ export function useDeleteEvent() {
         { queryKey: queryKeys.events.all },
         (old) => old?.filter((e) => e.id !== eventId)
       )
+      toast.success('Event deleted successfully')
+    },
+    onError: () => {
+      toast.error('Failed to delete event')
     },
   })
 }
