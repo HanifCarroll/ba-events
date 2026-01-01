@@ -420,7 +420,7 @@ export async function getTonightsEvents() {
   return data as EventWithVenue[]
 }
 
-// Hybrid semantic + filter search
+// Hybrid semantic + filter search (filtering done in PostgreSQL for performance)
 export async function hybridEventSearch(
   query: string,
   filters: EventFilters,
@@ -429,53 +429,24 @@ export async function hybridEventSearch(
   // Generate embedding for the search query
   const queryEmbedding = await generateEmbedding(query)
 
-  // Get semantic results with low threshold - short queries vs long docs have lower similarity
-  const { data: semanticResults, error } = await supabase.rpc(
-    'match_events_with_venues',
+  // Call the PostgreSQL function with all filters applied server-side
+  const { data, error } = await supabase.rpc(
+    'match_events_with_venues_filtered',
     {
       query_embedding: queryEmbedding,
       match_threshold: 0.2,
-      match_count: 50, // Get more for filtering
+      match_count: matchCount,
+      filter_starts_after: filters.startsAfter || null,
+      filter_starts_before: filters.startsBefore || null,
+      filter_neighborhood: filters.neighborhood || null,
+      filter_is_free: filters.isFree || null,
+      filter_max_price: filters.maxPrice ?? null,
+      filter_categories: filters.categories && filters.categories.length > 0 ? filters.categories : null,
     }
   )
 
   if (error) throw error
-  if (!semanticResults || semanticResults.length === 0) return []
-
-  // Apply post-filters to semantic results
-  let filtered = semanticResults as EventWithVenue[]
-
-  if (filters.startsAfter) {
-    filtered = filtered.filter(
-      e => new Date(e.starts_at) >= new Date(filters.startsAfter!)
-    )
-  }
-  if (filters.startsBefore) {
-    filtered = filtered.filter(
-      e => new Date(e.starts_at) <= new Date(filters.startsBefore!)
-    )
-  }
-  if (filters.neighborhood) {
-    filtered = filtered.filter(
-      e => e.venue_neighborhood === filters.neighborhood
-    )
-  }
-  if (filters.isFree) {
-    filtered = filtered.filter(e => e.is_free)
-  }
-  if (filters.maxPrice !== undefined) {
-    filtered = filtered.filter(
-      e => e.price === null || e.price <= filters.maxPrice!
-    )
-  }
-  if (filters.categories && filters.categories.length > 0) {
-    filtered = filtered.filter(e =>
-      e.categories.some(c => filters.categories!.includes(c))
-    )
-  }
-
-  // Return top results (already sorted by similarity from database)
-  return filtered.slice(0, matchCount)
+  return (data as EventWithVenue[]) || []
 }
 
 // ============================================================================
@@ -539,4 +510,41 @@ export async function upsertEvents(events: EventInsert[], client?: SupabaseClien
   }
 
   return { inserted, updated }
+}
+
+// ============================================================================
+// STATS OPERATIONS (optimized with COUNT queries)
+// ============================================================================
+
+export async function getAdminStatsFromDb() {
+  // Run all count queries in parallel for efficiency
+  const [venueCount, eventCount, upcomingCount, scheduledCount] = await Promise.all([
+    // Count venues
+    supabase.from('venues').select('*', { count: 'exact', head: true }),
+    // Count all events
+    supabase.from('events').select('*', { count: 'exact', head: true }),
+    // Count upcoming events (starts_at > now AND status = scheduled)
+    supabase
+      .from('events')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'scheduled')
+      .gt('starts_at', new Date().toISOString()),
+    // Count scheduled events
+    supabase
+      .from('events')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'scheduled'),
+  ])
+
+  if (venueCount.error) throw venueCount.error
+  if (eventCount.error) throw eventCount.error
+  if (upcomingCount.error) throw upcomingCount.error
+  if (scheduledCount.error) throw scheduledCount.error
+
+  return {
+    venueCount: venueCount.count || 0,
+    eventCount: eventCount.count || 0,
+    upcomingCount: upcomingCount.count || 0,
+    scheduledCount: scheduledCount.count || 0,
+  }
 }

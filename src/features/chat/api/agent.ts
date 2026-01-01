@@ -9,7 +9,17 @@ import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
 import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
-import type { EventWithVenue, EventFilters, APIMessage, ContentBlock, Venue, RefinementSuggestion, StreamEvent } from '@/shared/lib/types'
+import type {
+  EventWithVenue,
+  EventFilters,
+  APIMessage,
+  ContentBlock,
+  Venue,
+  RefinementSuggestion,
+  StreamEvent,
+  SearchEventsToolInput,
+  GetVenueDetailsToolInput,
+} from '@/shared/lib/types'
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -49,26 +59,8 @@ const chatRequestSchema = z.object({
   locale: z.enum(['en', 'es']).default('en'),
 })
 
-// Tool input schema for search_events
-const searchEventsInputSchema = z.object({
-  query: z.string().optional(),
-  categories: z.array(z.string()).optional(),
-  neighborhood: z.string().optional(),
-  isFree: z.boolean().optional(),
-  maxPrice: z.number().optional(),
-  timeFilter: z.enum(['tonight', 'tomorrow', 'weekend', 'week']).optional(),
-  limit: z.number().min(1).max(10).optional(),
-})
-
-type SearchEventsInput = z.infer<typeof searchEventsInputSchema>
-
-// Tool input schema for get_venue_details
-const getVenueDetailsInputSchema = z.object({
-  venueId: z.string().optional(),
-  venueName: z.string().optional(),
-})
-
-type GetVenueDetailsInput = z.infer<typeof getVenueDetailsInputSchema>
+// Note: Tool input types are defined in shared/lib/types.ts (SearchEventsToolInput, GetVenueDetailsToolInput)
+// The Zod schemas below are kept for potential runtime validation if needed
 
 // System prompt for the events assistant
 const getSystemPrompt = (locale: 'en' | 'es') => {
@@ -240,7 +232,7 @@ function formatInBA(utcDateStr: string): string {
 }
 
 // Convert tool input to EventFilters
-function toolInputToFilters(input: SearchEventsInput): EventFilters {
+function toolInputToFilters(input: SearchEventsToolInput): EventFilters {
   const filters: EventFilters = {}
   const now = getNowInBA()
   const currentHour = getHours(now)
@@ -318,7 +310,7 @@ function toolInputToFilters(input: SearchEventsInput): EventFilters {
 }
 
 // Execute the get_venue_details tool
-async function executeGetVenueDetails(input: GetVenueDetailsInput): Promise<Venue | null> {
+async function executeGetVenueDetails(input: GetVenueDetailsToolInput): Promise<Venue | null> {
   console.log('[DEBUG] Get venue details input:', JSON.stringify(input))
 
   // If we have a venue ID, fetch directly
@@ -363,7 +355,7 @@ function formatVenueResult(venue: Venue | null): string {
 }
 
 // Execute the search_events tool
-async function executeSearchEvents(input: SearchEventsInput): Promise<EventWithVenue[]> {
+async function executeSearchEvents(input: SearchEventsToolInput): Promise<EventWithVenue[]> {
   const filters = toolInputToFilters(input)
   const limit = input.limit ?? 5 // Default to 5 - matches system prompt instruction
   console.log('[DEBUG] Tool input:', JSON.stringify(input))
@@ -413,7 +405,7 @@ function formatToolResult(events: EventWithVenue[]): string {
 // Generate refinement suggestions based on search context
 interface SuggestionContext {
   originalQuery: string
-  toolInput: SearchEventsInput
+  toolInput: SearchEventsToolInput
   results: EventWithVenue[]
   locale: 'en' | 'es'
 }
@@ -513,10 +505,80 @@ function generateSuggestions(context: SuggestionContext): RefinementSuggestion[]
   return suggestions.slice(0, 4)
 }
 
+// Type for parsed tool use from stream - discriminated union based on tool name
+interface SearchEventsToolUse {
+  id: string
+  name: 'search_events'
+  input: SearchEventsToolInput
+}
+
+interface GetVenueDetailsToolUse {
+  id: string
+  name: 'get_venue_details'
+  input: GetVenueDetailsToolInput
+}
+
+type ParsedToolUse = SearchEventsToolUse | GetVenueDetailsToolUse
+
+/**
+ * Type guard for search_events tool input.
+ * Validates that the input has the expected shape for search_events.
+ */
+function isSearchEventsInput(input: unknown): input is SearchEventsToolInput {
+  if (typeof input !== 'object' || input === null) {
+    return false
+  }
+  const obj = input as Record<string, unknown>
+  // All fields are optional, but if present they should have correct types
+  if (obj.query !== undefined && typeof obj.query !== 'string') return false
+  if (obj.categories !== undefined && !Array.isArray(obj.categories)) return false
+  if (obj.vibes !== undefined && !Array.isArray(obj.vibes)) return false
+  if (obj.neighborhoods !== undefined && !Array.isArray(obj.neighborhoods)) return false
+  if (obj.neighborhood !== undefined && typeof obj.neighborhood !== 'string') return false
+  if (obj.dateFrom !== undefined && typeof obj.dateFrom !== 'string') return false
+  if (obj.dateTo !== undefined && typeof obj.dateTo !== 'string') return false
+  if (obj.priceMin !== undefined && typeof obj.priceMin !== 'number') return false
+  if (obj.priceMax !== undefined && typeof obj.priceMax !== 'number') return false
+  if (obj.maxPrice !== undefined && typeof obj.maxPrice !== 'number') return false
+  if (obj.isFree !== undefined && typeof obj.isFree !== 'boolean') return false
+  if (obj.timeFilter !== undefined && !['tonight', 'tomorrow', 'weekend', 'week'].includes(obj.timeFilter as string)) return false
+  if (obj.limit !== undefined && typeof obj.limit !== 'number') return false
+  return true
+}
+
+/**
+ * Type guard for get_venue_details tool input.
+ * Validates that the input has the expected shape for get_venue_details.
+ */
+function isGetVenueDetailsInput(input: unknown): input is GetVenueDetailsToolInput {
+  if (typeof input !== 'object' || input === null) {
+    return false
+  }
+  const obj = input as Record<string, unknown>
+  // At least one of venueId or venueName should be present
+  if (obj.venueId !== undefined && typeof obj.venueId !== 'string') return false
+  if (obj.venueName !== undefined && typeof obj.venueName !== 'string') return false
+  return obj.venueId !== undefined || obj.venueName !== undefined
+}
+
+/**
+ * Type guard for search_events tool - narrows ParsedToolUse to SearchEventsToolUse
+ */
+function isSearchEventsTool(toolUse: ParsedToolUse): toolUse is SearchEventsToolUse {
+  return toolUse.name === 'search_events'
+}
+
+/**
+ * Type guard for get_venue_details tool - narrows ParsedToolUse to GetVenueDetailsToolUse
+ */
+function isGetVenueDetailsTool(toolUse: ParsedToolUse): toolUse is GetVenueDetailsToolUse {
+  return toolUse.name === 'get_venue_details'
+}
+
 // Process stream and collect response data
 interface StreamResult {
   text: string
-  toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>
+  toolUses: ParsedToolUse[]
   stopReason: string | null
 }
 
@@ -526,7 +588,7 @@ async function processStream(
   streamText: boolean = true // Only stream text if true (false for first call with potential tool use)
 ): Promise<StreamResult> {
   let text = ''
-  const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
+  const toolUses: ParsedToolUse[] = []
   let currentToolUse: { id: string; name: string; inputJson: string } | null = null
   let stopReason: string | null = null
 
@@ -550,11 +612,24 @@ async function processStream(
       }
     } else if (event.type === 'content_block_stop') {
       if (currentToolUse) {
-        toolUses.push({
-          id: currentToolUse.id,
-          name: currentToolUse.name,
-          input: JSON.parse(currentToolUse.inputJson) as Record<string, unknown>,
-        })
+        const rawInput: unknown = JSON.parse(currentToolUse.inputJson)
+
+        // Use type guards to validate and type the input
+        if (currentToolUse.name === 'search_events' && isSearchEventsInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'search_events',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'get_venue_details' && isGetVenueDetailsInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'get_venue_details',
+            input: rawInput,
+          })
+        } else {
+          console.warn(`[DEBUG] Invalid tool input for ${currentToolUse.name}:`, rawInput)
+        }
         currentToolUse = null
       }
     } else if (event.type === 'message_delta') {
@@ -670,18 +745,28 @@ export const chat = createServerFn({ method: 'POST' })
 
           // Handle tool use
           if (result1.stopReason === 'tool_use' && result1.toolUses.length > 0) {
-            // Build assistant message content
+            // Build assistant message content - ToolUseBlock already has proper discriminated union type
             const assistantContent: ContentBlock[] = []
             if (result1.text) {
               assistantContent.push({ type: 'text', text: result1.text })
             }
             for (const toolUse of result1.toolUses) {
-              assistantContent.push({
-                type: 'tool_use',
-                id: toolUse.id,
-                name: toolUse.name,
-                input: toolUse.input,
-              })
+              // Type-safe building of ToolUseBlock based on tool name
+              if (isSearchEventsTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'search_events',
+                  input: toolUse.input,
+                })
+              } else if (isGetVenueDetailsTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'get_venue_details',
+                  input: toolUse.input,
+                })
+              }
             }
 
             messages.push({ role: 'assistant', content: assistantContent as Anthropic.ContentBlockParam[] })
@@ -691,14 +776,14 @@ export const chat = createServerFn({ method: 'POST' })
             const toolResults: Anthropic.ToolResultBlockParam[] = []
             const toolResultsForHistory: ContentBlock[] = []
             let searchEvents: EventWithVenue[] = []
-            let searchInput: SearchEventsInput | null = null
+            let searchInput: SearchEventsToolInput | null = null
 
             for (const toolUse of result1.toolUses) {
-              if (toolUse.name === 'search_events') {
+              // Use type guards for proper type narrowing instead of assertions
+              if (isSearchEventsTool(toolUse)) {
                 try {
-                  const input = toolUse.input as SearchEventsInput
-                  searchInput = input
-                  const events = await executeSearchEvents(input)
+                  searchInput = toolUse.input
+                  const events = await executeSearchEvents(toolUse.input)
                   searchEvents = events
 
                   // DON'T send events yet - wait for Claude to filter them
@@ -714,10 +799,9 @@ export const chat = createServerFn({ method: 'POST' })
                   toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
                   toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
                 }
-              } else if (toolUse.name === 'get_venue_details') {
+              } else if (isGetVenueDetailsTool(toolUse)) {
                 try {
-                  const input = toolUse.input as GetVenueDetailsInput
-                  const venue = await executeGetVenueDetails(input)
+                  const venue = await executeGetVenueDetails(toolUse.input)
 
                   const resultContent = formatVenueResult(venue)
                   toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })

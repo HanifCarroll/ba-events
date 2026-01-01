@@ -170,12 +170,61 @@ export interface EventFilters {
 
 // Content block types for Claude API messages
 export type TextBlock = { type: 'text'; text: string }
-export type ToolUseBlock = {
+
+// Tool input types for the agent - corresponds to the tool definitions in agent.ts
+export interface SearchEventsToolInput {
+  /** Natural language search query for semantic matching */
+  query?: string
+  /** Event categories to filter by */
+  categories?: string[]
+  /** Vibe/mood descriptors for the search */
+  vibes?: string[]
+  /** Buenos Aires neighborhoods to filter by */
+  neighborhoods?: string[]
+  /** Buenos Aires neighborhood to filter by (single) - for backwards compatibility */
+  neighborhood?: string
+  /** Start date filter (ISO string) */
+  dateFrom?: string
+  /** End date filter (ISO string) */
+  dateTo?: string
+  /** Minimum price in ARS */
+  priceMin?: number
+  /** Maximum price in ARS */
+  priceMax?: number
+  /** Set to true to only show free events */
+  isFree?: boolean
+  /** Maximum price in ARS - alias for priceMax for backwards compatibility */
+  maxPrice?: number
+  /** Time period filter */
+  timeFilter?: 'tonight' | 'tomorrow' | 'weekend' | 'week'
+  /** Maximum number of events to return */
+  limit?: number
+}
+
+export interface GetVenueDetailsToolInput {
+  /** The venue ID (if known from a previous event search) */
+  venueId?: string
+  /** The name of the venue to search for */
+  venueName?: string
+}
+
+// Discriminated union for type-safe tool use blocks
+export type SearchEventsToolUseBlock = {
   type: 'tool_use'
   id: string
-  name: string
-  input: Record<string, unknown>
+  name: 'search_events'
+  input: SearchEventsToolInput
 }
+
+export type GetVenueDetailsToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'get_venue_details'
+  input: GetVenueDetailsToolInput
+}
+
+export type ToolUseBlock = SearchEventsToolUseBlock | GetVenueDetailsToolUseBlock
+
 export type ToolResultBlock = {
   type: 'tool_result'
   tool_use_id: string

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { cn } from '@/shared/lib/utils'
 import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
@@ -10,7 +11,7 @@ interface ChatMessageProps {
   suggestionsDisabled?: boolean
 }
 
-export function ChatMessage({ message, onSuggestionSelect, suggestionsDisabled }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, onSuggestionSelect, suggestionsDisabled }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const hasContent = message.content.trim().length > 0
   const hasEvents = message.events && message.events.length > 0
@@ -88,4 +89,4 @@ export function ChatMessage({ message, onSuggestionSelect, suggestionsDisabled }
       </div>
     </div>
   )
-}
+})

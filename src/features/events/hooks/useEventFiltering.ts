@@ -139,64 +139,61 @@ export function useEventFiltering({ events, searchParams, navigate }: UseEventFi
     )
   }
 
-  // Compute data gap counts for "data quality" tab
-  const dataGapCounts = useMemo<DataGapCounts>(() => {
+  // Compute data gap counts and tab counts in a single pass (O(n) instead of O(2n))
+  const { dataGapCounts, tabCounts } = useMemo(() => {
     let missingDescription = 0
     let missingVenue = 0
     let missingCategories = 0
     let complete = 0
     let incomplete = 0
-
-    events.forEach((event) => {
-      // Only count scheduled/upcoming events
-      if (event.status !== 'scheduled') return
-
-      if (hasDataGap(event)) {
-        incomplete++
-        if (!event.description_es && event.link) {
-          missingDescription++
-        }
-        if (!event.venue_id) {
-          missingVenue++
-        }
-        if (!event.categories || event.categories.length === 0) {
-          missingCategories++
-        }
-      } else {
-        complete++
-      }
-    })
-
-    return {
-      all: incomplete,
-      complete,
-      missing_description: missingDescription,
-      missing_venue: missingVenue,
-      missing_categories: missingCategories,
-    }
-  }, [events])
-
-  // Compute tab counts
-  const tabCounts = useMemo<TabCounts>(() => {
     let pendingReview = 0
     let past = 0
 
     events.forEach((event) => {
+      // Tab counts for all statuses
       if (event.status === 'pending_review') {
         pendingReview++
       }
       if (event.status === 'past') {
         past++
       }
+
+      // Data gap counts only for scheduled events
+      if (event.status === 'scheduled') {
+        if (hasDataGap(event)) {
+          incomplete++
+          if (!event.description_es && event.link) {
+            missingDescription++
+          }
+          if (!event.venue_id) {
+            missingVenue++
+          }
+          if (!event.categories || event.categories.length === 0) {
+            missingCategories++
+          }
+        } else {
+          complete++
+        }
+      }
     })
 
-    return {
+    const dataGapCounts: DataGapCounts = {
+      all: incomplete,
+      complete,
+      missing_description: missingDescription,
+      missing_venue: missingVenue,
+      missing_categories: missingCategories,
+    }
+
+    const tabCounts: TabCounts = {
       all: events.length,
-      needs_attention: dataGapCounts.all,
+      needs_attention: incomplete,
       pending_review: pendingReview,
       past: past,
     }
-  }, [events, dataGapCounts.all])
+
+    return { dataGapCounts, tabCounts }
+  }, [events])
 
   // Filter events based on tab + search + venue + data gap + completeness
   const filteredEvents = useMemo(() => {

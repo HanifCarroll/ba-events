@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 import { getVenues, updateVenue } from '@/shared/lib/db/client'
 import { requireAdminAccess, mapToNeighborhood } from '@/shared/lib/admin-utils'
 import type { Venue, Neighborhood } from '@/shared/lib/types'
@@ -8,24 +9,56 @@ import type {
   NominatimEnrichUpdate,
 } from '@/shared/lib/streaming-types'
 
-// Nominatim API response types
-interface NominatimAddress {
-  house_number?: string
-  road?: string
-  neighbourhood?: string
-  suburb?: string
-  city?: string
-  state?: string
-  postcode?: string
-  country?: string
-}
+// ============================================================================
+// NOMINATIM API RESPONSE VALIDATION
+// ============================================================================
 
-interface NominatimResult {
-  display_name: string
-  address: NominatimAddress
-  lat: string
-  lon: string
-}
+/**
+ * Zod schema for Nominatim address details
+ * Based on: https://nominatim.org/release-docs/latest/api/Output/#addressdetails
+ */
+const nominatimAddressSchema = z.object({
+  house_number: z.string().optional(),
+  road: z.string().optional(),
+  neighbourhood: z.string().optional(),
+  suburb: z.string().optional(),
+  city: z.string().optional(),
+  town: z.string().optional(),
+  village: z.string().optional(),
+  municipality: z.string().optional(),
+  state: z.string().optional(),
+  postcode: z.string().optional(),
+  country: z.string().optional(),
+  country_code: z.string().optional(),
+}).passthrough() // Allow additional fields we don't use
+
+/**
+ * Zod schema for a single Nominatim search result
+ * Based on: https://nominatim.org/release-docs/latest/api/Output/
+ */
+const nominatimResultSchema = z.object({
+  place_id: z.number().optional(),
+  licence: z.string().optional(),
+  osm_type: z.string().optional(),
+  osm_id: z.number().optional(),
+  boundingbox: z.array(z.string()).optional(),
+  lat: z.string(),
+  lon: z.string(),
+  display_name: z.string(),
+  class: z.string().optional(),
+  type: z.string().optional(),
+  importance: z.number().optional(),
+  address: nominatimAddressSchema,
+}).passthrough() // Allow additional fields
+
+/**
+ * Zod schema for Nominatim search API response (array of results)
+ */
+const nominatimResponseSchema = z.array(nominatimResultSchema)
+
+// Inferred types from Zod schemas
+type NominatimAddress = z.infer<typeof nominatimAddressSchema>
+type NominatimResult = z.infer<typeof nominatimResultSchema>
 
 // Enrichment types
 export interface VenueEnrichmentInput {
@@ -87,8 +120,69 @@ function buildAddress(address: NominatimAddress): string | null {
 }
 
 /**
+ * Attempt to extract partial data from an invalid Nominatim response.
+ * Used as a fallback when full schema validation fails.
+ */
+function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
+  if (!Array.isArray(rawData) || rawData.length === 0) {
+    return null
+  }
+
+  const firstResult = rawData[0]
+  if (typeof firstResult !== 'object' || firstResult === null) {
+    return null
+  }
+
+  const result = firstResult as Record<string, unknown>
+
+  // At minimum we need lat, lon, and display_name
+  if (
+    typeof result.lat !== 'string' ||
+    typeof result.lon !== 'string' ||
+    typeof result.display_name !== 'string'
+  ) {
+    return null
+  }
+
+  // Build a partial result with what we can extract
+  const address: NominatimAddress = {}
+
+  if (typeof result.address === 'object' && result.address !== null) {
+    const rawAddress = result.address as Record<string, unknown>
+    if (typeof rawAddress.house_number === 'string') address.house_number = rawAddress.house_number
+    if (typeof rawAddress.road === 'string') address.road = rawAddress.road
+    if (typeof rawAddress.neighbourhood === 'string') address.neighbourhood = rawAddress.neighbourhood
+    if (typeof rawAddress.suburb === 'string') address.suburb = rawAddress.suburb
+    if (typeof rawAddress.city === 'string') address.city = rawAddress.city
+    if (typeof rawAddress.town === 'string') address.town = rawAddress.town
+    if (typeof rawAddress.village === 'string') address.village = rawAddress.village
+    if (typeof rawAddress.municipality === 'string') address.municipality = rawAddress.municipality
+    if (typeof rawAddress.state === 'string') address.state = rawAddress.state
+    if (typeof rawAddress.postcode === 'string') address.postcode = rawAddress.postcode
+    if (typeof rawAddress.country === 'string') address.country = rawAddress.country
+    if (typeof rawAddress.country_code === 'string') address.country_code = rawAddress.country_code
+  }
+
+  return {
+    lat: result.lat,
+    lon: result.lon,
+    display_name: result.display_name,
+    address,
+    // Optional fields with type checks
+    ...(typeof result.place_id === 'number' && { place_id: result.place_id }),
+    ...(typeof result.osm_type === 'string' && { osm_type: result.osm_type }),
+    ...(typeof result.osm_id === 'number' && { osm_id: result.osm_id }),
+    ...(typeof result.class === 'string' && { class: result.class }),
+    ...(typeof result.type === 'string' && { type: result.type }),
+    ...(typeof result.importance === 'number' && { importance: result.importance }),
+  }
+}
+
+/**
  * Call Nominatim API to search for a venue
  * Includes required User-Agent header per Nominatim usage policy
+ * Validates response with Zod schema for type safety
+ * Falls back to partial data extraction if validation fails
  */
 async function searchNominatim(venueName: string): Promise<NominatimResult | null> {
   const query = encodeURIComponent(`${venueName} Buenos Aires Argentina`)
@@ -105,9 +199,29 @@ async function searchNominatim(venueName: string): Promise<NominatimResult | nul
     throw new Error(`Nominatim API error: ${response.status} ${response.statusText}`)
   }
 
-  const results = await response.json() as NominatimResult[]
+  const rawData: unknown = await response.json()
 
-  if (!results || results.length === 0) {
+  // Validate response with Zod schema
+  const parseResult = nominatimResponseSchema.safeParse(rawData)
+
+  if (!parseResult.success) {
+    // Log the validation error but don't crash - try to extract partial data
+    console.warn('[Nominatim] Schema validation failed:', parseResult.error.format())
+    console.warn('[Nominatim] Attempting to extract partial data from response')
+
+    const partialResult = extractPartialNominatimData(rawData)
+    if (partialResult) {
+      console.log('[Nominatim] Successfully extracted partial data')
+      return partialResult
+    }
+
+    console.error('[Nominatim] Failed to extract partial data from invalid response')
+    return null
+  }
+
+  const results = parseResult.data
+
+  if (results.length === 0) {
     return null
   }
 
@@ -250,14 +364,15 @@ export const enrichVenuesWithNominatimAction = createServerFn({ method: 'POST' }
       }
 
       // Yield progress update after each venue
-      yield {
+      const progressUpdate: VenueEnrichmentProgress = {
         type: 'progress',
         current: i + 1,
         total: venues.length,
         venueName: result.venueName,
         success: result.success,
         error: result.error,
-      } as VenueEnrichmentProgress
+      }
+      yield progressUpdate
 
       // Rate limiting: wait 1 second between requests (except for last one)
       if (i < venues.length - 1) {
@@ -268,10 +383,11 @@ export const enrichVenuesWithNominatimAction = createServerFn({ method: 'POST' }
     console.log(`[venue-enrichment] Completed: ${enriched}/${venues.length} enriched, ${errors.length} errors`)
 
     // Yield final completion result
-    yield {
+    const completeUpdate: VenueEnrichmentComplete = {
       type: 'complete',
       enriched,
       total: venues.length,
       errors,
-    } as VenueEnrichmentComplete
+    }
+    yield completeUpdate
   })
