@@ -25,41 +25,137 @@ This is a **TanStack Start** project with:
 - Vite + Nitro
 - Tailwind CSS v4
 
-### Routing
+## Architecture
+
+This project uses **Vertical Slice Architecture** - code is organized by feature rather than technical layer.
+
+### Key Principles
+
+1. **Features own their logic** - Each feature (`auth`, `chat`, `events`, `import`, `venues`) contains its own API functions, hooks, and types
+2. **Shared code is truly shared** - Only code used by multiple features goes in `shared/`
+3. **Routes are thin** - Route files handle routing logic only; UI components live in `-components/` folders
+4. **Feature exports via index.ts** - Each feature has an `index.ts` that exports its public API
+
+### Path Aliases
+
+```typescript
+import { something } from '@/features/events'      // Feature modules
+import { Button } from '@/shared/ui/button'        // Shared UI
+import { supabase } from '@/shared/lib/db/client'  // Shared utilities
+```
+
+### Project Structure
+
+```
+src/
+├── features/                    # Feature modules (business logic)
+│   ├── auth/                    # Authentication
+│   │   ├── api/                 # Server functions
+│   │   │   ├── client.ts        # Browser-side Supabase auth
+│   │   │   ├── session.ts       # Server session management
+│   │   │   └── rate-limit.ts    # Upstash Redis rate limiting
+│   │   └── hooks/               # React hooks
+│   ├── chat/                    # AI chat feature
+│   │   ├── api/                 # Claude agent, streaming
+│   │   └── lib/                 # Message utilities
+│   ├── events/                  # Event management
+│   │   ├── api/                 # CRUD, enrichment, moderation, stats
+│   │   └── hooks/               # useEventAdmin, useEventFiltering, etc.
+│   ├── import/                  # Event import wizard
+│   │   ├── api/                 # Source handlers (passline, eventbrite, etc.)
+│   │   ├── hooks/               # useImportWizard state machine
+│   │   └── scrapers/            # Web scrapers
+│   └── venues/                  # Venue management
+│       ├── api/                 # CRUD, enrichment, review
+│       └── hooks/               # useVenueMutations, etc.
+│
+├── shared/                      # Truly shared code
+│   ├── ui/                      # shadcn/ui + custom components
+│   │   └── data-table/          # Reusable data table
+│   ├── lib/                     # Utilities
+│   │   ├── ai/                  # Embeddings, enrichment helpers
+│   │   ├── db/                  # Supabase client
+│   │   ├── utils/               # Helpers (cn, formatting)
+│   │   ├── admin-utils.ts       # Admin auth helpers
+│   │   ├── api-response.ts      # API response utilities
+│   │   ├── schemas.ts           # Zod validation
+│   │   ├── types.ts             # TypeScript types
+│   │   ├── query.ts             # React Query keys & setup
+│   │   └── analytics.ts         # PostHog tracking
+│   ├── hooks/                   # Shared hooks
+│   │   ├── useBulkSelection.ts  # Generic bulk selection
+│   │   └── useStreamingProgress.ts # Streaming operation progress
+│   └── providers/               # Context providers
+│       └── AuthProvider.tsx     # Auth context
+│
+├── routes/                      # TanStack Router pages (thin)
+│   ├── __root.tsx               # Root layout with providers
+│   ├── -components/             # Route-specific components
+│   │   ├── chat/                # Chat UI components
+│   │   └── events/              # Event display components
+│   ├── admin/
+│   │   ├── events/
+│   │   │   ├── -components/     # Event admin UI
+│   │   │   │   └── import/      # Import wizard step components
+│   │   │   ├── index.tsx        # Event list
+│   │   │   ├── $id.tsx          # Edit event
+│   │   │   ├── new.tsx          # Create event
+│   │   │   └── import.tsx       # Import wizard
+│   │   └── venues/
+│   │       ├── -components/     # Venue admin UI
+│   │       ├── index.tsx        # Venue list
+│   │       ├── $id.tsx          # Edit venue
+│   │       └── new.tsx          # Create venue
+│   ├── auth/
+│   │   └── callback.tsx         # OAuth callback
+│   └── api/
+│       └── events.ts            # External API endpoint
+│
+├── paraglide/                   # i18n (auto-generated)
+├── styles.css                   # Global styles
+└── router.tsx                   # Router configuration
+
+messages/                        # i18n translation files
+├── en.json
+└── es.json
+
+supabase/                        # Database
+├── schema.sql                   # Full schema
+├── seed.sql                     # Sample data
+└── migrations/                  # SQL migrations
+
+docs/                            # Documentation
+├── decisions.md                 # Architectural decisions
+├── event-import-enrichment.md   # Import & enrichment guide
+└── prd.md                       # Product requirements
+```
+
+### Route Colocation Pattern
+
+Routes use TanStack Router's `-components/` naming convention:
+
+```
+src/routes/admin/events/
+├── index.tsx              # Route file (thin)
+├── $id.tsx                # Dynamic route
+└── -components/           # Route-specific UI (ignored by router)
+    ├── EventForm.tsx
+    ├── EventTable.tsx
+    └── import/
+        ├── SourceStep.tsx
+        └── ConfigureStep.tsx
+```
+
+The `-` prefix tells TanStack Router to ignore these folders when generating routes.
+
+## Routing
 
 Routes are in `src/routes/`. The route tree is auto-generated in `src/routeTree.gen.ts`.
-
-```
-src/routes/
-├── __root.tsx           # Root layout with auth provider
-├── index.tsx            # Home/chat page (/)
-├── login.tsx            # Login page
-├── register.tsx         # Registration page
-├── saved.tsx            # Saved events
-├── profile.tsx          # User profile
-├── admin/
-│   ├── index.tsx        # Admin dashboard
-│   ├── login.tsx        # Admin login
-│   ├── events/
-│   │   ├── index.tsx    # Event list
-│   │   ├── new.tsx      # Create event
-│   │   ├── $id.tsx      # Edit event
-│   │   └── import.tsx   # Import wizard
-│   └── venues/
-│       ├── index.tsx    # Venue list
-│       ├── new.tsx      # Create venue
-│       ├── $id.tsx      # Edit venue
-│       └── import.tsx   # CSV import
-├── auth/
-│   └── callback.tsx     # OAuth callback
-└── api/
-    └── events.ts        # External event submission API
-```
 
 Create new routes by adding files to `src/routes/`. Dynamic routes use `$param` syntax:
 - `src/routes/admin/events/$id.tsx` → `/admin/events/:id`
 
-### Server Functions
+## Server Functions
 
 Use TanStack Start server functions for API calls:
 
@@ -68,7 +164,6 @@ import { createServerFn } from '@tanstack/react-start'
 
 // Simple server function (no input)
 const getEvents = createServerFn({ method: 'GET' }).handler(async () => {
-  // This runs on the server
   return db.query('SELECT * FROM events')
 })
 
@@ -80,6 +175,28 @@ const createEvent = createServerFn({ method: 'POST' })
   })
 ```
 
+### Admin Server Function Pattern
+
+For admin operations, use the `requireAdminAccess()` helper:
+
+```tsx
+import { requireAdminAccess } from '@/shared/lib/admin-utils'
+
+export const createEventAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: EventInsert) => data)
+  .handler(async ({ data }) => {
+    const client = await requireAdminAccess() // Throws if not admin
+    const embedding = await generateEventEmbedding(data)
+    return createEvent({ ...data, embedding }, client)
+  })
+```
+
+This pattern:
+1. Checks if user is authenticated
+2. Checks if user has admin role
+3. Returns a Supabase client scoped to that user for RLS
+4. Throws `Error('Unauthorized: Admin access required')` if not admin
+
 ## UI Components
 
 **Always use shadcn/ui components** for UI elements. If a component isn't installed, add it:
@@ -88,10 +205,9 @@ const createEvent = createServerFn({ method: 'POST' })
 bunx shadcn@latest add button
 bunx shadcn@latest add card
 bunx shadcn@latest add input
-# etc.
 ```
 
-Components will be installed to `src/components/ui/`.
+Components are installed to `src/shared/ui/`.
 
 Before building custom UI, check if shadcn has a component: https://ui.shadcn.com/docs/components
 
@@ -124,19 +240,31 @@ See `supabase/schema.sql` for the complete schema including:
 - Event status enum
 - pgvector indexes for semantic search
 
+### Query Keys
+
+Use centralized query keys from `@/shared/lib/query`:
+
+```tsx
+import { queryKeys } from '@/shared/lib/query'
+
+// In hooks
+queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
+queryClient.setQueriesData({ queryKey: queryKeys.venues.all }, updater)
+```
+
 ## AI/LLM
 
-Use the Anthropic SDK with Claude for the AI agent. The agent is in `src/lib/ai/agent.ts`.
+Use the Anthropic SDK with Claude for the AI agent. The agent is in `src/features/chat/api/agent.ts`.
 
 Tools available to Claude:
 - `search_events` - Semantic and filtered event search
 - `get_venue_details` - Venue information lookup
 
-For embeddings, use OpenAI via `src/lib/ai/embeddings.ts`.
+For embeddings, use OpenAI via `src/shared/lib/ai/embeddings.ts`.
 
 ## Internationalization (i18n)
 
-Uses Paraglide JS with English (en) and Spanish (es) locales.
+Uses Paraglide JS with English (en) and Spanish (es) locales. Spanish is the base locale.
 
 ### Usage
 ```tsx
@@ -166,7 +294,7 @@ const locale = getLocale() // 'en' or 'es'
 Uses Supabase Auth with the `AuthProvider` context.
 
 ```tsx
-import { useAuthContext } from '@/components/AuthProvider'
+import { useAuthContext } from '@/shared/providers/AuthProvider'
 
 function Component() {
   const { user, isAdmin, signOut } = useAuthContext()
@@ -176,6 +304,118 @@ function Component() {
 
 Roles are stored in `profiles.role` ('user' or 'admin').
 
+### Route Protection
+
+Use `beforeLoad` hooks for auth checks:
+
+```tsx
+// In route file
+import { requireAuth, requireAdmin } from '@/features/auth/api/session'
+
+export const Route = createFileRoute('/admin/')({
+  beforeLoad: requireAdmin,  // Redirects to / if not admin
+  component: AdminDashboard,
+})
+```
+
+## Analytics
+
+Uses PostHog for event tracking. Track events in mutations:
+
+```tsx
+import { track } from '@/shared/lib/analytics'
+
+// In mutation onSuccess
+track('admin:event_created', { eventId: result.id })
+```
+
+Event types are defined in `src/shared/lib/analytics.ts`.
+
+## Common Patterns
+
+### Mutation Hooks with Side Effects
+
+```tsx
+export function useCreateEvent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (data: EventInsert) => createEventAction({ data }),
+    onSuccess: (result) => {
+      track('admin:event_created', { id: result.id })
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
+      toast.success('Event created')
+    },
+    onError: () => {
+      toast.error('Failed to create event')
+    },
+  })
+}
+```
+
+### Bulk Selection Hook
+
+Use `useBulkSelection` for multi-select operations:
+
+```tsx
+import { useBulkSelection } from '@/shared/hooks/useBulkSelection'
+
+const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } =
+  useBulkSelection(items)
+```
+
+### Streaming Progress Hook
+
+For long-running operations with progress:
+
+```tsx
+import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
+
+const { state, processStream, stop } = useStreamingProgress({
+  onProgress: (update) => console.log(update.current, update.total),
+  getCurrentFromProgress: (p) => p.current,
+  getTotalFromProgress: (p) => p.total,
+})
+```
+
+### API Response Utilities
+
+For the public API endpoint:
+
+```tsx
+import { apiSuccess, apiList, apiError, withCache } from '@/shared/lib/api-response'
+
+// In API handler
+return apiSuccess(data)
+return apiList(items, totalCount)
+return apiError('Not found', 404)
+```
+
+## Environment Variables
+
+```bash
+# Supabase (server-side)
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+
+# Supabase (browser-side - VITE_ prefix required for client access)
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+
+# AI APIs
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+
+# Rate Limiting (optional for local dev)
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+
+# Admin API (optional for local dev)
+ADMIN_API_KEY=
+```
+
+**Note:** Variables with `VITE_` prefix are exposed to the browser. Never prefix secrets with `VITE_`.
+
 ## Testing
 
 ```bash
@@ -183,88 +423,7 @@ bun test              # Run all tests
 bun test --watch      # Watch mode
 ```
 
-Tests use Vitest with React Testing Library.
-
-## Project Structure
-
-```
-src/
-├── components/
-│   ├── ui/              # shadcn components (auto-generated)
-│   ├── admin/           # Admin dashboard components
-│   │   └── import/      # 7-step import wizard components
-│   ├── chat/            # Chat UI components
-│   ├── data-table/      # Reusable data table components
-│   ├── events/          # Event display components
-│   ├── AuthProvider.tsx # Auth context
-│   ├── MainLayout.tsx   # Sidebar navigation layout
-│   └── LanguageSwitcher.tsx
-├── hooks/               # Custom React hooks
-│   ├── useEventAdmin.ts       # Event admin orchestration
-│   ├── useEventFiltering.ts   # Event filtering logic
-│   ├── useEventMutations.ts   # Event CRUD mutations
-│   ├── useVenueMutations.ts   # Venue CRUD mutations
-│   ├── useBulkActions.ts      # Bulk select/edit/delete
-│   ├── useImportWizard.ts     # Multi-step import wizard state
-│   ├── useBackgroundEnrichment.ts # Track enrichment progress
-│   └── useAuthContext.ts      # Auth context hook
-├── lib/
-│   ├── ai/              # AI/LLM code
-│   │   ├── agent.ts     # Claude agent with tools
-│   │   ├── embeddings.ts # OpenAI embeddings
-│   │   └── enrichment.ts # Event description enrichment
-│   ├── admin/           # Admin server functions
-│   │   ├── index.ts     # Main exports
-│   │   ├── events.ts    # Event CRUD
-│   │   ├── venues.ts    # Venue CRUD
-│   │   ├── moderation.ts # Event moderation
-│   │   ├── enrichment.ts # Batch enrichment
-│   │   ├── stats.ts     # Dashboard stats
-│   │   ├── utils.ts     # Shared utilities
-│   │   └── sources/     # Import source handlers
-│   ├── auth/            # Authentication
-│   │   ├── client.ts    # Browser-side Supabase auth
-│   │   ├── session.ts   # Server session management
-│   │   └── rate-limit.ts # Upstash Redis rate limiting
-│   ├── chat/            # Chat feature
-│   │   ├── messages.ts  # Message utilities
-│   │   └── saved.ts     # Saved events logic
-│   ├── db/              # Database layer
-│   │   ├── client.ts    # Supabase queries
-│   │   └── server.ts    # Server-side Supabase client
-│   ├── scrapers/        # Event source scrapers
-│   │   ├── passline/
-│   │   ├── eventbrite/
-│   │   ├── ba-tourism/
-│   │   ├── meetup/
-│   │   ├── index.ts
-│   │   └── venue-matcher.ts
-│   ├── utils/           # Shared utilities
-│   │   ├── index.ts     # General utilities (cn, etc.)
-│   │   └── formatting.ts # Date/time formatting
-│   ├── analytics.ts     # PostHog tracking
-│   ├── query.ts         # React Query setup
-│   ├── schemas.ts       # Zod validation schemas
-│   ├── source-metadata.ts # Data gaps per source
-│   └── types.ts         # TypeScript types
-├── paraglide/           # i18n (auto-generated)
-├── routes/              # TanStack Router pages
-├── styles.css           # Global styles
-└── router.tsx           # Router configuration
-
-messages/                # i18n translation files
-├── en.json
-└── es.json
-
-supabase/                # Database
-├── schema.sql           # Full schema
-└── seed.sql             # Sample data
-
-docs/                    # Documentation
-├── decisions.md         # Architectural decisions
-├── event-import-enrichment.md
-└── prd.md
-```
+Tests use Vitest with React Testing Library. Test infrastructure is set up but test coverage is minimal.
 
 ## Best Practices
 

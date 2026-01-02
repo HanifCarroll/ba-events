@@ -37,6 +37,7 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
 | UI Components | shadcn/ui + Radix |
 | Forms | React Hook Form + Zod |
 | i18n | Paraglide JS |
+| Analytics | PostHog |
 | Rate Limiting | Upstash Redis |
 | Browser Automation | Playwright |
 
@@ -74,7 +75,7 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_ANON_KEY=your-anon-key
 
-   # Supabase (browser-side)
+   # Supabase (browser-side - VITE_ prefix required)
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-key
 
@@ -82,11 +83,11 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
    OPENAI_API_KEY=sk-your-openai-key
    ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
 
-   # Rate Limiting
+   # Rate Limiting (optional for local dev)
    UPSTASH_REDIS_REST_URL=your-upstash-url
    UPSTASH_REDIS_REST_TOKEN=your-upstash-token
 
-   # Admin API
+   # Admin API (optional for local dev)
    ADMIN_API_KEY=your-admin-api-key
    ```
 
@@ -110,39 +111,98 @@ bun run preview  # Preview production build
 bun test         # Run tests
 ```
 
-## Project Structure
+## Architecture
+
+This project uses **Vertical Slice Architecture** - code is organized by feature rather than by technical layer. Each feature contains its own API functions, hooks, and types.
+
+### Project Structure
 
 ```
 src/
-├── components/
-│   ├── admin/        # Admin dashboard components
-│   │   └── import/   # 7-step import wizard
-│   ├── chat/         # Chat UI components
-│   ├── data-table/   # Reusable data tables
-│   ├── events/       # Event card and list components
-│   └── ui/           # shadcn/ui components
-├── hooks/            # Custom React hooks
-├── lib/
-│   ├── ai.ts         # Claude agent with tools
-│   ├── admin.ts      # Admin server functions
-│   ├── auth.ts       # Authentication functions
-│   ├── embeddings.ts # OpenAI embeddings
-│   ├── enrichment.ts # Event description enrichment
-│   ├── supabase.ts   # Database queries
-│   ├── schemas.ts    # Zod validation schemas
-│   └── scrapers/     # Event source scrapers
-├── paraglide/        # i18n translations (auto-generated)
-├── routes/
-│   ├── admin/        # Admin routes
-│   ├── auth/         # OAuth callbacks
-│   └── api/          # API endpoints
-├── styles.css        # Global styles
-└── router.tsx        # Router configuration
+├── features/                    # Feature modules (business logic)
+│   ├── auth/                    # Authentication
+│   │   ├── api/                 # Server functions (client.ts, session.ts, rate-limit.ts)
+│   │   └── hooks/               # React hooks
+│   ├── chat/                    # AI chat feature
+│   │   ├── api/                 # Claude agent, message handling
+│   │   └── lib/                 # Chat utilities
+│   ├── events/                  # Event management
+│   │   ├── api/                 # CRUD, enrichment, moderation, stats
+│   │   └── hooks/               # useEventAdmin, useEventFiltering, etc.
+│   ├── import/                  # Event import wizard
+│   │   ├── api/                 # Source handlers (passline, eventbrite, etc.)
+│   │   ├── hooks/               # useImportWizard state machine
+│   │   └── scrapers/            # Web scrapers
+│   └── venues/                  # Venue management
+│       ├── api/                 # CRUD, enrichment, review
+│       └── hooks/               # useVenueMutations, etc.
+│
+├── shared/                      # Truly shared code
+│   ├── ui/                      # shadcn/ui + custom components
+│   │   └── data-table/          # Reusable data table
+│   ├── lib/                     # Utilities
+│   │   ├── ai/                  # Embeddings, enrichment
+│   │   ├── db/                  # Supabase client
+│   │   ├── utils/               # Helpers (cn, formatting)
+│   │   ├── schemas.ts           # Zod validation
+│   │   ├── types.ts             # TypeScript types
+│   │   ├── query.ts             # React Query setup
+│   │   └── analytics.ts         # PostHog tracking
+│   ├── hooks/                   # Shared hooks (useBulkSelection, useStreamingProgress)
+│   └── providers/               # Context providers (AuthProvider)
+│
+├── routes/                      # TanStack Router pages (thin)
+│   ├── __root.tsx               # Root layout
+│   ├── -components/             # Route-specific components (colocation)
+│   │   ├── chat/                # Chat UI components
+│   │   └── events/              # Event display components
+│   ├── admin/
+│   │   ├── events/
+│   │   │   ├── -components/     # Event admin UI
+│   │   │   │   └── import/      # Import wizard steps
+│   │   │   ├── index.tsx        # Event list
+│   │   │   ├── $id.tsx          # Edit event
+│   │   │   ├── new.tsx          # Create event
+│   │   │   └── import.tsx       # Import wizard
+│   │   └── venues/
+│   │       ├── -components/     # Venue admin UI
+│   │       ├── index.tsx        # Venue list
+│   │       ├── $id.tsx          # Edit venue
+│   │       └── new.tsx          # Create venue
+│   ├── auth/
+│   │   └── callback.tsx         # OAuth callback
+│   └── api/
+│       └── events.ts            # External API endpoint
+│
+├── paraglide/                   # i18n (auto-generated)
+├── styles.css                   # Global styles
+└── router.tsx                   # Router configuration
 
-messages/             # i18n translation files (en.json, es.json)
-supabase/             # Database schema and seeds
-docs/                 # Project documentation
+messages/                        # i18n translation files
+├── en.json
+└── es.json
+
+supabase/                        # Database
+├── schema.sql                   # Full schema
+├── seed.sql                     # Sample data
+└── migrations/                  # SQL migrations
+
+docs/                            # Documentation
+├── decisions.md                 # Architectural decisions
+├── event-import-enrichment.md   # Import & enrichment guide
+└── prd.md                       # Product requirements
 ```
+
+### Path Aliases
+
+The project uses these TypeScript path aliases:
+- `@/*` → `src/*`
+- `@/features/*` → `src/features/*`
+- `@/shared/*` → `src/shared/*`
+
+### Route Colocation Pattern
+
+Routes use TanStack Router's `-components/` naming convention to colocate UI components with their routes. The `-` prefix tells the router to ignore these folders when generating routes.
 
 ## AI Agent Tools
 
