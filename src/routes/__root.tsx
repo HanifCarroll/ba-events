@@ -115,6 +115,8 @@ function ClientPostHogProvider({ children }: { children: ReactNode }) {
             },
           },
           loaded: (ph) => {
+            // Expose globally for debugging
+            ;(window as unknown as Record<string, unknown>).posthog = ph
             if (import.meta.env.DEV) {
               ph.opt_out_capturing()
             }
