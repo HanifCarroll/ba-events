@@ -2,6 +2,11 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant short {
+  @media (max-height: 750px) {
+    @slot;
+  }
+}
 
 /* Always dark mode for this aesthetic */
 html {
