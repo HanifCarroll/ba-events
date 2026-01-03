@@ -6,10 +6,12 @@ import {
   enrichMeetupVenuesAction,
   enrichEventbriteVenuesAction,
   enrichPasslineVenuesAction,
+  enrichLumaVenuesAction,
   type PasslineVenueEnrichComplete as VenueEnrichComplete,
   type BATourismVenueEnrichComplete,
   type MeetupVenueEnrichComplete,
   type EventbriteVenueEnrichComplete,
+  type LumaVenueEnrichComplete,
   extractPasslineVenuesBatchClient,
 } from '@/features/import'
 import type { EventWithVenue } from '@/shared/lib/types'
@@ -21,13 +23,13 @@ interface VenueEnrichmentState {
 }
 
 // Sources that support venue enrichment
-// BA Tourism, Meetup, Eventbrite: server-side fetching
+// BA Tourism, Meetup, Eventbrite, Luma: server-side fetching
 // Passline: client-side fetching (Cloudflare blocks server requests)
-const VENUE_ENRICHABLE_SOURCES: readonly string[] = ['ba-tourism', 'meetup', 'eventbrite', 'passline']
+const VENUE_ENRICHABLE_SOURCES: readonly string[] = ['ba-tourism', 'meetup', 'eventbrite', 'passline', 'luma']
 
 /**
  * Hook for enriching events with missing venue data
- * Supports BA Tourism, Meetup, Eventbrite, and Passline events
+ * Supports BA Tourism, Meetup, Eventbrite, Passline, and Luma events
  */
 export function useVenueEnrichment() {
   const router = useRouter()
@@ -56,6 +58,8 @@ export function useVenueEnrichment() {
         return event.link.includes('eventbrite')
       case 'passline':
         return event.link.includes('passline.com')
+      case 'luma':
+        return event.link.includes('lu.ma') || event.link.includes('luma.com')
       default:
         return false
     }
@@ -226,6 +230,35 @@ export function useVenueEnrichment() {
             enriched: finalResult.enriched,
             venuesCreated: finalResult.venuesCreated,
             errors: finalResult.errors.length + (extractedVenues.length - venueData.length),
+          }
+        }
+        case 'luma': {
+          const lumaEvents = events.map((e) => ({
+            eventId: e.id,
+            eventUrl: e.link || '',
+            eventName: e.name,
+          }))
+
+          // Consume streaming response
+          const lumaStream = await enrichLumaVenuesAction({
+            data: { events: lumaEvents },
+          })
+
+          let lumaFinalResult: LumaVenueEnrichComplete | null = null
+          for await (const update of lumaStream) {
+            if (update.type === 'complete') {
+              lumaFinalResult = update
+            }
+          }
+
+          if (!lumaFinalResult) {
+            return { enriched: 0, venuesCreated: 0, errors: lumaEvents.length }
+          }
+
+          return {
+            enriched: lumaFinalResult.enriched,
+            venuesCreated: lumaFinalResult.venuesCreated,
+            errors: lumaFinalResult.errors.length,
           }
         }
         default:

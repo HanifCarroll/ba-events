@@ -59,11 +59,14 @@ export {
   importLumaEventsBatchAction,
   getLumaEventsNeedingDescriptionEnrichmentAction,
   enrichLumaDescriptionsAction,
+  enrichLumaVenuesAction,
   type LumaPreviewEvent,
   type LumaEvent,
   type LumaDescriptionEnrichmentInput,
+  type LumaVenueEnrichmentInput,
   type ImportComplete as LumaImportComplete,
   type DescriptionEnrichComplete as LumaDescriptionEnrichComplete,
+  type VenueEnrichComplete as LumaVenueEnrichComplete,
 } from './api/luma'
 
 // Hooks

@@ -27,3 +27,10 @@ export {
   fetchLumaDescriptionFromDetailPage,
 } from './description-enrichment'
 export type { LumaDescriptionResult, EnrichmentEvent as LumaEnrichmentEvent } from './description-enrichment'
+
+// Venue enrichment
+export {
+  enrichLumaEventsWithVenues,
+  fetchLumaVenueFromDetailPage,
+} from './venue-enrichment'
+export type { LumaVenueResult, VenueEnrichmentEvent as LumaVenueEnrichmentEvent } from './venue-enrichment'

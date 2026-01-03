@@ -18,6 +18,9 @@ import type {
   DescriptionEnrichProgress,
   DescriptionEnrichComplete,
   DescriptionEnrichUpdate,
+  VenueEnrichProgress,
+  VenueEnrichComplete,
+  VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
 
 export interface LumaPreviewEvent {
@@ -30,7 +33,7 @@ export interface LumaPreviewEvent {
 export type { LumaEvent }
 
 // Re-export streaming types
-export type { ImportProgress, ImportComplete, ImportUpdate, DescriptionEnrichProgress, DescriptionEnrichComplete, DescriptionEnrichUpdate }
+export type { ImportProgress, ImportComplete, ImportUpdate, DescriptionEnrichProgress, DescriptionEnrichComplete, DescriptionEnrichUpdate, VenueEnrichProgress, VenueEnrichComplete, VenueEnrichUpdate }
 
 /**
  * Fetch Luma events server-side
@@ -334,4 +337,141 @@ export const enrichLumaDescriptionsAction = createServerFn({ method: 'POST' })
       total: events.length,
       errors: errors.length > 0 ? errors : undefined,
     } as DescriptionEnrichComplete
+  })
+
+// ============================================================================
+// LUMA VENUE ENRICHMENT
+// ============================================================================
+
+export interface LumaVenueEnrichmentInput {
+  eventId: string
+  eventUrl: string
+  eventName?: string
+}
+
+/**
+ * Enrich Luma events with venue data by visiting individual event pages.
+ * Used for events that were imported without venue information.
+ *
+ * For each event:
+ * 1. Fetches venue from the Luma event detail page
+ * 2. Matches to existing venue or creates a new one
+ * 3. Updates the event with the venue_id
+ */
+export const enrichLumaVenuesAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { events: LumaVenueEnrichmentInput[] }) => data)
+  .handler(async function* ({ data }): AsyncGenerator<VenueEnrichUpdate> {
+    const client = await requireAdminAccess()
+    const { events } = data
+
+    if (events.length === 0) {
+      yield { type: 'complete', enriched: 0, venuesCreated: 0, total: 0, errors: [] } as VenueEnrichComplete
+      return
+    }
+
+    console.log(`[Admin] Starting Luma venue enrichment for ${events.length} events...`)
+
+    const { chromium } = await import('playwright')
+    const { fetchLumaVenueFromDetailPage } = await import('../scrapers/luma')
+
+    const browser = await chromium.launch({ headless: true })
+    let enriched = 0
+    let venuesCreated = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    try {
+      const concurrency = 3
+      const delayMs = 1000
+
+      // Process in batches for concurrency control
+      for (let i = 0; i < events.length; i += concurrency) {
+        const batch = events.slice(i, i + concurrency)
+
+        // Process batch in parallel
+        const batchResults = await Promise.all(
+          batch.map(async (event) => {
+            const page = await browser.newPage()
+            try {
+              const venue = await fetchLumaVenueFromDetailPage(page, event.eventUrl)
+
+              if (venue) {
+                // Try to match existing venue first
+                const venueMatch = await matchVenue(venue.name)
+                let venueId: string
+                let action: 'matched' | 'created' = 'matched'
+
+                if (venueMatch.venue) {
+                  venueId = venueMatch.venue.id
+                } else {
+                  // Create new venue
+                  const newVenue = await createVenue({
+                    name: venue.name,
+                    address: venue.address,
+                    neighborhood: null,
+                  }, client)
+                  venueId = newVenue.id
+                  action = 'created'
+                }
+
+                // Update event with venue_id
+                await updateEvent(event.eventId, { venue_id: venueId }, client)
+
+                console.log(`[Admin] ${action === 'created' ? 'Created' : 'Matched'} venue "${venue.name}" for: ${event.eventName || event.eventId}`)
+                return { event, venue, venueId, action, success: true, error: undefined }
+              } else {
+                return { event, venue: null, venueId: null, action: 'error' as const, success: false, error: 'No venue found on page' }
+              }
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+              console.error(`[Admin] Error enriching venue for ${event.eventName || event.eventId}:`, errorMsg)
+              return { event, venue: null, venueId: null, action: 'error' as const, success: false, error: errorMsg }
+            } finally {
+              await page.close()
+            }
+          })
+        )
+
+        // Process results and yield progress
+        for (const result of batchResults) {
+          if (result.success && result.venue) {
+            enriched++
+            if (result.action === 'created') {
+              venuesCreated++
+            }
+          } else if (result.error) {
+            errors.push({ id: result.event.eventId, error: result.error })
+          }
+
+          // Calculate current progress (account for batch position)
+          const currentIndex = events.indexOf(result.event) + 1
+
+          yield {
+            type: 'progress',
+            current: currentIndex,
+            total: events.length,
+            eventName: result.event.eventName || result.event.eventId,
+            action: result.action,
+            venueName: result.venue?.name,
+          } as VenueEnrichProgress
+        }
+
+        // Delay between batches (except after last batch)
+        if (i + concurrency < events.length) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+        }
+      }
+    } finally {
+      await browser.close()
+    }
+
+    console.log(`[Admin] Luma venue enrichment complete: ${enriched} enriched, ${venuesCreated} created, ${errors.length} errors`)
+
+    // Yield final completion result
+    yield {
+      type: 'complete',
+      enriched,
+      venuesCreated,
+      total: events.length,
+      errors,
+    } as VenueEnrichComplete
   })
