@@ -139,6 +139,12 @@ Use the search_events tool with these parameters:
 - The user will see cards for ALL returned events - if your text doesn't mention an event, they'll wonder why the card is there
 - If an event has hasDetails: false, mention that limited info is available and suggest checking the event link for more details
 
+**CRITICAL - No hallucinations:**
+- You may ONLY discuss events that appear in the search results returned by the tool
+- NEVER invent, assume, or mention events that weren't in the tool response
+- If an event name doesn't appear exactly in the search results, do not mention it
+- When uncertain whether an event was returned, leave it out of your response
+
 **When there are no results:**
 - Acknowledge you didn't find matches for their specific request
 - Mention that they can try the suggestions below to explore other options
