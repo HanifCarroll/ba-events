@@ -72,9 +72,6 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
 
       {/* SEO Info Section - provides indexable content for search engines (hidden on mobile and short viewports) */}
       <section className="hidden md:block short:md:hidden mt-8 short:mt-4 max-w-xl text-center">
-        <h2 className="text-sm font-medium text-muted-foreground/70 mb-2">
-          {m.home_about_title()}
-        </h2>
         <p className="text-xs text-muted-foreground/50 leading-relaxed">
           {m.home_about_text()}
         </p>
