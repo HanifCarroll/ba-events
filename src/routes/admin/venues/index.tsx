@@ -42,7 +42,6 @@ import { VenueDuplicatesPanel } from './-components/VenueDuplicatesPanel'
 import { VenueAddressNamesPanel } from './-components/VenueAddressNamesPanel'
 import { VenueBulkActionBar } from './-components/VenueBulkActionBar'
 import { MergeVenueDialog } from './-components/MergeVenueDialog'
-import { RenameVenueDialog } from './-components/RenameVenueDialog'
 import { DismissedDuplicatesDialog } from './-components/DismissedDuplicatesDialog'
 import { listVenues, deleteVenueAction, useVenueReview, useVenueBulkActions, useVenueNominatimEnrichment } from '@/features/venues'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
@@ -533,7 +532,6 @@ function VenueListPage() {
             venueEvents={review.addressVenueEvents}
             isLoading={review.isLoadingAddressNames}
             hasStarted={review.hasStartedAddressAnalysis}
-            onRename={review.openRenameDialog}
             onRefresh={review.refetchAddressNames}
             onStart={review.startAddressAnalysis}
           />
@@ -547,15 +545,6 @@ function VenueListPage() {
         onConfirm={review.handleMerge}
         onCancel={review.closeMergeDialog}
         isLoading={review.isMerging}
-      />
-
-      {/* Rename venue dialog */}
-      <RenameVenueDialog
-        venue={review.selectedAddressVenue?.venue ?? null}
-        suggestedName={review.selectedAddressVenue?.suggestedName}
-        onConfirm={review.handleRename}
-        onCancel={review.closeRenameDialog}
-        isLoading={review.isRenaming}
       />
 
       {/* Dismissed duplicates dialog */}

@@ -240,5 +240,17 @@
   "common_edit": "Editar",
   "admin_tab_missing_neighborhood": "Sin Barrio",
   "admin_no_missing_neighborhood": "Todos los Lugares Tienen Barrio",
-  "admin_no_missing_neighborhood_desc": "Todos los lugares tienen un barrio asignado."
+  "admin_no_missing_neighborhood_desc": "Todos los lugares tienen un barrio asignado.",
+  "admin_edit_venue": "Editar Lugar",
+  "admin_edit_venue_desc": "Actualizar la información de este lugar.",
+  "admin_venue_name": "Nombre",
+  "admin_neighborhood": "Barrio",
+  "admin_select_neighborhood": "Seleccionar barrio",
+  "admin_search_neighborhoods": "Buscar barrios...",
+  "admin_address": "Dirección",
+  "admin_street_address": "Dirección de calle",
+  "admin_website": "Sitio web",
+  "admin_instagram": "Instagram",
+  "admin_failed_to_save_venue": "Error al guardar el lugar",
+  "admin_delete_venue_warning": "Este lugar tiene {count} eventos asociados. Eliminarlo quitará la asociación del lugar de esos eventos."
 }

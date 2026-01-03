@@ -240,5 +240,17 @@
   "common_edit": "Edit",
   "admin_tab_missing_neighborhood": "Missing Neighborhood",
   "admin_no_missing_neighborhood": "All Venues Have Neighborhoods",
-  "admin_no_missing_neighborhood_desc": "Every venue has a neighborhood assigned."
+  "admin_no_missing_neighborhood_desc": "Every venue has a neighborhood assigned.",
+  "admin_edit_venue": "Edit Venue",
+  "admin_edit_venue_desc": "Update this venue's information.",
+  "admin_venue_name": "Name",
+  "admin_neighborhood": "Neighborhood",
+  "admin_select_neighborhood": "Select neighborhood",
+  "admin_search_neighborhoods": "Search neighborhoods...",
+  "admin_address": "Address",
+  "admin_street_address": "Street address",
+  "admin_website": "Website",
+  "admin_instagram": "Instagram",
+  "admin_failed_to_save_venue": "Failed to save venue",
+  "admin_delete_venue_warning": "This venue has {count} associated events. Deleting it will remove the venue association from those events."
 }

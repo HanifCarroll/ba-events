@@ -1,12 +1,35 @@
-import { RefreshCw, CheckCircle2, Pencil, Loader2, Play, Calendar, ExternalLink, Link2 } from 'lucide-react'
+import { useState } from 'react'
+import {
+  RefreshCw,
+  CheckCircle2,
+  Pencil,
+  Loader2,
+  Play,
+  Calendar,
+  ExternalLink,
+  Link2,
+  Trash2,
+} from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@/shared/ui/button'
 import { Card } from '@/shared/ui/card'
 import { Badge } from '@/shared/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/shared/ui/alert-dialog'
 import type { AddressLikeVenue } from '@/features/venues'
 import type { VenueEventPreview } from '@/features/venues'
+import { useDeleteVenue } from '@/features/venues'
 import type { Venue } from '@/shared/lib/types'
 import { formatShortDate } from '@/shared/lib/utils/formatting'
+import { EditVenueDialog } from './EditVenueDialog'
 import * as m from '@/paraglide/messages'
 
 interface VenueAddressNamesPanelProps {
@@ -14,7 +37,6 @@ interface VenueAddressNamesPanelProps {
   venueEvents: Record<string, VenueEventPreview[]>
   isLoading: boolean
   hasStarted: boolean
-  onRename: (venue: Venue, suggestedName?: string) => void
   onRefresh: () => void
   onStart: () => void
 }
@@ -24,10 +46,34 @@ export function VenueAddressNamesPanel({
   venueEvents,
   isLoading,
   hasStarted,
-  onRename,
   onRefresh,
   onStart,
 }: VenueAddressNamesPanelProps) {
+  const [editingVenue, setEditingVenue] = useState<Venue | null>(null)
+  const [editingSuggestedName, setEditingSuggestedName] = useState<string | undefined>()
+  const [deletingVenue, setDeletingVenue] = useState<Venue | null>(null)
+  const deleteMutation = useDeleteVenue()
+
+  const handleEdit = (venue: Venue, suggestedName?: string) => {
+    setEditingVenue(venue)
+    setEditingSuggestedName(suggestedName)
+  }
+
+  const handleCloseEdit = () => {
+    setEditingVenue(null)
+    setEditingSuggestedName(undefined)
+  }
+
+  const handleDelete = async () => {
+    if (!deletingVenue) return
+    try {
+      await deleteMutation.mutateAsync(deletingVenue.id)
+      setDeletingVenue(null)
+    } catch {
+      // Error handled by mutation
+    }
+  }
+
   // Show start button if analysis hasn't been started yet
   if (!hasStarted && !isLoading) {
     return (
@@ -107,10 +153,18 @@ export function VenueAddressNamesPanel({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => onRename(venue, suggestedName)}
+                    onClick={() => handleEdit(venue, suggestedName)}
                   >
                     <Pencil className="h-4 w-4 mr-1" />
-                    {m.admin_rename()}
+                    {m.common_edit()}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setDeletingVenue(venue)}
+                  >
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
@@ -161,6 +215,54 @@ export function VenueAddressNamesPanel({
           )
         })}
       </div>
+
+      {/* Edit Dialog */}
+      <EditVenueDialog
+        venue={editingVenue}
+        suggestedName={editingSuggestedName}
+        onClose={handleCloseEdit}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deletingVenue} onOpenChange={() => setDeletingVenue(null)}>
+        <AlertDialogContent className="bg-card border-border/50">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-foreground">
+              {m.admin_delete_venue()}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              {deletingVenue &&
+                m.admin_delete_venue_confirm({ name: deletingVenue.name })}
+              {deletingVenue && venueEvents[deletingVenue.id]?.length > 0 && (
+                <span className="block mt-2 text-amber-500">
+                  {m.admin_delete_venue_warning({
+                    count: venueEvents[deletingVenue.id].length,
+                  })}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-muted-foreground">
+              {m.common_cancel()}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {m.common_deleting()}
+                </>
+              ) : (
+                m.common_delete()
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
