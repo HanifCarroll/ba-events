@@ -14,7 +14,7 @@ import {
   SummaryStep,
 } from './-components/import'
 
-const validSources: ImportSource[] = ['passline', 'eventbrite', 'ba-tourism', 'meetup', 'csv']
+const validSources: ImportSource[] = ['passline', 'eventbrite', 'ba-tourism', 'meetup', 'luma', 'csv']
 
 export const Route = createFileRoute('/admin/events/import')({
   validateSearch: (search: Record<string, unknown>): { source?: ImportSource } => {
@@ -200,6 +200,7 @@ function ImportEventsPage() {
             onFetchEventbrite={wizard.fetchEventbriteEvents}
             onFetchBaTourism={wizard.fetchBaTourismEvents}
             onFetchMeetup={wizard.fetchMeetupEvents}
+            onFetchLuma={wizard.fetchLumaEvents}
             onCSVFile={wizard.handleCSVFile}
             onClearCSV={wizard.reset}
           />
@@ -221,7 +222,9 @@ function ImportEventsPage() {
                     ? wizard.baTourismEvents.length
                     : wizard.source === 'meetup'
                       ? wizard.meetupEvents.length
-                      : 0
+                      : wizard.source === 'luma'
+                        ? wizard.lumaEvents.length
+                        : 0
             }
             onUpdateVenueEdit={wizard.updateVenueEdit}
             onCreateVenues={wizard.createVenuesAndProceed}
@@ -236,6 +239,7 @@ function ImportEventsPage() {
             eventbriteEvents={wizard.eventbriteEvents}
             baTourismEvents={wizard.baTourismEvents}
             meetupEvents={wizard.meetupEvents}
+            lumaEvents={wizard.lumaEvents}
             csvRows={wizard.csvRows}
             csvValidCount={wizard.csvValidCount}
             csvErrorCount={wizard.csvErrorCount}

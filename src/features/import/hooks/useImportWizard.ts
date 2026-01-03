@@ -14,14 +14,18 @@ import {
   importMeetupEventsBatchAction,
   getMeetupEventsNeedingEnrichmentAction,
   enrichMeetupVenuesAction,
+  fetchLumaEventsAction,
+  importLumaEventsBatchAction,
   type PasslinePreviewEvent,
   type EventbritePreviewEvent,
   type BATourismPreviewEvent,
   type MeetupPreviewEvent,
+  type LumaPreviewEvent,
   type PasslineImportComplete,
   type EventbriteImportComplete,
   type BATourismImportComplete,
   type MeetupImportComplete,
+  type LumaImportComplete,
   type MeetupVenueEnrichComplete,
   type WeekContext,
 } from '@/features/import'
@@ -36,7 +40,7 @@ import { mapToNeighborhood } from '@/shared/lib/admin-utils'
 import { CATEGORIES, EVENT_STATUSES } from '@/shared/lib/types'
 import type { Neighborhood, Category, EventStatus, EventInsert } from '@/shared/lib/types'
 
-export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'csv'
+export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'luma' | 'csv'
 export type WizardStep = 'source' | 'configure' | 'venues' | 'select' | 'confirm' | 'enrich' | 'summary'
 
 export interface ImportResult {
@@ -109,6 +113,7 @@ export function useImportWizard(
   const [baTourismEvents, setBaTourismEvents] = useState<BATourismPreviewEvent[]>([])
   const [baTourismWeekContext, setBaTourismWeekContext] = useState<WeekContext | null>(null)
   const [meetupEvents, setMeetupEvents] = useState<MeetupPreviewEvent[]>([])
+  const [lumaEvents, setLumaEvents] = useState<LumaPreviewEvent[]>([])
 
   // CSV-specific state
   const [csvRows, setCsvRows] = useState<ParsedCSVRow[]>([])
@@ -222,8 +227,26 @@ export function useImportWizard(
       return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
     }
 
+    if (source === 'luma') {
+      const venueMap = new Map<string, UnmatchedVenue>()
+      lumaEvents
+        .filter(e => e.venueMatch.matchType === 'none')
+        .forEach(e => {
+          const name = e.luma.venue?.name || 'Unknown Venue'
+          const eventId = e.luma.api_id
+          const existing = venueMap.get(name)
+          if (existing) {
+            existing.count++
+            existing.eventIds.push(eventId)
+          } else {
+            venueMap.set(name, { name, count: 1, eventIds: [eventId] })
+          }
+        })
+      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
+    }
+
     return []
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents])
+  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
 
   // Find similar venue names for merge suggestions
   const similarVenues = useMemo(() => {
@@ -594,6 +617,44 @@ export function useImportWizard(
     }
   }, [startDate, endDate, chunkDateRange, dedupeByMeetupId])
 
+  const fetchLumaEventsHandler = useCallback(async () => {
+    setIsFetching(true)
+    setError(null)
+
+    try {
+      // Fetch, filter, and process events server-side
+      const { events: data } = await fetchLumaEventsAction({ data: { startDate, endDate } })
+
+      setLumaEvents(data)
+
+      // Initialize venue edits for unmatched venues (for optional use later)
+      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
+      if (hasUnmatched) {
+        const edits = new Map<string, VenueEdit>()
+        data
+          .filter(e => e.venueMatch.matchType === 'none')
+          .forEach(e => {
+            const name = e.luma.venue?.name || 'Unknown Venue'
+            if (!edits.has(name)) {
+              edits.set(name, { name, neighborhood: null, skip: false })
+            }
+          })
+        setVenueEdits(edits)
+      }
+
+      // Select all events and go directly to select step
+      setSelectedIds(new Set(data.map(e => e.luma.api_id)))
+      setStep('select')
+
+      toast.success(`Found ${data.length} events`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch events')
+      toast.error('Failed to fetch Luma events')
+    } finally {
+      setIsFetching(false)
+    }
+  }, [startDate, endDate])
+
   const handleCSVFile = useCallback((file: File) => {
     setCsvFileName(file.name)
     setError(null)
@@ -820,6 +881,46 @@ export function useImportWizard(
             })
             .map(e => e.meetup.id)
         ))
+      } else if (source === 'luma') {
+        // Update Luma event venue matches
+        setLumaEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const lumaName = event.luma.venue?.name || ''
+            const edit = venueEdits.get(lumaName)
+            let targetName = lumaName
+            if (edit?.mergeInto) targetName = edit.mergeInto
+
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === targetName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: { ...event.transformed, venue_id: matchedVenue.id },
+              }
+            }
+            return event
+          })
+        )
+
+        // Auto-select Luma events with matched venues
+        setSelectedIds(new Set(
+          lumaEvents
+            .filter(e => {
+              const name = e.luma.venue?.name || ''
+              return e.venueMatch.matchType !== 'none' || !venueEdits.get(name)?.skip
+            })
+            .map(e => e.luma.api_id)
+        ))
       }
 
       setStep('select')
@@ -829,7 +930,7 @@ export function useImportWizard(
     } finally {
       setIsCreatingVenues(false)
     }
-  }, [source, venueEdits, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents])
+  }, [source, venueEdits, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
 
   const skipVenues = useCallback(() => {
     if (source === 'passline') {
@@ -860,9 +961,16 @@ export function useImportWizard(
           .filter(e => e.venueMatch.matchType !== 'none')
           .map(e => e.meetup.id)
       ))
+    } else if (source === 'luma') {
+      // Auto-select only Luma events with matched venues
+      setSelectedIds(new Set(
+        lumaEvents
+          .filter(e => e.venueMatch.matchType !== 'none')
+          .map(e => e.luma.api_id)
+      ))
     }
     setStep('select')
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents])
+  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -901,6 +1009,12 @@ export function useImportWizard(
       } else {
         setSelectedIds(new Set(meetupEvents.map(e => e.meetup.id)))
       }
+    } else if (source === 'luma') {
+      if (selectedIds.size === lumaEvents.length) {
+        setSelectedIds(new Set())
+      } else {
+        setSelectedIds(new Set(lumaEvents.map(e => e.luma.api_id)))
+      }
     } else {
       const validIds = csvRows.filter(r => r.errors.length === 0).map((_, i) => `csv-${i}`)
       if (selectedIds.size === validIds.length) {
@@ -909,7 +1023,7 @@ export function useImportWizard(
         setSelectedIds(new Set(validIds))
       }
     }
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, csvRows, selectedIds.size])
+  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents, csvRows, selectedIds.size])
 
   const proceedToConfirm = useCallback(() => {
     setStep('confirm')
@@ -1088,6 +1202,39 @@ export function useImportWizard(
           setStep('enrich')
           return
         }
+      } else if (source === 'luma') {
+        const selectedEvents = lumaEvents.filter(e => selectedIds.has(e.luma.api_id))
+        const eventsToImport = selectedEvents.map(e => ({
+          lumaEvent: e.luma,
+          venueId: e.venueMatch.venue?.id || null,
+        }))
+
+        // Calculate quality stats
+        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
+        withoutVenue = selectedEvents.length - withVenue
+        withDescription = selectedEvents.filter(e => e.luma.description).length
+        withoutDescription = selectedEvents.length - withDescription
+        // Luma lacks categories - need enrichment
+        withCategories = 0
+        withoutCategories = selectedEvents.length
+
+        // Import all events in one call with streaming progress
+        const lumaStream = await importLumaEventsBatchAction({ data: { events: eventsToImport } })
+        let lumaFinalResult: LumaImportComplete | null = null
+
+        for await (const update of lumaStream) {
+          if (update.type === 'progress') {
+            setImportProgress({ current: update.current, total: update.total })
+          } else if (update.type === 'complete') {
+            lumaFinalResult = update
+          }
+        }
+
+        if (lumaFinalResult) {
+          totalInserted = lumaFinalResult.inserted
+          totalUpdated = lumaFinalResult.updated
+          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
+        }
       } else {
         const events = csvRows
           .filter((_, i) => selectedIds.has(`csv-${i}`))
@@ -1134,7 +1281,7 @@ export function useImportWizard(
       setIsImporting(false)
       setImportProgress(null)
     }
-  }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, meetupEvents, csvRows])
+  }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, meetupEvents, lumaEvents, csvRows])
 
   // Fetch events needing enrichment when entering enrich step
   const fetchEventsNeedingEnrichment = useCallback(async () => {
@@ -1299,6 +1446,7 @@ export function useImportWizard(
     setBaTourismEvents([])
     setBaTourismWeekContext(null)
     setMeetupEvents([])
+    setLumaEvents([])
     setCsvRows([])
     setCsvFileName(null)
     setVenueEdits(new Map())
@@ -1324,6 +1472,7 @@ export function useImportWizard(
     eventbriteEvents,
     baTourismEvents,
     meetupEvents,
+    lumaEvents,
     csvRows,
     csvFileName,
     venues,
@@ -1361,6 +1510,7 @@ export function useImportWizard(
     fetchEventbriteEvents: fetchEventbriteEventsHandler,
     fetchBaTourismEvents: fetchBaTourismEventsHandler,
     fetchMeetupEvents: fetchMeetupEventsHandler,
+    fetchLumaEvents: fetchLumaEventsHandler,
     handleCSVFile,
     updateVenueEdit,
     createVenuesAndProceed,

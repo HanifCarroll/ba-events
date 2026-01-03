@@ -11,5 +11,5 @@ export type { ColumnFiltersState } from '@tanstack/react-table'
 // Column definitions
 export { getVenueColumns } from './columns/venue-columns'
 export { getEventColumns } from './columns/event-columns'
-export { getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns } from './columns/import-columns'
-export type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId } from './columns/import-columns'
+export { getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns, getLumaColumns } from './columns/import-columns'
+export type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId, LumaEventWithId } from './columns/import-columns'

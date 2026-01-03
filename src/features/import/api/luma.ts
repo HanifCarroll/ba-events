@@ -1,0 +1,179 @@
+import { createServerFn } from '@tanstack/react-start'
+import {
+  type LumaEvent,
+  transformLumaEvent,
+  fetchLumaEvents,
+  filterByDateRange as filterLumaByDateRange,
+} from '../scrapers/luma'
+import { categorizeEvent } from '../scrapers/ai-categorizer'
+import { matchVenue, type VenueMatchResult } from '../scrapers/venue-matcher'
+import { upsertEvents, createVenue } from '@/shared/lib/db/client'
+import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import { requireAdminAccess } from '@/shared/lib/admin-utils'
+import type { EventInsert } from '@/shared/lib/types'
+import type {
+  ImportProgress,
+  ImportComplete,
+  ImportUpdate,
+} from '@/shared/lib/streaming-types'
+
+export interface LumaPreviewEvent {
+  luma: LumaEvent
+  transformed: EventInsert
+  venueMatch: VenueMatchResult
+}
+
+// Re-export LumaEvent type for client use
+export type { LumaEvent }
+
+// Re-export streaming types
+export type { ImportProgress, ImportComplete, ImportUpdate }
+
+/**
+ * Fetch Luma events server-side
+ * Includes filtering by date range and venue matching
+ */
+export const fetchLumaEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { startDate: string; endDate: string }) => data)
+  .handler(async ({ data: { startDate, endDate } }): Promise<{ events: LumaPreviewEvent[] }> => {
+    console.log('[Admin] Fetching Luma events server-side...')
+
+    // Fetch all events from Luma
+    const allEvents = await fetchLumaEvents()
+    console.log(`[Admin] Fetched ${allEvents.length} total events from Luma`)
+
+    // Filter by date range
+    const filteredEvents = filterLumaByDateRange(allEvents, startDate, endDate)
+    console.log(`[Admin] ${filteredEvents.length} events in date range ${startDate} to ${endDate}`)
+
+    // Match venues and transform events
+    const previews: LumaPreviewEvent[] = await Promise.all(
+      filteredEvents.map(async (event) => {
+        const venueName = event.venue?.name || ''
+        const venueMatch = await matchVenue(venueName)
+        const transformed = transformLumaEvent(
+          event,
+          venueMatch.venue?.id || null
+        )
+
+        return {
+          luma: event,
+          transformed,
+          venueMatch,
+        }
+      })
+    )
+
+    return { events: previews }
+  })
+
+/**
+ * Import a batch of events from Luma data
+ * Processes events with AI categorization and embeddings
+ * Uses async generator to stream progress updates to the client
+ */
+export const importLumaEventsBatchAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { events: Array<{ lumaEvent: LumaEvent; venueId: string | null }> }) => data
+  )
+  .handler(async function* ({ data }): AsyncGenerator<ImportUpdate> {
+    const client = await requireAdminAccess()
+
+    if (data.events.length === 0) {
+      yield { type: 'complete', inserted: 0, updated: 0, venuesCreated: 0 } as ImportComplete
+      return
+    }
+
+    let venuesCreated = 0
+    const total = data.events.length
+
+    // Transform events, auto-creating venues when needed
+    const eventsToImport: EventInsert[] = []
+    for (const { lumaEvent, venueId } of data.events) {
+      let finalVenueId = venueId
+
+      // If no venue matched but we have venue data, try to match or create
+      if (!finalVenueId && lumaEvent.venue?.name) {
+        const venueName = lumaEvent.venue.name
+        // Try to match venue by name first
+        const venueMatch = await matchVenue(venueName)
+        if (venueMatch.venue) {
+          finalVenueId = venueMatch.venue.id
+        } else {
+          // Auto-create venue with full details from Luma
+          try {
+            const addressParts = [
+              lumaEvent.venue.address,
+              lumaEvent.venue.city,
+            ].filter(Boolean)
+
+            const newVenue = await createVenue({
+              name: venueName,
+              neighborhood: null, // Could try to infer from city/address
+              address: addressParts.length > 0 ? addressParts.join(', ') : null,
+            }, client)
+            finalVenueId = newVenue.id
+            venuesCreated++
+            console.log(`[Admin] Auto-created venue for Luma: "${venueName}"`)
+          } catch (error) {
+            console.error(`[Admin] Failed to create venue "${venueName}":`, error)
+          }
+        }
+      }
+
+      eventsToImport.push(transformLumaEvent(lumaEvent, finalVenueId))
+    }
+
+    // AI categorize and generate embeddings sequentially to avoid rate limits
+    const eventsWithEmbeddings: EventInsert[] = []
+    for (let i = 0; i < eventsToImport.length; i++) {
+      const event = eventsToImport[i]
+
+      // Yield categorizing progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'categorizing',
+      } as ImportProgress
+
+      // Categorize via AI
+      const category = await categorizeEvent(event.name, event.description_es)
+
+      // Yield embedding progress
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total,
+        eventName: event.name,
+        phase: 'embedding',
+      } as ImportProgress
+
+      const embedding = await generateEventEmbedding({
+        name: event.name,
+        description_es: event.description_es,
+        categories: [category],
+      })
+      eventsWithEmbeddings.push({ ...event, categories: [category], embedding })
+    }
+
+    // Yield importing progress
+    yield {
+      type: 'progress',
+      current: total,
+      total,
+      eventName: 'Saving to database...',
+      phase: 'importing',
+    } as ImportProgress
+
+    // Upsert events (insert new, update existing)
+    const result = await upsertEvents(eventsWithEmbeddings, client)
+
+    // Yield final completion result
+    yield {
+      type: 'complete',
+      ...result,
+      venuesCreated,
+    } as ImportComplete
+  })

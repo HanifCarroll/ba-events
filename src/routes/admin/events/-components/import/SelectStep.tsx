@@ -2,9 +2,9 @@ import { useMemo } from 'react'
 import { ArrowRight, MapPin, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
-import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns } from '@/shared/ui/data-table'
-import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId } from '@/shared/ui/data-table'
-import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent } from '@/features/import'
+import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns, getLumaColumns } from '@/shared/ui/data-table'
+import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId, LumaEventWithId } from '@/shared/ui/data-table'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent, LumaPreviewEvent } from '@/features/import'
 import type { ImportSource } from '@/features/import'
 
 interface ParsedCSVRow {
@@ -24,6 +24,7 @@ interface SelectStepProps {
   eventbriteEvents: EventbritePreviewEvent[]
   baTourismEvents: BATourismPreviewEvent[]
   meetupEvents: MeetupPreviewEvent[]
+  lumaEvents: LumaPreviewEvent[]
   csvRows: ParsedCSVRow[]
   csvValidCount: number
   csvErrorCount: number
@@ -42,6 +43,7 @@ export function SelectStep({
   eventbriteEvents,
   baTourismEvents,
   meetupEvents,
+  lumaEvents,
   csvRows,
   csvErrorCount,
   csvAllValid,
@@ -55,6 +57,7 @@ export function SelectStep({
   const isEventbrite = source === 'eventbrite'
   const isBaTourism = source === 'ba-tourism'
   const isMeetup = source === 'meetup'
+  const isLuma = source === 'luma'
   const totalCount = isPassline
     ? passlineEvents.length
     : isEventbrite
@@ -63,8 +66,10 @@ export function SelectStep({
         ? baTourismEvents.length
         : isMeetup
           ? meetupEvents.length
-          : csvRows.length
-  const canProceed = (isPassline || isEventbrite || isBaTourism || isMeetup)
+          : isLuma
+            ? lumaEvents.length
+            : csvRows.length
+  const canProceed = (isPassline || isEventbrite || isBaTourism || isMeetup || isLuma)
     ? selectedIds.size > 0
     : (csvAllValid && selectedIds.size > 0)
 
@@ -97,6 +102,13 @@ export function SelectStep({
     }))
   }, [meetupEvents])
 
+  const lumaData = useMemo((): LumaEventWithId[] => {
+    return lumaEvents.map((event) => ({
+      ...event,
+      id: event.luma.api_id,
+    }))
+  }, [lumaEvents])
+
   const csvData = useMemo((): ParsedCSVRowWithId[] => {
     return csvRows.map((row, index) => ({
       ...row,
@@ -109,6 +121,7 @@ export function SelectStep({
   const eventbriteColumns = useMemo(() => getEventbriteColumns(), [])
   const baTourismColumns = useMemo(() => getBaTourismColumns(), [])
   const meetupColumns = useMemo(() => getMeetupColumns(), [])
+  const lumaColumns = useMemo(() => getLumaColumns(), [])
   const csvColumns = useMemo(() => getCSVColumns(), [])
 
   // Handle selection change
@@ -134,7 +147,7 @@ export function SelectStep({
       </div>
 
       {/* Venue Status Warning */}
-      {unmatchedVenueCount > 0 && (isPassline || isEventbrite || isBaTourism || isMeetup) && (
+      {unmatchedVenueCount > 0 && (isPassline || isEventbrite || isBaTourism || isMeetup || isLuma) && (
         <div className="flex items-center justify-between px-4 py-3 bg-amber-500/10 rounded-xl border border-amber-500/30">
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -189,7 +202,7 @@ export function SelectStep({
           <span className="text-sm text-muted-foreground">
             of {totalCount} events
           </span>
-          {!isPassline && !isEventbrite && !isBaTourism && !isMeetup && csvErrorCount > 0 && (
+          {!isPassline && !isEventbrite && !isBaTourism && !isMeetup && !isLuma && csvErrorCount > 0 && (
             <Badge variant="outline" className="border-destructive/30 text-destructive">
               {csvErrorCount} with errors
             </Badge>
@@ -250,6 +263,19 @@ export function SelectStep({
           columns={meetupColumns}
           data={meetupData}
           tableId="import-meetup"
+          enableRowSelection={true}
+          selectedIds={selectedIds}
+          onSelectionChange={handleSelectionChange}
+          enableColumnResizing={true}
+          enableColumnReordering={true}
+          enableMultiSort={true}
+          enableVirtualization={false}
+        />
+      ) : isLuma ? (
+        <DataTable
+          columns={lumaColumns}
+          data={lumaData}
+          tableId="import-luma"
           enableRowSelection={true}
           selectedIds={selectedIds}
           onSelectionChange={handleSelectionChange}

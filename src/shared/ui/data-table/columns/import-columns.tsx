@@ -1,7 +1,7 @@
 import { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2, HelpCircle, AlertCircle, RefreshCw } from 'lucide-react'
 import { Badge } from '@/shared/ui/badge'
-import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent } from '@/features/import'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent, LumaPreviewEvent } from '@/features/import'
 
 interface ParsedCSVRow {
   rowNumber: number
@@ -19,6 +19,7 @@ export type PasslineEventWithId = PasslinePreviewEvent & { id: string }
 export type EventbriteEventWithId = EventbritePreviewEvent & { id: string }
 export type BaTourismEventWithId = BATourismPreviewEvent & { id: string }
 export type MeetupEventWithId = MeetupPreviewEvent & { id: string }
+export type LumaEventWithId = LumaPreviewEvent & { id: string }
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
@@ -645,6 +646,131 @@ export function getMeetupColumns(): ColumnDef<MeetupEventWithId>[] {
           <span className="text-muted-foreground text-sm">-</span>
         )
       ),
+    },
+  ]
+}
+
+function LumaVenueMatchIndicator({ event }: { event: LumaPreviewEvent }) {
+  const { matchType, confidence, venue } = event.venueMatch
+  const originalName = event.luma.venue?.name || 'No venue'
+
+  if (matchType === 'exact') {
+    return (
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-green-500" />
+        <span className="text-sm">{venue?.name}</span>
+      </div>
+    )
+  }
+
+  if (matchType === 'fuzzy') {
+    return (
+      <div className="flex items-center gap-2">
+        <HelpCircle className="h-4 w-4 text-yellow-500" />
+        <span className="text-sm">
+          {venue?.name}
+          <span className="text-muted-foreground ml-1">
+            ({Math.round(confidence * 100)}%)
+          </span>
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <AlertCircle className="h-4 w-4 text-red-500" />
+      <span className="text-sm text-muted-foreground">{originalName}</span>
+    </div>
+  )
+}
+
+// Luma events columns
+export function getLumaColumns(): ColumnDef<LumaEventWithId>[] {
+  return [
+    {
+      id: 'name',
+      accessorFn: (row) => row.luma.name,
+      size: 280,
+      minSize: 180,
+      enableSorting: true,
+      header: 'Event',
+      cell: ({ row }) => {
+        const event = row.original
+        return (
+          <div className="flex flex-col gap-1">
+            <span className="font-medium line-clamp-1">
+              {event.luma.name}
+            </span>
+            {event.luma.description && (
+              <span className="text-xs text-muted-foreground line-clamp-1">
+                {event.luma.description}
+              </span>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      id: 'date',
+      accessorFn: (row) => row.transformed.starts_at,
+      size: 160,
+      minSize: 130,
+      enableSorting: true,
+      header: 'Date',
+      cell: ({ row }) => (
+        <span className="text-sm">
+          {formatDate(row.original.transformed.starts_at)}
+        </span>
+      ),
+    },
+    {
+      id: 'venue',
+      accessorFn: (row) => row.venueMatch.venue?.name || row.luma.venue?.name || '',
+      size: 200,
+      minSize: 150,
+      enableSorting: true,
+      header: 'Venue',
+      cell: ({ row }) => <LumaVenueMatchIndicator event={row.original} />,
+    },
+    {
+      id: 'guests',
+      accessorFn: (row) => row.luma.guest_count,
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Guests',
+      cell: ({ row }) => (
+        <Badge variant="outline" className="text-xs">
+          {row.original.luma.guest_count}
+        </Badge>
+      ),
+    },
+    {
+      id: 'price',
+      accessorFn: (row) => row.transformed.price ?? -1,
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: () => <span className="text-right w-full block">Price</span>,
+      cell: ({ row }) => {
+        const event = row.original
+        return (
+          <div className="text-right">
+            {event.transformed.is_free ? (
+              <Badge variant="outline" className="text-green-500 border-green-500/30">
+                Free
+              </Badge>
+            ) : event.transformed.price ? (
+              <span className="text-sm">
+                ${event.transformed.price.toLocaleString('es-AR')}
+              </span>
+            ) : (
+              <span className="text-muted-foreground text-sm">-</span>
+            )}
+          </div>
+        )
+      },
     },
   ]
 }

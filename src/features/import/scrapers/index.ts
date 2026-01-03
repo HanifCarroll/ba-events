@@ -21,5 +21,9 @@ export { baTourism }
 import * as meetup from './meetup'
 export { meetup }
 
+// Luma scraper - namespaced export
+import * as luma from './luma'
+export { luma }
+
 // Shared utilities
 export { matchVenue, matchVenues, type VenueMatchResult } from './venue-matcher'

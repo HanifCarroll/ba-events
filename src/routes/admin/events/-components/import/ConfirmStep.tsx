@@ -1,4 +1,4 @@
-import { Loader2, Download, CheckCircle2, Zap, FileSpreadsheet, Ticket, Landmark, Users } from 'lucide-react'
+import { Loader2, Download, CheckCircle2, Zap, FileSpreadsheet, Ticket, Landmark, Users, Sparkles } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import type { ImportSource } from '@/features/import'
 
@@ -44,6 +44,13 @@ const SOURCE_CONFIG: Record<ImportSource, {
     icon: Users,
     bgColor: 'bg-red-500/10',
     iconColor: 'text-red-500',
+  },
+  luma: {
+    name: 'Luma Import',
+    label: 'Luma',
+    icon: Sparkles,
+    bgColor: 'bg-violet-500/10',
+    iconColor: 'text-violet-500',
   },
   csv: {
     name: 'CSV Import',

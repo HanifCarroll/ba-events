@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { Download, Upload, FileText, X, Loader2, Zap, Ticket, Landmark, Users, CheckCircle2, AlertCircle, Info } from 'lucide-react'
+import { Download, Upload, FileText, X, Loader2, Zap, Ticket, Landmark, Users, Sparkles, CheckCircle2, AlertCircle, Info } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Label } from '@/shared/ui/label'
@@ -80,6 +80,7 @@ interface ConfigureStepProps {
   onFetchEventbrite: () => void
   onFetchBaTourism: () => void
   onFetchMeetup: () => void
+  onFetchLuma: () => void
   onCSVFile: (file: File) => void
   onClearCSV: () => void
 }
@@ -97,6 +98,7 @@ export function ConfigureStep({
   onFetchEventbrite,
   onFetchBaTourism,
   onFetchMeetup,
+  onFetchLuma,
   onCSVFile,
   onClearCSV,
 }: ConfigureStepProps) {
@@ -362,6 +364,70 @@ export function ConfigureStep({
 
         <p className="text-xs text-muted-foreground text-center">
           Recurring events are expanded to 4 weeks of occurrences
+        </p>
+      </div>
+    )
+  }
+
+  if (source === 'luma') {
+    return (
+      <div className="space-y-6 max-w-md mx-auto">
+        <div className="text-center space-y-2">
+          <h2 className="font-display text-xl font-semibold text-foreground">
+            Configure Date Range
+          </h2>
+          <p className="text-muted-foreground">
+            Select the date range to fetch events from Luma
+          </p>
+        </div>
+
+        <div className="bg-card/50 rounded-xl border border-border/50 p-6 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="start-date">From</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => onStartDateChange(e.target.value)}
+                className="bg-background/50"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date">To</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => onEndDateChange(e.target.value)}
+                className="bg-background/50"
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={onFetchLuma}
+            disabled={isFetching}
+            className="w-full bg-violet-500 hover:bg-violet-600 text-white"
+          >
+            {isFetching ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Fetching events...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Fetch Events
+              </>
+            )}
+          </Button>
+
+          <DataExpectationsPanel source="luma" />
+        </div>
+
+        <p className="text-xs text-muted-foreground text-center">
+          Fetches events from Luma Buenos Aires listing
         </p>
       </div>
     )

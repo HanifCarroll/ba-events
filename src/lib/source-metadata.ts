@@ -5,7 +5,7 @@ export type DataStatus = 'included' | 'requires_enrichment' | 'not_available'
 export interface SourceMetadata {
   name: string
   color: string
-  icon: 'zap' | 'ticket' | 'landmark' | 'users' | 'file-text'
+  icon: 'zap' | 'ticket' | 'landmark' | 'users' | 'file-text' | 'sparkles'
   dataGaps: {
     description: DataStatus
     venue: DataStatus
@@ -68,6 +68,19 @@ export const SOURCE_METADATA: Record<ImportSource, SourceMetadata> = {
     },
     note: 'Venue details often need enrichment from event pages.',
     autoEnrichDefault: true,
+  },
+  luma: {
+    name: 'Luma',
+    color: 'violet',
+    icon: 'sparkles',
+    dataGaps: {
+      description: 'included',
+      venue: 'included',
+      price: 'included',
+      categories: 'requires_enrichment',
+    },
+    note: 'Full event data included. Categories will be inferred by AI.',
+    autoEnrichDefault: false,
   },
   csv: {
     name: 'CSV Import',
