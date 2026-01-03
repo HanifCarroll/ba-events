@@ -74,13 +74,13 @@ export const SOURCE_METADATA: Record<ImportSource, SourceMetadata> = {
     color: 'violet',
     icon: 'sparkles',
     dataGaps: {
-      description: 'included',
+      description: 'requires_enrichment',
       venue: 'included',
       price: 'included',
       categories: 'requires_enrichment',
     },
-    note: 'Full event data included. Categories will be inferred by AI.',
-    autoEnrichDefault: false,
+    note: 'Descriptions require fetching from individual event pages.',
+    autoEnrichDefault: true,
   },
   csv: {
     name: 'CSV Import',
