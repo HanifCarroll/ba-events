@@ -46,6 +46,7 @@ export {
 export { useBulkActions, type BulkActionType, type UseBulkActionsReturn } from './hooks/useBulkActions'
 export { useDescriptionEnrichment, type EnrichStep } from './hooks/useDescriptionEnrichment'
 export { useBackgroundEnrichment } from './hooks/useBackgroundEnrichment'
+export { useLumaDescriptionEnrichment } from './hooks/useLumaDescriptionEnrichment'
 export { useEmbeddingRegeneration } from './hooks/useEmbeddingRegeneration'
 export { useSingleEventActions } from './hooks/useSingleEventActions'
 export { useMarkPastEvents } from './hooks/useMarkPastEvents'

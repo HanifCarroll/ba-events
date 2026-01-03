@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin, RefreshCw } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin, RefreshCw, FileText } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import type { BulkActionType } from '@/features/events'
@@ -35,6 +35,12 @@ interface BulkActionBarProps {
   onRegenerateEmbeddings?: () => void
   /** Whether embedding regeneration is currently running */
   isRegeneratingEmbeddings?: boolean
+  /** Number of selected Luma events that can be enriched (missing description) */
+  lumaEnrichableCount?: number
+  /** Callback to enrich Luma events with descriptions from their event pages */
+  onLumaEnrich?: () => void
+  /** Whether Luma enrichment is currently running */
+  isLumaEnriching?: boolean
 }
 
 export function BulkActionBar({
@@ -56,12 +62,16 @@ export function BulkActionBar({
   isVenueEnriching = false,
   onRegenerateEmbeddings,
   isRegeneratingEmbeddings = false,
+  lumaEnrichableCount = 0,
+  onLumaEnrich,
+  isLumaEnriching = false,
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
 
   const showEnrich = enrichableCount > 0 && onEnrich
   const showEventbriteEnrich = eventbriteEnrichableCount > 0 && onEventbriteEnrich
   const showVenueEnrich = venueEnrichableCount > 0 && onVenueEnrich
+  const showLumaEnrich = lumaEnrichableCount > 0 && onLumaEnrich
 
   if (overlay) {
     // Overlay version - slides in over table header
@@ -143,6 +153,28 @@ export function BulkActionBar({
             >
               <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
               Adding Venues...
+            </Button>
+          )}
+          {showLumaEnrich && !isLumaEnriching && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onLumaEnrich}
+              className="text-violet-200 hover:text-violet-100 hover:bg-violet-500/20"
+            >
+              <FileText className="h-4 w-4 mr-1.5" />
+              Luma Descriptions ({lumaEnrichableCount})
+            </Button>
+          )}
+          {isLumaEnriching && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled
+              className="text-violet-200"
+            >
+              <FileText className="h-4 w-4 mr-1.5 animate-pulse" />
+              Adding Luma Descriptions...
             </Button>
           )}
           {onRegenerateEmbeddings && !isRegeneratingEmbeddings && (
@@ -284,6 +316,28 @@ export function BulkActionBar({
           >
             <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
             Adding Venues...
+          </Button>
+        )}
+        {showLumaEnrich && !isLumaEnriching && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onLumaEnrich}
+            className="border-violet-500/50 text-violet-600 hover:bg-violet-500/10"
+          >
+            <FileText className="h-4 w-4 mr-1.5" />
+            Luma Descriptions ({lumaEnrichableCount})
+          </Button>
+        )}
+        {isLumaEnriching && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            className="border-violet-500/50 text-violet-600"
+          >
+            <FileText className="h-4 w-4 mr-1.5 animate-pulse" />
+            Adding Luma Descriptions...
           </Button>
         )}
         {onRegenerateEmbeddings && !isRegeneratingEmbeddings && (

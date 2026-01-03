@@ -51,7 +51,7 @@ import { DataTable, getEventColumns } from '@/shared/ui/data-table'
 import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState } from '@/shared/ui/EmptyState'
 import { listEvents } from '@/features/events'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
-import { useEventAdmin, useBackgroundEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/features/events'
+import { useEventAdmin, useBackgroundEnrichment, useLumaDescriptionEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/features/events'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
 import type { EventWithVenue } from '@/shared/lib/types'
@@ -262,6 +262,7 @@ function EventListPage() {
   )
   const backgroundEnrichment = useBackgroundEnrichment()
   const venueEnrichment = useVenueEnrichment()
+  const lumaEnrichment = useLumaDescriptionEnrichment()
   const embeddingRegeneration = useEmbeddingRegeneration()
 
   // Calculate enrichable count for selected events (description enrichment)
@@ -273,6 +274,11 @@ function EventListPage() {
   const venueEnrichableCount = useMemo(() => {
     return venueEnrichment.getVenueEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
   }, [venueEnrichment, filtering.filteredEvents, bulk.selectedIds])
+
+  // Calculate Luma enrichable count for selected events (missing descriptions)
+  const lumaEnrichableCount = useMemo(() => {
+    return lumaEnrichment.getLumaEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
+  }, [lumaEnrichment, filtering.filteredEvents, bulk.selectedIds])
 
   // Handle description enrichment with selection clear on complete
   const handleEnrich = useCallback(() => {
@@ -291,6 +297,15 @@ function EventListPage() {
       () => bulk.clearSelection()
     )
   }, [venueEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+
+  // Handle Luma description enrichment with selection clear on complete
+  const handleLumaEnrich = useCallback(() => {
+    lumaEnrichment.enrichLumaEvents(
+      filtering.filteredEvents,
+      bulk.selectedIds,
+      () => bulk.clearSelection()
+    )
+  }, [lumaEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
 
   // Handle embedding regeneration with selection clear on complete
   const handleRegenerateEmbeddings = useCallback(() => {
@@ -564,6 +579,9 @@ function EventListPage() {
               venueEnrichableCount={venueEnrichableCount}
               onVenueEnrich={handleVenueEnrich}
               isVenueEnriching={venueEnrichment.isVenueEnriching}
+              lumaEnrichableCount={lumaEnrichableCount}
+              onLumaEnrich={handleLumaEnrich}
+              isLumaEnriching={lumaEnrichment.isLumaEnriching}
               onRegenerateEmbeddings={handleRegenerateEmbeddings}
               isRegeneratingEmbeddings={embeddingRegeneration.isRegenerating}
             />
@@ -599,6 +617,9 @@ function EventListPage() {
                   venueEnrichableCount={venueEnrichableCount}
                   onVenueEnrich={handleVenueEnrich}
                   isVenueEnriching={venueEnrichment.isVenueEnriching}
+                  lumaEnrichableCount={lumaEnrichableCount}
+                  onLumaEnrich={handleLumaEnrich}
+                  isLumaEnriching={lumaEnrichment.isLumaEnriching}
                   onRegenerateEmbeddings={handleRegenerateEmbeddings}
                   isRegeneratingEmbeddings={embeddingRegeneration.isRegenerating}
                 />
