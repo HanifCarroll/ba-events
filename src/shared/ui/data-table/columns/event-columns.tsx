@@ -13,6 +13,7 @@ const sourceLabelMap: Record<string, string> = {
   eventbrite: 'Eventbrite',
   'ba-tourism': 'BA Tourism',
   meetup: 'Meetup',
+  luma: 'Luma',
   manual: 'Manual',
   csv: 'CSV',
 }
@@ -42,6 +43,10 @@ function getSourceBadge(source: string) {
     meetup: {
       className: 'bg-red-500/10 text-red-400 border-red-500/30',
       label: 'Meetup',
+    },
+    luma: {
+      className: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+      label: 'Luma',
     },
     manual: {
       className: 'bg-blue-500/10 text-blue-400 border-blue-500/30',

@@ -16,6 +16,8 @@ import {
   enrichMeetupVenuesAction,
   fetchLumaEventsAction,
   importLumaEventsBatchAction,
+  getLumaEventsNeedingDescriptionEnrichmentAction,
+  enrichLumaDescriptionsAction,
   type PasslinePreviewEvent,
   type EventbritePreviewEvent,
   type BATourismPreviewEvent,
@@ -27,6 +29,7 @@ import {
   type MeetupImportComplete,
   type LumaImportComplete,
   type MeetupVenueEnrichComplete,
+  type LumaDescriptionEnrichComplete,
   type WeekContext,
 } from '@/features/import'
 import {
@@ -136,11 +139,12 @@ export function useImportWizard(
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Enrichment state (for Meetup venue enrichment)
+  // Enrichment state (for Meetup venue enrichment and Luma description enrichment)
   const [isEnriching, setIsEnriching] = useState(false)
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number } | null>(null)
-  const [enrichmentResult, setEnrichmentResult] = useState<Pick<MeetupVenueEnrichComplete, 'enriched' | 'venuesCreated' | 'errors'> | null>(null)
+  const [enrichmentResult, setEnrichmentResult] = useState<Pick<MeetupVenueEnrichComplete, 'enriched' | 'venuesCreated' | 'errors'> | Pick<LumaDescriptionEnrichComplete, 'enriched' | 'errors'> | null>(null)
   const [eventsNeedingEnrichment, setEventsNeedingEnrichment] = useState<Array<{ id: string; link: string }>>([])
+  const [lumaEventsNeedingEnrichment, setLumaEventsNeedingEnrichment] = useState<Array<{ id: string; source_url: string; name: string }>>([])
   const [isLoadingEnrichmentEvents, setIsLoadingEnrichmentEvents] = useState(false)
 
   // Import result state (for summary step)
@@ -1235,6 +1239,24 @@ export function useImportWizard(
           totalUpdated = lumaFinalResult.updated
           toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
         }
+
+        // If we imported events without descriptions, go to enrich step for Luma
+        if (withoutDescription > 0 && (totalInserted > 0 || totalUpdated > 0)) {
+          setImportResult({
+            inserted: totalInserted,
+            updated: totalUpdated,
+            withVenue,
+            withoutVenue,
+            withDescription,
+            withoutDescription,
+            withCategories,
+            withoutCategories,
+          })
+          setIsImporting(false)
+          setImportProgress(null)
+          setStep('enrich')
+          return
+        }
       } else {
         const events = csvRows
           .filter((_, i) => selectedIds.has(`csv-${i}`))
@@ -1283,7 +1305,7 @@ export function useImportWizard(
     }
   }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, meetupEvents, lumaEvents, csvRows])
 
-  // Fetch events needing enrichment when entering enrich step
+  // Fetch Meetup events needing venue enrichment when entering enrich step
   const fetchEventsNeedingEnrichment = useCallback(async () => {
     setIsLoadingEnrichmentEvents(true)
     try {
@@ -1292,6 +1314,20 @@ export function useImportWizard(
     } catch (err) {
       console.error('Failed to fetch events needing enrichment:', err)
       setEventsNeedingEnrichment([])
+    } finally {
+      setIsLoadingEnrichmentEvents(false)
+    }
+  }, [])
+
+  // Fetch Luma events needing description enrichment when entering enrich step
+  const fetchLumaEventsNeedingEnrichment = useCallback(async () => {
+    setIsLoadingEnrichmentEvents(true)
+    try {
+      const result = await getLumaEventsNeedingDescriptionEnrichmentAction()
+      setLumaEventsNeedingEnrichment(result.events)
+    } catch (err) {
+      console.error('Failed to fetch Luma events needing enrichment:', err)
+      setLumaEventsNeedingEnrichment([])
     } finally {
       setIsLoadingEnrichmentEvents(false)
     }
@@ -1344,6 +1380,54 @@ export function useImportWizard(
     }
   }, [eventsNeedingEnrichment, router])
 
+  // Enrich Luma events with descriptions from detail pages
+  const enrichDescriptions = useCallback(async () => {
+    if (lumaEventsNeedingEnrichment.length === 0) return
+
+    setIsEnriching(true)
+    setEnrichmentProgress({ current: 0, total: lumaEventsNeedingEnrichment.length })
+    setError(null)
+
+    try {
+      const events = lumaEventsNeedingEnrichment.map(e => ({
+        eventId: e.id,
+        source_url: e.source_url,
+        name: e.name,
+      }))
+
+      // Consume streaming response
+      const enrichStream = await enrichLumaDescriptionsAction({ data: { events } })
+      let enrichFinalResult: LumaDescriptionEnrichComplete | null = null
+
+      for await (const update of enrichStream) {
+        if (update.type === 'progress') {
+          setEnrichmentProgress({ current: update.current, total: update.total })
+        } else if (update.type === 'complete') {
+          enrichFinalResult = update
+        }
+      }
+
+      if (enrichFinalResult) {
+        setEnrichmentResult({
+          enriched: enrichFinalResult.enriched,
+          errors: enrichFinalResult.errors || [],
+        })
+
+        if (enrichFinalResult.enriched > 0) {
+          toast.success(`Enriched ${enrichFinalResult.enriched} events with descriptions`)
+        }
+      }
+
+      // No auto-redirect - let user see results and decide what to do
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to enrich descriptions')
+      toast.error('Description enrichment failed')
+    } finally {
+      setIsEnriching(false)
+      setEnrichmentProgress(null)
+    }
+  }, [lumaEventsNeedingEnrichment])
+
   const skipEnrichment = useCallback(() => {
     router.navigate({ to: '/admin/events' })
   }, [router])
@@ -1353,66 +1437,121 @@ export function useImportWizard(
   }, [router])
 
   const retryFailedEnrichment = useCallback(async () => {
-    if (!enrichmentResult || enrichmentResult.errors.length === 0) return
+    if (!enrichmentResult || !enrichmentResult.errors || enrichmentResult.errors.length === 0) return
 
     setIsEnriching(true)
     setError(null)
 
-    // Get only the failed event IDs and their links
-    const failedEventIds = new Set(enrichmentResult.errors.map((e: { id: string; error: string }) => e.id))
-    const eventsToRetry = eventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
+    // Get only the failed event IDs
+    const failedEventIds = new Set((enrichmentResult.errors ?? []).map((e: { id: string; error: string }) => e.id))
 
-    if (eventsToRetry.length === 0) {
-      toast.error('Could not find event links for failed events')
-      setIsEnriching(false)
-      return
-    }
+    if (source === 'luma') {
+      // Retry Luma description enrichment
+      const eventsToRetry = lumaEventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
 
-    setEnrichmentProgress({ current: 0, total: eventsToRetry.length })
-
-    try {
-      const events = eventsToRetry.map(e => ({
-        eventId: e.id,
-        eventUrl: e.link,
-      }))
-
-      // Consume streaming response
-      const retryStream = await enrichMeetupVenuesAction({ data: { events } })
-      let retryFinalResult: MeetupVenueEnrichComplete | null = null
-
-      for await (const update of retryStream) {
-        if (update.type === 'progress') {
-          setEnrichmentProgress({ current: update.current, total: update.total })
-        } else if (update.type === 'complete') {
-          retryFinalResult = update
-        }
+      if (eventsToRetry.length === 0) {
+        toast.error('Could not find events for retry')
+        setIsEnriching(false)
+        return
       }
 
-      if (retryFinalResult) {
-        // Combine previous success with new results
-        const previousEnriched = enrichmentResult.enriched
-        const previousVenuesCreated = enrichmentResult.venuesCreated
+      setEnrichmentProgress({ current: 0, total: eventsToRetry.length })
 
-        setEnrichmentResult({
-          enriched: previousEnriched + retryFinalResult.enriched,
-          venuesCreated: previousVenuesCreated + retryFinalResult.venuesCreated,
-          errors: retryFinalResult.errors, // Only keep the new errors
-        })
+      try {
+        const events = eventsToRetry.map(e => ({
+          eventId: e.id,
+          source_url: e.source_url,
+          name: e.name,
+        }))
 
-        if (retryFinalResult.enriched > 0) {
-          toast.success(`Retry successful: enriched ${retryFinalResult.enriched} more events`)
-        } else if (retryFinalResult.errors.length > 0) {
-          toast.error(`Retry failed: ${retryFinalResult.errors.length} events still have errors`)
+        const retryStream = await enrichLumaDescriptionsAction({ data: { events } })
+        let retryFinalResult: LumaDescriptionEnrichComplete | null = null
+
+        for await (const update of retryStream) {
+          if (update.type === 'progress') {
+            setEnrichmentProgress({ current: update.current, total: update.total })
+          } else if (update.type === 'complete') {
+            retryFinalResult = update
+          }
         }
+
+        if (retryFinalResult) {
+          const previousEnriched = enrichmentResult.enriched
+
+          setEnrichmentResult({
+            enriched: previousEnriched + retryFinalResult.enriched,
+            errors: retryFinalResult.errors || [],
+          })
+
+          if (retryFinalResult.enriched > 0) {
+            toast.success(`Retry successful: enriched ${retryFinalResult.enriched} more events`)
+          } else if (retryFinalResult.errors && retryFinalResult.errors.length > 0) {
+            toast.error(`Retry failed: ${retryFinalResult.errors.length} events still have errors`)
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to retry enrichment')
+        toast.error('Retry failed')
+      } finally {
+        setIsEnriching(false)
+        setEnrichmentProgress(null)
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to retry enrichment')
-      toast.error('Retry failed')
-    } finally {
-      setIsEnriching(false)
-      setEnrichmentProgress(null)
+    } else {
+      // Retry Meetup venue enrichment
+      const eventsToRetry = eventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
+
+      if (eventsToRetry.length === 0) {
+        toast.error('Could not find event links for failed events')
+        setIsEnriching(false)
+        return
+      }
+
+      setEnrichmentProgress({ current: 0, total: eventsToRetry.length })
+
+      try {
+        const events = eventsToRetry.map(e => ({
+          eventId: e.id,
+          eventUrl: e.link,
+        }))
+
+        // Consume streaming response
+        const retryStream = await enrichMeetupVenuesAction({ data: { events } })
+        let retryFinalResult: MeetupVenueEnrichComplete | null = null
+
+        for await (const update of retryStream) {
+          if (update.type === 'progress') {
+            setEnrichmentProgress({ current: update.current, total: update.total })
+          } else if (update.type === 'complete') {
+            retryFinalResult = update
+          }
+        }
+
+        if (retryFinalResult) {
+          // Combine previous success with new results
+          const previousEnriched = enrichmentResult.enriched
+          const previousVenuesCreated = 'venuesCreated' in enrichmentResult ? enrichmentResult.venuesCreated : 0
+
+          setEnrichmentResult({
+            enriched: previousEnriched + retryFinalResult.enriched,
+            venuesCreated: previousVenuesCreated + retryFinalResult.venuesCreated,
+            errors: retryFinalResult.errors, // Only keep the new errors
+          })
+
+          if (retryFinalResult.enriched > 0) {
+            toast.success(`Retry successful: enriched ${retryFinalResult.enriched} more events`)
+          } else if (retryFinalResult.errors.length > 0) {
+            toast.error(`Retry failed: ${retryFinalResult.errors.length} events still have errors`)
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to retry enrichment')
+        toast.error('Retry failed')
+      } finally {
+        setIsEnriching(false)
+        setEnrichmentProgress(null)
+      }
     }
-  }, [enrichmentResult, eventsNeedingEnrichment])
+  }, [source, enrichmentResult, eventsNeedingEnrichment, lumaEventsNeedingEnrichment])
 
   const goToVenues = useCallback(() => {
     if (unmatchedVenues.length > 0) {
@@ -1457,6 +1596,7 @@ export function useImportWizard(
     setEnrichmentProgress(null)
     setEnrichmentResult(null)
     setEventsNeedingEnrichment([])
+    setLumaEventsNeedingEnrichment([])
     // Reset import result state
     setImportResult(null)
     setAutoEnrich(false)
@@ -1496,6 +1636,7 @@ export function useImportWizard(
     enrichmentProgress,
     enrichmentResult,
     eventsNeedingEnrichment,
+    lumaEventsNeedingEnrichment,
     isLoadingEnrichmentEvents,
 
     // Import result state (for summary step)
@@ -1525,7 +1666,9 @@ export function useImportWizard(
 
     // Enrichment actions
     fetchEventsNeedingEnrichment,
+    fetchLumaEventsNeedingEnrichment,
     enrichVenues,
+    enrichDescriptions,
     skipEnrichment,
     retryFailedEnrichment,
     viewEvents,

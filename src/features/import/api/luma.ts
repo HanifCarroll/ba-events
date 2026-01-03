@@ -7,7 +7,7 @@ import {
 } from '../scrapers/luma'
 import { categorizeEvent } from '../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../scrapers/venue-matcher'
-import { upsertEvents, createVenue } from '@/shared/lib/db/client'
+import { upsertEvents, createVenue, supabase, updateEvent } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import type { EventInsert } from '@/shared/lib/types'
@@ -15,6 +15,9 @@ import type {
   ImportProgress,
   ImportComplete,
   ImportUpdate,
+  DescriptionEnrichProgress,
+  DescriptionEnrichComplete,
+  DescriptionEnrichUpdate,
 } from '@/shared/lib/streaming-types'
 
 export interface LumaPreviewEvent {
@@ -27,7 +30,7 @@ export interface LumaPreviewEvent {
 export type { LumaEvent }
 
 // Re-export streaming types
-export type { ImportProgress, ImportComplete, ImportUpdate }
+export type { ImportProgress, ImportComplete, ImportUpdate, DescriptionEnrichProgress, DescriptionEnrichComplete, DescriptionEnrichUpdate }
 
 /**
  * Fetch Luma events server-side
@@ -176,4 +179,159 @@ export const importLumaEventsBatchAction = createServerFn({ method: 'POST' })
       ...result,
       venuesCreated,
     } as ImportComplete
+  })
+
+// ============================================================================
+// LUMA DESCRIPTION ENRICHMENT
+// ============================================================================
+
+/**
+ * Fetch Luma events that need description enrichment
+ * Returns events where description is null or empty
+ */
+export const getLumaEventsNeedingDescriptionEnrichmentAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<{ events: Array<{ id: string; source_url: string; name: string }> }> => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('id, source_url, name')
+      .eq('source', 'luma')
+      .or('description_es.is.null,description_es.eq.')
+      .not('source_url', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) {
+      console.error('[Admin] Error fetching Luma events needing description enrichment:', error)
+      return { events: [] }
+    }
+
+    return { events: (data || []).filter(e => e.source_url) as Array<{ id: string; source_url: string; name: string }> }
+  }
+)
+
+export interface LumaDescriptionEnrichmentInput {
+  eventId: string
+  source_url: string
+  name: string
+}
+
+/**
+ * Enrich Luma events with descriptions by visiting individual event pages.
+ * This is Phase 2 of the two-phase import process for Luma.
+ * Uses async generator to stream progress updates to the client
+ *
+ * For each event:
+ * 1. Fetches description from the Luma event detail page
+ * 2. Updates the event with the description
+ * 3. Regenerates the embedding with the new description
+ */
+export const enrichLumaDescriptionsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { events: LumaDescriptionEnrichmentInput[] }) => data)
+  .handler(async function* ({ data }): AsyncGenerator<DescriptionEnrichUpdate> {
+    const client = await requireAdminAccess()
+    const { events } = data
+
+    if (events.length === 0) {
+      yield { type: 'complete', enriched: 0, total: 0 } as DescriptionEnrichComplete
+      return
+    }
+
+    console.log(`[Admin] Starting Luma description enrichment for ${events.length} events...`)
+
+    const { chromium } = await import('playwright')
+    const { fetchLumaDescriptionFromDetailPage } = await import('../scrapers/luma')
+
+    const browser = await chromium.launch({ headless: true })
+    let enriched = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    try {
+      const concurrency = 3
+      const delayMs = 1000
+
+      // Process in batches for concurrency control
+      for (let i = 0; i < events.length; i += concurrency) {
+        const batch = events.slice(i, i + concurrency)
+
+        // Process batch in parallel
+        const batchResults = await Promise.all(
+          batch.map(async (event) => {
+            const page = await browser.newPage()
+            try {
+              const description = await fetchLumaDescriptionFromDetailPage(page, event.source_url)
+
+              if (description) {
+                // Update event with description
+                await updateEvent(event.eventId, { description_es: description }, client)
+
+                // Regenerate embedding with new description
+                const { data: eventData } = await supabase
+                  .from('events')
+                  .select('name, categories')
+                  .eq('id', event.eventId)
+                  .single()
+
+                if (eventData) {
+                  const embedding = await generateEventEmbedding({
+                    name: eventData.name,
+                    description_es: description,
+                    categories: eventData.categories || [],
+                  })
+                  await updateEvent(event.eventId, { embedding }, client)
+                }
+
+                console.log(`[Admin] Enriched description for: ${event.name}`)
+                return { event, success: true, error: undefined }
+              } else {
+                return { event, success: false, error: 'No description found on page' }
+              }
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+              console.error(`[Admin] Error enriching ${event.name}:`, errorMsg)
+              return { event, success: false, error: errorMsg }
+            } finally {
+              await page.close()
+            }
+          })
+        )
+
+        // Process results and yield progress
+        for (const result of batchResults) {
+          if (result.success) {
+            enriched++
+          } else if (result.error) {
+            errors.push({ id: result.event.eventId, error: result.error })
+          }
+
+          // Calculate current progress (account for batch position)
+          const currentIndex = events.indexOf(result.event) + 1
+
+          yield {
+            type: 'progress',
+            current: currentIndex,
+            total: events.length,
+            eventName: result.event.name,
+            success: result.success,
+            error: result.error,
+          } as DescriptionEnrichProgress
+        }
+
+        // Delay between batches (except after last batch)
+        if (i + concurrency < events.length) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+        }
+      }
+    } finally {
+      await browser.close()
+    }
+
+    console.log(`[Admin] Luma description enrichment complete: ${enriched} enriched, ${errors.length} errors`)
+
+    // Yield final completion result
+    yield {
+      type: 'complete',
+      enriched,
+      total: events.length,
+      errors: errors.length > 0 ? errors : undefined,
+    } as DescriptionEnrichComplete
   })

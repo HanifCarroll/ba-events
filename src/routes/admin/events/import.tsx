@@ -68,9 +68,13 @@ function ImportEventsPage() {
   // Fetch events needing enrichment when entering enrich step
   useEffect(() => {
     if (wizard.step === 'enrich') {
-      wizard.fetchEventsNeedingEnrichment()
+      if (wizard.source === 'luma') {
+        wizard.fetchLumaEventsNeedingEnrichment()
+      } else {
+        wizard.fetchEventsNeedingEnrichment()
+      }
     }
-  }, [wizard.step, wizard.fetchEventsNeedingEnrichment])
+  }, [wizard.step, wizard.source, wizard.fetchEventsNeedingEnrichment, wizard.fetchLumaEventsNeedingEnrichment])
 
   // Determine which steps are visible based on source
   const visibleSteps = STEPS.filter((step) => {
@@ -80,9 +84,9 @@ function ImportEventsPage() {
     if (step.key === 'venues') {
       return wizard.step === 'venues'
     }
-    // Show enrich only for meetup and only when on enrich step
+    // Show enrich for meetup (venues) or luma (descriptions) when on enrich step
     if (step.key === 'enrich') {
-      return wizard.source === 'meetup' && wizard.step === 'enrich'
+      return (wizard.source === 'meetup' || wizard.source === 'luma') && wizard.step === 'enrich'
     }
     // Show summary only when on summary step
     if (step.key === 'summary') {
@@ -265,11 +269,20 @@ function ImportEventsPage() {
 
         {wizard.step === 'enrich' && (
           <EnrichStep
-            eventsNeedingEnrichment={wizard.eventsNeedingEnrichment.length}
+            enrichmentType={wizard.source === 'luma' ? 'description' : 'venue'}
+            eventsNeedingEnrichment={
+              wizard.source === 'luma'
+                ? wizard.lumaEventsNeedingEnrichment.length
+                : wizard.eventsNeedingEnrichment.length
+            }
             isEnriching={wizard.isEnriching}
             enrichmentProgress={wizard.enrichmentProgress}
-            enrichmentResult={wizard.enrichmentResult}
-            onEnrich={wizard.enrichVenues}
+            enrichmentResult={wizard.enrichmentResult ? {
+              enriched: wizard.enrichmentResult.enriched,
+              venuesCreated: 'venuesCreated' in wizard.enrichmentResult ? wizard.enrichmentResult.venuesCreated : undefined,
+              errors: wizard.enrichmentResult.errors ?? []
+            } : null}
+            onEnrich={wizard.source === 'luma' ? wizard.enrichDescriptions : wizard.enrichVenues}
             onSkip={wizard.skipEnrichment}
             onRetryFailed={wizard.retryFailedEnrichment}
             onViewEvents={wizard.viewEvents}

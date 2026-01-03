@@ -57,9 +57,13 @@ export {
 export {
   fetchLumaEventsAction,
   importLumaEventsBatchAction,
+  getLumaEventsNeedingDescriptionEnrichmentAction,
+  enrichLumaDescriptionsAction,
   type LumaPreviewEvent,
   type LumaEvent,
+  type LumaDescriptionEnrichmentInput,
   type ImportComplete as LumaImportComplete,
+  type DescriptionEnrichComplete as LumaDescriptionEnrichComplete,
 } from './api/luma'
 
 // Hooks

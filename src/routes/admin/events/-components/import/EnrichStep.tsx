@@ -1,15 +1,50 @@
 import { useState } from 'react'
-import { Loader2, MapPin, CheckCircle2, AlertCircle, Users, ChevronDown, ChevronRight, RotateCcw, ArrowRight } from 'lucide-react'
+import { Loader2, MapPin, CheckCircle2, AlertCircle, Users, ChevronDown, ChevronRight, RotateCcw, ArrowRight, FileText } from 'lucide-react'
+
+// Config for each enrichment type
+const ENRICHMENT_CONFIG = {
+  venue: {
+    title: 'Enrich Venue Data',
+    subtitle: 'Fetch venue information from Meetup event pages',
+    completeText: 'Venue enrichment complete',
+    sourceLabel: 'Meetup Venue Enrichment',
+    Icon: Users,
+    iconBgClass: 'bg-red-500/10',
+    iconTextClass: 'text-red-500',
+    progressBarClass: 'bg-red-500',
+    buttonBgClass: 'bg-red-600 hover:bg-red-700',
+    enrichedLabel: 'Events enriched',
+    itemLabel: 'venue data',
+    helpText: 'This will visit each event\'s detail page to fetch venue information. New venues will be automatically created when found.',
+  },
+  description: {
+    title: 'Enrich Descriptions',
+    subtitle: 'Fetch full descriptions from Luma event pages',
+    completeText: 'Description enrichment complete',
+    sourceLabel: 'Luma Description Enrichment',
+    Icon: FileText,
+    iconBgClass: 'bg-violet-500/10',
+    iconTextClass: 'text-violet-500',
+    progressBarClass: 'bg-violet-500',
+    buttonBgClass: 'bg-violet-600 hover:bg-violet-700',
+    enrichedLabel: 'Descriptions added',
+    itemLabel: 'description',
+    helpText: 'This will visit each event\'s detail page to fetch the full description. Event embeddings will be regenerated with the new content.',
+  },
+} as const
 import { Button } from '@/shared/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/ui/collapsible'
 
+type EnrichmentType = 'venue' | 'description'
+
 interface EnrichStepProps {
+  enrichmentType: EnrichmentType
   eventsNeedingEnrichment: number
   isEnriching: boolean
   enrichmentProgress: { current: number; total: number } | null
   enrichmentResult: {
     enriched: number
-    venuesCreated: number
+    venuesCreated?: number
     errors: Array<{ id: string; error: string }>
   } | null
   onEnrich: () => void
@@ -19,6 +54,7 @@ interface EnrichStepProps {
 }
 
 export function EnrichStep({
+  enrichmentType,
   eventsNeedingEnrichment,
   isEnriching,
   enrichmentProgress,
@@ -31,34 +67,34 @@ export function EnrichStep({
   const hasCompleted = enrichmentResult !== null
   const [errorsOpen, setErrorsOpen] = useState(false)
   const hasErrors = hasCompleted && enrichmentResult.errors.length > 0
+  const config = ENRICHMENT_CONFIG[enrichmentType]
+  const { Icon } = config
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
       <div className="text-center space-y-2">
         <h2 className="font-display text-xl font-semibold text-foreground">
-          Enrich Venue Data
+          {config.title}
         </h2>
         <p className="text-muted-foreground">
-          {hasCompleted
-            ? 'Venue enrichment complete'
-            : 'Fetch venue information from Meetup event pages'}
+          {hasCompleted ? config.completeText : config.subtitle}
         </p>
       </div>
 
       <div className="bg-card/50 rounded-xl border border-border/50 p-6 space-y-6">
         {/* Source indicator */}
         <div className="flex items-center gap-3 pb-4 border-b border-border/30">
-          <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-red-500/10">
-            <Users className="h-5 w-5 text-red-500" />
+          <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${config.iconBgClass}`}>
+            <Icon className={`h-5 w-5 ${config.iconTextClass}`} />
           </div>
           <div>
             <p className="font-medium text-foreground">
-              Meetup Venue Enrichment
+              {config.sourceLabel}
             </p>
             <p className="text-sm text-muted-foreground">
               {hasCompleted
                 ? `${enrichmentResult.enriched} event${enrichmentResult.enriched !== 1 ? 's' : ''} enriched`
-                : `${eventsNeedingEnrichment} event${eventsNeedingEnrichment !== 1 ? 's' : ''} without venue data`}
+                : `${eventsNeedingEnrichment} event${eventsNeedingEnrichment !== 1 ? 's' : ''} without ${config.itemLabel}`}
             </p>
           </div>
         </div>
@@ -67,19 +103,21 @@ export function EnrichStep({
         {hasCompleted ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Events enriched</span>
+              <span className="text-muted-foreground">{config.enrichedLabel}</span>
               <span className="font-medium text-foreground flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
                 {enrichmentResult.enriched}
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">New venues created</span>
-              <span className="font-medium text-foreground flex items-center gap-1.5">
-                <MapPin className="h-4 w-4 text-blue-500" />
-                {enrichmentResult.venuesCreated}
-              </span>
-            </div>
+            {enrichmentType === 'venue' && enrichmentResult.venuesCreated !== undefined && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">New venues created</span>
+                <span className="font-medium text-foreground flex items-center gap-1.5">
+                  <MapPin className="h-4 w-4 text-blue-500" />
+                  {enrichmentResult.venuesCreated}
+                </span>
+              </div>
+            )}
             {hasErrors && (
               <Collapsible open={errorsOpen} onOpenChange={setErrorsOpen}>
                 <CollapsibleTrigger asChild>
@@ -118,8 +156,7 @@ export function EnrichStep({
               <span className="font-medium text-foreground">{eventsNeedingEnrichment}</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              This will visit each event's detail page to fetch venue information.
-              New venues will be automatically created when found.
+              {config.helpText}
             </p>
           </div>
         )}
@@ -129,7 +166,7 @@ export function EnrichStep({
           <div className="space-y-2">
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
-                className="h-full bg-red-500 transition-all duration-300"
+                className={`h-full ${config.progressBarClass} transition-all duration-300`}
                 style={{ width: `${(enrichmentProgress.current / enrichmentProgress.total) * 100}%` }}
               />
             </div>
@@ -145,7 +182,7 @@ export function EnrichStep({
             <Button
               onClick={onEnrich}
               disabled={isEnriching || eventsNeedingEnrichment === 0}
-              className="w-full bg-red-600 hover:bg-red-700 text-white"
+              className={`w-full ${config.buttonBgClass} text-white`}
             >
               {isEnriching ? (
                 <>
@@ -156,7 +193,7 @@ export function EnrichStep({
                 </>
               ) : (
                 <>
-                  <MapPin className="h-4 w-4 mr-2" />
+                  <Icon className="h-4 w-4 mr-2" />
                   Enrich {eventsNeedingEnrichment} Event{eventsNeedingEnrichment !== 1 ? 's' : ''}
                 </>
               )}
@@ -177,7 +214,7 @@ export function EnrichStep({
           <div className="space-y-3">
             <div className="flex items-center justify-center gap-2 text-sm text-green-600">
               <CheckCircle2 className="h-4 w-4" />
-              <span>Venue enrichment complete</span>
+              <span>{config.completeText}</span>
             </div>
 
             <div className="flex flex-col gap-2">

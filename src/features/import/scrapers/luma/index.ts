@@ -19,3 +19,11 @@ export {
   getUniqueVenueNames,
   getAllVenueInfo,
 } from './transformer'
+
+// Description enrichment
+export {
+  enrichLumaEventsWithDescriptions,
+  enrichLumaDescriptionsBatch,
+  fetchLumaDescriptionFromDetailPage,
+} from './description-enrichment'
+export type { LumaDescriptionResult, EnrichmentEvent as LumaEnrichmentEvent } from './description-enrichment'
