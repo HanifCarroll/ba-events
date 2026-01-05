@@ -720,14 +720,10 @@ export function useImportWizard(
 
     try {
       const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: 'other' }[] = []
-      const mergeMap = new Map<string, string>()
 
-      venueEdits.forEach((edit, originalName) => {
+      venueEdits.forEach((edit) => {
         if (edit.skip) return
-        if (edit.mergeInto) {
-          mergeMap.set(originalName, edit.mergeInto)
-          return
-        }
+        if (edit.mergeInto) return // Skip venues being merged into existing ones
         venuesToCreate.push({ name: edit.name, neighborhood: edit.neighborhood, type: 'other' })
       })
 

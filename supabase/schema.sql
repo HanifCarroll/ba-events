@@ -69,7 +69,9 @@ create type venue_type as enum (
 create type event_status as enum (
   'scheduled',
   'cancelled',
-  'postponed'
+  'postponed',
+  'past',
+  'pending_review'
 );
 
 -- Venues table
@@ -206,6 +208,38 @@ as $$
     and 1 - (events.embedding <=> query_embedding) > match_threshold
   order by events.embedding <=> query_embedding
   limit match_count;
+$$;
+
+-- Enable pg_trgm extension for fuzzy text matching
+create extension if not exists pg_trgm;
+
+-- Index for fuzzy venue name matching
+create index idx_venues_name_trgm on venues using gin (name gin_trgm_ops);
+
+-- Function to find similar venues by name (fuzzy matching)
+-- Used by src/features/import/scrapers/venue-matcher.ts for venue deduplication
+create or replace function find_similar_venue(
+  search_name text,
+  similarity_threshold float default 0.6
+)
+returns table (
+  id uuid,
+  name text,
+  similarity float
+)
+language plpgsql
+as $$
+begin
+  return query
+  select
+    v.id,
+    v.name,
+    similarity(v.name, search_name) as similarity
+  from venues v
+  where similarity(v.name, search_name) >= similarity_threshold
+  order by similarity desc
+  limit 1;
+end;
 $$;
 
 -- Helper view: events with venue details

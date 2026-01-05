@@ -29,9 +29,9 @@ Complete these in order:
 |------|------|-----|--------|
 | **1** | CRIT-03: Enrichment Status Tracking | Prerequisite for automatic enrichment | ✅ Complete |
 | **2** | Automatic Enrichment Architecture | Events + venues auto-enrich after import | ✅ Complete |
-| **3a** | CRIT-01: find_similar_venue RPC | Fuzzy venue matching is broken | Not Started |
-| **3b** | CRIT-02: EventStatus Enum | Potential runtime errors | Not Started |
-| **3c** | CRIT-04: Venue Merge | UI feature is broken | Not Started |
+| **3a** | CRIT-01: find_similar_venue RPC | Fuzzy venue matching is broken | ✅ Complete |
+| **3b** | CRIT-02: EventStatus Enum | Potential runtime errors | ✅ Complete |
+| **3c** | CRIT-04: Venue Merge | UI feature is broken | ✅ Complete (was already working) |
 | **4** | ARCH-01: Wizard Refactor | Code quality (do after core features work) | Not Started |
 
 Steps 3a-3c are independent and can be done in parallel.
@@ -374,7 +374,7 @@ These are independent of automatic enrichment and can be done in parallel with S
 
 ### CRIT-01: Missing `find_similar_venue` RPC Function
 
-**Status:** Not Started
+**Status:** ✅ Complete
 **Location:** `src/features/import/scrapers/venue-matcher.ts:58`
 **Impact:** Fuzzy venue matching is completely broken
 
@@ -432,7 +432,7 @@ $$ LANGUAGE plpgsql;
 
 ### CRIT-02: EventStatus Enum Mismatch
 
-**Status:** Not Started
+**Status:** ✅ Complete
 **Location:**
 - Database: `supabase/schema.sql` (event_status enum)
 - TypeScript: `src/shared/lib/types.ts:56`
@@ -476,9 +476,11 @@ ALTER TYPE event_status ADD VALUE 'pending_review';
 
 ### CRIT-04: Venue Merge Functionality Not Implemented
 
-**Status:** Not Started
+**Status:** ✅ Complete (was already working - removed dead code)
 **Location:** `src/features/import/hooks/useImportWizard.ts:709-937`
 **Impact:** Users can select "merge into" in UI but it's silently ignored
+
+**Update:** Upon investigation, the merge functionality was actually working correctly. The code reads `edit.mergeInto` directly from the venueEdits map when processing events. The `mergeMap` variable was dead code that was created but never used. Fix: Removed the unused `mergeMap` variable for clarity.
 
 **Problem:**
 The VenuesStep UI allows users to select a venue to merge into, but the `createVenuesAndProceed` function ignores the `mergeInto` field:
@@ -797,6 +799,32 @@ Fixed enriched/failed counts to update incrementally rather than only at stream 
 
 **Files Modified:**
 - `src/features/import/hooks/useAutoEnrichment.ts` - Added incremental tracking in both stream processors
+
+### 2026-01-05 - Step 3: Critical Issues (CRIT-01, CRIT-02, CRIT-04)
+**Status:** Complete
+
+Implemented three critical issues:
+
+**CRIT-01: find_similar_venue RPC Function**
+- Created PostgreSQL function with pg_trgm extension for fuzzy venue matching
+- Added GIN index on venue names for performance
+- Migration: `supabase/migrations/20260105000002_add_find_similar_venue.sql`
+
+**CRIT-02: EventStatus Enum Mismatch**
+- Added 'past' and 'pending_review' values to database enum
+- Both values were actively used in TypeScript but missing from database
+- Migration: `supabase/migrations/20260105000001_add_event_status_values.sql`
+
+**CRIT-04: Venue Merge Dead Code**
+- Upon investigation, merge functionality was already working correctly
+- Removed unused `mergeMap` variable from `createVenuesAndProceed` function
+- Code reads `edit.mergeInto` directly from venueEdits map
+
+**Files Modified:**
+- `supabase/migrations/20260105000001_add_event_status_values.sql` - NEW
+- `supabase/migrations/20260105000002_add_find_similar_venue.sql` - NEW
+- `supabase/schema.sql` - Updated enum + added function
+- `src/features/import/hooks/useImportWizard.ts` - Removed dead code
 ```
 
 ---
