@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import Papa from 'papaparse'
@@ -38,7 +38,9 @@ import {
   filterByDateRangeClient,
 } from '@/features/import/scrapers/passline/client'
 import { bulkCreateVenuesAction, listVenues } from '@/features/venues'
-import { bulkCreateEventsAction } from '@/features/events'
+import { bulkCreateEventsAction, getRecentlyImportedPendingEventsAction } from '@/features/events'
+import { getRecentlyCreatedPendingVenuesAction } from '@/features/venues/api/enrichment'
+import { useAutoEnrichment, type EventToEnrich, type VenueToEnrich } from './useAutoEnrichment'
 import { mapToNeighborhood } from '@/shared/lib/admin-utils'
 import { CATEGORIES, EVENT_STATUSES } from '@/shared/lib/types'
 import type { Neighborhood, Category, EventStatus, EventInsert } from '@/shared/lib/types'
@@ -150,6 +152,12 @@ export function useImportWizard(
   // Import result state (for summary step)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [autoEnrich, setAutoEnrich] = useState(false)
+
+  // Track when import started for auto-enrichment query
+  const importStartTimeRef = useRef<string | null>(null)
+
+  // Auto-enrichment hook for post-import enrichment
+  const autoEnrichment = useAutoEnrichment()
 
   // Venue name to ID lookup
   const venueNameToId = useMemo(() => {
@@ -1036,6 +1044,9 @@ export function useImportWizard(
   const importEvents = useCallback(async () => {
     if (selectedIds.size === 0) return
 
+    // Capture start time for auto-enrichment query
+    importStartTimeRef.current = new Date().toISOString()
+
     setIsImporting(true)
     setError(null)
     setImportProgress({ current: 0, total: selectedIds.size })
@@ -1295,6 +1306,48 @@ export function useImportWizard(
         with_venue: withVenue,
         without_venue: withoutVenue,
       })
+
+      // Start auto-enrichment for imported events and venues
+      // Query for events/venues that need enrichment from this import session
+      if (source && importStartTimeRef.current) {
+        try {
+          const [pendingEvents, pendingVenues] = await Promise.all([
+            getRecentlyImportedPendingEventsAction({
+              data: { source, importedAfter: importStartTimeRef.current },
+            }),
+            getRecentlyCreatedPendingVenuesAction({
+              data: { createdAfter: importStartTimeRef.current },
+            }),
+          ])
+
+          // Convert to the format expected by useAutoEnrichment
+          const eventsToEnrich: EventToEnrich[] = pendingEvents.map(
+            (e: { id: string; name: string; link: string; source: string }) => ({
+              id: e.id,
+              name: e.name,
+              link: e.link,
+              source: e.source,
+            })
+          )
+
+          const venuesToEnrich: VenueToEnrich[] = pendingVenues.map(
+            (v: { id: string; name: string }) => ({
+              venueId: v.id,
+              venueName: v.name,
+            })
+          )
+
+          // Start enrichment in background (non-blocking)
+          if (eventsToEnrich.length > 0 || venuesToEnrich.length > 0) {
+            // Don't await - let it run while user sees summary
+            autoEnrichment.startEnrichment(eventsToEnrich, venuesToEnrich)
+          }
+        } catch (enrichErr) {
+          // Don't fail the import if enrichment query fails
+          console.error('[import] Failed to start auto-enrichment:', enrichErr)
+        }
+      }
+
       setStep('summary')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import events')
@@ -1303,7 +1356,7 @@ export function useImportWizard(
       setIsImporting(false)
       setImportProgress(null)
     }
-  }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, meetupEvents, lumaEvents, csvRows])
+  }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, meetupEvents, lumaEvents, csvRows, autoEnrichment])
 
   // Fetch Meetup events needing venue enrichment when entering enrich step
   const fetchEventsNeedingEnrichment = useCallback(async () => {
@@ -1642,6 +1695,9 @@ export function useImportWizard(
     // Import result state (for summary step)
     importResult,
     autoEnrich,
+
+    // Auto-enrichment state (for post-import enrichment)
+    autoEnrichment,
 
     // Actions
     selectSource,

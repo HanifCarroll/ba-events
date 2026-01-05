@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
-import { getVenues, updateVenue } from '@/shared/lib/db/client'
+import { getVenues, updateVenue, supabase } from '@/shared/lib/db/client'
 import { requireAdminAccess, mapToNeighborhood } from '@/shared/lib/admin-utils'
 import type { Venue, Neighborhood } from '@/shared/lib/types'
 import type {
@@ -536,3 +536,50 @@ export const enrichVenuesWithNominatimAction = createServerFn({ method: 'POST' }
     }
     yield completeUpdate
   })
+
+// ============================================================================
+// PENDING QUERIES FOR AUTO-ENRICHMENT
+// ============================================================================
+
+/**
+ * Get recently created venues that need enrichment.
+ * Used to identify which venues to auto-enrich after import completes.
+ */
+export const getRecentlyCreatedPendingVenuesAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { createdAfter: string }) => data)
+  .handler(async ({ data: { createdAfter } }) => {
+    await requireAdminAccess()
+    const { data: venues, error } = await supabase
+      .from('venues')
+      .select('id, name')
+      .eq('enrichment_status', 'pending')
+      .gte('created_at', createdAfter)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[venue-enrichment] Failed to get recently created pending venues:', error)
+      return []
+    }
+
+    return (venues || []) as Array<{ id: string; name: string }>
+  })
+
+/**
+ * Get all pending venues for backfill enrichment.
+ */
+export const getAllPendingVenuesAction = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAdminAccess()
+  const { data: venues, error } = await supabase
+    .from('venues')
+    .select('id, name')
+    .eq('enrichment_status', 'pending')
+    .order('name', { ascending: true })
+    .limit(200) // Reasonable batch size for Nominatim rate limiting
+
+  if (error) {
+    console.error('[venue-enrichment] Failed to get all pending venues:', error)
+    return []
+  }
+
+  return (venues || []) as Array<{ id: string; name: string }>
+})

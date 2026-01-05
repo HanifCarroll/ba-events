@@ -299,6 +299,8 @@ function ImportEventsPage() {
               // TODO: Navigate to events page with enrichment
             }}
             onImportMore={wizard.reset}
+            autoEnrichmentState={wizard.autoEnrichment.state}
+            onStopEnrichment={wizard.autoEnrichment.stop}
           />
         )}
       </div>

@@ -3,7 +3,7 @@
 This document catalogs all identified issues in the event import and enrichment system. **Sections are ordered by implementation priority** - work through them top to bottom.
 
 **Created:** 2026-01-03
-**Last Updated:** 2026-01-05
+**Last Updated:** 2026-01-05 (Step 2 Complete)
 
 ---
 
@@ -28,7 +28,7 @@ Complete these in order:
 | Step | What | Why | Status |
 |------|------|-----|--------|
 | **1** | CRIT-03: Enrichment Status Tracking | Prerequisite for automatic enrichment | ✅ Complete |
-| **2** | Automatic Enrichment Architecture | Events + venues auto-enrich after import | Not Started |
+| **2** | Automatic Enrichment Architecture | Events + venues auto-enrich after import | ✅ Complete |
 | **3a** | CRIT-01: find_similar_venue RPC | Fuzzy venue matching is broken | Not Started |
 | **3b** | CRIT-02: EventStatus Enum | Potential runtime errors | Not Started |
 | **3c** | CRIT-04: Venue Merge | UI feature is broken | Not Started |
@@ -753,6 +753,50 @@ Implemented database-backed enrichment status tracking:
 - `src/features/venues/hooks/useVenueNominatimEnrichment.ts` - Updated canEnrichVenue check
 - `src/features/events/hooks/useBackgroundEnrichment.ts` - Updated canEnrichEvent check
 - `src/features/events/hooks/useLumaDescriptionEnrichment.ts` - Updated canEnrichEvent check
+
+### 2026-01-05 - Step 2: Automatic Enrichment Architecture
+**Status:** Complete
+
+Implemented automatic enrichment that triggers after import completes, plus backfill mechanism:
+
+**Features Implemented:**
+1. **Auto-trigger enrichment** - Enrichment starts automatically when import completes (no user action required)
+2. **Both events AND venues** - Event descriptions (Jina + Claude → bilingual + embedding) and venue data (Nominatim)
+3. **Progress UI** - SummaryStep shows real-time progress bars for events and venues
+4. **Stop functionality** - Users can stop enrichment mid-process
+5. **Backfill UI** - BackfillCard component in "Needs Attention" tab to enrich existing pending records
+
+**Files Created:**
+- `src/features/import/hooks/useAutoEnrichment.ts` - Orchestration hook for both event and venue enrichment
+- `src/routes/admin/events/-components/BackfillCard.tsx` - Admin UI for backfill enrichment
+
+**Files Modified:**
+- `src/features/events/api/enrichment.ts` - Added `getRecentlyImportedPendingEventsAction`, `getPendingEnrichmentCountsAction`, `getAllPendingEventsAction`
+- `src/features/venues/api/enrichment.ts` - Added `getRecentlyCreatedPendingVenuesAction`, `getAllPendingVenuesAction`
+- `src/features/import/hooks/useImportWizard.ts` - Added auto-enrichment trigger after import completes
+- `src/routes/admin/events/-components/import/SummaryStep.tsx` - Added auto-enrichment progress UI
+- `src/routes/admin/events/import.tsx` - Wired autoEnrichmentState to SummaryStep
+- `src/routes/admin/events/index.tsx` - Added BackfillCard to "Needs Attention" tab
+- `src/features/import/index.ts` - Exported useAutoEnrichment and types
+- `src/features/events/index.ts` - Exported new server actions
+- `src/features/venues/index.ts` - Exported new server actions
+
+**Architecture:**
+- Frontend streaming (client-side), NOT true server-side background jobs
+- Events enriched first, then venues
+- Progress tracked via `AutoEnrichmentState` with phases: 'idle' | 'events' | 'venues' | 'complete'
+- Queries use `enrichment_status: 'pending'` + `created_at >= importStartTime` to identify just-imported records
+
+### 2026-01-05 - Incremental Enrichment Tracking Fix
+**Status:** Complete
+
+Fixed enriched/failed counts to update incrementally rather than only at stream completion:
+- Previously, enriched count only updated when receiving `complete` message at end of stream
+- If user stopped enrichment early, count showed 0 instead of actual enriched count
+- Fix: Track counts incrementally by checking `progress.success` on each progress message in both `processEventStream` and `processVenueStream`
+
+**Files Modified:**
+- `src/features/import/hooks/useAutoEnrichment.ts` - Added incremental tracking in both stream processors
 ```
 
 ---

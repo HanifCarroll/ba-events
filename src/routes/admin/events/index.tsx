@@ -54,6 +54,7 @@ import { formatDateTime } from '@/shared/lib/utils/formatting'
 import { useEventAdmin, useBackgroundEnrichment, useLumaDescriptionEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/features/events'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
+import { BackfillCard } from './-components/BackfillCard'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 import { z } from 'zod'
@@ -455,6 +456,9 @@ function EventListPage() {
           {/* Data quality filters - only show on needs_attention tab */}
           {filtering.activeTab === 'needs_attention' && (
             <div className="space-y-3">
+              {/* Backfill Card for enriching pending records */}
+              <BackfillCard />
+
               {/* Completeness toggle */}
               <div className="flex items-center gap-3">
                 <Tabs

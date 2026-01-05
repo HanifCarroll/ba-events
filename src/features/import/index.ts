@@ -71,6 +71,12 @@ export {
 
 // Hooks
 export { useImportWizard, type ImportSource, type WizardStep } from './hooks/useImportWizard'
+export {
+  useAutoEnrichment,
+  type AutoEnrichmentState,
+  type EventToEnrich,
+  type VenueToEnrich,
+} from './hooks/useAutoEnrichment'
 
 // Scrapers - only export types and client-side utilities
 export { type PasslineEvent as PasslineEventRaw } from './scrapers/passline'

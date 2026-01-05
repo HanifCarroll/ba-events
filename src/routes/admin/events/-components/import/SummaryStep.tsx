@@ -1,9 +1,11 @@
 import { Link } from '@tanstack/react-router'
-import { CheckCircle2, ArrowRight, MapPin, FileText, Tags, Sparkles, RotateCcw } from 'lucide-react'
+import { CheckCircle2, ArrowRight, MapPin, FileText, Tags, Sparkles, RotateCcw, StopCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
+import { Progress } from '@/shared/ui/progress'
 import type { ImportSource } from '@/features/import'
 import { getSourceMetadata } from '@/lib/source-metadata'
+import type { AutoEnrichmentState } from '@/features/import/hooks/useAutoEnrichment'
 
 export interface ImportResult {
   inserted: number
@@ -24,6 +26,9 @@ interface SummaryStepProps {
   onEnrichNow: () => void
   onImportMore: () => void
   isEnrichingBackground?: boolean
+  // Auto-enrichment state from useAutoEnrichment hook
+  autoEnrichmentState?: AutoEnrichmentState
+  onStopEnrichment?: () => void
 }
 
 export function SummaryStep({
@@ -34,6 +39,8 @@ export function SummaryStep({
   onEnrichNow,
   onImportMore,
   isEnrichingBackground = false,
+  autoEnrichmentState,
+  onStopEnrichment,
 }: SummaryStepProps) {
   const metadata = getSourceMetadata(source)
   const total = importResult.inserted + importResult.updated
@@ -43,6 +50,11 @@ export function SummaryStep({
   const needsCategoriesEnrichment = metadata.dataGaps.categories === 'requires_enrichment'
   const canEnrich = (needsDescriptionEnrichment && importResult.withoutDescription > 0) ||
     (needsCategoriesEnrichment && importResult.withoutCategories > 0)
+
+  // Auto-enrichment state helpers
+  const isAutoEnriching = autoEnrichmentState?.phase === 'events' || autoEnrichmentState?.phase === 'venues'
+  const isAutoEnrichComplete = autoEnrichmentState?.phase === 'complete'
+  const showAutoEnrichment = autoEnrichmentState && autoEnrichmentState.phase !== 'idle'
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
@@ -139,6 +151,101 @@ export function SummaryStep({
           </p>
         )}
       </div>
+
+      {/* Auto-Enrichment Progress */}
+      {showAutoEnrichment && (
+        <div className="bg-card/50 rounded-xl border border-border/50 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+              {isAutoEnriching && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+              {isAutoEnrichComplete && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+              Auto-Enrichment
+            </h3>
+            {isAutoEnriching && onStopEnrichment && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onStopEnrichment}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <StopCircle className="h-4 w-4 mr-1" />
+                Stop
+              </Button>
+            )}
+          </div>
+
+          {/* Event Enrichment Progress */}
+          {(autoEnrichmentState?.phase === 'events' || autoEnrichmentState?.eventResult) && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Events</span>
+                {autoEnrichmentState?.eventProgress && (
+                  <span className="text-muted-foreground">
+                    {autoEnrichmentState.eventProgress.current}/{autoEnrichmentState.eventProgress.total}
+                  </span>
+                )}
+                {autoEnrichmentState?.eventResult && (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-green-600 border-green-500/30">
+                      {autoEnrichmentState.eventResult.enriched} enriched
+                    </Badge>
+                    {autoEnrichmentState.eventResult.failed > 0 && (
+                      <Badge variant="outline" className="text-red-600 border-red-500/30">
+                        {autoEnrichmentState.eventResult.failed} failed
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+              {autoEnrichmentState?.phase === 'events' && autoEnrichmentState.eventProgress && (
+                <Progress
+                  value={(autoEnrichmentState.eventProgress.current / autoEnrichmentState.eventProgress.total) * 100}
+                  className="h-2"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Venue Enrichment Progress */}
+          {(autoEnrichmentState?.phase === 'venues' || autoEnrichmentState?.venueResult) && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Venues</span>
+                {autoEnrichmentState?.venueProgress && (
+                  <span className="text-muted-foreground">
+                    {autoEnrichmentState.venueProgress.current}/{autoEnrichmentState.venueProgress.total}
+                  </span>
+                )}
+                {autoEnrichmentState?.venueResult && (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-green-600 border-green-500/30">
+                      {autoEnrichmentState.venueResult.enriched} enriched
+                    </Badge>
+                    {autoEnrichmentState.venueResult.failed > 0 && (
+                      <Badge variant="outline" className="text-red-600 border-red-500/30">
+                        {autoEnrichmentState.venueResult.failed} failed
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+              {autoEnrichmentState?.phase === 'venues' && autoEnrichmentState.venueProgress && (
+                <Progress
+                  value={(autoEnrichmentState.venueProgress.current / autoEnrichmentState.venueProgress.total) * 100}
+                  className="h-2"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Complete Summary */}
+          {isAutoEnrichComplete && (
+            <p className="text-xs text-muted-foreground pt-2 border-t border-border/30">
+              Enrichment complete. Data has been updated automatically.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Auto-Enrich Option */}
       {canEnrich && (

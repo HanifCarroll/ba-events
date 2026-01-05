@@ -21,6 +21,9 @@ export {
   getEventsWithoutDescriptions,
   regenerateEmbeddingsAction,
   updateEventDescriptionsAction,
+  getRecentlyImportedPendingEventsAction,
+  getPendingEnrichmentCountsAction,
+  getAllPendingEventsAction,
 } from './api/enrichment'
 
 export {

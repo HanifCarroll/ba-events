@@ -18,6 +18,8 @@ export {
   getVenuesNeedingEnrichmentAction,
   enrichVenuesWithNominatimAction,
   mapNominatimNeighborhood,
+  getRecentlyCreatedPendingVenuesAction,
+  getAllPendingVenuesAction,
   type VenueEnrichmentInput,
   type VenueEnrichmentOutput,
   type VenueEnrichmentProgress,

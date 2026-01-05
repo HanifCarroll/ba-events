@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getEventsWithVenues, getEventById, updateEvent } from '@/shared/lib/db/client'
+import { getEventsWithVenues, getEventById, updateEvent, supabase } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { enrichEventDescriptionBilingual } from '@/shared/lib/ai/enrichment'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
@@ -304,3 +304,79 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
       total: updates.length,
     } as DescriptionUpdateComplete
   })
+
+// ============================================================================
+// PENDING QUERIES FOR AUTO-ENRICHMENT
+// ============================================================================
+
+/**
+ * Get recently imported events that need enrichment.
+ * Used to identify which events to auto-enrich after import completes.
+ */
+export const getRecentlyImportedPendingEventsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { source: string; importedAfter: string }) => data)
+  .handler(async ({ data: { source, importedAfter } }) => {
+    await requireAdminAccess()
+    const { data: events, error } = await supabase
+      .from('events')
+      .select('id, name, link, source')
+      .eq('source', source)
+      .eq('enrichment_status', 'pending')
+      .gte('created_at', importedAfter)
+      .not('link', 'is', null)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[enrichment] Failed to get recently imported pending events:', error)
+      return []
+    }
+
+    return (events || []) as Array<{ id: string; name: string; link: string; source: string }>
+  })
+
+/**
+ * Get counts of pending events and venues for backfill UI.
+ */
+export const getPendingEnrichmentCountsAction = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await requireAdminAccess()
+
+    const [eventResult, venueResult] = await Promise.all([
+      supabase
+        .from('events')
+        .select('*', { count: 'exact', head: true })
+        .eq('enrichment_status', 'pending')
+        .not('link', 'is', null),
+      supabase
+        .from('venues')
+        .select('*', { count: 'exact', head: true })
+        .eq('enrichment_status', 'pending'),
+    ])
+
+    return {
+      pendingEvents: eventResult.count || 0,
+      pendingVenues: venueResult.count || 0,
+    }
+  }
+)
+
+/**
+ * Get all pending events for backfill enrichment.
+ */
+export const getAllPendingEventsAction = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAdminAccess()
+  const { data: events, error } = await supabase
+    .from('events')
+    .select('id, name, link, source')
+    .eq('enrichment_status', 'pending')
+    .not('link', 'is', null)
+    .order('starts_at', { ascending: true }) // Prioritize upcoming events
+    .limit(500) // Reasonable batch size
+
+  if (error) {
+    console.error('[enrichment] Failed to get all pending events:', error)
+    return []
+  }
+
+  return (events || []) as Array<{ id: string; name: string; link: string; source: string }>
+})
