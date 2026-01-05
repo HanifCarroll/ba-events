@@ -27,7 +27,7 @@ Complete these in order:
 
 | Step | What | Why | Status |
 |------|------|-----|--------|
-| **1** | CRIT-03: Enrichment Status Tracking | Prerequisite for automatic enrichment | Not Started |
+| **1** | CRIT-03: Enrichment Status Tracking | Prerequisite for automatic enrichment | ✅ Complete |
 | **2** | Automatic Enrichment Architecture | Events + venues auto-enrich after import | Not Started |
 | **3a** | CRIT-01: find_similar_venue RPC | Fuzzy venue matching is broken | Not Started |
 | **3b** | CRIT-02: EventStatus Enum | Potential runtime errors | Not Started |
@@ -44,7 +44,7 @@ Steps 3a-3c are independent and can be done in parallel.
 
 ### CRIT-03: Enrichment Status Tracking
 
-**Status:** Not Started
+**Status:** ✅ Complete
 **Location:** Database schema, `src/shared/lib/types.ts`
 **Impact:** Cannot implement automatic enrichment without tracking what's been enriched
 
@@ -688,16 +688,6 @@ Create error message helper with actionable messages based on error type.
 
 ---
 
-### UX-02: CSV Rows With Errors Cannot Be Individually Fixed
-
-**Status:** Not Started
-**Impact:** Users must fix CSV externally and re-upload
-
-**Solution:**
-Add inline editing for CSV rows with validation errors.
-
----
-
 ### UX-03: No Confirmation Summary Details
 
 **Status:** Not Started
@@ -743,6 +733,26 @@ Reorganized document in optimal implementation order:
 2. Automatic enrichment architecture second
 3. Other critical issues third
 4. Lower priority issues last
+
+### 2026-01-05 - CRIT-03: Enrichment Status Tracking
+**Status:** Complete
+
+Implemented database-backed enrichment status tracking:
+- Added `enrichment_status` enum type ('pending', 'in_progress', 'completed', 'failed')
+- Added `enrichment_status`, `enrichment_error`, `enriched_at` columns to both events and venues
+- Created partial indexes for efficient querying of pending records
+- Updated TypeScript types in `src/shared/lib/types.ts`
+- Updated all enrichment functions to filter by `enrichment_status === 'pending'`
+- Updated all enrichment functions to set status on success/failure
+
+**Files Modified:**
+- `src/shared/lib/types.ts` - Added EnrichmentStatus type, updated Event/Venue interfaces
+- `src/features/venues/api/enrichment.ts` - Updated filters and status updates
+- `src/features/events/api/enrichment.ts` - Updated filters and status updates
+- `src/features/import/api/luma.ts` - Updated SQL queries and status updates
+- `src/features/venues/hooks/useVenueNominatimEnrichment.ts` - Updated canEnrichVenue check
+- `src/features/events/hooks/useBackgroundEnrichment.ts` - Updated canEnrichEvent check
+- `src/features/events/hooks/useLumaDescriptionEnrichment.ts` - Updated canEnrichEvent check
 ```
 
 ---
