@@ -33,6 +33,24 @@ const nominatimAddressSchema = z.object({
 }).passthrough() // Allow additional fields we don't use
 
 /**
+ * Zod schema for Nominatim extratags (optional OSM metadata)
+ * These fields are only present if the data exists in OpenStreetMap
+ */
+const nominatimExtratagsSchema = z.object({
+  website: z.string().optional(),
+  'contact:website': z.string().optional(),
+  'contact:instagram': z.string().optional(),
+  instagram: z.string().optional(),
+  'contact:facebook': z.string().optional(),
+  facebook: z.string().optional(),
+  phone: z.string().optional(),
+  'contact:phone': z.string().optional(),
+  opening_hours: z.string().optional(),
+  wikidata: z.string().optional(),
+  wikipedia: z.string().optional(),
+}).passthrough() // Allow additional fields
+
+/**
  * Zod schema for a single Nominatim search result
  * Based on: https://nominatim.org/release-docs/latest/api/Output/
  */
@@ -49,6 +67,7 @@ const nominatimResultSchema = z.object({
   type: z.string().optional(),
   importance: z.number().optional(),
   address: nominatimAddressSchema,
+  extratags: nominatimExtratagsSchema.optional(),
 }).passthrough() // Allow additional fields
 
 /**
@@ -58,6 +77,7 @@ const nominatimResponseSchema = z.array(nominatimResultSchema)
 
 // Inferred types from Zod schemas
 type NominatimAddress = z.infer<typeof nominatimAddressSchema>
+type NominatimExtratags = z.infer<typeof nominatimExtratagsSchema>
 type NominatimResult = z.infer<typeof nominatimResultSchema>
 
 // Enrichment types
@@ -77,6 +97,82 @@ export interface VenueEnrichmentOutput {
 export type VenueEnrichmentProgress = NominatimEnrichProgress
 export type VenueEnrichmentComplete = NominatimEnrichComplete
 export type VenueEnrichmentUpdate = NominatimEnrichUpdate
+
+/**
+ * Extract website URL from Nominatim extratags.
+ * Tries multiple field names as OSM tagging varies.
+ */
+function extractWebsite(extratags: NominatimExtratags | undefined): string | null {
+  if (!extratags) return null
+  return extratags.website || extratags['contact:website'] || null
+}
+
+/**
+ * Extract Instagram handle from Nominatim extratags.
+ * Normalizes to just the handle (removes URL prefix if present).
+ */
+function extractInstagramHandle(extratags: NominatimExtratags | undefined): string | null {
+  if (!extratags) return null
+  const raw = extratags.instagram || extratags['contact:instagram']
+  if (!raw) return null
+
+  // Normalize: extract handle from URL if needed
+  // e.g., "https://instagram.com/venue_name" -> "venue_name"
+  const match = raw.match(/(?:instagram\.com\/)?@?([a-zA-Z0-9._]+)\/?$/)
+  return match ? match[1] : raw
+}
+
+/**
+ * Scrape a venue website to find Instagram handle.
+ * Looks for instagram.com links in the HTML.
+ */
+async function scrapeInstagramFromWebsite(websiteUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(websiteUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; BAEventos/1.0; +https://baeventos.com)',
+      },
+      signal: AbortSignal.timeout(10000),
+      redirect: 'follow',
+    })
+
+    if (!response.ok) {
+      console.log(`[venue-enrichment] Website returned ${response.status}: ${websiteUrl}`)
+      return null
+    }
+
+    const html = await response.text()
+
+    // Look for Instagram URLs in the HTML
+    // Matches: instagram.com/username, www.instagram.com/username, https://instagram.com/username
+    const instagramPattern = /(?:https?:\/\/)?(?:www\.)?instagram\.com\/([a-zA-Z0-9._]+)\/?/gi
+    const matches = html.matchAll(instagramPattern)
+
+    // Collect unique handles, excluding common non-profile paths
+    const excludedPaths = new Set(['p', 'reel', 'reels', 'stories', 'explore', 'accounts', 'direct', 'about', 'legal', 'privacy', 'terms'])
+    const handles = new Set<string>()
+
+    for (const match of matches) {
+      const handle = match[1].toLowerCase()
+      if (!excludedPaths.has(handle) && handle.length > 1) {
+        handles.add(handle)
+      }
+    }
+
+    if (handles.size === 0) {
+      return null
+    }
+
+    // If multiple handles found, prefer the first one (usually in header/footer)
+    const handle = Array.from(handles)[0]
+    console.log(`[venue-enrichment] Found Instagram @${handle} from website: ${websiteUrl}`)
+    return handle
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error'
+    console.log(`[venue-enrichment] Failed to scrape website for Instagram: ${msg}`)
+    return null
+  }
+}
 
 /**
  * Map Nominatim neighbourhood/suburb to valid CABA Neighborhood.
@@ -163,11 +259,23 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
     if (typeof rawAddress.country_code === 'string') address.country_code = rawAddress.country_code
   }
 
+  // Extract extratags if present
+  let extratags: NominatimExtratags | undefined
+  if (typeof result.extratags === 'object' && result.extratags !== null) {
+    const rawExtratags = result.extratags as Record<string, unknown>
+    extratags = {}
+    if (typeof rawExtratags.website === 'string') extratags.website = rawExtratags.website
+    if (typeof rawExtratags['contact:website'] === 'string') extratags['contact:website'] = rawExtratags['contact:website']
+    if (typeof rawExtratags.instagram === 'string') extratags.instagram = rawExtratags.instagram
+    if (typeof rawExtratags['contact:instagram'] === 'string') extratags['contact:instagram'] = rawExtratags['contact:instagram']
+  }
+
   return {
     lat: result.lat,
     lon: result.lon,
     display_name: result.display_name,
     address,
+    extratags,
     // Optional fields with type checks
     ...(typeof result.place_id === 'number' && { place_id: result.place_id }),
     ...(typeof result.osm_type === 'string' && { osm_type: result.osm_type }),
@@ -186,7 +294,7 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
  */
 async function searchNominatim(venueName: string): Promise<NominatimResult | null> {
   const query = encodeURIComponent(`${venueName} Buenos Aires Argentina`)
-  const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&limit=1`
+  const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&extratags=1&limit=1`
 
   const response = await fetch(url, {
     headers: {
@@ -257,31 +365,40 @@ async function enrichSingleVenue(
       }
     }
 
-    // Extract address and neighborhood
+    // Extract address, neighborhood, website, and instagram
     const address = buildAddress(result.address)
     const neighborhood = mapNominatimNeighborhood(
       result.address.neighbourhood,
       result.address.suburb
     )
+    const website = extractWebsite(result.extratags)
+    let instagramHandle = extractInstagramHandle(result.extratags)
+
+    // If we have a website but no Instagram from OSM, try scraping the website
+    if (website && !instagramHandle) {
+      instagramHandle = await scrapeInstagramFromWebsite(website)
+    }
 
     // Only update if we found something useful
-    if (!address && !neighborhood) {
+    if (!address && !neighborhood && !website && !instagramHandle) {
       return {
         venueId,
         venueName,
         success: false,
-        error: 'Found location but no address or neighborhood data',
+        error: 'Found location but no useful data (address, neighborhood, website, or instagram)',
       }
     }
 
     // Build update object with only non-null values
-    const updates: { address?: string; neighborhood?: Neighborhood } = {}
+    const updates: { address?: string; neighborhood?: Neighborhood; website?: string; instagram_handle?: string } = {}
     if (address) updates.address = address
     if (neighborhood) updates.neighborhood = neighborhood
+    if (website) updates.website = website
+    if (instagramHandle) updates.instagram_handle = instagramHandle
 
     await updateVenue(venueId, updates, client)
 
-    console.log(`[venue-enrichment] Enriched ${venueName}: address=${address}, neighborhood=${neighborhood}`)
+    console.log(`[venue-enrichment] Enriched ${venueName}: address=${address}, neighborhood=${neighborhood}, website=${website}, instagram=${instagramHandle}`)
 
     return { venueId, venueName, success: true }
   } catch (error) {
@@ -300,10 +417,18 @@ async function enrichSingleVenue(
             result.address.neighbourhood,
             result.address.suburb
           )
-          if (address || neighborhood) {
-            const updates: { address?: string; neighborhood?: Neighborhood } = {}
+          const website = extractWebsite(result.extratags)
+          let instagramHandle = extractInstagramHandle(result.extratags)
+          // Try scraping website for Instagram if we have website but no Instagram
+          if (website && !instagramHandle) {
+            instagramHandle = await scrapeInstagramFromWebsite(website)
+          }
+          if (address || neighborhood || website || instagramHandle) {
+            const updates: { address?: string; neighborhood?: Neighborhood; website?: string; instagram_handle?: string } = {}
             if (address) updates.address = address
             if (neighborhood) updates.neighborhood = neighborhood
+            if (website) updates.website = website
+            if (instagramHandle) updates.instagram_handle = instagramHandle
             await updateVenue(venueId, updates, client)
             return { venueId, venueName, success: true }
           }
