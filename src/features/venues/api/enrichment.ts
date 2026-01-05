@@ -357,6 +357,10 @@ async function enrichSingleVenue(
     const result = await searchNominatim(venueName)
 
     if (!result) {
+      await updateVenue(venueId, {
+        enrichment_status: 'failed',
+        enrichment_error: 'No results found on OpenStreetMap',
+      }, client)
       return {
         venueId,
         venueName,
@@ -381,6 +385,10 @@ async function enrichSingleVenue(
 
     // Only update if we found something useful
     if (!address && !neighborhood && !website && !instagramHandle) {
+      await updateVenue(venueId, {
+        enrichment_status: 'failed',
+        enrichment_error: 'Found location but no useful data (address, neighborhood, website, or instagram)',
+      }, client)
       return {
         venueId,
         venueName,
@@ -390,7 +398,10 @@ async function enrichSingleVenue(
     }
 
     // Build update object with only non-null values
-    const updates: { address?: string; neighborhood?: Neighborhood; website?: string; instagram_handle?: string } = {}
+    const updates: { address?: string; neighborhood?: Neighborhood; website?: string; instagram_handle?: string; enrichment_status: 'completed'; enriched_at: string } = {
+      enrichment_status: 'completed',
+      enriched_at: new Date().toISOString(),
+    }
     if (address) updates.address = address
     if (neighborhood) updates.neighborhood = neighborhood
     if (website) updates.website = website
@@ -424,7 +435,10 @@ async function enrichSingleVenue(
             instagramHandle = await scrapeInstagramFromWebsite(website)
           }
           if (address || neighborhood || website || instagramHandle) {
-            const updates: { address?: string; neighborhood?: Neighborhood; website?: string; instagram_handle?: string } = {}
+            const updates: { address?: string; neighborhood?: Neighborhood; website?: string; instagram_handle?: string; enrichment_status: 'completed'; enriched_at: string } = {
+              enrichment_status: 'completed',
+              enriched_at: new Date().toISOString(),
+            }
             if (address) updates.address = address
             if (neighborhood) updates.neighborhood = neighborhood
             if (website) updates.website = website
@@ -438,6 +452,12 @@ async function enrichSingleVenue(
       }
     }
 
+    // Mark as failed with error message
+    await updateVenue(venueId, {
+      enrichment_status: 'failed',
+      enrichment_error: errorMsg,
+    }, client)
+
     return {
       venueId,
       venueName,
@@ -448,13 +468,13 @@ async function enrichSingleVenue(
 }
 
 /**
- * Get venues that need address or neighborhood enrichment
+ * Get venues that need enrichment (based on enrichment_status)
  */
 export const getVenuesNeedingEnrichmentAction = createServerFn({ method: 'GET' }).handler(
   async (): Promise<Venue[]> => {
     await requireAdminAccess()
     const venues = await getVenues(1000)
-    return venues.filter((v) => !v.address || !v.neighborhood)
+    return venues.filter((v) => v.enrichment_status === 'pending')
   }
 )
 

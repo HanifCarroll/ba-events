@@ -75,10 +75,10 @@ export function useLumaDescriptionEnrichment() {
   })
 
   /**
-   * Check if an event is a Luma event that can be enriched (missing description)
+   * Check if an event is a Luma event that can be enriched (enrichment_status is 'pending')
    */
   const canEnrichEvent = useCallback((event: EventWithVenue) => {
-    return event.source === 'luma' && !event.description_es && !!event.link
+    return event.source === 'luma' && event.enrichment_status === 'pending' && !!event.link
   }, [])
 
   /**

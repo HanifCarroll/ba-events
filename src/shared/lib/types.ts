@@ -57,6 +57,11 @@ export const EVENT_STATUSES = ['scheduled', 'cancelled', 'postponed', 'past', 'p
 
 export type EventStatus = (typeof EVENT_STATUSES)[number]
 
+// Enrichment status (for both events and venues)
+export const ENRICHMENT_STATUSES = ['pending', 'in_progress', 'completed', 'failed'] as const
+
+export type EnrichmentStatus = (typeof ENRICHMENT_STATUSES)[number]
+
 // Simplified intent-based categories (reduced from 23 to 6)
 export const CATEGORIES = [
   'music',
@@ -77,6 +82,9 @@ export interface Venue {
   address: string | null
   website: string | null
   instagram_handle: string | null
+  enrichment_status: EnrichmentStatus
+  enrichment_error: string | null
+  enriched_at: string | null
   created_at: string
   updated_at: string
 }
@@ -88,6 +96,9 @@ export interface VenueInsert {
   address?: string | null
   website?: string | null
   instagram_handle?: string | null
+  enrichment_status?: EnrichmentStatus
+  enrichment_error?: string | null
+  enriched_at?: string | null
 }
 
 // For updating venues
@@ -114,6 +125,9 @@ export interface Event {
   external_id: string | null // ID from external source for deduplication
   status: EventStatus
   embedding?: number[]
+  enrichment_status: EnrichmentStatus
+  enrichment_error: string | null
+  enriched_at: string | null
   created_at: string
   updated_at: string
 }
@@ -145,6 +159,9 @@ export interface EventInsert {
   external_id?: string | null
   status?: EventStatus
   embedding?: number[]
+  enrichment_status?: EnrichmentStatus
+  enrichment_error?: string | null
+  enriched_at?: string | null
 }
 
 // For updating events

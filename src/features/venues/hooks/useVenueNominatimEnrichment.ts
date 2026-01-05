@@ -93,10 +93,10 @@ export function useVenueNominatimEnrichment() {
   })
 
   /**
-   * Check if a venue can be enriched (missing address or neighborhood)
+   * Check if a venue can be enriched (enrichment_status is 'pending')
    */
   const canEnrichVenue = useCallback((venue: Venue) => {
-    return !venue.address || !venue.neighborhood
+    return venue.enrichment_status === 'pending'
   }, [])
 
   /**

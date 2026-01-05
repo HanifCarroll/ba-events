@@ -190,7 +190,7 @@ export const importLumaEventsBatchAction = createServerFn({ method: 'POST' })
 
 /**
  * Fetch Luma events that need description enrichment
- * Returns events where description is null or empty
+ * Returns events where enrichment_status is 'pending' and description is null or empty
  */
 export const getLumaEventsNeedingDescriptionEnrichmentAction = createServerFn({ method: 'GET' }).handler(
   async (): Promise<{ events: Array<{ id: string; source_url: string; name: string }> }> => {
@@ -198,6 +198,7 @@ export const getLumaEventsNeedingDescriptionEnrichmentAction = createServerFn({ 
       .from('events')
       .select('id, source_url, name')
       .eq('source', 'luma')
+      .eq('enrichment_status', 'pending')
       .or('description_es.is.null,description_es.eq.')
       .not('source_url', 'is', null)
       .order('created_at', { ascending: false })
@@ -280,17 +281,38 @@ export const enrichLumaDescriptionsAction = createServerFn({ method: 'POST' })
                     description_es: description,
                     categories: eventData.categories || [],
                   })
-                  await updateEvent(event.eventId, { embedding }, client)
+                  // Update with embedding and mark as completed
+                  await updateEvent(event.eventId, {
+                    embedding,
+                    enrichment_status: 'completed',
+                    enriched_at: new Date().toISOString(),
+                  }, client)
+                } else {
+                  // Mark as completed even without embedding regeneration
+                  await updateEvent(event.eventId, {
+                    enrichment_status: 'completed',
+                    enriched_at: new Date().toISOString(),
+                  }, client)
                 }
 
                 console.log(`[Admin] Enriched description for: ${event.name}`)
                 return { event, success: true, error: undefined }
               } else {
+                // Mark as failed
+                await updateEvent(event.eventId, {
+                  enrichment_status: 'failed',
+                  enrichment_error: 'No description found on page',
+                }, client)
                 return { event, success: false, error: 'No description found on page' }
               }
             } catch (error) {
               const errorMsg = error instanceof Error ? error.message : 'Unknown error'
               console.error(`[Admin] Error enriching ${event.name}:`, errorMsg)
+              // Mark as failed
+              await updateEvent(event.eventId, {
+                enrichment_status: 'failed',
+                enrichment_error: errorMsg,
+              }, client)
               return { event, success: false, error: errorMsg }
             } finally {
               await page.close()

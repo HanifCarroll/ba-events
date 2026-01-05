@@ -74,10 +74,10 @@ export function useBackgroundEnrichment() {
   })
 
   /**
-   * Check if an event can be enriched (missing description but has a link)
+   * Check if an event can be enriched (enrichment_status is 'pending' and has a link)
    */
   const canEnrichEvent = useCallback((event: EventWithVenue) => {
-    return !event.description_es && !!event.link
+    return event.enrichment_status === 'pending' && !!event.link
   }, [])
 
   /**

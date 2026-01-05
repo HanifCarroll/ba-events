@@ -64,6 +64,10 @@ async function enrichSingleEvent(
     console.log(`[server] Got descriptions for ${id}: ES=${bilingual?.description_es ? 'yes' : 'no'}, EN=${bilingual?.description_en ? 'yes' : 'no'}`)
 
     if (!bilingual?.description_es) {
+      await updateEvent(id, {
+        enrichment_status: 'failed',
+        enrichment_error: 'Failed to extract description',
+      }, client)
       return { id, success: false, error: 'Failed to extract description' }
     }
 
@@ -77,20 +81,30 @@ async function enrichSingleEvent(
       categories: existingEvent.categories,
     })
 
-    // Update event with both descriptions and new embedding
+    // Update event with both descriptions, new embedding, and enrichment status
     await updateEvent(id, {
       description_es: bilingual.description_es,
       description_en: bilingual.description_en,
       embedding,
+      enrichment_status: 'completed',
+      enriched_at: new Date().toISOString(),
     }, client)
 
     return { id, success: true }
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
     console.error(`Failed to enrich event ${id}:`, error)
+
+    // Mark as failed with error message
+    await updateEvent(id, {
+      enrichment_status: 'failed',
+      enrichment_error: errorMsg,
+    }, client)
+
     return {
       id,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMsg,
     }
   }
 }
@@ -150,12 +164,12 @@ export const enrichEventDescriptionsAction = createServerFn({ method: 'POST' })
   })
 
 /**
- * Get events that are missing descriptions (no Spanish description)
+ * Get events that need enrichment (based on enrichment_status)
  */
 export const getEventsWithoutDescriptions = createServerFn({ method: 'GET' }).handler(
   async (): Promise<EventWithVenue[]> => {
     const events = await getEventsWithVenues(1000)
-    return events.filter((e) => !e.description_es)
+    return events.filter((e) => e.enrichment_status === 'pending')
   }
 )
 
