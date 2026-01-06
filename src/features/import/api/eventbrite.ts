@@ -21,11 +21,13 @@ import type {
   VenueEnrichComplete,
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
+import { checkDuplicateEvents } from './duplicate-detection'
 
 export interface EventbritePreviewEvent {
   eventbrite: EventbriteEvent
   transformed: EventInsert
   venueMatch: VenueMatchResult
+  alreadyImported: boolean
 }
 
 // Re-export EventbriteEvent type for client use
@@ -56,7 +58,7 @@ export const fetchEventbriteEventsAction = createServerFn({ method: 'POST' })
     console.log(`[Admin] ${filteredEvents.length} events in date range ${startDate} to ${endDate}`)
 
     // Match venues and transform events
-    const previews: EventbritePreviewEvent[] = await Promise.all(
+    const previewsWithoutImportCheck = await Promise.all(
       filteredEvents.map(async (event) => {
         const venueName = event.location?.name || ''
         const venueMatch = await matchVenue(venueName)
@@ -73,6 +75,19 @@ export const fetchEventbriteEventsAction = createServerFn({ method: 'POST' })
       })
     )
 
+    // Check for duplicates
+    const externalIds = previewsWithoutImportCheck
+      .map((p) => p.transformed.external_id)
+      .filter((id): id is string => Boolean(id))
+
+    const existingIds = await checkDuplicateEvents(externalIds, 'eventbrite')
+
+    // Add alreadyImported flag
+    const previews: EventbritePreviewEvent[] = previewsWithoutImportCheck.map((p) => ({
+      ...p,
+      alreadyImported: Boolean(p.transformed.external_id && existingIds.has(p.transformed.external_id)),
+    }))
+
     return { events: previews }
   })
 
@@ -84,7 +99,7 @@ export const processEventbriteEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: EventbriteEvent[] }) => data)
   .handler(async ({ data: { events } }): Promise<EventbritePreviewEvent[]> => {
     // Match venues and transform events
-    const previews: EventbritePreviewEvent[] = await Promise.all(
+    const previewsWithoutImportCheck = await Promise.all(
       events.map(async (event) => {
         // Use venue name for matching (Eventbrite provides full venue info)
         const venueName = event.location?.name || ''
@@ -101,6 +116,18 @@ export const processEventbriteEventsAction = createServerFn({ method: 'POST' })
         }
       })
     )
+
+    // Check for duplicates
+    const externalIds = previewsWithoutImportCheck
+      .map(p => p.transformed.external_id)
+      .filter((id): id is string => Boolean(id))
+    const existingIds = await checkDuplicateEvents(externalIds, 'eventbrite')
+
+    // Add alreadyImported flag
+    const previews: EventbritePreviewEvent[] = previewsWithoutImportCheck.map((p) => ({
+      ...p,
+      alreadyImported: Boolean(p.transformed.external_id && existingIds.has(p.transformed.external_id)),
+    }))
 
     return previews
   })

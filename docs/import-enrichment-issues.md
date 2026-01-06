@@ -3,7 +3,7 @@
 This document catalogs all identified issues in the event import and enrichment system. **Sections are ordered by implementation priority** - work through them top to bottom.
 
 **Created:** 2026-01-03
-**Last Updated:** 2026-01-05 (ARCH-01/ARCH-02 Complete)
+**Last Updated:** 2026-01-05 (Lower Priority Issues Complete)
 
 ---
 
@@ -634,48 +634,61 @@ export const ENRICHMENT_CONFIG = {
 
 ### DATA-01: Silent AI Categorization Failures
 
-**Status:** Not Started
-**Location:** `src/shared/lib/ai/ai-categorizer.ts:36-72`
+**Status:** ✅ Complete
+**Location:** `src/features/import/scrapers/ai-categorizer.ts`
 **Impact:** Events silently get wrong category; user unaware of failures
 
 **Problem:**
 When AI categorization fails, it silently defaults to 'social'.
 
-**Solution:**
-Return error information alongside result and track fallback count.
+**Solution Implemented:**
+- Created `CategorizationResult` interface with `success`, `fallback`, and `error` fields
+- Created `CategorizationStats` interface to track `total`, `successful`, `fallback` counts
+- Added `categorizeEventWithResult()` function returning detailed result objects
+- Added `categorizeEventsBatchWithStats()` function for batch processing with stats
+- Maintained backward compatibility with original function signatures
 
 ---
 
 ### DATA-02: Duplicate Detection Only for Meetup
 
-**Status:** Not Started
-**Location:** Various import files
+**Status:** ✅ Complete
+**Location:** All import API files
 **Impact:** Other sources can create duplicates on re-import
 
-**Solution:**
-Add duplicate detection to all sources using `checkExistingEvents()` utility.
+**Solution Implemented:**
+- Created `src/features/import/api/duplicate-detection.ts` with shared helper
+- Added `alreadyImported: boolean` field to all preview event interfaces
+- Added duplicate checking to Passline, Eventbrite, BA Tourism, and Luma fetch actions
+- Uses `external_id` to check against existing events in database
 
 ---
 
 ### DATA-03: Weak Similar Venue Detection
 
-**Status:** Not Started
-**Location:** `src/features/import/hooks/useImportWizard.ts:255-274`
+**Status:** ✅ Complete
+**Location:** `src/features/import/hooks/useImportWizard.ts`
 **Impact:** False positives/negatives in merge suggestions
 
-**Solution:**
-Use fuzzy matching with `string-similarity` package instead of simple substring matching.
+**Solution Implemented:**
+- Installed `string-similarity` package for Dice coefficient matching
+- Replaced substring matching with `compareTwoStrings()` fuzzy matching
+- Uses 0.6 similarity threshold for suggestions
+- Updated `similarVenues` to include similarity percentage: `Map<string, Array<{ name: string; similarity: number }>>`
+- VenuesStep UI now shows similarity percentage next to suggestions
 
 ---
 
 ### DATA-04: Price Field Type Inconsistency
 
-**Status:** Not Started
-**Location:** Various transformer files
+**Status:** ✅ Complete
+**Location:** `src/features/import/scrapers/shared/normalization.ts`
 **Impact:** Potential price display errors
 
-**Solution:**
-Document and standardize: all prices stored in ARS whole units.
+**Solution Implemented:**
+- Added comprehensive JSDoc comment to `normalizePrice()` function
+- Documented that all prices are standardized to ARS pesos as `number | null`
+- Clarified per-source handling: Passline (pesos), Luma (cents → pesos), CSV (user input), Eventbrite/BA Tourism (null)
 
 ---
 
@@ -683,21 +696,40 @@ Document and standardize: all prices stored in ARS whole units.
 
 ### UX-01: Generic Error Messages
 
-**Status:** Not Started
+**Status:** ✅ Complete
 **Impact:** Users can't debug or understand what went wrong
 
-**Solution:**
-Create error message helper with actionable messages based on error type.
+**Solution Implemented:**
+- Created `src/shared/lib/error-messages.ts` with contextual error helper
+- `getErrorMessage(error, context)` detects error type and returns actionable messages:
+  - Network errors: "Check your connection and try again"
+  - Auth errors: "Permission denied. You may need to log in again"
+  - Rate limiting: "Too many requests. Please wait a moment"
+  - Validation: Shows specific validation message
+  - Duplicates: "This record already exists"
+  - Not found: "The record was not found. It may have been deleted"
+  - Timeout: "Operation timed out. Try with fewer items"
+  - Server errors: Shows operation context
+- Updated all mutation hooks to use contextual error messages:
+  - `useEventMutations.ts` - create, update, delete
+  - `useVenueMutations.ts` - create, update, delete
+- Added helper functions: `getImportErrorMessage()`, `getEnrichmentErrorMessage()`
 
 ---
 
 ### UX-03: No Confirmation Summary Details
 
-**Status:** Not Started
+**Status:** ✅ Complete
 **Impact:** Users can't review exactly which events will be imported
 
-**Solution:**
-Add expandable event list in ConfirmStep.
+**Solution Implemented:**
+- Added `VenueStats` and `DataQuality` interfaces to ConfirmStep
+- Added pre-import summary section showing:
+  - Venue matching breakdown: matched (green), new (blue), unmatched (amber)
+  - Description quality: with description (green), without (amber)
+  - Warning badges for missing descriptions and unmatched venues
+- Computed stats from selected events in import.tsx
+- Shows similarity percentage for similar venue suggestions in VenuesStep
 
 ---
 
@@ -862,6 +894,58 @@ Implemented Source Adapter pattern to reduce code duplication in useImportWizard
 - Eliminated ~5 duplicate blocks in skipVenues function
 - Eliminated ~5 duplicate blocks in toggleSelectAll function
 - Single source of truth for source-specific logic now in adapter files
+
+### 2026-01-05 - Lower Priority Issues (DATA-01 through DATA-04, UX-01, UX-03)
+**Status:** Complete
+
+Implemented all remaining lower priority data quality and UX issues:
+
+**DATA-01: AI Categorization Error Tracking**
+- Added `CategorizationResult`, `CategorizationStats`, `BatchCategorizationResult` interfaces
+- Created `categorizeEventWithResult()` for detailed result objects
+- Created `categorizeEventsBatchWithStats()` for batch processing with stats
+- Tracks success, fallback, and error counts
+
+**DATA-02: Duplicate Detection for All Sources**
+- Created `src/features/import/api/duplicate-detection.ts` with shared helper
+- Added `alreadyImported: boolean` to all preview event types
+- Added duplicate checking to Passline, Eventbrite, BA Tourism, and Luma
+
+**DATA-03: Fuzzy Similar Venue Detection**
+- Installed `string-similarity` package
+- Replaced substring matching with Dice coefficient fuzzy matching (0.6 threshold)
+- VenuesStep now shows similarity percentage
+
+**DATA-04: Price Documentation**
+- Added JSDoc to `normalizePrice()` documenting ARS peso standardization
+
+**UX-01: Contextual Error Messages**
+- Created `src/shared/lib/error-messages.ts` with context-aware error helper
+- Updated all mutation hooks in events and venues features
+
+**UX-03: Enhanced Confirmation Summary**
+- Added `VenueStats` and `DataQuality` props to ConfirmStep
+- Shows venue matching breakdown (matched/new/unmatched)
+- Shows description quality stats (with/without)
+- Warning badges for missing data
+
+**Files Created:**
+- `src/features/import/api/duplicate-detection.ts`
+- `src/shared/lib/error-messages.ts`
+
+**Files Modified:**
+- `src/features/import/scrapers/ai-categorizer.ts`
+- `src/features/import/scrapers/shared/normalization.ts`
+- `src/features/import/api/passline.ts`
+- `src/features/import/api/eventbrite.ts`
+- `src/features/import/api/ba-tourism.ts`
+- `src/features/import/api/luma.ts`
+- `src/features/import/hooks/useImportWizard.ts`
+- `src/features/events/hooks/useEventMutations.ts`
+- `src/features/venues/hooks/useVenueMutations.ts`
+- `src/routes/admin/events/-components/import/ConfirmStep.tsx`
+- `src/routes/admin/events/-components/import/VenuesStep.tsx`
+- `src/routes/admin/events/import.tsx`
 ```
 
 ---

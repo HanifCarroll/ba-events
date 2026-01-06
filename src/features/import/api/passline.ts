@@ -17,11 +17,13 @@ import type {
   VenueEnrichComplete,
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
+import { checkDuplicateEvents } from './duplicate-detection'
 
 export interface PasslinePreviewEvent {
   passline: PasslineEvent
   transformed: EventInsert
   venueMatch: VenueMatchResult
+  alreadyImported: boolean
 }
 
 // Re-export PasslineEvent type for client use
@@ -38,7 +40,7 @@ export const processPasslineEventsAction = createServerFn({ method: 'POST' })
   .inputValidator((data: { events: PasslineEvent[] }) => data)
   .handler(async ({ data: { events } }): Promise<PasslinePreviewEvent[]> => {
     // Match venues and transform events
-    const previews: PasslinePreviewEvent[] = await Promise.all(
+    const previewsWithoutImportCheck = await Promise.all(
       events.map(async (event) => {
         const venueMatch = await matchVenue(event.lugar)
         const transformed = transformPasslineEvent(
@@ -53,6 +55,19 @@ export const processPasslineEventsAction = createServerFn({ method: 'POST' })
         }
       })
     )
+
+    // Check for duplicates
+    const externalIds = previewsWithoutImportCheck
+      .map((p) => p.transformed.external_id)
+      .filter((id): id is string => Boolean(id))
+
+    const existingIds = await checkDuplicateEvents(externalIds, 'passline')
+
+    // Add alreadyImported flag
+    const previews: PasslinePreviewEvent[] = previewsWithoutImportCheck.map((p) => ({
+      ...p,
+      alreadyImported: Boolean(p.transformed.external_id && existingIds.has(p.transformed.external_id)),
+    }))
 
     return previews
   })

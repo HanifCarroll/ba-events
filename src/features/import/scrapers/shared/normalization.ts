@@ -80,10 +80,17 @@ export function normalizeUrl(url: string | null): string | null {
 }
 
 /**
- * Normalize a price value from various input formats
+ * Normalize a price value from various input formats.
+ *
+ * All prices in this application are standardized to ARS pesos:
+ * - Passline: Already in pesos, passed through as-is
+ * - Luma: Converted from cents to pesos in transformer (price / 100)
+ * - Meetup: Already in pesos from API
+ * - CSV: User input expected in pesos
+ * - Eventbrite/BA Tourism: null (no price data from these sources)
  *
  * @param price - The price to normalize (number, string, or null)
- * @returns Normalized price rounded to 2 decimal places, or null
+ * @returns Normalized price in ARS pesos rounded to 2 decimal places, or null
  */
 export function normalizePrice(price: number | string | null): number | null {
   if (price === null || price === undefined) return null

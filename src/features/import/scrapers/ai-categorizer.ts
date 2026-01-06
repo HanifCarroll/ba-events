@@ -15,6 +15,26 @@ const anthropic = new Anthropic()
 const VALID_CATEGORIES: Category[] = ['music', 'arts', 'food', 'social', 'sports', 'festival']
 
 /**
+ * Result of a single categorization attempt
+ */
+export interface CategorizationResult {
+  category: Category
+  success: boolean
+  fallback: boolean
+  error?: string
+}
+
+/**
+ * Statistics from batch categorization
+ */
+export interface CategorizationStats {
+  total: number
+  successful: number
+  fallback: number
+  errors: string[]
+}
+
+/**
  * Prompt for Haiku to categorize events
  */
 const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categories:
@@ -31,12 +51,13 @@ If unclear, use "social" as the default.
 Respond with ONLY the category name (lowercase), nothing else.`
 
 /**
- * Categorize a single event using AI
+ * Categorize a single event using AI with detailed result
+ * Returns both the category and information about whether it was a fallback
  */
-export async function categorizeEvent(
+export async function categorizeEventWithResult(
   name: string,
   description: string | null | undefined
-): Promise<Category> {
+): Promise<CategorizationResult> {
   try {
     const eventContext = `Event: ${name}${description ? `\nDescription: ${description}` : ''}`
 
@@ -53,38 +74,81 @@ export async function categorizeEvent(
 
     const textBlock = message.content.find((block) => block.type === 'text')
     if (!textBlock?.text) {
-      return 'social'
+      return {
+        category: 'social',
+        success: false,
+        fallback: true,
+        error: 'Empty AI response',
+      }
     }
 
     const category = textBlock.text.trim().toLowerCase() as Category
 
     // Validate the response is a valid category
     if (VALID_CATEGORIES.includes(category)) {
-      return category
+      return { category, success: true, fallback: false }
     }
 
-    console.warn(`[ai-categorizer] Invalid category returned: "${textBlock.text}", defaulting to social`)
-    return 'social'
-  } catch (error) {
+    const error = `Invalid category returned: "${textBlock.text}"`
+    console.warn(`[ai-categorizer] ${error}, defaulting to social`)
+    return { category: 'social', success: false, fallback: true, error }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
     console.error('[ai-categorizer] Error categorizing event:', error)
-    return 'social'
+    return { category: 'social', success: false, fallback: true, error }
   }
 }
 
 /**
- * Batch categorize multiple events
- * Processes events sequentially with a small delay to avoid rate limits
+ * Categorize a single event using AI
+ * Returns just the category for backward compatibility
  */
-export async function categorizeEventsBatch(
+export async function categorizeEvent(
+  name: string,
+  description: string | null | undefined
+): Promise<Category> {
+  const result = await categorizeEventWithResult(name, description)
+  return result.category
+}
+
+/**
+ * Result from batch categorization including stats
+ */
+export interface BatchCategorizationResult {
+  categories: Category[]
+  stats: CategorizationStats
+}
+
+/**
+ * Batch categorize multiple events with statistics
+ * Processes events sequentially with a small delay to avoid rate limits
+ * Returns both the categories and stats about fallbacks/errors
+ */
+export async function categorizeEventsBatchWithStats(
   events: Array<{ name: string; description: string | null | undefined }>,
   delayMs: number = 100
-): Promise<Category[]> {
-  const results: Category[] = []
+): Promise<BatchCategorizationResult> {
+  const categories: Category[] = []
+  const stats: CategorizationStats = {
+    total: events.length,
+    successful: 0,
+    fallback: 0,
+    errors: [],
+  }
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i]
-    const category = await categorizeEvent(event.name, event.description)
-    results.push(category)
+    const result = await categorizeEventWithResult(event.name, event.description)
+    categories.push(result.category)
+
+    if (result.success) {
+      stats.successful++
+    } else {
+      stats.fallback++
+      if (result.error) {
+        stats.errors.push(`${event.name}: ${result.error}`)
+      }
+    }
 
     // Add delay between requests to avoid rate limiting
     if (i < events.length - 1 && delayMs > 0) {
@@ -92,5 +156,25 @@ export async function categorizeEventsBatch(
     }
   }
 
-  return results
+  // Log summary if there were fallbacks
+  if (stats.fallback > 0) {
+    console.warn(
+      `[ai-categorizer] Batch complete: ${stats.successful}/${stats.total} successful, ${stats.fallback} fallbacks`
+    )
+  }
+
+  return { categories, stats }
+}
+
+/**
+ * Batch categorize multiple events
+ * Processes events sequentially with a small delay to avoid rate limits
+ * Returns just the categories for backward compatibility
+ */
+export async function categorizeEventsBatch(
+  events: Array<{ name: string; description: string | null | undefined }>,
+  delayMs: number = 100
+): Promise<Category[]> {
+  const result = await categorizeEventsBatchWithStats(events, delayMs)
+  return result.categories
 }

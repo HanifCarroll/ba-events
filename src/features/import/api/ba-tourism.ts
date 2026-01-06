@@ -21,12 +21,14 @@ import type {
   VenueEnrichComplete,
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
+import { checkDuplicateEvents } from './duplicate-detection'
 
 export interface BATourismPreviewEvent {
   baTourism: BATourismEvent
   transformed: EventInsert[]
   venueMatch: VenueMatchResult
   dateCount: number
+  alreadyImported: boolean
 }
 
 export type { BATourismEvent, WeekContext }
@@ -46,7 +48,7 @@ export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
         ? parseWeekContext(data.weekContextText)
         : fetchedContext
 
-      const previews: BATourismPreviewEvent[] = await Promise.all(
+      const previewsWithoutImportCheck = await Promise.all(
         rawEvents.map(async (event) => {
           const venueMatch = await matchVenue(event.venueName)
           const transformed = transformBATourismEvent(
@@ -64,6 +66,21 @@ export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
           }
         })
       )
+
+      // Check for duplicates (BA Tourism has array of transformed events)
+      const externalIds = previewsWithoutImportCheck.flatMap(
+        (p) => p.transformed.map((t) => t.external_id).filter((id): id is string => Boolean(id))
+      )
+
+      const existingIds = await checkDuplicateEvents(externalIds, 'ba-tourism')
+
+      // Add alreadyImported flag - check if ANY transformed event already exists
+      const previews: BATourismPreviewEvent[] = previewsWithoutImportCheck.map((p) => ({
+        ...p,
+        alreadyImported: p.transformed.some(
+          (t) => t.external_id && existingIds.has(t.external_id)
+        ),
+      }))
 
       console.log(`[Admin] Returning ${previews.length} preview events`)
       return { events: previews, weekContext }

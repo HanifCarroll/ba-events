@@ -33,10 +33,15 @@ interface UnmatchedVenue {
   eventIds: string[]
 }
 
+interface SimilarVenueMatch {
+  name: string
+  similarity: number
+}
+
 interface VenuesStepProps {
   unmatchedVenues: UnmatchedVenue[]
   venueEdits: Map<string, VenueEdit>
-  similarVenues: Map<string, string[]>
+  similarVenues: Map<string, SimilarVenueMatch[]>
   venuesToCreateCount: number
   isCreatingVenues: boolean
   totalEventsCount: number
@@ -141,7 +146,7 @@ export function VenuesStep({
                       {suggestions.length > 0 && !edit?.skip && !isMerged && (
                         <span className="text-xs text-yellow-500 flex items-center gap-1">
                           <AlertCircle className="h-3 w-3" />
-                          Similar to: {suggestions.join(', ')}
+                          Similar to: {suggestions.map(s => `${s.name} (${Math.round(s.similarity * 100)}%)`).join(', ')}
                         </span>
                       )}
                       {isMerged && (
@@ -197,8 +202,8 @@ export function VenuesStep({
                         <SelectContent>
                           <SelectItem value="_none">Don't merge</SelectItem>
                           {suggestions.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
+                            <SelectItem key={s.name} value={s.name}>
+                              {s.name} ({Math.round(s.similarity * 100)}%)
                             </SelectItem>
                           ))}
                         </SelectContent>

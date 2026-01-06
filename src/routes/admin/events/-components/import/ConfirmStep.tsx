@@ -1,12 +1,26 @@
-import { Loader2, Download, CheckCircle2, Zap, FileSpreadsheet, Ticket, Landmark, Users, Sparkles } from 'lucide-react'
+import { Loader2, Download, CheckCircle2, Zap, FileSpreadsheet, Ticket, Landmark, Users, Sparkles, AlertTriangle, MapPin, FileText } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
+import { Badge } from '@/shared/ui/badge'
 import type { ImportSource } from '@/features/import'
+
+export interface VenueStats {
+  matched: number
+  unmatched: number
+  toCreate: number
+}
+
+export interface DataQuality {
+  withDescription: number
+  withoutDescription: number
+}
 
 interface ConfirmStepProps {
   source: ImportSource
   selectedCount: number
   isImporting: boolean
   importProgress: { current: number; total: number } | null
+  venueStats: VenueStats
+  dataQuality: DataQuality
   onImport: () => void
 }
 
@@ -66,10 +80,17 @@ export function ConfirmStep({
   selectedCount,
   isImporting,
   importProgress,
+  venueStats,
+  dataQuality,
   onImport,
 }: ConfirmStepProps) {
   const config = SOURCE_CONFIG[source]
   const Icon = config.icon
+
+  const totalVenues = venueStats.matched + venueStats.unmatched
+  const hasVenueData = totalVenues > 0
+  const hasUnmatchedVenues = venueStats.unmatched > 0
+  const missingDescriptions = dataQuality.withoutDescription > 0
 
   return (
     <div className="space-y-6 max-w-md mx-auto">
@@ -111,6 +132,83 @@ export function ConfirmStep({
             </span>
           </div>
         </div>
+
+        {/* Pre-import Summary: Venue & Data Quality */}
+        {(hasVenueData || dataQuality.withDescription > 0 || dataQuality.withoutDescription > 0) && (
+          <div className="border-t border-border/30 pt-4 space-y-4">
+            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+              Pre-Import Summary
+            </h4>
+
+            {/* Venue Stats */}
+            {hasVenueData && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span>Venues</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="flex items-center justify-between bg-green-500/10 rounded-lg px-3 py-2">
+                    <span className="text-muted-foreground">Matched</span>
+                    <span className="font-medium text-green-500">{venueStats.matched}</span>
+                  </div>
+                  {venueStats.toCreate > 0 && (
+                    <div className="flex items-center justify-between bg-blue-500/10 rounded-lg px-3 py-2">
+                      <span className="text-muted-foreground">New</span>
+                      <span className="font-medium text-blue-500">{venueStats.toCreate}</span>
+                    </div>
+                  )}
+                  {hasUnmatchedVenues && venueStats.toCreate === 0 && (
+                    <div className="flex items-center justify-between bg-amber-500/10 rounded-lg px-3 py-2">
+                      <span className="text-muted-foreground">Unmatched</span>
+                      <span className="font-medium text-amber-500">{venueStats.unmatched}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Data Quality */}
+            {(dataQuality.withDescription > 0 || dataQuality.withoutDescription > 0) && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>Descriptions</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="flex items-center justify-between bg-green-500/10 rounded-lg px-3 py-2">
+                    <span className="text-muted-foreground">With</span>
+                    <span className="font-medium text-green-500">{dataQuality.withDescription}</span>
+                  </div>
+                  <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                    missingDescriptions ? 'bg-amber-500/10' : 'bg-muted/50'
+                  }`}>
+                    <span className="text-muted-foreground">Without</span>
+                    <span className={`font-medium ${missingDescriptions ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                      {dataQuality.withoutDescription}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Warning badges */}
+            <div className="flex flex-wrap gap-2">
+              {hasUnmatchedVenues && venueStats.toCreate === 0 && (
+                <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30">
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  {venueStats.unmatched} venue{venueStats.unmatched !== 1 ? 's' : ''} without match
+                </Badge>
+              )}
+              {missingDescriptions && (
+                <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30">
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  {dataQuality.withoutDescription} event{dataQuality.withoutDescription !== 1 ? 's' : ''} missing description
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Progress bar */}
         {importProgress && (

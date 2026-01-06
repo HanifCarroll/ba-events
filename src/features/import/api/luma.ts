@@ -22,11 +22,13 @@ import type {
   VenueEnrichComplete,
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
+import { checkDuplicateEvents } from './duplicate-detection'
 
 export interface LumaPreviewEvent {
   luma: LumaEvent
   transformed: EventInsert
   venueMatch: VenueMatchResult
+  alreadyImported: boolean
 }
 
 // Re-export LumaEvent type for client use
@@ -53,7 +55,7 @@ export const fetchLumaEventsAction = createServerFn({ method: 'POST' })
     console.log(`[Admin] ${filteredEvents.length} events in date range ${startDate} to ${endDate}`)
 
     // Match venues and transform events
-    const previews: LumaPreviewEvent[] = await Promise.all(
+    const previewsWithoutImportCheck = await Promise.all(
       filteredEvents.map(async (event) => {
         const venueName = event.venue?.name || ''
         const venueMatch = await matchVenue(venueName)
@@ -69,6 +71,19 @@ export const fetchLumaEventsAction = createServerFn({ method: 'POST' })
         }
       })
     )
+
+    // Check for duplicates
+    const externalIds = previewsWithoutImportCheck
+      .map((p) => p.transformed.external_id)
+      .filter((id): id is string => Boolean(id))
+
+    const existingIds = await checkDuplicateEvents(externalIds, 'luma')
+
+    // Add alreadyImported flag
+    const previews: LumaPreviewEvent[] = previewsWithoutImportCheck.map((p) => ({
+      ...p,
+      alreadyImported: Boolean(p.transformed.external_id && existingIds.has(p.transformed.external_id)),
+    }))
 
     return { events: previews }
   })

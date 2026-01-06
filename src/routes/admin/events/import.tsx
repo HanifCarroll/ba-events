@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Upload, Check } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
@@ -12,6 +12,8 @@ import {
   ConfirmStep,
   EnrichStep,
   SummaryStep,
+  type VenueStats,
+  type DataQuality,
 } from './-components/import'
 
 const validSources: ImportSource[] = ['passline', 'eventbrite', 'ba-tourism', 'meetup', 'luma', 'csv']
@@ -46,6 +48,162 @@ function ImportEventsPage() {
   const navigate = useNavigate()
 
   const wizard = useImportWizard(venues, urlSource)
+
+  // Helper to extract event ID based on source type
+  const getEventId = (event: unknown, source: ImportSource, index: number): string => {
+    const e = event as Record<string, unknown>
+    switch (source) {
+      case 'passline':
+        return (e.passline as Record<string, string>)?.id ?? ''
+      case 'eventbrite':
+        return (e.eventbrite as Record<string, string>)?.url ?? ''
+      case 'ba-tourism':
+        return `ba-tourism-${(e.baTourism as Record<string, string>)?.name ?? ''}`
+      case 'meetup':
+        return (e.meetup as Record<string, string>)?.id ?? ''
+      case 'luma':
+        return (e.luma as Record<string, string>)?.api_id ?? ''
+      case 'csv':
+        return `csv-${index}`
+      default:
+        return ''
+    }
+  }
+
+  // Helper to extract venue name based on source type
+  const getVenueName = (event: unknown): string | null => {
+    const e = event as Record<string, unknown>
+    // Check for transformed data which has venue_name
+    if (e.transformed && typeof e.transformed === 'object') {
+      const transformed = e.transformed as Record<string, unknown>
+      if (typeof transformed.venue_name === 'string') {
+        return transformed.venue_name
+      }
+    }
+    return null
+  }
+
+  // Helper to extract description based on source type
+  const getDescription = (event: unknown): string | null => {
+    const e = event as Record<string, unknown>
+    // Check for transformed data which has description
+    if (e.transformed && typeof e.transformed === 'object') {
+      const transformed = e.transformed as Record<string, unknown>
+      if (typeof transformed.description === 'string') {
+        return transformed.description
+      }
+    }
+    // CSV rows have data.description
+    if (e.data && typeof e.data === 'object') {
+      const data = e.data as Record<string, unknown>
+      if (typeof data.description === 'string') {
+        return data.description
+      }
+    }
+    return null
+  }
+
+  // Compute venue stats for confirmation step
+  const venueStats = useMemo((): VenueStats => {
+    const unmatchedCount = wizard.unmatchedVenues.length
+    const toCreateCount = wizard.venuesToCreateCount
+
+    // Get events based on source
+    const getEventsForSource = (): unknown[] => {
+      switch (wizard.source) {
+        case 'passline':
+          return wizard.passlineEvents
+        case 'eventbrite':
+          return wizard.eventbriteEvents
+        case 'ba-tourism':
+          return wizard.baTourismEvents
+        case 'meetup':
+          return wizard.meetupEvents
+        case 'luma':
+          return wizard.lumaEvents
+        case 'csv':
+          return wizard.csvRows
+        default:
+          return []
+      }
+    }
+
+    const events = getEventsForSource()
+    const selectedEvents = events.filter((e, i) =>
+      wizard.selectedIds.has(getEventId(e, wizard.source ?? 'passline', i))
+    )
+    const venueNames = selectedEvents.map(e => getVenueName(e)).filter((v): v is string => v !== null)
+    const uniqueVenues = new Set(venueNames)
+    const totalVenues = uniqueVenues.size
+
+    return {
+      matched: Math.max(0, totalVenues - unmatchedCount),
+      unmatched: unmatchedCount,
+      toCreate: toCreateCount,
+    }
+  }, [
+    wizard.source,
+    wizard.unmatchedVenues.length,
+    wizard.venuesToCreateCount,
+    wizard.passlineEvents,
+    wizard.eventbriteEvents,
+    wizard.baTourismEvents,
+    wizard.meetupEvents,
+    wizard.lumaEvents,
+    wizard.csvRows,
+    wizard.selectedIds,
+  ])
+
+  // Compute data quality stats for confirmation step
+  const dataQuality = useMemo((): DataQuality => {
+    const getEventsForSource = (): unknown[] => {
+      switch (wizard.source) {
+        case 'passline':
+          return wizard.passlineEvents
+        case 'eventbrite':
+          return wizard.eventbriteEvents
+        case 'ba-tourism':
+          return wizard.baTourismEvents
+        case 'meetup':
+          return wizard.meetupEvents
+        case 'luma':
+          return wizard.lumaEvents
+        case 'csv':
+          // For CSV, only consider valid rows (rows without errors)
+          return wizard.csvRows.filter(r => r.errors.length === 0)
+        default:
+          return []
+      }
+    }
+
+    const events = getEventsForSource()
+    const selectedEvents = events.filter((e, i) =>
+      wizard.selectedIds.has(getEventId(e, wizard.source ?? 'passline', i))
+    )
+
+    let withDescription = 0
+    let withoutDescription = 0
+
+    for (const event of selectedEvents) {
+      const desc = getDescription(event)
+      if (desc && desc.trim().length > 0) {
+        withDescription++
+      } else {
+        withoutDescription++
+      }
+    }
+
+    return { withDescription, withoutDescription }
+  }, [
+    wizard.source,
+    wizard.passlineEvents,
+    wizard.eventbriteEvents,
+    wizard.baTourismEvents,
+    wizard.meetupEvents,
+    wizard.lumaEvents,
+    wizard.csvRows,
+    wizard.selectedIds,
+  ])
 
   // Sync URL when source changes
   useEffect(() => {
@@ -263,6 +421,8 @@ function ImportEventsPage() {
             selectedCount={wizard.selectedIds.size}
             isImporting={wizard.isImporting}
             importProgress={wizard.importProgress}
+            venueStats={venueStats}
+            dataQuality={dataQuality}
             onImport={wizard.importEvents}
           />
         )}

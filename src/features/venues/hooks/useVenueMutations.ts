@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { createVenueAction, updateVenueAction, deleteVenueAction } from '../api/crud'
 import { queryKeys } from '@/shared/lib/query'
 import { track } from '@/lib/analytics'
+import { getErrorMessage } from '@/shared/lib/error-messages'
 import type { Venue, VenueInsert, VenueUpdate } from '@/shared/lib/types'
 
 export function useCreateVenue() {
@@ -22,8 +23,8 @@ export function useCreateVenue() {
       )
       toast.success('Venue created successfully')
     },
-    onError: () => {
-      toast.error('Failed to create venue')
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'create', entity: 'venue' }))
     },
   })
 }
@@ -48,8 +49,8 @@ export function useUpdateVenue() {
       )
       toast.success('Venue updated successfully')
     },
-    onError: () => {
-      toast.error('Failed to update venue')
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'update', entity: 'venue' }))
     },
   })
 }
@@ -68,8 +69,8 @@ export function useDeleteVenue() {
       )
       toast.success('Venue deleted successfully')
     },
-    onError: () => {
-      toast.error('Failed to delete venue')
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'delete', entity: 'venue' }))
     },
   })
 }

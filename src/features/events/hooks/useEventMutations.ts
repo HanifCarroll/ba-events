@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { createEventAction, updateEventAction, deleteEventAction } from '../api/crud'
 import { queryKeys } from '@/shared/lib/query'
 import { track } from '@/lib/analytics'
+import { getErrorMessage } from '@/shared/lib/error-messages'
 import type { EventInsert, EventUpdate, EventWithVenue } from '@/shared/lib/types'
 
 export function useCreateEvent() {
@@ -20,8 +21,8 @@ export function useCreateEvent() {
       queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
       toast.success('Event created successfully')
     },
-    onError: () => {
-      toast.error('Failed to create event')
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'create', entity: 'event' }))
     },
   })
 }
@@ -46,8 +47,8 @@ export function useUpdateEvent() {
       )
       toast.success('Event updated successfully')
     },
-    onError: () => {
-      toast.error('Failed to update event')
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'update', entity: 'event' }))
     },
   })
 }
@@ -66,8 +67,8 @@ export function useDeleteEvent() {
       )
       toast.success('Event deleted successfully')
     },
-    onError: () => {
-      toast.error('Failed to delete event')
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'delete', entity: 'event' }))
     },
   })
 }

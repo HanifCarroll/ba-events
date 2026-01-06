@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import Papa from 'papaparse'
+import { compareTwoStrings } from 'string-similarity'
 import { track } from '@/lib/analytics'
 import {
   processPasslineEventsAction,
@@ -200,22 +201,29 @@ export function useImportWizard(
     return result
   }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
 
-  // Find similar venue names for merge suggestions
+  // Find similar venue names using fuzzy string matching for merge suggestions
   const similarVenues = useMemo(() => {
-    const similar = new Map<string, string[]>()
+    const similar = new Map<string, Array<{ name: string; similarity: number }>>()
     const names = unmatchedVenues.map(v => v.name)
+    const SIMILARITY_THRESHOLD = 0.6
 
     for (let i = 0; i < names.length; i++) {
+      const matches: Array<{ name: string; similarity: number }> = []
+
       for (let j = i + 1; j < names.length; j++) {
-        const a = names[i].toLowerCase().trim()
-        const b = names[j].toLowerCase().trim()
-        if (a.length > 5 && b.length > 5) {
-          if (a.includes(b) || b.includes(a)) {
-            const existing = similar.get(names[i]) || []
-            existing.push(names[j])
-            similar.set(names[i], existing)
-          }
+        const similarity = compareTwoStrings(
+          names[i].toLowerCase().trim(),
+          names[j].toLowerCase().trim()
+        )
+
+        if (similarity >= SIMILARITY_THRESHOLD) {
+          matches.push({ name: names[j], similarity })
         }
+      }
+
+      if (matches.length > 0) {
+        // Sort by similarity descending
+        similar.set(names[i], matches.sort((a, b) => b.similarity - a.similarity))
       }
     }
     return similar
