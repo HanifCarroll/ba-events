@@ -22,6 +22,8 @@ import type {
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
 import { checkDuplicateEventsWithData, buildDuplicateInfo, type DuplicateInfo } from './duplicate-detection'
+import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
+import { isBlockedByEntries } from '../scrapers/shared'
 
 export interface EventbritePreviewEvent {
   eventbrite: EventbriteEvent
@@ -55,8 +57,15 @@ export const fetchEventbriteEventsAction = createServerFn({ method: 'POST' })
     console.log(`[Admin] ${inPersonEvents.length} in-person events after filtering`)
 
     // Filter by date range
-    const filteredEvents = filterEventbriteByDateRange(inPersonEvents, startDate, endDate)
-    console.log(`[Admin] ${filteredEvents.length} events in date range ${startDate} to ${endDate}`)
+    const dateFilteredEvents = filterEventbriteByDateRange(inPersonEvents, startDate, endDate)
+    console.log(`[Admin] ${dateFilteredEvents.length} events in date range ${startDate} to ${endDate}`)
+
+    // Filter by blocklist
+    const blocklistEntries = await getBlocklistEntries('eventbrite')
+    const filteredEvents = dateFilteredEvents.filter(
+      (e) => !isBlockedByEntries(e.name, e.location?.name || '', blocklistEntries)
+    )
+    console.log(`[Admin] ${filteredEvents.length} events after blocklist filtering`)
 
     // Match venues and transform events
     const previewsWithoutImportCheck = await Promise.all(

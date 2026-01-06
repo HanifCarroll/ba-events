@@ -343,3 +343,36 @@ export interface SavedEvent {
   event_id: string
   created_at: string
 }
+
+// Import blocklist types
+export const BLOCKLIST_TARGET_FIELDS = ['event_name', 'venue_name'] as const
+export type BlocklistTargetField = (typeof BLOCKLIST_TARGET_FIELDS)[number]
+
+export const BLOCKLIST_SOURCES = [
+  'passline',
+  'eventbrite',
+  'ba_tourism',
+  'meetup',
+  'luma',
+  'all',
+] as const
+export type BlocklistSource = (typeof BLOCKLIST_SOURCES)[number]
+
+export interface ImportBlocklistEntry {
+  id: string
+  pattern: string
+  target_field: BlocklistTargetField
+  source: BlocklistSource
+  reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ImportBlocklistEntryInsert {
+  pattern: string
+  target_field: BlocklistTargetField
+  source: BlocklistSource
+  reason?: string | null
+}
+
+export type ImportBlocklistEntryUpdate = Partial<ImportBlocklistEntryInsert>

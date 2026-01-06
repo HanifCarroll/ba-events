@@ -90,3 +90,21 @@ export { type VenueMatchResult } from './scrapers/venue-matcher'
 
 // Client-side scraper for Passline (bypasses Cloudflare)
 export { extractPasslineVenuesBatchClient } from './scrapers/passline/client-enrichment'
+
+// Blocklist API
+export {
+  listBlocklistEntriesAction,
+  getBlocklistEntryAction,
+  createBlocklistEntryAction,
+  updateBlocklistEntryAction,
+  deleteBlocklistEntryAction,
+  bulkDeleteBlocklistEntriesAction,
+} from './api/blocklist'
+
+// Blocklist hooks
+export {
+  useCreateBlocklistEntry,
+  useUpdateBlocklistEntry,
+  useDeleteBlocklistEntry,
+  useBulkDeleteBlocklistEntries,
+} from './hooks/useBlocklistMutations'

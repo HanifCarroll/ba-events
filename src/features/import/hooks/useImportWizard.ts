@@ -50,6 +50,7 @@ import {
   filterCABAEventsClient,
   filterByDateRangeClient,
 } from '@/features/import/scrapers/passline/client'
+import { listBlocklistEntriesAction } from '@/features/import/api/blocklist'
 import { bulkCreateVenuesAction, listVenues } from '@/features/venues'
 import { bulkCreateEventsAction, getRecentlyImportedPendingEventsAction } from '@/features/events'
 import { getRecentlyCreatedPendingVenuesAction } from '@/features/venues/api/enrichment'
@@ -350,8 +351,11 @@ export function useImportWizard(
     setError(null)
 
     try {
+      // Fetch blocklist entries for passline (includes 'all' source entries)
+      const blocklistEntries = await listBlocklistEntriesAction({ data: 'passline' })
+
       const allEvents = await fetchPasslineEventsClient()
-      const cabaEvents = filterCABAEventsClient(allEvents)
+      const cabaEvents = filterCABAEventsClient(allEvents, blocklistEntries)
       const filteredEvents = filterByDateRangeClient(cabaEvents, { startDate, endDate })
       const data = await processPasslineEventsAction({ data: { events: filteredEvents } })
 

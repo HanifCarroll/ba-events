@@ -23,6 +23,8 @@ import type {
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
 import { checkDuplicateEventsWithData, buildDuplicateInfo, type DuplicateInfo } from './duplicate-detection'
+import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
+import { isBlockedByEntries } from '../scrapers/shared'
 
 export interface LumaPreviewEvent {
   luma: LumaEvent
@@ -52,8 +54,15 @@ export const fetchLumaEventsAction = createServerFn({ method: 'POST' })
     console.log(`[Admin] Fetched ${allEvents.length} total events from Luma`)
 
     // Filter by date range
-    const filteredEvents = filterLumaByDateRange(allEvents, startDate, endDate)
-    console.log(`[Admin] ${filteredEvents.length} events in date range ${startDate} to ${endDate}`)
+    const dateFilteredEvents = filterLumaByDateRange(allEvents, startDate, endDate)
+    console.log(`[Admin] ${dateFilteredEvents.length} events in date range ${startDate} to ${endDate}`)
+
+    // Filter by blocklist
+    const blocklistEntries = await getBlocklistEntries('luma')
+    const filteredEvents = dateFilteredEvents.filter(
+      (e) => !isBlockedByEntries(e.name, e.venue?.name || '', blocklistEntries)
+    )
+    console.log(`[Admin] ${filteredEvents.length} events after blocklist filtering`)
 
     // Match venues and transform events
     const previewsWithoutImportCheck = await Promise.all(

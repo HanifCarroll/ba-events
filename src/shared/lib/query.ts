@@ -50,4 +50,11 @@ export const queryKeys = {
     all: ['saved'] as const,
     list: () => [...queryKeys.saved.all, 'list'] as const,
   },
+
+  // Import blocklist
+  blocklist: {
+    all: ['blocklist'] as const,
+    list: () => [...queryKeys.blocklist.all, 'list'] as const,
+    detail: (id: string) => [...queryKeys.blocklist.all, 'detail', id] as const,
+  },
 } as const

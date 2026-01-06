@@ -22,6 +22,8 @@ import type {
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
 import { checkDuplicateEventsWithData, buildDuplicateInfo, type DuplicateInfo } from './duplicate-detection'
+import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
+import { isBlockedByEntries } from '../scrapers/shared'
 
 export interface BATourismPreviewEvent {
   baTourism: BATourismEvent
@@ -42,8 +44,15 @@ export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<{ events: BATourismPreviewEvent[]; weekContext: WeekContext }> => {
     try {
       console.log('[Admin] Starting BA Tourism fetch...')
-      const { events: rawEvents, weekContext: fetchedContext } = await scrapeBATourismEventsWithBrowser()
-      console.log(`[Admin] Scraped ${rawEvents.length} raw events`)
+      const { events: scrapedEvents, weekContext: fetchedContext } = await scrapeBATourismEventsWithBrowser()
+      console.log(`[Admin] Scraped ${scrapedEvents.length} raw events`)
+
+      // Filter by blocklist
+      const blocklistEntries = await getBlocklistEntries('ba_tourism')
+      const rawEvents = scrapedEvents.filter(
+        (e) => !isBlockedByEntries(e.name, e.venueName || '', blocklistEntries)
+      )
+      console.log(`[Admin] ${rawEvents.length} events after blocklist filtering`)
 
       const weekContext = data.weekContextText
         ? parseWeekContext(data.weekContextText)

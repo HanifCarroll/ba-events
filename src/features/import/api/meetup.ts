@@ -20,6 +20,8 @@ import type {
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
 import { checkDuplicateEventsWithData, buildDuplicateInfo, type DuplicateInfo } from './duplicate-detection'
+import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
+import { isBlockedByEntries } from '../scrapers/shared'
 
 export interface MeetupPreviewEvent {
   meetup: MeetupEvent
@@ -68,11 +70,18 @@ export const fetchMeetupEventsAction = createServerFn({ method: 'POST' })
       console.log(`[Admin] Starting Meetup fetch for ${data.startDate} to ${data.endDate}...`)
 
       // Scraper now handles date range and in-person filtering via URL parameters
-      const rawEvents = await scrapeMeetupEvents({
+      const scrapedEvents = await scrapeMeetupEvents({
         startDate: data.startDate,
         endDate: data.endDate,
       })
-      console.log(`[Admin] Scraped ${rawEvents.length} in-person Meetup events`)
+      console.log(`[Admin] Scraped ${scrapedEvents.length} in-person Meetup events`)
+
+      // Filter by blocklist
+      const blocklistEntries = await getBlocklistEntries('meetup')
+      const rawEvents = scrapedEvents.filter(
+        (e) => !isBlockedByEntries(e.name, e.venue?.name || '', blocklistEntries)
+      )
+      console.log(`[Admin] ${rawEvents.length} events after blocklist filtering`)
 
       // Transform events first to get external_ids
       const previewsWithoutImportCheck = await Promise.all(

@@ -20,12 +20,15 @@ import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as ApiEventsRouteImport } from './routes/api/events'
 import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/index'
 import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/index'
+import { Route as AdminBlocklistIndexRouteImport } from './routes/admin/blocklist/index'
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
 import { Route as AdminVenuesImportRouteImport } from './routes/admin/venues/import'
 import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
 import { Route as AdminEventsNewRouteImport } from './routes/admin/events/new'
 import { Route as AdminEventsImportRouteImport } from './routes/admin/events/import'
 import { Route as AdminEventsIdRouteImport } from './routes/admin/events/$id'
+import { Route as AdminBlocklistNewRouteImport } from './routes/admin/blocklist/new'
+import { Route as AdminBlocklistIdRouteImport } from './routes/admin/blocklist/$id'
 
 const SavedRoute = SavedRouteImport.update({
   id: '/saved',
@@ -82,6 +85,11 @@ const AdminEventsIndexRoute = AdminEventsIndexRouteImport.update({
   path: '/events/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminBlocklistIndexRoute = AdminBlocklistIndexRouteImport.update({
+  id: '/blocklist/',
+  path: '/blocklist/',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminVenuesNewRoute = AdminVenuesNewRouteImport.update({
   id: '/venues/new',
   path: '/venues/new',
@@ -112,6 +120,16 @@ const AdminEventsIdRoute = AdminEventsIdRouteImport.update({
   path: '/events/$id',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminBlocklistNewRoute = AdminBlocklistNewRouteImport.update({
+  id: '/blocklist/new',
+  path: '/blocklist/new',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminBlocklistIdRoute = AdminBlocklistIdRouteImport.update({
+  id: '/blocklist/$id',
+  path: '/blocklist/$id',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -123,12 +141,15 @@ export interface FileRoutesByFullPath {
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
+  '/admin/blocklist/new': typeof AdminBlocklistNewRoute
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/admin/blocklist': typeof AdminBlocklistIndexRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/venues': typeof AdminVenuesIndexRoute
 }
@@ -141,12 +162,15 @@ export interface FileRoutesByTo {
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
+  '/admin/blocklist/new': typeof AdminBlocklistNewRoute
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/admin/blocklist': typeof AdminBlocklistIndexRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/venues': typeof AdminVenuesIndexRoute
 }
@@ -161,12 +185,15 @@ export interface FileRoutesById {
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
+  '/admin/blocklist/new': typeof AdminBlocklistNewRoute
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/admin/blocklist/': typeof AdminBlocklistIndexRoute
   '/admin/events/': typeof AdminEventsIndexRoute
   '/admin/venues/': typeof AdminVenuesIndexRoute
 }
@@ -182,12 +209,15 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/auth/callback'
     | '/admin/'
+    | '/admin/blocklist/$id'
+    | '/admin/blocklist/new'
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/admin/blocklist'
     | '/admin/events'
     | '/admin/venues'
   fileRoutesByTo: FileRoutesByTo
@@ -200,12 +230,15 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/auth/callback'
     | '/admin'
+    | '/admin/blocklist/$id'
+    | '/admin/blocklist/new'
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/admin/blocklist'
     | '/admin/events'
     | '/admin/venues'
   id:
@@ -219,12 +252,15 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/auth/callback'
     | '/admin/'
+    | '/admin/blocklist/$id'
+    | '/admin/blocklist/new'
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/admin/blocklist/'
     | '/admin/events/'
     | '/admin/venues/'
   fileRoutesById: FileRoutesById
@@ -319,6 +355,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminEventsIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/blocklist/': {
+      id: '/admin/blocklist/'
+      path: '/blocklist'
+      fullPath: '/admin/blocklist'
+      preLoaderRoute: typeof AdminBlocklistIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/venues/new': {
       id: '/admin/venues/new'
       path: '/venues/new'
@@ -361,29 +404,49 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminEventsIdRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/blocklist/new': {
+      id: '/admin/blocklist/new'
+      path: '/blocklist/new'
+      fullPath: '/admin/blocklist/new'
+      preLoaderRoute: typeof AdminBlocklistNewRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/blocklist/$id': {
+      id: '/admin/blocklist/$id'
+      path: '/blocklist/$id'
+      fullPath: '/admin/blocklist/$id'
+      preLoaderRoute: typeof AdminBlocklistIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
 interface AdminRouteChildren {
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminBlocklistIdRoute: typeof AdminBlocklistIdRoute
+  AdminBlocklistNewRoute: typeof AdminBlocklistNewRoute
   AdminEventsIdRoute: typeof AdminEventsIdRoute
   AdminEventsImportRoute: typeof AdminEventsImportRoute
   AdminEventsNewRoute: typeof AdminEventsNewRoute
   AdminVenuesIdRoute: typeof AdminVenuesIdRoute
   AdminVenuesImportRoute: typeof AdminVenuesImportRoute
   AdminVenuesNewRoute: typeof AdminVenuesNewRoute
+  AdminBlocklistIndexRoute: typeof AdminBlocklistIndexRoute
   AdminEventsIndexRoute: typeof AdminEventsIndexRoute
   AdminVenuesIndexRoute: typeof AdminVenuesIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminIndexRoute: AdminIndexRoute,
+  AdminBlocklistIdRoute: AdminBlocklistIdRoute,
+  AdminBlocklistNewRoute: AdminBlocklistNewRoute,
   AdminEventsIdRoute: AdminEventsIdRoute,
   AdminEventsImportRoute: AdminEventsImportRoute,
   AdminEventsNewRoute: AdminEventsNewRoute,
   AdminVenuesIdRoute: AdminVenuesIdRoute,
   AdminVenuesImportRoute: AdminVenuesImportRoute,
   AdminVenuesNewRoute: AdminVenuesNewRoute,
+  AdminBlocklistIndexRoute: AdminBlocklistIndexRoute,
   AdminEventsIndexRoute: AdminEventsIndexRoute,
   AdminVenuesIndexRoute: AdminVenuesIndexRoute,
 }

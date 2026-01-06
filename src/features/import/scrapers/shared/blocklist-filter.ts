@@ -1,41 +1,37 @@
 /**
  * Blocklist Filter Utility
  *
- * Filters out "advertisement events" based on blocklist configuration.
+ * Filters out "advertisement events" based on blocklist entries from the database.
  */
 
-import type { BlocklistConfig } from '../../config/blocklist'
+import type { ImportBlocklistEntry } from '@/shared/lib/types'
 
 /**
- * Check if an event matches any blocklist criteria
+ * Check if an event matches any blocklist entries
  *
  * @param eventName - The event name/title
  * @param venueName - The venue name
- * @param blocklist - The blocklist configuration to check against
+ * @param entries - Blocklist entries from the database
  * @returns true if the event should be blocked, false otherwise
  */
-export function isBlockedEvent(
+export function isBlockedByEntries(
   eventName: string,
   venueName: string,
-  blocklist: BlocklistConfig
+  entries: ImportBlocklistEntry[]
 ): boolean {
+  if (!entries || entries.length === 0) return false
+
   const lowerEventName = eventName.toLowerCase()
   const lowerVenueName = venueName.toLowerCase()
 
-  // Check exact venue name matches
-  if (blocklist.venueNames.some((v) => lowerVenueName === v.toLowerCase())) {
-    return true
-  }
-
-  // Check venue name patterns (substring match)
-  if (blocklist.venueNamePatterns.some((p) => lowerVenueName.includes(p.toLowerCase()))) {
-    return true
-  }
-
-  // Check event name patterns (substring match)
-  if (blocklist.eventNamePatterns.some((p) => lowerEventName.includes(p.toLowerCase()))) {
-    return true
-  }
-
-  return false
+  return entries.some((entry) => {
+    const pattern = entry.pattern.toLowerCase()
+    if (entry.target_field === 'event_name') {
+      return lowerEventName.includes(pattern)
+    }
+    if (entry.target_field === 'venue_name') {
+      return lowerVenueName.includes(pattern)
+    }
+    return false
+  })
 }

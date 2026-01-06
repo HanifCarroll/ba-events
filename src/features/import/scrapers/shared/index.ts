@@ -9,4 +9,4 @@ export {
   type NormalizedDateRange,
 } from './normalization'
 
-export { isBlockedEvent } from './blocklist-filter'
+export { isBlockedByEntries } from './blocklist-filter'

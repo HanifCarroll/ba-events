@@ -6,8 +6,8 @@
  */
 
 import type { PasslineEvent, DateRange } from './api'
-import { isBlockedEvent } from '../shared'
-import { PASSLINE_BLOCKLIST } from '../../config/blocklist'
+import { isBlockedByEntries } from '../shared'
+import type { ImportBlocklistEntry } from '@/shared/lib/types'
 
 const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
 
@@ -36,11 +36,17 @@ export async function fetchPasslineEventsClient(): Promise<PasslineEvent[]> {
  * Filter events to only include CABA (Capital Federal) events
  * Also excludes "VARIAS LOCACIONES" which are venue rental ads, not real events
  * Also applies the blocklist to filter out advertisement events
+ *
+ * @param events - Events to filter
+ * @param blocklistEntries - Optional blocklist entries from database
  */
-export function filterCABAEventsClient(events: PasslineEvent[]): PasslineEvent[] {
+export function filterCABAEventsClient(
+  events: PasslineEvent[],
+  blocklistEntries?: ImportBlocklistEntry[]
+): PasslineEvent[] {
   return events
     .filter((e) => e.nombre_region === 'Capital Federal' && e.lugar !== 'VARIAS LOCACIONES')
-    .filter((e) => !isBlockedEvent(e.nombre, e.lugar, PASSLINE_BLOCKLIST))
+    .filter((e) => !blocklistEntries?.length || !isBlockedByEntries(e.nombre, e.lugar, blocklistEntries))
 }
 
 /**
