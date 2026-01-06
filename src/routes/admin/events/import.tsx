@@ -205,6 +205,82 @@ function ImportEventsPage() {
     wizard.selectedIds,
   ])
 
+  // Compute event summaries per unmatched venue for VenuesStep
+  const venueEventMap = useMemo(() => {
+    const map = new Map<string, Array<{ id: string; name: string; link: string | null }>>()
+
+    if (wizard.source === 'passline') {
+      for (const event of wizard.passlineEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.passline.lugar
+          if (!map.has(venueName)) map.set(venueName, [])
+          map.get(venueName)!.push({
+            id: event.passline.id,
+            name: event.passline.nombre,
+            link: event.transformed.link ?? null,
+          })
+        }
+      }
+    } else if (wizard.source === 'eventbrite') {
+      for (const event of wizard.eventbriteEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.eventbrite.location?.name || 'Unknown Venue'
+          if (!map.has(venueName)) map.set(venueName, [])
+          map.get(venueName)!.push({
+            id: event.eventbrite.url,
+            name: event.eventbrite.name,
+            link: event.eventbrite.url,
+          })
+        }
+      }
+    } else if (wizard.source === 'ba-tourism') {
+      for (const event of wizard.baTourismEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.baTourism.venueName
+          if (!map.has(venueName)) map.set(venueName, [])
+          map.get(venueName)!.push({
+            id: `ba-tourism-${event.baTourism.name}`,
+            name: event.baTourism.name,
+            link: event.baTourism.moreInfoUrl,
+          })
+        }
+      }
+    } else if (wizard.source === 'meetup') {
+      for (const event of wizard.meetupEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.meetup.venue?.name || 'Unknown Venue'
+          if (!map.has(venueName)) map.set(venueName, [])
+          map.get(venueName)!.push({
+            id: event.meetup.id,
+            name: event.meetup.name,
+            link: event.meetup.eventUrl,
+          })
+        }
+      }
+    } else if (wizard.source === 'luma') {
+      for (const event of wizard.lumaEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.luma.venue?.name || 'Unknown Venue'
+          if (!map.has(venueName)) map.set(venueName, [])
+          map.get(venueName)!.push({
+            id: event.luma.api_id,
+            name: event.luma.name,
+            link: event.luma.url || null,
+          })
+        }
+      }
+    }
+
+    return map
+  }, [
+    wizard.source,
+    wizard.passlineEvents,
+    wizard.eventbriteEvents,
+    wizard.baTourismEvents,
+    wizard.meetupEvents,
+    wizard.lumaEvents,
+  ])
+
   // Sync URL when source changes
   useEffect(() => {
     if (wizard.source && wizard.source !== urlSource) {
@@ -388,6 +464,8 @@ function ImportEventsPage() {
                         ? wizard.lumaEvents.length
                         : 0
             }
+            venueEventMap={venueEventMap}
+            existingVenues={wizard.venues}
             onUpdateVenueEdit={wizard.updateVenueEdit}
             onCreateVenues={wizard.createVenuesAndProceed}
             onSkip={wizard.skipVenues}
@@ -411,7 +489,10 @@ function ImportEventsPage() {
             onToggleSelect={wizard.toggleSelect}
             onToggleSelectAll={wizard.toggleSelectAll}
             onProceed={wizard.proceedToConfirm}
-            onHandleVenues={wizard.unmatchedVenues.length > 0 ? wizard.goToVenues : undefined}
+            onCreateAllVenues={wizard.unmatchedVenues.length > 0 ? wizard.createAllVenuesAndProceed : undefined}
+            onReviewVenues={wizard.unmatchedVenues.length > 0 ? wizard.goToVenues : undefined}
+            onSkipVenues={wizard.unmatchedVenues.length > 0 ? wizard.proceedToConfirm : undefined}
+            isCreatingVenues={wizard.isCreatingVenues}
           />
         )}
 

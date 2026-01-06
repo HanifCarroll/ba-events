@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react'
 import type { ColumnFiltersState } from '@tanstack/react-table'
-import { ArrowRight, MapPin, AlertTriangle, Eye, EyeOff } from 'lucide-react'
+import { ArrowRight, MapPin, AlertTriangle, Eye, EyeOff, Plus } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Switch } from '@/shared/ui/switch'
@@ -38,7 +38,11 @@ interface SelectStepProps {
   onToggleSelect: (id: string) => void
   onToggleSelectAll: () => void
   onProceed: () => void
-  onHandleVenues?: () => void
+  // Inline venue decision callbacks
+  onCreateAllVenues?: () => void
+  onReviewVenues?: () => void
+  onSkipVenues?: () => void
+  isCreatingVenues?: boolean
 }
 
 export function SelectStep({
@@ -55,7 +59,10 @@ export function SelectStep({
   unmatchedVenueCount,
   onToggleSelect,
   onProceed,
-  onHandleVenues,
+  onCreateAllVenues,
+  onReviewVenues,
+  onSkipVenues,
+  isCreatingVenues,
 }: SelectStepProps) {
   const [diffDialogOpen, setDiffDialogOpen] = useState(false)
   const [selectedDiff, setSelectedDiff] = useState<DuplicateInfo | null>(null)
@@ -164,7 +171,7 @@ export function SelectStep({
     : csvData.length
 
   const canProceed = isApiSource
-    ? selectedIds.size > 0
+    ? selectedIds.size > 0 && unmatchedVenueCount === 0
     : (csvAllValid && selectedIds.size > 0)
 
   // Get column definitions
@@ -197,31 +204,62 @@ export function SelectStep({
         </p>
       </div>
 
-      {/* Venue Status Warning */}
+      {/* Inline Venue Decision */}
       {unmatchedVenueCount > 0 && isApiSource && (
-        <div className="flex items-center justify-between px-4 py-3 bg-amber-500/10 rounded-xl border border-amber-500/30">
+        <div className="space-y-4 px-4 py-4 bg-amber-500/10 rounded-xl border border-amber-500/30">
+          {/* Warning header */}
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             <div>
               <p className="text-sm font-medium text-foreground">
-                {unmatchedVenueCount} event{unmatchedVenueCount !== 1 ? 's' : ''} without venue match
+                {unmatchedVenueCount} event{unmatchedVenueCount !== 1 ? 's' : ''} have unmatched venues
               </p>
               <p className="text-xs text-muted-foreground">
-                These events will be imported without a venue. You can create venues now or assign them later.
+                Choose how to handle these venues before importing
               </p>
             </div>
           </div>
-          {onHandleVenues && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onHandleVenues}
-              className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
-            >
-              <MapPin className="h-4 w-4 mr-2" />
-              Handle Venues
-            </Button>
-          )}
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-3">
+            {onCreateAllVenues && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={onCreateAllVenues}
+                disabled={isCreatingVenues}
+                className="bg-primary text-primary-foreground"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {isCreatingVenues ? 'Creating...' : 'Create All as New'}
+              </Button>
+            )}
+
+            {onReviewVenues && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onReviewVenues}
+                disabled={isCreatingVenues}
+                className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+              >
+                <MapPin className="h-4 w-4 mr-2" />
+                Review & Merge
+              </Button>
+            )}
+
+            {onSkipVenues && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onSkipVenues}
+                disabled={isCreatingVenues}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Import Without Venues
+              </Button>
+            )}
+          </div>
         </div>
       )}
 

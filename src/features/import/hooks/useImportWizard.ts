@@ -73,11 +73,13 @@ export interface ImportResult {
   withoutCategories: number
 }
 
+type VenueAction = 'create' | 'merge' | 'skip'
+
 interface VenueEdit {
   name: string
   neighborhood: Neighborhood | null
-  skip: boolean
-  mergeInto?: string
+  action: VenueAction
+  mergeInto?: string  // Only used when action === 'merge'
 }
 
 interface CSVRow {
@@ -370,7 +372,7 @@ export function useImportWizard(
           .forEach(e => {
             const name = e.passline.lugar
             if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, skip: false })
+              edits.set(name, { name, neighborhood: null, action: 'create' })
             }
           })
         setVenueEdits(edits)
@@ -413,7 +415,7 @@ export function useImportWizard(
           .forEach(e => {
             const name = e.eventbrite.location?.name || 'Unknown Venue'
             if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, skip: false })
+              edits.set(name, { name, neighborhood: null, action: 'create' })
             }
           })
         setVenueEdits(edits)
@@ -461,7 +463,7 @@ export function useImportWizard(
               edits.set(name, {
                 name,
                 neighborhood: mapToNeighborhood(e.baTourism.neighborhood),
-                skip: false,
+                action: 'create',
               })
             }
           })
@@ -574,7 +576,7 @@ export function useImportWizard(
           .forEach(e => {
             const name = e.meetup.venue?.name || 'Unknown Venue'
             if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, skip: false })
+              edits.set(name, { name, neighborhood: null, action: 'create' })
             }
           })
         setVenueEdits(edits)
@@ -620,7 +622,7 @@ export function useImportWizard(
           .forEach(e => {
             const name = e.luma.venue?.name || 'Unknown Venue'
             if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, skip: false })
+              edits.set(name, { name, neighborhood: null, action: 'create' })
             }
           })
         setVenueEdits(edits)
@@ -686,7 +688,7 @@ export function useImportWizard(
   const venuesToCreateCount = useMemo(() => {
     let count = 0
     venueEdits.forEach(edit => {
-      if (!edit.skip && !edit.mergeInto) count++
+      if (edit.action === 'create') count++
     })
     return count
   }, [venueEdits])
@@ -699,8 +701,7 @@ export function useImportWizard(
       const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: 'other' }[] = []
 
       venueEdits.forEach((edit) => {
-        if (edit.skip) return
-        if (edit.mergeInto) return // Skip venues being merged into existing ones
+        if (edit.action !== 'create') return // Only create venues with 'create' action
         venuesToCreate.push({ name: edit.name, neighborhood: edit.neighborhood, type: 'other' })
       })
 
@@ -746,7 +747,7 @@ export function useImportWizard(
         // Auto-select Passline events with matched venues
         setSelectedIds(new Set(
           passlineEvents
-            .filter(e => e.venueMatch.matchType !== 'none' || !venueEdits.get(e.passline.lugar)?.skip)
+            .filter(e => e.venueMatch.matchType !== 'none' || venueEdits.get(e.passline.lugar)?.action !== 'skip')
             .map(e => e.passline.id)
         ))
       } else if (source === 'eventbrite') {
@@ -785,7 +786,7 @@ export function useImportWizard(
           eventbriteEvents
             .filter(e => {
               const name = e.eventbrite.location?.name || ''
-              return e.venueMatch.matchType !== 'none' || !venueEdits.get(name)?.skip
+              return e.venueMatch.matchType !== 'none' || venueEdits.get(name)?.action !== 'skip'
             })
             .map(e => e.eventbrite.url)
         ))
@@ -823,7 +824,7 @@ export function useImportWizard(
         // Auto-select BA Tourism events with matched venues
         setSelectedIds(new Set(
           baTourismEvents
-            .filter(e => e.venueMatch.matchType !== 'none' || !venueEdits.get(e.baTourism.venueName)?.skip)
+            .filter(e => e.venueMatch.matchType !== 'none' || venueEdits.get(e.baTourism.venueName)?.action !== 'skip')
             .map(e => `ba-tourism-${e.baTourism.name}`)
         ))
       } else if (source === 'meetup') {
@@ -862,7 +863,7 @@ export function useImportWizard(
           meetupEvents
             .filter(e => {
               const name = e.meetup.venue?.name || ''
-              return e.venueMatch.matchType !== 'none' || !venueEdits.get(name)?.skip
+              return e.venueMatch.matchType !== 'none' || venueEdits.get(name)?.action !== 'skip'
             })
             .map(e => e.meetup.id)
         ))
@@ -902,7 +903,7 @@ export function useImportWizard(
           lumaEvents
             .filter(e => {
               const name = e.luma.venue?.name || ''
-              return e.venueMatch.matchType !== 'none' || !venueEdits.get(name)?.skip
+              return e.venueMatch.matchType !== 'none' || venueEdits.get(name)?.action !== 'skip'
             })
             .map(e => e.luma.api_id)
         ))
@@ -916,6 +917,165 @@ export function useImportWizard(
       setIsCreatingVenues(false)
     }
   }, [source, venueEdits, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
+
+  // Create all unmatched venues and proceed directly to confirm step
+  const createAllVenuesAndProceed = useCallback(async () => {
+    setIsCreatingVenues(true)
+    setError(null)
+
+    try {
+      // Create all unmatched venues (no skip, no merge)
+      const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: 'other' }[] = []
+
+      for (const venue of unmatchedVenues) {
+        venuesToCreate.push({ name: venue.name, neighborhood: null, type: 'other' })
+      }
+
+      if (venuesToCreate.length > 0) {
+        await bulkCreateVenuesAction({ data: venuesToCreate })
+        toast.success(`Created ${venuesToCreate.length} venues`)
+      }
+
+      const updatedVenues = await listVenues()
+      setVenues(updatedVenues.map(v => ({ id: v.id, name: v.name, neighborhood: v.neighborhood })))
+
+      // Update event venue matches based on source
+      if (source === 'passline') {
+        setPasslineEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const passlineName = event.passline.lugar
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === passlineName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: { ...event.transformed, venue_id: matchedVenue.id },
+              }
+            }
+            return event
+          })
+        )
+      } else if (source === 'eventbrite') {
+        setEventbriteEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const eventbriteName = event.eventbrite.location?.name || ''
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === eventbriteName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: { ...event.transformed, venue_id: matchedVenue.id },
+              }
+            }
+            return event
+          })
+        )
+      } else if (source === 'ba-tourism') {
+        setBaTourismEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const baTourismName = event.baTourism.venueName
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === baTourismName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: event.transformed.map(t => ({ ...t, venue_id: matchedVenue.id })),
+              }
+            }
+            return event
+          })
+        )
+      } else if (source === 'meetup') {
+        setMeetupEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const meetupName = event.meetup.venue?.name || ''
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === meetupName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: event.transformed.map(t => ({ ...t, venue_id: matchedVenue.id })),
+              }
+            }
+            return event
+          })
+        )
+      } else if (source === 'luma') {
+        setLumaEvents(prev =>
+          prev.map(event => {
+            if (event.venueMatch.matchType !== 'none') return event
+
+            const lumaName = event.luma.venue?.name || ''
+            const matchedVenue = updatedVenues.find(
+              v => v.name.toLowerCase() === lumaName.toLowerCase()
+            )
+
+            if (matchedVenue) {
+              return {
+                ...event,
+                venueMatch: {
+                  venue: matchedVenue,
+                  matchType: 'exact' as const,
+                  confidence: 1,
+                  searchName: event.venueMatch.searchName,
+                },
+                transformed: { ...event.transformed, venue_id: matchedVenue.id },
+              }
+            }
+            return event
+          })
+        )
+      }
+
+      // Go directly to confirm step (skip the select step review)
+      setStep('confirm')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create venues')
+      toast.error('Failed to create venues')
+    } finally {
+      setIsCreatingVenues(false)
+    }
+  }, [source, unmatchedVenues, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
 
   const skipVenues = useCallback(() => {
     // Auto-select only events with matched venues using adapters
@@ -1659,6 +1819,7 @@ export function useImportWizard(
     handleCSVFile,
     updateVenueEdit,
     createVenuesAndProceed,
+    createAllVenuesAndProceed,
     skipVenues,
     toggleSelect,
     toggleSelectAll,

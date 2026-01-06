@@ -70,6 +70,25 @@ export interface NominatimEnrichComplete {
 export type NominatimEnrichUpdate = NominatimEnrichProgress | NominatimEnrichComplete
 
 // ============================================================================
+// NEIGHBORHOOD LOOKUP STREAMING TYPES (import wizard venue step)
+// ============================================================================
+
+export interface NeighborhoodLookupProgress {
+  type: 'progress'
+  current: number
+  total: number
+  venueName: string
+  neighborhood: string | null  // CABA neighborhood name or null if not found
+  error: string | null
+}
+
+export interface NeighborhoodLookupComplete {
+  type: 'complete'
+}
+
+export type NeighborhoodLookupUpdate = NeighborhoodLookupProgress | NeighborhoodLookupComplete
+
+// ============================================================================
 // ADDRESS DETECTION STREAMING TYPES (venue review)
 // ============================================================================
 

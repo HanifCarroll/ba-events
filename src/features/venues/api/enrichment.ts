@@ -7,6 +7,7 @@ import type {
   NominatimEnrichProgress,
   NominatimEnrichComplete,
   NominatimEnrichUpdate,
+  NeighborhoodLookupUpdate,
 } from '@/shared/lib/streaming-types'
 
 // ============================================================================
@@ -583,3 +584,60 @@ export const getAllPendingVenuesAction = createServerFn({ method: 'GET' }).handl
 
   return (venues || []) as Array<{ id: string; name: string }>
 })
+
+// ============================================================================
+// NEIGHBORHOOD LOOKUP (for import wizard - no DB updates)
+// ============================================================================
+
+/**
+ * Look up neighborhoods for venue names using Nominatim API.
+ * This is a lightweight version that only returns neighborhoods without
+ * creating or updating any database records.
+ *
+ * Used by the import wizard's VenuesStep to auto-populate neighborhood dropdowns.
+ */
+export const lookupNeighborhoodsAction = createServerFn({ method: 'POST' })
+  .inputValidator((data: { venueNames: string[] }) => data)
+  .handler(async function* ({ data: { venueNames } }): AsyncGenerator<NeighborhoodLookupUpdate> {
+    await requireAdminAccess()
+    console.log(`[neighborhood-lookup] Starting lookup for ${venueNames.length} venues`)
+
+    for (let i = 0; i < venueNames.length; i++) {
+      const venueName = venueNames[i]
+      let neighborhood: Neighborhood | null = null
+      let error: string | null = null
+
+      try {
+        const result = await searchNominatim(venueName)
+        if (result) {
+          neighborhood = mapNominatimNeighborhood(
+            result.address.neighbourhood,
+            result.address.suburb
+          )
+          console.log(`[neighborhood-lookup] ${venueName} -> ${neighborhood || 'not found'}`)
+        } else {
+          console.log(`[neighborhood-lookup] ${venueName} -> no OSM result`)
+        }
+      } catch (e) {
+        error = e instanceof Error ? e.message : 'Unknown error'
+        console.error(`[neighborhood-lookup] Error for ${venueName}:`, error)
+      }
+
+      yield {
+        type: 'progress',
+        current: i + 1,
+        total: venueNames.length,
+        venueName,
+        neighborhood,
+        error,
+      }
+
+      // Rate limiting: wait 1 second between requests (except for last one)
+      if (i < venueNames.length - 1) {
+        await delay(1000)
+      }
+    }
+
+    console.log(`[neighborhood-lookup] Completed lookup for ${venueNames.length} venues`)
+    yield { type: 'complete' }
+  })

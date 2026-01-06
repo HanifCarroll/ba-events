@@ -20,6 +20,7 @@ export {
   mapNominatimNeighborhood,
   getRecentlyCreatedPendingVenuesAction,
   getAllPendingVenuesAction,
+  lookupNeighborhoodsAction,
   type VenueEnrichmentInput,
   type VenueEnrichmentOutput,
   type VenueEnrichmentProgress,
