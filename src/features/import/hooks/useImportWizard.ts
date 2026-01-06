@@ -33,6 +33,18 @@ import {
   type WeekContext,
 } from '@/features/import'
 import {
+  passlineAdapter,
+  eventbriteAdapter,
+  baTourismAdapter,
+  meetupAdapter,
+  lumaAdapter,
+} from '../adapters'
+import {
+  getUnmatchedVenues as getUnmatchedVenuesHelper,
+  getAllEventIds,
+  getMatchedEventIds,
+} from './helpers'
+import {
   fetchPasslineEventsClient,
   filterCABAEventsClient,
   filterByDateRangeClient,
@@ -166,98 +178,26 @@ export function useImportWizard(
     return map
   }, [venues])
 
-  // Compute unmatched venues for Passline/Eventbrite/BA Tourism events
+  // Compute unmatched venues for all sources using adapters
   const unmatchedVenues = useMemo<UnmatchedVenue[]>(() => {
+    if (!source || source === 'csv') return []
+
+    // Get the appropriate events and adapter for the source
+    let result: UnmatchedVenue[] = []
+
     if (source === 'passline') {
-      const venueMap = new Map<string, UnmatchedVenue>()
-      passlineEvents
-        .filter(e => e.venueMatch.matchType === 'none')
-        .forEach(e => {
-          const name = e.passline.lugar
-          const existing = venueMap.get(name)
-          if (existing) {
-            existing.count++
-            existing.eventIds.push(e.passline.id)
-          } else {
-            venueMap.set(name, { name, count: 1, eventIds: [e.passline.id] })
-          }
-        })
-      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
+      result = getUnmatchedVenuesHelper(passlineEvents, passlineAdapter)
+    } else if (source === 'eventbrite') {
+      result = getUnmatchedVenuesHelper(eventbriteEvents, eventbriteAdapter)
+    } else if (source === 'ba-tourism') {
+      result = getUnmatchedVenuesHelper(baTourismEvents, baTourismAdapter)
+    } else if (source === 'meetup') {
+      result = getUnmatchedVenuesHelper(meetupEvents, meetupAdapter)
+    } else if (source === 'luma') {
+      result = getUnmatchedVenuesHelper(lumaEvents, lumaAdapter)
     }
 
-    if (source === 'eventbrite') {
-      const venueMap = new Map<string, UnmatchedVenue>()
-      eventbriteEvents
-        .filter(e => e.venueMatch.matchType === 'none')
-        .forEach(e => {
-          const name = e.eventbrite.location?.name || 'Unknown Venue'
-          const eventId = e.eventbrite.url // Use URL as unique ID for Eventbrite
-          const existing = venueMap.get(name)
-          if (existing) {
-            existing.count++
-            existing.eventIds.push(eventId)
-          } else {
-            venueMap.set(name, { name, count: 1, eventIds: [eventId] })
-          }
-        })
-      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
-    }
-
-    if (source === 'ba-tourism') {
-      const venueMap = new Map<string, UnmatchedVenue>()
-      baTourismEvents
-        .filter(e => e.venueMatch.matchType === 'none')
-        .forEach(e => {
-          const name = e.baTourism.venueName
-          const eventId = `ba-tourism-${e.baTourism.name}`
-          const existing = venueMap.get(name)
-          if (existing) {
-            existing.count++
-            existing.eventIds.push(eventId)
-          } else {
-            venueMap.set(name, { name, count: 1, eventIds: [eventId] })
-          }
-        })
-      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
-    }
-
-    if (source === 'meetup') {
-      const venueMap = new Map<string, UnmatchedVenue>()
-      meetupEvents
-        .filter(e => e.venueMatch.matchType === 'none')
-        .forEach(e => {
-          const name = e.meetup.venue?.name || 'Unknown Venue'
-          const eventId = e.meetup.id
-          const existing = venueMap.get(name)
-          if (existing) {
-            existing.count++
-            existing.eventIds.push(eventId)
-          } else {
-            venueMap.set(name, { name, count: 1, eventIds: [eventId] })
-          }
-        })
-      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
-    }
-
-    if (source === 'luma') {
-      const venueMap = new Map<string, UnmatchedVenue>()
-      lumaEvents
-        .filter(e => e.venueMatch.matchType === 'none')
-        .forEach(e => {
-          const name = e.luma.venue?.name || 'Unknown Venue'
-          const eventId = e.luma.api_id
-          const existing = venueMap.get(name)
-          if (existing) {
-            existing.count++
-            existing.eventIds.push(eventId)
-          } else {
-            venueMap.set(name, { name, count: 1, eventIds: [eventId] })
-          }
-        })
-      return Array.from(venueMap.values()).sort((a, b) => b.count - a.count)
-    }
-
-    return []
+    return result
   }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
 
   // Find similar venue names for merge suggestions
@@ -941,41 +881,17 @@ export function useImportWizard(
   }, [source, venueEdits, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
 
   const skipVenues = useCallback(() => {
+    // Auto-select only events with matched venues using adapters
     if (source === 'passline') {
-      // Auto-select only Passline events with matched venues
-      setSelectedIds(new Set(
-        passlineEvents
-          .filter(e => e.venueMatch.matchType !== 'none')
-          .map(e => e.passline.id)
-      ))
+      setSelectedIds(getMatchedEventIds(passlineEvents, passlineAdapter))
     } else if (source === 'eventbrite') {
-      // Auto-select only Eventbrite events with matched venues
-      setSelectedIds(new Set(
-        eventbriteEvents
-          .filter(e => e.venueMatch.matchType !== 'none')
-          .map(e => e.eventbrite.url)
-      ))
+      setSelectedIds(getMatchedEventIds(eventbriteEvents, eventbriteAdapter))
     } else if (source === 'ba-tourism') {
-      // Auto-select only BA Tourism events with matched venues
-      setSelectedIds(new Set(
-        baTourismEvents
-          .filter(e => e.venueMatch.matchType !== 'none')
-          .map(e => `ba-tourism-${e.baTourism.name}`)
-      ))
+      setSelectedIds(getMatchedEventIds(baTourismEvents, baTourismAdapter))
     } else if (source === 'meetup') {
-      // Auto-select only Meetup events with matched venues
-      setSelectedIds(new Set(
-        meetupEvents
-          .filter(e => e.venueMatch.matchType !== 'none')
-          .map(e => e.meetup.id)
-      ))
+      setSelectedIds(getMatchedEventIds(meetupEvents, meetupAdapter))
     } else if (source === 'luma') {
-      // Auto-select only Luma events with matched venues
-      setSelectedIds(new Set(
-        lumaEvents
-          .filter(e => e.venueMatch.matchType !== 'none')
-          .map(e => e.luma.api_id)
-      ))
+      setSelectedIds(getMatchedEventIds(lumaEvents, lumaAdapter))
     }
     setStep('select')
   }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
@@ -993,42 +909,41 @@ export function useImportWizard(
   }, [])
 
   const toggleSelectAll = useCallback(() => {
+    // Get all event IDs for the current source using adapters
+    let allIds: Set<string> | null = null
+    let eventCount = 0
+
     if (source === 'passline') {
-      if (selectedIds.size === passlineEvents.length) {
-        setSelectedIds(new Set())
-      } else {
-        setSelectedIds(new Set(passlineEvents.map(e => e.passline.id)))
-      }
+      allIds = getAllEventIds(passlineEvents, passlineAdapter)
+      eventCount = passlineEvents.length
     } else if (source === 'eventbrite') {
-      if (selectedIds.size === eventbriteEvents.length) {
-        setSelectedIds(new Set())
-      } else {
-        setSelectedIds(new Set(eventbriteEvents.map(e => e.eventbrite.url)))
-      }
+      allIds = getAllEventIds(eventbriteEvents, eventbriteAdapter)
+      eventCount = eventbriteEvents.length
     } else if (source === 'ba-tourism') {
-      if (selectedIds.size === baTourismEvents.length) {
-        setSelectedIds(new Set())
-      } else {
-        setSelectedIds(new Set(baTourismEvents.map(e => `ba-tourism-${e.baTourism.name}`)))
-      }
+      allIds = getAllEventIds(baTourismEvents, baTourismAdapter)
+      eventCount = baTourismEvents.length
     } else if (source === 'meetup') {
-      if (selectedIds.size === meetupEvents.length) {
-        setSelectedIds(new Set())
-      } else {
-        setSelectedIds(new Set(meetupEvents.map(e => e.meetup.id)))
-      }
+      allIds = getAllEventIds(meetupEvents, meetupAdapter)
+      eventCount = meetupEvents.length
     } else if (source === 'luma') {
-      if (selectedIds.size === lumaEvents.length) {
-        setSelectedIds(new Set())
-      } else {
-        setSelectedIds(new Set(lumaEvents.map(e => e.luma.api_id)))
-      }
-    } else {
+      allIds = getAllEventIds(lumaEvents, lumaAdapter)
+      eventCount = lumaEvents.length
+    } else if (source === 'csv') {
       const validIds = csvRows.filter(r => r.errors.length === 0).map((_, i) => `csv-${i}`)
       if (selectedIds.size === validIds.length) {
         setSelectedIds(new Set())
       } else {
         setSelectedIds(new Set(validIds))
+      }
+      return
+    }
+
+    // Toggle selection for non-CSV sources
+    if (allIds) {
+      if (selectedIds.size === eventCount) {
+        setSelectedIds(new Set())
+      } else {
+        setSelectedIds(allIds)
       }
     }
   }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents, csvRows, selectedIds.size])

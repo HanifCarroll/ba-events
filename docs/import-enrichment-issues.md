@@ -3,7 +3,7 @@
 This document catalogs all identified issues in the event import and enrichment system. **Sections are ordered by implementation priority** - work through them top to bottom.
 
 **Created:** 2026-01-03
-**Last Updated:** 2026-01-05 (Step 2 Complete)
+**Last Updated:** 2026-01-05 (ARCH-01/ARCH-02 Complete)
 
 ---
 
@@ -32,7 +32,8 @@ Complete these in order:
 | **3a** | CRIT-01: find_similar_venue RPC | Fuzzy venue matching is broken | ✅ Complete |
 | **3b** | CRIT-02: EventStatus Enum | Potential runtime errors | ✅ Complete |
 | **3c** | CRIT-04: Venue Merge | UI feature is broken | ✅ Complete (was already working) |
-| **4** | ARCH-01: Wizard Refactor | Code quality (do after core features work) | Not Started |
+| **4** | ARCH-01: Wizard Refactor | Code quality (do after core features work) | ✅ Complete |
+| **5** | ARCH-02: Enrichment Config | Standardize handler patterns | ✅ Complete |
 
 Steps 3a-3c are independent and can be done in parallel.
 
@@ -558,7 +559,7 @@ These improve code quality but aren't blocking features.
 
 ### ARCH-01: Monolithic Import Wizard Hook (1,680 lines)
 
-**Status:** Not Started
+**Status:** ✅ Complete
 **Location:** `src/features/import/hooks/useImportWizard.ts`
 **Impact:** Hard to test, maintain, and extend; violates single responsibility
 
@@ -603,7 +604,7 @@ export interface SourceAdapter<TRaw = unknown, TPreview = unknown> {
 
 ### ARCH-02: Inconsistent Source Handler Patterns
 
-**Status:** Not Started
+**Status:** ✅ Complete
 **Location:** `src/features/import/api/*.ts`
 **Impact:** Unpredictable behavior across sources; maintenance burden
 
@@ -825,6 +826,42 @@ Implemented three critical issues:
 - `supabase/migrations/20260105000002_add_find_similar_venue.sql` - NEW
 - `supabase/schema.sql` - Updated enum + added function
 - `src/features/import/hooks/useImportWizard.ts` - Removed dead code
+
+### 2026-01-05 - ARCH-01 & ARCH-02: Source Adapter Pattern
+**Status:** Complete
+
+Implemented Source Adapter pattern to reduce code duplication in useImportWizard.ts:
+
+**What was done:**
+- Created adapter interface defining how each source should be handled
+- Created 5 source-specific adapters (Passline, Eventbrite, BA Tourism, Meetup, Luma)
+- Created unified helper functions for venue and selection operations
+- Refactored `unmatchedVenues` useMemo from ~90 lines to ~20 lines
+- Refactored `skipVenues` function from ~38 lines to ~15 lines
+- Refactored `toggleSelectAll` to use adapter pattern
+- Added centralized enrichment config (ARCH-02)
+
+**Files Created:**
+- `src/features/import/adapters/types.ts` - Adapter interface and shared types
+- `src/features/import/adapters/passline-adapter.ts`
+- `src/features/import/adapters/eventbrite-adapter.ts`
+- `src/features/import/adapters/ba-tourism-adapter.ts`
+- `src/features/import/adapters/meetup-adapter.ts`
+- `src/features/import/adapters/luma-adapter.ts`
+- `src/features/import/adapters/index.ts` - Registry and exports
+- `src/features/import/hooks/helpers/venue-helpers.ts` - Unified venue matching functions
+- `src/features/import/hooks/helpers/selection-helpers.ts` - Unified selection functions
+- `src/features/import/hooks/helpers/index.ts` - Helper exports
+- `src/features/import/config/enrichment-config.ts` - Centralized enrichment config
+
+**Files Modified:**
+- `src/features/import/hooks/useImportWizard.ts` - Refactored to use adapters and helpers
+
+**Code reduction:**
+- Eliminated ~5 duplicate blocks in unmatchedVenues computation
+- Eliminated ~5 duplicate blocks in skipVenues function
+- Eliminated ~5 duplicate blocks in toggleSelectAll function
+- Single source of truth for source-specific logic now in adapter files
 ```
 
 ---
