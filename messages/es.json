@@ -252,5 +252,10 @@
   "admin_website": "Sitio web",
   "admin_instagram": "Instagram",
   "admin_failed_to_save_venue": "Error al guardar el lugar",
-  "admin_delete_venue_warning": "Este lugar tiene {count} eventos asociados. Eliminarlo quitará la asociación del lugar de esos eventos."
+  "admin_delete_venue_warning": "Este lugar tiene {count} eventos asociados. Eliminarlo quitará la asociación del lugar de esos eventos.",
+  "admin_parent_venue": "Lugar Principal",
+  "admin_select_parent_venue": "Seleccionar lugar principal",
+  "admin_search_parent_venues": "Buscar lugares...",
+  "admin_no_parent_venue": "Ninguno (lugar independiente)",
+  "admin_part_of": "Parte de {name}"
 }

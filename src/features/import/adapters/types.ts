@@ -7,13 +7,19 @@
 
 import type { Venue, EventInsert, Neighborhood } from '@/shared/lib/types'
 import type { VenueMatchResult } from '../scrapers/venue-matcher'
+import type { DuplicateInfo } from '../api/duplicate-detection'
 
 // All supported import sources
 export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'luma' | 'csv'
 
+// Re-export DuplicateInfo for convenience
+export type { DuplicateInfo } from '../api/duplicate-detection'
+
 // Base preview event shape that all sources share
 export interface BasePreviewEvent {
   venueMatch: VenueMatchResult
+  alreadyImported: boolean
+  duplicateInfo?: DuplicateInfo // Present when alreadyImported is true
 }
 
 // Adapter interface - each source implements this

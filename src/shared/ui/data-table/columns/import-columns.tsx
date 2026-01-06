@@ -1,7 +1,8 @@
 import { ColumnDef } from '@tanstack/react-table'
-import { CheckCircle2, HelpCircle, AlertCircle, RefreshCw } from 'lucide-react'
+import { CheckCircle2, HelpCircle, AlertCircle, Eye, ExternalLink } from 'lucide-react'
 import { Badge } from '@/shared/ui/badge'
-import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent, LumaPreviewEvent } from '@/features/import'
+import { Button } from '@/shared/ui/button'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent, LumaPreviewEvent, DuplicateInfo } from '@/features/import'
 
 interface ParsedCSVRow {
   rowNumber: number
@@ -30,6 +31,60 @@ function formatDate(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+// Table meta type for passing handlers
+export interface ImportTableMeta {
+  onViewDiff?: (duplicateInfo: DuplicateInfo) => void
+}
+
+// Status badge component for import preview tables
+function ImportStatusBadge({
+  alreadyImported,
+  duplicateInfo,
+  onViewDiff,
+}: {
+  alreadyImported: boolean
+  duplicateInfo?: DuplicateInfo
+  onViewDiff?: (duplicateInfo: DuplicateInfo) => void
+}) {
+  if (!alreadyImported) {
+    return (
+      <Badge variant="outline" className="text-xs border-green-500/30 text-green-500">
+        New
+      </Badge>
+    )
+  }
+
+  if (duplicateInfo?.hasChanges) {
+    return (
+      <div className="flex items-center gap-1">
+        <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-500">
+          Changed
+        </Badge>
+        {onViewDiff && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewDiff(duplicateInfo)
+            }}
+          >
+            <Eye className="h-3 w-3 mr-1" />
+            Diff
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <Badge variant="outline" className="text-xs border-blue-500/30 text-blue-500">
+      Exists
+    </Badge>
+  )
 }
 
 function VenueMatchIndicator({ event }: { event: PasslinePreviewEvent }) {
@@ -104,6 +159,25 @@ function EventbriteVenueMatchIndicator({ event }: { event: EventbritePreviewEven
 // Passline events columns
 export function getPasslineColumns(): ColumnDef<PasslineEventWithId>[] {
   return [
+    {
+      id: 'status',
+      accessorFn: (row) => row.alreadyImported ? (row.duplicateInfo?.hasChanges ? 'changed' : 'exists') : 'new',
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Status',
+      cell: ({ row, table }) => {
+        const event = row.original
+        const meta = table.options.meta as ImportTableMeta | undefined
+        return (
+          <ImportStatusBadge
+            alreadyImported={event.alreadyImported}
+            duplicateInfo={event.duplicateInfo}
+            onViewDiff={meta?.onViewDiff}
+          />
+        )
+      },
+    },
     {
       id: 'name',
       accessorFn: (row) => row.passline.nombre,
@@ -192,12 +266,66 @@ export function getPasslineColumns(): ColumnDef<PasslineEventWithId>[] {
         )
       },
     },
+    {
+      id: 'link',
+      accessorFn: (row) => row.transformed.link,
+      size: 60,
+      minSize: 50,
+      enableSorting: false,
+      header: 'Link',
+      cell: ({ row }) => {
+        const link = row.original.transformed.link
+        if (!link) return null
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              window.open(link, '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        )
+      },
+    },
+    // Hidden column for filtering by duplicate status
+    {
+      id: 'alreadyImported',
+      accessorFn: (row) => row.alreadyImported ? 'yes' : 'no',
+      enableColumnFilter: true,
+      enableHiding: true,
+      size: 0,
+      header: () => null,
+      cell: () => null,
+    },
   ]
 }
 
 // Eventbrite events columns
 export function getEventbriteColumns(): ColumnDef<EventbriteEventWithId>[] {
   return [
+    {
+      id: 'status',
+      accessorFn: (row) => row.alreadyImported ? (row.duplicateInfo?.hasChanges ? 'changed' : 'exists') : 'new',
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Status',
+      cell: ({ row, table }) => {
+        const event = row.original
+        const meta = table.options.meta as ImportTableMeta | undefined
+        return (
+          <ImportStatusBadge
+            alreadyImported={event.alreadyImported}
+            duplicateInfo={event.duplicateInfo}
+            onViewDiff={meta?.onViewDiff}
+          />
+        )
+      },
+    },
     {
       id: 'name',
       accessorFn: (row) => row.eventbrite.name,
@@ -270,6 +398,41 @@ export function getEventbriteColumns(): ColumnDef<EventbriteEventWithId>[] {
           <span className="text-muted-foreground text-sm">-</span>
         )
       ),
+    },
+    {
+      id: 'link',
+      accessorFn: (row) => row.eventbrite.url,
+      size: 60,
+      minSize: 50,
+      enableSorting: false,
+      header: 'Link',
+      cell: ({ row }) => {
+        const link = row.original.eventbrite.url
+        if (!link) return null
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              window.open(link, '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        )
+      },
+    },
+    // Hidden column for filtering by duplicate status
+    {
+      id: 'alreadyImported',
+      accessorFn: (row) => row.alreadyImported ? 'yes' : 'no',
+      enableColumnFilter: true,
+      enableHiding: true,
+      size: 0,
+      header: () => null,
+      cell: () => null,
     },
   ]
 }
@@ -412,6 +575,25 @@ function BaTourismVenueMatchIndicator({ event }: { event: BATourismPreviewEvent 
 export function getBaTourismColumns(): ColumnDef<BaTourismEventWithId>[] {
   return [
     {
+      id: 'status',
+      accessorFn: (row) => row.alreadyImported ? (row.duplicateInfo?.hasChanges ? 'changed' : 'exists') : 'new',
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Status',
+      cell: ({ row, table }) => {
+        const event = row.original
+        const meta = table.options.meta as ImportTableMeta | undefined
+        return (
+          <ImportStatusBadge
+            alreadyImported={event.alreadyImported}
+            duplicateInfo={event.duplicateInfo}
+            onViewDiff={meta?.onViewDiff}
+          />
+        )
+      },
+    },
+    {
       id: 'name',
       accessorFn: (row) => row.baTourism.name,
       size: 280,
@@ -512,6 +694,41 @@ export function getBaTourismColumns(): ColumnDef<BaTourismEventWithId>[] {
         )
       ),
     },
+    {
+      id: 'link',
+      accessorFn: (row) => row.baTourism.moreInfoUrl,
+      size: 60,
+      minSize: 50,
+      enableSorting: false,
+      header: 'Link',
+      cell: ({ row }) => {
+        const link = row.original.baTourism.moreInfoUrl
+        if (!link) return null
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              window.open(link, '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        )
+      },
+    },
+    // Hidden column for filtering by duplicate status
+    {
+      id: 'alreadyImported',
+      accessorFn: (row) => row.alreadyImported ? 'yes' : 'no',
+      enableColumnFilter: true,
+      enableHiding: true,
+      size: 0,
+      header: () => null,
+      cell: () => null,
+    },
   ]
 }
 
@@ -554,6 +771,25 @@ function MeetupVenueMatchIndicator({ event }: { event: MeetupPreviewEvent }) {
 export function getMeetupColumns(): ColumnDef<MeetupEventWithId>[] {
   return [
     {
+      id: 'status',
+      accessorFn: (row) => row.alreadyImported ? (row.duplicateInfo?.hasChanges ? 'changed' : 'exists') : 'new',
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Status',
+      cell: ({ row, table }) => {
+        const event = row.original
+        const meta = table.options.meta as ImportTableMeta | undefined
+        return (
+          <ImportStatusBadge
+            alreadyImported={event.alreadyImported}
+            duplicateInfo={event.duplicateInfo}
+            onViewDiff={meta?.onViewDiff}
+          />
+        )
+      },
+    },
+    {
       id: 'name',
       accessorFn: (row) => row.meetup.name,
       size: 280,
@@ -564,17 +800,9 @@ export function getMeetupColumns(): ColumnDef<MeetupEventWithId>[] {
         const event = row.original
         return (
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="font-medium line-clamp-1">
-                {event.meetup.name}
-              </span>
-              {event.alreadyImported && (
-                <Badge variant="outline" className="text-xs shrink-0 border-blue-500/30 text-blue-500">
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  Update
-                </Badge>
-              )}
-            </div>
+            <span className="font-medium line-clamp-1">
+              {event.meetup.name}
+            </span>
             <span className="text-xs text-muted-foreground line-clamp-1">
               by {event.meetup.group.name}
             </span>
@@ -647,6 +875,41 @@ export function getMeetupColumns(): ColumnDef<MeetupEventWithId>[] {
         )
       ),
     },
+    {
+      id: 'link',
+      accessorFn: (row) => row.meetup.eventUrl,
+      size: 60,
+      minSize: 50,
+      enableSorting: false,
+      header: 'Link',
+      cell: ({ row }) => {
+        const link = row.original.meetup.eventUrl
+        if (!link) return null
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              window.open(link, '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        )
+      },
+    },
+    // Hidden column for filtering by duplicate status
+    {
+      id: 'alreadyImported',
+      accessorFn: (row) => row.alreadyImported ? 'yes' : 'no',
+      enableColumnFilter: true,
+      enableHiding: true,
+      size: 0,
+      header: () => null,
+      cell: () => null,
+    },
   ]
 }
 
@@ -688,6 +951,25 @@ function LumaVenueMatchIndicator({ event }: { event: LumaPreviewEvent }) {
 // Luma events columns
 export function getLumaColumns(): ColumnDef<LumaEventWithId>[] {
   return [
+    {
+      id: 'status',
+      accessorFn: (row) => row.alreadyImported ? (row.duplicateInfo?.hasChanges ? 'changed' : 'exists') : 'new',
+      size: 100,
+      minSize: 80,
+      enableSorting: true,
+      header: 'Status',
+      cell: ({ row, table }) => {
+        const event = row.original
+        const meta = table.options.meta as ImportTableMeta | undefined
+        return (
+          <ImportStatusBadge
+            alreadyImported={event.alreadyImported}
+            duplicateInfo={event.duplicateInfo}
+            onViewDiff={meta?.onViewDiff}
+          />
+        )
+      },
+    },
     {
       id: 'name',
       accessorFn: (row) => row.luma.name,
@@ -771,6 +1053,41 @@ export function getLumaColumns(): ColumnDef<LumaEventWithId>[] {
           </div>
         )
       },
+    },
+    {
+      id: 'link',
+      accessorFn: (row) => row.luma.url,
+      size: 60,
+      minSize: 50,
+      enableSorting: false,
+      header: 'Link',
+      cell: ({ row }) => {
+        const link = row.original.luma.url
+        if (!link) return null
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              window.open(link, '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        )
+      },
+    },
+    // Hidden column for filtering by duplicate status
+    {
+      id: 'alreadyImported',
+      accessorFn: (row) => row.alreadyImported ? 'yes' : 'no',
+      enableColumnFilter: true,
+      enableHiding: true,
+      size: 0,
+      header: () => null,
+      cell: () => null,
     },
   ]
 }

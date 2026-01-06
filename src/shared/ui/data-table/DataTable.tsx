@@ -275,6 +275,10 @@ export interface DataTableProps<TData extends { id: string }> {
 
   // Empty state
   emptyState?: ReactNode
+
+  // Custom meta passed to table (accessible in cell renderers via table.options.meta)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  meta?: any
 }
 
 export function DataTable<TData extends { id: string }>({
@@ -299,6 +303,7 @@ export function DataTable<TData extends { id: string }>({
   toolbarLeft,
   toolbarRight,
   emptyState,
+  meta,
 }: DataTableProps<TData>) {
   // Preferences (persisted)
   const preferences = useColumnPreferences(tableId)
@@ -473,6 +478,7 @@ export function DataTable<TData extends { id: string }>({
     enableRowSelection,
     enableColumnFilters: enableColumnFiltering,
     getRowId: (row) => row.id,
+    meta,
   })
 
   // DnD sensors

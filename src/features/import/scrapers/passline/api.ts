@@ -6,6 +6,9 @@
  * API discovered via browser network inspection - no official documentation.
  */
 
+import { isBlockedEvent } from '../shared'
+import { PASSLINE_BLOCKLIST } from '../../config/blocklist'
+
 // Passline event structure from their API
 export interface PasslineEvent {
   id: string
@@ -61,11 +64,12 @@ export async function fetchPasslineEvents(): Promise<PasslineEvent[]> {
 /**
  * Filter events to only include CABA (Capital Federal) events
  * Also excludes "VARIAS LOCACIONES" which are venue rental ads, not real events
+ * Also applies the blocklist to filter out advertisement events
  */
 export function filterCABAEvents(events: PasslineEvent[]): PasslineEvent[] {
-  return events.filter(
-    (e) => e.nombre_region === 'Capital Federal' && e.lugar !== 'VARIAS LOCACIONES'
-  )
+  return events
+    .filter((e) => e.nombre_region === 'Capital Federal' && e.lugar !== 'VARIAS LOCACIONES')
+    .filter((e) => !isBlockedEvent(e.nombre, e.lugar, PASSLINE_BLOCKLIST))
 }
 
 /**

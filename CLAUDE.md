@@ -252,6 +252,34 @@ queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
 queryClient.setQueriesData({ queryKey: queryKeys.venues.all }, updater)
 ```
 
+### Supabase CLI
+
+Use the Supabase CLI through `bunx` for database operations like migrations, schema changes, and management tasks. The CLI is more reliable than MCP tools for these operations.
+
+```bash
+# Link to project (one-time setup)
+bunx supabase link --project-ref <project-ref>
+
+# Push local migrations to remote database
+bunx supabase db push
+
+# Pull remote schema changes
+bunx supabase db pull
+
+# Create a new migration
+bunx supabase migration new <migration_name>
+
+# List migration status
+bunx supabase migration list
+
+# Repair migration history if out of sync
+bunx supabase migration repair --status applied <version>
+bunx supabase migration repair --status reverted <version>
+
+# Generate TypeScript types from schema
+bunx supabase gen types typescript --project-id <project-ref> > src/shared/lib/types/database.ts
+```
+
 ## AI/LLM
 
 Use the Anthropic SDK with Claude for the AI agent. The agent is in `src/features/chat/api/agent.ts`.

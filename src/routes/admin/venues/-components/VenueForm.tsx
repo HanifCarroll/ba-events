@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { MapPin, Loader2 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
@@ -14,10 +16,11 @@ import {
   FormLabel,
   FormMessage,
 } from '@/shared/ui/form'
-import { useCreateVenue, useUpdateVenue } from '@/features/venues'
+import { useCreateVenue, useUpdateVenue, getVenuesForSelect } from '@/features/venues'
 import { venueFormSchema, type VenueFormInput } from '@/shared/lib/schemas'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
 import type { Venue, Neighborhood } from '@/shared/lib/types'
+import * as m from '@/paraglide/messages'
 
 interface VenueFormProps {
   venue?: Venue
@@ -29,6 +32,25 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
   const createMutation = useCreateVenue()
   const updateMutation = useUpdateVenue()
 
+  // Fetch venues for parent selector
+  const { data: allVenues = [] } = useQuery({
+    queryKey: ['venues', 'for-select'],
+    queryFn: () => getVenuesForSelect(),
+  })
+
+  // Filter venues that can be parents:
+  // - Must not already have a parent (no grandchildren allowed)
+  // - Must not be the current venue (when editing)
+  const parentVenueOptions = useMemo(() => {
+    const options = allVenues
+      .filter((v) => !v.parent_id && v.id !== venue?.id)
+      .map((v) => ({
+        value: v.id,
+        label: v.name + (v.neighborhood ? ` (${v.neighborhood})` : ''),
+      }))
+    return [{ value: '', label: m.admin_no_parent_venue() }, ...options]
+  }, [allVenues, venue?.id])
+
   const form = useForm<VenueFormInput>({
     resolver: zodResolver(venueFormSchema),
     defaultValues: {
@@ -37,6 +59,7 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
       address: venue?.address || '',
       website: venue?.website || '',
       instagram_handle: venue?.instagram_handle || '',
+      parent_id: venue?.parent_id || null,
     },
   })
 
@@ -48,6 +71,7 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
         address: data.address || null,
         website: data.website || null,
         instagram_handle: data.instagram_handle || null,
+        parent_id: data.parent_id || null,
       }
 
       if (mode === 'create') {
@@ -101,6 +125,28 @@ export function VenueForm({ venue, mode }: VenueFormProps) {
                         {...field}
                         placeholder="Enter venue name"
                         className="bg-background/50 border-border/50"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Parent Venue */}
+              <FormField
+                control={form.control}
+                name="parent_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{m.admin_parent_venue()}</FormLabel>
+                    <FormControl>
+                      <Combobox
+                        options={parentVenueOptions}
+                        value={field.value || ''}
+                        onValueChange={(value) => field.onChange(value || null)}
+                        placeholder={m.admin_select_parent_venue()}
+                        searchPlaceholder={m.admin_search_parent_venues()}
+                        emptyText={m.admin_no_venues_found()}
                       />
                     </FormControl>
                     <FormMessage />

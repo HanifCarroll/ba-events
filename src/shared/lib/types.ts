@@ -82,6 +82,7 @@ export interface Venue {
   address: string | null
   website: string | null
   instagram_handle: string | null
+  parent_id: string | null
   enrichment_status: EnrichmentStatus
   enrichment_error: string | null
   enriched_at: string | null
@@ -96,6 +97,7 @@ export interface VenueInsert {
   address?: string | null
   website?: string | null
   instagram_handle?: string | null
+  parent_id?: string | null
   enrichment_status?: EnrichmentStatus
   enrichment_error?: string | null
   enriched_at?: string | null

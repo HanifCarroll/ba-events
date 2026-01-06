@@ -1,11 +1,15 @@
-import { useMemo } from 'react'
-import { ArrowRight, MapPin, AlertTriangle, RefreshCw } from 'lucide-react'
+import { useMemo, useState, useCallback } from 'react'
+import type { ColumnFiltersState } from '@tanstack/react-table'
+import { ArrowRight, MapPin, AlertTriangle, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
+import { Switch } from '@/shared/ui/switch'
+import { Label } from '@/shared/ui/label'
 import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns, getLumaColumns } from '@/shared/ui/data-table'
-import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId, LumaEventWithId } from '@/shared/ui/data-table'
-import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent, LumaPreviewEvent } from '@/features/import'
+import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId, LumaEventWithId, ImportTableMeta } from '@/shared/ui/data-table'
+import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent, LumaPreviewEvent, DuplicateInfo } from '@/features/import'
 import type { ImportSource } from '@/features/import'
+import { DiffViewerDialog } from './DiffViewerDialog'
 
 interface ParsedCSVRow {
   rowNumber: number
@@ -53,11 +57,29 @@ export function SelectStep({
   onProceed,
   onHandleVenues,
 }: SelectStepProps) {
+  const [diffDialogOpen, setDiffDialogOpen] = useState(false)
+  const [selectedDiff, setSelectedDiff] = useState<DuplicateInfo | null>(null)
+  // Column filter state for hiding duplicates - default to hiding them
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([
+    { id: 'alreadyImported', value: 'no' }
+  ])
+
+  // Derived state: are duplicates currently shown?
+  const showDuplicates = !columnFilters.some(f => f.id === 'alreadyImported' && f.value === 'no')
+
+  // Toggle handler for showing/hiding duplicates
+  const handleToggleDuplicates = useCallback((show: boolean) => {
+    setColumnFilters(show ? [] : [{ id: 'alreadyImported', value: 'no' }])
+  }, [])
+
   const isPassline = source === 'passline'
   const isEventbrite = source === 'eventbrite'
   const isBaTourism = source === 'ba-tourism'
   const isMeetup = source === 'meetup'
   const isLuma = source === 'luma'
+  const isApiSource = isPassline || isEventbrite || isBaTourism || isMeetup || isLuma
+
+  // Get total count (unfiltered)
   const totalCount = isPassline
     ? passlineEvents.length
     : isEventbrite
@@ -69,11 +91,30 @@ export function SelectStep({
           : isLuma
             ? lumaEvents.length
             : csvRows.length
-  const canProceed = (isPassline || isEventbrite || isBaTourism || isMeetup || isLuma)
-    ? selectedIds.size > 0
-    : (csvAllValid && selectedIds.size > 0)
+
+  // Calculate already imported count for all sources
+  const alreadyImportedCount = useMemo(() => {
+    if (isPassline) return passlineEvents.filter(e => e.alreadyImported).length
+    if (isEventbrite) return eventbriteEvents.filter(e => e.alreadyImported).length
+    if (isBaTourism) return baTourismEvents.filter(e => e.alreadyImported).length
+    if (isMeetup) return meetupEvents.filter(e => e.alreadyImported).length
+    if (isLuma) return lumaEvents.filter(e => e.alreadyImported).length
+    return 0
+  }, [isPassline, isEventbrite, isBaTourism, isMeetup, isLuma, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
+
+  // Handler for viewing diff - passed to DataTable via meta
+  const handleViewDiff = useCallback((duplicateInfo: DuplicateInfo) => {
+    setSelectedDiff(duplicateInfo)
+    setDiffDialogOpen(true)
+  }, [])
+
+  // Table meta with diff handler
+  const tableMeta: ImportTableMeta = useMemo(() => ({
+    onViewDiff: handleViewDiff,
+  }), [handleViewDiff])
 
   // Transform data to include id field for DataTable compatibility
+  // No filtering here - DataTable handles filtering via columnFilters
   const passlineData = useMemo((): PasslineEventWithId[] => {
     return passlineEvents.map((event) => ({
       ...event,
@@ -116,6 +157,16 @@ export function SelectStep({
     }))
   }, [csvRows])
 
+  // Get visible count based on filter state
+  // When hiding duplicates: total - duplicates, otherwise total
+  const visibleCount = isApiSource
+    ? (showDuplicates ? totalCount : totalCount - alreadyImportedCount)
+    : csvData.length
+
+  const canProceed = isApiSource
+    ? selectedIds.size > 0
+    : (csvAllValid && selectedIds.size > 0)
+
   // Get column definitions
   const passlineColumns = useMemo(() => getPasslineColumns(), [])
   const eventbriteColumns = useMemo(() => getEventbriteColumns(), [])
@@ -147,7 +198,7 @@ export function SelectStep({
       </div>
 
       {/* Venue Status Warning */}
-      {unmatchedVenueCount > 0 && (isPassline || isEventbrite || isBaTourism || isMeetup || isLuma) && (
+      {unmatchedVenueCount > 0 && isApiSource && (
         <div className="flex items-center justify-between px-4 py-3 bg-amber-500/10 rounded-xl border border-amber-500/30">
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -174,24 +225,38 @@ export function SelectStep({
         </div>
       )}
 
-      {/* Already Imported Info - Meetup only */}
-      {isMeetup && (() => {
-        const alreadyImportedCount = meetupEvents.filter(e => e.alreadyImported).length
-        if (alreadyImportedCount === 0) return null
-        return (
-          <div className="flex items-center gap-3 px-4 py-3 bg-blue-500/10 rounded-xl border border-blue-500/30">
-            <RefreshCw className="h-5 w-5 text-blue-500" />
+      {/* Already Imported Toggle - Universal for all sources */}
+      {alreadyImportedCount > 0 && isApiSource && (
+        <div className="flex items-center justify-between px-4 py-3 bg-blue-500/10 rounded-xl border border-blue-500/30">
+          <div className="flex items-center gap-3">
+            {showDuplicates ? (
+              <Eye className="h-5 w-5 text-blue-500" />
+            ) : (
+              <EyeOff className="h-5 w-5 text-blue-500" />
+            )}
             <div>
               <p className="text-sm font-medium text-foreground">
-                {alreadyImportedCount} event{alreadyImportedCount !== 1 ? 's' : ''} already imported
+                {showDuplicates ? 'Showing' : 'Hiding'} {alreadyImportedCount} already imported event{alreadyImportedCount !== 1 ? 's' : ''}
               </p>
               <p className="text-xs text-muted-foreground">
-                These events exist in your database and will be updated if re-imported.
+                {showDuplicates
+                  ? 'Select duplicates to re-import and update existing records.'
+                  : 'Toggle to show duplicates if you want to re-import them.'}
               </p>
             </div>
           </div>
-        )
-      })()}
+          <div className="flex items-center gap-2">
+            <Label htmlFor="show-duplicates" className="text-sm text-muted-foreground">
+              Show duplicates
+            </Label>
+            <Switch
+              id="show-duplicates"
+              checked={showDuplicates}
+              onCheckedChange={handleToggleDuplicates}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Summary & Proceed */}
       <div className="flex items-center justify-between px-4 py-3 bg-card/50 rounded-xl border border-border/50">
@@ -200,9 +265,12 @@ export function SelectStep({
             {selectedIds.size} selected
           </Badge>
           <span className="text-sm text-muted-foreground">
-            of {totalCount} events
+            of {visibleCount} event{visibleCount !== 1 ? 's' : ''}
+            {!showDuplicates && alreadyImportedCount > 0 && isApiSource && (
+              <span className="text-muted-foreground/70"> ({totalCount} total)</span>
+            )}
           </span>
-          {!isPassline && !isEventbrite && !isBaTourism && !isMeetup && !isLuma && csvErrorCount > 0 && (
+          {!isApiSource && csvErrorCount > 0 && (
             <Badge variant="outline" className="border-destructive/30 text-destructive">
               {csvErrorCount} with errors
             </Badge>
@@ -231,6 +299,10 @@ export function SelectStep({
           enableColumnReordering={true}
           enableMultiSort={true}
           enableVirtualization={false}
+          enableColumnFiltering={true}
+          columnFilters={columnFilters}
+          onColumnFiltersChange={setColumnFilters}
+          meta={tableMeta}
         />
       ) : isEventbrite ? (
         <DataTable
@@ -244,6 +316,10 @@ export function SelectStep({
           enableColumnReordering={true}
           enableMultiSort={true}
           enableVirtualization={false}
+          enableColumnFiltering={true}
+          columnFilters={columnFilters}
+          onColumnFiltersChange={setColumnFilters}
+          meta={tableMeta}
         />
       ) : isBaTourism ? (
         <DataTable
@@ -257,6 +333,10 @@ export function SelectStep({
           enableColumnReordering={true}
           enableMultiSort={true}
           enableVirtualization={false}
+          enableColumnFiltering={true}
+          columnFilters={columnFilters}
+          onColumnFiltersChange={setColumnFilters}
+          meta={tableMeta}
         />
       ) : isMeetup ? (
         <DataTable
@@ -270,6 +350,10 @@ export function SelectStep({
           enableColumnReordering={true}
           enableMultiSort={true}
           enableVirtualization={false}
+          enableColumnFiltering={true}
+          columnFilters={columnFilters}
+          onColumnFiltersChange={setColumnFilters}
+          meta={tableMeta}
         />
       ) : isLuma ? (
         <DataTable
@@ -283,6 +367,10 @@ export function SelectStep({
           enableColumnReordering={true}
           enableMultiSort={true}
           enableVirtualization={false}
+          enableColumnFiltering={true}
+          columnFilters={columnFilters}
+          onColumnFiltersChange={setColumnFilters}
+          meta={tableMeta}
         />
       ) : (
         <>
@@ -308,6 +396,13 @@ export function SelectStep({
           )}
         </>
       )}
+
+      {/* Diff Viewer Dialog */}
+      <DiffViewerDialog
+        open={diffDialogOpen}
+        onOpenChange={setDiffDialogOpen}
+        duplicateInfo={selectedDiff}
+      />
     </div>
   )
 }

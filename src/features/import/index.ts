@@ -78,6 +78,9 @@ export {
   type VenueToEnrich,
 } from './hooks/useAutoEnrichment'
 
+// Duplicate detection types
+export { type DuplicateInfo, type FieldDiff } from './api/duplicate-detection'
+
 // Scrapers - only export types and client-side utilities
 export { type PasslineEvent as PasslineEventRaw } from './scrapers/passline'
 export { type EventbriteEvent } from './scrapers/eventbrite'

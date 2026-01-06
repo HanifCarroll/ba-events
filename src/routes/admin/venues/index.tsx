@@ -242,10 +242,15 @@ function VenueListPage() {
     [bulk]
   )
 
+  // Create venues map for looking up parent names
+  const venuesMap = useMemo(() => {
+    return new Map(venues.map((v) => [v.id, v]))
+  }, [venues])
+
   // Column definitions with delete handler
   const columns = useMemo(
-    () => getVenueColumns({ onDelete: setDeleteTarget }),
-    []
+    () => getVenueColumns({ onDelete: setDeleteTarget, venuesMap }),
+    [venuesMap]
   )
 
   return (

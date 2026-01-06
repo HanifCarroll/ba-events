@@ -164,6 +164,7 @@ export const venueFormSchema = z.object({
   address: z.string(),
   website: z.string(),
   instagram_handle: z.string(),
+  parent_id: z.string().nullable().optional(),
 })
 
 export type VenueFormInput = z.infer<typeof venueFormSchema>
@@ -182,6 +183,7 @@ export const venueSchema = z.object({
       // Remove @ prefix if present
       return val.startsWith('@') ? val.slice(1) : val
     }),
+  parent_id: z.string().uuid().nullable().optional(),
 })
 
 export type VenueInput = z.infer<typeof venueSchema>

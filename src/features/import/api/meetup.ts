@@ -7,7 +7,7 @@ import {
 } from '../scrapers/meetup'
 import { categorizeEvent } from '../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../scrapers/venue-matcher'
-import { upsertEvents, supabase, updateEvent, createVenue } from '@/shared/lib/db/client'
+import { upsertEvents, updateEvent, createVenue, supabase } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import type { EventInsert } from '@/shared/lib/types'
@@ -19,6 +19,7 @@ import type {
   VenueEnrichComplete,
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
+import { checkDuplicateEventsWithData, buildDuplicateInfo, type DuplicateInfo } from './duplicate-detection'
 
 export interface MeetupPreviewEvent {
   meetup: MeetupEvent
@@ -26,6 +27,7 @@ export interface MeetupPreviewEvent {
   venueMatch: VenueMatchResult
   dateCount: number
   alreadyImported: boolean
+  duplicateInfo?: DuplicateInfo // Info for the first matching transformed event
 }
 
 export type { MeetupEvent }
@@ -92,35 +94,37 @@ export const fetchMeetupEventsAction = createServerFn({ method: 'POST' })
         })
       )
 
-      // Collect all external_ids to check against database
+      // Check for duplicates with full event data for diff comparison
+      // Meetup has array of transformed events (recurring events expand)
       const allExternalIds = previewsWithoutImportCheck.flatMap(
-        (p) => p.transformed.map((t) => t.external_id).filter(Boolean)
+        (p) => p.transformed.map((t) => t.external_id).filter((id): id is string => Boolean(id))
       )
 
-      // Check which external_ids already exist in database
-      const existingIds = new Set<string>()
-      if (allExternalIds.length > 0) {
-        const { data: existingEvents } = await supabase
-          .from('events')
-          .select('external_id')
-          .eq('source', 'meetup')
-          .in('external_id', allExternalIds)
+      const existingEventsMap = await checkDuplicateEventsWithData(allExternalIds, 'meetup')
+      console.log(`[Admin] Found ${existingEventsMap.size} already imported events`)
 
-        if (existingEvents) {
-          for (const e of existingEvents) {
-            if (e.external_id) existingIds.add(e.external_id)
-          }
-        }
-        console.log(`[Admin] Found ${existingIds.size} already imported events`)
-      }
-
-      // Add alreadyImported flag to each preview
+      // Add alreadyImported flag and duplicate info
+      // For array transforms, use the first matching event for diff display
       const previews: MeetupPreviewEvent[] = previewsWithoutImportCheck.map((p) => {
-        // Check if ANY of the transformed events already exist
-        const alreadyImported = p.transformed.some(
-          (t) => t.external_id && existingIds.has(t.external_id)
+        // Find the first transformed event that already exists
+        const firstMatchingTransformed = p.transformed.find(
+          (t) => t.external_id && existingEventsMap.has(t.external_id)
         )
-        return { ...p, alreadyImported }
+
+        const existingEvent = firstMatchingTransformed?.external_id
+          ? existingEventsMap.get(firstMatchingTransformed.external_id)
+          : undefined
+
+        const alreadyImported = Boolean(existingEvent)
+        const duplicateInfo = existingEvent && firstMatchingTransformed
+          ? buildDuplicateInfo(firstMatchingTransformed, existingEvent)
+          : undefined
+
+        return {
+          ...p,
+          alreadyImported,
+          duplicateInfo,
+        }
       })
 
       const alreadyImportedCount = previews.filter((p) => p.alreadyImported).length

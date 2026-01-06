@@ -5,13 +5,15 @@ import { Badge } from '@/shared/ui/badge'
 import { Button } from '@/shared/ui/button'
 import { DataTableColumnHeader } from '../DataTableColumnHeader'
 import type { Venue } from '@/shared/lib/types'
+import * as m from '@/paraglide/messages'
 
 interface VenueColumnsOptions {
   onDelete?: (venue: Venue) => void
+  venuesMap?: Map<string, Venue>
 }
 
 export function getVenueColumns(options?: VenueColumnsOptions): ColumnDef<Venue>[] {
-  const { onDelete } = options || {}
+  const { onDelete, venuesMap } = options || {}
 
   return [
     {
@@ -22,9 +24,19 @@ export function getVenueColumns(options?: VenueColumnsOptions): ColumnDef<Venue>
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Name" />
       ),
-      cell: ({ row }) => (
-        <span className="font-medium text-foreground">{row.original.name}</span>
-      ),
+      cell: ({ row }) => {
+        const parentVenue = row.original.parent_id && venuesMap?.get(row.original.parent_id)
+        return (
+          <div>
+            <span className="font-medium text-foreground">{row.original.name}</span>
+            {parentVenue && (
+              <span className="block text-xs text-muted-foreground">
+                {m.admin_part_of({ name: parentVenue.name })}
+              </span>
+            )}
+          </div>
+        )
+      },
     },
     {
       id: 'neighborhood',

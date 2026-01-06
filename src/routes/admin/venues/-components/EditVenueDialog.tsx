@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
@@ -21,7 +22,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/shared/ui/form'
-import { useUpdateVenue } from '@/features/venues'
+import { useUpdateVenue, getVenuesForSelect } from '@/features/venues'
 import { venueFormSchema, type VenueFormInput } from '@/shared/lib/schemas'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
 import type { Venue, Neighborhood } from '@/shared/lib/types'
@@ -36,6 +37,25 @@ interface EditVenueDialogProps {
 export function EditVenueDialog({ venue, suggestedName, onClose }: EditVenueDialogProps) {
   const updateMutation = useUpdateVenue()
 
+  // Fetch venues for parent selector
+  const { data: allVenues = [] } = useQuery({
+    queryKey: ['venues', 'for-select'],
+    queryFn: () => getVenuesForSelect(),
+  })
+
+  // Filter venues that can be parents:
+  // - Must not already have a parent (no grandchildren allowed)
+  // - Must not be the current venue (when editing)
+  const parentVenueOptions = useMemo(() => {
+    const options = allVenues
+      .filter((v) => !v.parent_id && v.id !== venue?.id)
+      .map((v) => ({
+        value: v.id,
+        label: v.name + (v.neighborhood ? ` (${v.neighborhood})` : ''),
+      }))
+    return [{ value: '', label: m.admin_no_parent_venue() }, ...options]
+  }, [allVenues, venue?.id])
+
   const form = useForm<VenueFormInput>({
     resolver: zodResolver(venueFormSchema),
     defaultValues: {
@@ -44,6 +64,7 @@ export function EditVenueDialog({ venue, suggestedName, onClose }: EditVenueDial
       address: '',
       website: '',
       instagram_handle: '',
+      parent_id: null,
     },
   })
 
@@ -56,6 +77,7 @@ export function EditVenueDialog({ venue, suggestedName, onClose }: EditVenueDial
         address: venue.address || '',
         website: venue.website || '',
         instagram_handle: venue.instagram_handle || '',
+        parent_id: venue.parent_id || null,
       })
     }
   }, [venue, suggestedName, form])
@@ -70,6 +92,7 @@ export function EditVenueDialog({ venue, suggestedName, onClose }: EditVenueDial
         address: data.address || null,
         website: data.website || null,
         instagram_handle: data.instagram_handle || null,
+        parent_id: data.parent_id || null,
       }
 
       await updateMutation.mutateAsync({ id: venue.id, data: submitData })
@@ -125,6 +148,28 @@ export function EditVenueDialog({ venue, suggestedName, onClose }: EditVenueDial
                       {m.admin_use_suggested({ name: suggestedName })}
                     </Button>
                   )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Parent Venue */}
+            <FormField
+              control={form.control}
+              name="parent_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{m.admin_parent_venue()}</FormLabel>
+                  <FormControl>
+                    <Combobox
+                      options={parentVenueOptions}
+                      value={field.value || ''}
+                      onValueChange={(value) => field.onChange(value || null)}
+                      placeholder={m.admin_select_parent_venue()}
+                      searchPlaceholder={m.admin_search_parent_venues()}
+                      emptyText={m.admin_no_venues_found()}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

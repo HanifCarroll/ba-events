@@ -21,12 +21,13 @@ export const getVenue = createServerFn({ method: 'GET' })
     return getVenueById(id)
   })
 
-export const getVenuesForSelect = createServerFn({ method: 'GET' }).handler(async (): Promise<{ id: string; name: string; neighborhood: string | null }[]> => {
+export const getVenuesForSelect = createServerFn({ method: 'GET' }).handler(async (): Promise<{ id: string; name: string; neighborhood: string | null; parent_id: string | null }[]> => {
   const venues = await getVenues(1000)
   return venues.map(v => ({
     id: v.id,
     name: v.name,
     neighborhood: v.neighborhood,
+    parent_id: v.parent_id,
   }))
 })
 

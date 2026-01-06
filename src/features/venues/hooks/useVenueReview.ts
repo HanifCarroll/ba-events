@@ -188,6 +188,12 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
       const venue2 = venueMap.get(pair.similar_venue_id)
       if (!venue1 || !venue2) continue
 
+      // Skip pairs that share the same parent_id - they are intentionally related
+      // (e.g., "Cuervo Cafe - Palermo" and "Cuervo Cafe - San Telmo" both under "Cuervo Cafe")
+      if (venue1.parent_id && venue2.parent_id && venue1.parent_id === venue2.parent_id) {
+        continue
+      }
+
       // Use venue with more events as primary, or alphabetically first
       const count1 = eventCounts?.[pair.venue_id] ?? 0
       const count2 = eventCounts?.[pair.similar_venue_id] ?? 0

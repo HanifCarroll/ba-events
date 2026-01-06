@@ -21,7 +21,7 @@ import type {
   VenueEnrichComplete,
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
-import { checkDuplicateEvents } from './duplicate-detection'
+import { checkDuplicateEventsWithData, buildDuplicateInfo, type DuplicateInfo } from './duplicate-detection'
 
 export interface BATourismPreviewEvent {
   baTourism: BATourismEvent
@@ -29,6 +29,7 @@ export interface BATourismPreviewEvent {
   venueMatch: VenueMatchResult
   dateCount: number
   alreadyImported: boolean
+  duplicateInfo?: DuplicateInfo // Info for the first matching transformed event
 }
 
 export type { BATourismEvent, WeekContext }
@@ -67,20 +68,37 @@ export const fetchBATourismEventsAction = createServerFn({ method: 'POST' })
         })
       )
 
-      // Check for duplicates (BA Tourism has array of transformed events)
+      // Check for duplicates with full event data for diff comparison
+      // BA Tourism has array of transformed events (one per date)
       const externalIds = previewsWithoutImportCheck.flatMap(
         (p) => p.transformed.map((t) => t.external_id).filter((id): id is string => Boolean(id))
       )
 
-      const existingIds = await checkDuplicateEvents(externalIds, 'ba-tourism')
+      const existingEventsMap = await checkDuplicateEventsWithData(externalIds, 'ba-tourism')
 
-      // Add alreadyImported flag - check if ANY transformed event already exists
-      const previews: BATourismPreviewEvent[] = previewsWithoutImportCheck.map((p) => ({
-        ...p,
-        alreadyImported: p.transformed.some(
-          (t) => t.external_id && existingIds.has(t.external_id)
-        ),
-      }))
+      // Add alreadyImported flag and duplicate info
+      // For array transforms, use the first matching event for diff display
+      const previews: BATourismPreviewEvent[] = previewsWithoutImportCheck.map((p) => {
+        // Find the first transformed event that already exists
+        const firstMatchingTransformed = p.transformed.find(
+          (t) => t.external_id && existingEventsMap.has(t.external_id)
+        )
+
+        const existingEvent = firstMatchingTransformed?.external_id
+          ? existingEventsMap.get(firstMatchingTransformed.external_id)
+          : undefined
+
+        const alreadyImported = Boolean(existingEvent)
+        const duplicateInfo = existingEvent && firstMatchingTransformed
+          ? buildDuplicateInfo(firstMatchingTransformed, existingEvent)
+          : undefined
+
+        return {
+          ...p,
+          alreadyImported,
+          duplicateInfo,
+        }
+      })
 
       console.log(`[Admin] Returning ${previews.length} preview events`)
       return { events: previews, weekContext }

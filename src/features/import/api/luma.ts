@@ -22,13 +22,14 @@ import type {
   VenueEnrichComplete,
   VenueEnrichUpdate,
 } from '@/shared/lib/streaming-types'
-import { checkDuplicateEvents } from './duplicate-detection'
+import { checkDuplicateEventsWithData, buildDuplicateInfo, type DuplicateInfo } from './duplicate-detection'
 
 export interface LumaPreviewEvent {
   luma: LumaEvent
   transformed: EventInsert
   venueMatch: VenueMatchResult
   alreadyImported: boolean
+  duplicateInfo?: DuplicateInfo
 }
 
 // Re-export LumaEvent type for client use
@@ -72,18 +73,30 @@ export const fetchLumaEventsAction = createServerFn({ method: 'POST' })
       })
     )
 
-    // Check for duplicates
+    // Check for duplicates with full event data for diff comparison
     const externalIds = previewsWithoutImportCheck
       .map((p) => p.transformed.external_id)
       .filter((id): id is string => Boolean(id))
 
-    const existingIds = await checkDuplicateEvents(externalIds, 'luma')
+    const existingEventsMap = await checkDuplicateEventsWithData(externalIds, 'luma')
 
-    // Add alreadyImported flag
-    const previews: LumaPreviewEvent[] = previewsWithoutImportCheck.map((p) => ({
-      ...p,
-      alreadyImported: Boolean(p.transformed.external_id && existingIds.has(p.transformed.external_id)),
-    }))
+    // Add alreadyImported flag and duplicate info with diffs
+    const previews: LumaPreviewEvent[] = previewsWithoutImportCheck.map((p) => {
+      const existingEvent = p.transformed.external_id
+        ? existingEventsMap.get(p.transformed.external_id)
+        : undefined
+
+      const alreadyImported = Boolean(existingEvent)
+      const duplicateInfo = existingEvent
+        ? buildDuplicateInfo(p.transformed, existingEvent)
+        : undefined
+
+      return {
+        ...p,
+        alreadyImported,
+        duplicateInfo,
+      }
+    })
 
     return { events: previews }
   })

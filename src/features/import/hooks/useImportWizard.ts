@@ -372,11 +372,16 @@ export function useImportWizard(
         setVenueEdits(edits)
       }
 
-      // Select all events and go directly to select step
-      setSelectedIds(new Set(data.map(e => e.passline.id)))
+      // Select NEW events only (exclude already imported) and go directly to select step
+      const newEvents = data.filter(e => !e.alreadyImported)
+      setSelectedIds(new Set(newEvents.map(e => e.passline.id)))
       setStep('select')
 
-      toast.success(`Found ${data.length} events`)
+      const alreadyImportedCount = data.length - newEvents.length
+      const message = alreadyImportedCount > 0
+        ? `Found ${data.length} events (${alreadyImportedCount} already imported)`
+        : `Found ${data.length} events`
+      toast.success(message)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch events')
       toast.error('Failed to fetch events')
@@ -410,11 +415,16 @@ export function useImportWizard(
         setVenueEdits(edits)
       }
 
-      // Select all events and go directly to select step
-      setSelectedIds(new Set(data.map(e => e.eventbrite.url)))
+      // Select NEW events only (exclude already imported) and go directly to select step
+      const newEvents = data.filter(e => !e.alreadyImported)
+      setSelectedIds(new Set(newEvents.map(e => e.eventbrite.url)))
       setStep('select')
 
-      toast.success(`Found ${data.length} events`)
+      const alreadyImportedCount = data.length - newEvents.length
+      const message = alreadyImportedCount > 0
+        ? `Found ${data.length} events (${alreadyImportedCount} already imported)`
+        : `Found ${data.length} events`
+      toast.success(message)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch events')
       toast.error('Failed to fetch events')
@@ -454,13 +464,18 @@ export function useImportWizard(
         setVenueEdits(edits)
       }
 
-      // Select all events and go directly to select step
-      setSelectedIds(new Set(data.map(e => `ba-tourism-${e.baTourism.name}`)))
+      // Select NEW events only (exclude already imported) and go directly to select step
+      const newEvents = data.filter(e => !e.alreadyImported)
+      setSelectedIds(new Set(newEvents.map(e => `ba-tourism-${e.baTourism.name}`)))
       setStep('select')
 
       // Calculate total events including multi-date expansion
       const totalExpanded = data.reduce((sum, e) => sum + e.dateCount, 0)
-      toast.success(`Found ${data.length} events (${totalExpanded} dates)`)
+      const alreadyImportedCount = data.length - newEvents.length
+      const message = alreadyImportedCount > 0
+        ? `Found ${data.length} events (${totalExpanded} dates, ${alreadyImportedCount} already imported)`
+        : `Found ${data.length} events (${totalExpanded} dates)`
+      toast.success(message)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch events')
       toast.error('Failed to fetch BA Tourism events')
@@ -561,13 +576,18 @@ export function useImportWizard(
         setVenueEdits(edits)
       }
 
-      // Select all events and go directly to select step
-      setSelectedIds(new Set(data.map(e => e.meetup.id)))
+      // Select NEW events only (exclude already imported) and go directly to select step
+      const newEvents = data.filter(e => !e.alreadyImported)
+      setSelectedIds(new Set(newEvents.map(e => e.meetup.id)))
       setStep('select')
 
       // Calculate total events including recurring event expansion
       const totalExpanded = data.reduce((sum, e) => sum + e.dateCount, 0)
-      toast.success(`Found ${data.length} events (${totalExpanded} occurrences)`)
+      const alreadyImportedCount = data.length - newEvents.length
+      const message = alreadyImportedCount > 0
+        ? `Found ${data.length} events (${totalExpanded} occurrences, ${alreadyImportedCount} already imported)`
+        : `Found ${data.length} events (${totalExpanded} occurrences)`
+      toast.success(message)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch events')
       toast.error('Failed to fetch Meetup events')
@@ -602,11 +622,16 @@ export function useImportWizard(
         setVenueEdits(edits)
       }
 
-      // Select all events and go directly to select step
-      setSelectedIds(new Set(data.map(e => e.luma.api_id)))
+      // Select NEW events only (exclude already imported) and go directly to select step
+      const newEvents = data.filter(e => !e.alreadyImported)
+      setSelectedIds(new Set(newEvents.map(e => e.luma.api_id)))
       setStep('select')
 
-      toast.success(`Found ${data.length} events`)
+      const alreadyImportedCount = data.length - newEvents.length
+      const message = alreadyImportedCount > 0
+        ? `Found ${data.length} events (${alreadyImportedCount} already imported)`
+        : `Found ${data.length} events`
+      toast.success(message)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch events')
       toast.error('Failed to fetch Luma events')

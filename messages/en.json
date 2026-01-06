@@ -252,5 +252,10 @@
   "admin_website": "Website",
   "admin_instagram": "Instagram",
   "admin_failed_to_save_venue": "Failed to save venue",
-  "admin_delete_venue_warning": "This venue has {count} associated events. Deleting it will remove the venue association from those events."
+  "admin_delete_venue_warning": "This venue has {count} associated events. Deleting it will remove the venue association from those events.",
+  "admin_parent_venue": "Parent Venue",
+  "admin_select_parent_venue": "Select parent venue",
+  "admin_search_parent_venues": "Search venues...",
+  "admin_no_parent_venue": "None (standalone venue)",
+  "admin_part_of": "Part of {name}"
 }
