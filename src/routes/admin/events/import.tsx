@@ -4,6 +4,7 @@ import { ArrowLeft, Upload, Check } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { getVenuesForSelect } from '@/features/venues'
 import { useImportWizard, type WizardStep, type ImportSource } from '@/features/import'
+import type { VenueLookupInput } from '@/shared/lib/streaming-types'
 import {
   SourceStep,
   ConfigureStep,
@@ -281,6 +282,107 @@ function ImportEventsPage() {
     wizard.lumaEvents,
   ])
 
+  // Compute venue lookup data with rich location info for tiered neighborhood lookup
+  const venueLookupData = useMemo(() => {
+    const map = new Map<string, VenueLookupInput>()
+
+    if (wizard.source === 'ba-tourism') {
+      for (const event of wizard.baTourismEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.baTourism.venueName
+          if (!map.has(venueName)) {
+            map.set(venueName, {
+              venueName,
+              // BA Tourism has direct neighborhood - most reliable!
+              neighborhood: event.baTourism.neighborhood || undefined,
+              // Also has coordinates as fallback
+              coordinates: event.baTourism.coordinates
+                ? { lat: event.baTourism.coordinates.lat, lng: event.baTourism.coordinates.lng }
+                : undefined,
+              address: event.baTourism.address ?? undefined,
+            })
+          }
+        }
+      }
+    } else if (wizard.source === 'meetup') {
+      for (const event of wizard.meetupEvents) {
+        if (event.venueMatch.matchType === 'none' && event.meetup.venue) {
+          const venueName = event.meetup.venue.name
+          if (!map.has(venueName)) {
+            map.set(venueName, {
+              venueName,
+              // Meetup has coordinates - use reverse geocoding
+              coordinates:
+                event.meetup.venue.lat !== null && event.meetup.venue.lng !== null
+                  ? { lat: event.meetup.venue.lat, lng: event.meetup.venue.lng }
+                  : undefined,
+              address: event.meetup.venue.address ?? undefined,
+            })
+          }
+        }
+      }
+    } else if (wizard.source === 'luma') {
+      for (const event of wizard.lumaEvents) {
+        if (event.venueMatch.matchType === 'none' && event.luma.venue?.name) {
+          const venueName = event.luma.venue.name
+          if (!map.has(venueName)) {
+            map.set(venueName, {
+              venueName,
+              // Luma has coordinates - use reverse geocoding
+              coordinates:
+                event.luma.venue.latitude !== null && event.luma.venue.longitude !== null
+                  ? { lat: event.luma.venue.latitude, lng: event.luma.venue.longitude }
+                  : undefined,
+              address: event.luma.venue.address ?? undefined,
+            })
+          }
+        }
+      }
+    } else if (wizard.source === 'eventbrite') {
+      for (const event of wizard.eventbriteEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.eventbrite.location?.name || 'Unknown Venue'
+          if (!map.has(venueName)) {
+            // Eventbrite geo coordinates are strings, need to parse them
+            const geo = event.eventbrite.location?.geo
+            const lat = geo?.latitude ? parseFloat(geo.latitude) : null
+            const lng = geo?.longitude ? parseFloat(geo.longitude) : null
+
+            map.set(venueName, {
+              venueName,
+              coordinates: lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)
+                ? { lat, lng }
+                : undefined,
+            })
+          }
+        }
+      }
+    } else if (wizard.source === 'passline') {
+      // Passline needs detail page scraping for address - pass event URLs
+      for (const event of wizard.passlineEvents) {
+        if (event.venueMatch.matchType === 'none') {
+          const venueName = event.passline.lugar
+          if (!map.has(venueName)) {
+            // Include the first event URL for this venue (to scrape address from detail page)
+            map.set(venueName, {
+              venueName,
+              eventUrl: event.transformed.link ?? undefined,
+            })
+          }
+        }
+      }
+    }
+
+    return map
+  }, [
+    wizard.source,
+    wizard.baTourismEvents,
+    wizard.meetupEvents,
+    wizard.lumaEvents,
+    wizard.eventbriteEvents,
+    wizard.passlineEvents,
+  ])
+
   // Sync URL when source changes
   useEffect(() => {
     if (wizard.source && wizard.source !== urlSource) {
@@ -465,6 +567,7 @@ function ImportEventsPage() {
                         : 0
             }
             venueEventMap={venueEventMap}
+            venueLookupData={venueLookupData}
             existingVenues={wizard.venues}
             onUpdateVenueEdit={wizard.updateVenueEdit}
             onCreateVenues={wizard.createVenuesAndProceed}

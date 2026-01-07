@@ -29,6 +29,7 @@ import {
 } from '@/shared/ui/command'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
 import type { Neighborhood } from '@/shared/lib/types'
+import type { VenueLookupInput } from '@/shared/lib/streaming-types'
 
 type VenueAction = 'create' | 'merge' | 'skip'
 
@@ -70,6 +71,7 @@ interface VenuesStepProps {
   isCreatingVenues: boolean
   totalEventsCount: number
   venueEventMap: Map<string, VenueEventSummary[]>
+  venueLookupData: Map<string, VenueLookupInput>
   existingVenues: ExistingVenue[]
   onUpdateVenueEdit: (name: string, updates: Partial<VenueEdit>) => void
   onCreateVenues: () => void
@@ -84,6 +86,7 @@ export function VenuesStep({
   isCreatingVenues,
   totalEventsCount: _totalEventsCount,
   venueEventMap,
+  venueLookupData,
   existingVenues,
   onUpdateVenueEdit,
   onCreateVenues,
@@ -178,20 +181,25 @@ export function VenuesStep({
   // Handle neighborhood lookup for all venues marked for creation
   const handleLookupNeighborhoods = useCallback(async () => {
     // Get venues that need neighborhood lookup: action='create' and no neighborhood set
+    // Use rich lookup data with coordinates, address, direct neighborhood when available
     const venuesToLookup = unmatchedVenues
       .filter(v => {
         const edit = venueEdits.get(v.name)
         return edit?.action === 'create' && !edit.neighborhood
       })
-      .map(v => v.name)
+      .map(v => venueLookupData.get(v.name))
+      .filter((v): v is VenueLookupInput => v !== undefined)
 
     if (venuesToLookup.length === 0) return
 
     setIsLookingUp(true)
     setLookupProgress({ current: 0, total: venuesToLookup.length })
 
+    console.log(`[Neighborhood Lookup] Starting Nominatim lookups for ${venuesToLookup.length} venues`)
+
     try {
-      const stream = await lookupNeighborhoodsAction({ data: { venueNames: venuesToLookup } })
+      // Use the tiered lookup with rich venue data (coordinates, address, direct neighborhood)
+      const stream = await lookupNeighborhoodsAction({ data: { venues: venuesToLookup } })
 
       for await (const update of stream) {
         if (update.type === 'progress') {
@@ -207,7 +215,7 @@ export function VenuesStep({
       setIsLookingUp(false)
       setLookupProgress(null)
     }
-  }, [unmatchedVenues, venueEdits, onUpdateVenueEdit])
+  }, [unmatchedVenues, venueEdits, venueLookupData, onUpdateVenueEdit])
 
   // Count venues eligible for neighborhood lookup
   const venuesToLookupCount = useMemo(() => {

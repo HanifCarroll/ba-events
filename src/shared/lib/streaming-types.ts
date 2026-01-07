@@ -73,12 +73,29 @@ export type NominatimEnrichUpdate = NominatimEnrichProgress | NominatimEnrichCom
 // NEIGHBORHOOD LOOKUP STREAMING TYPES (import wizard venue step)
 // ============================================================================
 
+/** Method used to resolve neighborhood - indicates data source reliability */
+export type NeighborhoodLookupMethod = 'direct' | 'coordinates' | 'address' | 'name-only'
+
+/** Input for neighborhood lookup with rich location data from import sources */
+export interface VenueLookupInput {
+  venueName: string
+  /** Direct neighborhood from source (BA Tourism) - no API call needed */
+  neighborhood?: string
+  /** Coordinates for reverse geocoding (Meetup, Luma, Eventbrite) */
+  coordinates?: { lat: number; lng: number }
+  /** Address for enhanced Nominatim query */
+  address?: string
+  /** Event URL for sources that need detail page scraping (Passline) */
+  eventUrl?: string
+}
+
 export interface NeighborhoodLookupProgress {
   type: 'progress'
   current: number
   total: number
   venueName: string
   neighborhood: string | null  // CABA neighborhood name or null if not found
+  method: NeighborhoodLookupMethod  // How the neighborhood was resolved
   error: string | null
 }
 
@@ -179,3 +196,30 @@ export interface DescriptionEnrichComplete {
 }
 
 export type DescriptionEnrichUpdate = DescriptionEnrichProgress | DescriptionEnrichComplete
+
+// ============================================================================
+// PASSLINE ADDRESS FETCH STREAMING TYPES (import wizard venue step)
+// ============================================================================
+
+export interface PasslineAddressProgress {
+  type: 'progress'
+  current: number
+  total: number
+  venueName: string
+  address: string | null
+  location: string | null // City/region like "Buenos Aires, SAN TELMO"
+  success: boolean
+  error: string | null
+}
+
+export interface PasslineAddressComplete {
+  type: 'complete'
+  results: Array<{
+    venueName: string
+    address: string | null
+    location: string | null
+    error?: string
+  }>
+}
+
+export type PasslineAddressUpdate = PasslineAddressProgress | PasslineAddressComplete

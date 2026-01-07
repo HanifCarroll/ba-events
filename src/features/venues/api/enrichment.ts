@@ -8,6 +8,8 @@ import type {
   NominatimEnrichComplete,
   NominatimEnrichUpdate,
   NeighborhoodLookupUpdate,
+  VenueLookupInput,
+  NeighborhoodLookupMethod,
 } from '@/shared/lib/streaming-types'
 
 // ============================================================================
@@ -292,49 +294,108 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
  * Includes required User-Agent header per Nominatim usage policy
  * Validates response with Zod schema for type safety
  * Falls back to partial data extraction if validation fails
+ * Includes retry logic for timeout errors
  */
-async function searchNominatim(venueName: string): Promise<NominatimResult | null> {
+async function searchNominatim(venueName: string, retries: number = 1): Promise<NominatimResult | null> {
   const query = encodeURIComponent(`${venueName} Buenos Aires Argentina`)
   const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&addressdetails=1&extratags=1&limit=1`
 
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'BAEventos/1.0 (baeventos.com)',
-    },
-    signal: AbortSignal.timeout(10000), // 10 second timeout
-  })
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'BAEventos/1.0 (baeventos.com)',
+      },
+      signal: AbortSignal.timeout(15000), // 15 second timeout
+    })
 
-  if (!response.ok) {
-    throw new Error(`Nominatim API error: ${response.status} ${response.statusText}`)
-  }
-
-  const rawData: unknown = await response.json()
-
-  // Validate response with Zod schema
-  const parseResult = nominatimResponseSchema.safeParse(rawData)
-
-  if (!parseResult.success) {
-    // Log the validation error but don't crash - try to extract partial data
-    console.warn('[Nominatim] Schema validation failed:', parseResult.error.format())
-    console.warn('[Nominatim] Attempting to extract partial data from response')
-
-    const partialResult = extractPartialNominatimData(rawData)
-    if (partialResult) {
-      console.log('[Nominatim] Successfully extracted partial data')
-      return partialResult
+    if (!response.ok) {
+      throw new Error(`Nominatim API error: ${response.status} ${response.statusText}`)
     }
 
-    console.error('[Nominatim] Failed to extract partial data from invalid response')
+    const rawData: unknown = await response.json()
+
+    // Validate response with Zod schema
+    const parseResult = nominatimResponseSchema.safeParse(rawData)
+
+    if (!parseResult.success) {
+      // Log the validation error but don't crash - try to extract partial data
+      console.warn('[Nominatim] Schema validation failed:', parseResult.error.format())
+      console.warn('[Nominatim] Attempting to extract partial data from response')
+
+      const partialResult = extractPartialNominatimData(rawData)
+      if (partialResult) {
+        console.log('[Nominatim] Successfully extracted partial data')
+        return partialResult
+      }
+
+      console.error('[Nominatim] Failed to extract partial data from invalid response')
+      return null
+    }
+
+    const results = parseResult.data
+
+    if (results.length === 0) {
+      return null
+    }
+
+    return results[0]
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    if ((errorMsg.includes('timeout') || errorMsg.includes('aborted')) && retries > 0) {
+      console.warn(`[Nominatim] Timeout for "${venueName}", retrying... (${retries} retries left)`)
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      return searchNominatim(venueName, retries - 1)
+    }
+    throw error
+  }
+}
+
+/**
+ * Reverse geocode coordinates to get neighborhood using Nominatim reverse API.
+ * More accurate than venue name search for venues with exact coordinates.
+ * Includes retry logic for timeout errors.
+ */
+async function reverseGeocodeNeighborhood(
+  lat: number,
+  lng: number,
+  retries: number = 1
+): Promise<Neighborhood | null> {
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'BAEventos/1.0 (baeventos.com)',
+      },
+      signal: AbortSignal.timeout(15000), // 15 second timeout
+    })
+
+    if (!response.ok) {
+      console.warn(`[reverse-geocode] API error: ${response.status} ${response.statusText}`)
+      return null
+    }
+
+    const data = await response.json()
+
+    // Nominatim reverse returns a single result object (not array like search)
+    if (!data || !data.address) {
+      return null
+    }
+
+    return mapNominatimNeighborhood(
+      data.address.neighbourhood,
+      data.address.suburb
+    )
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    if (errorMsg.includes('timeout') && retries > 0) {
+      console.warn(`[reverse-geocode] Timeout, retrying... (${retries} retries left)`)
+      await delay(2000)
+      return reverseGeocodeNeighborhood(lat, lng, retries - 1)
+    }
+    console.warn(`[reverse-geocode] Error: ${errorMsg}`)
     return null
   }
-
-  const results = parseResult.data
-
-  if (results.length === 0) {
-    return null
-  }
-
-  return results[0]
 }
 
 /**
@@ -590,54 +651,101 @@ export const getAllPendingVenuesAction = createServerFn({ method: 'GET' }).handl
 // ============================================================================
 
 /**
- * Look up neighborhoods for venue names using Nominatim API.
+ * Look up neighborhoods for venues using a tiered approach based on available data.
  * This is a lightweight version that only returns neighborhoods without
  * creating or updating any database records.
+ *
+ * Tiers (in order of accuracy):
+ * 1. Direct neighborhood field (BA Tourism) - no API call needed
+ * 2. Reverse geocode coordinates (Meetup, Luma, Eventbrite) - most accurate
+ * 3. Address-enhanced Nominatim search - better than name alone
+ * 4. Venue name only search (Passline fallback) - least reliable
  *
  * Used by the import wizard's VenuesStep to auto-populate neighborhood dropdowns.
  */
 export const lookupNeighborhoodsAction = createServerFn({ method: 'POST' })
-  .inputValidator((data: { venueNames: string[] }) => data)
-  .handler(async function* ({ data: { venueNames } }): AsyncGenerator<NeighborhoodLookupUpdate> {
+  .inputValidator((data: { venues: VenueLookupInput[] }) => data)
+  .handler(async function* ({ data: { venues } }): AsyncGenerator<NeighborhoodLookupUpdate> {
     await requireAdminAccess()
-    console.log(`[neighborhood-lookup] Starting lookup for ${venueNames.length} venues`)
+    console.log(`[neighborhood-lookup] Starting tiered lookup for ${venues.length} venues`)
 
-    for (let i = 0; i < venueNames.length; i++) {
-      const venueName = venueNames[i]
+    for (let i = 0; i < venues.length; i++) {
+      const venue = venues[i]
       let neighborhood: Neighborhood | null = null
       let error: string | null = null
+      let method: NeighborhoodLookupMethod = 'name-only'
 
       try {
-        const result = await searchNominatim(venueName)
-        if (result) {
-          neighborhood = mapNominatimNeighborhood(
-            result.address.neighbourhood,
-            result.address.suburb
+        // Tier 1: Direct neighborhood field (BA Tourism)
+        if (venue.neighborhood) {
+          neighborhood = mapToNeighborhood(venue.neighborhood)
+          method = 'direct'
+          if (neighborhood) {
+            console.log(`[neighborhood-lookup] ${venue.venueName} -> ${neighborhood} (direct)`)
+          }
+        }
+
+        // Tier 2: Reverse geocode coordinates (Meetup, Luma, Eventbrite)
+        if (!neighborhood && venue.coordinates) {
+          neighborhood = await reverseGeocodeNeighborhood(
+            venue.coordinates.lat,
+            venue.coordinates.lng
           )
-          console.log(`[neighborhood-lookup] ${venueName} -> ${neighborhood || 'not found'}`)
-        } else {
-          console.log(`[neighborhood-lookup] ${venueName} -> no OSM result`)
+          method = 'coordinates'
+          if (neighborhood) {
+            console.log(`[neighborhood-lookup] ${venue.venueName} -> ${neighborhood} (coordinates)`)
+          }
+        }
+
+        // Tier 3: Address-enhanced Nominatim search
+        if (!neighborhood && venue.address) {
+          const result = await searchNominatim(`${venue.venueName} ${venue.address}`)
+          if (result) {
+            neighborhood = mapNominatimNeighborhood(
+              result.address.neighbourhood,
+              result.address.suburb
+            )
+          }
+          method = 'address'
+          if (neighborhood) {
+            console.log(`[neighborhood-lookup] ${venue.venueName} -> ${neighborhood} (address)`)
+          }
+        }
+
+        // Tier 4: Venue name only search (fallback for Passline)
+        if (!neighborhood) {
+          const result = await searchNominatim(venue.venueName)
+          if (result) {
+            neighborhood = mapNominatimNeighborhood(
+              result.address.neighbourhood,
+              result.address.suburb
+            )
+          }
+          method = 'name-only'
+          console.log(`[neighborhood-lookup] ${venue.venueName} -> ${neighborhood || 'not found'} (name-only)`)
         }
       } catch (e) {
         error = e instanceof Error ? e.message : 'Unknown error'
-        console.error(`[neighborhood-lookup] Error for ${venueName}:`, error)
+        console.error(`[neighborhood-lookup] Error for ${venue.venueName}:`, error)
       }
 
       yield {
         type: 'progress',
         current: i + 1,
-        total: venueNames.length,
-        venueName,
+        total: venues.length,
+        venueName: venue.venueName,
         neighborhood,
+        method,
         error,
       }
 
-      // Rate limiting: wait 1 second between requests (except for last one)
-      if (i < venueNames.length - 1) {
+      // Rate limiting: wait 1 second between API calls (skip for direct field)
+      if (method !== 'direct' && i < venues.length - 1) {
         await delay(1000)
       }
     }
 
-    console.log(`[neighborhood-lookup] Completed lookup for ${venueNames.length} venues`)
+    console.log(`[neighborhood-lookup] Completed lookup for ${venues.length} venues`)
     yield { type: 'complete' }
   })
+
