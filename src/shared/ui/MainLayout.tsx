@@ -16,6 +16,7 @@ import {
   Calendar,
   MapPin,
   Ban,
+  Bot,
 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -100,6 +101,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     { to: '/admin/events', label: m.nav_events(), icon: Calendar, adminOnly: true },
     { to: '/admin/venues', label: m.nav_venues(), icon: MapPin, adminOnly: true },
     { to: '/admin/blocklist', label: m.nav_blocklist(), icon: Ban, adminOnly: true },
+    { to: '/admin/scraping', label: m.nav_scraping(), icon: Bot, adminOnly: true },
   ]
 
   const filterNavItems = (items: NavItem[]) => items.filter((item) => {

@@ -376,3 +376,75 @@ export interface ImportBlocklistEntryInsert {
 }
 
 export type ImportBlocklistEntryUpdate = Partial<ImportBlocklistEntryInsert>
+
+// Scrape run status
+export const SCRAPE_RUN_STATUSES = ['running', 'completed', 'failed', 'partial'] as const
+export type ScrapeRunStatus = (typeof SCRAPE_RUN_STATUSES)[number]
+
+// Scrape run sources
+export const SCRAPE_RUN_SOURCES = [
+  'passline',
+  'eventbrite',
+  'ba-tourism',
+  'meetup',
+  'luma',
+  'all',
+] as const
+export type ScrapeRunSource = (typeof SCRAPE_RUN_SOURCES)[number]
+
+// JSON type for JSONB fields
+export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
+
+// Scrape run record from database
+export interface ScrapeRun {
+  id: string
+  source: ScrapeRunSource
+  status: ScrapeRunStatus
+  trigger_id: string | null
+  started_at: string
+  completed_at: string | null
+  events_fetched: number
+  events_inserted: number
+  events_updated: number
+  events_skipped: number
+  venues_matched: number
+  venues_auto_created: number
+  venues_queued_review: number
+  enrichments_completed: number
+  enrichments_failed: number
+  error_message: string | null
+  error_details: Json | null
+  metadata: Json | null
+  created_at: string
+}
+
+// Venue review queue status
+export const VENUE_REVIEW_STATUSES = ['pending', 'approved', 'rejected', 'merged'] as const
+export type VenueReviewStatus = (typeof VENUE_REVIEW_STATUSES)[number]
+
+// Venue review queue record from database
+export interface VenueReviewQueue {
+  id: string
+  scrape_run_id: string | null
+  source: string
+  source_venue_name: string
+  source_address: string | null
+  source_coordinates: { lat: number; lng: number } | null
+  source_event_ids: string[]
+  best_match_venue_id: string | null
+  match_confidence: number | null
+  status: VenueReviewStatus
+  reviewed_at: string | null
+  reviewed_by: string | null
+  final_venue_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Extended venue review with related data
+export interface VenueReviewQueueWithDetails extends VenueReviewQueue {
+  best_match_venue_name: string | null
+  final_venue_name: string | null
+  reviewed_by_email: string | null
+}

@@ -1,0 +1,288 @@
+/**
+ * Core BA Tourism Import Logic
+ *
+ * HTTP-independent logic for importing BA Tourism events.
+ * Can be called from both manual import wizard and Trigger.dev jobs.
+ *
+ * Note: BA Tourism website shows events for the current week only.
+ * The site is updated weekly, so we import all events (no date range filter).
+ */
+import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  scrapeBATourismEventsWithBrowser,
+} from '../scrapers/ba-tourism/browser-scraper'
+import {
+  transformBATourismEvent,
+  getUniqueVenueNames,
+} from '../scrapers/ba-tourism/transformer'
+import type { BATourismEvent } from '../scrapers/ba-tourism/types'
+import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
+import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
+import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
+import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
+import { settleVenues, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement'
+import { delay } from './nominatim'
+import type { EventInsert } from '@/shared/lib/types'
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface BATourismImportOptions {
+  /** Skip duplicate checking (for testing) */
+  skipDuplicateCheck?: boolean
+  /** Scrape run ID for audit trail */
+  scrapeRunId?: string | null
+  /** Reference date for date parsing (default: current date) */
+  referenceDate?: Date
+}
+
+export interface BATourismImportResult {
+  // Scrape stats
+  eventsFetched: number
+  eventsFiltered: number
+  eventsExpanded: number // After multi-day expansion
+
+  // Import stats
+  eventsInserted: number
+  eventsUpdated: number
+  eventsSkipped: number
+
+  // Venue stats
+  venuesMatched: number
+  venuesAutoCreated: number
+  venuesQueuedReview: number
+
+  // Categorization stats
+  categorizationSuccessful: number
+  categorizationFallback: number
+
+  // Week context
+  weekStart: string | null
+  weekEnd: string | null
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Filter events by blocklist
+ */
+function filterBlockedEvents(
+  events: BATourismEvent[],
+  blocklistEntries: Awaited<ReturnType<typeof getBlocklistEntries>>
+): BATourismEvent[] {
+  return events.filter((event) => {
+    return !isBlockedByEntries(event.name, event.venueName, blocklistEntries)
+  })
+}
+
+// ============================================================================
+// MAIN IMPORT FUNCTION
+// ============================================================================
+
+/**
+ * Process a full BA Tourism import.
+ *
+ * Steps:
+ * 1. Scrape events from BA Tourism website (requires browser)
+ * 2. Apply blocklist filter
+ * 3. Settle venues (match, auto-create, or queue for review)
+ * 4. Transform events (expands multi-day events)
+ * 5. Check for duplicates
+ * 6. Categorize events with AI
+ * 7. Generate embeddings
+ * 8. Upsert events to database
+ */
+export async function processBATourismImport(
+  client: SupabaseClient,
+  options: BATourismImportOptions = {}
+): Promise<BATourismImportResult> {
+  const referenceDate = options.referenceDate ?? new Date()
+
+  console.log('[ba-tourism] Starting import')
+
+  // Initialize result
+  const result: BATourismImportResult = {
+    eventsFetched: 0,
+    eventsFiltered: 0,
+    eventsExpanded: 0,
+    eventsInserted: 0,
+    eventsUpdated: 0,
+    eventsSkipped: 0,
+    venuesMatched: 0,
+    venuesAutoCreated: 0,
+    venuesQueuedReview: 0,
+    categorizationSuccessful: 0,
+    categorizationFallback: 0,
+    weekStart: null,
+    weekEnd: null,
+  }
+
+  // Step 1: Scrape events
+  console.log('[ba-tourism] Scraping events from website (browser mode)...')
+  const { events: allEvents, weekContext } = await scrapeBATourismEventsWithBrowser()
+  result.eventsFetched = allEvents.length
+  result.weekStart = weekContext.startDate?.toISOString() || null
+  result.weekEnd = weekContext.endDate?.toISOString() || null
+  console.log(`[ba-tourism] Scraped ${allEvents.length} events for week ${result.weekStart} to ${result.weekEnd}`)
+
+  // Step 2: Apply blocklist filter
+  console.log('[ba-tourism] Filtering events...')
+  const blocklistEntries = await getBlocklistEntries('ba_tourism')
+  const filteredEvents = filterBlockedEvents(allEvents, blocklistEntries)
+  result.eventsFiltered = filteredEvents.length
+  console.log(`[ba-tourism] Filtered to ${filteredEvents.length} events after blocklist`)
+
+  if (filteredEvents.length === 0) {
+    console.log('[ba-tourism] No events to import')
+    return result
+  }
+
+  // Step 3: Settle venues
+  console.log('[ba-tourism] Settling venues...')
+  const uniqueVenueNames = getUniqueVenueNames(filteredEvents)
+  const venueInputs: VenueSettlementInput[] = uniqueVenueNames
+    .filter((name) => name && name !== 'Ubicación no especificada')
+    .map((name) => {
+      // Find first event with this venue for coordinates/neighborhood
+      const eventWithVenue = filteredEvents.find((e) => e.venueName === name)
+      return {
+        name,
+        address: eventWithVenue?.address || null,
+        neighborhood: eventWithVenue?.neighborhood || null, // BA Tourism provides neighborhood directly
+        coordinates: eventWithVenue?.coordinates || null,
+      }
+    })
+
+  const { results: venueResults, stats: venueStats } = await settleVenues(
+    client,
+    venueInputs,
+    { source: 'ba-tourism', scrapeRunId: options.scrapeRunId }
+  )
+
+  result.venuesMatched = venueStats.matched
+  result.venuesAutoCreated = venueStats.autoCreated
+  result.venuesQueuedReview = venueStats.queuedReview
+
+  // Step 4: Transform events with venue IDs (handles multi-day expansion)
+  console.log('[ba-tourism] Transforming events...')
+  const transformedEvents: EventInsert[] = []
+  const eventSourceMap: Map<EventInsert, BATourismEvent> = new Map()
+
+  for (const event of filteredEvents) {
+    const venueId = getVenueIdFromResults(venueResults, event.venueName)
+    const expanded = transformBATourismEvent(event, weekContext, venueId, referenceDate)
+    for (const transformed of expanded) {
+      transformedEvents.push(transformed)
+      eventSourceMap.set(transformed, event)
+    }
+  }
+  result.eventsExpanded = transformedEvents.length
+  console.log(`[ba-tourism] Expanded to ${transformedEvents.length} event entries`)
+
+  // Step 5: Check duplicates
+  const externalIds = transformedEvents
+    .map((e) => e.external_id)
+    .filter((id): id is string => id !== null)
+  const existingEventsMap = options.skipDuplicateCheck
+    ? new Map()
+    : await checkDuplicateEventsWithData(externalIds, 'ba-tourism')
+
+  // Build list of events to process with update status
+  const eventsToProcess: Array<{ transformed: EventInsert; sourceEvent: BATourismEvent; isUpdate: boolean }> = []
+  for (const transformed of transformedEvents) {
+    const sourceEvent = eventSourceMap.get(transformed)!
+    const existing = transformed.external_id ? existingEventsMap.get(transformed.external_id) : undefined
+    eventsToProcess.push({
+      transformed,
+      sourceEvent,
+      isUpdate: !!existing,
+    })
+  }
+
+  // Step 6: Categorize events with AI
+  console.log('[ba-tourism] Categorizing events...')
+  const { categories, stats: catStats } = await categorizeEventsBatchWithStats(
+    eventsToProcess.map((e) => ({
+      name: e.transformed.name,
+      description: e.transformed.description_es,
+    })),
+    100 // 100ms delay between requests
+  )
+
+  result.categorizationSuccessful = catStats.successful
+  result.categorizationFallback = catStats.fallback
+
+  // Apply categories to events
+  for (let i = 0; i < eventsToProcess.length; i++) {
+    eventsToProcess[i].transformed.categories = [categories[i]]
+  }
+
+  // Step 7: Generate embeddings and upsert
+  console.log('[ba-tourism] Generating embeddings and upserting events...')
+  for (const { transformed, isUpdate } of eventsToProcess) {
+    try {
+      // Generate embedding
+      const embedding = await generateEventEmbedding({
+        name: transformed.name,
+        description_es: transformed.description_es,
+        categories: transformed.categories,
+      })
+
+      const eventWithEmbedding = {
+        ...transformed,
+        embedding,
+        enrichment_status: 'pending' as const,
+      }
+
+      if (isUpdate) {
+        // Update existing event
+        const existing = existingEventsMap.get(transformed.external_id!)
+        const { error } = await client
+          .from('events')
+          .update({
+            name: eventWithEmbedding.name,
+            starts_at: eventWithEmbedding.starts_at,
+            ends_at: eventWithEmbedding.ends_at,
+            venue_id: eventWithEmbedding.venue_id,
+            categories: eventWithEmbedding.categories,
+            is_free: eventWithEmbedding.is_free,
+            embedding: eventWithEmbedding.embedding,
+          })
+          .eq('id', existing!.id)
+
+        if (error) {
+          console.error(`[ba-tourism] Failed to update event: ${error.message}`)
+          result.eventsSkipped++
+        } else {
+          result.eventsUpdated++
+        }
+      } else {
+        // Insert new event
+        const { error } = await client.from('events').insert(eventWithEmbedding)
+
+        if (error) {
+          console.error(`[ba-tourism] Failed to insert event: ${error.message}`)
+          result.eventsSkipped++
+        } else {
+          result.eventsInserted++
+        }
+      }
+
+      // Rate limiting for embedding API
+      await delay(100)
+    } catch (error) {
+      console.error(`[ba-tourism] Error processing event ${transformed.name}:`, error)
+      result.eventsSkipped++
+    }
+  }
+
+  console.log(
+    `[ba-tourism] Import complete: ${result.eventsInserted} inserted, ${result.eventsUpdated} updated, ${result.eventsSkipped} skipped`
+  )
+
+  return result
+}

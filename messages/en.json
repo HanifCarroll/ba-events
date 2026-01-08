@@ -9,6 +9,7 @@
   "nav_events": "Events",
   "nav_venues": "Venues",
   "nav_blocklist": "Blocklist",
+  "nav_scraping": "Scraping",
   "auth_signed_in_as": "Signed in as",
   "auth_sign_out": "Sign out",
   "auth_signing_out": "Signing out...",
