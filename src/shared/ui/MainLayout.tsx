@@ -5,7 +5,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   Menu,
   X,
-  Home,
   MessageSquarePlus,
   Bookmark,
   Settings,
@@ -34,11 +33,10 @@ interface MainLayoutProps {
 interface NavItem {
   to?: string
   label: string
-  icon: typeof Home
+  icon: typeof MessageSquarePlus
   action?: () => void
   requiresAuth?: boolean
   adminOnly?: boolean
-  showWhenHasMessages?: boolean
   exact?: boolean
 }
 
@@ -49,7 +47,6 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { user, profile, isAdmin } = useAuthContext()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [hasMessages, setHasMessages] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('sidebar-collapsed') === 'true'
@@ -59,15 +56,6 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   // Wrap signOutAction with useServerFn for server-side sign-out
   const signOut = useServerFn(signOutAction)
-
-  // Listen for chat state changes
-  useEffect(() => {
-    const handleChatStateChange = (e: CustomEvent<{ hasMessages: boolean }>) => {
-      setHasMessages(e.detail.hasMessages)
-    }
-    window.addEventListener('chat-state-change', handleChatStateChange as EventListener)
-    return () => window.removeEventListener('chat-state-change', handleChatStateChange as EventListener)
-  }, [])
 
   // Persist collapsed state
   useEffect(() => {
@@ -102,8 +90,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   const mainNavItems: NavItem[] = [
-    { to: '/', label: m.nav_home(), icon: Home },
-    { label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat, showWhenHasMessages: true },
+    { label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat },
     { to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
     { to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
   ]
@@ -118,7 +105,6 @@ export function MainLayout({ children }: MainLayoutProps) {
   const filterNavItems = (items: NavItem[]) => items.filter((item) => {
     if (item.adminOnly && !isAdmin) return false
     if (item.requiresAuth && !user) return false
-    if (item.showWhenHasMessages && !hasMessages) return false
     return true
   })
 

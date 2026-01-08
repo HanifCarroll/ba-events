@@ -158,6 +158,12 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
                     <span>{event.venue_neighborhood}</span>
                   </div>
                 )}
+                {event.venue_address && (
+                  <div className="flex items-start gap-2 text-sm text-muted-foreground col-span-2">
+                    <MapPin className="h-4 w-4 text-primary/60 shrink-0 mt-0.5" />
+                    <span>{event.venue_address}</span>
+                  </div>
+                )}
                 {event.min_age && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Users className="h-4 w-4 text-primary/60" />
