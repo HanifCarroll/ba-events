@@ -6,7 +6,7 @@
  * - Generates bilingual descriptions
  * - Updates embeddings
  */
-import { task } from '@trigger.dev/sdk/v3'
+import { task, metadata } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client'
 import {
   enrichEvents,
@@ -42,6 +42,14 @@ export const enrichEventsJob = task({
 
     if (events.length === 0) {
       console.log('[enrich-events] No events need enrichment')
+      // Set metadata for empty case
+      metadata.set('progress', {
+        current: 0,
+        total: 0,
+        enriched: 0,
+        failed: 0,
+        currentEvent: null,
+      })
       return {
         total: 0,
         enriched: 0,
@@ -53,10 +61,43 @@ export const enrichEventsJob = task({
 
     console.log(`[enrich-events] Found ${events.length} events to enrich`)
 
-    // Process with progress logging
+    // Set initial metadata for frontend progress tracking
+    metadata.set('progress', {
+      current: 0,
+      total: events.length,
+      enriched: 0,
+      failed: 0,
+      currentEvent: events[0]?.name ?? null,
+    })
+
+    // Track stats for metadata updates
+    let enrichedCount = 0
+    let failedCount = 0
+
+    // Process with progress logging and metadata updates
     const stats = await enrichEvents(client, events, {
       delayMs: 1000, // 1 second between requests
       onProgress: (current, total, result) => {
+        // Update counts
+        if (result.enriched) {
+          enrichedCount++
+        } else if (!result.success) {
+          failedCount++
+        }
+
+        // Find current event name for display
+        const currentEventName = events[current - 1]?.name ?? null
+
+        // Update metadata for real-time frontend updates
+        metadata.set('progress', {
+          current,
+          total,
+          enriched: enrichedCount,
+          failed: failedCount,
+          currentEvent: currentEventName,
+        })
+
+        // Console logging (every 10 or at completion)
         if (current % 10 === 0 || current === total) {
           console.log(`[enrich-events] Progress: ${current}/${total}`)
         }

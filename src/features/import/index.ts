@@ -77,6 +77,23 @@ export {
   type EventToEnrich,
   type VenueToEnrich,
 } from './hooks/useAutoEnrichment'
+export {
+  useTriggerEnrichment,
+  type EnrichmentProgress,
+  type EnrichmentResult,
+  type EnrichmentStatus,
+  type TriggerEnrichmentState,
+} from './hooks/useTriggerEnrichment'
+
+// Trigger.dev enrichment API
+export {
+  triggerEventEnrichmentAction,
+  getEnrichmentJobStatusAction,
+  getActiveEnrichmentJobAction,
+  type TriggerEnrichmentResult,
+  type EnrichmentJobStatus,
+  type ActiveEnrichmentJob,
+} from './api/trigger-enrichment'
 
 // Duplicate detection types
 export { type DuplicateInfo, type FieldDiff } from './api/duplicate-detection'
