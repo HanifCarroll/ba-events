@@ -33,12 +33,10 @@ export async function queryEventsPaginated(
   // Apply tab-based filters
   switch (filters.tab) {
     case 'needs_attention':
-      // Events with data gaps: missing description (with link), missing venue, or missing categories
+      // Events with data gaps: missing description (with link) or missing venue
       query = query.or(
         'and(description_es.is.null,link.not.is.null),' +
-        'venue_id.is.null,' +
-        'categories.is.null,' +
-        'categories.eq.{}'
+        'venue_id.is.null'
       )
       break
 
@@ -77,11 +75,6 @@ export async function queryEventsPaginated(
 
   if (filters.missingVenue) {
     query = query.is('venue_id', null)
-  }
-
-  if (filters.missingCategories) {
-    // Empty array or null
-    query = query.or('categories.is.null,categories.eq.{}')
   }
 
   // Imported today filter
@@ -149,7 +142,6 @@ export async function queryEventTabCounts(
     p_search: filters.search || null,
     p_missing_description: filters.missingDescription || false,
     p_missing_venue: filters.missingVenue || false,
-    p_missing_categories: filters.missingCategories || false,
     p_imported_today: filters.importedToday || false,
   })
 

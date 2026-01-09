@@ -40,7 +40,6 @@ export interface EventFilterParams {
   // Data gap filters
   missingDescription?: boolean
   missingVenue?: boolean
-  missingCategories?: boolean
 
   // Date filters
   importedToday?: boolean
@@ -86,7 +85,6 @@ export interface EventSearchParams {
   // Data gap filters
   missingDescription?: boolean
   missingVenue?: boolean
-  missingCategories?: boolean
   // View preferences
   showPast?: boolean
   // Column filters (for DataTable)

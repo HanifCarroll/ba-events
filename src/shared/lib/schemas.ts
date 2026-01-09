@@ -109,7 +109,7 @@ export const eventFormSchema = z.object({
   ends_at: z.string(),
   is_all_day: z.boolean(),
   venue_id: z.string(),
-  categories: z.array(z.enum(CATEGORIES)),
+  categories: z.array(z.enum(CATEGORIES)).min(1, 'At least one category is required'),
   price: z.number().min(0).optional(),
   is_free: z.boolean(),
   min_age: z.number().min(0).optional(),

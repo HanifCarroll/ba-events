@@ -15,7 +15,6 @@ import {
   FileSpreadsheet,
   AlertCircle,
   FileText,
-  Tags,
 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
@@ -71,7 +70,6 @@ const eventSearchSchema = z.object({
   // Data gap filters (for needs_attention tab) - server-side
   missingDescription: z.boolean().optional(),
   missingVenue: z.boolean().optional(),
-  missingCategories: z.boolean().optional(),
   // Column filters (for DataTable)
   name: z.string().optional(),
   venue_name: z.string().optional(),
@@ -199,7 +197,6 @@ function EventListPage() {
     setShowPast,
     setMissingDescription,
     setMissingVenue,
-    setMissingCategories,
     setSorting,
     clearFilters,
   } = useEventsPaginated({ searchParams, navigate })
@@ -494,14 +491,6 @@ function EventListPage() {
                   />
                   <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">{m.admin_missing_venue()}</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <Checkbox
-                    checked={filters.missingCategories}
-                    onCheckedChange={(checked) => setMissingCategories(checked === true)}
-                  />
-                  <Tags className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">{m.admin_missing_categories()}</span>
                 </label>
               </div>
             </div>

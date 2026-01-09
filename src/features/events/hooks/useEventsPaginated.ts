@@ -54,7 +54,6 @@ export interface UseEventsPaginatedReturn {
     status: string | undefined
     missingDescription: boolean
     missingVenue: boolean
-    missingCategories: boolean
     sortBy: string
     sortOrder: 'asc' | 'desc'
   }
@@ -69,7 +68,6 @@ export interface UseEventsPaginatedReturn {
   setShowPast: (value: boolean) => void
   setMissingDescription: (value: boolean) => void
   setMissingVenue: (value: boolean) => void
-  setMissingCategories: (value: boolean) => void
   setSorting: (sortBy: string | undefined, sortDir: 'asc' | 'desc' | undefined) => void
   clearFilters: () => void
 }
@@ -89,7 +87,6 @@ function searchParamsToApiParams(searchParams: EventSearchParams): EventListPara
     showPast: searchParams.showPast,
     missingDescription: searchParams.missingDescription,
     missingVenue: searchParams.missingVenue,
-    missingCategories: searchParams.missingCategories,
     sortBy: searchParams.sortBy ?? 'starts_at',
     sortOrder: searchParams.sortDir ?? 'desc',
   }
@@ -107,7 +104,6 @@ function getFilterParams(searchParams: EventSearchParams): Omit<EventFilterParam
     showPast: searchParams.showPast,
     missingDescription: searchParams.missingDescription,
     missingVenue: searchParams.missingVenue,
-    missingCategories: searchParams.missingCategories,
     sortBy: searchParams.sortBy,
     sortOrder: searchParams.sortDir,
   }
@@ -229,7 +225,6 @@ export function useEventsPaginated({
   const setShowPast = useMemo(() => createBooleanFilterSetter('showPast'), [createBooleanFilterSetter])
   const setMissingDescription = useMemo(() => createBooleanFilterSetter('missingDescription'), [createBooleanFilterSetter])
   const setMissingVenue = useMemo(() => createBooleanFilterSetter('missingVenue'), [createBooleanFilterSetter])
-  const setMissingCategories = useMemo(() => createBooleanFilterSetter('missingCategories'), [createBooleanFilterSetter])
 
   const setSorting = useCallback(
     (sortBy: string | undefined, sortDir: 'asc' | 'desc' | undefined) => {
@@ -260,7 +255,6 @@ export function useEventsPaginated({
     searchParams.status ||
     searchParams.missingDescription ||
     searchParams.missingVenue ||
-    searchParams.missingCategories ||
     searchParams.sortBy
   )
 
@@ -288,7 +282,6 @@ export function useEventsPaginated({
       status: searchParams.status,
       missingDescription: searchParams.missingDescription ?? false,
       missingVenue: searchParams.missingVenue ?? false,
-      missingCategories: searchParams.missingCategories ?? false,
       sortBy: searchParams.sortBy ?? 'starts_at',
       sortOrder: searchParams.sortDir ?? 'desc',
     },
@@ -303,7 +296,6 @@ export function useEventsPaginated({
     setShowPast,
     setMissingDescription,
     setMissingVenue,
-    setMissingCategories,
     setSorting,
     clearFilters,
   }
