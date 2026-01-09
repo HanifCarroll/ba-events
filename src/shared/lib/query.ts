@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
+import type { EventListParams, EventFilterParams } from '@/shared/lib/types/pagination'
 
 // Create a singleton QueryClient instance
 export const queryClient = new QueryClient({
@@ -22,6 +23,12 @@ export const queryKeys = {
     all: ['events'] as const,
     list: (filters?: { status?: string; venueId?: string }) =>
       [...queryKeys.events.all, 'list', filters] as const,
+    // Paginated list with all filter params
+    listPaginated: (params: EventListParams) =>
+      [...queryKeys.events.all, 'listPaginated', params] as const,
+    // Tab counts (needs_attention, pending_review, etc.)
+    tabCounts: (filters: Omit<EventFilterParams, 'tab'>) =>
+      [...queryKeys.events.all, 'tabCounts', filters] as const,
     detail: (id: string) => [...queryKeys.events.all, 'detail', id] as const,
   },
 

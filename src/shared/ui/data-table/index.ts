@@ -1,12 +1,14 @@
 export { DataTable } from './DataTable'
 export type { DataTableProps } from './DataTable'
 export { DataTableColumnHeader } from './DataTableColumnHeader'
+export { DataTablePagination } from './DataTablePagination'
+export type { DataTablePaginationProps } from './DataTablePagination'
 export type { FilterType, FilterOption } from './DataTableColumnHeader'
 export { DataTableViewOptions } from './DataTableViewOptions'
 export { useColumnPreferences } from './hooks/useColumnPreferences'
 
 // Re-export useful types from @tanstack/react-table
-export type { ColumnFiltersState } from '@tanstack/react-table'
+export type { ColumnFiltersState, PaginationState, SortingState } from '@tanstack/react-table'
 
 // Column definitions
 export { getVenueColumns } from './columns/venue-columns'

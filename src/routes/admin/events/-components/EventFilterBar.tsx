@@ -11,7 +11,7 @@ import {
 } from '@/shared/ui/select'
 import { Combobox } from '@/shared/ui/combobox'
 import type { EventStatus } from '@/shared/lib/types'
-import type { VenueOption } from '@/features/events'
+import type { VenueOption } from '@/shared/lib/types/pagination'
 
 interface EventFilterBarProps {
   search: string

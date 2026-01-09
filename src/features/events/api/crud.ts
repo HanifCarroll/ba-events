@@ -13,11 +13,36 @@ import {
 } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
+import { queryEventsPaginated, queryEventTabCounts } from './queries'
 import type { EventInsert, EventUpdate, EventWithVenue, EventStatus } from '@/shared/lib/types'
+import type { EventListParams, EventFilterParams, PaginatedResponse, EventTabCounts } from '@/shared/lib/types/pagination'
 
 export const listEvents = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
   return getEventsWithVenues(1000)
 })
+
+/**
+ * Paginated event list with server-side filtering
+ * Returns events matching filters with pagination metadata
+ */
+export const listEventsPaginated = createServerFn({ method: 'GET' })
+  .inputValidator((params: EventListParams) => params)
+  .handler(async ({ data }): Promise<PaginatedResponse<EventWithVenue>> => {
+    await requireAdminAccess()
+    const { page = 1, pageSize = 25, ...filters } = data
+    return queryEventsPaginated(filters, { page, pageSize })
+  })
+
+/**
+ * Get event tab counts for admin sidebar badges
+ * Returns counts for all, needs_attention, pending_review, past tabs
+ */
+export const getEventTabCountsAction = createServerFn({ method: 'GET' })
+  .inputValidator((filters: Omit<EventFilterParams, 'tab'>) => filters)
+  .handler(async ({ data }): Promise<EventTabCounts> => {
+    await requireAdminAccess()
+    return queryEventTabCounts(data)
+  })
 
 export const getEventAction = createServerFn({ method: 'GET' })
   .inputValidator((id: string) => id)

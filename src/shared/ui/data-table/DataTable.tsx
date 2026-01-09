@@ -4,6 +4,7 @@ import {
   ColumnFiltersState,
   ColumnOrderState,
   ColumnSizingState,
+  PaginationState,
   SortingState,
   VisibilityState,
   flexRender,
@@ -11,6 +12,7 @@ import {
   getFacetedRowModel,
   getFacetedUniqueValues,
   getFilteredRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
   Row,
@@ -259,6 +261,15 @@ export interface DataTableProps<TData extends { id: string }> {
   sorting?: SortingState
   onSortingChange?: (sorting: SortingState) => void
 
+  // Pagination (controlled, optional) - for server-side pagination
+  manualPagination?: boolean
+  pageCount?: number
+  pagination?: PaginationState
+  onPaginationChange?: (pagination: PaginationState) => void
+
+  // Loading state - shows dimmed content while fetching new data
+  isLoading?: boolean
+
   // Persistence
   tableId?: string
 
@@ -275,6 +286,9 @@ export interface DataTableProps<TData extends { id: string }> {
 
   // Empty state
   emptyState?: ReactNode
+
+  // Pagination slot - for custom pagination controls
+  paginationSlot?: ReactNode
 
   // Custom meta passed to table (accessible in cell renderers via table.options.meta)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -296,6 +310,11 @@ export function DataTable<TData extends { id: string }>({
   onColumnFiltersChange,
   sorting: controlledSorting,
   onSortingChange,
+  manualPagination = false,
+  pageCount,
+  pagination: controlledPagination,
+  onPaginationChange,
+  isLoading = false,
   tableId = 'default',
   estimatedRowHeight = 64,
   containerHeight = 'calc(100vh - 420px)',
@@ -303,6 +322,7 @@ export function DataTable<TData extends { id: string }>({
   toolbarLeft,
   toolbarRight,
   emptyState,
+  paginationSlot,
   meta,
 }: DataTableProps<TData>) {
   // Preferences (persisted)
@@ -341,6 +361,25 @@ export function DataTable<TData extends { id: string }>({
       }
     },
     [columnFilters, onColumnFiltersChange]
+  )
+
+  // Support controlled pagination (for server-side pagination)
+  const [internalPagination, setInternalPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 25,
+  })
+
+  const pagination = controlledPagination ?? internalPagination
+  const setPagination = useCallback(
+    (updater: PaginationState | ((prev: PaginationState) => PaginationState)) => {
+      const newPagination = typeof updater === 'function' ? updater(pagination) : updater
+      if (onPaginationChange) {
+        onPaginationChange(newPagination)
+      } else {
+        setInternalPagination(newPagination)
+      }
+    },
+    [pagination, onPaginationChange]
   )
 
   // Selection state
@@ -456,6 +495,7 @@ export function DataTable<TData extends { id: string }>({
       columnVisibility,
       columnOrder: enableRowSelection ? ['select', ...columnOrder] : columnOrder,
       rowSelection,
+      pagination,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -468,15 +508,19 @@ export function DataTable<TData extends { id: string }>({
       setColumnOrder(filtered)
     },
     onRowSelectionChange: handleSelectionChange,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: enableColumnFiltering ? getFilteredRowModel() : undefined,
     getFacetedRowModel: enableColumnFiltering ? getFacetedRowModel() : undefined,
     getFacetedUniqueValues: enableColumnFiltering ? getFacetedUniqueValues() : undefined,
     getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: manualPagination ? undefined : getPaginationRowModel(),
     columnResizeMode: 'onChange',
     enableMultiSort,
     enableRowSelection,
     enableColumnFilters: enableColumnFiltering,
+    manualPagination,
+    pageCount: manualPagination ? pageCount : undefined,
     getRowId: (row) => row.id,
     meta,
   })
@@ -542,7 +586,10 @@ export function DataTable<TData extends { id: string }>({
       )}
 
       {/* Table container - single scroll container for both header and body */}
-      <div className="bg-card/50 rounded-xl border border-border/50 overflow-hidden">
+      <div className={cn(
+        'bg-card/50 rounded-xl border border-border/50 overflow-hidden transition-opacity',
+        isLoading && 'opacity-60'
+      )}>
         <div
           ref={scrollContainerRef}
           className="overflow-auto"
@@ -682,6 +729,9 @@ export function DataTable<TData extends { id: string }>({
           </DndContext>
         </div>
       </div>
+
+      {/* Pagination controls */}
+      {paginationSlot}
     </div>
   )
 }

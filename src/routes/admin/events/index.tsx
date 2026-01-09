@@ -1,22 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { memo, useRef, useEffect, useMemo, useCallback, useState } from 'react'
-
-// Simple debounce utility
-function debounce<T extends (...args: Parameters<T>) => void>(
-  fn: T,
-  delay: number
-): T & { cancel: () => void } {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-  const debounced = (...args: Parameters<T>) => {
-    if (timeoutId) clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => fn(...args), delay)
-  }
-  debounced.cancel = () => {
-    if (timeoutId) clearTimeout(timeoutId)
-  }
-  return debounced as T & { cancel: () => void }
-}
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { debounce } from '@/shared/lib/utils'
 import { toast } from 'sonner'
 import {
   Plus,
@@ -47,15 +32,25 @@ import {
   DialogTitle,
 } from '@/shared/ui/dialog'
 import { Combobox } from '@/shared/ui/combobox'
-import { DataTable, getEventColumns } from '@/shared/ui/data-table'
+import { DataTable, DataTablePagination, getEventColumns } from '@/shared/ui/data-table'
 import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState } from '@/shared/ui/EmptyState'
-import { listEvents } from '@/features/events'
+import {
+  useEventsPaginated,
+  useBackgroundEnrichment,
+  useLumaDescriptionEnrichment,
+  useEmbeddingRegeneration,
+  useBulkActions,
+  useSingleEventActions,
+  useMarkPastEvents,
+  type EventTab,
+} from '@/features/events'
+import { listVenues } from '@/features/venues'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
-import { useEventAdmin, useBackgroundEnrichment, useLumaDescriptionEnrichment, useEmbeddingRegeneration, type EventTab, type DataGapType } from '@/features/events'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
 import { BackfillCard } from './-components/BackfillCard'
 import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventSearchParams } from '@/shared/lib/types/pagination'
 
 import { z } from 'zod'
 import type { ColumnFiltersState, SortingState } from '@tanstack/react-table'
@@ -64,14 +59,17 @@ import type { ColumnFiltersState, SortingState } from '@tanstack/react-table'
 const eventSearchSchema = z.object({
   // Tab filter
   tab: z.enum(['all', 'needs_attention', 'pending_review', 'past']).optional().catch('all'),
-  // Completeness filter for needs_attention tab
-  completeness: z.enum(['incomplete', 'complete']).optional().catch('incomplete'),
-  // Data gap filter for needs_attention tab
-  dataGap: z.enum(['all', 'missing_description', 'missing_venue', 'missing_categories']).optional(),
+  // Pagination
+  page: z.number().optional().catch(1),
+  pageSize: z.number().optional().catch(25),
   // Quick filters (moved from React state to URL)
   search: z.string().optional(),
   venue: z.string().optional(), // venue ID filter
   importedToday: z.boolean().optional(), // Filter for recently imported events
+  // Data gap filters (for needs_attention tab) - server-side
+  missingDescription: z.boolean().optional(),
+  missingVenue: z.boolean().optional(),
+  missingCategories: z.boolean().optional(),
   // Column filters (for DataTable)
   name: z.string().optional(),
   venue_name: z.string().optional(),
@@ -82,7 +80,7 @@ const eventSearchSchema = z.object({
   sortDir: z.enum(['asc', 'desc']).optional(),
 })
 
-export type EventSearchParams = z.infer<typeof eventSearchSchema>
+// Type is now defined in @/shared/lib/types/pagination.ts and exported via @/features/events
 
 // Convert URL params to TanStack Table column filters
 function paramsToColumnFilters(params: EventSearchParams): ColumnFiltersState {
@@ -128,10 +126,19 @@ function sortingToParams(sorting: SortingState): Partial<EventSearchParams> {
 export const Route = createFileRoute('/admin/events/')({
   validateSearch: eventSearchSchema,
   loader: async () => {
-    return listEvents()
+    // Only load venues in the loader - events are fetched via React Query with pagination
+    const venues = await listVenues()
+    return { venues }
   },
   component: EventListPage,
 })
+
+/** Get button text for bulk action dialog - avoids nested ternary */
+function getBulkActionButtonText(isProcessing: boolean, action: string | null): string {
+  if (isProcessing) return m.common_processing()
+  if (action === 'delete') return m.common_delete()
+  return m.common_confirm()
+}
 
 function getStatusBadge(status: string) {
   const statusLabels: Record<string, () => string> = {
@@ -168,16 +175,44 @@ function getStatusBadge(status: string) {
 }
 
 function EventListPage() {
-  const events = Route.useLoaderData()
+  const { venues } = Route.useLoaderData()
   const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
 
-  // Pass searchParams and navigate to the hook - URL is now single source of truth
-  const { filtering, bulk, markPast, singleActions } = useEventAdmin({
+  // Server-side paginated events with prefetching
+  const {
     events,
-    searchParams,
-    navigate,
-  })
+    pagination,
+    tabCounts,
+    isFetching,
+    activeTab,
+    hasActiveFilters,
+    filters,
+    setPage,
+    setPageSize,
+    setTab,
+    setSearch,
+    setVenueFilter,
+    setImportedToday,
+    setMissingDescription,
+    setMissingVenue,
+    setMissingCategories,
+    setSorting,
+    clearFilters,
+  } = useEventsPaginated({ searchParams, navigate })
+
+  // Bulk selection (operates on current page)
+  const bulk = useBulkActions(events)
+  const singleActions = useSingleEventActions()
+  const markPast = useMarkPastEvents()
+
+  // Venue options for filter dropdown
+  const venueOptions = useMemo(() => {
+    return venues.map((v) => ({
+      value: v.id,
+      label: v.name,
+    }))
+  }, [venues])
 
   // Local state as write buffer for debounced search input
   const [searchInput, setSearchInput] = useState(searchParams.search || '')
@@ -191,12 +226,9 @@ function EventListPage() {
   const debouncedSearchUpdate = useMemo(
     () =>
       debounce((value: string) => {
-        navigate({
-          search: (prev) => ({ ...prev, search: value || undefined }),
-          replace: true,
-        })
+        setSearch(value)
       }, 300),
-    [navigate]
+    [setSearch]
   )
 
   // Cleanup debounce on unmount
@@ -214,15 +246,11 @@ function EventListPage() {
     [debouncedSearchUpdate]
   )
 
-  // Clear all filters - defined here where we have direct access to navigate
+  // Clear all filters
   const handleClearFilters = useCallback(() => {
-    navigate({
-      search: {
-        tab: searchParams.tab || 'all',
-      },
-    })
+    clearFilters()
     setSearchInput('')
-  }, [navigate, searchParams.tab])
+  }, [clearFilters])
 
   // Derive TanStack Table state from URL params
   const columnFilters = useMemo(() => paramsToColumnFilters(searchParams), [searchParams])
@@ -251,16 +279,9 @@ function EventListPage() {
   const handleSortingChange = useCallback(
     (newSorting: SortingState) => {
       const sortParams = sortingToParams(newSorting)
-      navigate({
-        search: (prev) => ({
-          ...prev,
-          sortBy: sortParams.sortBy,
-          sortDir: sortParams.sortDir,
-        }),
-        replace: true,
-      })
+      setSorting(sortParams.sortBy, sortParams.sortDir)
     },
-    [navigate]
+    [setSorting]
   )
   const backgroundEnrichment = useBackgroundEnrichment()
   const venueEnrichment = useVenueEnrichment()
@@ -269,54 +290,54 @@ function EventListPage() {
 
   // Calculate enrichable count for selected events (description enrichment)
   const enrichableCount = useMemo(() => {
-    return backgroundEnrichment.getEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
-  }, [backgroundEnrichment, filtering.filteredEvents, bulk.selectedIds])
+    return backgroundEnrichment.getEnrichableEvents(events, bulk.selectedIds).length
+  }, [backgroundEnrichment, events, bulk.selectedIds])
 
   // Calculate venue enrichable count for selected events
   const venueEnrichableCount = useMemo(() => {
-    return venueEnrichment.getVenueEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
-  }, [venueEnrichment, filtering.filteredEvents, bulk.selectedIds])
+    return venueEnrichment.getVenueEnrichableEvents(events, bulk.selectedIds).length
+  }, [venueEnrichment, events, bulk.selectedIds])
 
   // Calculate Luma enrichable count for selected events (missing descriptions)
   const lumaEnrichableCount = useMemo(() => {
-    return lumaEnrichment.getLumaEnrichableEvents(filtering.filteredEvents, bulk.selectedIds).length
-  }, [lumaEnrichment, filtering.filteredEvents, bulk.selectedIds])
+    return lumaEnrichment.getLumaEnrichableEvents(events, bulk.selectedIds).length
+  }, [lumaEnrichment, events, bulk.selectedIds])
 
   // Handle description enrichment with selection clear on complete
   const handleEnrich = useCallback(() => {
     backgroundEnrichment.enrichEvents(
-      filtering.filteredEvents,
+      events,
       bulk.selectedIds,
       () => bulk.clearSelection()
     )
-  }, [backgroundEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+  }, [backgroundEnrichment, events, bulk.selectedIds, bulk.clearSelection])
 
   // Handle venue enrichment with selection clear on complete
   const handleVenueEnrich = useCallback(() => {
     venueEnrichment.enrichVenues(
-      filtering.filteredEvents,
+      events,
       bulk.selectedIds,
       () => bulk.clearSelection()
     )
-  }, [venueEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+  }, [venueEnrichment, events, bulk.selectedIds, bulk.clearSelection])
 
   // Handle Luma description enrichment with selection clear on complete
   const handleLumaEnrich = useCallback(() => {
     lumaEnrichment.enrichLumaEvents(
-      filtering.filteredEvents,
+      events,
       bulk.selectedIds,
       () => bulk.clearSelection()
     )
-  }, [lumaEnrichment, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+  }, [lumaEnrichment, events, bulk.selectedIds, bulk.clearSelection])
 
   // Handle embedding regeneration with selection clear on complete
   const handleRegenerateEmbeddings = useCallback(() => {
     embeddingRegeneration.regenerateEmbeddings(
-      filtering.filteredEvents,
+      events,
       bulk.selectedIds,
       () => bulk.clearSelection()
     )
-  }, [embeddingRegeneration, filtering.filteredEvents, bulk.selectedIds, bulk.clearSelection])
+  }, [embeddingRegeneration, events, bulk.selectedIds, bulk.clearSelection])
 
   // Smart "Mark Past" toast on page load
   useEffect(() => {
@@ -333,15 +354,7 @@ function EventListPage() {
   }, []) // Only run once on mount
 
   const handleTabChange = (value: string) => {
-    // Update URL - clears all filters when switching tabs
-    // Since all filter state is now in URL, this single navigate clears everything
-    navigate({
-      search: {
-        tab: value as EventTab,
-        // All other params cleared by setting to undefined
-      },
-    })
-    // Also clear the local search input state
+    setTab(value as EventTab)
     setSearchInput('')
   }
 
@@ -368,9 +381,9 @@ function EventListPage() {
         onReject: singleActions.handleReject,
         isApproving: singleActions.isApproving,
         isRejecting: singleActions.isRejecting,
-        showNeedsAttention: filtering.activeTab === 'needs_attention',
+        showNeedsAttention: activeTab === 'needs_attention',
       }),
-    [singleActions, filtering.activeTab]
+    [singleActions, activeTab]
   )
 
   return (
@@ -383,8 +396,8 @@ function EventListPage() {
             {m.admin_events_title()}
           </h1>
           <p className="text-muted-foreground mt-1">
-            {filtering.hasActiveFilters
-              ? m.admin_events_filtered({ filtered: filtering.filteredEvents.length, total: events.length })
+            {hasActiveFilters
+              ? m.admin_events_filtered({ filtered: events.length, total: events.length })
               : m.admin_events_count({ count: events.length })}
           </p>
         </div>
@@ -412,14 +425,14 @@ function EventListPage() {
       {/* Tabs */}
       {events.length > 0 && (
         <div className="space-y-4">
-          <Tabs value={filtering.activeTab} onValueChange={handleTabChange}>
+          <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="bg-card/50 border border-border/50 p-1 h-auto">
               <TabsTrigger
                 value="all"
                 className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary px-4 py-2"
               >
                 {m.admin_tab_all()}
-                <span className="ml-2 text-xs opacity-70">({filtering.tabCounts.all})</span>
+                <span className="ml-2 text-xs opacity-70">({tabCounts?.all ?? 0})</span>
               </TabsTrigger>
               <TabsTrigger
                 value="needs_attention"
@@ -427,9 +440,9 @@ function EventListPage() {
               >
                 <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
                 {m.admin_tab_needs_attention()}
-                {filtering.tabCounts.needs_attention > 0 && (
+                {(tabCounts?.needs_attention ?? 0) > 0 && (
                   <span className="ml-2 text-xs bg-orange-500/30 px-1.5 py-0.5 rounded-full">
-                    {filtering.tabCounts.needs_attention}
+                    {tabCounts?.needs_attention}
                   </span>
                 )}
               </TabsTrigger>
@@ -438,9 +451,9 @@ function EventListPage() {
                 className="data-[state=active]:bg-yellow-500/20 data-[state=active]:text-yellow-400 px-4 py-2"
               >
                 {m.admin_tab_pending()}
-                {filtering.tabCounts.pending_review > 0 && (
+                {(tabCounts?.pending_review ?? 0) > 0 && (
                   <span className="ml-2 text-xs bg-yellow-500/30 px-1.5 py-0.5 rounded-full">
-                    {filtering.tabCounts.pending_review}
+                    {tabCounts?.pending_review}
                   </span>
                 )}
               </TabsTrigger>
@@ -449,79 +462,45 @@ function EventListPage() {
                 className="data-[state=active]:bg-muted data-[state=active]:text-muted-foreground px-4 py-2"
               >
                 {m.admin_tab_past()}
-                <span className="ml-2 text-xs opacity-70">({filtering.tabCounts.past})</span>
+                <span className="ml-2 text-xs opacity-70">({tabCounts?.past ?? 0})</span>
               </TabsTrigger>
             </TabsList>
           </Tabs>
 
           {/* Data quality filters - only show on needs_attention tab */}
-          {filtering.activeTab === 'needs_attention' && (
+          {activeTab === 'needs_attention' && (
             <div className="space-y-3">
               {/* Backfill Card for enriching pending records */}
               <BackfillCard />
 
-              {/* Completeness toggle */}
-              <div className="flex items-center gap-3">
-                <Tabs
-                  value={filtering.completenessFilter}
-                  onValueChange={(v) => filtering.setCompletenessFilter(v as 'incomplete' | 'complete')}
-                >
-                  <TabsList className="bg-card/50 border border-border/50 p-0.5 h-auto">
-                    <TabsTrigger
-                      value="incomplete"
-                      className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400 px-3 py-1.5 text-sm"
-                    >
-                      {m.admin_incomplete()}
-                      <span className="ml-1.5 text-xs opacity-70">({filtering.dataGapCounts.all})</span>
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="complete"
-                      className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400 px-3 py-1.5 text-sm"
-                    >
-                      {m.admin_complete()}
-                      <span className="ml-1.5 text-xs opacity-70">({filtering.dataGapCounts.complete})</span>
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
+              {/* Data gap filter checkboxes */}
+              <div className="flex items-center gap-4 flex-wrap">
+                <span className="text-sm text-muted-foreground">{m.admin_filter_by()}</span>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <Checkbox
+                    checked={filters.missingDescription}
+                    onCheckedChange={(checked) => setMissingDescription(checked === true)}
+                  />
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">{m.admin_missing_description()}</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <Checkbox
+                    checked={filters.missingVenue}
+                    onCheckedChange={(checked) => setMissingVenue(checked === true)}
+                  />
+                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">{m.admin_missing_venue()}</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <Checkbox
+                    checked={filters.missingCategories}
+                    onCheckedChange={(checked) => setMissingCategories(checked === true)}
+                  />
+                  <Tags className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">{m.admin_missing_categories()}</span>
+                </label>
               </div>
-
-              {/* Data gap filter chips - only show when viewing incomplete */}
-              {filtering.completenessFilter === 'incomplete' && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-muted-foreground mr-1">{m.admin_filter_by()}</span>
-                  <DataGapChip
-                    type="all"
-                    label={m.admin_all_gaps()}
-                    count={filtering.dataGapCounts.all}
-                    isActive={filtering.dataGapFilter === 'all'}
-                    onClick={() => filtering.setDataGapFilter('all')}
-                  />
-                  <DataGapChip
-                    type="missing_description"
-                    label={m.admin_missing_description()}
-                    count={filtering.dataGapCounts.missing_description}
-                    isActive={filtering.dataGapFilter === 'missing_description'}
-                    onClick={() => filtering.setDataGapFilter('missing_description')}
-                    icon={<FileText className="h-3.5 w-3.5" />}
-                  />
-                  <DataGapChip
-                    type="missing_venue"
-                    label={m.admin_missing_venue()}
-                    count={filtering.dataGapCounts.missing_venue}
-                    isActive={filtering.dataGapFilter === 'missing_venue'}
-                    onClick={() => filtering.setDataGapFilter('missing_venue')}
-                    icon={<MapPin className="h-3.5 w-3.5" />}
-                  />
-                  <DataGapChip
-                    type="missing_categories"
-                    label={m.admin_missing_categories()}
-                    count={filtering.dataGapCounts.missing_categories}
-                    isActive={filtering.dataGapFilter === 'missing_categories'}
-                    onClick={() => filtering.setDataGapFilter('missing_categories')}
-                    icon={<Tags className="h-3.5 w-3.5" />}
-                  />
-                </div>
-              )}
             </div>
           )}
 
@@ -537,23 +516,23 @@ function EventListPage() {
               />
             </div>
             <Combobox
-              options={filtering.venueOptions}
-              value={filtering.venueFilter}
-              onValueChange={filtering.setVenueFilter}
+              options={venueOptions}
+              value={filters.venueId}
+              onValueChange={setVenueFilter}
               placeholder={m.admin_all_venues()}
               emptyText={m.admin_no_venues_found()}
               className="w-48"
             />
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <Checkbox
-                checked={filtering.importedToday}
-                onCheckedChange={(checked) => filtering.setImportedToday(checked === true)}
+                checked={filters.importedToday}
+                onCheckedChange={(checked) => setImportedToday(checked === true)}
               />
               <span className="text-sm text-muted-foreground whitespace-nowrap">
                 {m.admin_imported_today()}
               </span>
             </label>
-            {filtering.hasActiveFilters && (
+            {hasActiveFilters && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -568,13 +547,14 @@ function EventListPage() {
       )}
 
       {/* Content */}
-      {events.length === 0 ? (
+      {tabCounts?.all === 0 ? (
+        // No events in database at all
         <EmptyState />
-      ) : filtering.tabCounts[filtering.activeTab] === 0 ? (
-        // Tab has no events at all - show tab-specific empty state
-        <TabEmptyState tab={filtering.activeTab} />
-      ) : filtering.filteredEvents.length === 0 ? (
-        // Tab has events but filters hide them
+      ) : tabCounts?.[activeTab] === 0 ? (
+        // Tab has no events (e.g., all events reviewed)
+        <TabEmptyState tab={activeTab} />
+      ) : events.length === 0 ? (
+        // Filters/search returned no results for this page
         <NoMatchesState onClearFilters={handleClearFilters} />
       ) : (
         <>
@@ -582,7 +562,7 @@ function EventListPage() {
           <div className="sm:hidden">
             <BulkActionBar
               selectedCount={bulk.selectedIds.size}
-              filteredEventsLength={filtering.filteredEvents.length}
+              filteredEventsLength={events.length}
               onToggleSelectAll={bulk.toggleSelectAll}
               onSetBulkAction={bulk.setBulkAction}
               onClearSelection={bulk.clearSelection}
@@ -601,7 +581,7 @@ function EventListPage() {
             />
           </div>
           <MobileEventCards
-            events={filtering.filteredEvents}
+            events={events}
             selectedIds={bulk.selectedIds}
             onToggleSelect={bulk.toggleSelect}
             onApprove={singleActions.handleApprove}
@@ -609,7 +589,7 @@ function EventListPage() {
             onDelete={singleActions.setDeleteTarget}
             isApproving={singleActions.isApproving}
             isRejecting={singleActions.isRejecting}
-            showNeedsAttention={filtering.activeTab === 'needs_attention'}
+            showNeedsAttention={activeTab === 'needs_attention'}
           />
 
           {/* Desktop Table View with DataTable */}
@@ -619,7 +599,7 @@ function EventListPage() {
               <div className="absolute top-0 left-0 right-0 z-20">
                 <BulkActionBar
                   selectedCount={bulk.selectedIds.size}
-                  filteredEventsLength={filtering.filteredEvents.length}
+                  filteredEventsLength={events.length}
                   onToggleSelectAll={bulk.toggleSelectAll}
                   onSetBulkAction={bulk.setBulkAction}
                   onClearSelection={bulk.clearSelection}
@@ -641,7 +621,7 @@ function EventListPage() {
 
               <DataTable
                 columns={columns}
-                data={filtering.filteredEvents}
+                data={events}
                 tableId="admin-events"
                 enableRowSelection={true}
                 selectedIds={bulk.selectedIds}
@@ -654,9 +634,24 @@ function EventListPage() {
                 sorting={sorting}
                 onSortingChange={handleSortingChange}
                 enableMultiSort={true}
-                enableVirtualization={true}
-                estimatedRowHeight={64}
-                containerHeight="calc(100vh - 420px)"
+                manualPagination={true}
+                pageCount={pagination?.totalPages}
+                isLoading={isFetching}
+                paginationSlot={
+                  pagination && (
+                    <DataTablePagination
+                      page={pagination.page}
+                      pageSize={pagination.pageSize}
+                      totalCount={pagination.totalCount}
+                      totalPages={pagination.totalPages}
+                      hasNextPage={pagination.hasNextPage}
+                      hasPrevPage={pagination.hasPrevPage}
+                      onPageChange={setPage}
+                      onPageSizeChange={setPageSize}
+                      isLoading={isFetching}
+                    />
+                  )
+                }
               />
             </div>
           </div>
@@ -719,11 +714,7 @@ function EventListPage() {
               onClick={bulk.handleBulkAction}
               disabled={bulk.isBulkProcessing}
             >
-              {bulk.isBulkProcessing
-                ? m.common_processing()
-                : bulk.bulkAction === 'delete'
-                  ? m.common_delete()
-                  : m.common_confirm()}
+              {getBulkActionButtonText(bulk.isBulkProcessing, bulk.bulkAction)}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -824,36 +815,6 @@ function TabEmptyState({ tab }: { tab: EventTab }) {
       title={title}
       description={description}
     />
-  )
-}
-
-interface DataGapChipProps {
-  type: DataGapType
-  label: string
-  count: number
-  isActive: boolean
-  onClick: () => void
-  icon?: React.ReactNode
-}
-
-function DataGapChip({ label, count, isActive, onClick, icon }: DataGapChipProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-colors ${
-        isActive
-          ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-          : 'bg-card/50 text-muted-foreground border border-border/50 hover:bg-card hover:text-foreground'
-      }`}
-    >
-      {icon}
-      <span>{label}</span>
-      <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-        isActive ? 'bg-orange-500/30' : 'bg-muted/50'
-      }`}>
-        {count}
-      </span>
-    </button>
   )
 }
 

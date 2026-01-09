@@ -5,6 +5,8 @@
 // API (Server Functions)
 export {
   listEvents,
+  listEventsPaginated,
+  getEventTabCountsAction,
   getEventAction,
   createEventAction,
   updateEventAction,
@@ -36,16 +38,6 @@ export { getAdminStats } from './api/stats'
 
 // Hooks
 export { useCreateEvent, useUpdateEvent, useDeleteEvent } from './hooks/useEventMutations'
-export {
-  useEventFiltering,
-  type EventTab,
-  type DataGapType,
-  type CompletenessFilter,
-  type VenueOption,
-  type DataGapCounts,
-  type TabCounts,
-  type UseEventFilteringOptions,
-} from './hooks/useEventFiltering'
 export { useBulkActions, type BulkActionType, type UseBulkActionsReturn } from './hooks/useBulkActions'
 export { useDescriptionEnrichment, type EnrichStep } from './hooks/useDescriptionEnrichment'
 export { useBackgroundEnrichment } from './hooks/useBackgroundEnrichment'
@@ -53,7 +45,13 @@ export { useLumaDescriptionEnrichment } from './hooks/useLumaDescriptionEnrichme
 export { useEmbeddingRegeneration } from './hooks/useEmbeddingRegeneration'
 export { useSingleEventActions } from './hooks/useSingleEventActions'
 export { useMarkPastEvents } from './hooks/useMarkPastEvents'
-export { useEventAdmin } from './hooks/useEventAdmin'
+export {
+  useEventsPaginated,
+  type EventSearchParams,
+  type EventTab,
+  type UseEventsPaginatedOptions,
+  type UseEventsPaginatedReturn,
+} from './hooks/useEventsPaginated'
 
 // Types
 export type {
