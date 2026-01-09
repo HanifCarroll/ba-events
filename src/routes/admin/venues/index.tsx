@@ -21,6 +21,7 @@ import { Plus, MapPin, Search, X, Filter, Upload, Loader2, AlertCircle, ChevronD
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
+import { Checkbox } from '@/shared/ui/checkbox'
 import { Input } from '@/shared/ui/input'
 import { Combobox } from '@/shared/ui/combobox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs'
@@ -53,6 +54,7 @@ const venueSearchSchema = z.object({
   tab: z.enum(['all', 'missing_neighborhood', 'duplicates', 'address_names']).optional().catch('all'),
   search: z.string().optional(),
   neighborhood: z.string().optional(),
+  importedToday: z.boolean().optional(),
 })
 
 export type VenueSearchParams = z.infer<typeof venueSearchSchema>
@@ -77,6 +79,7 @@ function VenueListPage() {
   const activeTab = (searchParams.tab || 'all') as ReviewTab
   const search = searchParams.search || ''
   const neighborhoodFilter = searchParams.neighborhood as Neighborhood | undefined
+  const importedToday = searchParams.importedToday ?? false
 
   // Tab change - clears filters
   const setActiveTab = useCallback(
@@ -139,6 +142,17 @@ function VenueListPage() {
     [navigate]
   )
 
+  // Handle imported today filter change
+  const handleImportedTodayChange = useCallback(
+    (value: boolean) => {
+      navigate({
+        search: (prev) => ({ ...prev, importedToday: value || undefined }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
   // Neighborhood options for combobox
   const neighborhoodOptions = useMemo(() => {
     return NEIGHBORHOODS.map((n) => ({ value: n, label: n }))
@@ -165,14 +179,22 @@ function VenueListPage() {
       if (neighborhoodFilter && venue.neighborhood !== neighborhoodFilter) {
         return false
       }
+      // Imported today filter
+      if (importedToday) {
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        if (new Date(venue.created_at) < todayStart) {
+          return false
+        }
+      }
       return true
     })
-  }, [venues, search, neighborhoodFilter, failedVenueFilter])
+  }, [venues, search, neighborhoodFilter, failedVenueFilter, importedToday])
 
   // Bulk actions
   const bulk = useVenueBulkActions(filteredVenues)
 
-  const hasActiveFilters = search || neighborhoodFilter || failedVenueFilter
+  const hasActiveFilters = search || neighborhoodFilter || failedVenueFilter || importedToday
 
   // Get count of venues that can be enriched from selection
   const enrichableVenues = useMemo(() => {
@@ -312,9 +334,9 @@ function VenueListPage() {
           </div>
 
           {/* Filter controls */}
-          <div className={`grid gap-3 ${showFilters ? 'grid' : 'hidden'} sm:grid sm:grid-cols-3`}>
+          <div className={`flex flex-col gap-3 ${showFilters ? 'flex' : 'hidden'} sm:flex sm:flex-row sm:flex-wrap sm:items-center`}>
             {/* Search */}
-            <div className="relative sm:col-span-2">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 value={searchInput}
@@ -331,7 +353,19 @@ function VenueListPage() {
               onValueChange={handleNeighborhoodChange}
               placeholder={m.admin_all_neighborhoods()}
               emptyText={m.admin_no_neighborhood()}
+              className="w-48"
             />
+
+            {/* Imported today filter */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <Checkbox
+                checked={importedToday}
+                onCheckedChange={(checked) => handleImportedTodayChange(checked === true)}
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                {m.admin_imported_today()}
+              </span>
+            </label>
           </div>
 
           {/* Clear filters */}

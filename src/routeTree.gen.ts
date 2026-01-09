@@ -25,6 +25,7 @@ import { Route as AdminBlocklistIndexRouteImport } from './routes/admin/blocklis
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
 import { Route as AdminVenuesImportRouteImport } from './routes/admin/venues/import'
 import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
+import { Route as AdminScrapingVenuesReviewRouteImport } from './routes/admin/scraping/venues-review'
 import { Route as AdminEventsNewRouteImport } from './routes/admin/events/new'
 import { Route as AdminEventsImportRouteImport } from './routes/admin/events/import'
 import { Route as AdminEventsIdRouteImport } from './routes/admin/events/$id'
@@ -111,6 +112,12 @@ const AdminVenuesIdRoute = AdminVenuesIdRouteImport.update({
   path: '/venues/$id',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminScrapingVenuesReviewRoute =
+  AdminScrapingVenuesReviewRouteImport.update({
+    id: '/scraping/venues-review',
+    path: '/scraping/venues-review',
+    getParentRoute: () => AdminRoute,
+  } as any)
 const AdminEventsNewRoute = AdminEventsNewRouteImport.update({
   id: '/events/new',
   path: '/events/new',
@@ -152,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
+  '/admin/scraping/venues-review': typeof AdminScrapingVenuesReviewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -174,6 +182,7 @@ export interface FileRoutesByTo {
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
+  '/admin/scraping/venues-review': typeof AdminScrapingVenuesReviewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -198,6 +207,7 @@ export interface FileRoutesById {
   '/admin/events/$id': typeof AdminEventsIdRoute
   '/admin/events/import': typeof AdminEventsImportRoute
   '/admin/events/new': typeof AdminEventsNewRoute
+  '/admin/scraping/venues-review': typeof AdminScrapingVenuesReviewRoute
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
@@ -223,6 +233,7 @@ export interface FileRouteTypes {
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
+    | '/admin/scraping/venues-review'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
@@ -245,6 +256,7 @@ export interface FileRouteTypes {
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
+    | '/admin/scraping/venues-review'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
@@ -268,6 +280,7 @@ export interface FileRouteTypes {
     | '/admin/events/$id'
     | '/admin/events/import'
     | '/admin/events/new'
+    | '/admin/scraping/venues-review'
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
@@ -402,6 +415,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminVenuesIdRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/scraping/venues-review': {
+      id: '/admin/scraping/venues-review'
+      path: '/scraping/venues-review'
+      fullPath: '/admin/scraping/venues-review'
+      preLoaderRoute: typeof AdminScrapingVenuesReviewRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/events/new': {
       id: '/admin/events/new'
       path: '/events/new'
@@ -447,6 +467,7 @@ interface AdminRouteChildren {
   AdminEventsIdRoute: typeof AdminEventsIdRoute
   AdminEventsImportRoute: typeof AdminEventsImportRoute
   AdminEventsNewRoute: typeof AdminEventsNewRoute
+  AdminScrapingVenuesReviewRoute: typeof AdminScrapingVenuesReviewRoute
   AdminVenuesIdRoute: typeof AdminVenuesIdRoute
   AdminVenuesImportRoute: typeof AdminVenuesImportRoute
   AdminVenuesNewRoute: typeof AdminVenuesNewRoute
@@ -463,6 +484,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminEventsIdRoute: AdminEventsIdRoute,
   AdminEventsImportRoute: AdminEventsImportRoute,
   AdminEventsNewRoute: AdminEventsNewRoute,
+  AdminScrapingVenuesReviewRoute: AdminScrapingVenuesReviewRoute,
   AdminVenuesIdRoute: AdminVenuesIdRoute,
   AdminVenuesImportRoute: AdminVenuesImportRoute,
   AdminVenuesNewRoute: AdminVenuesNewRoute,

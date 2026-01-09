@@ -48,6 +48,7 @@ export function useEventFiltering({ events, searchParams, navigate }: UseEventFi
   const search = searchParams.search || ''
   const venueFilter = searchParams.venue
   const statusFilter = (searchParams.status || 'all') as EventStatus | 'all'
+  const importedToday = searchParams.importedToday ?? false
 
   // Setters that update URL
   const setSearch = useCallback(
@@ -99,6 +100,16 @@ export function useEventFiltering({ events, searchParams, navigate }: UseEventFi
     (value: EventStatus | 'all') => {
       navigate({
         search: (prev) => ({ ...prev, status: value === 'all' ? undefined : value }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const setImportedToday = useCallback(
+    (value: boolean) => {
+      navigate({
+        search: (prev) => ({ ...prev, importedToday: value || undefined }),
         replace: true,
       })
     },
@@ -237,15 +248,24 @@ export function useEventFiltering({ events, searchParams, navigate }: UseEventFi
       if (venueFilter && event.venue_id !== venueFilter) {
         return false
       }
+      // Imported today filter
+      if (importedToday) {
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        if (new Date(event.created_at) < todayStart) {
+          return false
+        }
+      }
       return true
     })
-  }, [events, activeTab, search, statusFilter, venueFilter, dataGapFilter, completenessFilter])
+  }, [events, activeTab, search, statusFilter, venueFilter, dataGapFilter, completenessFilter, importedToday])
 
   // Check if any filters are active (for showing "Clear" button)
   const hasActiveFilters = !!(
     search ||
     (activeTab === 'all' && statusFilter !== 'all') ||
     venueFilter ||
+    importedToday ||
     (activeTab === 'needs_attention' && completenessFilter === 'incomplete' && dataGapFilter !== 'all') ||
     // Also check URL column filters and sorting
     searchParams.name ||
@@ -262,6 +282,8 @@ export function useEventFiltering({ events, searchParams, navigate }: UseEventFi
     setStatusFilter,
     venueFilter,
     setVenueFilter,
+    importedToday,
+    setImportedToday,
     showFilters,
     setShowFilters,
     venueOptions,

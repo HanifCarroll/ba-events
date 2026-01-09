@@ -71,6 +71,7 @@ const eventSearchSchema = z.object({
   // Quick filters (moved from React state to URL)
   search: z.string().optional(),
   venue: z.string().optional(), // venue ID filter
+  importedToday: z.boolean().optional(), // Filter for recently imported events
   // Column filters (for DataTable)
   name: z.string().optional(),
   venue_name: z.string().optional(),
@@ -525,8 +526,8 @@ function EventListPage() {
           )}
 
           {/* Search and Venue filter - compact row */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 max-w-sm min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={m.admin_search_events()}
@@ -543,6 +544,15 @@ function EventListPage() {
               emptyText={m.admin_no_venues_found()}
               className="w-48"
             />
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <Checkbox
+                checked={filtering.importedToday}
+                onCheckedChange={(checked) => filtering.setImportedToday(checked === true)}
+              />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                {m.admin_imported_today()}
+              </span>
+            </label>
             {filtering.hasActiveFilters && (
               <Button
                 variant="ghost"

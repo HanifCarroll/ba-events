@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import {
   Bot,
   Clock,
@@ -310,8 +310,10 @@ function ScrapingDashboard() {
           View All Runs (coming soon)
         </Button>
         {venueReviewCount > 0 && (
-          <Button className="bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30" disabled>
-            Review {venueReviewCount} Venues (coming soon)
+          <Button asChild className="bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30">
+            <Link to="/admin/scraping/venues-review">
+              Review {venueReviewCount} Venue{venueReviewCount === 1 ? '' : 's'}
+            </Link>
           </Button>
         )}
       </div>

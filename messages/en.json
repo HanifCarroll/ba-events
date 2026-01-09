@@ -124,6 +124,7 @@
   "admin_search_events": "Search events...",
   "admin_all_venues": "All Venues",
   "admin_no_venues_found": "No venues found",
+  "admin_imported_today": "Imported today",
   "admin_no_events": "No events yet",
   "admin_no_events_desc": "Get started by adding your first event.",
   "admin_no_matching_events": "No matching events",
