@@ -14,6 +14,32 @@ import { CLAUDE_MODEL } from './constants'
 
 const anthropic = new Anthropic()
 
+// ============================================================================
+// SHARED UTILITIES
+// ============================================================================
+
+/**
+ * Get known language for a source.
+ * Sources from Argentina are typically Spanish, others need detection.
+ */
+export function getKnownLanguageForSource(source: string): 'spanish' | 'english' | undefined {
+  switch (source) {
+    case 'passline':
+    case 'ba-tourism':
+      return 'spanish'
+    default:
+      return undefined // Auto-detect
+  }
+}
+
+/**
+ * Extract text content from Claude's response
+ */
+function extractTextFromResponse(message: Anthropic.Message): string | null {
+  const textBlock = message.content.find((block) => block.type === 'text')
+  return textBlock?.text ?? null
+}
+
 /**
  * Language detection prompt - quick classification
  */
@@ -85,6 +111,31 @@ Maintain the same tone, meaning, and style. Keep it concise.
 Output ONLY the translated text, no explanations or additional commentary.`
 
 /**
+ * Venue extraction prompt - extracts just the venue/location name
+ */
+const VENUE_EXTRACTION_PROMPT = `Extract the venue name from this event page.
+
+Look for:
+- The physical venue/location name where the event takes place
+- Check sections labeled "Venue", "Location", "Lugar", "Ubicación", "Dónde"
+- The place name, not the full address
+
+DO NOT include:
+- Full street addresses (we just need the venue name)
+- City, neighborhood, or country names
+- Room numbers or floor details
+- "Online", "Virtual", or "TBA" - return null for these
+
+Examples:
+- "Centro Cultural Kirchner" ✓
+- "Teatro Colón" ✓
+- "La Trastienda Club" ✓
+- "Av. Corrientes 1234, CABA" ✗ (this is an address, not a venue name)
+- "Online event" → null
+
+Return ONLY the venue name as plain text, or exactly the word "null" (without quotes) if no specific physical venue is mentioned.`
+
+/**
  * Fetch a URL's content as markdown using Jina Reader
  */
 export async function fetchWithJina(url: string): Promise<string | null> {
@@ -132,14 +183,10 @@ export async function detectLanguage(markdown: string): Promise<DetectedLanguage
       ],
     })
 
-    const textBlock = message.content.find((block) => block.type === 'text')
-    const response = textBlock?.text?.toLowerCase().trim() ?? ''
+    const response = extractTextFromResponse(message)?.toLowerCase().trim() ?? ''
 
     // Default to Spanish for Buenos Aires events if unclear
-    if (response.includes('english')) {
-      return 'english'
-    }
-    return 'spanish'
+    return response.includes('english') ? 'english' : 'spanish'
   } catch (error) {
     console.error(`Language detection error:`, error)
     // Default to Spanish for Buenos Aires context
@@ -171,8 +218,7 @@ export async function extractDescription(
       ],
     })
 
-    const textBlock = message.content.find((block) => block.type === 'text')
-    return textBlock?.text ?? null
+    return extractTextFromResponse(message)
   } catch (error) {
     console.error(`Haiku extraction error:`, error)
     return null
@@ -200,10 +246,43 @@ export async function translateText(
       ],
     })
 
-    const textBlock = message.content.find((block) => block.type === 'text')
-    return textBlock?.text ?? null
+    return extractTextFromResponse(message)
   } catch (error) {
     console.error(`Haiku translation error:`, error)
+    return null
+  }
+}
+
+/**
+ * Extract venue name from markdown content using Haiku 4.5
+ * Returns the venue name or null if no physical venue found
+ */
+export async function extractVenueName(markdown: string): Promise<string | null> {
+  try {
+    // Use a moderate sample for venue extraction (first 10k chars)
+    const truncatedMarkdown = markdown.slice(0, 10000)
+
+    const message = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 100,
+      messages: [
+        {
+          role: 'user',
+          content: `${VENUE_EXTRACTION_PROMPT}\n\n---\n${truncatedMarkdown}\n---`,
+        },
+      ],
+    })
+
+    const response = extractTextFromResponse(message)?.trim() ?? ''
+
+    // Check for null responses
+    if (!response || response.toLowerCase() === 'null' || response.toLowerCase() === 'n/a') {
+      return null
+    }
+
+    return response
+  } catch (error) {
+    console.error(`Haiku venue extraction error:`, error)
     return null
   }
 }
@@ -212,6 +291,25 @@ export async function translateText(
 export interface BilingualDescription {
   description_es: string | null
   description_en: string | null
+}
+
+/**
+ * Translate a description to both Spanish and English
+ */
+async function translateToBilingual(
+  sourceDescription: string,
+  sourceLanguage: 'spanish' | 'english'
+): Promise<BilingualDescription> {
+  if (sourceLanguage === 'spanish') {
+    console.log(`[enrichment] Translating to English with Haiku...`)
+    const descriptionEn = await translateText(sourceDescription, 'es-to-en')
+    console.log(`[enrichment] English: ${descriptionEn ? descriptionEn.substring(0, 100) + '...' : 'null'}`)
+    return { description_es: sourceDescription, description_en: descriptionEn }
+  }
+  console.log(`[enrichment] Translating to Spanish with Haiku...`)
+  const descriptionEs = await translateText(sourceDescription, 'en-to-es')
+  console.log(`[enrichment] Spanish: ${descriptionEs ? descriptionEs.substring(0, 100) + '...' : 'null'}`)
+  return { description_es: descriptionEs, description_en: sourceDescription }
 }
 
 /**
@@ -228,9 +326,41 @@ export async function enrichEventDescriptionBilingual(
   url: string,
   knownLanguage?: 'spanish' | 'english'
 ): Promise<BilingualDescription | null> {
-  console.log(`[enrichment] Starting bilingual enrichment for: ${url}${knownLanguage ? ` (known: ${knownLanguage})` : ''}`)
+  // Delegate to enrichEventFull without venue extraction
+  const result = await enrichEventFull(url, { knownLanguage, extractVenue: false })
+  if (!result) return null
+  return { description_es: result.description_es, description_en: result.description_en }
+}
 
-  // Step 1: Fetch markdown via Jina
+/**
+ * Full enrichment result including venue extraction
+ */
+export interface FullEnrichmentResult {
+  description_es: string | null
+  description_en: string | null
+  venue_name: string | null
+}
+
+/**
+ * Combined enrichment pipeline that extracts both description and venue name
+ * Fetches page once with Jina, then extracts both in parallel
+ *
+ * @param url - The event page URL
+ * @param options.knownLanguage - If provided, skip detection (e.g., 'spanish' for Passline/BA Tourism)
+ * @param options.extractVenue - Whether to extract venue name (default: true)
+ */
+export async function enrichEventFull(
+  url: string,
+  options?: {
+    knownLanguage?: 'spanish' | 'english'
+    extractVenue?: boolean
+  }
+): Promise<FullEnrichmentResult | null> {
+  const { knownLanguage, extractVenue = true } = options ?? {}
+
+  console.log(`[enrichment] Starting full enrichment for: ${url}${knownLanguage ? ` (known: ${knownLanguage})` : ''}`)
+
+  // Step 1: Fetch markdown via Jina (once for all extractions)
   console.log(`[enrichment] Fetching via Jina...`)
   const markdown = await fetchWithJina(url)
   if (!markdown) {
@@ -250,34 +380,62 @@ export async function enrichEventDescriptionBilingual(
     console.log(`[enrichment] Detected language: ${sourceLanguage}`)
   }
 
-  // Step 3: Extract description in source language
-  console.log(`[enrichment] Extracting ${sourceLanguage} description with Haiku...`)
-  const sourceDescription = await extractDescription(markdown, sourceLanguage)
+  // Step 3: Extract description and venue in parallel
+  console.log(`[enrichment] Extracting description and ${extractVenue ? 'venue' : 'skipping venue'}...`)
+
+  const [sourceDescription, venueName] = await Promise.all([
+    extractDescription(markdown, sourceLanguage),
+    extractVenue ? extractVenueName(markdown) : Promise.resolve(null),
+  ])
+
   if (!sourceDescription) {
     console.log(`[enrichment] ${sourceLanguage} extraction failed`)
+    // Still return venue if we got it
+    if (venueName) {
+      console.log(`[enrichment] Got venue but no description: ${venueName}`)
+      return {
+        description_es: null,
+        description_en: null,
+        venue_name: venueName,
+      }
+    }
     return null
   }
+
   console.log(`[enrichment] ${sourceLanguage}: ${sourceDescription.substring(0, 100)}...`)
-
-  // Step 4: Translate to other language
-  let descriptionEs: string | null
-  let descriptionEn: string | null
-
-  if (sourceLanguage === 'spanish') {
-    descriptionEs = sourceDescription
-    console.log(`[enrichment] Translating to English with Haiku...`)
-    descriptionEn = await translateText(sourceDescription, 'es-to-en')
-    console.log(`[enrichment] English: ${descriptionEn ? descriptionEn.substring(0, 100) + '...' : 'null'}`)
-  } else {
-    descriptionEn = sourceDescription
-    console.log(`[enrichment] Translating to Spanish with Haiku...`)
-    descriptionEs = await translateText(sourceDescription, 'en-to-es')
-    console.log(`[enrichment] Spanish: ${descriptionEs ? descriptionEs.substring(0, 100) + '...' : 'null'}`)
+  if (venueName) {
+    console.log(`[enrichment] Venue: ${venueName}`)
   }
+
+  // Step 4: Translate description to other language
+  const bilingual = await translateToBilingual(sourceDescription, sourceLanguage)
 
   return {
-    description_es: descriptionEs,
-    description_en: descriptionEn,
+    ...bilingual,
+    venue_name: venueName,
   }
+}
+
+/**
+ * Extract only venue name from a URL (for events that already have descriptions)
+ * Lighter weight than full enrichment - skips description extraction
+ */
+export async function extractVenueFromUrl(url: string): Promise<string | null> {
+  console.log(`[enrichment] Extracting venue only for: ${url}`)
+
+  const markdown = await fetchWithJina(url)
+  if (!markdown) {
+    console.log(`[enrichment] Jina fetch failed`)
+    return null
+  }
+
+  const venueName = await extractVenueName(markdown)
+  if (venueName) {
+    console.log(`[enrichment] Found venue: ${venueName}`)
+  } else {
+    console.log(`[enrichment] No venue found`)
+  }
+
+  return venueName
 }
 

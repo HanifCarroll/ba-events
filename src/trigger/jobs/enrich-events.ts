@@ -67,12 +67,16 @@ export const enrichEventsJob = task({
       total: events.length,
       enriched: 0,
       failed: 0,
+      venuesMatched: 0,
+      venuesCreated: 0,
       currentEvent: events[0]?.name ?? null,
     })
 
     // Track stats for metadata updates
     let enrichedCount = 0
     let failedCount = 0
+    let venuesMatched = 0
+    let venuesCreated = 0
 
     // Process with progress logging and metadata updates
     const stats = await enrichEvents(client, events, {
@@ -85,6 +89,15 @@ export const enrichEventsJob = task({
           failedCount++
         }
 
+        // Track venue settlements
+        if (result.venueSettlement) {
+          if (result.venueSettlement.action === 'matched' || result.venueSettlement.action === 'queued-review') {
+            venuesMatched++
+          } else if (result.venueSettlement.action === 'auto-created') {
+            venuesCreated++
+          }
+        }
+
         // Find current event name for display
         const currentEventName = events[current - 1]?.name ?? null
 
@@ -94,12 +107,14 @@ export const enrichEventsJob = task({
           total,
           enriched: enrichedCount,
           failed: failedCount,
+          venuesMatched,
+          venuesCreated,
           currentEvent: currentEventName,
         })
 
         // Console logging (every 10 or at completion)
         if (current % 10 === 0 || current === total) {
-          console.log(`[enrich-events] Progress: ${current}/${total}`)
+          console.log(`[enrich-events] Progress: ${current}/${total} (venues: ${venuesMatched} matched, ${venuesCreated} created)`)
         }
         if (!result.success) {
           console.warn(`[enrich-events] Failed: ${result.eventId} - ${result.error}`)

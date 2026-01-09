@@ -1,7 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getEventsWithVenues, getEventById, updateEvent, supabase } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
-import { enrichEventDescriptionBilingual } from '@/shared/lib/ai/enrichment'
+import {
+  enrichEventDescriptionBilingual,
+  getKnownLanguageForSource,
+} from '@/shared/lib/ai/enrichment'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import type { EventWithVenue } from '@/shared/lib/types'
 import type {
@@ -29,20 +32,6 @@ export type {
   DescriptionEnrichUpdate,
 }
 
-/**
- * Map event sources to known languages
- * Returns undefined for sources that need detection
- */
-function getKnownLanguageForSource(source: string): 'spanish' | 'english' | undefined {
-  switch (source) {
-    case 'passline':
-    case 'ba-tourism':
-      return 'spanish'
-    // Meetup and Eventbrite vary - need detection
-    default:
-      return undefined
-  }
-}
 
 /**
  * Process a single event enrichment
@@ -380,3 +369,106 @@ export const getAllPendingEventsAction = createServerFn({ method: 'GET' }).handl
 
   return (events || []) as Array<{ id: string; name: string; link: string; source: string }>
 })
+
+// ============================================================================
+// NEEDS ATTENTION BREAKDOWN
+// ============================================================================
+
+export interface NeedsAttentionBreakdown {
+  readyForEnrichment: number
+  missingVenueOnly: number
+  enrichmentFailed: number
+  noLink: number
+}
+
+/**
+ * Get breakdown of events needing attention by category.
+ */
+export const getNeedsAttentionBreakdownAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<NeedsAttentionBreakdown> => {
+    await requireAdminAccess()
+
+    const { data, error } = await supabase.rpc('get_needs_attention_breakdown')
+
+    if (error) {
+      console.error('[enrichment] Failed to get needs attention breakdown:', error)
+      return {
+        readyForEnrichment: 0,
+        missingVenueOnly: 0,
+        enrichmentFailed: 0,
+        noLink: 0,
+      }
+    }
+
+    const row = data?.[0] || {}
+    return {
+      readyForEnrichment: Number(row.ready_for_enrichment) || 0,
+      missingVenueOnly: Number(row.missing_venue_only) || 0,
+      enrichmentFailed: Number(row.enrichment_failed) || 0,
+      noLink: Number(row.no_link) || 0,
+    }
+  }
+)
+
+// ============================================================================
+// RETRY FAILED ENRICHMENTS
+// ============================================================================
+
+/**
+ * Reset failed enrichments to pending status so they can be retried.
+ */
+export const resetFailedEnrichmentsAction = createServerFn({ method: 'POST' }).handler(
+  async (): Promise<{ count: number }> => {
+    const client = await requireAdminAccess()
+
+    const { data, error } = await client
+      .from('events')
+      .update({
+        enrichment_status: 'pending',
+        enrichment_error: null,
+      })
+      .eq('enrichment_status', 'failed')
+      .not('link', 'is', null)
+      .select('id')
+
+    if (error) {
+      console.error('[enrichment] Failed to reset failed enrichments:', error)
+      throw new Error(`Failed to reset enrichments: ${error.message}`)
+    }
+
+    const count = data?.length || 0
+    console.log(`[enrichment] Reset ${count} failed enrichments to pending`)
+
+    return { count }
+  }
+)
+
+// ============================================================================
+// VENUE-ONLY ENRICHMENT
+// ============================================================================
+
+/**
+ * Get events that have descriptions but are missing venues (for venue-only enrichment).
+ */
+export const getEventsNeedingVenueOnlyAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<Array<{ id: string; name: string; link: string; source: string }>> => {
+    await requireAdminAccess()
+
+    const { data, error } = await supabase
+      .from('events')
+      .select('id, name, link, source')
+      .eq('enrichment_status', 'completed')
+      .is('venue_id', null)
+      .not('link', 'is', null)
+      .neq('status', 'past')
+      .order('starts_at', { ascending: true })
+      .limit(200)
+
+    if (error) {
+      console.error('[enrichment] Failed to get events needing venue:', error)
+      return []
+    }
+
+    return (data || []) as Array<{ id: string; name: string; link: string; source: string }>
+  }
+)

@@ -26,6 +26,10 @@ export {
   getRecentlyImportedPendingEventsAction,
   getPendingEnrichmentCountsAction,
   getAllPendingEventsAction,
+  getNeedsAttentionBreakdownAction,
+  resetFailedEnrichmentsAction,
+  getEventsNeedingVenueOnlyAction,
+  type NeedsAttentionBreakdown,
 } from './api/enrichment'
 
 export {
