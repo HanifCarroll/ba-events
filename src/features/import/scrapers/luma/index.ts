@@ -31,6 +31,6 @@ export type { LumaDescriptionResult, EnrichmentEvent as LumaEnrichmentEvent } fr
 // Venue enrichment
 export {
   enrichLumaEventsWithVenues,
-  fetchLumaVenueFromDetailPage,
+  fetchLumaVenueFromUrl,
 } from './venue-enrichment'
 export type { LumaVenueResult, VenueEnrichmentEvent as LumaVenueEnrichmentEvent } from './venue-enrichment'

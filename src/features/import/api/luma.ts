@@ -413,7 +413,7 @@ export interface LumaVenueEnrichmentInput {
  * Used for events that were imported without venue information.
  *
  * For each event:
- * 1. Fetches venue from the Luma event detail page
+ * 1. Fetches venue from the Luma event detail page (using fetch, not Playwright)
  * 2. Matches to existing venue or creates a new one
  * 3. Updates the event with the venue_id
  */
@@ -430,97 +430,89 @@ export const enrichLumaVenuesAction = createServerFn({ method: 'POST' })
 
     console.log(`[Admin] Starting Luma venue enrichment for ${events.length} events...`)
 
-    const { chromium } = await import('playwright')
-    const { fetchLumaVenueFromDetailPage } = await import('../scrapers/luma')
+    // Use fetch-based venue extraction (Playwright-free for serverless compatibility)
+    const { fetchLumaVenueFromUrl } = await import('../scrapers/luma')
 
-    const browser = await chromium.launch({ headless: true })
     let enriched = 0
     let venuesCreated = 0
     const errors: Array<{ id: string; error: string }> = []
 
-    try {
-      const concurrency = 3
-      const delayMs = 1000
+    const concurrency = 3
+    const delayMs = 1000
 
-      // Process in batches for concurrency control
-      for (let i = 0; i < events.length; i += concurrency) {
-        const batch = events.slice(i, i + concurrency)
+    // Process in batches for concurrency control
+    for (let i = 0; i < events.length; i += concurrency) {
+      const batch = events.slice(i, i + concurrency)
 
-        // Process batch in parallel
-        const batchResults = await Promise.all(
-          batch.map(async (event) => {
-            const page = await browser.newPage()
-            try {
-              const venue = await fetchLumaVenueFromDetailPage(page, event.eventUrl)
+      // Process batch in parallel
+      const batchResults = await Promise.all(
+        batch.map(async (event) => {
+          try {
+            const venue = await fetchLumaVenueFromUrl(event.eventUrl)
 
-              if (venue) {
-                // Try to match existing venue first
-                const venueMatch = await matchVenue(venue.name)
-                let venueId: string
-                let action: 'matched' | 'created' = 'matched'
+            if (venue) {
+              // Try to match existing venue first
+              const venueMatch = await matchVenue(venue.name)
+              let venueId: string
+              let action: 'matched' | 'created' = 'matched'
 
-                if (venueMatch.venue) {
-                  venueId = venueMatch.venue.id
-                } else {
-                  // Create new venue
-                  const newVenue = await createVenue({
-                    name: venue.name,
-                    address: venue.address,
-                    neighborhood: null,
-                  }, client)
-                  venueId = newVenue.id
-                  action = 'created'
-                }
-
-                // Update event with venue_id
-                await updateEvent(event.eventId, { venue_id: venueId }, client)
-
-                console.log(`[Admin] ${action === 'created' ? 'Created' : 'Matched'} venue "${venue.name}" for: ${event.eventName || event.eventId}`)
-                return { event, venue, venueId, action, success: true, error: undefined }
+              if (venueMatch.venue) {
+                venueId = venueMatch.venue.id
               } else {
-                return { event, venue: null, venueId: null, action: 'error' as const, success: false, error: 'No venue found on page' }
+                // Create new venue
+                const newVenue = await createVenue({
+                  name: venue.name,
+                  address: venue.address,
+                  neighborhood: null,
+                }, client)
+                venueId = newVenue.id
+                action = 'created'
               }
-            } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-              console.error(`[Admin] Error enriching venue for ${event.eventName || event.eventId}:`, errorMsg)
-              return { event, venue: null, venueId: null, action: 'error' as const, success: false, error: errorMsg }
-            } finally {
-              await page.close()
-            }
-          })
-        )
 
-        // Process results and yield progress
-        for (const result of batchResults) {
-          if (result.success && result.venue) {
-            enriched++
-            if (result.action === 'created') {
-              venuesCreated++
+              // Update event with venue_id
+              await updateEvent(event.eventId, { venue_id: venueId }, client)
+
+              console.log(`[Admin] ${action === 'created' ? 'Created' : 'Matched'} venue "${venue.name}" for: ${event.eventName || event.eventId}`)
+              return { event, venue, venueId, action, success: true, error: undefined }
+            } else {
+              return { event, venue: null, venueId: null, action: 'error' as const, success: false, error: 'No venue found on page' }
             }
-          } else if (result.error) {
-            errors.push({ id: result.event.eventId, error: result.error })
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+            console.error(`[Admin] Error enriching venue for ${event.eventName || event.eventId}:`, errorMsg)
+            return { event, venue: null, venueId: null, action: 'error' as const, success: false, error: errorMsg }
           }
+        })
+      )
 
-          // Calculate current progress (account for batch position)
-          const currentIndex = events.indexOf(result.event) + 1
-
-          yield {
-            type: 'progress',
-            current: currentIndex,
-            total: events.length,
-            eventName: result.event.eventName || result.event.eventId,
-            action: result.action,
-            venueName: result.venue?.name,
-          } as VenueEnrichProgress
+      // Process results and yield progress
+      for (const result of batchResults) {
+        if (result.success && result.venue) {
+          enriched++
+          if (result.action === 'created') {
+            venuesCreated++
+          }
+        } else if (result.error) {
+          errors.push({ id: result.event.eventId, error: result.error })
         }
 
-        // Delay between batches (except after last batch)
-        if (i + concurrency < events.length) {
-          await new Promise((resolve) => setTimeout(resolve, delayMs))
-        }
+        // Calculate current progress (account for batch position)
+        const currentIndex = events.indexOf(result.event) + 1
+
+        yield {
+          type: 'progress',
+          current: currentIndex,
+          total: events.length,
+          eventName: result.event.eventName || result.event.eventId,
+          action: result.action,
+          venueName: result.venue?.name,
+        } as VenueEnrichProgress
       }
-    } finally {
-      await browser.close()
+
+      // Delay between batches (except after last batch)
+      if (i + concurrency < events.length) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
     }
 
     console.log(`[Admin] Luma venue enrichment complete: ${enriched} enriched, ${venuesCreated} created, ${errors.length} errors`)

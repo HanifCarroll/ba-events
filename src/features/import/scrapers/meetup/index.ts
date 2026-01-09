@@ -36,7 +36,7 @@ export {
 
 // Venue enrichment
 export {
-  fetchMeetupVenueFromDetailPage,
+  fetchMeetupVenueFromUrl,
   enrichMeetupEventsWithVenues,
 } from './venue-enrichment'
 
