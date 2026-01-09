@@ -261,6 +261,8 @@ export interface LumaDescriptionEnrichmentInput {
  * This is Phase 2 of the two-phase import process for Luma.
  * Uses async generator to stream progress updates to the client
  *
+ * Uses fetch + HTML parsing (not Playwright) for serverless compatibility.
+ *
  * For each event:
  * 1. Fetches description from the Luma event detail page
  * 2. Updates the event with the description
@@ -279,112 +281,104 @@ export const enrichLumaDescriptionsAction = createServerFn({ method: 'POST' })
 
     console.log(`[Admin] Starting Luma description enrichment for ${events.length} events...`)
 
-    const { chromium } = await import('playwright')
+    // Use fetch-based description extraction (Playwright-free for serverless compatibility)
     const { fetchLumaDescriptionFromDetailPage } = await import('../scrapers/luma')
 
-    const browser = await chromium.launch({ headless: true })
     let enriched = 0
     const errors: Array<{ id: string; error: string }> = []
 
-    try {
-      const concurrency = 3
-      const delayMs = 1000
+    const concurrency = 3
+    const delayMs = 1000
 
-      // Process in batches for concurrency control
-      for (let i = 0; i < events.length; i += concurrency) {
-        const batch = events.slice(i, i + concurrency)
+    // Process in batches for concurrency control
+    for (let i = 0; i < events.length; i += concurrency) {
+      const batch = events.slice(i, i + concurrency)
 
-        // Process batch in parallel
-        const batchResults = await Promise.all(
-          batch.map(async (event) => {
-            const page = await browser.newPage()
-            try {
-              const description = await fetchLumaDescriptionFromDetailPage(page, event.source_url)
+      // Process batch in parallel
+      const batchResults = await Promise.all(
+        batch.map(async (event) => {
+          try {
+            const description = await fetchLumaDescriptionFromDetailPage(event.source_url)
 
-              if (description) {
-                // Update event with description
-                await updateEvent(event.eventId, { description_es: description }, client)
+            if (description) {
+              // Update event with description
+              await updateEvent(event.eventId, { description_es: description }, client)
 
-                // Regenerate embedding with new description
-                const { data: eventData } = await supabase
-                  .from('events')
-                  .select('name, categories')
-                  .eq('id', event.eventId)
-                  .single()
+              // Regenerate embedding with new description
+              const { data: eventData } = await supabase
+                .from('events')
+                .select('name, categories')
+                .eq('id', event.eventId)
+                .single()
 
-                if (eventData) {
-                  const embedding = await generateEventEmbedding({
-                    name: eventData.name,
-                    description_es: description,
-                    categories: eventData.categories || [],
-                  })
-                  // Update with embedding and mark as completed
-                  await updateEvent(event.eventId, {
-                    embedding,
-                    enrichment_status: 'completed',
-                    enriched_at: new Date().toISOString(),
-                  }, client)
-                } else {
-                  // Mark as completed even without embedding regeneration
-                  await updateEvent(event.eventId, {
-                    enrichment_status: 'completed',
-                    enriched_at: new Date().toISOString(),
-                  }, client)
-                }
-
-                console.log(`[Admin] Enriched description for: ${event.name}`)
-                return { event, success: true, error: undefined }
-              } else {
-                // Mark as failed
+              if (eventData) {
+                const embedding = await generateEventEmbedding({
+                  name: eventData.name,
+                  description_es: description,
+                  categories: eventData.categories || [],
+                })
+                // Update with embedding and mark as completed
                 await updateEvent(event.eventId, {
-                  enrichment_status: 'failed',
-                  enrichment_error: 'No description found on page',
+                  embedding,
+                  enrichment_status: 'completed',
+                  enriched_at: new Date().toISOString(),
                 }, client)
-                return { event, success: false, error: 'No description found on page' }
+              } else {
+                // Mark as completed even without embedding regeneration
+                await updateEvent(event.eventId, {
+                  enrichment_status: 'completed',
+                  enriched_at: new Date().toISOString(),
+                }, client)
               }
-            } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-              console.error(`[Admin] Error enriching ${event.name}:`, errorMsg)
+
+              console.log(`[Admin] Enriched description for: ${event.name}`)
+              return { event, success: true, error: undefined }
+            } else {
               // Mark as failed
               await updateEvent(event.eventId, {
                 enrichment_status: 'failed',
-                enrichment_error: errorMsg,
+                enrichment_error: 'No description found on page',
               }, client)
-              return { event, success: false, error: errorMsg }
-            } finally {
-              await page.close()
+              return { event, success: false, error: 'No description found on page' }
             }
-          })
-        )
-
-        // Process results and yield progress
-        for (const result of batchResults) {
-          if (result.success) {
-            enriched++
-          } else if (result.error) {
-            errors.push({ id: result.event.eventId, error: result.error })
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+            console.error(`[Admin] Error enriching ${event.name}:`, errorMsg)
+            // Mark as failed
+            await updateEvent(event.eventId, {
+              enrichment_status: 'failed',
+              enrichment_error: errorMsg,
+            }, client)
+            return { event, success: false, error: errorMsg }
           }
+        })
+      )
 
-          // Calculate current progress (account for batch position)
-          const currentIndex = events.indexOf(result.event) + 1
-
-          yield {
-            type: 'progress',
-            current: currentIndex,
-            total: events.length,
-            eventName: result.event.name,
-            success: result.success,
-            error: result.error,
-          } as DescriptionEnrichProgress
+      // Process results and yield progress
+      for (const result of batchResults) {
+        if (result.success) {
+          enriched++
+        } else if (result.error) {
+          errors.push({ id: result.event.eventId, error: result.error })
         }
 
-        // Delay between batches (except after last batch)
-        if (i + concurrency < events.length) {
-          await new Promise((resolve) => setTimeout(resolve, delayMs))
-        }
+        // Calculate current progress (account for batch position)
+        const currentIndex = events.indexOf(result.event) + 1
+
+        yield {
+          type: 'progress',
+          current: currentIndex,
+          total: events.length,
+          eventName: result.event.name,
+          success: result.success,
+          error: result.error,
+        } as DescriptionEnrichProgress
       }
-    } finally {
-      await browser.close()
+
+      // Delay between batches (except after last batch)
+      if (i + concurrency < events.length) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
     }
 
     console.log(`[Admin] Luma description enrichment complete: ${enriched} enriched, ${errors.length} errors`)

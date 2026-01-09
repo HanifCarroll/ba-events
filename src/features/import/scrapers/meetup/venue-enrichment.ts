@@ -8,6 +8,11 @@
  * JSON-LD structured data is embedded in the initial HTML response.
  */
 
+import {
+  findJsonLdByType,
+  fetchHtml,
+} from '@/shared/lib/html-parsing'
+
 export interface MeetupVenueInfo {
   name: string
   address: string | null
@@ -25,64 +30,38 @@ export interface EnrichmentResult {
 }
 
 /**
- * Extract JSON-LD venue data from HTML content
- * Parses all <script type="application/ld+json"> tags to find venue information
+ * Extract venue from JSON-LD Event data
  */
-function extractVenueFromHtml(html: string): MeetupVenueInfo | null {
-  // Find all JSON-LD script tags using regex
-  const jsonLdPattern = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-  let match
+function extractVenueFromJsonLd(html: string): MeetupVenueInfo | null {
+  const eventData = findJsonLdByType(html, 'Event') as Record<string, unknown> | null
+  if (!eventData?.location) return null
 
-  while ((match = jsonLdPattern.exec(html)) !== null) {
-    try {
-      const jsonContent = match[1].trim()
-      const data = JSON.parse(jsonContent)
+  const loc = eventData.location as Record<string, unknown>
+  if (loc['@type'] !== 'Place' || !loc.name) return null
 
-      // Look for location data in the JSON-LD
-      if (data.location) {
-        const loc = data.location
-        if (loc['@type'] === 'Place' && loc.name) {
-          const address =
-            typeof loc.address === 'string'
-              ? loc.address
-              : loc.address?.streetAddress || loc.address?.name || null
-          return { name: loc.name, address }
-        }
-      }
-    } catch {
-      // Not valid JSON or doesn't match expected structure, continue
-    }
+  const address = loc.address as Record<string, unknown> | string | undefined
+  const resolvedAddress =
+    typeof address === 'string'
+      ? address
+      : (address?.streetAddress as string) || (address?.name as string) || null
+
+  return {
+    name: loc.name as string,
+    address: resolvedAddress,
   }
-
-  return null
 }
 
 /**
  * Fetch venue info from a single Meetup event detail page
  * Uses simple fetch instead of Playwright - JSON-LD is in the initial HTML
  */
-export async function fetchMeetupVenueFromUrl(eventUrl: string): Promise<MeetupVenueInfo | null> {
-  try {
-    const response = await fetch(eventUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-    })
+export async function fetchMeetupVenueFromUrl(
+  eventUrl: string
+): Promise<MeetupVenueInfo | null> {
+  const html = await fetchHtml(eventUrl)
+  if (!html) return null
 
-    if (!response.ok) {
-      console.log(`[Meetup Enrichment] HTTP ${response.status} for ${eventUrl}`)
-      return null
-    }
-
-    const html = await response.text()
-    return extractVenueFromHtml(html)
-  } catch (error) {
-    console.log(`[Meetup Enrichment] Failed to fetch ${eventUrl}:`, error)
-    return null
-  }
+  return extractVenueFromJsonLd(html)
 }
 
 /**
@@ -118,7 +97,9 @@ export async function enrichMeetupEventsWithVenues(
         try {
           const venue = await fetchMeetupVenueFromUrl(event.eventUrl)
           if (venue) {
-            console.log(`[Meetup Enrichment] Found venue for event ${event.id}: ${venue.name}`)
+            console.log(
+              `[Meetup Enrichment] Found venue for event ${event.id}: ${venue.name}`
+            )
           }
           return { eventId: event.id, venue }
         } catch (error) {

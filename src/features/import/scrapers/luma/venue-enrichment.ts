@@ -8,7 +8,16 @@
  * __NEXT_DATA__ and JSON-LD structured data are embedded in the initial HTML.
  */
 
-import type { VenueEnrichProgress, VenueEnrichComplete } from '@/shared/lib/streaming-types'
+import type {
+  VenueEnrichProgress,
+  VenueEnrichComplete,
+} from '@/shared/lib/streaming-types'
+import {
+  extractNextData,
+  getNestedValue,
+  findJsonLdByType,
+  fetchHtml,
+} from '@/shared/lib/html-parsing'
 
 export interface LumaVenueResult {
   eventId: string
@@ -31,56 +40,55 @@ export interface VenueEnrichmentEvent {
  * Extract venue from __NEXT_DATA__ script content
  */
 function extractVenueFromNextData(
-  nextDataContent: string
+  nextData: unknown
 ): LumaVenueResult['venue'] | null {
-  try {
-    const data = JSON.parse(nextDataContent)
-    // Navigate to event data in Next.js props
-    const event = data?.props?.pageProps?.initialData?.event
+  // Navigate to event data in Next.js props
+  const event = getNestedValue(nextData, 'props.pageProps.initialData.event') as
+    | Record<string, unknown>
+    | undefined
 
-    // Try geo_address_json first
-    if (event?.geo_address_json) {
-      const geo = event.geo_address_json
-      const name = geo.place_name || geo.name || null
-      if (name) {
-        return {
-          name,
-          address: geo.full_address || geo.address || null,
-          latitude: geo.latitude ?? null,
-          longitude: geo.longitude ?? null,
-        }
+  if (!event) return null
+
+  // Try geo_address_json first
+  const geoJson = event.geo_address_json as Record<string, unknown> | undefined
+  if (geoJson) {
+    const name = (geoJson.place_name || geoJson.name) as string | undefined
+    if (name) {
+      return {
+        name,
+        address: (geoJson.full_address || geoJson.address) as string | null ?? null,
+        latitude: (geoJson.latitude as number) ?? null,
+        longitude: (geoJson.longitude as number) ?? null,
       }
     }
+  }
 
-    // Try venue object
-    if (event?.venue) {
-      const venue = event.venue
-      const name = venue.name || venue.place_name || null
-      if (name) {
-        return {
-          name,
-          address: venue.full_address || venue.address || null,
-          latitude: venue.latitude ?? null,
-          longitude: venue.longitude ?? null,
-        }
+  // Try venue object
+  const venue = event.venue as Record<string, unknown> | undefined
+  if (venue) {
+    const name = (venue.name || venue.place_name) as string | undefined
+    if (name) {
+      return {
+        name,
+        address: (venue.full_address || venue.address) as string | null ?? null,
+        latitude: (venue.latitude as number) ?? null,
+        longitude: (venue.longitude as number) ?? null,
       }
     }
+  }
 
-    // Try location field
-    if (event?.location) {
-      const loc = event.location
-      const name = loc.name || loc.place_name || null
-      if (name) {
-        return {
-          name,
-          address: loc.full_address || loc.address || null,
-          latitude: loc.latitude ?? null,
-          longitude: loc.longitude ?? null,
-        }
+  // Try location field
+  const location = event.location as Record<string, unknown> | undefined
+  if (location) {
+    const name = (location.name || location.place_name) as string | undefined
+    if (name) {
+      return {
+        name,
+        address: (location.full_address || location.address) as string | null ?? null,
+        latitude: (location.latitude as number) ?? null,
+        longitude: (location.longitude as number) ?? null,
       }
     }
-  } catch {
-    // Not valid JSON
   }
 
   return null
@@ -90,33 +98,24 @@ function extractVenueFromNextData(
  * Extract venue from JSON-LD structured data
  */
 function extractVenueFromJsonLd(html: string): LumaVenueResult['venue'] | null {
-  const jsonLdPattern =
-    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-  let match
+  const eventData = findJsonLdByType(html, 'Event') as Record<string, unknown> | null
+  if (!eventData?.location) return null
 
-  while ((match = jsonLdPattern.exec(html)) !== null) {
-    try {
-      const jsonContent = match[1].trim()
-      const data = JSON.parse(jsonContent)
+  const loc = eventData.location as Record<string, unknown>
+  if (loc['@type'] !== 'Place' || !loc.name) return null
 
-      if (data['@type'] === 'Event' && data.location) {
-        const loc = data.location
-        // Can be a Place or PostalAddress
-        if (loc['@type'] === 'Place' && loc.name) {
-          return {
-            name: loc.name,
-            address: loc.address?.streetAddress || loc.address || null,
-            latitude: loc.geo?.latitude ?? null,
-            longitude: loc.geo?.longitude ?? null,
-          }
-        }
-      }
-    } catch {
-      // Not valid JSON, continue
-    }
+  const geo = loc.geo as Record<string, unknown> | undefined
+  const address = loc.address as Record<string, unknown> | string | undefined
+
+  return {
+    name: loc.name as string,
+    address:
+      typeof address === 'string'
+        ? address
+        : (address?.streetAddress as string) || null,
+    latitude: (geo?.latitude as number) ?? null,
+    longitude: (geo?.longitude as number) ?? null,
   }
-
-  return null
 }
 
 /**
@@ -125,11 +124,9 @@ function extractVenueFromJsonLd(html: string): LumaVenueResult['venue'] | null {
  */
 function extractVenueFromHtml(html: string): LumaVenueResult['venue'] | null {
   // Method 1: __NEXT_DATA__ embedded data (most reliable)
-  const nextDataMatch = html.match(
-    /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i
-  )
-  if (nextDataMatch) {
-    const venue = extractVenueFromNextData(nextDataMatch[1])
+  const nextData = extractNextData(html)
+  if (nextData) {
+    const venue = extractVenueFromNextData(nextData)
     if (venue) return venue
   }
 
@@ -144,33 +141,16 @@ function extractVenueFromHtml(html: string): LumaVenueResult['venue'] | null {
 export async function fetchLumaVenueFromUrl(
   eventUrl: string
 ): Promise<LumaVenueResult['venue']> {
-  try {
-    // Ensure URL is properly formed
-    let fullUrl = eventUrl
-    if (!fullUrl.startsWith('http')) {
-      fullUrl = `https://lu.ma${fullUrl.startsWith('/') ? '' : '/'}${fullUrl}`
-    }
-
-    const response = await fetch(fullUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-    })
-
-    if (!response.ok) {
-      console.log(`[Luma Venue Enrichment] HTTP ${response.status} for ${fullUrl}`)
-      return null
-    }
-
-    const html = await response.text()
-    return extractVenueFromHtml(html)
-  } catch (error) {
-    console.log(`[Luma Venue Enrichment] Failed to fetch ${eventUrl}:`, error)
-    return null
+  // Ensure URL is properly formed
+  let fullUrl = eventUrl
+  if (!fullUrl.startsWith('http')) {
+    fullUrl = `https://lu.ma${fullUrl.startsWith('/') ? '' : '/'}${fullUrl}`
   }
+
+  const html = await fetchHtml(fullUrl)
+  if (!html) return null
+
+  return extractVenueFromHtml(html)
 }
 
 /**

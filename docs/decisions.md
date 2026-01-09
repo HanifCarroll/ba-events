@@ -26,6 +26,39 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Serverless-Compatible Scraping Strategy
+
+**Date:** 2025-01-09
+
+**Related Decision:** Playwright for Browser-Based Scrapers (2025-12-29)
+
+**Decision:** When scraping web content, choose the approach based on execution context:
+
+| Context | Approach | Why |
+|---------|----------|-----|
+| **Netlify Server Functions** (`src/features/*/api/`) | Fetch + HTML parsing, OR Browserless.io | Netlify has no Playwright binaries |
+| **Trigger.dev Jobs** (`src/trigger/jobs/`) | Playwright (local) | Jobs run in containers with full browser support |
+| **Client-side** | Fetch (if CORS allows) | Browser handles requests directly |
+
+**Key Rule:** Never use `chromium.launch()` in server functions under `src/features/*/api/`. These run on Netlify serverless which lacks Playwright browser binaries.
+
+**Alternatives Considered:**
+- Bundle Playwright browsers: Rejected - 100MB+ bundle size, exceeds Netlify limits
+- Always use Browserless.io: Acceptable fallback but adds cost and latency
+- Move all scraping to Trigger.dev: Best for long-running operations
+
+**Rationale:**
+1. Netlify serverless has 10-26 second timeout AND no Playwright binaries
+2. JSON-LD and `__NEXT_DATA__` are in initial HTML, making Playwright unnecessary for many extractions
+3. Trigger.dev jobs have 30+ minute timeouts and full container environments
+
+**Consequences:**
+- Before adding Playwright to any `api/` file, consider if fetch + parsing suffices
+- For JS-rendered content in server functions, use Browserless.io as fallback
+- Document any new Playwright usage in server functions as tech debt
+
+---
+
 ### Vertical Slice Architecture Restructuring
 
 **Date:** 2025-12-31
