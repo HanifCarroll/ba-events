@@ -167,6 +167,21 @@ function transformGraphQLEvent(gqlEvent: MeetupGraphQLEvent): MeetupEvent | null
   }
 }
 
+/** Type for the DOM extraction script result */
+interface DOMExtractionResult {
+  id: string
+  name: string
+  dateTime: string
+  eventUrl: string
+  imageUrl: string | null
+  venueName: string | null
+  groupName: string
+  groupRating: number | null
+  attendeeCount: number
+  isOnline: boolean
+  category: string | null
+}
+
 /**
  * DOM extraction script to run in browser context
  * Used as fallback if GraphQL interception doesn't capture events
@@ -179,46 +194,26 @@ function transformGraphQLEvent(gqlEvent: MeetupGraphQLEvent): MeetupEvent | null
  * Line 5: "by [Group Name]"
  * Line 6: Rating (e.g., "4.7") - optional
  * Line 7: "X attendees"
+ *
+ * NOTE: This is a string to avoid Trigger.dev/esbuild bundling issues.
+ * When passed as a function reference, esbuild adds __name helpers that
+ * don't exist in the browser context, causing "ReferenceError: __name is not defined"
  */
-const domExtractionScript = (): Array<{
-  id: string
-  name: string
-  dateTime: string
-  eventUrl: string
-  imageUrl: string | null
-  venueName: string | null
-  groupName: string
-  groupRating: number | null
-  attendeeCount: number
-  isOnline: boolean
-  category: string | null
-}> => {
-  const events: Array<{
-    id: string
-    name: string
-    dateTime: string
-    eventUrl: string
-    imageUrl: string | null
-    venueName: string | null
-    groupName: string
-    groupRating: number | null
-    attendeeCount: number
-    isOnline: boolean
-    category: string | null
-  }> = []
+const domExtractionScript = `(() => {
+  const events = []
 
   // Find all event links - they have href containing /events/ and a numeric ID
   const eventLinks = document.querySelectorAll('a[href*="/events/"]')
 
-  const seenIds = new Set<string>()
+  const seenIds = new Set()
 
   eventLinks.forEach((linkEl) => {
     try {
-      const anchor = linkEl as HTMLAnchorElement
+      const anchor = linkEl
       const eventUrl = anchor.href
 
       // Extract event ID from URL
-      const idMatch = eventUrl.match(/events\/(\d+)/)
+      const idMatch = eventUrl.match(/events\\/(\\d+)/)
       if (!idMatch) return
       const id = idMatch[1]
 
@@ -227,11 +222,11 @@ const domExtractionScript = (): Array<{
       seenIds.add(id)
 
       // Get date from <time> element's datetime attribute (already ISO format!)
-      // Format: "2026-01-10T15:00:00-03:00[${BA_TIMEZONE}]"
+      // Format: "2026-01-10T15:00:00-03:00[America/Argentina/Buenos_Aires]"
       const timeEl = anchor.querySelector('time')
       let dateTime = timeEl?.getAttribute('datetime') || ''
       // Strip the [timezone] suffix if present
-      dateTime = dateTime.replace(/\[.*\]$/, '')
+      dateTime = dateTime.replace(/\\[.*\\]$/, '')
       if (!dateTime) return
 
       // Get event name from <h3> element
@@ -242,7 +237,7 @@ const domExtractionScript = (): Array<{
       // Parse innerText for additional info (group, rating, attendees, online status)
       const innerText = anchor.innerText || ''
       const lines = innerText
-        .split('\n')
+        .split('\\n')
         .map((l) => l.trim())
         .filter((l) => l && l !== '•')
 
@@ -251,16 +246,16 @@ const domExtractionScript = (): Array<{
 
       // Group name - look for "by ..."
       let groupName = 'Unknown Group'
-      let groupRating: number | null = null
+      let groupRating = null
       let attendeeCount = 0
 
       for (const line of lines) {
         if (line.startsWith('by ')) {
           groupName = line.slice(3).trim()
-        } else if (/^\d\.\d$/.test(line)) {
+        } else if (/^\\d\\.\\d$/.test(line)) {
           groupRating = parseFloat(line)
-        } else if (/^\d+\s*attendees?$/i.test(line)) {
-          const match = line.match(/(\d+)/)
+        } else if (/^\\d+\\s*attendees?$/i.test(line)) {
+          const match = line.match(/(\\d+)/)
           if (match) {
             attendeeCount = parseInt(match[1], 10)
           }
@@ -268,7 +263,7 @@ const domExtractionScript = (): Array<{
       }
 
       // Image
-      const imgEl = anchor.querySelector('img') as HTMLImageElement
+      const imgEl = anchor.querySelector('img')
       const imageUrl = imgEl?.src || null
 
       events.push({
@@ -290,7 +285,7 @@ const domExtractionScript = (): Array<{
   })
 
   return events
-}
+})()`
 
 /**
  * Auto-scroll to load more events
@@ -368,7 +363,7 @@ async function scrapePageForEvents(
 
     // DOM fallback if GraphQL didn't capture events
     if (pageEvents.length < 3) {
-      const domEvents = await page.evaluate(domExtractionScript)
+      const domEvents = (await page.evaluate(domExtractionScript)) as DOMExtractionResult[]
       for (const domEvent of domEvents) {
         if (!seenIds.has(domEvent.id)) {
           seenIds.add(domEvent.id)
@@ -504,7 +499,7 @@ async function scrapeBrowserlessPage(
 
     // DOM fallback
     if (pageEvents.length < 3) {
-      const domEvents = await page.evaluate(domExtractionScript)
+      const domEvents = (await page.evaluate(domExtractionScript)) as DOMExtractionResult[]
       for (const domEvent of domEvents) {
         if (!seenIds.has(domEvent.id)) {
           seenIds.add(domEvent.id)
@@ -659,5 +654,5 @@ export function filterByDateRange(
  * Returns the script as a string to be executed in browser
  */
 export function getExtractionScript(): string {
-  return `(${domExtractionScript.toString()})()`
+  return domExtractionScript
 }

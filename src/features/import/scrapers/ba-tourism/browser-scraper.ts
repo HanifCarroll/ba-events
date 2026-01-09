@@ -16,12 +16,9 @@ import { sanitizeError } from '@/shared/lib/security'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
 
-/**
- * Extraction script to run in the browser context
- * Returns events and week context text
- */
-const extractionScript = () => {
-  const events: Array<{
+/** Type for the extraction script result */
+interface ExtractionResult {
+  events: Array<{
     name: string
     category: string
     isFree: boolean
@@ -32,7 +29,20 @@ const extractionScript = () => {
     coordinates: { lat: number; lng: number } | null
     description: string
     moreInfoUrl: string
-  }> = []
+  }>
+  weekContextText: string
+}
+
+/**
+ * Extraction script to run in the browser context
+ * Returns events and week context text
+ *
+ * NOTE: This is a string to avoid Trigger.dev/esbuild bundling issues.
+ * When passed as a function reference, esbuild adds __name helpers that
+ * don't exist in the browser context, causing "ReferenceError: __name is not defined"
+ */
+const extractionScript = `(() => {
+  const events = []
 
   const cards = document.querySelectorAll('.card-landing')
 
@@ -44,7 +54,7 @@ const extractionScript = () => {
     'destacar en el listado',
   ]
 
-  const parseCategoryHeading = (text: string) => {
+  const parseCategoryHeading = (text) => {
     const cleaned = text.replace(/\[/g, '').replace(/\]/g, '').trim()
     const parts = cleaned.split('|').map((p) => p.trim())
     return {
@@ -53,7 +63,7 @@ const extractionScript = () => {
     }
   }
 
-  const parseVenueText = (text: string) => {
+  const parseVenueText = (text) => {
     const lastCommaIdx = text.lastIndexOf(',')
     if (lastCommaIdx > 0) {
       const neighborhood = text.slice(lastCommaIdx + 1).trim()
@@ -69,7 +79,7 @@ const extractionScript = () => {
     return { venueName: text.trim(), address: null, neighborhood: 'CABA' }
   }
 
-  const extractCoordinates = (url: string | null) => {
+  const extractCoordinates = (url) => {
     if (!url) return null
     const match = url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/)
     if (match) {
@@ -103,7 +113,7 @@ const extractionScript = () => {
 
     const { venueName, address: parsedAddress, neighborhood } = parseVenueText(dondeText)
 
-    const mapsLink = card.querySelector('a[href*="google.com/maps"]') as HTMLAnchorElement | null
+    const mapsLink = card.querySelector('a[href*="google.com/maps"]')
     const mapsAddress = mapsLink?.textContent?.trim() || null
     const mapsHref = mapsLink?.getAttribute('href') || null
     const coordinates = extractCoordinates(mapsHref)
@@ -113,7 +123,7 @@ const extractionScript = () => {
     const links = card.querySelectorAll('a')
     for (const link of links) {
       if (link.textContent?.toLowerCase().includes('más información')) {
-        moreInfoUrl = (link as HTMLAnchorElement).href || ''
+        moreInfoUrl = link.href || ''
         break
       }
     }
@@ -165,7 +175,7 @@ const extractionScript = () => {
   }
 
   return { events, weekContextText }
-}
+})()`
 
 /**
  * Scrape events using local Playwright (development mode)
@@ -213,7 +223,7 @@ async function scrapeWithPlaywright(): Promise<{
 
     // Execute extraction script in browser context
     console.log('[BA Tourism] Running extraction script...')
-    const result = await page.evaluate(extractionScript)
+    const result = (await page.evaluate(extractionScript)) as ExtractionResult
     console.log(`[BA Tourism] Extracted ${result.events.length} events`)
 
     const weekContext = parseWeekContext(result.weekContextText)
@@ -259,7 +269,7 @@ async function scrapeWithBrowserless(token: string): Promise<{
     await page.waitForSelector('.card-landing', { timeout: 10000 })
 
     // Execute extraction script in browser context
-    const result = await page.evaluate(extractionScript)
+    const result = (await page.evaluate(extractionScript)) as ExtractionResult
 
     const weekContext = parseWeekContext(result.weekContextText)
 
