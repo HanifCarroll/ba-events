@@ -45,6 +45,9 @@ export interface EventFilterParams {
   // Date filters
   importedToday?: boolean
 
+  // View preferences
+  showPast?: boolean
+
   // Sorting
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
@@ -84,6 +87,8 @@ export interface EventSearchParams {
   missingDescription?: boolean
   missingVenue?: boolean
   missingCategories?: boolean
+  // View preferences
+  showPast?: boolean
   // Column filters (for DataTable)
   name?: string
   venue_name?: string

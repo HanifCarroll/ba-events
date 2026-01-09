@@ -50,6 +50,7 @@ export interface UseEventsPaginatedReturn {
     search: string
     venueId: string | undefined
     importedToday: boolean
+    showPast: boolean
     status: string | undefined
     missingDescription: boolean
     missingVenue: boolean
@@ -65,6 +66,7 @@ export interface UseEventsPaginatedReturn {
   setSearch: (search: string) => void
   setVenueFilter: (venueId: string | undefined) => void
   setImportedToday: (value: boolean) => void
+  setShowPast: (value: boolean) => void
   setMissingDescription: (value: boolean) => void
   setMissingVenue: (value: boolean) => void
   setMissingCategories: (value: boolean) => void
@@ -84,6 +86,7 @@ function searchParamsToApiParams(searchParams: EventSearchParams): EventListPara
     venueId: searchParams.venue,
     status: searchParams.status,
     importedToday: searchParams.importedToday,
+    showPast: searchParams.showPast,
     missingDescription: searchParams.missingDescription,
     missingVenue: searchParams.missingVenue,
     missingCategories: searchParams.missingCategories,
@@ -101,6 +104,7 @@ function getFilterParams(searchParams: EventSearchParams): Omit<EventFilterParam
     venueId: searchParams.venue,
     status: searchParams.status,
     importedToday: searchParams.importedToday,
+    showPast: searchParams.showPast,
     missingDescription: searchParams.missingDescription,
     missingVenue: searchParams.missingVenue,
     missingCategories: searchParams.missingCategories,
@@ -222,6 +226,7 @@ export function useEventsPaginated({
   )
 
   const setImportedToday = useMemo(() => createBooleanFilterSetter('importedToday'), [createBooleanFilterSetter])
+  const setShowPast = useMemo(() => createBooleanFilterSetter('showPast'), [createBooleanFilterSetter])
   const setMissingDescription = useMemo(() => createBooleanFilterSetter('missingDescription'), [createBooleanFilterSetter])
   const setMissingVenue = useMemo(() => createBooleanFilterSetter('missingVenue'), [createBooleanFilterSetter])
   const setMissingCategories = useMemo(() => createBooleanFilterSetter('missingCategories'), [createBooleanFilterSetter])
@@ -246,10 +251,12 @@ export function useEventsPaginated({
   }, [navigate, searchParams.tab])
 
   // Check if any filters are active
+  // Note: showPast is considered active when true (showing past events)
   const hasActiveFilters = !!(
     searchParams.search ||
     searchParams.venue ||
     searchParams.importedToday ||
+    searchParams.showPast ||
     searchParams.status ||
     searchParams.missingDescription ||
     searchParams.missingVenue ||
@@ -277,6 +284,7 @@ export function useEventsPaginated({
       search: searchParams.search ?? '',
       venueId: searchParams.venue,
       importedToday: searchParams.importedToday ?? false,
+      showPast: searchParams.showPast ?? false,
       status: searchParams.status,
       missingDescription: searchParams.missingDescription ?? false,
       missingVenue: searchParams.missingVenue ?? false,
@@ -292,6 +300,7 @@ export function useEventsPaginated({
     setSearch,
     setVenueFilter,
     setImportedToday,
+    setShowPast,
     setMissingDescription,
     setMissingVenue,
     setMissingCategories,

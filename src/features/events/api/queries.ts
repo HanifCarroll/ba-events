@@ -91,6 +91,12 @@ export async function queryEventsPaginated(
     query = query.gte('created_at', todayStart.toISOString())
   }
 
+  // Hide past events unless explicitly showing them
+  // Skip this filter on the 'past' tab (that tab is for viewing past events)
+  if (!filters.showPast && filters.tab !== 'past') {
+    query = query.neq('status', 'past')
+  }
+
   // Apply sorting
   const sortColumn = filters.sortBy || 'starts_at'
   const sortAscending = filters.sortOrder === 'asc'

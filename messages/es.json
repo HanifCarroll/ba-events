@@ -123,6 +123,7 @@
   "admin_all_venues": "Todos los Lugares",
   "admin_no_venues_found": "No se encontraron lugares",
   "admin_imported_today": "Importado hoy",
+  "admin_show_past_events": "Mostrar eventos pasados",
   "admin_no_events": "Sin eventos aún",
   "admin_no_events_desc": "Comienza agregando tu primer evento.",
   "admin_no_matching_events": "No hay eventos coincidentes",

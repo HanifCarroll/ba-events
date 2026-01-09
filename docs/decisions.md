@@ -26,6 +26,63 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### URL-Based State Management for Admin Filters
+
+**Date:** 2025-01-09
+
+**Decision:** Use URL search params as the single source of truth for all filter, pagination, and tab state in the admin events table. Implemented using TanStack Router's type-safe search params with Zod validation.
+
+**Pattern:**
+```typescript
+// 1. Define Zod schema with defaults
+const eventSearchSchema = z.object({
+  tab: z.enum(['all', 'needs_attention', 'pending_review', 'past']).optional().catch('all'),
+  page: z.number().optional().catch(1),
+  search: z.string().optional(),
+  showPast: z.boolean().optional().catch(false),
+  // ... other filters
+})
+
+// 2. Route validates search params
+export const Route = createFileRoute('/admin/events/')({
+  validateSearch: eventSearchSchema,
+})
+
+// 3. Hook provides typed setters that update URL
+const { filters, setShowPast, setSearch } = useEventsPaginated({
+  searchParams: Route.useSearch(),
+  navigate: Route.useNavigate(),
+})
+
+// 4. Setters update URL, which triggers re-render with new params
+const setShowPast = (value: boolean) => {
+  navigate({
+    search: (prev) => ({ ...prev, showPast: value || undefined, page: 1 }),
+  })
+}
+```
+
+**Alternatives Considered:**
+- React state (`useState`/`useReducer`): Loses state on refresh, can't share URLs
+- Global state (Zustand/Redux): Adds complexity, still loses state on refresh
+- localStorage persistence: Complex sync logic, can't share URLs with others
+
+**Rationale:**
+1. **Shareable URLs**: Users can bookmark or share exact filter combinations (e.g., `/admin/events?tab=needs_attention&missingDescription=true`)
+2. **Browser history works**: Back/forward buttons navigate through filter states
+3. **Refresh preserves state**: No lost work when refreshing the page
+4. **Type safety**: Zod schema validates params, `.catch()` provides defaults for invalid values
+5. **Single source of truth**: No sync bugs between URL and component state
+6. **Deferred defaults**: Using `.catch()` instead of `.default()` means invalid params get defaults without URL changes
+
+**Consequences:**
+- New filters must be added to both Zod schema and `useEventsPaginated` hook
+- Filter setters should reset `page: 1` when changing filters (avoids empty page edge cases)
+- Boolean filters use `value || undefined` pattern to keep URLs clean (false = omitted from URL)
+- The hook converts URL param names to API param names (e.g., `venue` → `venueId`)
+
+---
+
 ### Serverless-Compatible Scraping Strategy
 
 **Date:** 2025-01-09

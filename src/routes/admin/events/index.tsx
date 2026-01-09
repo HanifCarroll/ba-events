@@ -66,6 +66,8 @@ const eventSearchSchema = z.object({
   search: z.string().optional(),
   venue: z.string().optional(), // venue ID filter
   importedToday: z.boolean().optional(), // Filter for recently imported events
+  // View preferences
+  showPast: z.boolean().optional().catch(false), // Default: false (hide past events)
   // Data gap filters (for needs_attention tab) - server-side
   missingDescription: z.boolean().optional(),
   missingVenue: z.boolean().optional(),
@@ -194,6 +196,7 @@ function EventListPage() {
     setSearch,
     setVenueFilter,
     setImportedToday,
+    setShowPast,
     setMissingDescription,
     setMissingVenue,
     setMissingCategories,
@@ -532,6 +535,18 @@ function EventListPage() {
                 {m.admin_imported_today()}
               </span>
             </label>
+            {/* Show past events checkbox - hidden on Past tab since it's redundant */}
+            {activeTab !== 'past' && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={filters.showPast}
+                  onCheckedChange={(checked) => setShowPast(checked === true)}
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                  {m.admin_show_past_events()}
+                </span>
+              </label>
+            )}
             {hasActiveFilters && (
               <Button
                 variant="ghost"
