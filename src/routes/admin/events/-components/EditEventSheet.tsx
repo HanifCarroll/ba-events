@@ -166,7 +166,7 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
         </SheetHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 py-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 px-4 py-4">
             {/* Name */}
             <FormField
               control={form.control}
