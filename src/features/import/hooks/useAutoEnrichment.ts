@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
-import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { enrichEventDescriptionsAction } from '@/features/events/api/enrichment'
 import { enrichVenuesWithNominatimAction } from '@/features/venues/api/enrichment'
 import type {
@@ -65,7 +65,7 @@ const initialState: AutoEnrichmentState = {
  * - Events admin (backfill enrichment)
  */
 export function useAutoEnrichment(options?: UseAutoEnrichmentOptions) {
-  const router = useRouter()
+  const { invalidateAll } = useInvalidateCache()
   const [state, setState] = useState<AutoEnrichmentState>(initialState)
   const shouldStopRef = useRef(false)
   const toastIdRef = useRef<string | number | undefined>(undefined)
@@ -283,7 +283,7 @@ export function useAutoEnrichment(options?: UseAutoEnrichmentOptions) {
           description: `Events: ${eventResult.enriched} enriched`,
         })
         toastIdRef.current = undefined
-        router.invalidate()
+        await invalidateAll()
         options?.onComplete?.()
         return
       }
@@ -314,10 +314,10 @@ export function useAutoEnrichment(options?: UseAutoEnrichmentOptions) {
       }
 
       toastIdRef.current = undefined
-      router.invalidate()
+      await invalidateAll()
       options?.onComplete?.()
     },
-    [processEventStream, processVenueStream, router, options]
+    [processEventStream, processVenueStream, invalidateAll, options]
   )
 
   /**
@@ -341,10 +341,10 @@ export function useAutoEnrichment(options?: UseAutoEnrichmentOptions) {
       }
 
       toastIdRef.current = undefined
-      router.invalidate()
+      await invalidateAll()
       options?.onComplete?.()
     },
-    [processEventStream, router, options]
+    [processEventStream, invalidateAll, options]
   )
 
   /**
@@ -368,10 +368,10 @@ export function useAutoEnrichment(options?: UseAutoEnrichmentOptions) {
       }
 
       toastIdRef.current = undefined
-      router.invalidate()
+      await invalidateAll()
       options?.onComplete?.()
     },
-    [processVenueStream, router, options]
+    [processVenueStream, invalidateAll, options]
   )
 
   return {

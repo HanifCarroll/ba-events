@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react'
-import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
 import {
   enrichEventDescriptionsAction,
@@ -10,7 +10,7 @@ import type { DescriptionEnrichProgress } from '../api/streaming-types'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 export function useBackgroundEnrichment() {
-  const router = useRouter()
+  const { invalidateEvents } = useInvalidateCache()
 
   // Keep track of the current toast ID so we can update it
   const toastIdRef = useRef<string | number | undefined>(undefined)
@@ -38,7 +38,7 @@ export function useBackgroundEnrichment() {
       totalEnrichedRef.current = result.enriched
 
       // Refresh UI to show new descriptions
-      router.invalidate()
+      invalidateEvents()
 
       // Final toast
       if (result.enriched === 0) {
@@ -62,7 +62,7 @@ export function useBackgroundEnrichment() {
     },
     onStop: () => {
       // Refresh UI to show new descriptions
-      router.invalidate()
+      invalidateEvents()
 
       toast.warning(`Stopped adding descriptions`, {
         id: toastIdRef.current,

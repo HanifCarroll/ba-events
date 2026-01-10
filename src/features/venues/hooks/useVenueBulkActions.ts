@@ -1,13 +1,13 @@
 import { useState, useCallback } from 'react'
-import { useRouter } from '@tanstack/react-router'
 import { bulkDeleteVenuesAction } from '../api/crud'
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { useBulkSelection } from '@/shared/hooks/useBulkSelection'
 import type { Venue } from '@/shared/lib/types'
 
 export type VenueBulkActionType = 'delete' | 'enrich' | null
 
 export function useVenueBulkActions(filteredVenues: Venue[]) {
-  const router = useRouter()
+  const { invalidateVenues } = useInvalidateCache()
   const selection = useBulkSelection(filteredVenues)
   const [bulkAction, setBulkAction] = useState<VenueBulkActionType>(null)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
@@ -21,8 +21,8 @@ export function useVenueBulkActions(filteredVenues: Venue[]) {
 
       if (bulkAction === 'delete') {
         await bulkDeleteVenuesAction({ data: ids })
-        // Invalidate router to refresh venues list
-        router.invalidate()
+        // Invalidate query cache to refresh venues list
+        await invalidateVenues()
       }
 
       selection.clearSelection()
@@ -32,7 +32,7 @@ export function useVenueBulkActions(filteredVenues: Venue[]) {
     } finally {
       setIsBulkProcessing(false)
     }
-  }, [bulkAction, selection, router])
+  }, [bulkAction, selection, invalidateVenues])
 
   return {
     // Selection state and methods (spread from shared hook)

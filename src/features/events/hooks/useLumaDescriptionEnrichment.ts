@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react'
-import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
 import { enrichLumaDescriptionsAction } from '@/features/import'
 import type { DescriptionEnrichProgress, DescriptionEnrichComplete } from '@/shared/lib/streaming-types'
@@ -11,7 +11,7 @@ import type { EventWithVenue } from '@/shared/lib/types'
  * Uses Playwright to scrape the actual description from each Luma event page.
  */
 export function useLumaDescriptionEnrichment() {
-  const router = useRouter()
+  const { invalidateEvents } = useInvalidateCache()
 
   // Keep track of the current toast ID so we can update it
   const toastIdRef = useRef<string | number | undefined>(undefined)
@@ -39,7 +39,7 @@ export function useLumaDescriptionEnrichment() {
       totalEnrichedRef.current = result.enriched
 
       // Refresh UI to show new descriptions
-      router.invalidate()
+      invalidateEvents()
 
       // Final toast
       if (result.enriched === 0) {
@@ -63,7 +63,7 @@ export function useLumaDescriptionEnrichment() {
     },
     onStop: () => {
       // Refresh UI to show new descriptions
-      router.invalidate()
+      invalidateEvents()
 
       toast.warning(`Stopped adding Luma descriptions`, {
         id: toastIdRef.current,

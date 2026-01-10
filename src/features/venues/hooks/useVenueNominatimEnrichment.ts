@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
-import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
 import {
   enrichVenuesWithNominatimAction,
@@ -15,7 +15,7 @@ import type { Venue } from '@/shared/lib/types'
 export type VenueEventsMap = Record<string, VenueEventPreview[]>
 
 export function useVenueNominatimEnrichment() {
-  const router = useRouter()
+  const { invalidateVenues } = useInvalidateCache()
   const [result, setResult] = useState<VenueEnrichmentOutput | null>(null)
   const [venueEvents, setVenueEvents] = useState<VenueEventsMap>({})
 
@@ -79,7 +79,7 @@ export function useVenueNominatimEnrichment() {
       }
 
       // Refresh UI to show new data
-      router.invalidate()
+      invalidateVenues()
     },
     onError: (error) => {
       console.error('Failed to enrich venues:', error)

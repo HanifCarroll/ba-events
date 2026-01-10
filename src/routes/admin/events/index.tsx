@@ -423,7 +423,7 @@ function EventListPage() {
       <div className="deco-line w-24" />
 
       {/* Tabs */}
-      {events.length > 0 && (
+      {(tabCounts?.all ?? 0) > 0 && (
         <div className="space-y-4">
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="bg-card/50 border border-border/50 p-1 h-auto">

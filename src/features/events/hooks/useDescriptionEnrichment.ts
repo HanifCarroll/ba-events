@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
-import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import {
   getEventsWithoutDescriptions,
   enrichEventDescriptionsAction,
@@ -11,7 +11,7 @@ import type { EventWithVenue } from '@/shared/lib/types'
 export type EnrichStep = 'select' | 'enriching' | 'complete'
 
 export function useDescriptionEnrichment() {
-  const router = useRouter()
+  const { invalidateEvents } = useInvalidateCache()
   const [showEnrichDialog, setShowEnrichDialog] = useState(false)
   const [eventsWithoutDesc, setEventsWithoutDesc] = useState<EventWithVenue[]>(
     []
@@ -112,7 +112,7 @@ export function useDescriptionEnrichment() {
       if (finalResult) {
         setEnrichResult({ enriched: finalResult.enriched, total: finalResult.total })
         setEnrichStep('complete')
-        router.invalidate()
+        await invalidateEvents()
       }
     } catch (err) {
       console.error('Enrichment failed:', err)

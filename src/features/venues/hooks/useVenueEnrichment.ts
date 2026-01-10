@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
-import { useRouter } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { queryKeys } from '@/shared/lib/query'
 import {
   enrichBATourismVenuesAction,
   enrichMeetupVenuesAction,
@@ -32,7 +33,7 @@ const VENUE_ENRICHABLE_SOURCES: readonly string[] = ['ba-tourism', 'meetup', 'ev
  * Supports BA Tourism, Meetup, Eventbrite, Passline, and Luma events
  */
 export function useVenueEnrichment() {
-  const router = useRouter()
+  const queryClient = useQueryClient()
   const [state, setState] = useState<VenueEnrichmentState>({
     isEnriching: false,
     current: 0,
@@ -349,8 +350,8 @@ export function useVenueEnrichment() {
           )
         }
 
-        // Refresh UI
-        router.invalidate()
+        // Invalidate events cache to refresh the table
+        await queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
 
         // Call completion callback
         onComplete?.()
@@ -368,7 +369,7 @@ export function useVenueEnrichment() {
         toastIdRef.current = undefined
       }
     },
-    [getVenueEnrichableEvents, groupBySource, enrichBySource, router]
+    [getVenueEnrichableEvents, groupBySource, enrichBySource, queryClient]
   )
 
   return {

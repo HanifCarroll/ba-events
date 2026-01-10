@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { countPastEventsAction, markPastEventsAction } from '../api/crud'
 
 export function useMarkPastEvents() {
-  const router = useRouter()
+  const { invalidateEvents } = useInvalidateCache()
   const [showMarkPastDialog, setShowMarkPastDialog] = useState(false)
   const [pastEventsCount, setPastEventsCount] = useState(0)
   const [isMarkingPast, setIsMarkingPast] = useState(false)
@@ -20,7 +20,7 @@ export function useMarkPastEvents() {
     try {
       await markPastEventsAction()
       setShowMarkPastDialog(false)
-      router.invalidate()
+      await invalidateEvents()
     } catch (err) {
       console.error('Mark past failed:', err)
       toast.error('Failed to mark past events')

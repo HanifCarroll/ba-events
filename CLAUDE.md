@@ -84,6 +84,7 @@ src/
 │   │   └── analytics.ts         # PostHog tracking
 │   ├── hooks/                   # Shared hooks
 │   │   ├── useBulkSelection.ts  # Generic bulk selection
+│   │   ├── useInvalidateCache.ts # TanStack Query cache invalidation
 │   │   └── useStreamingProgress.ts # Streaming operation progress
 │   └── providers/               # Context providers
 │       └── AuthProvider.tsx     # Auth context
@@ -418,6 +419,38 @@ return apiSuccess(data)
 return apiList(items, totalCount)
 return apiError('Not found', 404)
 ```
+
+### Cache Invalidation
+
+This project uses **two different data fetching patterns** that require different invalidation approaches:
+
+1. **Route Loaders** - Data fetched in route `loader` functions, accessed via `Route.useLoaderData()`
+2. **TanStack Query** - Data fetched via `useQuery` hooks
+
+**CRITICAL: Use the correct invalidation method:**
+
+```tsx
+// For Route Loaders (data from Route.useLoaderData())
+import { useRouter } from '@tanstack/react-router'
+const router = useRouter()
+router.invalidate()  // ✅ Correct for route loaders
+
+// For TanStack Query (data from useQuery hooks)
+import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
+const { invalidateEvents, invalidateVenues, invalidateAll } = useInvalidateCache()
+await invalidateEvents()  // ✅ Correct for TanStack Query
+```
+
+**How to identify which pattern is used:**
+- Route loaders: Look for `loader:` in the route definition and `Route.useLoaderData()` in the component
+- TanStack Query: Look for `useQuery()` or custom hooks that wrap `useQuery()`
+
+**Common mistake:** Using `router.invalidate()` when data is fetched via TanStack Query. This will NOT refresh the data because router invalidation only affects route loaders.
+
+The `useInvalidateCache` hook provides:
+- `invalidateEvents()` - Invalidates all events queries
+- `invalidateVenues()` - Invalidates all venues queries
+- `invalidateAll()` - Invalidates both events and venues
 
 ## Environment Variables
 
