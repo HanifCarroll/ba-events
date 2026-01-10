@@ -44,6 +44,7 @@ import { VenueAddressNamesPanel } from './-components/VenueAddressNamesPanel'
 import { VenueBulkActionBar } from './-components/VenueBulkActionBar'
 import { MergeVenueDialog } from './-components/MergeVenueDialog'
 import { DismissedDuplicatesDialog } from './-components/DismissedDuplicatesDialog'
+import { EditVenueDialog } from './-components/EditVenueDialog'
 import { listVenues, deleteVenueAction, useVenueReview, useVenueBulkActions, useVenueNominatimEnrichment } from '@/features/venues'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
 import type { Venue, Neighborhood } from '@/shared/lib/types'
@@ -55,6 +56,7 @@ const venueSearchSchema = z.object({
   search: z.string().optional(),
   neighborhood: z.string().optional(),
   importedToday: z.boolean().optional(),
+  editId: z.string().optional(),
 })
 
 export type VenueSearchParams = z.infer<typeof venueSearchSchema>
@@ -80,6 +82,25 @@ function VenueListPage() {
   const search = searchParams.search || ''
   const neighborhoodFilter = searchParams.neighborhood as Neighborhood | undefined
   const importedToday = searchParams.importedToday ?? false
+
+  // Derive editing venue from cached data (instant!)
+  const editingVenue = useMemo(
+    () => (searchParams.editId ? venues.find((v) => v.id === searchParams.editId) ?? null : null),
+    [venues, searchParams.editId]
+  )
+
+  // Open edit dialog via URL
+  const handleEdit = useCallback(
+    (venue: Venue) => {
+      navigate({ search: (prev) => ({ ...prev, editId: venue.id }) })
+    },
+    [navigate]
+  )
+
+  // Close edit dialog via URL
+  const handleCloseEdit = useCallback(() => {
+    navigate({ search: (prev) => ({ ...prev, editId: undefined }) })
+  }, [navigate])
 
   // Tab change - clears filters
   const setActiveTab = useCallback(
@@ -269,10 +290,10 @@ function VenueListPage() {
     return new Map(venues.map((v) => [v.id, v]))
   }, [venues])
 
-  // Column definitions with delete handler
+  // Column definitions with edit and delete handlers
   const columns = useMemo(
-    () => getVenueColumns({ onDelete: setDeleteTarget, venuesMap }),
-    [venuesMap]
+    () => getVenueColumns({ onEdit: handleEdit, onDelete: setDeleteTarget, venuesMap }),
+    [handleEdit, venuesMap]
   )
 
   return (
@@ -446,6 +467,7 @@ function VenueListPage() {
               <MobileVenueCard
                 key={venue.id}
                 venue={venue}
+                onEdit={() => handleEdit(venue)}
                 onDelete={() => setDeleteTarget(venue)}
               />
             ))}
@@ -503,6 +525,7 @@ function VenueListPage() {
                   <MobileVenueCard
                     key={venue.id}
                     venue={venue}
+                    onEdit={() => handleEdit(venue)}
                     onDelete={() => setDeleteTarget(venue)}
                   />
                 ))}
@@ -869,6 +892,9 @@ function VenueListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit venue dialog */}
+      <EditVenueDialog venue={editingVenue} onClose={handleCloseEdit} />
     </div>
   )
 }
@@ -876,9 +902,11 @@ function VenueListPage() {
 // Mobile venue card component
 function MobileVenueCard({
   venue,
+  onEdit,
   onDelete,
 }: {
   venue: Venue
+  onEdit: () => void
   onDelete: () => void
 }) {
   return (
@@ -900,14 +928,12 @@ function MobileVenueCard({
 
       <div className="flex items-center gap-2 pt-2 border-t border-border/30">
         <Button
-          asChild
           variant="ghost"
           size="sm"
           className="flex-1 text-muted-foreground hover:text-foreground"
+          onClick={onEdit}
         >
-          <Link to="/admin/venues/$id" params={{ id: venue.id }}>
-            {m.common_edit()}
-          </Link>
+          {m.common_edit()}
         </Button>
         <Button
           variant="ghost"
