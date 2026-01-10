@@ -63,6 +63,9 @@ export type VenueSearchParams = z.infer<typeof venueSearchSchema>
 
 export const Route = createFileRoute('/admin/venues/')({
   validateSearch: venueSearchSchema,
+  // Loader doesn't depend on any search params - venues list is static
+  // This prevents reloading when editId or other search params change
+  loaderDeps: () => ({}),
   loader: async () => {
     return listVenues()
   },

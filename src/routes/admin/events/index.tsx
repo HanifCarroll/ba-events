@@ -128,6 +128,9 @@ function sortingToParams(sorting: SortingState): Partial<EventSearchParams> {
 
 export const Route = createFileRoute('/admin/events/')({
   validateSearch: eventSearchSchema,
+  // Loader doesn't depend on any search params - venues list is static
+  // This prevents reloading when editId or other search params change
+  loaderDeps: () => ({}),
   loader: async () => {
     // Only load venues in the loader - events are fetched via React Query with pagination
     const venues = await listVenues()
