@@ -26,6 +26,51 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Instant Edit Modal Pattern for Admin
+
+**Date:** 2025-01-10
+
+**Decision:** Use Sheet-based modal editing with URL search param sync (`?editId=<id>`) instead of page navigation for event editing. Follow the existing `EditVenueDialog` pattern.
+
+**Pattern:**
+```typescript
+// 1. Add editId to URL search schema
+const eventSearchSchema = z.object({
+  // ... other params
+  editId: z.string().optional(),
+})
+
+// 2. Derive editing state from cached data (instant!)
+const editingEvent = useMemo(
+  () => searchParams.editId ? events.find(e => e.id === searchParams.editId) ?? null : null,
+  [events, searchParams.editId]
+)
+
+// 3. Open/close via URL navigation
+const handleEdit = (event) => navigate({ search: prev => ({ ...prev, editId: event.id }) })
+const handleCloseEdit = () => navigate({ search: prev => ({ ...prev, editId: undefined }) })
+
+// 4. Sheet/Dialog controlled by null check
+<EditEventSheet event={editingEvent} onClose={handleCloseEdit} />
+```
+
+**Alternatives Considered:**
+- Keep page navigation (`/admin/events/$id`): Slow, server-side loading breaks flow
+- Route masking (TanStack Router feature): More complex, overkill for this use case
+- Client-side state only (`useState`): Loses URL sharing and browser back button
+
+**Rationale:**
+1. **Instant UX**: Modal opens immediately using cached data from table (no server round-trip)
+2. **URL sync**: Shareable links (`/admin/events?editId=abc`), browser back button closes modal
+3. **Consistent pattern**: Matches existing `EditVenueDialog` approach in venues admin
+4. **Simple implementation**: Search params recommended by TanStack Router maintainer
+
+**References:**
+- Prior art: `EditVenueDialog` (`src/routes/admin/venues/-components/EditVenueDialog.tsx`)
+- TanStack Router recommendation: https://github.com/TanStack/router/discussions/1966
+
+---
+
 ### URL-Based State Management for Admin Filters
 
 **Date:** 2025-01-09

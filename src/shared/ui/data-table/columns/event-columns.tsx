@@ -100,6 +100,7 @@ function getStatusBadge(status: string) {
 }
 
 interface EventColumnsOptions {
+  onEdit?: (event: EventWithVenue) => void
   onDelete?: (event: EventWithVenue) => void
   onApprove?: (id: string) => void
   onReject?: (id: string) => void
@@ -110,6 +111,7 @@ interface EventColumnsOptions {
 
 export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventWithVenue>[] {
   const {
+    onEdit,
     onDelete,
     onApprove,
     onReject,
@@ -309,16 +311,27 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
                 </Button>
               </>
             )}
-            <Button
-              asChild
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            >
-              <Link to="/admin/events/$id" params={{ id: event.id }}>
+            {onEdit ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={() => onEdit(event)}
+              >
                 <Pencil className="h-4 w-4" />
-              </Link>
-            </Button>
+              </Button>
+            ) : (
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              >
+                <Link to="/admin/events/$id" params={{ id: event.id }}>
+                  <Pencil className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
             {onDelete && (
               <Button
                 variant="ghost"

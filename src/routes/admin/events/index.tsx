@@ -48,6 +48,7 @@ import { formatDateTime } from '@/shared/lib/utils/formatting'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
 import { BackfillCard } from './-components/BackfillCard'
+import { EditEventSheet } from './-components/EditEventSheet'
 import type { EventWithVenue } from '@/shared/lib/types'
 import type { EventSearchParams } from '@/shared/lib/types/pagination'
 
@@ -78,6 +79,8 @@ const eventSearchSchema = z.object({
   // Sorting (column and direction)
   sortBy: z.string().optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
+  // Edit modal (instant editing via URL)
+  editId: z.string().optional(),
 })
 
 // Type is now defined in @/shared/lib/types/pagination.ts and exported via @/features/events
@@ -372,10 +375,28 @@ function EventListPage() {
     [bulk]
   )
 
+  // Edit modal handlers - URL-based for shareable links and browser back button
+  const editingEvent = useMemo(
+    () => (searchParams.editId ? events.find((e) => e.id === searchParams.editId) ?? null : null),
+    [events, searchParams.editId]
+  )
+
+  const handleEdit = useCallback(
+    (event: EventWithVenue) => {
+      navigate({ search: (prev) => ({ ...prev, editId: event.id }) })
+    },
+    [navigate]
+  )
+
+  const handleCloseEdit = useCallback(() => {
+    navigate({ search: (prev) => ({ ...prev, editId: undefined }) })
+  }, [navigate])
+
   // Column definitions
   const columns = useMemo(
     () =>
       getEventColumns({
+        onEdit: handleEdit,
         onDelete: singleActions.setDeleteTarget,
         onApprove: singleActions.handleApprove,
         onReject: singleActions.handleReject,
@@ -383,7 +404,7 @@ function EventListPage() {
         isRejecting: singleActions.isRejecting,
         showNeedsAttention: activeTab === 'needs_attention',
       }),
-    [singleActions, activeTab]
+    [handleEdit, singleActions, activeTab]
   )
 
   return (
@@ -588,6 +609,7 @@ function EventListPage() {
             events={events}
             selectedIds={bulk.selectedIds}
             onToggleSelect={bulk.toggleSelect}
+            onEdit={handleEdit}
             onApprove={singleActions.handleApprove}
             onReject={singleActions.handleReject}
             onDelete={singleActions.setDeleteTarget}
@@ -755,6 +777,8 @@ function EventListPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit event sheet - instant editing via URL */}
+      <EditEventSheet event={editingEvent} onClose={handleCloseEdit} />
     </div>
   )
 }
@@ -826,6 +850,7 @@ interface EventListProps {
   events: EventWithVenue[]
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
+  onEdit: (event: EventWithVenue) => void
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onDelete: (event: EventWithVenue) => void
@@ -839,6 +864,7 @@ const MobileEventCard = memo(function MobileEventCard({
   event,
   isSelected,
   onToggleSelect,
+  onEdit,
   onApprove,
   onReject,
   onDelete,
@@ -849,6 +875,7 @@ const MobileEventCard = memo(function MobileEventCard({
   event: EventWithVenue
   isSelected: boolean
   onToggleSelect: (id: string) => void
+  onEdit: (event: EventWithVenue) => void
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onDelete: (event: EventWithVenue) => void
@@ -942,15 +969,13 @@ const MobileEventCard = memo(function MobileEventCard({
         ) : (
           <>
             <Button
-              asChild
               variant="ghost"
               size="sm"
               className="flex-1 text-muted-foreground hover:text-foreground"
+              onClick={() => onEdit(event)}
             >
-              <Link to="/admin/events/$id" params={{ id: event.id }}>
-                <Pencil className="h-4 w-4 mr-2" />
-                {m.common_edit()}
-              </Link>
+              <Pencil className="h-4 w-4 mr-2" />
+              {m.common_edit()}
             </Button>
             <Button
               variant="ghost"
@@ -972,6 +997,7 @@ function MobileEventCards({
   events,
   selectedIds,
   onToggleSelect,
+  onEdit,
   onApprove,
   onReject,
   onDelete,
@@ -1018,6 +1044,7 @@ function MobileEventCards({
                 event={event}
                 isSelected={selectedIds.has(event.id)}
                 onToggleSelect={onToggleSelect}
+                onEdit={onEdit}
                 onApprove={onApprove}
                 onReject={onReject}
                 onDelete={onDelete}
