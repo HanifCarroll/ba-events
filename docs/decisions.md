@@ -26,6 +26,58 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### React State for Edit Modals (Performance Fix)
+
+**Date:** 2025-01-10
+
+**Related Decision:** Instant Edit Modal Pattern for Admin (2025-01-10)
+
+**Decision:** Switch edit modal state from URL search params (`?editId=<id>`) to local React state (`useState`) for instant open/close performance.
+
+**Problem:**
+Even with `loaderDeps: () => ({})`, TanStack Router still treats search param changes as full navigations that go through the routing lifecycle. This caused a noticeable ~1 second delay when opening/closing edit modals due to:
+1. Router navigation processing
+2. Route component re-renders triggered by search param changes
+3. React Query dependency recalculations (even when query keys don't change, new object references are created)
+
+**Solution:**
+```typescript
+// Before: URL-based (slow)
+const editingEvent = useMemo(
+  () => searchParams.editId ? events.find(e => e.id === searchParams.editId) : null,
+  [events, searchParams.editId]
+)
+const handleEdit = (event) => navigate({ search: prev => ({ ...prev, editId: event.id }) })
+
+// After: React state (instant)
+const [editingEvent, setEditingEvent] = useState<EventWithVenue | null>(null)
+const handleEdit = (event) => setEditingEvent(event)
+```
+
+**Additional optimization:** Only mount the modal component when needed:
+```typescript
+// Before: Always mounted, controlled by prop
+<EditEventSheet event={editingEvent} onClose={handleCloseEdit} />
+
+// After: Conditionally mounted
+{editingEvent && <EditEventSheet event={editingEvent} onClose={handleCloseEdit} />}
+```
+
+**Trade-offs:**
+- ❌ No shareable link to specific event edit (`/admin/events?editId=xyz`)
+- ❌ No browser back button to close modal
+- ✅ Instant open/close (pure React state update, no router involvement)
+- ✅ Simpler code (no URL schema, no navigation calls)
+- ✅ Reduced re-renders (state change is local, not global route change)
+
+**Rationale:** For admin edit modals, instant UX is more important than URL sharing. Users rarely share links to "edit this specific event" - they share the admin page itself. The performance improvement is immediately noticeable.
+
+**Applied to:**
+- Events: `EditEventSheet` - uses `useState<EventWithVenue | null>`
+- Venues: `EditVenueDialog` - uses `useState<Venue | null>`
+
+---
+
 ### Instant Edit Modal Pattern for Admin
 
 **Date:** 2025-01-10

@@ -79,8 +79,6 @@ const eventSearchSchema = z.object({
   // Sorting (column and direction)
   sortBy: z.string().optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
-  // Edit modal (instant editing via URL)
-  editId: z.string().optional(),
 })
 
 // Type is now defined in @/shared/lib/types/pagination.ts and exported via @/features/events
@@ -378,22 +376,16 @@ function EventListPage() {
     [bulk]
   )
 
-  // Edit modal handlers - URL-based for shareable links and browser back button
-  const editingEvent = useMemo(
-    () => (searchParams.editId ? events.find((e) => e.id === searchParams.editId) ?? null : null),
-    [events, searchParams.editId]
-  )
+  // Edit modal handlers - local state for instant open/close
+  const [editingEvent, setEditingEvent] = useState<EventWithVenue | null>(null)
 
-  const handleEdit = useCallback(
-    (event: EventWithVenue) => {
-      navigate({ search: (prev) => ({ ...prev, editId: event.id }) })
-    },
-    [navigate]
-  )
+  const handleEdit = useCallback((event: EventWithVenue) => {
+    setEditingEvent(event)
+  }, [])
 
   const handleCloseEdit = useCallback(() => {
-    navigate({ search: (prev) => ({ ...prev, editId: undefined }) })
-  }, [navigate])
+    setEditingEvent(null)
+  }, [])
 
   // Column definitions
   const columns = useMemo(
@@ -780,8 +772,8 @@ function EventListPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit event sheet - instant editing via URL */}
-      <EditEventSheet event={editingEvent} onClose={handleCloseEdit} />
+      {/* Edit event sheet - only mount when needed to avoid unnecessary renders */}
+      {editingEvent && <EditEventSheet event={editingEvent} onClose={handleCloseEdit} />}
     </div>
   )
 }

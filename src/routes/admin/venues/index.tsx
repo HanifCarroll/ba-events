@@ -56,7 +56,6 @@ const venueSearchSchema = z.object({
   search: z.string().optional(),
   neighborhood: z.string().optional(),
   importedToday: z.boolean().optional(),
-  editId: z.string().optional(),
 })
 
 export type VenueSearchParams = z.infer<typeof venueSearchSchema>
@@ -86,24 +85,16 @@ function VenueListPage() {
   const neighborhoodFilter = searchParams.neighborhood as Neighborhood | undefined
   const importedToday = searchParams.importedToday ?? false
 
-  // Derive editing venue from cached data (instant!)
-  const editingVenue = useMemo(
-    () => (searchParams.editId ? venues.find((v) => v.id === searchParams.editId) ?? null : null),
-    [venues, searchParams.editId]
-  )
+  // Edit modal handlers - local state for instant open/close
+  const [editingVenue, setEditingVenue] = useState<Venue | null>(null)
 
-  // Open edit dialog via URL
-  const handleEdit = useCallback(
-    (venue: Venue) => {
-      navigate({ search: (prev) => ({ ...prev, editId: venue.id }) })
-    },
-    [navigate]
-  )
+  const handleEdit = useCallback((venue: Venue) => {
+    setEditingVenue(venue)
+  }, [])
 
-  // Close edit dialog via URL
   const handleCloseEdit = useCallback(() => {
-    navigate({ search: (prev) => ({ ...prev, editId: undefined }) })
-  }, [navigate])
+    setEditingVenue(null)
+  }, [])
 
   // Tab change - clears filters
   const setActiveTab = useCallback(
@@ -896,8 +887,8 @@ function VenueListPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit venue dialog */}
-      <EditVenueDialog venue={editingVenue} onClose={handleCloseEdit} />
+      {/* Edit venue dialog - only mount when needed to avoid unnecessary renders */}
+      {editingVenue && <EditVenueDialog venue={editingVenue} onClose={handleCloseEdit} />}
     </div>
   )
 }
