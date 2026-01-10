@@ -3,7 +3,6 @@ import {
   Sparkles,
   Loader2,
   CheckCircle2,
-  MapPin,
   FileText,
   AlertCircle,
   LinkIcon,
@@ -19,16 +18,10 @@ import {
   resetFailedEnrichmentsAction,
   type NeedsAttentionBreakdown,
 } from '@/features/events'
-import { getAllPendingVenuesAction } from '@/features/venues/api/enrichment'
-import {
-  useAutoEnrichment,
-  useTriggerEnrichment,
-  type VenueToEnrich,
-} from '@/features/import'
+import { useTriggerEnrichment } from '@/features/import'
 
 export function BackfillCard() {
   const [breakdown, setBreakdown] = useState<NeedsAttentionBreakdown | null>(null)
-  const [pendingVenues, setPendingVenues] = useState<number>(0)
   const [isLoadingCounts, setIsLoadingCounts] = useState(true)
   const [isResettingFailed, setIsResettingFailed] = useState(false)
 
@@ -39,22 +32,11 @@ export function BackfillCard() {
     },
   })
 
-  // Streaming-based enrichment for venues (faster, works with Netlify timeout)
-  const venueEnrichment = useAutoEnrichment({
-    onComplete: () => {
-      fetchCounts()
-    },
-  })
-
   const fetchCounts = async () => {
     setIsLoadingCounts(true)
     try {
-      const [breakdownData, venues] = await Promise.all([
-        getNeedsAttentionBreakdownAction(),
-        getAllPendingVenuesAction(),
-      ])
+      const breakdownData = await getNeedsAttentionBreakdownAction()
       setBreakdown(breakdownData)
-      setPendingVenues(venues.length)
     } catch (error) {
       console.error('[backfill] Failed to fetch counts:', error)
       setBreakdown({
@@ -63,7 +45,6 @@ export function BackfillCard() {
         enrichmentFailed: 0,
         noLink: 0,
       })
-      setPendingVenues(0)
     } finally {
       setIsLoadingCounts(false)
     }
@@ -73,41 +54,9 @@ export function BackfillCard() {
     fetchCounts()
   }, [])
 
-  const handleEnrichAll = async () => {
-    // Start event enrichment via Trigger.dev (now includes venue extraction)
-    eventEnrichment.trigger({ limit: 200 })
-
-    // Start venue enrichment via streaming (runs in parallel)
-    try {
-      const venues = await getAllPendingVenuesAction()
-      const venuesToEnrich: VenueToEnrich[] = venues.map((v) => ({
-        venueId: v.id,
-        venueName: v.name,
-      }))
-      if (venuesToEnrich.length > 0) {
-        venueEnrichment.startVenueEnrichment(venuesToEnrich)
-      }
-    } catch (error) {
-      console.error('[backfill] Failed to start venue enrichment:', error)
-    }
-  }
-
   const handleEnrichEvents = async () => {
     // Use Trigger.dev for event enrichment (avoids Netlify timeout)
     eventEnrichment.trigger({ limit: 200 })
-  }
-
-  const handleEnrichVenues = async () => {
-    try {
-      const venues = await getAllPendingVenuesAction()
-      const venuesToEnrich: VenueToEnrich[] = venues.map((v) => ({
-        venueId: v.id,
-        venueName: v.name,
-      }))
-      venueEnrichment.startVenueEnrichment(venuesToEnrich)
-    } catch (error) {
-      console.error('[backfill] Failed to start venue enrichment:', error)
-    }
   }
 
   const handleRetryFailed = async () => {
@@ -125,25 +74,15 @@ export function BackfillCard() {
   }
 
   // Determine overall state
-  const isEventEnriching = eventEnrichment.isEnriching
-  const isEventComplete = eventEnrichment.status === 'completed'
-  const isEventFailed = eventEnrichment.status === 'failed'
-
-  const venueState = venueEnrichment.state
-  const isVenueEnriching = venueState.phase === 'venues'
-  const isVenueComplete = venueState.phase === 'complete' && venueState.venueResult !== null
-
-  const isEnriching = isEventEnriching || isVenueEnriching
-  const isComplete =
-    (isEventComplete || !isEventEnriching) &&
-    (isVenueComplete || !isVenueEnriching) &&
-    (isEventComplete || isVenueComplete)
+  const isEnriching = eventEnrichment.isEnriching
+  const isComplete = eventEnrichment.status === 'completed'
+  const isFailed = eventEnrichment.status === 'failed'
 
   // Calculate if there's anything to show
   const totalEventIssues = breakdown
     ? breakdown.readyForEnrichment + breakdown.missingVenueOnly + breakdown.enrichmentFailed + breakdown.noLink
     : 0
-  const hasPending = totalEventIssues > 0 || pendingVenues > 0
+  const hasPending = totalEventIssues > 0
 
   // Calculate event progress percentage
   const eventProgressPercent = eventEnrichment.progress
@@ -151,7 +90,7 @@ export function BackfillCard() {
     : 0
 
   // Don't show card if nothing pending and not enriching and no results
-  if (!isLoadingCounts && !hasPending && !isEnriching && !isEventComplete && !isVenueComplete && !isEventFailed) {
+  if (!isLoadingCounts && !hasPending && !isEnriching && !isComplete && !isFailed) {
     return null
   }
 
@@ -161,20 +100,20 @@ export function BackfillCard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            <CardTitle className="text-lg">Data Quality</CardTitle>
+            <CardTitle className="text-lg">Event Data Quality</CardTitle>
           </div>
-          {isEventEnriching && (
+          {isEnriching && (
             <Badge variant="outline" className="text-amber-600 border-amber-500/30">
               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
               Running in background
             </Badge>
           )}
         </div>
-        <CardDescription>Events and venues that need attention</CardDescription>
+        <CardDescription>Events that need attention</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Breakdown Categories - show when idle */}
-        {!isEnriching && !isEventComplete && !isVenueComplete && !isEventFailed && (
+        {!isEnriching && !isComplete && !isFailed && (
           <div className="space-y-3">
             {/* Ready for Enrichment */}
             {(breakdown?.readyForEnrichment ?? 0) > 0 && (
@@ -278,63 +217,23 @@ export function BackfillCard() {
                 </span>
               </div>
             )}
-
-            {/* Pending Venues (separate system) */}
-            {pendingVenues > 0 && (
-              <div className="flex items-center justify-between p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                <div className="flex items-center gap-3">
-                  <MapPin className="h-5 w-5 text-amber-600" />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Venues Pending</p>
-                    <p className="text-xs text-muted-foreground">Need website/social enrichment</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-amber-600">
-                    {isLoadingCounts ? '...' : pendingVenues}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleEnrichVenues}
-                    disabled={isLoadingCounts}
-                    className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
-                  >
-                    <MapPin className="h-3 w-3 mr-1" />
-                    Enrich
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Enrich All Button */}
-            {hasPending && (
-              <Button
-                onClick={handleEnrichAll}
-                className="w-full bg-primary text-primary-foreground"
-                disabled={isLoadingCounts}
-              >
-                <Sparkles className="h-4 w-4 mr-2" />
-                Enrich All
-              </Button>
-            )}
           </div>
         )}
 
-        {/* Event Enrichment Progress (Trigger.dev) */}
-        {(isEventEnriching || isEventComplete || isEventFailed) && (
+        {/* Enrichment Progress */}
+        {(isEnriching || isComplete || isFailed) && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-muted-foreground" />
                 <span className="text-muted-foreground">Events</span>
               </span>
-              {isEventEnriching && eventEnrichment.progress && (
+              {isEnriching && eventEnrichment.progress && (
                 <span className="text-muted-foreground">
                   {eventEnrichment.progress.current}/{eventEnrichment.progress.total}
                 </span>
               )}
-              {isEventComplete && eventEnrichment.result && (
+              {isComplete && eventEnrichment.result && (
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-green-600 border-green-500/30">
                     {eventEnrichment.result.enriched} enriched
@@ -346,14 +245,14 @@ export function BackfillCard() {
                   )}
                 </div>
               )}
-              {isEventFailed && (
+              {isFailed && (
                 <Badge variant="outline" className="text-red-600 border-red-500/30">
                   <AlertCircle className="h-3 w-3 mr-1" />
                   Failed
                 </Badge>
               )}
             </div>
-            {isEventEnriching && eventEnrichment.progress && (
+            {isEnriching && eventEnrichment.progress && (
               <>
                 <Progress value={eventProgressPercent} className="h-2" />
                 {eventEnrichment.progress.currentEvent && (
@@ -363,43 +262,8 @@ export function BackfillCard() {
                 )}
               </>
             )}
-            {isEventFailed && eventEnrichment.error && (
+            {isFailed && eventEnrichment.error && (
               <p className="text-xs text-red-600">{eventEnrichment.error}</p>
-            )}
-          </div>
-        )}
-
-        {/* Venue Enrichment Progress (Streaming) */}
-        {(isVenueEnriching || venueState.venueResult) && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Venues</span>
-              </span>
-              {isVenueEnriching && venueState.venueProgress && (
-                <span className="text-muted-foreground">
-                  {venueState.venueProgress.current}/{venueState.venueProgress.total}
-                </span>
-              )}
-              {venueState.venueResult && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-green-600 border-green-500/30">
-                    {venueState.venueResult.enriched} enriched
-                  </Badge>
-                  {venueState.venueResult.failed > 0 && (
-                    <Badge variant="outline" className="text-red-600 border-red-500/30">
-                      {venueState.venueResult.failed} failed
-                    </Badge>
-                  )}
-                </div>
-              )}
-            </div>
-            {isVenueEnriching && venueState.venueProgress && (
-              <Progress
-                value={(venueState.venueProgress.current / venueState.venueProgress.total) * 100}
-                className="h-2"
-              />
             )}
           </div>
         )}
@@ -413,17 +277,16 @@ export function BackfillCard() {
         )}
 
         {/* Reset after complete or failed */}
-        {(isComplete || isEventFailed) && !isEnriching && (
+        {(isComplete || isFailed) && !isEnriching && (
           <Button
             variant="outline"
             onClick={() => {
               eventEnrichment.reset()
-              venueEnrichment.reset()
               fetchCounts()
             }}
             className="w-full"
           >
-            <Loader2 className="h-4 w-4 mr-2" />
+            <RotateCcw className="h-4 w-4 mr-2" />
             Check for More
           </Button>
         )}
