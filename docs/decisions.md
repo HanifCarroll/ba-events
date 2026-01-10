@@ -69,8 +69,31 @@ const handleCloseEdit = () => navigate({ search: prev => ({ ...prev, editId: und
 - Events: `EditEventSheet` (`src/routes/admin/events/-components/EditEventSheet.tsx`)
 - Venues: `EditVenueDialog` (`src/routes/admin/venues/-components/EditVenueDialog.tsx`)
 
+**Performance Optimization - loaderDeps:**
+
+By default, TanStack Router's stale-while-revalidate behavior causes route loaders to re-run in the background when search params change. This caused a ~2 second delay when opening/closing edit modals because the loader would refetch all venues from Supabase.
+
+**Fix:** Use `loaderDeps: () => ({})` to tell the router the loader doesn't depend on any search params:
+
+```typescript
+export const Route = createFileRoute('/admin/venues/')({
+  validateSearch: venueSearchSchema,
+  // Loader doesn't depend on any search params - prevents reload on editId change
+  loaderDeps: () => ({}),
+  loader: async () => listVenues(),
+  component: VenueListPage,
+})
+```
+
+**How it works:**
+- `loaderDeps` specifies which search params should trigger loader re-runs
+- Returning `{}` means "no dependencies" - loader only runs on initial page load
+- Changing `editId` (or any search param) won't trigger a reload
+- If your loader DOES depend on search params (e.g., pagination), include them: `loaderDeps: ({ search }) => ({ page: search.page })`
+
 **References:**
 - TanStack Router recommendation: https://github.com/TanStack/router/discussions/1966
+- TanStack Router Data Loading: https://tanstack.com/router/v1/docs/framework/react/guide/data-loading
 
 ---
 
