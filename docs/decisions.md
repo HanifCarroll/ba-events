@@ -30,7 +30,7 @@ When adding a new decision, use this format:
 
 **Date:** 2025-01-10
 
-**Decision:** Use Sheet-based modal editing with URL search param sync (`?editId=<id>`) instead of page navigation for event editing. Follow the existing `EditVenueDialog` pattern.
+**Decision:** Use modal-based editing with URL search param sync (`?editId=<id>`) instead of page navigation for admin entity editing. Applied to both events (Sheet) and venues (Dialog).
 
 **Pattern:**
 ```typescript
@@ -65,8 +65,11 @@ const handleCloseEdit = () => navigate({ search: prev => ({ ...prev, editId: und
 3. **Consistent pattern**: Matches existing `EditVenueDialog` approach in venues admin
 4. **Simple implementation**: Search params recommended by TanStack Router maintainer
 
+**Applied to:**
+- Events: `EditEventSheet` (`src/routes/admin/events/-components/EditEventSheet.tsx`)
+- Venues: `EditVenueDialog` (`src/routes/admin/venues/-components/EditVenueDialog.tsx`)
+
 **References:**
-- Prior art: `EditVenueDialog` (`src/routes/admin/venues/-components/EditVenueDialog.tsx`)
 - TanStack Router recommendation: https://github.com/TanStack/router/discussions/1966
 
 ---
