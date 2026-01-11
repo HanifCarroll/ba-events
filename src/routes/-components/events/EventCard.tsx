@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { ChevronDown, Calendar, MapPin, Clock, Users, ExternalLink } from 'lucide-react'
 import {
   Collapsible,
@@ -9,6 +10,7 @@ import { SaveEventButton } from '../SaveEventButton'
 import { formatPrice } from '@/features/chat'
 import { formatShortDate, formatTime, formatEventTime } from '@/shared/lib/utils/formatting'
 import { track } from '@/lib/analytics'
+import { getEventUrl } from '@/shared/lib/utils/url'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 interface EventCardProps {
@@ -87,13 +89,21 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
                   <Clock className="h-3 w-3 text-primary/60" />
                   {timeStr}
                 </span>
+                <Link
+                  to="/event/$id"
+                  params={{ id: event.id }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200 ml-1"
+                >
+                  <span>Details</span>
+                </Link>
                 {event.link && (
                   <a
                     href={event.link}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200 ml-1"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200"
                   >
                     <span>View</span>
                     <ExternalLink className="h-3 w-3" />
@@ -215,7 +225,7 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
 
               {/* Actions */}
               <div className="flex items-center justify-between pt-2">
-                <EventActions event={event} />
+                <EventActions event={event} shareUrl={getEventUrl(event.id)} />
               </div>
             </div>
           </div>

@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as EventIdRouteImport } from './routes/event/$id'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as ApiEventsRouteImport } from './routes/api/events'
 import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/index'
@@ -66,6 +67,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
+} as any)
+const EventIdRoute = EventIdRouteImport.update({
+  id: '/event/$id',
+  path: '/event/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/saved': typeof SavedRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/event/$id': typeof EventIdRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
   '/admin/blocklist/new': typeof AdminBlocklistNewRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/saved': typeof SavedRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/event/$id': typeof EventIdRoute
   '/admin': typeof AdminIndexRoute
   '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
   '/admin/blocklist/new': typeof AdminBlocklistNewRoute
@@ -201,6 +209,7 @@ export interface FileRoutesById {
   '/saved': typeof SavedRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/event/$id': typeof EventIdRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
   '/admin/blocklist/new': typeof AdminBlocklistNewRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/saved'
     | '/api/events'
     | '/auth/callback'
+    | '/event/$id'
     | '/admin/'
     | '/admin/blocklist/$id'
     | '/admin/blocklist/new'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/saved'
     | '/api/events'
     | '/auth/callback'
+    | '/event/$id'
     | '/admin'
     | '/admin/blocklist/$id'
     | '/admin/blocklist/new'
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/saved'
     | '/api/events'
     | '/auth/callback'
+    | '/event/$id'
     | '/admin/'
     | '/admin/blocklist/$id'
     | '/admin/blocklist/new'
@@ -299,6 +311,7 @@ export interface RootRouteChildren {
   SavedRoute: typeof SavedRoute
   ApiEventsRoute: typeof ApiEventsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
+  EventIdRoute: typeof EventIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -351,6 +364,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/event/$id': {
+      id: '/event/$id'
+      path: '/event/$id'
+      fullPath: '/event/$id'
+      preLoaderRoute: typeof EventIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/callback': {
       id: '/auth/callback'
@@ -505,6 +525,7 @@ const rootRouteChildren: RootRouteChildren = {
   SavedRoute: SavedRoute,
   ApiEventsRoute: ApiEventsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
+  EventIdRoute: EventIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -12,14 +12,15 @@ import type { EventWithVenue } from '@/shared/lib/types'
 
 interface EventActionsProps {
   event: EventWithVenue
+  shareUrl?: string
 }
 
-export function EventActions({ event }: EventActionsProps) {
+export function EventActions({ event, shareUrl }: EventActionsProps) {
   const [saved, setSaved] = useState(() => isFavorite(event.id))
   const [copied, setCopied] = useState(false)
 
   const handleShare = async () => {
-    const shareUrl = event.link || window.location.href
+    const shareTarget = shareUrl || event.link || window.location.href
     const shareText = `Check out ${event.name} at ${event.venue_name}`
 
     if (navigator.share) {
@@ -27,14 +28,14 @@ export function EventActions({ event }: EventActionsProps) {
         await navigator.share({
           title: event.name,
           text: shareText,
-          url: shareUrl,
+          url: shareTarget,
         })
       } catch {
         // User cancelled or share failed, fall back to copy
-        await copyToClipboard(shareUrl)
+        await copyToClipboard(shareTarget)
       }
     } else {
-      await copyToClipboard(shareUrl)
+      await copyToClipboard(shareTarget)
     }
   }
 

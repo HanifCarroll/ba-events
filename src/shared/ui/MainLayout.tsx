@@ -91,7 +91,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   const mainNavItems: NavItem[] = [
-    { label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat },
+    { to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat, exact: true },
     { to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
     { to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
   ]
@@ -138,7 +138,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       </div>
     )
 
-    if (item.action) {
+    if (item.action && !item.to) {
       return (
         <button onClick={item.action} className="w-full text-left">
           {content}
@@ -147,7 +147,13 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
 
     return (
-      <Link to={item.to!} onClick={() => setMobileMenuOpen(false)}>
+      <Link
+        to={item.to!}
+        onClick={() => {
+          if (item.action) item.action()
+          setMobileMenuOpen(false)
+        }}
+      >
         {content}
       </Link>
     )

@@ -9,6 +9,7 @@ import { queryClient } from '@/shared/lib/query'
 import { MainLayout } from '@/shared/ui/MainLayout'
 import { getLocale, setLocale } from '@/paraglide/runtime'
 import React, { useEffect, useState, type ReactNode } from 'react'
+import { getSiteUrl } from '@/shared/lib/utils/url'
 
 import appCss from '../styles.css?url'
 
@@ -31,8 +32,12 @@ export const Route = createRootRoute({
     return { session }
   },
 
-  head: () => ({
-    meta: [
+  head: () => {
+    const siteUrl = getSiteUrl()
+    const ogImageUrl = `${siteUrl}/og-image.png`
+
+    return {
+      meta: [
       // Core meta tags
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
@@ -45,8 +50,8 @@ export const Route = createRootRoute({
       { property: 'og:site_name', content: 'BA Eventos' },
       { property: 'og:title', content: 'BA Eventos - Descubrí Buenos Aires' },
       { property: 'og:description', content: 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.' },
-      { property: 'og:image', content: 'https://baeventos.com/og-image.png' },
-      { property: 'og:url', content: 'https://baeventos.com' },
+      { property: 'og:image', content: ogImageUrl },
+      { property: 'og:url', content: siteUrl },
       { property: 'og:locale', content: 'es_AR' },
       { property: 'og:locale:alternate', content: 'en_US' },
 
@@ -54,10 +59,10 @@ export const Route = createRootRoute({
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: 'BA Eventos - Descubrí Buenos Aires' },
       { name: 'twitter:description', content: 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.' },
-      { name: 'twitter:image', content: 'https://baeventos.com/og-image.png' },
-    ],
-    links: [
-      { rel: 'canonical', href: 'https://baeventos.com' },
+      { name: 'twitter:image', content: ogImageUrl },
+      ],
+      links: [
+      { rel: 'canonical', href: siteUrl },
       { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
       { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
       { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap' },
@@ -65,8 +70,8 @@ export const Route = createRootRoute({
       { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
       { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
       { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
-    ],
-    scripts: [
+      ],
+      scripts: [
       {
         type: 'application/ld+json',
         children: JSON.stringify({
@@ -74,7 +79,7 @@ export const Route = createRootRoute({
           '@type': 'WebApplication',
           'name': 'BA Eventos',
           'description': 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.',
-          'url': 'https://baeventos.com',
+          'url': siteUrl,
           'applicationCategory': 'EntertainmentApplication',
           'operatingSystem': 'Web',
           'availableLanguage': ['es', 'en'],
@@ -86,12 +91,13 @@ export const Route = createRootRoute({
           'author': {
             '@type': 'Organization',
             'name': 'BA Eventos',
-            'url': 'https://baeventos.com',
+            'url': siteUrl,
           },
         }),
       },
-    ],
-  }),
+      ],
+    }
+  },
 
   component: RootDocument,
 })

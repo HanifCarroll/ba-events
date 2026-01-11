@@ -11,6 +11,7 @@ export {
   listPastEventsAdmin,
   getEventTabCountsAction,
   getEventAction,
+  getEventWithVenueAction,
   createEventAction,
   updateEventAction,
   deleteEventAction,

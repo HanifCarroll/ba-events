@@ -4,6 +4,7 @@ import {
   getActiveEventsWithVenues,
   getPastEventsWithVenues,
   getEventById,
+  getEventWithVenue,
   createEvent,
   createEvents,
   updateEvent,
@@ -79,6 +80,12 @@ export const getEventAction = createServerFn({ method: 'GET' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
     return getEventById(id)
+  })
+
+export const getEventWithVenueAction = createServerFn({ method: 'GET' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    return getEventWithVenue(id)
   })
 
 export const createEventAction = createServerFn({ method: 'POST' })
