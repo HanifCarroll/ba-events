@@ -15,8 +15,6 @@ import {
   FileSpreadsheet,
   AlertCircle,
   FileText,
-  Sparkles,
-  DollarSign,
 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
@@ -48,7 +46,7 @@ import { listVenues } from '@/features/venues'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
-import type { EnrichmentConfig } from './-components/EnrichmentButton'
+import { buildEnrichmentsConfig } from './-components/enrichments-config'
 import { BackfillCard } from './-components/BackfillCard'
 import { EditEventSheet } from './-components/EditEventSheet'
 import type { EventWithVenue } from '@/shared/lib/types'
@@ -579,75 +577,48 @@ function EventListPage() {
   }, [passlineEnrichment, events, bulk.selectedIds, bulk.clearSelection])
 
   // Build enrichments config array for BulkActionBar
-  const enrichments = useMemo<EnrichmentConfig[]>(() => [
-    {
-      key: 'descriptions',
-      label: 'Add Descriptions',
-      progressLabel: 'Adding Descriptions',
-      count: enrichableCount,
-      onClick: handleEnrich,
-      isEnriching: backgroundEnrichment.isEnriching,
-      onStop: backgroundEnrichment.stopEnrichment,
-      color: 'primary',
-      icon: Sparkles,
-    },
-    {
-      key: 'eventbrite',
-      label: 'Add Prices',
-      progressLabel: 'Adding Prices',
-      count: 0, // Eventbrite enrichment not currently wired up
-      onClick: () => {},
-      isEnriching: false,
-      color: 'orange',
-      icon: DollarSign,
-    },
-    {
-      key: 'venues',
-      label: 'Add Venues',
-      progressLabel: 'Adding Venues',
-      count: venueEnrichableCount,
-      onClick: handleVenueEnrich,
-      isEnriching: venueEnrichment.isVenueEnriching,
-      color: 'blue',
-      icon: MapPin,
-    },
-    {
-      key: 'luma',
-      label: 'Luma Descriptions',
-      progressLabel: 'Adding Luma Descriptions',
-      count: lumaEnrichableCount,
-      onClick: handleLumaEnrich,
-      isEnriching: lumaEnrichment.isLumaEnriching,
-      color: 'violet',
-      icon: FileText,
-    },
-    {
-      key: 'passline',
-      label: 'Passline Descriptions',
-      progressLabel: 'Adding Passline Descriptions',
-      count: passlineEnrichableCount,
-      onClick: handlePasslineEnrich,
-      isEnriching: passlineEnrichment.isPasslineEnriching,
-      onStop: passlineEnrichment.stopPasslineEnrichment,
-      color: 'indigo',
-      icon: FileText,
-    },
-  ], [
-    enrichableCount,
-    handleEnrich,
-    backgroundEnrichment.isEnriching,
-    backgroundEnrichment.stopEnrichment,
-    venueEnrichableCount,
-    handleVenueEnrich,
-    venueEnrichment.isVenueEnriching,
-    lumaEnrichableCount,
-    handleLumaEnrich,
-    lumaEnrichment.isLumaEnriching,
-    passlineEnrichableCount,
-    handlePasslineEnrich,
-    passlineEnrichment.isPasslineEnriching,
-    passlineEnrichment.stopPasslineEnrichment,
-  ])
+  const enrichments = useMemo(
+    () => buildEnrichmentsConfig({
+      descriptionCount: enrichableCount,
+      onDescriptionEnrich: handleEnrich,
+      backgroundEnrichment: {
+        isEnriching: backgroundEnrichment.isEnriching,
+        stopEnrichment: backgroundEnrichment.stopEnrichment,
+      },
+      venueCount: venueEnrichableCount,
+      onVenueEnrich: handleVenueEnrich,
+      venueEnrichment: {
+        isVenueEnriching: venueEnrichment.isVenueEnriching,
+      },
+      lumaCount: lumaEnrichableCount,
+      onLumaEnrich: handleLumaEnrich,
+      lumaEnrichment: {
+        isLumaEnriching: lumaEnrichment.isLumaEnriching,
+      },
+      passlineCount: passlineEnrichableCount,
+      onPasslineEnrich: handlePasslineEnrich,
+      passlineEnrichment: {
+        isPasslineEnriching: passlineEnrichment.isPasslineEnriching,
+        stopPasslineEnrichment: passlineEnrichment.stopPasslineEnrichment,
+      },
+    }),
+    [
+      enrichableCount,
+      handleEnrich,
+      backgroundEnrichment.isEnriching,
+      backgroundEnrichment.stopEnrichment,
+      venueEnrichableCount,
+      handleVenueEnrich,
+      venueEnrichment.isVenueEnriching,
+      lumaEnrichableCount,
+      handleLumaEnrich,
+      lumaEnrichment.isLumaEnriching,
+      passlineEnrichableCount,
+      handlePasslineEnrich,
+      passlineEnrichment.isPasslineEnriching,
+      passlineEnrichment.stopPasslineEnrichment,
+    ]
+  )
 
   // Smart "Mark Past" toast on page load
   useEffect(() => {
