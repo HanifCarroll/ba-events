@@ -26,6 +26,85 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Lazy Initialization for Server-Only SDKs
+
+**Date:** 2026-01-11
+
+**Decision:** Always use lazy initialization (getter function pattern) for server-only SDKs like Anthropic, OpenAI, etc. Never instantiate these at module scope.
+
+**Problem:**
+The language dropdown (and all other interactive elements) stopped working because React hydration was failing silently. Investigation revealed:
+
+1. `eventbrite/enrichment.ts` had `const anthropic = new Anthropic()` at module scope
+2. When any page imported from `@/features/import`, the barrel file triggered this import
+3. The Anthropic SDK detected the browser environment and threw an error
+4. This error occurred during JavaScript bundle evaluation, **before React could hydrate**
+5. Result: No React event handlers attached, all interactive elements non-functional
+
+**Console error observed:**
+```
+AnthropicError: It looks like you're running in a browser-like environment
+```
+
+**Solution:**
+Use lazy initialization pattern - SDK is only instantiated when actually called on the server:
+
+```typescript
+// ❌ BAD: Executes immediately when module loads (crashes in browser)
+const anthropic = new Anthropic()
+
+// ✅ GOOD: Only instantiates when function is called (on server)
+let anthropicClient: Anthropic | null = null
+
+function getAnthropicClient(): Anthropic {
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic()
+  }
+  return anthropicClient
+}
+
+// Usage in server functions
+const message = await getAnthropicClient().messages.create({ ... })
+```
+
+**Pattern already used correctly in:**
+- `src/shared/lib/ai/enrichment.ts` (lines 16-23)
+
+**Pattern was incorrect in:**
+- `src/features/import/scrapers/eventbrite/enrichment.ts` (fixed)
+
+**Why this happens:**
+1. JavaScript bundlers evaluate all imported modules to build the dependency tree
+2. Barrel files (`index.ts` with `export * from './module'`) cause transitive imports
+3. Even if a module is only used on the server, if it's in the import chain, it gets evaluated
+4. Server-only SDKs often detect browser environment and throw errors
+5. These errors during bundle evaluation prevent React from completing hydration
+
+**When to apply this pattern:**
+- **Always** for: Anthropic SDK, OpenAI SDK, database clients, any SDK that throws in browser
+- **Not needed for**: Pure utility functions, types, constants
+
+**Alternatives Considered:**
+- `server-only` package: Prevents import entirely, too restrictive if you need the module in shared code
+- Dynamic imports: More complex, harder to type correctly
+- Separate server-only entry points: Requires restructuring exports
+
+**Rationale:**
+1. **Zero runtime cost**: Lazy init adds negligible overhead
+2. **No build config changes**: Works with any bundler
+3. **Self-contained**: Fix is in the module itself, no external coordination needed
+4. **Matches existing pattern**: Already used in `shared/lib/ai/enrichment.ts`
+
+**Detection tips:**
+- If React hydration fails silently (no `__reactFiber` on DOM elements), check console for SDK errors
+- Search for `new Anthropic()`, `new OpenAI()`, etc. at module scope
+- Trace import chains from routes through barrel files
+
+**Files Modified:**
+- `src/features/import/scrapers/eventbrite/enrichment.ts` - Changed to lazy initialization
+
+---
+
 ### SSR Auth State via Route Context
 
 **Date:** 2026-01-11
