@@ -46,6 +46,18 @@ export type {
   EnrichmentResult,
 } from './venue-enrichment'
 
+// Description enrichment
+export {
+  fetchMeetupDescriptionFromDetailPage,
+  enrichMeetupEventsWithDescriptions,
+  enrichMeetupDescriptionsBatch,
+} from './description-enrichment'
+
+export type {
+  MeetupDescriptionResult,
+  DescriptionEnrichmentEvent,
+} from './description-enrichment'
+
 // Types
 export type {
   MeetupEvent,

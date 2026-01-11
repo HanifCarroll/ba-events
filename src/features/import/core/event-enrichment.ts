@@ -9,7 +9,11 @@ import {
   enrichEventFull,
   extractVenueFromUrl,
   getKnownLanguageForSource,
+  detectLanguage,
+  translateText,
 } from '@/shared/lib/ai/enrichment'
+import { fetchMeetupDescriptionFromDetailPage } from '@/features/import/scrapers/meetup/description-enrichment'
+import { fetchMeetupVenueFromUrl } from '@/features/import/scrapers/meetup/venue-enrichment'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { settleVenue, type VenueSettlementResult } from './venue-settlement'
 import { delay } from './nominatim'
@@ -74,6 +78,75 @@ async function updateEventEnrichment(
 }
 
 // ============================================================================
+// MEETUP-SPECIFIC ENRICHMENT
+// ============================================================================
+
+/**
+ * Enrich a Meetup event with description and venue.
+ *
+ * Meetup blocks Jina Reader (HTTP 451), so we use direct HTML fetch instead.
+ * Description is extracted from __NEXT_DATA__ in the page HTML.
+ */
+async function enrichMeetupEvent(
+  link: string,
+  options?: { extractVenue?: boolean }
+): Promise<{
+  description_es: string | null
+  description_en: string | null
+  venue_name: string | null
+} | null> {
+  // Step 1: Fetch description from Meetup page
+  const description = await fetchMeetupDescriptionFromDetailPage(link)
+
+  if (!description) {
+    console.log('[event-enrichment] No description found for Meetup event')
+    return null
+  }
+
+  console.log(
+    `[event-enrichment] Meetup description fetched (${description.length} chars)`
+  )
+
+  // Step 2: Detect language (Meetup can have Spanish or English descriptions)
+  const detectedLang = await detectLanguage(description)
+  console.log(`[event-enrichment] Detected language: ${detectedLang}`)
+
+  // Step 3: Get both language versions
+  let description_es: string | null = null
+  let description_en: string | null = null
+
+  if (detectedLang === 'spanish') {
+    description_es = description
+    description_en = await translateText(description, 'es-to-en')
+  } else {
+    description_en = description
+    description_es = await translateText(description, 'en-to-es')
+  }
+
+  // Step 4: Extract venue if needed
+  let venue_name: string | null = null
+  if (options?.extractVenue) {
+    try {
+      const venueInfo = await fetchMeetupVenueFromUrl(link)
+      venue_name = venueInfo?.name || null
+      if (venue_name) {
+        console.log(`[event-enrichment] Meetup venue extracted: ${venue_name}`)
+      }
+    } catch (error) {
+      console.log(
+        `[event-enrichment] Failed to extract venue: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
+  }
+
+  return {
+    description_es,
+    description_en,
+    venue_name,
+  }
+}
+
+// ============================================================================
 // SINGLE EVENT ENRICHMENT
 // ============================================================================
 
@@ -100,12 +173,16 @@ export async function enrichSingleEvent(
 
   try {
     // Step 1: Fetch and extract bilingual descriptions + venue name
-    const knownLanguage = getKnownLanguageForSource(source)
     const needsVenue = !venue_id
-    const enrichmentResult = await enrichEventFull(link, {
-      knownLanguage,
-      extractVenue: needsVenue,
-    })
+
+    // Route Meetup events to dedicated enrichment (Jina Reader returns 451 for Meetup)
+    const enrichmentResult =
+      source === 'meetup'
+        ? await enrichMeetupEvent(link, { extractVenue: needsVenue })
+        : await enrichEventFull(link, {
+            knownLanguage: getKnownLanguageForSource(source),
+            extractVenue: needsVenue,
+          })
 
     if (!enrichmentResult || !enrichmentResult.description_es) {
       await updateEventEnrichment(client, id, {
