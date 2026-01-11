@@ -1,6 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 import {
   getEventsWithVenues,
+  getActiveEventsWithVenues,
+  getPastEventsWithVenues,
   getEventById,
   createEvent,
   createEvents,
@@ -24,11 +26,30 @@ export const listEvents = createServerFn({ method: 'GET' }).handler(async (): Pr
 /**
  * List all events for admin with no pagination (client-side filtering)
  * Returns all events ordered by starts_at descending
+ * @deprecated Use listActiveEventsAdmin + listPastEventsAdmin for better performance
  */
 export const listAllEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
   await requireAdminAccess()
   // Fetch all events - reasonable limit for client-side handling
   return getEventsWithVenues(5000)
+})
+
+/**
+ * List active (non-past) events for admin - initial page load
+ * Excludes embedding column for better performance
+ */
+export const listActiveEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
+  await requireAdminAccess()
+  return getActiveEventsWithVenues(5000)
+})
+
+/**
+ * List past events for admin - lazy loaded when Past tab is clicked
+ * Excludes embedding column for better performance
+ */
+export const listPastEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
+  await requireAdminAccess()
+  return getPastEventsWithVenues(5000)
 })
 
 /**

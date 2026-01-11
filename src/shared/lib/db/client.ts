@@ -155,6 +155,16 @@ export async function bulkDeleteVenues(ids: string[], client?: SupabaseClient) {
 // EVENT OPERATIONS
 // ============================================================================
 
+// Columns for admin event lists (excludes embedding for performance)
+// The embedding column is ~6KB per event and not needed for admin display
+const EVENT_ADMIN_COLUMNS = `
+  id, name, description_es, description_en, starts_at, ends_at, is_all_day,
+  venue_id, categories, price, is_free, min_age, image_url, link, ticket_url,
+  source, external_id, status, location_hidden, enrichment_status, enrichment_error,
+  enriched_at, created_at, updated_at,
+  venue_name, venue_neighborhood, venue_address
+`
+
 export async function getEvents(limit = 50) {
   const { data, error } = await supabase
     .from('events')
@@ -172,6 +182,38 @@ export async function getEventsWithVenues(limit = 50) {
     .from('events_with_venues')
     .select('*')
     .order('starts_at', { ascending: true })
+    .limit(limit)
+
+  if (error) throw error
+  return data as EventWithVenue[]
+}
+
+/**
+ * Fetch active (non-past) events for admin with explicit column selection.
+ * Excludes the embedding column for better performance.
+ */
+export async function getActiveEventsWithVenues(limit = 5000) {
+  const { data, error } = await supabase
+    .from('events_with_venues')
+    .select(EVENT_ADMIN_COLUMNS)
+    .neq('status', 'past')
+    .order('starts_at', { ascending: true })
+    .limit(limit)
+
+  if (error) throw error
+  return data as EventWithVenue[]
+}
+
+/**
+ * Fetch past events for admin with explicit column selection.
+ * Lazy-loaded when user clicks the "Past" tab.
+ */
+export async function getPastEventsWithVenues(limit = 5000) {
+  const { data, error } = await supabase
+    .from('events_with_venues')
+    .select(EVENT_ADMIN_COLUMNS)
+    .eq('status', 'past')
+    .order('starts_at', { ascending: false }) // Most recent past events first
     .limit(limit)
 
   if (error) throw error
