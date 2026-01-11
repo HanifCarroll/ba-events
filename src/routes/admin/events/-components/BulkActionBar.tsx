@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin, RefreshCw, FileText } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin, FileText } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import type { BulkActionType } from '@/features/events'
@@ -31,10 +31,6 @@ interface BulkActionBarProps {
   onVenueEnrich?: () => void
   /** Whether venue enrichment is currently running */
   isVenueEnriching?: boolean
-  /** Callback to regenerate embeddings for selected events */
-  onRegenerateEmbeddings?: () => void
-  /** Whether embedding regeneration is currently running */
-  isRegeneratingEmbeddings?: boolean
   /** Number of selected Luma events that can be enriched (missing description) */
   lumaEnrichableCount?: number
   /** Callback to enrich Luma events with descriptions from their event pages */
@@ -60,8 +56,6 @@ export function BulkActionBar({
   venueEnrichableCount = 0,
   onVenueEnrich,
   isVenueEnriching = false,
-  onRegenerateEmbeddings,
-  isRegeneratingEmbeddings = false,
   lumaEnrichableCount = 0,
   onLumaEnrich,
   isLumaEnriching = false,
@@ -175,28 +169,6 @@ export function BulkActionBar({
             >
               <FileText className="h-4 w-4 mr-1.5 animate-pulse" />
               Adding Luma Descriptions...
-            </Button>
-          )}
-          {onRegenerateEmbeddings && !isRegeneratingEmbeddings && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onRegenerateEmbeddings}
-              className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            >
-              <RefreshCw className="h-4 w-4 mr-1.5" />
-              Regen Embeddings
-            </Button>
-          )}
-          {isRegeneratingEmbeddings && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled
-              className="text-primary-foreground/70"
-            >
-              <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
-              Regenerating...
             </Button>
           )}
           <Button
@@ -338,28 +310,6 @@ export function BulkActionBar({
           >
             <FileText className="h-4 w-4 mr-1.5 animate-pulse" />
             Adding Luma Descriptions...
-          </Button>
-        )}
-        {onRegenerateEmbeddings && !isRegeneratingEmbeddings && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRegenerateEmbeddings}
-            className="border-border/50"
-          >
-            <RefreshCw className="h-4 w-4 mr-1.5" />
-            Regen Embeddings
-          </Button>
-        )}
-        {isRegeneratingEmbeddings && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className="border-border/50"
-          >
-            <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
-            Regenerating...
           </Button>
         )}
         <Button

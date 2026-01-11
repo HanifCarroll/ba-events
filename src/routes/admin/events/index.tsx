@@ -36,7 +36,6 @@ import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState 
 import {
   useBackgroundEnrichment,
   useLumaDescriptionEnrichment,
-  useEmbeddingRegeneration,
   useBulkActions,
   useSingleEventActions,
   useMarkPastEvents,
@@ -517,7 +516,6 @@ function EventListPage() {
   const backgroundEnrichment = useBackgroundEnrichment()
   const venueEnrichment = useVenueEnrichment()
   const lumaEnrichment = useLumaDescriptionEnrichment()
-  const embeddingRegeneration = useEmbeddingRegeneration()
 
   // Calculate enrichable count for selected events (description enrichment)
   const enrichableCount = useMemo(() => {
@@ -560,15 +558,6 @@ function EventListPage() {
       () => bulk.clearSelection()
     )
   }, [lumaEnrichment, events, bulk.selectedIds, bulk.clearSelection])
-
-  // Handle embedding regeneration with selection clear on complete
-  const handleRegenerateEmbeddings = useCallback(() => {
-    embeddingRegeneration.regenerateEmbeddings(
-      events,
-      bulk.selectedIds,
-      () => bulk.clearSelection()
-    )
-  }, [embeddingRegeneration, events, bulk.selectedIds, bulk.clearSelection])
 
   // Smart "Mark Past" toast on page load
   useEffect(() => {
@@ -823,8 +812,6 @@ function EventListPage() {
               lumaEnrichableCount={lumaEnrichableCount}
               onLumaEnrich={handleLumaEnrich}
               isLumaEnriching={lumaEnrichment.isLumaEnriching}
-              onRegenerateEmbeddings={handleRegenerateEmbeddings}
-              isRegeneratingEmbeddings={embeddingRegeneration.isRegenerating}
             />
           </div>
           <MobileEventCards
@@ -862,8 +849,6 @@ function EventListPage() {
                   lumaEnrichableCount={lumaEnrichableCount}
                   onLumaEnrich={handleLumaEnrich}
                   isLumaEnriching={lumaEnrichment.isLumaEnriching}
-                  onRegenerateEmbeddings={handleRegenerateEmbeddings}
-                  isRegeneratingEmbeddings={embeddingRegeneration.isRegenerating}
                 />
               </div>
 
