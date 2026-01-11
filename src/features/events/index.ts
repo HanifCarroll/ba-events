@@ -6,6 +6,7 @@
 export {
   listEvents,
   listEventsPaginated,
+  listAllEventsAdmin,
   getEventTabCountsAction,
   getEventAction,
   createEventAction,

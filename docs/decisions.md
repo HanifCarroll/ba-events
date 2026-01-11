@@ -26,6 +26,68 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Client-Side Pagination for Admin Events Table
+
+**Date:** 2026-01-10
+
+**Decision:** Load all events in the route loader and perform filtering, sorting, and pagination client-side instead of using server-side pagination.
+
+**Previous Approach:**
+- Server-side pagination via `useEventsPaginated` hook with React Query
+- Route loader only fetched venues; events fetched client-side via `useQuery`
+- Caused loading flash: empty state → filters → data (3 render phases)
+
+**New Approach:**
+```typescript
+// Route loader fetches ALL data upfront
+loader: async () => {
+  const [venues, allEvents] = await Promise.all([
+    listVenues(),
+    listAllEventsAdmin(), // Fetches up to 5000 events
+  ])
+  return { venues, allEvents }
+}
+
+// Component filters/paginates client-side with useMemo
+const filteredEvents = useMemo(() => filterEvents(allEvents, searchParams), [allEvents, searchParams])
+const sortedEvents = useMemo(() => sortEvents(filteredEvents, sortBy, sortDir), [filteredEvents, sortBy, sortDir])
+const events = sortedEvents.slice((page - 1) * pageSize, page * pageSize)
+```
+
+**Alternatives Considered:**
+- Server-side pagination with `initialData`: Still caused multiple render phases due to separate tab counts query
+- SSR hydration with React Query: Complex setup with dehydration/hydration, overkill for admin page
+- Loading skeleton: Would hide the flash but data still loads in phases
+
+**Rationale:**
+1. **Instant rendering**: All data available on first render, no loading flash
+2. **Instant interactions**: Tab switching, filtering, pagination are immediate (no network)
+3. **Simplicity**: Removed complex `useEventsPaginated` hook with server-side queries
+4. **Appropriate for dataset size**: ~500-2000 events is well within client-side handling capacity
+5. **URL state preserved**: Filters/pagination still use URL search params for shareability
+
+**Trade-offs:**
+- ✅ No loading flash or intermediate states
+- ✅ Instant filtering, sorting, pagination
+- ✅ Simpler code (no React Query for events)
+- ✅ Reduced server requests
+- ❌ Initial page load fetches more data (~100KB for 1000 events)
+- ❌ Memory usage higher on client (all events in memory)
+- ❌ Not suitable if dataset grows to 10,000+ events
+
+**When to use this pattern:**
+- Dataset under ~5000 records
+- Frequent filtering/pagination expected
+- Loading flash is unacceptable UX
+- Admin/internal tools where initial load time is acceptable
+
+**When NOT to use:**
+- Large datasets (10,000+ records)
+- Public-facing pages where initial payload size matters
+- Data changes frequently and needs real-time server state
+
+---
+
 ### React State for Edit Modals (Performance Fix)
 
 **Date:** 2025-01-10

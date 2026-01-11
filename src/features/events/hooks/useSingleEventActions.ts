@@ -1,12 +1,11 @@
 import { useState, useCallback } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useRouter } from '@tanstack/react-router'
 import { deleteEventAction } from '../api/crud'
 import { approveEventAction, rejectEventAction } from '../api/moderation'
-import { queryKeys } from '@/shared/lib/query'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 export function useSingleEventActions() {
-  const queryClient = useQueryClient()
+  const router = useRouter()
   const [deleteTarget, setDeleteTarget] = useState<EventWithVenue | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isApproving, setIsApproving] = useState<string | null>(null)
@@ -18,50 +17,41 @@ export function useSingleEventActions() {
 
     try {
       await deleteEventAction({ data: deleteTarget.id })
-      // Remove from cache directly
-      queryClient.setQueriesData<EventWithVenue[]>(
-        { queryKey: queryKeys.events.all },
-        (old) => old?.filter((e) => e.id !== deleteTarget.id)
-      )
+      // Invalidate router loader to refresh events data
+      await router.invalidate()
       setDeleteTarget(null)
     } catch (err) {
       console.error('Delete failed:', err)
     } finally {
       setIsDeleting(false)
     }
-  }, [deleteTarget, queryClient])
+  }, [deleteTarget, router])
 
   const handleApprove = useCallback(async (eventId: string) => {
     setIsApproving(eventId)
     try {
       await approveEventAction({ data: { eventId } })
-      // Update status in cache directly
-      queryClient.setQueriesData<EventWithVenue[]>(
-        { queryKey: queryKeys.events.all },
-        (old) => old?.map((e) => (e.id === eventId ? { ...e, status: 'scheduled' } : e))
-      )
+      // Invalidate router loader to refresh events data
+      await router.invalidate()
     } catch (err) {
       console.error('Approve failed:', err)
     } finally {
       setIsApproving(null)
     }
-  }, [queryClient])
+  }, [router])
 
   const handleReject = useCallback(async (eventId: string) => {
     setIsRejecting(eventId)
     try {
       await rejectEventAction({ data: { eventId } })
-      // Update status in cache directly
-      queryClient.setQueriesData<EventWithVenue[]>(
-        { queryKey: queryKeys.events.all },
-        (old) => old?.map((e) => (e.id === eventId ? { ...e, status: 'cancelled' } : e))
-      )
+      // Invalidate router loader to refresh events data
+      await router.invalidate()
     } catch (err) {
       console.error('Reject failed:', err)
     } finally {
       setIsRejecting(null)
     }
-  }, [queryClient])
+  }, [router])
 
   return {
     deleteTarget,

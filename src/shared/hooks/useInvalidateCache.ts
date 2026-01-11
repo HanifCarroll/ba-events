@@ -1,14 +1,17 @@
 import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useRouter } from '@tanstack/react-router'
 import { queryKeys } from '@/shared/lib/query'
 
 /**
- * Hook for invalidating TanStack Query cache.
+ * Hook for invalidating data caches.
  *
- * Use this instead of `router.invalidate()` when you need to refresh data
- * that's fetched via TanStack Query (useQuery hooks).
+ * This hook invalidates BOTH:
+ * - TanStack Query cache (for data fetched via useQuery hooks)
+ * - TanStack Router loaders (for data fetched in route loaders)
  *
- * `router.invalidate()` only refreshes TanStack Router loaders, not Query cache.
+ * Events are loaded via route loaders, so router.invalidate() is required.
+ * Venues are loaded via React Query, so queryClient.invalidateQueries() is required.
  *
  * @example
  * const { invalidateEvents, invalidateVenues } = useInvalidateCache()
@@ -24,13 +27,15 @@ import { queryKeys } from '@/shared/lib/query'
  */
 export function useInvalidateCache() {
   const queryClient = useQueryClient()
+  const router = useRouter()
 
   /**
-   * Invalidate all events queries (list, paginated, tab counts, details)
+   * Invalidate events data.
+   * Events are loaded via route loaders, so this invalidates the router.
    */
   const invalidateEvents = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
-  }, [queryClient])
+    await router.invalidate()
+  }, [router])
 
   /**
    * Invalidate all venues queries (list, select, details)
@@ -40,14 +45,14 @@ export function useInvalidateCache() {
   }, [queryClient])
 
   /**
-   * Invalidate both events and venues queries
+   * Invalidate both events (via router) and venues (via React Query)
    */
   const invalidateAll = useCallback(async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.events.all }),
+      router.invalidate(),
       queryClient.invalidateQueries({ queryKey: queryKeys.venues.all }),
     ])
-  }, [queryClient])
+  }, [router, queryClient])
 
   return {
     invalidateEvents,

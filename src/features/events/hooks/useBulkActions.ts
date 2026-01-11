@@ -1,14 +1,13 @@
 import { useState, useCallback } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useRouter } from '@tanstack/react-router'
 import { bulkUpdateEventStatusAction, bulkDeleteEventsAction } from '../api/crud'
-import { queryKeys } from '@/shared/lib/query'
 import { useBulkSelection } from '@/shared/hooks/useBulkSelection'
-import type { EventWithVenue, EventStatus } from '@/shared/lib/types'
+import type { EventWithVenue } from '@/shared/lib/types'
 
 export type BulkActionType = 'delete' | 'past' | 'cancelled' | null
 
 export function useBulkActions(filteredEvents: EventWithVenue[]) {
-  const queryClient = useQueryClient()
+  const router = useRouter()
   const selection = useBulkSelection(filteredEvents)
   const [bulkAction, setBulkAction] = useState<BulkActionType>(null)
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
@@ -22,23 +21,12 @@ export function useBulkActions(filteredEvents: EventWithVenue[]) {
 
       if (bulkAction === 'delete') {
         await bulkDeleteEventsAction({ data: ids })
-        // Remove deleted events from cache
-        const idsSet = new Set(ids)
-        queryClient.setQueriesData<EventWithVenue[]>(
-          { queryKey: queryKeys.events.all },
-          (old) => old?.filter((e) => !idsSet.has(e.id))
-        )
       } else if (bulkAction === 'past' || bulkAction === 'cancelled') {
         await bulkUpdateEventStatusAction({ data: { eventIds: ids, status: bulkAction } })
-        // Update status in cache
-        const idsSet = new Set(ids)
-        const newStatus: EventStatus = bulkAction
-        queryClient.setQueriesData<EventWithVenue[]>(
-          { queryKey: queryKeys.events.all },
-          (old) => old?.map((e) => (idsSet.has(e.id) ? { ...e, status: newStatus } : e))
-        )
       }
 
+      // Invalidate router loader to refresh events data
+      await router.invalidate()
       selection.clearSelection()
       setBulkAction(null)
     } catch (err) {
@@ -46,7 +34,7 @@ export function useBulkActions(filteredEvents: EventWithVenue[]) {
     } finally {
       setIsBulkProcessing(false)
     }
-  }, [bulkAction, selection, queryClient])
+  }, [bulkAction, selection, router])
 
   return {
     // Selection state and methods (spread from shared hook)

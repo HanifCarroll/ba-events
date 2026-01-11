@@ -22,6 +22,16 @@ export const listEvents = createServerFn({ method: 'GET' }).handler(async (): Pr
 })
 
 /**
+ * List all events for admin with no pagination (client-side filtering)
+ * Returns all events ordered by starts_at descending
+ */
+export const listAllEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
+  await requireAdminAccess()
+  // Fetch all events - reasonable limit for client-side handling
+  return getEventsWithVenues(5000)
+})
+
+/**
  * Paginated event list with server-side filtering
  * Returns events matching filters with pagination metadata
  */

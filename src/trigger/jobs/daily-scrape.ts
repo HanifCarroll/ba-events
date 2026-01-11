@@ -5,6 +5,7 @@
  * Coordinates scraping of all 5 event sources and triggers enrichment.
  */
 import { schedules, tasks, runs } from '@trigger.dev/sdk/v3'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceRoleClient } from '../utils/db-client'
 
 // Import task types for type-safe triggering
@@ -24,6 +25,75 @@ const SOURCE_JOBS = [
   { id: 'scrape-luma', name: 'Luma' },
 ] as const
 
+/**
+ * Clean up existing events that match blocklist patterns.
+ * This handles events imported before blocklist entries were added.
+ */
+async function cleanupBlocklistedEvents(client: SupabaseClient): Promise<number> {
+  // Get all blocklist entries
+  const { data: blocklistEntries, error: blocklistError } = await client
+    .from('import_blocklist')
+    .select('pattern, target_field, source')
+
+  if (blocklistError || !blocklistEntries || blocklistEntries.length === 0) {
+    return 0
+  }
+
+  // Get all events with venue names
+  const { data: events, error: eventsError } = await client
+    .from('events_with_venues')
+    .select('id, name, source, venue_name')
+
+  if (eventsError || !events) {
+    console.error('[daily-scrape] Failed to fetch events for blocklist cleanup:', eventsError)
+    return 0
+  }
+
+  // Find events that match blocklist patterns
+  const eventIdsToDelete: string[] = []
+
+  for (const event of events) {
+    const lowerEventName = event.name?.toLowerCase() || ''
+    const lowerVenueName = event.venue_name?.toLowerCase() || ''
+
+    for (const entry of blocklistEntries) {
+      // Check if source matches (entry applies to this source or 'all')
+      if (entry.source !== 'all' && entry.source !== event.source) {
+        continue
+      }
+
+      const pattern = entry.pattern.toLowerCase()
+
+      if (entry.target_field === 'event_name' && lowerEventName.includes(pattern)) {
+        eventIdsToDelete.push(event.id)
+        break
+      }
+
+      if (entry.target_field === 'venue_name' && lowerVenueName.includes(pattern)) {
+        eventIdsToDelete.push(event.id)
+        break
+      }
+    }
+  }
+
+  if (eventIdsToDelete.length === 0) {
+    return 0
+  }
+
+  // Delete the matching events
+  const { error: deleteError } = await client
+    .from('events')
+    .delete()
+    .in('id', eventIdsToDelete)
+
+  if (deleteError) {
+    console.error('[daily-scrape] Failed to delete blocklisted events:', deleteError)
+    return 0
+  }
+
+  return eventIdsToDelete.length
+}
+
 export interface DailyScrapeResult {
   scrapeRunId: string
   startedAt: string
@@ -38,6 +108,7 @@ export interface DailyScrapeResult {
     error?: string
   }[]
   enrichmentTriggered: boolean
+  blocklistCleanup: number
 }
 
 export const dailyScrape = schedules.task({
@@ -166,6 +237,16 @@ export const dailyScrape = schedules.task({
 
     console.log(`[daily-scrape] Source jobs completed: ${totalInserted} inserted, ${totalUpdated} updated, ${totalSkipped} skipped`)
 
+    // Clean up any events that match blocklist patterns
+    // This handles events imported before blocklist entries were added
+    console.log('[daily-scrape] Running blocklist cleanup...')
+    const blocklistCleanup = await cleanupBlocklistedEvents(client)
+    if (blocklistCleanup > 0) {
+      console.log(`[daily-scrape] Blocklist cleanup: deleted ${blocklistCleanup} events`)
+    } else {
+      console.log('[daily-scrape] Blocklist cleanup: no events to delete')
+    }
+
     // Trigger enrichment job for newly imported events
     let enrichmentTriggered = false
     if (totalInserted > 0) {
@@ -198,6 +279,7 @@ export const dailyScrape = schedules.task({
           ...scrapeRun.metadata,
           results,
           enrichmentTriggered,
+          blocklistCleanup,
         },
       })
       .eq('id', scrapeRunId)
@@ -214,6 +296,7 @@ export const dailyScrape = schedules.task({
       completedAt,
       results,
       enrichmentTriggered,
+      blocklistCleanup,
     }
   },
 })

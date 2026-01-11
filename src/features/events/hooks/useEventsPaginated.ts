@@ -28,6 +28,8 @@ type SearchUpdater = (prev: EventSearchParams) => Partial<EventSearchParams>
 export interface UseEventsPaginatedOptions {
   searchParams: EventSearchParams
   navigate: (opts: { search: Partial<EventSearchParams> | SearchUpdater; replace?: boolean }) => void
+  /** Initial data from route loader - eliminates loading flash on first render */
+  initialData?: PaginatedResponse<EventWithVenue>
 }
 
 export interface UseEventsPaginatedReturn {
@@ -112,6 +114,7 @@ function getFilterParams(searchParams: EventSearchParams): Omit<EventFilterParam
 export function useEventsPaginated({
   searchParams,
   navigate,
+  initialData,
 }: UseEventsPaginatedOptions): UseEventsPaginatedReturn {
   const queryClient = useQueryClient()
 
@@ -125,6 +128,7 @@ export function useEventsPaginated({
     queryFn: () => listEventsPaginated({ data: apiParams }),
     placeholderData: keepPreviousData, // Show previous data while loading new page
     staleTime: 30_000, // 30 seconds
+    initialData, // From route loader - eliminates loading flash on first render
   })
 
   // Tab counts query (separate, longer staleTime since counts change less often)

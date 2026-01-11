@@ -422,34 +422,31 @@ return apiError('Not found', 404)
 
 ### Cache Invalidation
 
-This project uses **two different data fetching patterns** that require different invalidation approaches:
+This project uses **two different data fetching patterns**:
 
-1. **Route Loaders** - Data fetched in route `loader` functions, accessed via `Route.useLoaderData()`
-2. **TanStack Query** - Data fetched via `useQuery` hooks
+1. **Route Loaders** - Events are loaded via route `loader` functions, accessed via `Route.useLoaderData()`
+2. **TanStack Query** - Venues are fetched via `useQuery` hooks
 
-**CRITICAL: Use the correct invalidation method:**
+**Always use `useInvalidateCache` for cache invalidation:**
 
 ```tsx
-// For Route Loaders (data from Route.useLoaderData())
-import { useRouter } from '@tanstack/react-router'
-const router = useRouter()
-router.invalidate()  // ✅ Correct for route loaders
-
-// For TanStack Query (data from useQuery hooks)
 import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
+
 const { invalidateEvents, invalidateVenues, invalidateAll } = useInvalidateCache()
-await invalidateEvents()  // ✅ Correct for TanStack Query
+
+// After updating an event (uses router.invalidate() internally)
+await invalidateEvents()
+
+// After updating a venue (uses queryClient.invalidateQueries() internally)
+await invalidateVenues()
+
+// After updating both
+await invalidateAll()
 ```
 
-**How to identify which pattern is used:**
-- Route loaders: Look for `loader:` in the route definition and `Route.useLoaderData()` in the component
-- TanStack Query: Look for `useQuery()` or custom hooks that wrap `useQuery()`
-
-**Common mistake:** Using `router.invalidate()` when data is fetched via TanStack Query. This will NOT refresh the data because router invalidation only affects route loaders.
-
-The `useInvalidateCache` hook provides:
-- `invalidateEvents()` - Invalidates all events queries
-- `invalidateVenues()` - Invalidates all venues queries
+The `useInvalidateCache` hook abstracts away the different invalidation mechanisms:
+- `invalidateEvents()` - Calls `router.invalidate()` to refresh route loader data
+- `invalidateVenues()` - Calls `queryClient.invalidateQueries()` to refresh React Query cache
 - `invalidateAll()` - Invalidates both events and venues
 
 ## Environment Variables
