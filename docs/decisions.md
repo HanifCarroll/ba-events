@@ -26,6 +26,65 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Unified Description Enrichment Button
+
+**Date:** 2026-01-11
+
+**Decision:** Consolidate three separate description enrichment buttons (Generic, Passline, Luma) into a single "Add Descriptions" button that automatically routes events to the correct enrichment strategy based on their source.
+
+**Problem:**
+The admin events page had three separate enrichment buttons with overlapping but exclusive functionality:
+- "Add Descriptions" - For generic sources using Jina Reader + Claude AI
+- "Passline Descriptions" - For Passline events using client-side JSON-LD extraction
+- "Luma Descriptions" - For Luma events using Playwright scraping
+
+This created UX confusion:
+1. Users had to understand which button to use for which events
+2. Mixed selections (e.g., 10 Passline + 5 Luma + 5 Meetup) required clicking multiple buttons
+3. Three separate buttons cluttered the bulk action bar
+
+**Solution:**
+Created `useUnifiedDescriptionEnrichment` hook that:
+1. Partitions selected events by source
+2. Looks up enrichment strategy using source-to-strategy mapping
+3. Executes enrichments sequentially by source (Passline → Luma → Generic)
+4. Tracks combined progress across all sources
+5. Provides unified stop functionality
+
+**Source-to-Strategy Mapping:**
+
+| Source | Strategy | Hook Used | Stoppable |
+|--------|----------|-----------|-----------|
+| passline | Client-side JSON-LD | usePasslineDescriptionEnrichment | Yes |
+| luma | Playwright scraping | useLumaDescriptionEnrichment | Yes |
+| meetup | Jina + Claude | useBackgroundEnrichment | Yes |
+| eventbrite | Jina + Claude | useBackgroundEnrichment | Yes |
+| ba-tourism | Jina + Claude | useBackgroundEnrichment | Yes |
+| csv | None | N/A | N/A |
+
+**Alternatives Considered:**
+- **Replace hooks entirely**: Rejected - existing hooks are well-tested and may be needed for source-specific operations
+- **Parallel execution**: Rejected - harder to track progress, race conditions in cache invalidation
+- **Client-only orchestration**: Rejected - would lose server-side streaming progress
+
+**Rationale:**
+1. **Single entry point**: One button handles all description enrichment
+2. **Preserves existing logic**: Orchestrates hooks rather than replacing them
+3. **Extensible**: New sources just add an entry to the strategy map
+4. **Progressive feedback**: Combined progress + source-aware toast messages
+5. **Stop all**: Unified stop halts current source and prevents subsequent execution
+
+**Files Created:**
+- `src/features/events/hooks/useUnifiedDescriptionEnrichment.ts`
+- `src/features/events/hooks/description-enrichment-strategies.ts`
+
+**Files Modified:**
+- `src/routes/admin/events/-components/enrichments-config.ts` - Simplified to single description config
+- `src/routes/admin/events/index.tsx` - Use unified hook
+- `src/features/events/index.ts` - Export new hook
+
+---
+
 ### Lazy Initialization for Server-Only SDKs
 
 **Date:** 2026-01-11

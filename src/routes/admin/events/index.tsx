@@ -37,11 +37,15 @@ import {
   useBackgroundEnrichment,
   useLumaDescriptionEnrichment,
   usePasslineDescriptionEnrichment,
+  useUnifiedDescriptionEnrichment,
   useBulkActions,
   useSingleEventActions,
   useMarkPastEvents,
-  listAllEventsAdmin,
+  listActiveEventsAdmin,
+  listPastEventsAdmin,
+  getEventTabCountsAction,
 } from '@/features/events'
+// EventTabCounts type is compatible with local TabCounts interface
 import { listVenues } from '@/features/venues'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
 import { useVenueEnrichment } from '@/features/venues'
@@ -145,37 +149,8 @@ function eventNeedsAttention(event: EventWithVenue): boolean {
   return missingDescriptionWithLink || missingVenue
 }
 
-/** Compute tab counts from all events */
-function computeTabCounts(events: EventWithVenue[], showPast: boolean): TabCounts {
-  let all = 0
-  let needs_attention = 0
-  let pending_review = 0
-  let past = 0
-
-  for (const event of events) {
-    // Count for "all" tab - excludes past unless showPast is true
-    if (event.status !== 'past' || showPast) {
-      all++
-    }
-
-    // Count needs_attention (excludes past events)
-    if (event.status !== 'past' && eventNeedsAttention(event)) {
-      needs_attention++
-    }
-
-    // Count pending_review
-    if (event.status === 'pending_review') {
-      pending_review++
-    }
-
-    // Count past
-    if (event.status === 'past') {
-      past++
-    }
-  }
-
-  return { all, needs_attention, pending_review, past }
-}
+// Note: Tab counts are now fetched from the server via getEventTabCountsAction
+// instead of being computed client-side for better performance
 
 /** Filter events based on tab and search params */
 function filterEvents(events: EventWithVenue[], params: EventSearchParams): EventWithVenue[] {
@@ -266,12 +241,14 @@ function sortEvents(events: EventWithVenue[], sortBy?: string, sortDir?: 'asc' |
 export const Route = createFileRoute('/admin/events/')({
   validateSearch: eventSearchSchema,
   loader: async () => {
-    // Fetch all events and venues in parallel - client-side filtering/pagination
-    const [venues, allEvents] = await Promise.all([
+    // Fetch active events, venues, and tab counts in parallel
+    // Past events are lazy-loaded when user clicks the "Past" tab
+    const [venues, activeEvents, tabCounts] = await Promise.all([
       listVenues(),
-      listAllEventsAdmin(),
+      listActiveEventsAdmin(),
+      getEventTabCountsAction({ data: {} }),
     ])
-    return { venues, allEvents }
+    return { venues, activeEvents, tabCounts }
   },
   component: EventListPage,
 })
@@ -318,7 +295,7 @@ function getStatusBadge(status: string) {
 }
 
 function EventListPage() {
-  const { venues, allEvents } = Route.useLoaderData()
+  const { venues, activeEvents, tabCounts: serverTabCounts } = Route.useLoaderData()
   const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
 
@@ -327,11 +304,25 @@ function EventListPage() {
   const page = searchParams.page ?? 1
   const pageSize = searchParams.pageSize ?? 25
 
-  // Compute tab counts from all events
-  const tabCounts = useMemo(
-    () => computeTabCounts(allEvents, searchParams.showPast ?? false),
-    [allEvents, searchParams.showPast]
-  )
+  // Lazy-loaded past events (null = not loaded yet)
+  const [pastEvents, setPastEvents] = useState<EventWithVenue[] | null>(null)
+  const [isPastLoading, setIsPastLoading] = useState(false)
+
+  // Derive allEvents based on current tab
+  // For non-past tabs, use activeEvents; for past tab, use pastEvents (or empty while loading)
+  const allEvents = useMemo(() => {
+    if (activeTab === 'past') {
+      return pastEvents ?? []
+    }
+    return activeEvents
+  }, [activeTab, activeEvents, pastEvents])
+
+  // Use server-provided tab counts, but override past count if we've loaded past events
+  const tabCounts = useMemo((): TabCounts => ({
+    ...serverTabCounts,
+    // If past events have been loaded, use actual count for accuracy
+    past: pastEvents !== null ? pastEvents.length : serverTabCounts.past,
+  }), [serverTabCounts, pastEvents])
 
   // Filter events based on current params
   const filteredEvents = useMemo(
@@ -515,39 +506,37 @@ function EventListPage() {
     },
     [setSorting]
   )
+  // Individual enrichment hooks (orchestrated by unified hook)
   const backgroundEnrichment = useBackgroundEnrichment()
-  const venueEnrichment = useVenueEnrichment()
-  const lumaEnrichment = useLumaDescriptionEnrichment()
   const passlineEnrichment = usePasslineDescriptionEnrichment()
+  const lumaEnrichment = useLumaDescriptionEnrichment()
+  const venueEnrichment = useVenueEnrichment()
 
-  // Calculate enrichable count for selected events (description enrichment)
+  // Unified description enrichment - automatically routes to correct method based on source
+  const unifiedEnrichment = useUnifiedDescriptionEnrichment(
+    backgroundEnrichment,
+    passlineEnrichment,
+    lumaEnrichment
+  )
+
+  // Calculate unified enrichable count for selected events (all sources)
   const enrichableCount = useMemo(() => {
-    return backgroundEnrichment.getEnrichableEvents(events, bulk.selectedIds).length
-  }, [backgroundEnrichment, events, bulk.selectedIds])
+    return unifiedEnrichment.getEnrichableCount(events, bulk.selectedIds)
+  }, [unifiedEnrichment, events, bulk.selectedIds])
 
   // Calculate venue enrichable count for selected events
   const venueEnrichableCount = useMemo(() => {
     return venueEnrichment.getVenueEnrichableEvents(events, bulk.selectedIds).length
   }, [venueEnrichment, events, bulk.selectedIds])
 
-  // Calculate Luma enrichable count for selected events (missing descriptions)
-  const lumaEnrichableCount = useMemo(() => {
-    return lumaEnrichment.getLumaEnrichableEvents(events, bulk.selectedIds).length
-  }, [lumaEnrichment, events, bulk.selectedIds])
-
-  // Calculate Passline enrichable count for selected events (missing descriptions)
-  const passlineEnrichableCount = useMemo(() => {
-    return passlineEnrichment.getPasslineEnrichableEvents(events, bulk.selectedIds).length
-  }, [passlineEnrichment, events, bulk.selectedIds])
-
-  // Handle description enrichment with selection clear on complete
+  // Handle unified description enrichment with selection clear on complete
   const handleEnrich = useCallback(() => {
-    backgroundEnrichment.enrichEvents(
+    unifiedEnrichment.enrichDescriptions(
       events,
       bulk.selectedIds,
       () => bulk.clearSelection()
     )
-  }, [backgroundEnrichment, events, bulk.selectedIds, bulk.clearSelection])
+  }, [unifiedEnrichment, events, bulk.selectedIds, bulk.clearSelection])
 
   // Handle venue enrichment with selection clear on complete
   const handleVenueEnrich = useCallback(() => {
@@ -558,65 +547,29 @@ function EventListPage() {
     )
   }, [venueEnrichment, events, bulk.selectedIds, bulk.clearSelection])
 
-  // Handle Luma description enrichment with selection clear on complete
-  const handleLumaEnrich = useCallback(() => {
-    lumaEnrichment.enrichLumaEvents(
-      events,
-      bulk.selectedIds,
-      () => bulk.clearSelection()
-    )
-  }, [lumaEnrichment, events, bulk.selectedIds, bulk.clearSelection])
-
-  // Handle Passline description enrichment with selection clear on complete
-  const handlePasslineEnrich = useCallback(() => {
-    passlineEnrichment.enrichPasslineEvents(
-      events,
-      bulk.selectedIds,
-      () => bulk.clearSelection()
-    )
-  }, [passlineEnrichment, events, bulk.selectedIds, bulk.clearSelection])
-
   // Build enrichments config array for BulkActionBar
   const enrichments = useMemo(
     () => buildEnrichmentsConfig({
       descriptionCount: enrichableCount,
       onDescriptionEnrich: handleEnrich,
-      backgroundEnrichment: {
-        isEnriching: backgroundEnrichment.isEnriching,
-        stopEnrichment: backgroundEnrichment.stopEnrichment,
+      descriptionEnrichment: {
+        isEnriching: unifiedEnrichment.isEnriching,
+        stopEnrichment: unifiedEnrichment.stop,
       },
       venueCount: venueEnrichableCount,
       onVenueEnrich: handleVenueEnrich,
       venueEnrichment: {
         isVenueEnriching: venueEnrichment.isVenueEnriching,
       },
-      lumaCount: lumaEnrichableCount,
-      onLumaEnrich: handleLumaEnrich,
-      lumaEnrichment: {
-        isLumaEnriching: lumaEnrichment.isLumaEnriching,
-      },
-      passlineCount: passlineEnrichableCount,
-      onPasslineEnrich: handlePasslineEnrich,
-      passlineEnrichment: {
-        isPasslineEnriching: passlineEnrichment.isPasslineEnriching,
-        stopPasslineEnrichment: passlineEnrichment.stopPasslineEnrichment,
-      },
     }),
     [
       enrichableCount,
       handleEnrich,
-      backgroundEnrichment.isEnriching,
-      backgroundEnrichment.stopEnrichment,
+      unifiedEnrichment.isEnriching,
+      unifiedEnrichment.stop,
       venueEnrichableCount,
       handleVenueEnrich,
       venueEnrichment.isVenueEnriching,
-      lumaEnrichableCount,
-      handleLumaEnrich,
-      lumaEnrichment.isLumaEnriching,
-      passlineEnrichableCount,
-      handlePasslineEnrich,
-      passlineEnrichment.isPasslineEnriching,
-      passlineEnrichment.stopPasslineEnrichment,
     ]
   )
 
@@ -634,8 +587,24 @@ function EventListPage() {
     }
   }, []) // Only run once on mount
 
-  const handleTabChange = (value: string) => {
-    setTab(value as EventTab)
+  const handleTabChange = async (value: string) => {
+    const tab = value as EventTab
+
+    // Lazy load past events on first click of Past tab
+    if (tab === 'past' && pastEvents === null && !isPastLoading) {
+      setIsPastLoading(true)
+      try {
+        const past = await listPastEventsAdmin()
+        setPastEvents(past)
+      } catch (error) {
+        console.error('Failed to load past events:', error)
+        toast.error('Failed to load past events')
+      } finally {
+        setIsPastLoading(false)
+      }
+    }
+
+    setTab(tab)
     setSearchInput('')
   }
 
@@ -847,6 +816,14 @@ function EventListPage() {
       {tabCounts?.all === 0 ? (
         // No events in database at all
         <EmptyState />
+      ) : isPastLoading && activeTab === 'past' ? (
+        // Loading past events
+        <div className="flex items-center justify-center py-16">
+          <div className="text-center space-y-3">
+            <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
+            <p className="text-muted-foreground">Loading past events...</p>
+          </div>
+        </div>
       ) : tabCounts?.[activeTab] === 0 ? (
         // Tab has no events (e.g., all events reviewed)
         <TabEmptyState tab={activeTab} />

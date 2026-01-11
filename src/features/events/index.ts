@@ -7,6 +7,8 @@ export {
   listEvents,
   listEventsPaginated,
   listAllEventsAdmin,
+  listActiveEventsAdmin,
+  listPastEventsAdmin,
   getEventTabCountsAction,
   getEventAction,
   createEventAction,
@@ -53,6 +55,13 @@ export { useDescriptionEnrichment, type EnrichStep } from './hooks/useDescriptio
 export { useBackgroundEnrichment } from './hooks/useBackgroundEnrichment'
 export { useLumaDescriptionEnrichment } from './hooks/useLumaDescriptionEnrichment'
 export { usePasslineDescriptionEnrichment } from './hooks/usePasslineDescriptionEnrichment'
+export { useUnifiedDescriptionEnrichment } from './hooks/useUnifiedDescriptionEnrichment'
+export {
+  getEnrichmentMethod,
+  getEnrichmentStrategy,
+  groupEventsByEnrichmentMethod,
+  type DescriptionEnrichmentMethod,
+} from './hooks/description-enrichment-strategies'
 export { useSingleEventActions } from './hooks/useSingleEventActions'
 export { useMarkPastEvents } from './hooks/useMarkPastEvents'
 export {

@@ -5,7 +5,7 @@
  * Adding a new enrichment type requires adding a single config object here.
  */
 
-import { Sparkles, DollarSign, MapPin, FileText } from 'lucide-react'
+import { Sparkles, MapPin } from 'lucide-react'
 import type { EnrichmentConfig, EnrichmentColor } from './EnrichmentButton'
 import type { LucideIcon } from 'lucide-react'
 
@@ -49,12 +49,15 @@ function buildEnrichmentConfig(input: EnrichmentConfigInput): EnrichmentConfig {
 
 /**
  * Parameters needed to build the full enrichments config array.
+ *
+ * Note: Description enrichment is now unified - it automatically routes events
+ * to the correct enrichment method (Passline, Luma, or generic) based on source.
  */
 export interface EnrichmentsConfigParams {
-  // Generic description enrichment
+  // Unified description enrichment (handles Passline, Luma, and generic sources)
   descriptionCount: number
   onDescriptionEnrich: () => void
-  backgroundEnrichment: {
+  descriptionEnrichment: {
     isEnriching: boolean
     stopEnrichment: () => void
   }
@@ -65,21 +68,6 @@ export interface EnrichmentsConfigParams {
   venueEnrichment: {
     isVenueEnriching: boolean
   }
-
-  // Luma description enrichment
-  lumaCount: number
-  onLumaEnrich: () => void
-  lumaEnrichment: {
-    isLumaEnriching: boolean
-  }
-
-  // Passline description enrichment
-  passlineCount: number
-  onPasslineEnrich: () => void
-  passlineEnrichment: {
-    isPasslineEnriching: boolean
-    stopPasslineEnrichment: () => void
-  }
 }
 
 /**
@@ -88,6 +76,7 @@ export interface EnrichmentsConfigParams {
  */
 export function buildEnrichmentsConfig(params: EnrichmentsConfigParams): EnrichmentConfig[] {
   return [
+    // Unified description enrichment - automatically routes to Passline, Luma, or generic
     buildEnrichmentConfig({
       key: 'descriptions',
       label: 'Add Descriptions',
@@ -97,21 +86,11 @@ export function buildEnrichmentsConfig(params: EnrichmentsConfigParams): Enrichm
       count: params.descriptionCount,
       onClick: params.onDescriptionEnrich,
       hook: {
-        isEnriching: params.backgroundEnrichment.isEnriching,
-        stopEnrichment: params.backgroundEnrichment.stopEnrichment,
+        isEnriching: params.descriptionEnrichment.isEnriching,
+        stopEnrichment: params.descriptionEnrichment.stopEnrichment,
       },
     }),
-    // Eventbrite enrichment (not currently wired up)
-    buildEnrichmentConfig({
-      key: 'eventbrite',
-      label: 'Add Prices',
-      progressLabel: 'Adding Prices',
-      color: 'orange',
-      icon: DollarSign,
-      count: 0,
-      onClick: () => {},
-      hook: { isEnriching: false },
-    }),
+    // Venue enrichment
     buildEnrichmentConfig({
       key: 'venues',
       label: 'Add Venues',
@@ -122,31 +101,6 @@ export function buildEnrichmentsConfig(params: EnrichmentsConfigParams): Enrichm
       onClick: params.onVenueEnrich,
       hook: {
         isEnriching: params.venueEnrichment.isVenueEnriching,
-      },
-    }),
-    buildEnrichmentConfig({
-      key: 'luma',
-      label: 'Luma Descriptions',
-      progressLabel: 'Adding Luma Descriptions',
-      color: 'violet',
-      icon: FileText,
-      count: params.lumaCount,
-      onClick: params.onLumaEnrich,
-      hook: {
-        isEnriching: params.lumaEnrichment.isLumaEnriching,
-      },
-    }),
-    buildEnrichmentConfig({
-      key: 'passline',
-      label: 'Passline Descriptions',
-      progressLabel: 'Adding Passline Descriptions',
-      color: 'indigo',
-      icon: FileText,
-      count: params.passlineCount,
-      onClick: params.onPasslineEnrich,
-      hook: {
-        isEnriching: params.passlineEnrichment.isPasslineEnriching,
-        stopEnrichment: params.passlineEnrichment.stopPasslineEnrichment,
       },
     }),
   ]

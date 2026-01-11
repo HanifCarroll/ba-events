@@ -152,6 +152,79 @@ Events are eligible for enrichment if they have `!description_es && !!link`.
 3. Batch processing with controlled concurrency (3 parallel pages)
 4. Rate-limiting delays between batches
 
+## Unified Description Enrichment Button
+
+The admin events page provides a single "Add Descriptions" button that automatically routes events to the correct enrichment method based on their source. This is implemented via a **source-to-strategy mapping** system.
+
+### How It Works
+
+1. User selects events in the admin table (can be mixed sources)
+2. Clicking "Add Descriptions" triggers the unified enrichment hook
+3. Events are grouped by source and processed sequentially:
+   - **Passline events** → Client-side JSON-LD extraction + server translation
+   - **Luma events** → Server-side Playwright scraping
+   - **Other sources** → Server-side Jina Reader + Claude AI
+
+### Source-to-Strategy Mapping
+
+The mapping is defined in `src/features/events/hooks/description-enrichment-strategies.ts`:
+
+| Source | Method | Hook Used | Reason |
+|--------|--------|-----------|--------|
+| `passline` | `passline` | `usePasslineDescriptionEnrichment` | Cloudflare blocks server requests |
+| `luma` | `luma` | `useLumaDescriptionEnrichment` | Requires Playwright for JS content |
+| `meetup` | `background` | `useBackgroundEnrichment` | Works with Jina Reader |
+| `eventbrite` | `background` | `useBackgroundEnrichment` | Works with Jina Reader |
+| `ba-tourism` | `background` | `useBackgroundEnrichment` | Works with Jina Reader |
+| `csv` | `none` | N/A | No source URL available |
+
+### Adding a New Source
+
+To add enrichment support for a new source:
+
+1. **Add to strategy map** in `description-enrichment-strategies.ts`:
+   ```typescript
+   const STRATEGY_MAP: Record<ImportSource, StrategyConfig> = {
+     // ... existing entries
+     'new-source': {
+       method: 'background', // or 'passline', 'luma', 'none'
+       reason: 'Explain why this method was chosen',
+       isStoppable: true,
+     },
+   }
+   ```
+
+2. **If using existing method** (`background`, `passline`, `luma`): No further changes needed.
+
+3. **If using new method**: Create a new enrichment hook following the pattern:
+   ```typescript
+   export function useNewSourceDescriptionEnrichment() {
+     return {
+       isEnriching: boolean,
+       canEnrichEvent: (event) => boolean,
+       getEnrichableEvents: (events, selectedIds) => EventWithVenue[],
+       enrichEvents: (events, selectedIds, onComplete?) => Promise<void>,
+       stopEnrichment: () => void,
+     }
+   }
+   ```
+
+4. **Update unified hook** in `useUnifiedDescriptionEnrichment.ts`:
+   - Add the new hook as a parameter
+   - Add routing logic in `executeMethodEnrichment()`
+   - Update `getEnrichableEventsByMethod()` to filter events
+
+### Key Files
+
+```
+src/features/events/hooks/
+├── description-enrichment-strategies.ts  # Source-to-strategy mapping
+├── useUnifiedDescriptionEnrichment.ts    # Orchestration hook
+├── useBackgroundEnrichment.ts            # Generic Jina + Claude
+├── usePasslineDescriptionEnrichment.ts   # Client-side JSON-LD
+└── useLumaDescriptionEnrichment.ts       # Server-side Playwright
+```
+
 ## Valid Categories & Vibes
 
 **Categories:** techno, house, electronic, jazz, rock, indie, latin, tango, classical, hip-hop, reggaeton, folk, art, theatre, comedy, film, food, market, festival, workshop, networking, sports, other
