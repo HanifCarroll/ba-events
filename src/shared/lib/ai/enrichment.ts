@@ -120,6 +120,7 @@ Output ONLY the translated text, no explanations or additional commentary.`
 
 /**
  * Venue extraction prompt - extracts just the venue/location name
+ * Used with structured outputs for guaranteed JSON response
  */
 const VENUE_EXTRACTION_PROMPT = `Extract the venue name from this event page.
 
@@ -128,20 +129,38 @@ Look for:
 - Check sections labeled "Venue", "Location", "Lugar", "Ubicación", "Dónde"
 - The place name, not the full address
 
-DO NOT include:
-- Full street addresses (we just need the venue name)
-- City, neighborhood, or country names
-- Room numbers or floor details
-- "Online", "Virtual", or "TBA" - return null for these
+Set venue_name to null if:
+- No specific physical venue is mentioned
+- The event is online/virtual
+- The location says "TBA", "To be announced", or similar
+- Only an address is provided without a venue name
 
-Examples:
-- "Centro Cultural Kirchner" ✓
-- "Teatro Colón" ✓
-- "La Trastienda Club" ✓
-- "Av. Corrientes 1234, CABA" ✗ (this is an address, not a venue name)
-- "Online event" → null
+Examples of valid venue names:
+- "Centro Cultural Kirchner"
+- "Teatro Colón"
+- "La Trastienda Club"
 
-Return ONLY the venue name as plain text, or exactly the word "null" (without quotes) if no specific physical venue is mentioned.`
+Examples that should return null:
+- "Av. Corrientes 1234, CABA" (address only, no venue name)
+- "Online event"
+- "Location TBA"
+- "Needs a location"`
+
+/**
+ * JSON schema for venue extraction response
+ * Using structured outputs guarantees this exact format
+ */
+const VENUE_EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    venue_name: {
+      type: ['string', 'null'],
+      description: 'The venue name, or null if no physical venue is specified',
+    },
+  },
+  required: ['venue_name'],
+  additionalProperties: false,
+} as const
 
 /**
  * Fetch a URL's content as markdown using Jina Reader
@@ -262,33 +281,56 @@ export async function translateText(
 }
 
 /**
- * Extract venue name from markdown content using Haiku 4.5
- * Returns the venue name or null if no physical venue found
+ * Response type for venue extraction with structured outputs
+ */
+interface VenueExtractionResponse {
+  venue_name: string | null
+}
+
+/**
+ * Structured outputs beta header
+ */
+const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
+
+/**
+ * Extract venue name from markdown content using Haiku 4.5 with structured outputs.
+ * Uses constrained decoding to guarantee valid JSON response format.
+ * Returns the venue name or null if no physical venue found.
  */
 export async function extractVenueName(markdown: string): Promise<string | null> {
   try {
     // Use a moderate sample for venue extraction (first 10k chars)
     const truncatedMarkdown = markdown.slice(0, 10000)
 
-    const message = await getAnthropicClient().messages.create({
+    // Use structured outputs beta API for guaranteed JSON response
+    const message = await getAnthropicClient().beta.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 100,
+      betas: [STRUCTURED_OUTPUTS_BETA],
       messages: [
         {
           role: 'user',
           content: `${VENUE_EXTRACTION_PROMPT}\n\n---\n${truncatedMarkdown}\n---`,
         },
       ],
+      output_format: {
+        type: 'json_schema',
+        schema: VENUE_EXTRACTION_SCHEMA,
+      },
     })
 
-    const response = extractTextFromResponse(message)?.trim() ?? ''
-
-    // Check for null responses
-    if (!response || response.toLowerCase() === 'null' || response.toLowerCase() === 'n/a') {
+    // With structured outputs, response is guaranteed to be valid JSON
+    const textBlock = message.content.find((block) => block.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') {
+      console.error('[extractVenueName] No text block in response')
       return null
     }
 
-    return response
+    const result = JSON.parse(textBlock.text) as VenueExtractionResponse
+
+    // Return the venue_name directly - it's either a string or null
+    // No need for pattern matching since structured outputs guarantee the format
+    return result.venue_name
   } catch (error) {
     console.error(`Haiku venue extraction error:`, error)
     return null

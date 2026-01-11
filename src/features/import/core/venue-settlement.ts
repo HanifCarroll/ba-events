@@ -43,6 +43,22 @@ const PLACEHOLDER_PATTERNS = [
 ]
 
 /**
+ * Patterns that indicate garbage/invalid venue names.
+ * These catch AI-generated explanatory text that slipped through extraction.
+ */
+const GARBAGE_VENUE_PATTERNS = [
+  /^null\b/i,                           // Starts with "null" (AI saying no venue)
+  /no\s*(specific\s*)?(physical\s*)?venue/i,  // "no venue", "no specific venue", etc.
+  /needs\s*a\s*location/i,              // "Needs a location"
+  /location\s*(field|section)/i,        // "location field", "location section"
+  /the\s*event\s*page/i,                // "The event page shows..."
+  /not\s*been\s*(specified|designated|assigned)/i,  // "has not been specified"
+  /n\/a/i,                              // "N/A"
+  /^online\s*event$/i,                  // "Online event"
+  /^virtual$/i,                         // "Virtual"
+]
+
+/**
  * Check if a venue name or address is a placeholder (not a real location).
  * Returns true for text like "Register to See Address", "TBA", etc.
  */
@@ -51,6 +67,25 @@ export function isPlaceholderVenue(text: string | null | undefined): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
   return PLACEHOLDER_PATTERNS.some(pattern => pattern.test(trimmed))
+}
+
+/**
+ * Check if a venue name is garbage/invalid (AI-generated explanation, not a real venue).
+ * Returns true for text like "null The event page...", "No specific venue", etc.
+ */
+export function isGarbageVenueName(text: string | null | undefined): boolean {
+  if (!text) return true // Empty is garbage
+  const trimmed = text.trim()
+  if (!trimmed) return true
+
+  // Too short to be a real venue name
+  if (trimmed.length < 3) return true
+
+  // Too long - real venue names are rarely over 100 chars
+  if (trimmed.length > 150) return true
+
+  // Check garbage patterns
+  return GARBAGE_VENUE_PATTERNS.some(pattern => pattern.test(trimmed))
 }
 
 // ============================================================================
@@ -195,6 +230,18 @@ export async function settleVenue(
       confidence: 0,
       venueName,
       isPlaceholder: true,
+    }
+  }
+
+  // Check for garbage/invalid venue names (AI-generated explanations, etc.)
+  // These should not create venues
+  if (isGarbageVenueName(venueName)) {
+    console.log(`[venue-settlement] Detected garbage venue name: "${venueName}"`)
+    return {
+      venueId: null,
+      action: 'skipped',
+      confidence: 0,
+      venueName,
     }
   }
 
