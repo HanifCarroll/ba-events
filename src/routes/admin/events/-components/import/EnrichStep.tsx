@@ -31,11 +31,25 @@ const ENRICHMENT_CONFIG = {
     itemLabel: 'description',
     helpText: 'This will visit each event\'s detail page to fetch the full description. Event embeddings will be regenerated with the new content.',
   },
+  'passline-description': {
+    title: 'Enrich Passline Descriptions',
+    subtitle: 'Extract descriptions from Passline event pages',
+    completeText: 'Passline description enrichment complete',
+    sourceLabel: 'Passline Description Enrichment',
+    Icon: FileText,
+    iconBgClass: 'bg-amber-500/10',
+    iconTextClass: 'text-amber-500',
+    progressBarClass: 'bg-amber-500',
+    buttonBgClass: 'bg-amber-600 hover:bg-amber-700',
+    enrichedLabel: 'Descriptions added',
+    itemLabel: 'description',
+    helpText: 'This extracts descriptions from Passline event pages and translates them to English. Event embeddings will be generated with the new content.',
+  },
 } as const
 import { Button } from '@/shared/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/ui/collapsible'
 
-type EnrichmentType = 'venue' | 'description'
+type EnrichmentType = 'venue' | 'description' | 'passline-description'
 
 interface EnrichStepProps {
   enrichmentType: EnrichmentType

@@ -106,7 +106,14 @@ export { type MeetupEvent } from './scrapers/meetup'
 export { type VenueMatchResult } from './scrapers/venue-matcher'
 
 // Client-side scraper for Passline (bypasses Cloudflare)
-export { extractPasslineVenuesBatchClient } from './scrapers/passline/client-enrichment'
+export {
+  extractPasslineVenuesBatchClient,
+  extractPasslineEventsBatchClient,
+  extractPasslineEventInfoClient,
+  type PasslineVenueInfo,
+  type PasslineEventInfo,
+  type PasslineEnrichmentResult,
+} from './scrapers/passline/client-enrichment'
 
 // Blocklist API
 export {

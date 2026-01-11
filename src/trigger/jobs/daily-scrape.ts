@@ -9,7 +9,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceRoleClient } from '../utils/db-client'
 
 // Import task types for type-safe triggering
-import type { scrapePassline } from './scrape-passline'
+// Note: scrapePassline removed - Passline blocks server-side requests with Cloudflare
+// Passline imports must be done manually via admin UI (see decisions.md 2026-01-11)
 import type { scrapeEventbrite } from './scrape-eventbrite'
 import type { scrapeBATourism } from './scrape-ba-tourism'
 import type { scrapeMeetup } from './scrape-meetup'
@@ -17,8 +18,8 @@ import type { scrapeLuma } from './scrape-luma'
 import type { enrichEventsJob } from './enrich-events'
 
 // Source job IDs
+// Note: Passline removed - requires manual import via admin UI due to Cloudflare blocking
 const SOURCE_JOBS = [
-  { id: 'scrape-passline', name: 'Passline' },
   { id: 'scrape-eventbrite', name: 'Eventbrite' },
   { id: 'scrape-ba-tourism', name: 'BA Tourism' },
   { id: 'scrape-meetup', name: 'Meetup' },
@@ -153,11 +154,8 @@ export const dailyScrape = schedules.task({
     // Trigger all source jobs in parallel
     console.log('[daily-scrape] Triggering source jobs...')
 
+    // Note: Passline removed - requires manual import via admin UI due to Cloudflare blocking
     const handles = await Promise.all([
-      tasks.trigger<typeof scrapePassline>('scrape-passline', {
-        daysAhead: 30,
-        scrapeRunId,
-      }),
       tasks.trigger<typeof scrapeEventbrite>('scrape-eventbrite', {
         daysAhead: 30,
         scrapeRunId,

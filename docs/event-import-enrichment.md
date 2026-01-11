@@ -67,6 +67,55 @@ This document outlines the two-phase event import architecture: fast initial imp
 - Descriptions - must be scraped from individual event pages via Jina + Claude Haiku
 - Venue details - often null in list data, requires visiting individual event pages
 
+## Enrichment Strategy Decision Matrix
+
+The following table documents the client-side vs server-side enrichment strategy for each source, along with the technical reasons for each decision.
+
+| Source | Strategy | Reason | Description Method | Venue Method | Known Language |
+|--------|----------|--------|-------------------|--------------|----------------|
+| **Passline** | Client-side | Cloudflare blocks server-side requests | JSON-LD `description` field | JSON-LD `location.name` + DOM address patterns | Spanish (es) |
+| **Meetup** | Server direct fetch | Jina Reader returns HTTP 451 | `__NEXT_DATA__` props | JSON-LD `@type: Place` | Variable (detect) |
+| **Luma** | Server-side (Jina) | Works normally | `__NEXT_DATA__` or JSON-LD | `geo_address_json` or venue object | Variable (detect) |
+| **BA Tourism** | Server-side (Jina + AI) | Works normally | Jina markdown → Haiku extraction | Regex after "¿Dónde?" heading | Spanish (es) |
+| **Eventbrite** | Server-side (Jina + AI) | Works normally | Jina markdown → Haiku extraction | JSON-LD Event.location | Variable (detect) |
+
+### Decision Factors
+
+1. **Cloudflare/Bot Protection** → Use client-side extraction (browser context)
+2. **Jina Legal Restrictions (HTTP 451)** → Use direct fetch with browser headers
+3. **Structured Data Available (JSON-LD, `__NEXT_DATA__`)** → Use direct extraction (no AI)
+4. **Complex/Unstructured HTML** → Use AI extraction (Claude Haiku)
+5. **Known Language (Spanish sources)** → Skip language detection
+
+### Enrichment Adapter Architecture
+
+Each source has an enrichment adapter in `src/features/import/adapters/enrichment/`:
+
+```typescript
+interface EnrichmentAdapter<TPreviewEvent> {
+  source: ImportSource
+  capabilities: { descriptions: boolean; venues: boolean }
+  config: {
+    requiresClientSide: boolean
+    strategyReason: string
+    knownLanguage?: 'es' | 'en'
+    concurrency: number
+    delayMs: number
+  }
+
+  // Client-side only
+  extractDescriptions?(events, onProgress): Promise<DescriptionExtractionResult[]>
+  extractVenues?(events, onProgress): Promise<VenueExtractionResult[]>
+
+  // Server-side only
+  serverEnrich?(link, options): Promise<ServerEnrichmentResult | null>
+
+  getEnrichmentUrl?(event): string | null
+}
+```
+
+Use `getEnrichmentAdapter(source)` to get the adapter for routing decisions.
+
 ## Enrichment Process
 
 ### Phase 1: Fast Import
@@ -112,14 +161,36 @@ Events are eligible for enrichment if they have `!description_es && !!link`.
 ## Key Files
 
 ```
-src/lib/
-├── admin.ts                    # Server functions for import/enrichment
-├── enrichment.ts               # Description enrichment (Jina + Claude)
-├── source-metadata.ts          # Data gap definitions per source
+src/features/import/
+├── adapters/
+│   ├── index.ts                # Source adapter registry
+│   ├── types.ts                # SourceAdapter interface
+│   ├── enrichment-types.ts     # EnrichmentAdapter interface
+│   ├── enrichment/
+│   │   ├── index.ts            # Enrichment adapter registry
+│   │   ├── passline-enrichment.ts    # Client-side (Cloudflare)
+│   │   ├── meetup-enrichment.ts      # Server direct fetch (Jina 451)
+│   │   ├── luma-enrichment.ts        # Server-side Jina
+│   │   ├── ba-tourism-enrichment.ts  # Server-side Jina + AI
+│   │   └── eventbrite-enrichment.ts  # Server-side Jina + AI
+│   ├── passline-adapter.ts     # Passline source adapter
+│   ├── meetup-adapter.ts       # Meetup source adapter
+│   ├── luma-adapter.ts         # Luma source adapter
+│   ├── ba-tourism-adapter.ts   # BA Tourism source adapter
+│   └── eventbrite-adapter.ts   # Eventbrite source adapter
 ├── scrapers/
 │   ├── venue-matcher.ts        # Venue matching logic
-│   ├── passline/               # Passline scraper + transformer
+│   ├── passline/               # Passline scraper + client enrichment
 │   ├── eventbrite/             # Eventbrite scraper + enrichment
-│   ├── meetup/                 # Meetup scraper + venue enrichment
+│   ├── meetup/                 # Meetup scraper + enrichment
+│   ├── luma/                   # Luma scraper + enrichment
 │   └── ba-tourism/             # BA Tourism scraper
+├── core/
+│   └── event-enrichment.ts     # Batch enrichment orchestration
+└── hooks/
+    └── useImportWizard.ts      # Import wizard state machine
+
+src/shared/lib/ai/
+├── enrichment.ts               # Jina + Haiku description extraction
+└── embeddings.ts               # OpenAI embedding generation
 ```

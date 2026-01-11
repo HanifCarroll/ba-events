@@ -43,6 +43,7 @@ export function hasAdapter(source: ImportSource): boolean {
 
 // Re-export types
 export * from './types'
+export * from './enrichment-types'
 
 // Re-export individual adapters for direct use with proper typing
 export { passlineAdapter } from './passline-adapter'
@@ -50,3 +51,6 @@ export { eventbriteAdapter } from './eventbrite-adapter'
 export { baTourismAdapter } from './ba-tourism-adapter'
 export { meetupAdapter } from './meetup-adapter'
 export { lumaAdapter } from './luma-adapter'
+
+// Re-export enrichment adapters and registry
+export * from './enrichment'

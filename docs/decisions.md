@@ -26,6 +26,182 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Unified Enrichment Adapter Pattern
+
+**Date:** 2026-01-11
+
+**Decision:** Create a unified `EnrichmentAdapter` interface separate from the existing `SourceAdapter` to encapsulate source-specific enrichment strategies (client-side vs server-side, extraction methods, language handling).
+
+**Related Decision:** Client-Side Description Extraction for Passline Events (2026-01-11)
+
+**Problem:**
+Enrichment logic was scattered across multiple files with source-specific conditionals:
+- `useImportWizard.ts` had separate fetch functions per source (e.g., `fetchLumaEventsNeedingEnrichment`, `fetchPasslineEventsNeedingEnrichment`)
+- `event-enrichment.ts` had `if (source === 'meetup')` branches
+- No central documentation of which sources need client vs server enrichment
+
+**Alternatives Considered:**
+- **Extend SourceAdapter**: Rejected - enrichment and import are separate concerns with different lifecycles
+- **Configuration object only**: Rejected - source-specific logic still needed encapsulation
+- **No adapter, just documentation**: Rejected - code still needs routing logic
+
+**Solution:**
+Created `EnrichmentAdapter` interface with:
+1. **capabilities**: What the source can enrich (descriptions, venues)
+2. **config**: Execution strategy (client/server, language, concurrency)
+3. **extractDescriptions/extractVenues**: Client-side extraction (for Cloudflare-blocked sources)
+4. **serverEnrich**: Server-side extraction (for Jina-compatible sources)
+5. **getEnrichmentUrl**: URL extraction from preview events
+
+**Files Created:**
+```
+src/features/import/adapters/
+├── enrichment-types.ts         # EnrichmentAdapter interface
+└── enrichment/
+    ├── index.ts                # Registry + helper functions
+    ├── passline-enrichment.ts  # Client-side (Cloudflare blocks)
+    ├── meetup-enrichment.ts    # Server direct fetch (Jina 451)
+    ├── luma-enrichment.ts      # Server-side Jina
+    ├── ba-tourism-enrichment.ts # Server-side Jina + AI
+    └── eventbrite-enrichment.ts # Server-side Jina + AI
+```
+
+**Enrichment Strategy Matrix:**
+
+| Source | Strategy | Reason | Language |
+|--------|----------|--------|----------|
+| Passline | Client-side | Cloudflare blocks server | Spanish |
+| Meetup | Server direct fetch | Jina returns 451 | Detect |
+| Luma | Server Jina | Works normally | Detect |
+| BA Tourism | Server Jina + AI | Works normally | Spanish |
+| Eventbrite | Server Jina + AI | Works normally | Detect |
+
+**Usage:**
+```typescript
+import { getEnrichmentAdapter, requiresClientSideEnrichment } from '@/features/import/adapters'
+
+const adapter = getEnrichmentAdapter('passline')
+if (adapter?.config.requiresClientSide) {
+  // Route to client-side extraction
+  const results = await adapter.extractDescriptions?.(events, onProgress)
+} else {
+  // Route to server-side enrichment
+  const result = await adapter?.serverEnrich?.(link, { extractVenue: true })
+}
+```
+
+**Rationale:**
+1. **Self-documenting**: Each adapter declares its strategy and reason
+2. **Centralized routing**: `getEnrichmentAdapter()` provides single entry point
+3. **Type-safe**: TypeScript enforces correct adapter implementation
+4. **Extensible**: New sources just add an adapter file
+5. **Testable**: Adapters are pure functions with no global state
+
+**Consequences:**
+- Existing enrichment code (`useImportWizard.ts`, `event-enrichment.ts`) can gradually migrate to use adapters
+- New sources must implement an enrichment adapter
+- Decision matrix is documented in both code and `docs/event-import-enrichment.md`
+
+---
+
+### Client-Side Description Extraction for Passline Events
+
+**Date:** 2026-01-11
+
+**Decision:** Implement client-side description extraction for Passline events using JSON-LD, bypassing the server-side Jina Reader flow that fails due to Cloudflare blocking.
+
+**Problem:**
+Passline events were imported without descriptions because:
+1. The standard enrichment flow uses Jina Reader (`r.jina.ai/{url}`) to fetch page content
+2. Jina Reader returns HTTP 200 but gets the wrong content (country selector page instead of event page)
+3. Server-side requests to Passline are blocked by Cloudflare
+4. Without descriptions, events cannot generate proper embeddings for recommendations
+
+**Investigation:**
+- Used Chrome browser automation to check Passline event pages
+- Found that **JSON-LD structured data contains full event descriptions**
+- Example: Event "TAN BIONICA en Santa Fe" has 1,041-character description in JSON-LD
+- JSON-LD is already being extracted client-side for venue information
+
+**Solution:**
+1. **Extended `client-enrichment.ts`** to also extract `description` from JSON-LD (alongside venue info)
+2. **Created `enrichPasslineDescriptionsAction`** server action that:
+   - Takes Spanish descriptions already extracted client-side
+   - Translates them to English using Claude
+   - Generates embeddings
+   - Saves both descriptions to the database
+3. **Created `usePasslineDescriptionEnrichment` hook** that:
+   - Extracts descriptions client-side via `extractPasslineEventsBatchClient`
+   - Sends to server for translation and saving
+4. **Updated `enrichSingleEvent`** to skip Passline events (they require client-side extraction)
+
+**Files Created/Modified:**
+- `src/features/import/scrapers/passline/client-enrichment.ts` - Added description extraction
+- `src/features/events/api/enrichment.ts` - Added `enrichPasslineDescriptionsAction`, skip Passline in `enrichSingleEvent`
+- `src/features/events/hooks/usePasslineDescriptionEnrichment.ts` - New hook for client-side flow
+- `src/features/events/index.ts` - Exported new functions
+- `src/features/import/index.ts` - Exported new types
+
+**Usage:**
+To enrich Passline events with descriptions:
+1. Go to Admin > Events
+2. Select Passline events with enrichment_status = 'pending'
+3. Click "Fetch Passline Descriptions" (once UI button is added)
+
+**Consequences:**
+- Passline description enrichment requires user action (client-side extraction)
+- The "Add Descriptions" button will skip Passline events (shows message to use Passline-specific button)
+- Descriptions are in Spanish, translated to English via Claude API
+
+**Related Decision:** Disable Scheduled Passline Scraper (2026-01-11)
+
+---
+
+### Disable Scheduled Passline Scraper (Cloudflare Blocking)
+
+**Date:** 2026-01-11
+
+**Decision:** Remove Passline from the daily automated scrape job. Passline imports must now be done manually via the admin UI.
+
+**Problem:**
+Passline implemented aggressive Cloudflare bot protection that blocks all server-side requests:
+- Direct API calls return **HTTP 403 Forbidden**
+- Browserless.io with stealth mode: blocked
+- Browserless.io with residential proxy: blocked
+- Network interception approach: blocked
+- All configurations show "Un momento..." / "Just a moment..." Cloudflare challenge page
+
+The scheduled Trigger.dev job (`scrape-passline`) has failed for multiple consecutive days.
+
+**Testing Performed:**
+Created test scripts to evaluate multiple bypass approaches:
+1. `test-passline-browserless-api.ts` - Execute fetch inside Browserless browser context → CORS error
+2. `test-passline-browserless-scrape.ts` - Scrape website directly → Cloudflare blocked
+3. `test-passline-network-intercept.ts` - Intercept API calls during page load → Cloudflare blocked
+4. `test-passline-browserless-proxy.ts` - Try stealth, proxy, default configs → All blocked
+
+**Alternatives Considered:**
+- **Specialized Cloudflare bypass services** (ScrapingBee, ZenRows, Bright Data): Would add cost and may still fail as Cloudflare updates
+- **Keep retrying with Browserless**: Wastes resources, consistently fails
+- **Contact Passline for API access**: Uncertain timeline, may not be granted
+
+**Solution:**
+1. Removed `scrape-passline` from `daily-scrape.ts` orchestrator
+2. Passline import wizard in admin UI still works (runs in real browser context)
+3. Added comments in code explaining why Passline is excluded
+
+**Files Modified:**
+- `src/trigger/jobs/daily-scrape.ts` - Removed Passline from SOURCE_JOBS and trigger calls
+
+**Consequences:**
+- Passline events must be imported manually by an admin
+- Manual imports work because they run in the user's actual browser
+- If Passline relaxes their Cloudflare rules in the future, the job can be re-enabled
+
+**Related Decision:** Client-Side Fetch for Passline Scraper (2025-12-29)
+
+---
+
 ### Handle Hidden Event Addresses (Luma Placeholder Detection)
 
 **Date:** 2026-01-11

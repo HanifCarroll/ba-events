@@ -19,6 +19,7 @@ import {
   importLumaEventsBatchAction,
   getLumaEventsNeedingDescriptionEnrichmentAction,
   enrichLumaDescriptionsAction,
+  extractPasslineEventsBatchClient,
   type PasslinePreviewEvent,
   type EventbritePreviewEvent,
   type BATourismPreviewEvent,
@@ -52,7 +53,13 @@ import {
 } from '@/features/import/scrapers/passline/client'
 import { listBlocklistEntriesAction } from '@/features/import/api/blocklist'
 import { bulkCreateVenuesAction, listVenues } from '@/features/venues'
-import { bulkCreateEventsAction, getRecentlyImportedPendingEventsAction } from '@/features/events'
+import {
+  bulkCreateEventsAction,
+  getRecentlyImportedPendingEventsAction,
+  getPasslineEventsNeedingDescriptionsAction,
+  enrichPasslineDescriptionsAction,
+  type PasslineDescriptionEnrichComplete,
+} from '@/features/events'
 import { getRecentlyCreatedPendingVenuesAction } from '@/features/venues/api/enrichment'
 import { useAutoEnrichment, type EventToEnrich, type VenueToEnrich } from './useAutoEnrichment'
 import { mapToNeighborhood } from '@/shared/lib/admin-utils'
@@ -157,12 +164,13 @@ export function useImportWizard(
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Enrichment state (for Meetup venue enrichment and Luma description enrichment)
+  // Enrichment state (for Meetup venue enrichment, Luma/Passline description enrichment)
   const [isEnriching, setIsEnriching] = useState(false)
   const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number } | null>(null)
-  const [enrichmentResult, setEnrichmentResult] = useState<Pick<MeetupVenueEnrichComplete, 'enriched' | 'venuesCreated' | 'errors'> | Pick<LumaDescriptionEnrichComplete, 'enriched' | 'errors'> | null>(null)
+  const [enrichmentResult, setEnrichmentResult] = useState<Pick<MeetupVenueEnrichComplete, 'enriched' | 'venuesCreated' | 'errors'> | Pick<LumaDescriptionEnrichComplete, 'enriched' | 'errors'> | Pick<PasslineDescriptionEnrichComplete, 'enriched' | 'errors' | 'translated'> | null>(null)
   const [eventsNeedingEnrichment, setEventsNeedingEnrichment] = useState<Array<{ id: string; link: string }>>([])
   const [lumaEventsNeedingEnrichment, setLumaEventsNeedingEnrichment] = useState<Array<{ id: string; source_url: string; name: string }>>([])
+  const [passlineEventsNeedingEnrichment, setPasslineEventsNeedingEnrichment] = useState<Array<{ id: string; link: string; name: string }>>([])
   const [isLoadingEnrichmentEvents, setIsLoadingEnrichmentEvents] = useState(false)
 
   // Import result state (for summary step)
@@ -1203,6 +1211,25 @@ export function useImportWizard(
           totalUpdated = finalResult.updated
           toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
         }
+
+        // If we imported events without descriptions, go to enrich step for Passline
+        // Passline events always lack descriptions and need client-side extraction
+        if (withoutDescription > 0 && (totalInserted > 0 || totalUpdated > 0)) {
+          setImportResult({
+            inserted: totalInserted,
+            updated: totalUpdated,
+            withVenue,
+            withoutVenue,
+            withDescription,
+            withoutDescription,
+            withCategories,
+            withoutCategories,
+          })
+          setIsImporting(false)
+          setImportProgress(null)
+          setStep('enrich')
+          return
+        }
       } else if (source === 'eventbrite') {
         const selectedEvents = eventbriteEvents.filter(e => selectedIds.has(e.eventbrite.url))
         const eventsToImport = selectedEvents.map(e => ({
@@ -1494,6 +1521,20 @@ export function useImportWizard(
     }
   }, [])
 
+  // Fetch Passline events needing description enrichment when entering enrich step
+  const fetchPasslineEventsNeedingEnrichment = useCallback(async () => {
+    setIsLoadingEnrichmentEvents(true)
+    try {
+      const result = await getPasslineEventsNeedingDescriptionsAction()
+      setPasslineEventsNeedingEnrichment(result)
+    } catch (err) {
+      console.error('Failed to fetch Passline events needing enrichment:', err)
+      setPasslineEventsNeedingEnrichment([])
+    } finally {
+      setIsLoadingEnrichmentEvents(false)
+    }
+  }, [])
+
   const enrichVenues = useCallback(async () => {
     if (eventsNeedingEnrichment.length === 0) return
 
@@ -1588,6 +1629,95 @@ export function useImportWizard(
       setEnrichmentProgress(null)
     }
   }, [lumaEventsNeedingEnrichment])
+
+  // Enrich Passline events with descriptions from detail pages (client-side extraction)
+  const enrichPasslineDescriptions = useCallback(async () => {
+    if (passlineEventsNeedingEnrichment.length === 0) return
+
+    setIsEnriching(true)
+    setEnrichmentProgress({ current: 0, total: passlineEventsNeedingEnrichment.length })
+    setError(null)
+
+    try {
+      // Phase 1: Client-side extraction from JSON-LD
+      const eventsForExtraction = passlineEventsNeedingEnrichment.map(e => ({
+        id: e.id,
+        url: e.link,
+      }))
+
+      const extractedResults = await extractPasslineEventsBatchClient(
+        eventsForExtraction,
+        (current, total) => {
+          setEnrichmentProgress({ current, total: total * 2 }) // First half is extraction
+        },
+        300 // 300ms delay between requests
+      )
+
+      // Filter to only events where we got descriptions
+      const eventsWithDescriptions = extractedResults
+        .filter(r => r.description && r.description.length > 0)
+        .map(r => {
+          const event = passlineEventsNeedingEnrichment.find(e => e.id === r.id)
+          return {
+            id: r.id,
+            name: event?.name || 'Unknown',
+            description_es: r.description!,
+          }
+        })
+
+      if (eventsWithDescriptions.length === 0) {
+        setEnrichmentResult({
+          enriched: 0,
+          translated: 0,
+          errors: [],
+        })
+        toast.error('No descriptions found in Passline event pages')
+        setIsEnriching(false)
+        setEnrichmentProgress(null)
+        return
+      }
+
+      // Phase 2: Server-side translation and saving
+      const enrichStream = await enrichPasslineDescriptionsAction({
+        data: { events: eventsWithDescriptions },
+      })
+      let enrichFinalResult: PasslineDescriptionEnrichComplete | null = null
+
+      for await (const update of enrichStream) {
+        if (update.type === 'progress') {
+          // Second half of progress is translation
+          setEnrichmentProgress({
+            current: passlineEventsNeedingEnrichment.length + update.current,
+            total: passlineEventsNeedingEnrichment.length + update.total,
+          })
+        } else if (update.type === 'complete') {
+          enrichFinalResult = update
+        }
+      }
+
+      if (enrichFinalResult) {
+        setEnrichmentResult({
+          enriched: enrichFinalResult.enriched,
+          translated: enrichFinalResult.translated,
+          errors: enrichFinalResult.errors || [],
+        })
+
+        if (enrichFinalResult.enriched > 0) {
+          toast.success(
+            `Enriched ${enrichFinalResult.enriched} Passline events (${enrichFinalResult.translated} translated)`
+          )
+        }
+      }
+
+      // No auto-redirect - let user see results and decide what to do
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to enrich Passline descriptions')
+      toast.error('Passline description enrichment failed')
+    } finally {
+      setIsEnriching(false)
+      setEnrichmentProgress(null)
+    }
+  }, [passlineEventsNeedingEnrichment])
 
   const skipEnrichment = useCallback(() => {
     router.navigate({ to: '/admin/events' })
@@ -1758,6 +1888,7 @@ export function useImportWizard(
     setEnrichmentResult(null)
     setEventsNeedingEnrichment([])
     setLumaEventsNeedingEnrichment([])
+    setPasslineEventsNeedingEnrichment([])
     // Reset import result state
     setImportResult(null)
     setAutoEnrich(false)
@@ -1798,6 +1929,7 @@ export function useImportWizard(
     enrichmentResult,
     eventsNeedingEnrichment,
     lumaEventsNeedingEnrichment,
+    passlineEventsNeedingEnrichment,
     isLoadingEnrichmentEvents,
 
     // Import result state (for summary step)
@@ -1832,8 +1964,10 @@ export function useImportWizard(
     // Enrichment actions
     fetchEventsNeedingEnrichment,
     fetchLumaEventsNeedingEnrichment,
+    fetchPasslineEventsNeedingEnrichment,
     enrichVenues,
     enrichDescriptions,
+    enrichPasslineDescriptions,
     skipEnrichment,
     retryFailedEnrichment,
     viewEvents,

@@ -4,6 +4,7 @@ import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import {
   enrichEventDescriptionBilingual,
   getKnownLanguageForSource,
+  translateText,
 } from '@/shared/lib/ai/enrichment'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import type { EventWithVenue } from '@/shared/lib/types'
@@ -36,14 +37,25 @@ export type {
 /**
  * Process a single event enrichment
  * Returns result object with success/error info
+ *
+ * Note: Passline events are skipped - Cloudflare blocks server-side requests.
+ * Use enrichPasslineDescriptionsAction for client-side extraction instead.
  */
 async function enrichSingleEvent(
   id: string,
   link: string,
   source: string,
   client: Awaited<ReturnType<typeof requireAdminAccess>>
-): Promise<{ id: string; success: boolean; error?: string }> {
+): Promise<{ id: string; success: boolean; error?: string; skipped?: boolean }> {
   console.log(`[server] Processing event ${id}: ${link} (source: ${source})`)
+
+  // Skip Passline - Cloudflare blocks server-side requests (see decisions.md 2026-01-11)
+  // Users should use the "Fetch Passline Descriptions" button which uses client-side extraction
+  if (source === 'passline') {
+    console.log(`[server] Skipping Passline event ${id} - use client-side extraction`)
+    return { id, success: false, skipped: true, error: 'Passline requires client-side extraction' }
+  }
+
   try {
     // Get known language for source, or undefined to trigger detection
     const knownLanguage = getKnownLanguageForSource(source)
@@ -470,5 +482,172 @@ export const getEventsNeedingVenueOnlyAction = createServerFn({ method: 'GET' })
     }
 
     return (data || []) as Array<{ id: string; name: string; link: string; source: string }>
+  }
+)
+
+// ============================================================================
+// PASSLINE DESCRIPTION ENRICHMENT (CLIENT-SIDE EXTRACTION)
+// ============================================================================
+
+export interface PasslineDescriptionEnrichProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  success: boolean
+  error?: string
+}
+
+export interface PasslineDescriptionEnrichComplete {
+  type: 'complete'
+  enriched: number
+  translated: number
+  total: number
+  errors?: Array<{ id: string; error: string }>
+}
+
+export type PasslineDescriptionEnrichUpdate =
+  | PasslineDescriptionEnrichProgress
+  | PasslineDescriptionEnrichComplete
+
+/**
+ * Enrich Passline event descriptions from client-extracted data.
+ *
+ * Since Cloudflare blocks server-side requests to Passline, descriptions must be
+ * extracted client-side from JSON-LD. This action:
+ * 1. Takes Spanish descriptions already extracted by the client
+ * 2. Translates them to English
+ * 3. Generates embeddings
+ * 4. Saves both descriptions to the database
+ *
+ * Use with extractPasslineEventsBatchClient on the client side.
+ */
+export const enrichPasslineDescriptionsAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { events: Array<{ id: string; name: string; description_es: string }> }) => data
+  )
+  .handler(async function* ({
+    data: { events },
+  }): AsyncGenerator<PasslineDescriptionEnrichUpdate> {
+    const client = await requireAdminAccess()
+    console.log(
+      `[server] enrichPasslineDescriptionsAction called with ${events.length} events`
+    )
+
+    let enriched = 0
+    let translated = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    for (let i = 0; i < events.length; i++) {
+      const { id, name, description_es } = events[i]
+
+      try {
+        // Translate Spanish description to English
+        let description_en: string | null = null
+        try {
+          description_en = await translateText(description_es, 'es-to-en')
+          if (description_en) translated++
+        } catch (translateError) {
+          console.warn(`[server] Failed to translate description for ${id}:`, translateError)
+          // Continue without English translation
+        }
+
+        // Get existing event data for embedding generation
+        const existingEvent = await getEventById(id)
+
+        // Generate embedding from Spanish description
+        const embedding = await generateEventEmbedding({
+          name: existingEvent.name,
+          description_es,
+          categories: existingEvent.categories,
+        })
+
+        // Update event with descriptions, embedding, and enrichment status
+        await updateEvent(
+          id,
+          {
+            description_es,
+            description_en,
+            embedding,
+            enrichment_status: 'completed',
+            enriched_at: new Date().toISOString(),
+          },
+          client
+        )
+
+        enriched++
+
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: name,
+          success: true,
+        } as PasslineDescriptionEnrichProgress
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+        console.error(`[server] Failed to enrich Passline event ${id}:`, errorMsg)
+        errors.push({ id, error: errorMsg })
+
+        // Mark as failed
+        try {
+          await updateEvent(
+            id,
+            {
+              enrichment_status: 'failed',
+              enrichment_error: errorMsg,
+            },
+            client
+          )
+        } catch {
+          // Ignore update error
+        }
+
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: name,
+          success: false,
+          error: errorMsg,
+        } as PasslineDescriptionEnrichProgress
+      }
+    }
+
+    yield {
+      type: 'complete',
+      enriched,
+      translated,
+      total: events.length,
+      errors: errors.length > 0 ? errors : undefined,
+    } as PasslineDescriptionEnrichComplete
+  })
+
+/**
+ * Get Passline events that need description enrichment.
+ * These are events with source='passline' and enrichment_status='pending'.
+ */
+export const getPasslineEventsNeedingDescriptionsAction = createServerFn({
+  method: 'GET',
+}).handler(
+  async (): Promise<Array<{ id: string; name: string; link: string }>> => {
+    await requireAdminAccess()
+
+    const { data, error } = await supabase
+      .from('events')
+      .select('id, name, link')
+      .eq('source', 'passline')
+      .eq('enrichment_status', 'pending')
+      .not('link', 'is', null)
+      .neq('status', 'past')
+      .order('starts_at', { ascending: true })
+      .limit(200)
+
+    if (error) {
+      console.error('[enrichment] Failed to get Passline events needing descriptions:', error)
+      return []
+    }
+
+    return (data || []) as Array<{ id: string; name: string; link: string }>
   }
 )

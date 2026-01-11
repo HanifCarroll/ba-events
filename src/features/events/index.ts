@@ -30,7 +30,12 @@ export {
   getNeedsAttentionBreakdownAction,
   resetFailedEnrichmentsAction,
   getEventsNeedingVenueOnlyAction,
+  enrichPasslineDescriptionsAction,
+  getPasslineEventsNeedingDescriptionsAction,
   type NeedsAttentionBreakdown,
+  type PasslineDescriptionEnrichProgress,
+  type PasslineDescriptionEnrichComplete,
+  type PasslineDescriptionEnrichUpdate,
 } from './api/enrichment'
 
 export {
@@ -47,6 +52,7 @@ export { useBulkActions, type BulkActionType, type UseBulkActionsReturn } from '
 export { useDescriptionEnrichment, type EnrichStep } from './hooks/useDescriptionEnrichment'
 export { useBackgroundEnrichment } from './hooks/useBackgroundEnrichment'
 export { useLumaDescriptionEnrichment } from './hooks/useLumaDescriptionEnrichment'
+export { usePasslineDescriptionEnrichment } from './hooks/usePasslineDescriptionEnrichment'
 export { useSingleEventActions } from './hooks/useSingleEventActions'
 export { useMarkPastEvents } from './hooks/useMarkPastEvents'
 export {

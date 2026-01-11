@@ -406,11 +406,13 @@ function ImportEventsPage() {
     if (wizard.step === 'enrich') {
       if (wizard.source === 'luma') {
         wizard.fetchLumaEventsNeedingEnrichment()
+      } else if (wizard.source === 'passline') {
+        wizard.fetchPasslineEventsNeedingEnrichment()
       } else {
         wizard.fetchEventsNeedingEnrichment()
       }
     }
-  }, [wizard.step, wizard.source, wizard.fetchEventsNeedingEnrichment, wizard.fetchLumaEventsNeedingEnrichment])
+  }, [wizard.step, wizard.source, wizard.fetchEventsNeedingEnrichment, wizard.fetchLumaEventsNeedingEnrichment, wizard.fetchPasslineEventsNeedingEnrichment])
 
   // Determine which steps are visible based on source
   const visibleSteps = STEPS.filter((step) => {
@@ -420,9 +422,9 @@ function ImportEventsPage() {
     if (step.key === 'venues') {
       return wizard.step === 'venues'
     }
-    // Show enrich for meetup (venues) or luma (descriptions) when on enrich step
+    // Show enrich for meetup (venues), luma (descriptions), or passline (descriptions) when on enrich step
     if (step.key === 'enrich') {
-      return (wizard.source === 'meetup' || wizard.source === 'luma') && wizard.step === 'enrich'
+      return (wizard.source === 'meetup' || wizard.source === 'luma' || wizard.source === 'passline') && wizard.step === 'enrich'
     }
     // Show summary only when on summary step
     if (step.key === 'summary') {
@@ -613,11 +615,19 @@ function ImportEventsPage() {
 
         {wizard.step === 'enrich' && (
           <EnrichStep
-            enrichmentType={wizard.source === 'luma' ? 'description' : 'venue'}
+            enrichmentType={
+              wizard.source === 'luma'
+                ? 'description'
+                : wizard.source === 'passline'
+                  ? 'passline-description'
+                  : 'venue'
+            }
             eventsNeedingEnrichment={
               wizard.source === 'luma'
                 ? wizard.lumaEventsNeedingEnrichment.length
-                : wizard.eventsNeedingEnrichment.length
+                : wizard.source === 'passline'
+                  ? wizard.passlineEventsNeedingEnrichment.length
+                  : wizard.eventsNeedingEnrichment.length
             }
             isEnriching={wizard.isEnriching}
             enrichmentProgress={wizard.enrichmentProgress}
@@ -626,7 +636,13 @@ function ImportEventsPage() {
               venuesCreated: 'venuesCreated' in wizard.enrichmentResult ? wizard.enrichmentResult.venuesCreated : undefined,
               errors: wizard.enrichmentResult.errors ?? []
             } : null}
-            onEnrich={wizard.source === 'luma' ? wizard.enrichDescriptions : wizard.enrichVenues}
+            onEnrich={
+              wizard.source === 'luma'
+                ? wizard.enrichDescriptions
+                : wizard.source === 'passline'
+                  ? wizard.enrichPasslineDescriptions
+                  : wizard.enrichVenues
+            }
             onSkip={wizard.skipEnrichment}
             onRetryFailed={wizard.retryFailedEnrichment}
             onViewEvents={wizard.viewEvents}

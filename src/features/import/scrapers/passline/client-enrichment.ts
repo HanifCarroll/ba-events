@@ -1,11 +1,11 @@
 /**
- * Client-side Passline Venue Enrichment
+ * Client-side Passline Enrichment
  *
- * Fetches Passline event detail pages from the browser to extract venue information.
+ * Fetches Passline event detail pages from the browser to extract venue and description info.
  * Must run client-side because Cloudflare blocks server-side requests.
  *
  * Passline detail pages have:
- * - JSON-LD with venue name (location.name)
+ * - JSON-LD with venue name (location.name) and event description
  * - DOM elements with city/region info (e.g., "Buenos Aires, PALERMO")
  * - Google Maps link (could be resolved for full address but adds complexity)
  */
@@ -16,14 +16,20 @@ export interface PasslineVenueInfo {
   location: string | null // City/region string like "Buenos Aires, PALERMO"
 }
 
+export interface PasslineEventInfo {
+  venue: PasslineVenueInfo | null
+  description: string | null // Event description from JSON-LD
+}
+
 export interface PasslineEnrichmentResult {
   id: string
   venue: PasslineVenueInfo | null
+  description: string | null
   error?: string
 }
 
 /**
- * Extract venue info from a Passline event detail page
+ * Extract venue and description info from a Passline event detail page
  * Runs in browser context (client-side only)
  *
  * Passline venue blocks typically contain:
@@ -31,9 +37,9 @@ export interface PasslineEnrichmentResult {
  * - Line 2: Street address (e.g., "Blvd. Pellegrini y Av. López y Planes")
  * - Line 3: City, REGION (e.g., "Santa Fe, SANTA FE")
  */
-export async function extractPasslineVenueClient(
+export async function extractPasslineEventInfoClient(
   url: string
-): Promise<PasslineVenueInfo | null> {
+): Promise<PasslineEventInfo | null> {
   try {
     const response = await fetch(url, {
       headers: {
@@ -52,8 +58,9 @@ export async function extractPasslineVenueClient(
     let venueName: string | null = null
     let address: string | null = null
     let location: string | null = null
+    let description: string | null = null
 
-    // Method 1: Extract from JSON-LD (most reliable for venue name)
+    // Method 1: Extract from JSON-LD (most reliable for venue name and description)
     const jsonLdMatch = html.match(
       /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i
     )
@@ -63,6 +70,9 @@ export async function extractPasslineVenueClient(
         const jsonLd = JSON.parse(jsonLdMatch[1])
         if (jsonLd.location?.name) {
           venueName = jsonLd.location.name
+        }
+        if (jsonLd.description) {
+          description = jsonLd.description
         }
       } catch {
         // JSON parse failed, continue with DOM extraction
@@ -163,27 +173,39 @@ export async function extractPasslineVenueClient(
       }
     }
 
-    // If we found a venue name, return the result
-    if (venueName) {
-      return {
-        venueName,
-        address,
-        location,
-      }
+    // Build venue info if we found a venue name
+    const venue: PasslineVenueInfo | null = venueName
+      ? { venueName, address, location }
+      : null
+
+    // Return result if we found any useful data
+    if (venue || description) {
+      return { venue, description }
     }
 
     return null
   } catch (error) {
-    console.error(`[Passline] Error extracting venue from ${url}:`, error)
+    console.error(`[Passline] Error extracting event info from ${url}:`, error)
     return null
   }
 }
 
 /**
- * Batch extract venue info from multiple Passline events
+ * Extract venue info only (backwards-compatible wrapper)
+ * @deprecated Use extractPasslineEventInfoClient instead
+ */
+export async function extractPasslineVenueClient(
+  url: string
+): Promise<PasslineVenueInfo | null> {
+  const result = await extractPasslineEventInfoClient(url)
+  return result?.venue || null
+}
+
+/**
+ * Batch extract venue and description info from multiple Passline events
  * Includes rate limiting delay between requests
  */
-export async function extractPasslineVenuesBatchClient(
+export async function extractPasslineEventsBatchClient(
   events: Array<{ id: string; url: string }>,
   onProgress?: (current: number, total: number) => void,
   delayMs: number = 500
@@ -195,12 +217,17 @@ export async function extractPasslineVenuesBatchClient(
     onProgress?.(i + 1, events.length)
 
     try {
-      const venue = await extractPasslineVenueClient(event.url)
-      results.push({ id: event.id, venue })
+      const eventInfo = await extractPasslineEventInfoClient(event.url)
+      results.push({
+        id: event.id,
+        venue: eventInfo?.venue || null,
+        description: eventInfo?.description || null,
+      })
     } catch (error) {
       results.push({
         id: event.id,
         venue: null,
+        description: null,
         error: error instanceof Error ? error.message : 'Unknown error',
       })
     }
@@ -212,4 +239,16 @@ export async function extractPasslineVenuesBatchClient(
   }
 
   return results
+}
+
+/**
+ * Batch extract venue info only (backwards-compatible wrapper)
+ * @deprecated Use extractPasslineEventsBatchClient instead
+ */
+export async function extractPasslineVenuesBatchClient(
+  events: Array<{ id: string; url: string }>,
+  onProgress?: (current: number, total: number) => void,
+  delayMs: number = 500
+): Promise<PasslineEnrichmentResult[]> {
+  return extractPasslineEventsBatchClient(events, onProgress, delayMs)
 }
