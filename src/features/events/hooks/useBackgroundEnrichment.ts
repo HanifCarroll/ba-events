@@ -74,10 +74,11 @@ export function useBackgroundEnrichment() {
   })
 
   /**
-   * Check if an event can be enriched (enrichment_status is 'pending' and has a link)
+   * Check if an event can be enriched (enrichment_status is 'pending' or 'failed' and has a link)
    */
   const canEnrichEvent = useCallback((event: EventWithVenue) => {
-    return event.enrichment_status === 'pending' && !!event.link
+    const canEnrich = event.enrichment_status === 'pending' || event.enrichment_status === 'failed'
+    return canEnrich && !!event.link
   }, [])
 
   /**
