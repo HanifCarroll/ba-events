@@ -1,7 +1,8 @@
-import { Clock, XCircle, Trash2, X, Sparkles, Square, DollarSign, MapPin, FileText } from 'lucide-react'
+import { Clock, XCircle, Trash2, X } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import type { BulkActionType } from '@/features/events'
+import { EnrichmentButton, type EnrichmentConfig } from './EnrichmentButton'
 
 interface BulkActionBarProps {
   selectedCount: number
@@ -11,32 +12,8 @@ interface BulkActionBarProps {
   onClearSelection: () => void
   /** If true, renders as an overlay-ready component (no outer margins, fills width) */
   overlay?: boolean
-  /** Number of selected events that can be enriched (missing description with link) */
-  enrichableCount?: number
-  /** Callback to enrich selected events */
-  onEnrich?: () => void
-  /** Whether enrichment is currently running */
-  isEnriching?: boolean
-  /** Callback to stop enrichment */
-  onStopEnrich?: () => void
-  /** Number of selected Eventbrite events that can be enriched (missing categories/price) */
-  eventbriteEnrichableCount?: number
-  /** Callback to enrich Eventbrite events */
-  onEventbriteEnrich?: () => void
-  /** Whether Eventbrite enrichment is currently running */
-  isEventbriteEnriching?: boolean
-  /** Number of selected events missing venues */
-  venueEnrichableCount?: number
-  /** Callback to enrich events with missing venues */
-  onVenueEnrich?: () => void
-  /** Whether venue enrichment is currently running */
-  isVenueEnriching?: boolean
-  /** Number of selected Luma events that can be enriched (missing description) */
-  lumaEnrichableCount?: number
-  /** Callback to enrich Luma events with descriptions from their event pages */
-  onLumaEnrich?: () => void
-  /** Whether Luma enrichment is currently running */
-  isLumaEnriching?: boolean
+  /** Array of enrichment button configurations */
+  enrichments?: EnrichmentConfig[]
 }
 
 export function BulkActionBar({
@@ -46,26 +23,9 @@ export function BulkActionBar({
   onSetBulkAction,
   onClearSelection,
   overlay = false,
-  enrichableCount = 0,
-  onEnrich,
-  isEnriching = false,
-  onStopEnrich,
-  eventbriteEnrichableCount = 0,
-  onEventbriteEnrich,
-  isEventbriteEnriching = false,
-  venueEnrichableCount = 0,
-  onVenueEnrich,
-  isVenueEnriching = false,
-  lumaEnrichableCount = 0,
-  onLumaEnrich,
-  isLumaEnriching = false,
+  enrichments = [],
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null
-
-  const showEnrich = enrichableCount > 0 && onEnrich
-  const showEventbriteEnrich = eventbriteEnrichableCount > 0 && onEventbriteEnrich
-  const showVenueEnrich = venueEnrichableCount > 0 && onVenueEnrich
-  const showLumaEnrich = lumaEnrichableCount > 0 && onLumaEnrich
 
   if (overlay) {
     // Overlay version - slides in over table header
@@ -83,94 +43,9 @@ export function BulkActionBar({
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-2">
-          {showEnrich && !isEnriching && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onEnrich}
-              className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            >
-              <Sparkles className="h-4 w-4 mr-1.5" />
-              Add Descriptions ({enrichableCount})
-            </Button>
-          )}
-          {isEnriching && onStopEnrich && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onStopEnrich}
-              className="text-yellow-200 hover:text-yellow-100 hover:bg-yellow-500/20"
-            >
-              <Square className="h-4 w-4 mr-1.5" />
-              Stop
-            </Button>
-          )}
-          {showEventbriteEnrich && !isEventbriteEnriching && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onEventbriteEnrich}
-              className="text-orange-200 hover:text-orange-100 hover:bg-orange-500/20"
-            >
-              <DollarSign className="h-4 w-4 mr-1.5" />
-              Add Prices ({eventbriteEnrichableCount})
-            </Button>
-          )}
-          {isEventbriteEnriching && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled
-              className="text-orange-200"
-            >
-              <Square className="h-4 w-4 mr-1.5 animate-pulse" />
-              Adding Prices...
-            </Button>
-          )}
-          {showVenueEnrich && !isVenueEnriching && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onVenueEnrich}
-              className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            >
-              <MapPin className="h-4 w-4 mr-1.5" />
-              Add Venues ({venueEnrichableCount})
-            </Button>
-          )}
-          {isVenueEnriching && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled
-              className="text-primary-foreground/70"
-            >
-              <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
-              Adding Venues...
-            </Button>
-          )}
-          {showLumaEnrich && !isLumaEnriching && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onLumaEnrich}
-              className="text-violet-200 hover:text-violet-100 hover:bg-violet-500/20"
-            >
-              <FileText className="h-4 w-4 mr-1.5" />
-              Luma Descriptions ({lumaEnrichableCount})
-            </Button>
-          )}
-          {isLumaEnriching && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled
-              className="text-violet-200"
-            >
-              <FileText className="h-4 w-4 mr-1.5 animate-pulse" />
-              Adding Luma Descriptions...
-            </Button>
-          )}
+          {enrichments.map(({ key, ...config }) => (
+            <EnrichmentButton key={key} {...config} overlay />
+          ))}
           <Button
             variant="ghost"
             size="sm"
@@ -224,94 +99,9 @@ export function BulkActionBar({
       </div>
       <div className="flex-1" />
       <div className="flex items-center gap-2">
-        {showEnrich && !isEnriching && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onEnrich}
-            className="border-primary/50 text-primary hover:bg-primary/10"
-          >
-            <Sparkles className="h-4 w-4 mr-1.5" />
-            Add Descriptions ({enrichableCount})
-          </Button>
-        )}
-        {isEnriching && onStopEnrich && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onStopEnrich}
-            className="border-yellow-500/50 text-yellow-600 hover:bg-yellow-500/10"
-          >
-            <Square className="h-4 w-4 mr-1.5" />
-            Stop
-          </Button>
-        )}
-        {showEventbriteEnrich && !isEventbriteEnriching && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onEventbriteEnrich}
-            className="border-orange-500/50 text-orange-600 hover:bg-orange-500/10"
-          >
-            <DollarSign className="h-4 w-4 mr-1.5" />
-            Add Prices ({eventbriteEnrichableCount})
-          </Button>
-        )}
-        {isEventbriteEnriching && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className="border-orange-500/50 text-orange-600"
-          >
-            <Square className="h-4 w-4 mr-1.5 animate-pulse" />
-            Adding Prices...
-          </Button>
-        )}
-        {showVenueEnrich && !isVenueEnriching && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onVenueEnrich}
-            className="border-blue-500/50 text-blue-600 hover:bg-blue-500/10"
-          >
-            <MapPin className="h-4 w-4 mr-1.5" />
-            Add Venues ({venueEnrichableCount})
-          </Button>
-        )}
-        {isVenueEnriching && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className="border-blue-500/50 text-blue-600"
-          >
-            <MapPin className="h-4 w-4 mr-1.5 animate-pulse" />
-            Adding Venues...
-          </Button>
-        )}
-        {showLumaEnrich && !isLumaEnriching && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onLumaEnrich}
-            className="border-violet-500/50 text-violet-600 hover:bg-violet-500/10"
-          >
-            <FileText className="h-4 w-4 mr-1.5" />
-            Luma Descriptions ({lumaEnrichableCount})
-          </Button>
-        )}
-        {isLumaEnriching && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className="border-violet-500/50 text-violet-600"
-          >
-            <FileText className="h-4 w-4 mr-1.5 animate-pulse" />
-            Adding Luma Descriptions...
-          </Button>
-        )}
+        {enrichments.map(({ key, ...config }) => (
+          <EnrichmentButton key={key} {...config} overlay={false} />
+        ))}
         <Button
           variant="outline"
           size="sm"

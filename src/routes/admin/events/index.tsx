@@ -15,6 +15,8 @@ import {
   FileSpreadsheet,
   AlertCircle,
   FileText,
+  Sparkles,
+  DollarSign,
 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
@@ -36,6 +38,7 @@ import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState 
 import {
   useBackgroundEnrichment,
   useLumaDescriptionEnrichment,
+  usePasslineDescriptionEnrichment,
   useBulkActions,
   useSingleEventActions,
   useMarkPastEvents,
@@ -45,6 +48,7 @@ import { listVenues } from '@/features/venues'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
+import type { EnrichmentConfig } from './-components/EnrichmentButton'
 import { BackfillCard } from './-components/BackfillCard'
 import { EditEventSheet } from './-components/EditEventSheet'
 import type { EventWithVenue } from '@/shared/lib/types'
@@ -516,6 +520,7 @@ function EventListPage() {
   const backgroundEnrichment = useBackgroundEnrichment()
   const venueEnrichment = useVenueEnrichment()
   const lumaEnrichment = useLumaDescriptionEnrichment()
+  const passlineEnrichment = usePasslineDescriptionEnrichment()
 
   // Calculate enrichable count for selected events (description enrichment)
   const enrichableCount = useMemo(() => {
@@ -531,6 +536,11 @@ function EventListPage() {
   const lumaEnrichableCount = useMemo(() => {
     return lumaEnrichment.getLumaEnrichableEvents(events, bulk.selectedIds).length
   }, [lumaEnrichment, events, bulk.selectedIds])
+
+  // Calculate Passline enrichable count for selected events (missing descriptions)
+  const passlineEnrichableCount = useMemo(() => {
+    return passlineEnrichment.getPasslineEnrichableEvents(events, bulk.selectedIds).length
+  }, [passlineEnrichment, events, bulk.selectedIds])
 
   // Handle description enrichment with selection clear on complete
   const handleEnrich = useCallback(() => {
@@ -558,6 +568,86 @@ function EventListPage() {
       () => bulk.clearSelection()
     )
   }, [lumaEnrichment, events, bulk.selectedIds, bulk.clearSelection])
+
+  // Handle Passline description enrichment with selection clear on complete
+  const handlePasslineEnrich = useCallback(() => {
+    passlineEnrichment.enrichPasslineEvents(
+      events,
+      bulk.selectedIds,
+      () => bulk.clearSelection()
+    )
+  }, [passlineEnrichment, events, bulk.selectedIds, bulk.clearSelection])
+
+  // Build enrichments config array for BulkActionBar
+  const enrichments = useMemo<EnrichmentConfig[]>(() => [
+    {
+      key: 'descriptions',
+      label: 'Add Descriptions',
+      progressLabel: 'Adding Descriptions',
+      count: enrichableCount,
+      onClick: handleEnrich,
+      isEnriching: backgroundEnrichment.isEnriching,
+      onStop: backgroundEnrichment.stopEnrichment,
+      color: 'primary',
+      icon: Sparkles,
+    },
+    {
+      key: 'eventbrite',
+      label: 'Add Prices',
+      progressLabel: 'Adding Prices',
+      count: 0, // Eventbrite enrichment not currently wired up
+      onClick: () => {},
+      isEnriching: false,
+      color: 'orange',
+      icon: DollarSign,
+    },
+    {
+      key: 'venues',
+      label: 'Add Venues',
+      progressLabel: 'Adding Venues',
+      count: venueEnrichableCount,
+      onClick: handleVenueEnrich,
+      isEnriching: venueEnrichment.isVenueEnriching,
+      color: 'blue',
+      icon: MapPin,
+    },
+    {
+      key: 'luma',
+      label: 'Luma Descriptions',
+      progressLabel: 'Adding Luma Descriptions',
+      count: lumaEnrichableCount,
+      onClick: handleLumaEnrich,
+      isEnriching: lumaEnrichment.isLumaEnriching,
+      color: 'violet',
+      icon: FileText,
+    },
+    {
+      key: 'passline',
+      label: 'Passline Descriptions',
+      progressLabel: 'Adding Passline Descriptions',
+      count: passlineEnrichableCount,
+      onClick: handlePasslineEnrich,
+      isEnriching: passlineEnrichment.isPasslineEnriching,
+      onStop: passlineEnrichment.stopPasslineEnrichment,
+      color: 'indigo',
+      icon: FileText,
+    },
+  ], [
+    enrichableCount,
+    handleEnrich,
+    backgroundEnrichment.isEnriching,
+    backgroundEnrichment.stopEnrichment,
+    venueEnrichableCount,
+    handleVenueEnrich,
+    venueEnrichment.isVenueEnriching,
+    lumaEnrichableCount,
+    handleLumaEnrich,
+    lumaEnrichment.isLumaEnriching,
+    passlineEnrichableCount,
+    handlePasslineEnrich,
+    passlineEnrichment.isPasslineEnriching,
+    passlineEnrichment.stopPasslineEnrichment,
+  ])
 
   // Smart "Mark Past" toast on page load
   useEffect(() => {
@@ -802,16 +892,7 @@ function EventListPage() {
               onToggleSelectAll={bulk.toggleSelectAll}
               onSetBulkAction={bulk.setBulkAction}
               onClearSelection={bulk.clearSelection}
-              enrichableCount={enrichableCount}
-              onEnrich={handleEnrich}
-              isEnriching={backgroundEnrichment.isEnriching}
-              onStopEnrich={backgroundEnrichment.stopEnrichment}
-              venueEnrichableCount={venueEnrichableCount}
-              onVenueEnrich={handleVenueEnrich}
-              isVenueEnriching={venueEnrichment.isVenueEnriching}
-              lumaEnrichableCount={lumaEnrichableCount}
-              onLumaEnrich={handleLumaEnrich}
-              isLumaEnriching={lumaEnrichment.isLumaEnriching}
+              enrichments={enrichments}
             />
           </div>
           <MobileEventCards
@@ -839,16 +920,7 @@ function EventListPage() {
                   onSetBulkAction={bulk.setBulkAction}
                   onClearSelection={bulk.clearSelection}
                   overlay
-                  enrichableCount={enrichableCount}
-                  onEnrich={handleEnrich}
-                  isEnriching={backgroundEnrichment.isEnriching}
-                  onStopEnrich={backgroundEnrichment.stopEnrichment}
-                  venueEnrichableCount={venueEnrichableCount}
-                  onVenueEnrich={handleVenueEnrich}
-                  isVenueEnriching={venueEnrichment.isVenueEnriching}
-                  lumaEnrichableCount={lumaEnrichableCount}
-                  onLumaEnrich={handleLumaEnrich}
-                  isLumaEnriching={lumaEnrichment.isLumaEnriching}
+                  enrichments={enrichments}
                 />
               </div>
 
