@@ -8,17 +8,23 @@
  *
  * This handles the backlog of events that weren't enriched during import,
  * including events that failed enrichment due to temporary errors.
+ *
+ * Architecture:
+ * - enrichmentCatchup (scheduled) triggers enrichmentBatch
+ * - enrichmentBatch processes 50 events, then chains to itself if more remain
  */
-import { schedules, metadata } from '@trigger.dev/sdk/v3'
+import { schedules, task, tasks, metadata } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client'
 import {
   enrichEvents,
   type EnrichmentStats,
 } from '@/features/import/core/event-enrichment'
 
+// Smaller batch size - each event takes 15-30 seconds due to API calls
+const BATCH_SIZE = 50
+
 /**
  * Get events needing enrichment (pending or failed status, have link).
- * Unlike getEventsNeedingEnrichment, this includes failed events for retry.
  */
 async function getEventsForCatchup(
   client: ReturnType<typeof createServiceRoleClient>,
@@ -40,52 +46,67 @@ async function getEventsForCatchup(
   return data || []
 }
 
-export const enrichmentCatchup = schedules.task({
-  id: 'enrichment-catchup',
-  // 10 AM Buenos Aires time (UTC-3), 4 hours after daily-scrape
-  cron: {
-    pattern: '0 10 * * *',
-    timezone: 'America/Buenos_Aires',
-  },
-  // No maxDuration needed - Trigger.dev v3 has no timeouts
-  // But set a reasonable limit for monitoring purposes
-  maxDuration: 7200, // 2 hours
-  run: async (payload): Promise<EnrichmentStats & { remainingCount: number }> => {
-    console.log('[enrichment-catchup] Starting catchup enrichment')
-    console.log(`[enrichment-catchup] Scheduled time: ${payload.timestamp}`)
+/**
+ * Get count of events needing enrichment.
+ */
+async function getPendingCount(client: ReturnType<typeof createServiceRoleClient>) {
+  const { count } = await client
+    .from('events')
+    .select('*', { count: 'exact', head: true })
+    .in('enrichment_status', ['pending', 'failed'])
+    .not('link', 'is', null)
+
+  return count ?? 0
+}
+
+export interface EnrichmentBatchPayload {
+  /** Which batch number this is (for logging) */
+  batchNumber: number
+  /** Maximum batches to process in this chain (prevents runaway) */
+  maxBatches?: number
+}
+
+export interface EnrichmentBatchResult extends EnrichmentStats {
+  batchNumber: number
+  remainingCount: number
+  chainedNextBatch: boolean
+}
+
+/**
+ * Process a single batch of events and chain to next batch if needed.
+ */
+export const enrichmentBatch = task({
+  id: 'enrichment-batch',
+  maxDuration: 3600, // 1 hour per batch (should take ~25 min for 50 events)
+  run: async (payload: EnrichmentBatchPayload): Promise<EnrichmentBatchResult> => {
+    const { batchNumber, maxBatches = 10 } = payload
+
+    console.log(`[enrichment-batch] Starting batch #${batchNumber}`)
 
     const client = createServiceRoleClient()
 
-    // Process in batches of 200 per run
-    // At ~1 second per event, this takes about 3-4 minutes
-    const BATCH_SIZE = 200
-
-    // Get events needing enrichment (pending or failed)
+    // Get events needing enrichment
     const events = await getEventsForCatchup(client, BATCH_SIZE)
 
     if (events.length === 0) {
-      console.log('[enrichment-catchup] No events need enrichment')
-      metadata.set('progress', {
-        current: 0,
-        total: 0,
-        enriched: 0,
-        failed: 0,
-        currentEvent: null,
-      })
+      console.log('[enrichment-batch] No events need enrichment')
       return {
+        batchNumber,
         total: 0,
         enriched: 0,
         skipped: 0,
         failed: 0,
         errors: [],
         remainingCount: 0,
+        chainedNextBatch: false,
       }
     }
 
-    console.log(`[enrichment-catchup] Found ${events.length} events to enrich`)
+    console.log(`[enrichment-batch] Found ${events.length} events to enrich`)
 
-    // Set initial metadata for frontend progress tracking
+    // Set initial metadata
     metadata.set('progress', {
+      batchNumber,
       current: 0,
       total: events.length,
       enriched: 0,
@@ -93,26 +114,24 @@ export const enrichmentCatchup = schedules.task({
       currentEvent: events[0]?.name ?? null,
     })
 
-    // Track stats for metadata updates
+    // Track stats
     let enrichedCount = 0
     let failedCount = 0
 
-    // Process events with progress logging
+    // Process events
     const stats = await enrichEvents(client, events, {
-      delayMs: 1000, // 1 second between requests (rate limiting)
+      delayMs: 1000,
       onProgress: (current, total, result) => {
-        // Update counts
         if (result.enriched) {
           enrichedCount++
         } else if (!result.success) {
           failedCount++
         }
 
-        // Find current event name for display
         const currentEventName = events[current - 1]?.name ?? null
 
-        // Update metadata for real-time frontend updates
         metadata.set('progress', {
+          batchNumber,
           current,
           total,
           enriched: enrichedCount,
@@ -120,28 +139,79 @@ export const enrichmentCatchup = schedules.task({
           currentEvent: currentEventName,
         })
 
-        // Console logging (every 10 or at completion)
         if (current % 10 === 0 || current === total) {
-          console.log(`[enrichment-catchup] Progress: ${current}/${total} (${enrichedCount} enriched, ${failedCount} failed)`)
+          console.log(`[enrichment-batch] Batch #${batchNumber} progress: ${current}/${total}`)
         }
         if (!result.success) {
-          console.warn(`[enrichment-catchup] Failed: ${result.eventId} - ${result.error}`)
+          console.warn(`[enrichment-batch] Failed: ${result.eventId} - ${result.error}`)
         }
       },
     })
 
-    // Check how many events still need enrichment
-    const { count: remainingCount } = await client
-      .from('events')
-      .select('*', { count: 'exact', head: true })
-      .in('enrichment_status', ['pending', 'failed'])
-      .not('link', 'is', null)
+    // Check remaining count
+    const remainingCount = await getPendingCount(client)
 
-    console.log(`[enrichment-catchup] Completed: ${stats.enriched} enriched, ${stats.failed} failed, ${remainingCount ?? 0} remaining`)
+    console.log(`[enrichment-batch] Batch #${batchNumber} completed: ${stats.enriched} enriched, ${stats.failed} failed, ${remainingCount} remaining`)
+
+    // Chain to next batch if there are more events and we haven't hit max batches
+    let chainedNextBatch = false
+    if (remainingCount > 0 && batchNumber < maxBatches) {
+      console.log(`[enrichment-batch] Triggering batch #${batchNumber + 1}`)
+      await tasks.trigger<typeof enrichmentBatch>('enrichment-batch', {
+        batchNumber: batchNumber + 1,
+        maxBatches,
+      })
+      chainedNextBatch = true
+    } else if (remainingCount > 0) {
+      console.log(`[enrichment-batch] Reached max batches (${maxBatches}), ${remainingCount} events remaining for next run`)
+    }
 
     return {
       ...stats,
-      remainingCount: remainingCount ?? 0,
+      batchNumber,
+      remainingCount,
+      chainedNextBatch,
+    }
+  },
+})
+
+/**
+ * Scheduled task that kicks off the catchup process.
+ */
+export const enrichmentCatchup = schedules.task({
+  id: 'enrichment-catchup',
+  // 10 AM Buenos Aires time (UTC-3), 4 hours after daily-scrape
+  cron: {
+    pattern: '0 10 * * *',
+    timezone: 'America/Buenos_Aires',
+  },
+  run: async (payload) => {
+    console.log('[enrichment-catchup] Starting scheduled catchup')
+    console.log(`[enrichment-catchup] Scheduled time: ${payload.timestamp}`)
+
+    const client = createServiceRoleClient()
+    const pendingCount = await getPendingCount(client)
+
+    if (pendingCount === 0) {
+      console.log('[enrichment-catchup] No events need enrichment')
+      return {
+        triggered: false,
+        pendingCount: 0,
+      }
+    }
+
+    console.log(`[enrichment-catchup] Found ${pendingCount} events needing enrichment, triggering batch processing`)
+
+    // Trigger the first batch
+    // Allow up to 20 batches (1000 events) per scheduled run
+    await tasks.trigger<typeof enrichmentBatch>('enrichment-batch', {
+      batchNumber: 1,
+      maxBatches: 20,
+    })
+
+    return {
+      triggered: true,
+      pendingCount,
     }
   },
 })
