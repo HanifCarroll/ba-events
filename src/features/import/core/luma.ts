@@ -19,7 +19,7 @@ import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
-import { settleVenues, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement'
+import { settleVenues, getVenueIdFromResults, type VenueSettlementInput, type VenueSettlementResult } from './venue-settlement'
 import { delay } from './nominatim'
 import type { EventInsert } from '@/shared/lib/types'
 
@@ -57,6 +57,19 @@ export interface LumaImportResult {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/**
+ * Check if a venue name was detected as a placeholder (e.g., "Register to See Address")
+ */
+function isPlaceholderResult(
+  results: Map<string, VenueSettlementResult>,
+  venueName: string | null | undefined
+): boolean {
+  if (!venueName) return false
+  const key = venueName.trim().toLowerCase()
+  const result = results.get(key)
+  return result?.action === 'placeholder'
+}
 
 /**
  * Filter events by blocklist
@@ -165,6 +178,12 @@ export async function processLumaImport(
     const venueId = getVenueIdFromResults(venueResults, venueName)
     const transformed = transformLumaEvent(event, venueId)
 
+    // Check if venue was detected as a placeholder (e.g., "Register to See Address")
+    const locationHidden = isPlaceholderResult(venueResults, venueName)
+    if (locationHidden) {
+      ;(transformed as EventInsert & { location_hidden?: boolean }).location_hidden = true
+    }
+
     const existing = existingEventsMap.get(event.api_id)
     if (existing) {
       // Event exists - check if we should update
@@ -225,6 +244,7 @@ export async function processLumaImport(
             is_free: eventWithEmbedding.is_free,
             image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
+            location_hidden: (eventWithEmbedding as EventInsert & { location_hidden?: boolean }).location_hidden ?? false,
           })
           .eq('id', existing!.id)
 

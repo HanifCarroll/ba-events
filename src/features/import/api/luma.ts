@@ -7,6 +7,7 @@ import {
 } from '../scrapers/luma'
 import { categorizeEvent } from '../scrapers/ai-categorizer'
 import { matchVenue, type VenueMatchResult } from '../scrapers/venue-matcher'
+import { isPlaceholderVenue } from '../core/venue-settlement'
 import { upsertEvents, createVenue, supabase, updateEvent } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
@@ -131,13 +132,20 @@ export const importLumaEventsBatchAction = createServerFn({ method: 'POST' })
     const total = data.events.length
 
     // Transform events, auto-creating venues when needed
-    const eventsToImport: EventInsert[] = []
+    const eventsToImport: Array<EventInsert & { location_hidden?: boolean }> = []
     for (const { lumaEvent, venueId } of data.events) {
       let finalVenueId = venueId
+      let locationHidden = false
 
+      // Check if venue name is a placeholder (e.g., "Register to See Address")
+      const venueName = lumaEvent.venue?.name || ''
+      if (isPlaceholderVenue(venueName)) {
+        console.log(`[Admin] Detected placeholder venue: "${venueName}"`)
+        finalVenueId = null
+        locationHidden = true
+      }
       // If no venue matched but we have venue data, try to match or create
-      if (!finalVenueId && lumaEvent.venue?.name) {
-        const venueName = lumaEvent.venue.name
+      else if (!finalVenueId && lumaEvent.venue?.name) {
         // Try to match venue by name first
         const venueMatch = await matchVenue(venueName)
         if (venueMatch.venue) {
@@ -164,7 +172,11 @@ export const importLumaEventsBatchAction = createServerFn({ method: 'POST' })
         }
       }
 
-      eventsToImport.push(transformLumaEvent(lumaEvent, finalVenueId))
+      const transformed = transformLumaEvent(lumaEvent, finalVenueId)
+      eventsToImport.push({
+        ...transformed,
+        location_hidden: locationHidden,
+      })
     }
 
     // AI categorize and generate embeddings sequentially to avoid rate limits

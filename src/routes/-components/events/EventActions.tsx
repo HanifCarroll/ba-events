@@ -129,7 +129,8 @@ export function EventActions({ event }: EventActionsProps) {
           </Tooltip>
         )}
 
-        {(event.venue_address || event.venue_name) && (
+        {/* Don't show map button when address is hidden */}
+        {!event.location_hidden && (event.venue_address || event.venue_name) && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button

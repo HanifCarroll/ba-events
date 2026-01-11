@@ -68,7 +68,12 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
                 {event.name}
               </h3>
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2">
-                {event.venue_name && (
+                {event.location_hidden ? (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <MapPin className="h-3 w-3 text-primary/60" />
+                    <span className="truncate max-w-[140px] italic">Address after registration</span>
+                  </span>
+                ) : event.venue_name && (
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <MapPin className="h-3 w-3 text-primary/60" />
                     <span className="truncate max-w-[120px]">{event.venue_name}</span>
@@ -152,17 +157,39 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
                   <Clock className="h-4 w-4 text-primary/60" />
                   <span>{formatEventTime(event.starts_at, event.ends_at)}</span>
                 </div>
-                {event.venue_neighborhood && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <MapPin className="h-4 w-4 text-primary/60" />
-                    <span>{event.venue_neighborhood}</span>
-                  </div>
-                )}
-                {event.venue_address && (
+                {event.location_hidden ? (
                   <div className="flex items-start gap-2 text-sm text-muted-foreground col-span-2">
                     <MapPin className="h-4 w-4 text-primary/60 shrink-0 mt-0.5" />
-                    <span>{event.venue_address}</span>
+                    <span className="italic">
+                      Address shared after registration.{' '}
+                      {event.link && (
+                        <a
+                          href={event.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline font-medium"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Register to see
+                        </a>
+                      )}
+                    </span>
                   </div>
+                ) : (
+                  <>
+                    {event.venue_neighborhood && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <MapPin className="h-4 w-4 text-primary/60" />
+                        <span>{event.venue_neighborhood}</span>
+                      </div>
+                    )}
+                    {event.venue_address && (
+                      <div className="flex items-start gap-2 text-sm text-muted-foreground col-span-2">
+                        <MapPin className="h-4 w-4 text-primary/60 shrink-0 mt-0.5" />
+                        <span>{event.venue_address}</span>
+                      </div>
+                    )}
+                  </>
                 )}
                 {event.min_age && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">

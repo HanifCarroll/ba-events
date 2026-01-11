@@ -29,6 +29,30 @@ export const AUTO_USE_THRESHOLD = 0.85
  */
 export const REVIEW_QUEUE_THRESHOLD = 0.6
 
+/**
+ * Patterns that indicate a placeholder address rather than a real venue.
+ * These are shown by event platforms when the host hides the address until registration.
+ */
+const PLACEHOLDER_PATTERNS = [
+  /register\s*(to\s*)?see\s*address/i,
+  /address\s*(to\s*be\s*)?(confirmed|tba|tbd)/i,
+  /location\s*(to\s*be\s*)?(confirmed|tba|tbd|announced)/i,
+  /^tba$/i,
+  /^tbd$/i,
+  /^to\s*be\s*(announced|confirmed|determined)$/i,
+]
+
+/**
+ * Check if a venue name or address is a placeholder (not a real location).
+ * Returns true for text like "Register to See Address", "TBA", etc.
+ */
+export function isPlaceholderVenue(text: string | null | undefined): boolean {
+  if (!text) return false
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  return PLACEHOLDER_PATTERNS.some(pattern => pattern.test(trimmed))
+}
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -42,11 +66,13 @@ export interface VenueSettlementInput {
 
 export interface VenueSettlementResult {
   venueId: string | null
-  action: 'matched' | 'auto-created' | 'queued-review' | 'skipped'
+  action: 'matched' | 'auto-created' | 'queued-review' | 'skipped' | 'placeholder'
   confidence: number
   method?: 'exact' | 'fuzzy' | 'coordinates' | 'address' | 'name-only' | 'direct'
   venueName: string
   neighborhood?: Neighborhood | null
+  /** True if the venue name/address was detected as a placeholder (e.g., "Register to See Address") */
+  isPlaceholder?: boolean
 }
 
 export interface VenueReviewQueueEntry {
@@ -64,6 +90,7 @@ export interface VenueSettlementStats {
   autoCreated: number
   queuedReview: number
   skipped: number
+  placeholder: number
 }
 
 // ============================================================================
@@ -157,6 +184,19 @@ export async function settleVenue(
   }
 
   const venueName = input.name.trim()
+
+  // Check for placeholder addresses (e.g., "Register to See Address")
+  // These should not create venues - the event should be marked with location_hidden instead
+  if (isPlaceholderVenue(venueName) || isPlaceholderVenue(input.address)) {
+    console.log(`[venue-settlement] Detected placeholder venue: "${venueName}"`)
+    return {
+      venueId: null,
+      action: 'placeholder',
+      confidence: 0,
+      venueName,
+      isPlaceholder: true,
+    }
+  }
 
   // Step 1: Try matching against existing venues
   const match = await matchVenue(venueName, REVIEW_QUEUE_THRESHOLD)
@@ -255,6 +295,7 @@ export async function settleVenues(
     autoCreated: 0,
     queuedReview: 0,
     skipped: 0,
+    placeholder: 0,
   }
 
   // Dedupe venues by name
@@ -289,6 +330,9 @@ export async function settleVenues(
       case 'skipped':
         stats.skipped++
         break
+      case 'placeholder':
+        stats.placeholder++
+        break
     }
 
     // Rate limiting for API calls (only needed if we hit Nominatim)
@@ -300,7 +344,7 @@ export async function settleVenues(
   }
 
   console.log(
-    `[venue-settlement] Completed: ${stats.matched} matched, ${stats.autoCreated} created, ${stats.queuedReview} queued, ${stats.skipped} skipped`
+    `[venue-settlement] Completed: ${stats.matched} matched, ${stats.autoCreated} created, ${stats.queuedReview} queued, ${stats.skipped} skipped, ${stats.placeholder} placeholder`
   )
 
   return { results, stats }
