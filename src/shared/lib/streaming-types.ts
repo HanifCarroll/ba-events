@@ -223,3 +223,28 @@ export interface PasslineAddressComplete {
 }
 
 export type PasslineAddressUpdate = PasslineAddressProgress | PasslineAddressComplete
+
+// ============================================================================
+// PASSLINE DESCRIPTION ENRICHMENT STREAMING TYPES
+// ============================================================================
+
+export interface PasslineDescriptionEnrichProgress {
+  type: 'progress'
+  current: number
+  total: number
+  eventName: string
+  success: boolean
+  error?: string
+}
+
+export interface PasslineDescriptionEnrichComplete {
+  type: 'complete'
+  enriched: number
+  translated: number
+  total: number
+  errors?: Array<{ id: string; error: string }>
+}
+
+export type PasslineDescriptionEnrichUpdate =
+  | PasslineDescriptionEnrichProgress
+  | PasslineDescriptionEnrichComplete

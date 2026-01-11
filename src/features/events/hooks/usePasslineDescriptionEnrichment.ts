@@ -2,22 +2,23 @@ import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
-import {
-  enrichPasslineDescriptionsAction,
-  type PasslineDescriptionEnrichProgress,
-  type PasslineDescriptionEnrichComplete,
-} from '../api/enrichment'
-import { extractPasslineEventsBatchClient } from '@/features/import/scrapers/passline/client-enrichment'
+import { enrichPasslineDescriptionsWithPlaywrightAction } from '../api/enrichment'
+import type {
+  PasslineDescriptionEnrichProgress,
+  PasslineDescriptionEnrichComplete,
+} from '@/shared/lib/streaming-types'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 /**
- * Hook for enriching Passline events with descriptions.
+ * Hook for enriching Passline events with descriptions using Playwright.
  *
- * Since Cloudflare blocks server-side requests to Passline, this hook:
- * 1. Extracts descriptions client-side from JSON-LD on each event page
- * 2. Sends the Spanish descriptions to the server for translation and embedding
+ * Uses server-side Playwright/Browserless to:
+ * 1. Visit each Passline event page (bypasses CORS and Cloudflare)
+ * 2. Extract description from JSON-LD
+ * 3. Translate Spanish description to English
+ * 4. Generate embedding and save to database
  *
- * Use the "Fetch Passline Descriptions" button to trigger this enrichment.
+ * Use the "Add Descriptions" button to trigger this enrichment.
  */
 export function usePasslineDescriptionEnrichment() {
   const { invalidateEvents } = useInvalidateCache()
@@ -26,7 +27,6 @@ export function usePasslineDescriptionEnrichment() {
   const toastIdRef = useRef<string | number | undefined>(undefined)
   const totalEnrichedRef = useRef(0)
   const totalToProcessRef = useRef(0)
-  const extractionPhaseRef = useRef(false)
 
   const { state, processStream, stop } = useStreamingProgress<
     PasslineDescriptionEnrichProgress,
@@ -34,12 +34,13 @@ export function usePasslineDescriptionEnrichment() {
   >({
     onProgress: (update) => {
       // Update toast with progress
+      const statusText = update.success ? 'Fetched' : 'Processing'
       toast.loading(
         `Processing Passline descriptions (${update.current}/${update.total})...`,
         {
           id: toastIdRef.current,
           description: update.eventName
-            ? `Translating: ${update.eventName.substring(0, 40)}${update.eventName.length > 40 ? '...' : ''}`
+            ? `${statusText}: ${update.eventName.substring(0, 40)}${update.eventName.length > 40 ? '...' : ''}`
             : 'Processing...',
         }
       )
@@ -88,14 +89,13 @@ export function usePasslineDescriptionEnrichment() {
   })
 
   /**
-   * Check if an event is a Passline event that can be enriched
+   * Check if an event is a Passline event that can be enriched.
+   * Allows both 'pending' (never enriched) and 'failed' (retry) events.
    */
   const canEnrichEvent = useCallback((event: EventWithVenue) => {
-    return (
-      event.source === 'passline' &&
-      event.enrichment_status === 'pending' &&
-      !!event.link
-    )
+    const canEnrich =
+      event.enrichment_status === 'pending' || event.enrichment_status === 'failed'
+    return event.source === 'passline' && canEnrich && !!event.link
   }, [])
 
   /**
@@ -109,9 +109,12 @@ export function usePasslineDescriptionEnrichment() {
   )
 
   /**
-   * Enrich selected Passline events with descriptions
-   * 1. First extracts descriptions client-side from JSON-LD
-   * 2. Then sends to server for translation and embedding
+   * Enrich selected Passline events with descriptions using Playwright.
+   * Server-side Playwright/Browserless handles:
+   * - Visiting Passline pages (bypasses CORS)
+   * - Cloudflare challenge handling
+   * - JSON-LD extraction
+   * - Translation and embedding generation
    */
   const enrichPasslineEvents = useCallback(
     async (
@@ -132,69 +135,26 @@ export function usePasslineDescriptionEnrichment() {
       // Reset counters
       totalEnrichedRef.current = 0
       totalToProcessRef.current = enrichableEvents.length
-      extractionPhaseRef.current = true
 
-      // Prepare events for client-side extraction
-      const eventsForExtraction = enrichableEvents.map((e) => ({
+      // Prepare events for server-side enrichment
+      const eventsForEnrichment = enrichableEvents.map((e) => ({
         id: e.id,
-        url: e.link || '',
+        name: e.name,
+        link: e.link || '',
       }))
 
-      // Show initial toast for extraction phase
+      // Show initial toast
       toastIdRef.current = toast.loading(
-        `Extracting descriptions from ${enrichableEvents.length} Passline pages...`,
+        `Fetching descriptions for ${enrichableEvents.length} Passline events...`,
         {
-          description: 'Fetching event pages to extract JSON-LD data.',
+          description: 'Using Playwright to visit each event page.',
         }
       )
 
       try {
-        // Phase 1: Client-side extraction from JSON-LD
-        const extractedResults = await extractPasslineEventsBatchClient(
-          eventsForExtraction,
-          (current, total) => {
-            toast.loading(`Extracting descriptions (${current}/${total})...`, {
-              id: toastIdRef.current,
-              description: `Fetching Passline event pages...`,
-            })
-          },
-          300 // 300ms delay between requests
-        )
-
-        // Filter to only events where we got descriptions
-        const eventsWithDescriptions = extractedResults
-          .filter((r) => r.description && r.description.length > 0)
-          .map((r) => {
-            const event = enrichableEvents.find((e) => e.id === r.id)
-            return {
-              id: r.id,
-              name: event?.name || 'Unknown',
-              description_es: r.description!,
-            }
-          })
-
-        if (eventsWithDescriptions.length === 0) {
-          toast.error('No descriptions found', {
-            id: toastIdRef.current,
-            description:
-              'Could not extract descriptions from any Passline event pages. They may not have description data.',
-          })
-          return
-        }
-
-        // Update toast for translation phase
-        extractionPhaseRef.current = false
-        toast.loading(
-          `Translating ${eventsWithDescriptions.length} descriptions...`,
-          {
-            id: toastIdRef.current,
-            description: 'Sending to server for translation and embedding.',
-          }
-        )
-
-        // Phase 2: Server-side translation and saving
-        const stream = await enrichPasslineDescriptionsAction({
-          data: { events: eventsWithDescriptions },
+        // Single-phase: Server-side extraction, translation, and saving
+        const stream = await enrichPasslineDescriptionsWithPlaywrightAction({
+          data: { events: eventsForEnrichment },
         })
 
         await processStream(
@@ -207,14 +167,13 @@ export function usePasslineDescriptionEnrichment() {
         onComplete?.()
       } finally {
         toastIdRef.current = undefined
-        extractionPhaseRef.current = false
       }
     },
     [getPasslineEnrichableEvents, processStream]
   )
 
   return {
-    isPasslineEnriching: state.isProcessing || extractionPhaseRef.current,
+    isPasslineEnriching: state.isProcessing,
     passlineEnrichProgress: {
       isEnriching: state.isProcessing,
       current: state.current,

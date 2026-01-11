@@ -33,6 +33,7 @@ export {
   resetFailedEnrichmentsAction,
   getEventsNeedingVenueOnlyAction,
   enrichPasslineDescriptionsAction,
+  enrichPasslineDescriptionsWithPlaywrightAction,
   getPasslineEventsNeedingDescriptionsAction,
   type NeedsAttentionBreakdown,
   type PasslineDescriptionEnrichProgress,

@@ -75,10 +75,13 @@ export function useLumaDescriptionEnrichment() {
   })
 
   /**
-   * Check if an event is a Luma event that can be enriched (enrichment_status is 'pending')
+   * Check if an event is a Luma event that can be enriched.
+   * Allows both 'pending' (never enriched) and 'failed' (retry) events.
    */
   const canEnrichEvent = useCallback((event: EventWithVenue) => {
-    return event.source === 'luma' && event.enrichment_status === 'pending' && !!event.link
+    const canEnrich =
+      event.enrichment_status === 'pending' || event.enrichment_status === 'failed'
+    return event.source === 'luma' && canEnrich && !!event.link
   }, [])
 
   /**

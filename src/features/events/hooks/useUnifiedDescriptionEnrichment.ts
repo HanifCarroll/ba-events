@@ -70,6 +70,7 @@ export function useUnifiedDescriptionEnrichment(
       const backgroundCandidates = events.filter(
         (e) => selectedIds.has(e.id) && !passlineIds.has(e.id) && !lumaIds.has(e.id)
       )
+
       const backgroundEvents = backgroundEnrichment.getEnrichableEvents(
         backgroundCandidates,
         new Set(backgroundCandidates.map((e) => e.id))
@@ -199,7 +200,9 @@ export function useUnifiedDescriptionEnrichment(
           }
 
           const methodEvents = byMethod.get(method) ?? []
-          if (methodEvents.length === 0) continue
+          if (methodEvents.length === 0) {
+            continue
+          }
 
           // Create a Set of IDs for this method's events
           const methodIds = new Set(methodEvents.map((e) => e.id))

@@ -7,6 +7,7 @@ import {
   translateText,
 } from '@/shared/lib/ai/enrichment'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
+import { fetchPasslineDescription } from '@/features/import/scrapers/passline/description-enrichment'
 import type { EventWithVenue } from '@/shared/lib/types'
 import type {
   EmbeddingProgress,
@@ -651,3 +652,159 @@ export const getPasslineEventsNeedingDescriptionsAction = createServerFn({
     return (data || []) as Array<{ id: string; name: string; link: string }>
   }
 )
+
+/**
+ * Enrich Passline event descriptions using Playwright/Browserless.
+ *
+ * This is the complete server-side flow that:
+ * 1. Launches Playwright/Browserless to fetch each event page
+ * 2. Extracts Spanish descriptions from JSON-LD
+ * 3. Translates them to English
+ * 4. Generates embeddings
+ * 5. Saves to the database
+ *
+ * Uses Browserless.io in production (BROWSERLESS_TOKEN env var),
+ * or local Playwright for development.
+ */
+export const enrichPasslineDescriptionsWithPlaywrightAction = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (data: { events: Array<{ id: string; name: string; link: string }> }) => data
+  )
+  .handler(async function* ({
+    data: { events },
+  }): AsyncGenerator<PasslineDescriptionEnrichUpdate> {
+    const client = await requireAdminAccess()
+    console.log(
+      `[server] enrichPasslineDescriptionsWithPlaywrightAction called with ${events.length} events`
+    )
+
+    let enriched = 0
+    let translated = 0
+    const errors: Array<{ id: string; error: string }> = []
+
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i]
+
+      try {
+        // Phase 1: Fetch description using Playwright/Browserless
+        console.log(`[server] Fetching description for "${event.name}" from ${event.link}`)
+        const result = await fetchPasslineDescription({
+          id: event.id,
+          name: event.name,
+          link: event.link,
+        })
+
+        if (!result.description) {
+          console.log(`[server] No description found for "${event.name}": ${result.error || 'unknown'}`)
+          errors.push({ id: event.id, error: result.error || 'No description found' })
+
+          // Mark as failed
+          await updateEvent(
+            event.id,
+            {
+              enrichment_status: 'failed',
+              enrichment_error: result.error || 'No description found',
+            },
+            client
+          )
+
+          yield {
+            type: 'progress',
+            current: i + 1,
+            total: events.length,
+            eventName: event.name,
+            success: false,
+            error: result.error,
+          } as PasslineDescriptionEnrichProgress
+
+          continue
+        }
+
+        const description_es = result.description
+
+        // Phase 2: Translate to English
+        let description_en: string | null = null
+        try {
+          description_en = await translateText(description_es, 'es-to-en')
+          if (description_en) translated++
+        } catch (translateError) {
+          console.warn(`[server] Failed to translate description for ${event.id}:`, translateError)
+          // Continue without English translation
+        }
+
+        // Phase 3: Get existing event data for embedding generation
+        const existingEvent = await getEventById(event.id)
+
+        // Phase 4: Generate embedding from Spanish description
+        const embedding = await generateEventEmbedding({
+          name: existingEvent.name,
+          description_es,
+          categories: existingEvent.categories,
+        })
+
+        // Phase 5: Update event with descriptions, embedding, and enrichment status
+        await updateEvent(
+          event.id,
+          {
+            description_es,
+            description_en,
+            embedding,
+            enrichment_status: 'completed',
+            enriched_at: new Date().toISOString(),
+          },
+          client
+        )
+
+        enriched++
+        console.log(`[server] Successfully enriched "${event.name}"`)
+
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: event.name,
+          success: true,
+        } as PasslineDescriptionEnrichProgress
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+        console.error(`[server] Failed to enrich Passline event ${event.id}:`, errorMsg)
+        errors.push({ id: event.id, error: errorMsg })
+
+        // Mark as failed
+        try {
+          await updateEvent(
+            event.id,
+            {
+              enrichment_status: 'failed',
+              enrichment_error: errorMsg,
+            },
+            client
+          )
+        } catch {
+          // Ignore update error
+        }
+
+        yield {
+          type: 'progress',
+          current: i + 1,
+          total: events.length,
+          eventName: event.name,
+          success: false,
+          error: errorMsg,
+        } as PasslineDescriptionEnrichProgress
+      }
+
+      // Small delay between events to avoid overwhelming the browser service
+      if (i < events.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+    }
+
+    yield {
+      type: 'complete',
+      enriched,
+      translated,
+      total: events.length,
+      errors: errors.length > 0 ? errors : undefined,
+    } as PasslineDescriptionEnrichComplete
+  })
