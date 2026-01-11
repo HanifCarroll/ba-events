@@ -8,12 +8,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   enrichEventFull,
   extractVenueFromUrl,
-  getKnownLanguageForSource,
   detectLanguage,
   translateText,
 } from '@/shared/lib/ai/enrichment'
-import { fetchMeetupDescriptionFromDetailPage } from '@/features/import/scrapers/meetup/description-enrichment'
-import { fetchMeetupVenueFromUrl } from '@/features/import/scrapers/meetup/venue-enrichment'
+import {
+  getEnrichmentAdapter,
+  hasServerEnrichment,
+} from '@/features/import/adapters/enrichment'
+import type { ImportSource } from '@/features/import/adapters/types'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { settleVenue, type VenueSettlementResult } from './venue-settlement'
 import { delay } from './nominatim'
@@ -78,75 +80,6 @@ async function updateEventEnrichment(
 }
 
 // ============================================================================
-// MEETUP-SPECIFIC ENRICHMENT
-// ============================================================================
-
-/**
- * Enrich a Meetup event with description and venue.
- *
- * Meetup blocks Jina Reader (HTTP 451), so we use direct HTML fetch instead.
- * Description is extracted from __NEXT_DATA__ in the page HTML.
- */
-async function enrichMeetupEvent(
-  link: string,
-  options?: { extractVenue?: boolean }
-): Promise<{
-  description_es: string | null
-  description_en: string | null
-  venue_name: string | null
-} | null> {
-  // Step 1: Fetch description from Meetup page
-  const description = await fetchMeetupDescriptionFromDetailPage(link)
-
-  if (!description) {
-    console.log('[event-enrichment] No description found for Meetup event')
-    return null
-  }
-
-  console.log(
-    `[event-enrichment] Meetup description fetched (${description.length} chars)`
-  )
-
-  // Step 2: Detect language (Meetup can have Spanish or English descriptions)
-  const detectedLang = await detectLanguage(description)
-  console.log(`[event-enrichment] Detected language: ${detectedLang}`)
-
-  // Step 3: Get both language versions
-  let description_es: string | null = null
-  let description_en: string | null = null
-
-  if (detectedLang === 'spanish') {
-    description_es = description
-    description_en = await translateText(description, 'es-to-en')
-  } else {
-    description_en = description
-    description_es = await translateText(description, 'en-to-es')
-  }
-
-  // Step 4: Extract venue if needed
-  let venue_name: string | null = null
-  if (options?.extractVenue) {
-    try {
-      const venueInfo = await fetchMeetupVenueFromUrl(link)
-      venue_name = venueInfo?.name || null
-      if (venue_name) {
-        console.log(`[event-enrichment] Meetup venue extracted: ${venue_name}`)
-      }
-    } catch (error) {
-      console.log(
-        `[event-enrichment] Failed to extract venue: ${error instanceof Error ? error.message : 'Unknown error'}`
-      )
-    }
-  }
-
-  return {
-    description_es,
-    description_en,
-    venue_name,
-  }
-}
-
-// ============================================================================
 // SINGLE EVENT ENRICHMENT
 // ============================================================================
 
@@ -172,17 +105,61 @@ export async function enrichSingleEvent(
   console.log(`[event-enrichment] Enriching: ${name}`)
 
   try {
-    // Step 1: Fetch and extract bilingual descriptions + venue name
+    // Step 1: Get enrichment adapter for this source
+    const adapter = getEnrichmentAdapter(source as ImportSource)
     const needsVenue = !venue_id
 
-    // Route Meetup events to dedicated enrichment (Jina Reader returns 451 for Meetup)
-    const enrichmentResult =
-      source === 'meetup'
-        ? await enrichMeetupEvent(link, { extractVenue: needsVenue })
-        : await enrichEventFull(link, {
-            knownLanguage: getKnownLanguageForSource(source),
-            extractVenue: needsVenue,
-          })
+    // Skip sources that require client-side enrichment (e.g., Passline with Cloudflare)
+    if (adapter?.config.requiresClientSide) {
+      return {
+        eventId: id,
+        success: false,
+        enriched: false,
+        error: `${source} requires client-side extraction`,
+      }
+    }
+
+    // Step 2: Fetch and extract bilingual descriptions + venue name
+    // Use adapter's serverEnrich if available, otherwise fall back to generic enrichment
+    let enrichmentResult: {
+      description_es: string | null
+      description_en: string | null
+      venue_name: string | null
+    } | null = null
+
+    if (adapter && hasServerEnrichment(adapter)) {
+      console.log(`[event-enrichment] Using adapter for ${source}`)
+      enrichmentResult = await adapter.serverEnrich(link, { extractVenue: needsVenue })
+
+      // Handle adapters that return description_en when language is unknown
+      // Detect language and remap if Spanish
+      if (enrichmentResult?.description_en && !enrichmentResult.description_es) {
+        const detectedLang = await detectLanguage(enrichmentResult.description_en)
+        console.log(`[event-enrichment] Detected language: ${detectedLang}`)
+
+        if (detectedLang === 'spanish') {
+          enrichmentResult.description_es = enrichmentResult.description_en
+          enrichmentResult.description_en = await translateText(
+            enrichmentResult.description_es,
+            'es-to-en'
+          )
+        } else {
+          // It's English - translate to Spanish
+          enrichmentResult.description_es = await translateText(
+            enrichmentResult.description_en,
+            'en-to-es'
+          )
+        }
+      }
+    } else {
+      // Fallback to generic enrichment (for sources without adapters or missing serverEnrich)
+      console.log(`[event-enrichment] Using generic enrichment for ${source}`)
+      const knownLanguage = adapter?.config.knownLanguage === 'es' ? 'spanish' : undefined
+      enrichmentResult = await enrichEventFull(link, {
+        knownLanguage,
+        extractVenue: needsVenue,
+      })
+    }
 
     if (!enrichmentResult || !enrichmentResult.description_es) {
       await updateEventEnrichment(client, id, {
