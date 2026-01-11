@@ -16,6 +16,14 @@ import type {
   PasslineDescriptionEnrichComplete,
 } from '@/shared/lib/streaming-types'
 import { sanitizeError } from '@/shared/lib/security'
+import {
+  isCloudflareChallenge,
+  BROWSER_USER_AGENT,
+  BROWSER_VIEWPORT,
+  STEALTH_LAUNCH_ARGS,
+  DEFAULT_LOCALE,
+  getBrowserlessEndpoint,
+} from '@/shared/lib/browser'
 
 export interface PasslineDescriptionResult {
   id: string
@@ -91,7 +99,7 @@ export async function fetchPasslineDescriptionFromDetailPage(
     } catch {
       // Check if this is a Cloudflare challenge page
       const html = await page.content()
-      if (html.includes('__cf_chl') || html.includes('challenge-platform')) {
+      if (isCloudflareChallenge(html)) {
         console.log(`[Passline Description] Cloudflare challenge detected for "${eventName}", waiting...`)
         // Wait longer for Cloudflare to resolve
         await page.waitForTimeout(5000)
@@ -116,7 +124,7 @@ export async function fetchPasslineDescriptionFromDetailPage(
     const html = await page.content()
 
     // Double-check we're not on a Cloudflare page
-    if (html.includes('__cf_chl') && !html.includes('application/ld+json')) {
+    if (isCloudflareChallenge(html) && !html.includes('application/ld+json')) {
       console.log(`[Passline Description] Still on Cloudflare page for "${eventName}"`)
       return {
         id,
@@ -170,7 +178,7 @@ async function fetchWithBrowserless(
   try {
     // Use stealth mode and block ads to appear more like a real browser
     browser = await puppeteer.default.connect({
-      browserWSEndpoint: `wss://chrome.browserless.io?token=${token}&stealth&blockAds`,
+      browserWSEndpoint: getBrowserlessEndpoint(token),
     })
   } catch (error) {
     console.error('[Passline Description] Failed to connect to Browserless:', sanitizeError(error))
@@ -199,9 +207,9 @@ async function fetchWithBrowserless(
       } catch {
         attempts++
         const html = await page.content()
-        const isCloudflare = html.includes('__cf_chl') || html.includes('challenge-platform') || html.includes('turnstile')
+        const cloudflareDetected = isCloudflareChallenge(html)
 
-        if (isCloudflare && attempts < maxAttempts) {
+        if (cloudflareDetected && attempts < maxAttempts) {
           console.log(`[Passline Description] Cloudflare challenge for "${event.name}", waiting (attempt ${attempts}/${maxAttempts})...`)
           // Wait for Turnstile to potentially auto-resolve
           await new Promise(resolve => setTimeout(resolve, 8000))
@@ -216,7 +224,7 @@ async function fetchWithBrowserless(
     const html = await page.content()
 
     // Check if we're still on Cloudflare
-    if (html.includes('__cf_chl') && !html.includes('application/ld+json')) {
+    if (isCloudflareChallenge(html) && !html.includes('application/ld+json')) {
       const pageTitle = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || 'unknown'
       console.log(`[Passline Description] Cloudflare page for "${event.name}", title: "${pageTitle}"`)
       return {
@@ -317,10 +325,7 @@ async function* fetchWithPlaywrightBatch(
   // Launch browser with settings to appear more like a real browser
   const browser: Browser = await chromium.launch({
     headless: true,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-    ],
+    args: [...STEALTH_LAUNCH_ARGS],
   })
 
   const results: PasslineDescriptionResult[] = []
@@ -334,9 +339,9 @@ async function* fetchWithPlaywrightBatch(
       const event = events[i]
 
       const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1920, height: 1080 },
-        locale: 'es-AR',
+        userAgent: BROWSER_USER_AGENT,
+        viewport: BROWSER_VIEWPORT,
+        locale: DEFAULT_LOCALE,
       })
       const page = await context.newPage()
 
@@ -453,14 +458,14 @@ export async function fetchPasslineDescription(
   const { chromium } = await import('playwright')
   const browser = await chromium.launch({
     headless: true,
-    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+    args: [...STEALTH_LAUNCH_ARGS],
   })
 
   try {
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      viewport: { width: 1920, height: 1080 },
-      locale: 'es-AR',
+      userAgent: BROWSER_USER_AGENT,
+      viewport: BROWSER_VIEWPORT,
+      locale: DEFAULT_LOCALE,
     })
     const page = await context.newPage()
 

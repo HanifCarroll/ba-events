@@ -15,6 +15,7 @@ import type { MeetupEvent, MeetupGraphQLEvent } from './types'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import { sanitizeError } from '@/shared/lib/security'
+import { getBrowserlessEndpoint } from '@/shared/lib/browser'
 
 const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
 
@@ -553,7 +554,7 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
   let browser
   try {
     browser = await puppeteer.default.connect({
-      browserWSEndpoint: `wss://chrome.browserless.io?token=${token}`,
+      browserWSEndpoint: getBrowserlessEndpoint(token),
     })
   } catch (error) {
     // Sanitize error to prevent token leakage in logs

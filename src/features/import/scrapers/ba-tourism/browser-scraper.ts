@@ -13,6 +13,7 @@
 import type { BATourismEvent, WeekContext } from './types'
 import { parseWeekContext } from './date-parser'
 import { sanitizeError } from '@/shared/lib/security'
+import { getBrowserlessEndpoint } from '@/shared/lib/browser'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
 
@@ -249,7 +250,7 @@ async function scrapeWithBrowserless(token: string): Promise<{
   let browser
   try {
     browser = await puppeteer.default.connect({
-      browserWSEndpoint: `wss://chrome.browserless.io?token=${token}`,
+      browserWSEndpoint: getBrowserlessEndpoint(token),
     })
   } catch (error) {
     // Sanitize error to prevent token leakage in logs

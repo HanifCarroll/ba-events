@@ -16,6 +16,14 @@ import type {
   PasslineAddressComplete,
 } from '@/shared/lib/streaming-types'
 import { sanitizeError } from '@/shared/lib/security'
+import {
+  isCloudflareChallenge,
+  BROWSER_USER_AGENT,
+  BROWSER_VIEWPORT,
+  STEALTH_LAUNCH_ARGS,
+  DEFAULT_LOCALE,
+  getBrowserlessEndpoint,
+} from '@/shared/lib/browser'
 
 export interface PasslineAddressResult {
   venueName: string
@@ -201,7 +209,7 @@ export async function fetchPasslineAddressFromDetailPage(
     } catch {
       // Check if this is a Cloudflare challenge page
       const html = await page.content()
-      if (html.includes('__cf_chl') || html.includes('challenge-platform')) {
+      if (isCloudflareChallenge(html)) {
         console.log(`[Passline Address] Cloudflare challenge detected for "${venueName}", waiting...`)
         // Wait longer for Cloudflare to resolve
         await page.waitForTimeout(5000)
@@ -231,7 +239,7 @@ export async function fetchPasslineAddressFromDetailPage(
     const html = await page.content()
 
     // Double-check we're not on a Cloudflare page
-    if (html.includes('__cf_chl') && !html.includes('segundo_contenedor')) {
+    if (isCloudflareChallenge(html) && !html.includes('segundo_contenedor')) {
       console.log(`[Passline Address] Still on Cloudflare page for "${venueName}"`)
       return {
         venueName,
@@ -291,7 +299,7 @@ async function fetchWithBrowserless(
   try {
     // Use stealth mode and block ads to appear more like a real browser
     browser = await puppeteer.default.connect({
-      browserWSEndpoint: `wss://chrome.browserless.io?token=${token}&stealth&blockAds`,
+      browserWSEndpoint: getBrowserlessEndpoint(token),
     })
   } catch (error) {
     console.error('[Passline Address] Failed to connect to Browserless:', sanitizeError(error))
@@ -320,9 +328,9 @@ async function fetchWithBrowserless(
       } catch {
         attempts++
         const html = await page.content()
-        const isCloudflare = html.includes('__cf_chl') || html.includes('challenge-platform') || html.includes('turnstile')
+        const cloudflareDetected = isCloudflareChallenge(html)
 
-        if (isCloudflare && attempts < maxAttempts) {
+        if (cloudflareDetected && attempts < maxAttempts) {
           console.log(`[Passline Address] Cloudflare challenge for "${venueName}", waiting (attempt ${attempts}/${maxAttempts})...`)
           // Wait for Turnstile to potentially auto-resolve
           await new Promise(resolve => setTimeout(resolve, 8000))
@@ -332,13 +340,13 @@ async function fetchWithBrowserless(
         // Final failure
         const pageTitle = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || 'unknown'
         console.log(`[Passline Address] Venue container not found for "${venueName}"`)
-        console.log(`[Passline Address] Page title: "${pageTitle}", Cloudflare: ${isCloudflare}, HTML length: ${html.length}`)
+        console.log(`[Passline Address] Page title: "${pageTitle}", Cloudflare: ${cloudflareDetected}, HTML length: ${html.length}`)
 
         return {
           venueName,
           address: null,
           location: null,
-          error: isCloudflare ? 'Cloudflare challenge' : 'Venue container not found',
+          error: cloudflareDetected ? 'Cloudflare challenge' : 'Venue container not found',
         }
       }
     }
@@ -432,10 +440,7 @@ async function* fetchWithPlaywrightBatch(
   // Launch browser with settings to appear more like a real browser
   const browser: Browser = await chromium.launch({
     headless: true,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-    ],
+    args: [...STEALTH_LAUNCH_ARGS],
   })
 
   const results: PasslineAddressResult[] = []
@@ -451,9 +456,9 @@ async function* fetchWithPlaywrightBatch(
       const batchResults = await Promise.all(
         batch.map(async (venue) => {
           const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            viewport: { width: 1920, height: 1080 },
-            locale: 'es-AR',
+            userAgent: BROWSER_USER_AGENT,
+            viewport: BROWSER_VIEWPORT,
+            locale: DEFAULT_LOCALE,
           })
           const page = await context.newPage()
           try {

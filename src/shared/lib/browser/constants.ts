@@ -1,0 +1,50 @@
+/**
+ * Browser Automation Constants
+ *
+ * Shared constants used across all browser automation scrapers.
+ * These settings help pages appear more like real browser sessions.
+ */
+
+/**
+ * Standard user agent string for browser automation.
+ * Mimics a real Chrome browser on macOS.
+ */
+export const BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+/**
+ * Standard viewport size for browser automation.
+ * Uses common desktop resolution.
+ */
+export const BROWSER_VIEWPORT = {
+  width: 1920,
+  height: 1080,
+} as const
+
+/**
+ * Launch arguments for stealth mode.
+ * Helps avoid bot detection.
+ */
+export const STEALTH_LAUNCH_ARGS = [
+  '--disable-blink-features=AutomationControlled',
+  '--no-sandbox',
+] as const
+
+/**
+ * Default locale for browser context.
+ * Set to Spanish (Argentina) for Buenos Aires event sites.
+ */
+export const DEFAULT_LOCALE = 'es-AR'
+
+/**
+ * Browserless.io WebSocket endpoint template.
+ * Uses stealth mode and ad blocking for better success rates.
+ */
+export const BROWSERLESS_ENDPOINT = 'wss://chrome.browserless.io?token={token}&stealth&blockAds'
+
+/**
+ * Get the Browserless WebSocket endpoint with the token.
+ */
+export function getBrowserlessEndpoint(token: string): string {
+  return BROWSERLESS_ENDPOINT.replace('{token}', token)
+}

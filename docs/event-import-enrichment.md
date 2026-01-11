@@ -69,19 +69,19 @@ This document outlines the two-phase event import architecture: fast initial imp
 
 ## Enrichment Strategy Decision Matrix
 
-The following table documents the client-side vs server-side enrichment strategy for each source, along with the technical reasons for each decision.
+The following table documents the enrichment strategy for each source, along with the technical reasons for each decision.
 
 | Source | Strategy | Reason | Description Method | Venue Method | Known Language |
 |--------|----------|--------|-------------------|--------------|----------------|
-| **Passline** | Client-side | Cloudflare blocks server-side requests | JSON-LD `description` field | JSON-LD `location.name` + DOM address patterns | Spanish (es) |
+| **Passline** | Server-side Playwright | Playwright bypasses CORS & Cloudflare | JSON-LD `description` field | JSON-LD `location.name` + DOM address patterns | Spanish (es) |
 | **Meetup** | Server direct fetch | Jina Reader returns HTTP 451 | `__NEXT_DATA__` props | JSON-LD `@type: Place` | Variable (detect) |
-| **Luma** | Server-side (Jina) | Works normally | `__NEXT_DATA__` or JSON-LD | `geo_address_json` or venue object | Variable (detect) |
+| **Luma** | Server-side Playwright | Requires browser for JS content | `__NEXT_DATA__` or JSON-LD | `geo_address_json` or venue object | Variable (detect) |
 | **BA Tourism** | Server-side (Jina + AI) | Works normally | Jina markdown → Haiku extraction | Regex after "¿Dónde?" heading | Spanish (es) |
 | **Eventbrite** | Server-side (Jina + AI) | Works normally | Jina markdown → Haiku extraction | JSON-LD Event.location | Variable (detect) |
 
 ### Decision Factors
 
-1. **Cloudflare/Bot Protection** → Use client-side extraction (browser context)
+1. **Cloudflare/Bot Protection** → Use Playwright/Browserless (server-side browser automation)
 2. **Jina Legal Restrictions (HTTP 451)** → Use direct fetch with browser headers
 3. **Structured Data Available (JSON-LD, `__NEXT_DATA__`)** → Use direct extraction (no AI)
 4. **Complex/Unstructured HTML** → Use AI extraction (Claude Haiku)
@@ -171,7 +171,7 @@ The mapping is defined in `src/features/events/hooks/description-enrichment-stra
 
 | Source | Method | Hook Used | Reason |
 |--------|--------|-----------|--------|
-| `passline` | `passline` | `usePasslineDescriptionEnrichment` | Cloudflare blocks server requests |
+| `passline` | `passline` | `usePasslineDescriptionEnrichment` | Uses Playwright/Browserless to bypass CORS & Cloudflare |
 | `luma` | `luma` | `useLumaDescriptionEnrichment` | Requires Playwright for JS content |
 | `meetup` | `background` | `useBackgroundEnrichment` | Works with Jina Reader |
 | `eventbrite` | `background` | `useBackgroundEnrichment` | Works with Jina Reader |
@@ -221,9 +221,86 @@ src/features/events/hooks/
 ├── description-enrichment-strategies.ts  # Source-to-strategy mapping
 ├── useUnifiedDescriptionEnrichment.ts    # Orchestration hook
 ├── useBackgroundEnrichment.ts            # Generic Jina + Claude
-├── usePasslineDescriptionEnrichment.ts   # Client-side JSON-LD
+├── usePasslineDescriptionEnrichment.ts   # Server-side Playwright
 └── useLumaDescriptionEnrichment.ts       # Server-side Playwright
 ```
+
+## Browser Automation Architecture
+
+Several scrapers use browser automation (Playwright/Puppeteer) to fetch data from sites with bot protection (Cloudflare) or heavy JavaScript rendering.
+
+### Dual-Mode System
+
+The browser automation supports two modes:
+
+| Mode | Environment | Browser | When Used |
+|------|-------------|---------|-----------|
+| **Browserless** | Production | Puppeteer + Browserless.io | `BROWSERLESS_TOKEN` env var is set |
+| **Local** | Development | Playwright + Chromium | Fallback when no token |
+
+**Browserless.io** is a hosted browser service that provides:
+- Stealth mode (`&stealth`) for bot detection bypass
+- Ad blocking (`&blockAds`) for cleaner pages
+- Better Cloudflare success rates (real browser fingerprints)
+
+### Cloudflare Handling
+
+When a Cloudflare challenge is detected:
+1. Wait 5-8 seconds for Turnstile auto-resolve
+2. Retry up to 3 times
+3. Check for success selector (e.g., `#segundo_contenedor` for Passline)
+
+Detection indicators:
+- `__cf_chl` - Cloudflare challenge token
+- `challenge-platform` - Challenge platform indicator
+- `turnstile` - Turnstile CAPTCHA
+
+### Shared Browser Utilities
+
+Common browser automation code is centralized in `src/shared/lib/browser/`:
+
+```
+src/shared/lib/browser/
+├── index.ts          # Public API exports
+├── types.ts          # TypeScript interfaces
+├── connection.ts     # Browser connection factory
+├── cloudflare.ts     # Cloudflare detection & retry
+└── constants.ts      # User-agent, viewport, launch args
+```
+
+**Usage:**
+```typescript
+import {
+  createBrowserConnection,
+  isCloudflareChallenge,
+  waitForCloudflareResolution,
+} from '@/shared/lib/browser'
+
+const browser = await createBrowserConnection()
+const page = await browser.newPage()
+await page.goto('https://example.com')
+
+const result = await waitForCloudflareResolution(page, {
+  successSelector: '#content',
+})
+
+if (result.success) {
+  const html = await page.content()
+  // Process page...
+}
+
+await page.close()
+await browser.close()
+```
+
+### Browser Scrapers
+
+| File | Source | Purpose |
+|------|--------|---------|
+| `scrapers/passline/description-enrichment.ts` | Passline | Extract event descriptions |
+| `scrapers/passline/address-enrichment.ts` | Passline | Extract venue addresses |
+| `scrapers/meetup/browser-scraper.ts` | Meetup | Scrape events by date range |
+| `scrapers/ba-tourism/browser-scraper.ts` | BA Tourism | Scrape tourism portal events |
 
 ## Valid Categories & Vibes
 
@@ -241,9 +318,9 @@ src/features/import/
 │   ├── enrichment-types.ts     # EnrichmentAdapter interface
 │   ├── enrichment/
 │   │   ├── index.ts            # Enrichment adapter registry
-│   │   ├── passline-enrichment.ts    # Client-side (Cloudflare)
+│   │   ├── passline-enrichment.ts    # Passline Playwright (bypasses Cloudflare)
 │   │   ├── meetup-enrichment.ts      # Server direct fetch (Jina 451)
-│   │   ├── luma-enrichment.ts        # Server-side Jina
+│   │   ├── luma-enrichment.ts        # Server-side Playwright
 │   │   ├── ba-tourism-enrichment.ts  # Server-side Jina + AI
 │   │   └── eventbrite-enrichment.ts  # Server-side Jina + AI
 │   ├── passline-adapter.ts     # Passline source adapter
@@ -253,17 +330,26 @@ src/features/import/
 │   └── eventbrite-adapter.ts   # Eventbrite source adapter
 ├── scrapers/
 │   ├── venue-matcher.ts        # Venue matching logic
-│   ├── passline/               # Passline scraper + client enrichment
+│   ├── passline/               # Passline scraper + Playwright enrichment
+│   │   ├── description-enrichment.ts  # Server-side Playwright scraper
+│   │   └── address-enrichment.ts      # Venue address extraction
 │   ├── eventbrite/             # Eventbrite scraper + enrichment
-│   ├── meetup/                 # Meetup scraper + enrichment
+│   ├── meetup/                 # Meetup scraper + Playwright scraper
 │   ├── luma/                   # Luma scraper + enrichment
-│   └── ba-tourism/             # BA Tourism scraper
+│   └── ba-tourism/             # BA Tourism Playwright scraper
 ├── core/
 │   └── event-enrichment.ts     # Batch enrichment orchestration
 └── hooks/
     └── useImportWizard.ts      # Import wizard state machine
 
-src/shared/lib/ai/
-├── enrichment.ts               # Jina + Haiku description extraction
-└── embeddings.ts               # OpenAI embedding generation
+src/shared/lib/
+├── ai/
+│   ├── enrichment.ts           # Jina + Haiku description extraction
+│   └── embeddings.ts           # OpenAI embedding generation
+└── browser/                    # Browser automation utilities
+    ├── index.ts                # Public API exports
+    ├── types.ts                # TypeScript interfaces
+    ├── connection.ts           # Browser connection factory
+    ├── cloudflare.ts           # Cloudflare detection & retry
+    └── constants.ts            # User-agent, viewport, launch args
 ```
