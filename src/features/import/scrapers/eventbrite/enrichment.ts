@@ -12,7 +12,16 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Category } from '@/shared/lib/types'
 import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
 
-const anthropic = new Anthropic()
+// Lazy initialization to avoid instantiating in browser bundle
+// (Anthropic SDK throws when instantiated client-side)
+let anthropicClient: Anthropic | null = null
+
+function getAnthropicClient(): Anthropic {
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic()
+  }
+  return anthropicClient
+}
 
 // ---------------------------------------------------------------------------
 // Price Extraction
@@ -137,7 +146,7 @@ export async function inferCategory(
   try {
     const eventContext = `Event: ${name}${description ? `\nDescription: ${description}` : ''}`
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 20,
       messages: [
