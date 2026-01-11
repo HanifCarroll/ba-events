@@ -1,7 +1,7 @@
 import { HeadContent, Outlet, Scripts, createRootRoute, useLocation } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/shared/providers/AuthProvider'
-import { useAuthContext } from '@/features/auth'
+import { useAuthContext, getSessionUser, type SessionUser } from '@/features/auth'
 import { TooltipProvider } from '@/shared/ui/tooltip'
 import { Toaster } from '@/shared/ui/sonner'
 import { ErrorBoundary } from '@/shared/ui/ErrorBoundary'
@@ -12,6 +12,11 @@ import React, { useEffect, useState, type ReactNode } from 'react'
 
 import appCss from '../styles.css?url'
 
+// Route context type for auth state
+export interface RootRouteContext {
+  session: SessionUser | null
+}
+
 // PostHog is loaded dynamically client-side only to avoid SSR issues
 let posthogInstance: typeof import('posthog-js').default | null = null
 
@@ -20,6 +25,12 @@ function getPostHog() {
 }
 
 export const Route = createRootRoute({
+  // Fetch auth state server-side so it's available during SSR
+  beforeLoad: async (): Promise<RootRouteContext> => {
+    const session = await getSessionUser()
+    return { session }
+  },
+
   head: () => ({
     meta: [
       // Core meta tags
@@ -137,6 +148,9 @@ function ClientPostHogProvider({ children }: { children: ReactNode }) {
 }
 
 function RootDocument() {
+  // Get auth state from route context (fetched in beforeLoad during SSR)
+  const { session } = Route.useRouteContext()
+
   return (
     <html lang={getLocale()} className="dark">
       <head>
@@ -146,7 +160,7 @@ function RootDocument() {
         <ErrorBoundary>
           <ClientPostHogProvider>
             <QueryClientProvider client={queryClient}>
-              <AuthProvider>
+              <AuthProvider initialSession={session}>
                 <TooltipProvider>
                   <PostHogIdentify />
                   <RootLayout />

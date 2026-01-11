@@ -12,7 +12,15 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { CLAUDE_MODEL } from './constants'
 
-const anthropic = new Anthropic()
+// Lazy initialization to avoid instantiating in browser bundle
+let anthropicClient: Anthropic | null = null
+
+function getAnthropicClient(): Anthropic {
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic()
+  }
+  return anthropicClient
+}
 
 // ============================================================================
 // SHARED UTILITIES
@@ -172,7 +180,7 @@ export async function detectLanguage(markdown: string): Promise<DetectedLanguage
     // Use a smaller sample for language detection (first 3k chars)
     const sample = markdown.slice(0, 3000)
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 10,
       messages: [
@@ -207,7 +215,7 @@ export async function extractDescription(
     const truncatedMarkdown = markdown.slice(0, 15000)
     const prompt = language === 'spanish' ? EXTRACTION_PROMPT_ES : EXTRACTION_PROMPT_EN
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 400,
       messages: [
@@ -235,7 +243,7 @@ export async function translateText(
   try {
     const prompt = direction === 'es-to-en' ? TRANSLATION_ES_TO_EN : TRANSLATION_EN_TO_ES
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 400,
       messages: [
@@ -262,7 +270,7 @@ export async function extractVenueName(markdown: string): Promise<string | null>
     // Use a moderate sample for venue extraction (first 10k chars)
     const truncatedMarkdown = markdown.slice(0, 10000)
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 100,
       messages: [

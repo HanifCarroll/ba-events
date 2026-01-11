@@ -26,6 +26,89 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### SSR Auth State via Route Context
+
+**Date:** 2026-01-11
+
+**Decision:** Fetch authentication state in the root route's `beforeLoad` hook and pass it to `AuthProvider` via route context, instead of relying solely on client-side `useQuery`.
+
+**Problem:**
+The sidebar was showing "Iniciar sesión" (Sign In) even when the user was logged in because:
+1. `useQuery` in `AuthProvider` does NOT execute during SSR
+2. Server-rendered HTML had `user = null` → sidebar showed login button
+3. While `beforeLoad` in protected routes correctly detected auth (redirecting `/login` → `/admin`), this data wasn't shared with React components
+4. Client-side query should refetch after hydration, but there was no network request being made
+
+**Investigation:**
+- Used Chrome browser automation to verify server-rendered HTML showed login button
+- Network inspection confirmed no `getSessionUser` server function call was being made
+- Server-side `beforeLoad` correctly detected session (login page redirected to `/admin`)
+- The disconnect was between server-side route guards and client-side React state
+
+**Solution:**
+Following the [TanStack Start Authentication pattern](https://tanstack.com/start/latest/docs/framework/react/guide/authentication):
+
+1. **Root route fetches session in `beforeLoad`:**
+```typescript
+// src/routes/__root.tsx
+export const Route = createRootRoute({
+  beforeLoad: async (): Promise<RootRouteContext> => {
+    const session = await getSessionUser()
+    return { session }
+  },
+  // ...
+})
+```
+
+2. **AuthProvider accepts `initialSession` prop:**
+```typescript
+// src/shared/providers/AuthProvider.tsx
+export function AuthProvider({ children, initialSession }: AuthProviderProps) {
+  const { data: sessionUser } = useQuery({
+    queryKey: ['session'],
+    queryFn: () => getSessionUser(),
+    initialData: initialSession ?? undefined, // SSR data prevents flash
+    staleTime: 1000 * 60 * 5,
+  })
+  // ...
+}
+```
+
+3. **Route context passes session to provider:**
+```typescript
+function RootDocument() {
+  const { session } = Route.useRouteContext()
+  return (
+    // ...
+    <AuthProvider initialSession={session}>
+      {children}
+    </AuthProvider>
+  )
+}
+```
+
+**Alternatives Considered:**
+- **React Query SSR with HydrationBoundary**: More complex setup with `dehydrate`/`hydrate`, overkill for single query
+- **Client-only with loading skeleton**: Would still show flash of logged-out state
+- **Supabase client-side auth only**: Loses SSR benefits, exposes auth state mismatch
+
+**Rationale:**
+1. **TanStack Start native pattern**: Uses route context as recommended by docs
+2. **Single fetch**: `beforeLoad` runs once on server, data is reused via `initialData`
+3. **No hydration mismatch**: Server and client render same auth state
+4. **Graceful degradation**: `useQuery` still refetches if needed (window focus, stale data)
+
+**Files Modified:**
+- `src/routes/__root.tsx` - Added `beforeLoad`, route context type, pass `initialSession`
+- `src/shared/providers/AuthProvider.tsx` - Added `initialSession` prop with `initialData`
+
+**References:**
+- [TanStack Start Authentication Guide](https://tanstack.com/start/latest/docs/framework/react/guide/authentication)
+- [TanStack Start Basic Auth Example](https://tanstack.com/start/latest/docs/framework/react/examples/start-basic-auth)
+- [React Query SSR Guide](https://tanstack.com/query/v5/docs/framework/react/guides/advanced-ssr)
+
+---
+
 ### Unified Enrichment Adapter Pattern
 
 **Date:** 2026-01-11

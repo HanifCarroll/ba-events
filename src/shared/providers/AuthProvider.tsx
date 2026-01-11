@@ -1,6 +1,6 @@
 import { createContext, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getSessionUser } from '@/features/auth'
+import { getSessionUser, type SessionUser } from '@/features/auth'
 import type { Session, User } from '@supabase/supabase-js'
 import type { Profile } from '@/shared/lib/types'
 
@@ -12,13 +12,21 @@ interface AuthContextValue {
   isAdmin: boolean
 }
 
+interface AuthProviderProps {
+  children: ReactNode
+  /** Initial session data from SSR (route beforeLoad) */
+  initialSession?: SessionUser | null
+}
+
 // Export context for use in useAuthContext hook (separate file for HMR compatibility)
 export const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children, initialSession }: AuthProviderProps) {
   const { data: sessionUser, isLoading } = useQuery({
     queryKey: ['session'],
     queryFn: () => getSessionUser(),
+    // Use SSR data as initial data to prevent flash of logged-out state
+    initialData: initialSession ?? undefined,
     staleTime: 1000 * 60 * 5, // Consider fresh for 5 minutes
     refetchOnWindowFocus: true,
   })
