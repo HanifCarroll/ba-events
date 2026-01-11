@@ -26,6 +26,60 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Handle Hidden Event Addresses (Luma Placeholder Detection)
+
+**Date:** 2026-01-11
+
+**Decision:** Detect placeholder venue text like "Register to See Address" during import, prevent fake venue creation, and display a user-friendly message indicating registration is required to see the address.
+
+**Problem:**
+Luma events can have hidden addresses that show "Register to See Address" instead of actual location. Previously:
+- This placeholder text was treated as a real venue name
+- A fake venue record got created in the database
+- Events got linked to this fake venue, polluting venue data
+
+**Solution:**
+1. Add `location_hidden` boolean column to events table (default `false`)
+2. Add `isPlaceholderVenue()` function to detect patterns like "Register to See Address", "TBA", "TBD", etc.
+3. Update venue settlement to return `action: 'placeholder'` when detected
+4. Update Luma imports (both manual wizard and Trigger.dev job) to set `location_hidden: true`
+5. Update EventCard UI to show "Address after registration" with a registration link
+6. Hide the map button in EventActions when `location_hidden` is true
+
+**Alternatives Considered:**
+- Store the placeholder text as venue name: Pollutes venue data with fake entries
+- Skip importing these events entirely: Loses valuable events just because address is hidden
+- Show generic "No address" message: Less helpful than explaining registration is required
+
+**Rationale:**
+1. **Data integrity**: Prevents fake venues from being created
+2. **User clarity**: Users understand they need to register to see the address
+3. **Actionable**: Registration link provides a clear path forward
+4. **Industry standard**: Matches how Luma, Partiful, and other platforms handle this pattern
+
+**Placeholder Patterns Detected:**
+```typescript
+const PLACEHOLDER_PATTERNS = [
+  /register\s*(to\s*)?see\s*address/i,
+  /address\s*(to\s*be\s*)?(confirmed|tba|tbd)/i,
+  /location\s*(to\s*be\s*)?(confirmed|tba|tbd|announced)/i,
+  /^tba$/i,
+  /^tbd$/i,
+  /^to\s*be\s*(announced|confirmed|determined)$/i,
+]
+```
+
+**Files Modified:**
+- `supabase/migrations/20260111123144_add_location_hidden.sql` - Database column
+- `src/features/import/core/venue-settlement.ts` - Placeholder detection
+- `src/features/import/core/luma.ts` - Trigger.dev job
+- `src/features/import/api/luma.ts` - Manual import
+- `src/routes/-components/events/EventCard.tsx` - UI display
+- `src/routes/-components/events/EventActions.tsx` - Hide map button
+- `src/shared/lib/types.ts` - TypeScript types
+
+---
+
 ### Client-Side Pagination for Admin Events Table
 
 **Date:** 2026-01-10
