@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Loader2, ChevronDown, ChevronUp, Calendar, ExternalLink } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronUp, Calendar, ExternalLink, Globe, Instagram } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import {
   Dialog,
@@ -32,6 +32,23 @@ interface MergeVenueDialogProps {
   isLoading: boolean
 }
 
+// Score venue by data completeness (higher = more complete)
+function getVenueCompletenessScore(venue: Venue, eventCount: number): number {
+  let score = 0
+  // Address completeness: full address with number > partial address > none
+  if (venue.address) {
+    // Check if address has a street number (more complete)
+    const hasStreetNumber = /\d+/.test(venue.address)
+    score += hasStreetNumber ? 3 : 1
+  }
+  if (venue.website) score += 2
+  if (venue.instagram_handle) score += 2
+  if (venue.neighborhood) score += 1
+  // Event count as tiebreaker (scaled down to not dominate)
+  score += Math.min(eventCount, 10) * 0.1
+  return score
+}
+
 export function MergeVenueDialog({
   group,
   eventCounts,
@@ -42,13 +59,20 @@ export function MergeVenueDialog({
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null)
   const [expandedVenueIds, setExpandedVenueIds] = useState<Set<string>>(new Set())
 
-  // Reset selection when group changes
+  // Reset selection when group changes - pre-select venue with most complete data
   useEffect(() => {
     if (group) {
-      setSelectedTargetId(group.primaryVenue.id)
+      const allVenues = [group.primaryVenue, ...group.duplicates.map((d) => d.venue)]
+      // Find venue with highest completeness score
+      const bestVenue = allVenues.reduce((best, venue) => {
+        const bestScore = getVenueCompletenessScore(best, eventCounts[best.id] ?? 0)
+        const venueScore = getVenueCompletenessScore(venue, eventCounts[venue.id] ?? 0)
+        return venueScore > bestScore ? venue : best
+      }, allVenues[0])
+      setSelectedTargetId(bestVenue.id)
       setExpandedVenueIds(new Set())
     }
-  }, [group])
+  }, [group, eventCounts])
 
   // All venues in the group (primary + duplicates)
   const allVenues: Array<{ venue: Venue; similarity: number }> = group
@@ -133,6 +157,37 @@ export function MergeVenueDialog({
                             ? m.admin_event_count_singular()
                             : m.admin_events_count({ count: eventCount })}
                         </p>
+                        {(venue.address || venue.website || venue.instagram_handle) && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-muted-foreground/70">
+                            {venue.address && (
+                              <span>{venue.address}</span>
+                            )}
+                            {venue.website && (
+                              <a
+                                href={venue.website}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 hover:text-primary"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Globe className="h-3 w-3" />
+                                <span>Website</span>
+                              </a>
+                            )}
+                            {venue.instagram_handle && (
+                              <a
+                                href={`https://instagram.com/${venue.instagram_handle}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 hover:text-primary"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Instagram className="h-3 w-3" />
+                                <span>@{venue.instagram_handle}</span>
+                              </a>
+                            )}
+                          </div>
+                        )}
                       </Label>
                       {eventCount > 0 && (
                         <CollapsibleTrigger asChild>

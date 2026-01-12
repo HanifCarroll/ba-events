@@ -194,11 +194,10 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
         continue
       }
 
-      // Use venue with more events as primary, or alphabetically first
-      const count1 = eventCounts?.[pair.venue_id] ?? 0
-      const count2 = eventCounts?.[pair.similar_venue_id] ?? 0
+      // Use deterministic ordering: alphabetically first name is primary
+      // (Don't use eventCounts here - it causes unstable re-renders as counts load)
       const [primary, secondary] =
-        count1 > count2 ? [venue1, venue2] : count2 > count1 ? [venue2, venue1] : venue1.name < venue2.name ? [venue1, venue2] : [venue2, venue1]
+        venue1.name.localeCompare(venue2.name) <= 0 ? [venue1, venue2] : [venue2, venue1]
 
       const existing = groups.get(primary.id)
       if (existing) {
@@ -223,7 +222,7 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     }
 
     return Array.from(groups.values()).sort((a, b) => a.primaryVenue.name.localeCompare(b.primaryVenue.name))
-  }, [duplicatePairs, venues, eventCounts])
+  }, [duplicatePairs, venues])
 
   // Filter venues with address-like names
   const addressLikeVenues = useMemo((): AddressLikeVenue[] => {
