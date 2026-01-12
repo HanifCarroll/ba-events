@@ -33,6 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/shared/ui/dialog'
+import { ConfirmationDialog } from '@/shared/ui/confirmation-dialog'
 import {
   Collapsible,
   CollapsibleContent,
@@ -621,60 +622,30 @@ function VenueListPage() {
       />
 
       {/* Delete confirmation dialog */}
-      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-        <DialogContent className="bg-card border-border/50">
-          <DialogHeader>
-            <DialogTitle className="font-display text-foreground">{m.admin_delete_venue()}</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {m.admin_delete_venue_confirm({ name: deleteTarget?.name || '' })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => setDeleteTarget(null)}
-              className="text-muted-foreground"
-            >
-              {m.common_cancel()}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
-              {isDeleting ? m.common_deleting() : m.common_delete()}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmationDialog
+        open={!!deleteTarget}
+        onOpenChange={() => setDeleteTarget(null)}
+        title={m.admin_delete_venue()}
+        description={m.admin_delete_venue_confirm({ name: deleteTarget?.name || '' })}
+        variant="destructive"
+        confirmText={m.common_delete()}
+        confirmingText={m.common_deleting()}
+        onConfirm={handleDelete}
+        isConfirming={isDeleting}
+      />
 
       {/* Bulk delete confirmation dialog */}
-      <Dialog open={bulk.bulkAction === 'delete'} onOpenChange={() => bulk.setBulkAction(null)}>
-        <DialogContent className="bg-card border-border/50">
-          <DialogHeader>
-            <DialogTitle className="font-display text-foreground">{m.admin_delete_venues()}</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {m.admin_delete_venues_confirm({ count: bulk.selectedIds.size })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => bulk.setBulkAction(null)}
-              className="text-muted-foreground"
-            >
-              {m.common_cancel()}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={bulk.handleBulkAction}
-              disabled={bulk.isBulkProcessing}
-            >
-              {bulk.isBulkProcessing ? m.common_deleting() : m.common_delete()}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmationDialog
+        open={bulk.bulkAction === 'delete'}
+        onOpenChange={() => bulk.setBulkAction(null)}
+        title={m.admin_delete_venues()}
+        description={m.admin_delete_venues_confirm({ count: bulk.selectedIds.size })}
+        variant="destructive"
+        confirmText={m.common_delete()}
+        confirmingText={m.common_deleting()}
+        onConfirm={bulk.handleBulkAction}
+        isConfirming={bulk.isBulkProcessing}
+      />
 
       {/* Venue enrichment dialog */}
       <Dialog open={bulk.bulkAction === 'enrich'} onOpenChange={handleCloseEnrichDialog}>
