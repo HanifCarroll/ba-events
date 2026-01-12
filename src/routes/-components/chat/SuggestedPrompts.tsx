@@ -1,4 +1,4 @@
-import { Calendar, Music, Ticket, Users, Sparkles } from 'lucide-react'
+import { Calendar, Music, Ticket, Sparkles } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 
 interface SuggestedPromptsProps {
@@ -12,7 +12,7 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
     { text: m.prompt_tonight(), icon: Calendar },
     { text: m.prompt_free(), icon: Ticket },
     { text: m.prompt_live_music(), icon: Music },
-    { text: m.prompt_meet_locals(), icon: Users },
+    { text: m.prompt_surprise_me(), icon: Sparkles },
   ]
 
   return (
