@@ -295,7 +295,7 @@ function VenueListPage() {
   )
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
+    <div className="max-w-6xl mx-auto h-full overflow-auto sm:overflow-hidden flex flex-col gap-6 p-6 animate-fade-in-up">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -303,11 +303,6 @@ function VenueListPage() {
             <MapPin className="h-6 w-6 text-primary" />
             {m.admin_venues_title()}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            {hasActiveFilters
-              ? m.admin_venues_filtered({ filtered: filteredVenues.length, total: venues.length })
-              : m.admin_venues_count({ count: venues.length })}
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" className="border-border/50">
@@ -402,9 +397,9 @@ function VenueListPage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReviewTab)}>
-        <TabsList className="bg-muted/50 border border-border/50">
+      {/* Tabs - flex-1 to fill remaining space */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReviewTab)} className="flex-1 min-h-0 flex flex-col">
+        <TabsList className="bg-muted/50 border border-border/50 shrink-0">
           <TabsTrigger value="all" className="data-[state=active]:bg-background">
             {m.admin_all_venues()}
           </TabsTrigger>
@@ -435,7 +430,7 @@ function VenueListPage() {
         </TabsList>
 
         {/* All Venues Tab */}
-        <TabsContent value="all" className="mt-4">
+        <TabsContent value="all" className="mt-4 flex-1 min-h-0 flex flex-col">
           {venues.length === 0 ? (
         <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
           <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -472,8 +467,8 @@ function VenueListPage() {
           </div>
 
           {/* Desktop Table View */}
-          <div className="hidden sm:block">
-            <div className="relative">
+          <div className="hidden sm:flex flex-1 min-h-0">
+            <div className="relative flex-1 flex flex-col min-h-0">
               {/* Bulk action overlay */}
               <div className="absolute top-0 left-0 right-0 z-20">
                 <VenueBulkActionBar
@@ -487,18 +482,22 @@ function VenueListPage() {
                 />
               </div>
 
-              <DataTable
-                columns={columns}
-                data={filteredVenues}
-                tableId="admin-venues"
-                enableRowSelection={true}
-                selectedIds={bulk.selectedIds}
-                onSelectionChange={handleSelectionChange}
-                enableColumnResizing={true}
-                enableColumnReordering={true}
-                enableMultiSort={true}
-                enableVirtualization={false}
-              />
+              <div className="flex-1 min-h-0">
+                <DataTable
+                  columns={columns}
+                  data={filteredVenues}
+                  tableId="admin-venues"
+                  enableRowSelection={true}
+                  selectedIds={bulk.selectedIds}
+                  onSelectionChange={handleSelectionChange}
+                  enableColumnResizing={true}
+                  enableColumnReordering={true}
+                  enableMultiSort={true}
+                  enableVirtualization={true}
+                  enablePagination={false}
+                  containerHeight="100%"
+                />
+              </div>
             </div>
           </div>
         </>
@@ -506,7 +505,7 @@ function VenueListPage() {
         </TabsContent>
 
         {/* Missing Neighborhood Tab */}
-        <TabsContent value="missing_neighborhood" className="mt-4">
+        <TabsContent value="missing_neighborhood" className="mt-4 flex-1 min-h-0 flex flex-col">
           {review.missingNeighborhoodVenues.length === 0 ? (
             <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
               <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -530,8 +529,8 @@ function VenueListPage() {
               </div>
 
               {/* Desktop Table View */}
-              <div className="hidden sm:block">
-                <div className="relative">
+              <div className="hidden sm:flex flex-1 min-h-0">
+                <div className="relative flex-1 flex flex-col min-h-0">
                   {/* Bulk action overlay */}
                   <div className="absolute top-0 left-0 right-0 z-20">
                     <VenueBulkActionBar
@@ -552,18 +551,22 @@ function VenueListPage() {
                     />
                   </div>
 
-                  <DataTable
-                    columns={columns}
-                    data={review.missingNeighborhoodVenues}
-                    tableId="admin-venues-missing-neighborhood"
-                    enableRowSelection={true}
-                    selectedIds={bulk.selectedIds}
-                    onSelectionChange={handleSelectionChange}
-                    enableColumnResizing={true}
-                    enableColumnReordering={true}
-                    enableMultiSort={true}
-                    enableVirtualization={false}
-                  />
+                  <div className="flex-1 min-h-0">
+                    <DataTable
+                      columns={columns}
+                      data={review.missingNeighborhoodVenues}
+                      tableId="admin-venues-missing-neighborhood"
+                      enableRowSelection={true}
+                      selectedIds={bulk.selectedIds}
+                      onSelectionChange={handleSelectionChange}
+                      enableColumnResizing={true}
+                      enableColumnReordering={true}
+                      enableMultiSort={true}
+                      enableVirtualization={true}
+                      enablePagination={false}
+                      containerHeight="100%"
+                    />
+                  </div>
                 </div>
               </div>
             </>

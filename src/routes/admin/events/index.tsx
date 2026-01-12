@@ -31,7 +31,7 @@ import {
   DialogTitle,
 } from '@/shared/ui/dialog'
 import { Combobox } from '@/shared/ui/combobox'
-import { DataTable, DataTablePagination, getEventColumns } from '@/shared/ui/data-table'
+import { DataTable, getEventColumns } from '@/shared/ui/data-table'
 import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState } from '@/shared/ui/EmptyState'
 import {
   useBackgroundEnrichment,
@@ -66,9 +66,6 @@ type EventTab = 'all' | 'needs_attention' | 'pending_review' | 'past'
 const eventSearchSchema = z.object({
   // Tab filter
   tab: z.enum(['all', 'needs_attention', 'pending_review', 'past']).optional().catch('all'),
-  // Pagination
-  page: z.number().optional().catch(1),
-  pageSize: z.number().optional().catch(25),
   // Quick filters (moved from React state to URL)
   search: z.string().optional(),
   venue: z.string().optional(), // venue ID filter
@@ -299,10 +296,8 @@ function EventListPage() {
   const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
 
-  // Client-side filtering, sorting, and pagination
+  // Client-side filtering and sorting (virtualization replaces pagination)
   const activeTab: EventTab = (searchParams.tab ?? 'all') as EventTab
-  const page = searchParams.page ?? 1
-  const pageSize = searchParams.pageSize ?? 25
 
   // Lazy-loaded past events (null = not loaded yet)
   const [pastEvents, setPastEvents] = useState<EventWithVenue[] | null>(null)
@@ -330,29 +325,14 @@ function EventListPage() {
     [allEvents, searchParams]
   )
 
-  // Sort filtered events
+  // Sort filtered events (virtualization renders all, no pagination needed)
   const sortedEvents = useMemo(
     () => sortEvents(filteredEvents, searchParams.sortBy, searchParams.sortDir),
     [filteredEvents, searchParams.sortBy, searchParams.sortDir]
   )
 
-  // Paginate for current page
-  const totalCount = sortedEvents.length
-  const totalPages = Math.ceil(totalCount / pageSize)
-  const events = useMemo(
-    () => sortedEvents.slice((page - 1) * pageSize, page * pageSize),
-    [sortedEvents, page, pageSize]
-  )
-
-  // Pagination object for DataTablePagination
-  const pagination = useMemo(() => ({
-    page,
-    pageSize,
-    totalCount,
-    totalPages,
-    hasNextPage: page < totalPages,
-    hasPrevPage: page > 1,
-  }), [page, pageSize, totalCount, totalPages])
+  // Use sortedEvents directly for virtualized table (no pagination slicing)
+  const events = sortedEvents
 
   // Filter values for UI
   const filters = useMemo(() => ({
@@ -380,40 +360,32 @@ function EventListPage() {
   )
 
   // Navigation helpers
-  const setPage = useCallback((p: number) => {
-    navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })
-  }, [navigate])
-
-  const setPageSize = useCallback((size: number) => {
-    navigate({ search: (prev) => ({ ...prev, pageSize: size, page: 1 }), replace: true })
-  }, [navigate])
-
   const setTab = useCallback((tab: EventTab) => {
-    navigate({ search: { tab, page: 1 } })
+    navigate({ search: { tab } })
   }, [navigate])
 
   const setSearch = useCallback((search: string) => {
-    navigate({ search: (prev) => ({ ...prev, search: search || undefined, page: 1 }), replace: true })
+    navigate({ search: (prev) => ({ ...prev, search: search || undefined }), replace: true })
   }, [navigate])
 
   const setVenueFilter = useCallback((venueId: string | undefined) => {
-    navigate({ search: (prev) => ({ ...prev, venue: venueId, page: 1 }), replace: true })
+    navigate({ search: (prev) => ({ ...prev, venue: venueId }), replace: true })
   }, [navigate])
 
   const setImportedToday = useCallback((value: boolean) => {
-    navigate({ search: (prev) => ({ ...prev, importedToday: value || undefined, page: 1 }), replace: true })
+    navigate({ search: (prev) => ({ ...prev, importedToday: value || undefined }), replace: true })
   }, [navigate])
 
   const setShowPast = useCallback((value: boolean) => {
-    navigate({ search: (prev) => ({ ...prev, showPast: value || undefined, page: 1 }), replace: true })
+    navigate({ search: (prev) => ({ ...prev, showPast: value || undefined }), replace: true })
   }, [navigate])
 
   const setMissingDescription = useCallback((value: boolean) => {
-    navigate({ search: (prev) => ({ ...prev, missingDescription: value || undefined, page: 1 }), replace: true })
+    navigate({ search: (prev) => ({ ...prev, missingDescription: value || undefined }), replace: true })
   }, [navigate])
 
   const setMissingVenue = useCallback((value: boolean) => {
-    navigate({ search: (prev) => ({ ...prev, missingVenue: value || undefined, page: 1 }), replace: true })
+    navigate({ search: (prev) => ({ ...prev, missingVenue: value || undefined }), replace: true })
   }, [navigate])
 
   const setSorting = useCallback((sortBy: string | undefined, sortDir: 'asc' | 'desc' | undefined) => {
@@ -421,7 +393,7 @@ function EventListPage() {
   }, [navigate])
 
   const clearFilters = useCallback(() => {
-    navigate({ search: { tab: activeTab, page: 1 } })
+    navigate({ search: { tab: activeTab } })
   }, [navigate, activeTab])
 
   // Bulk selection (operates on current page)
@@ -649,7 +621,7 @@ function EventListPage() {
   )
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in-up">
+    <div className="max-w-6xl mx-auto h-full overflow-auto sm:overflow-hidden flex flex-col gap-6 p-6 animate-fade-in-up">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -657,11 +629,6 @@ function EventListPage() {
             <Calendar className="h-6 w-6 text-primary" />
             {m.admin_events_title()}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            {hasActiveFilters
-              ? m.admin_events_filtered({ filtered: events.length, total: events.length })
-              : m.admin_events_count({ count: events.length })}
-          </p>
         </div>
         <div className="flex items-center gap-3">
           {/* Add Event button */}
@@ -812,100 +779,93 @@ function EventListPage() {
         </div>
       )}
 
-      {/* Content */}
-      {tabCounts?.all === 0 ? (
-        // No events in database at all
-        <EmptyState />
-      ) : isPastLoading && activeTab === 'past' ? (
-        // Loading past events
-        <div className="flex items-center justify-center py-16">
-          <div className="text-center space-y-3">
-            <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
-            <p className="text-muted-foreground">Loading past events...</p>
-          </div>
-        </div>
-      ) : tabCounts?.[activeTab] === 0 ? (
-        // Tab has no events (e.g., all events reviewed)
-        <TabEmptyState tab={activeTab} />
-      ) : events.length === 0 ? (
-        // Filters/search returned no results for this page
-        <NoMatchesState onClearFilters={handleClearFilters} />
-      ) : (
-        <>
-          {/* Mobile Card View */}
-          <div className="sm:hidden">
-            <BulkActionBar
-              selectedCount={bulk.selectedIds.size}
-              filteredEventsLength={events.length}
-              onToggleSelectAll={bulk.toggleSelectAll}
-              onSetBulkAction={bulk.setBulkAction}
-              onClearSelection={bulk.clearSelection}
-              enrichments={enrichments}
-            />
-          </div>
-          <MobileEventCards
-            events={events}
-            selectedIds={bulk.selectedIds}
-            onToggleSelect={bulk.toggleSelect}
-            onEdit={handleEdit}
-            onApprove={singleActions.handleApprove}
-            onReject={singleActions.handleReject}
-            onDelete={singleActions.setDeleteTarget}
-            isApproving={singleActions.isApproving}
-            isRejecting={singleActions.isRejecting}
-            showNeedsAttention={activeTab === 'needs_attention'}
-          />
-
-          {/* Desktop Table View with DataTable */}
-          <div className="hidden sm:block">
-            <div className="relative">
-              {/* Bulk action overlay - needs z-20 to be above sticky table header (z-10) */}
-              <div className="absolute top-0 left-0 right-0 z-20">
-                <BulkActionBar
-                  selectedCount={bulk.selectedIds.size}
-                  filteredEventsLength={events.length}
-                  onToggleSelectAll={bulk.toggleSelectAll}
-                  onSetBulkAction={bulk.setBulkAction}
-                  onClearSelection={bulk.clearSelection}
-                  overlay
-                  enrichments={enrichments}
-                />
-              </div>
-
-              <DataTable
-                columns={columns}
-                data={events}
-                tableId="admin-events"
-                enableRowSelection={true}
-                selectedIds={bulk.selectedIds}
-                onSelectionChange={handleSelectionChange}
-                enableColumnResizing={true}
-                enableColumnReordering={true}
-                enableColumnFiltering={true}
-                columnFilters={columnFilters}
-                onColumnFiltersChange={handleColumnFiltersChange}
-                sorting={sorting}
-                onSortingChange={handleSortingChange}
-                enableMultiSort={true}
-                manualPagination={true}
-                pageCount={pagination.totalPages}
-                paginationSlot={
-                  <DataTablePagination
-                    page={pagination.page}
-                    pageSize={pagination.pageSize}
-                    totalCount={pagination.totalCount}
-                    totalPages={pagination.totalPages}
-                    hasNextPage={pagination.hasNextPage}
-                    hasPrevPage={pagination.hasPrevPage}
-                    onPageChange={setPage}
-                    onPageSizeChange={setPageSize}
-                  />
-                }
-              />
+      {/* Content - flex-1 to fill remaining space when showing table */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {tabCounts?.all === 0 ? (
+          // No events in database at all
+          <EmptyState />
+        ) : isPastLoading && activeTab === 'past' ? (
+          // Loading past events
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center space-y-3">
+              <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
+              <p className="text-muted-foreground">Loading past events...</p>
             </div>
           </div>
-        </>
-      )}
+        ) : tabCounts?.[activeTab] === 0 ? (
+          // Tab has no events (e.g., all events reviewed)
+          <TabEmptyState tab={activeTab} />
+        ) : events.length === 0 ? (
+          // Filters/search returned no results for this page
+          <NoMatchesState onClearFilters={handleClearFilters} />
+        ) : (
+          <>
+            {/* Mobile Card View */}
+            <div className="sm:hidden">
+              <BulkActionBar
+                selectedCount={bulk.selectedIds.size}
+                filteredEventsLength={events.length}
+                onToggleSelectAll={bulk.toggleSelectAll}
+                onSetBulkAction={bulk.setBulkAction}
+                onClearSelection={bulk.clearSelection}
+                enrichments={enrichments}
+              />
+            </div>
+            <MobileEventCards
+              events={events}
+              selectedIds={bulk.selectedIds}
+              onToggleSelect={bulk.toggleSelect}
+              onEdit={handleEdit}
+              onApprove={singleActions.handleApprove}
+              onReject={singleActions.handleReject}
+              onDelete={singleActions.setDeleteTarget}
+              isApproving={singleActions.isApproving}
+              isRejecting={singleActions.isRejecting}
+              showNeedsAttention={activeTab === 'needs_attention'}
+            />
+
+            {/* Desktop Table View with DataTable */}
+            <div className="hidden sm:flex flex-1 min-h-0">
+              <div className="relative flex-1 flex flex-col min-h-0">
+                {/* Bulk action overlay - needs z-20 to be above sticky table header (z-10) */}
+                <div className="absolute top-0 left-0 right-0 z-20">
+                  <BulkActionBar
+                    selectedCount={bulk.selectedIds.size}
+                    filteredEventsLength={events.length}
+                    onToggleSelectAll={bulk.toggleSelectAll}
+                    onSetBulkAction={bulk.setBulkAction}
+                    onClearSelection={bulk.clearSelection}
+                    overlay
+                    enrichments={enrichments}
+                  />
+                </div>
+
+                <div className="flex-1 min-h-0">
+                  <DataTable
+                    columns={columns}
+                    data={events}
+                    tableId="admin-events"
+                    enableRowSelection={true}
+                    selectedIds={bulk.selectedIds}
+                    onSelectionChange={handleSelectionChange}
+                    enableColumnResizing={true}
+                    enableColumnReordering={true}
+                    enableColumnFiltering={true}
+                    columnFilters={columnFilters}
+                    onColumnFiltersChange={handleColumnFiltersChange}
+                    sorting={sorting}
+                    onSortingChange={handleSortingChange}
+                    enableMultiSort={true}
+                    enableVirtualization={true}
+                    enablePagination={false}
+                    containerHeight="100%"
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!singleActions.deleteTarget} onOpenChange={() => singleActions.setDeleteTarget(null)}>
