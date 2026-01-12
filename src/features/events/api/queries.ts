@@ -151,14 +151,14 @@ export async function queryEventTabCounts(
 
   // The function returns a single row with all counts
   const counts = data?.[0] || {
-    tab_all: 0,
+    tab_active: 0,
     tab_needs_attention: 0,
     tab_pending_review: 0,
     tab_past: 0,
   }
 
   return {
-    all: Number(counts.tab_all),
+    all: Number(counts.tab_active),
     needs_attention: Number(counts.tab_needs_attention),
     pending_review: Number(counts.tab_pending_review),
     past: Number(counts.tab_past),
