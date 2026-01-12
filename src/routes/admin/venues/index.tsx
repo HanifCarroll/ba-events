@@ -574,7 +574,7 @@ function VenueListPage() {
         </TabsContent>
 
         {/* Duplicates Tab */}
-        <TabsContent value="duplicates" className="mt-4">
+        <TabsContent value="duplicates" className="mt-4 flex-1 min-h-0 overflow-auto">
           <VenueDuplicatesPanel
             groups={review.duplicateGroups}
             eventCounts={review.eventCounts}
@@ -589,7 +589,7 @@ function VenueListPage() {
         </TabsContent>
 
         {/* Address Names Tab */}
-        <TabsContent value="address_names" className="mt-4">
+        <TabsContent value="address_names" className="mt-4 flex-1 min-h-0 overflow-auto">
           <VenueAddressNamesPanel
             venues={review.addressLikeVenues}
             venueEvents={review.addressVenueEvents}
