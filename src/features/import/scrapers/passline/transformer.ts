@@ -58,7 +58,6 @@ export function transformPasslineEvent(
     categories: [], // Assigned via AI during import
     price: price,
     is_free: price === 0 || price === null,
-    min_age: null, // Passline doesn't provide this
     image_url: normalizeImageUrl(event.recorte || event.miniatura || null),
     link: normalizeUrl(event.url),
     ticket_url: normalizeUrl(event.url),

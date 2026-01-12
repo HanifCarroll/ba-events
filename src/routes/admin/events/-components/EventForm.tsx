@@ -78,7 +78,6 @@ export function EventForm({ event, mode }: EventFormProps) {
       categories: (event?.categories || []) as Category[],
       price: event?.price ?? undefined,
       is_free: event?.is_free || false,
-      min_age: event?.min_age ?? undefined,
       link: event?.link || '',
       ticket_url: event?.ticket_url || '',
       status: event?.status || 'scheduled',
@@ -112,7 +111,6 @@ export function EventForm({ event, mode }: EventFormProps) {
         categories: data.categories,
         price: data.price ?? null,
         is_free: data.is_free,
-        min_age: data.min_age ?? null,
         link: data.link || null,
         ticket_url: data.ticket_url || null,
         source: 'manual',
@@ -428,7 +426,7 @@ export function EventForm({ event, mode }: EventFormProps) {
           {/* Pricing */}
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
-              <CardTitle className="text-lg text-foreground">Pricing & Age</CardTitle>
+              <CardTitle className="text-lg text-foreground">Pricing</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Free checkbox */}
@@ -450,57 +448,31 @@ export function EventForm({ event, mode }: EventFormProps) {
                 )}
               />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Price */}
-                <FormField
-                  control={form.control}
-                  name="price"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price (ARS)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={field.value ?? ''}
-                          onChange={(e) =>
-                            field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)
-                          }
-                          placeholder="0.00"
-                          disabled={isFree}
-                          className="bg-background/50 border-border/50"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Min age */}
-                <FormField
-                  control={form.control}
-                  name="min_age"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Minimum Age</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={field.value ?? ''}
-                          onChange={(e) =>
-                            field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)
-                          }
-                          placeholder="All ages"
-                          className="bg-background/50 border-border/50"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              {/* Price */}
+              <FormField
+                control={form.control}
+                name="price"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Price (ARS)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={field.value ?? ''}
+                        onChange={(e) =>
+                          field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)
+                        }
+                        placeholder="0.00"
+                        disabled={isFree}
+                        className="bg-background/50 border-border/50 max-w-[200px]"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 

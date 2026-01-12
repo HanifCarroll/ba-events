@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, Calendar, MapPin, Clock, Users, ExternalLink, Target, Lightbulb, Ticket, Sparkles } from 'lucide-react'
+import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Target, Lightbulb, Ticket, Sparkles } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -185,12 +185,6 @@ function HeroEventCard({ event, position, source, commentary, tips }: HeroEventC
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4 text-primary/60" />
               <span>{event.venue_address}</span>
-            </div>
-          )}
-          {event.min_age && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="h-4 w-4 text-primary/60" />
-              <span>{event.min_age}+ only</span>
             </div>
           )}
         </div>
@@ -479,12 +473,6 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
                       </div>
                     )}
                   </>
-                )}
-                {event.min_age && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Users className="h-4 w-4 text-primary/60" />
-                    <span>{event.min_age}+ only</span>
-                  </div>
                 )}
               </div>
 

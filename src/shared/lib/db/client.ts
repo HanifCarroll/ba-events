@@ -159,7 +159,7 @@ export async function bulkDeleteVenues(ids: string[], client?: SupabaseClient) {
 // The embedding column is ~6KB per event and not needed for admin display
 const EVENT_ADMIN_COLUMNS = `
   id, name, description_es, description_en, starts_at, ends_at, is_all_day,
-  venue_id, categories, price, is_free, min_age, image_url, link, ticket_url,
+  venue_id, categories, price, is_free, image_url, link, ticket_url,
   source, external_id, status, location_hidden, enrichment_status, enrichment_error,
   enriched_at, created_at, updated_at,
   venue_name, venue_neighborhood, venue_address
@@ -446,10 +446,6 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
   }
   if (filters.maxPrice !== undefined) {
     query = query.lte('price', filters.maxPrice)
-  }
-  if (filters.minAge !== undefined) {
-    // Events with no age restriction (null) or matching min_age
-    query = query.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
   }
 
   query = query.order('starts_at', { ascending: true }).limit(limit)

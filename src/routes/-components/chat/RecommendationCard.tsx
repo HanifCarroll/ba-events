@@ -8,7 +8,6 @@ import {
   MapPin,
   Calendar,
   Clock,
-  Users,
   ChevronRight,
 } from 'lucide-react'
 import { SaveEventButton } from '../SaveEventButton'
@@ -133,19 +132,13 @@ export function RecommendationCard({ recommendation, onRefinementSelect }: Recom
       )}
 
       {/* Additional details row */}
-      {(event.venue_address || event.min_age) && (
+      {event.venue_address && (
         <div className="px-5 pb-4">
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
             {!event.location_hidden && event.venue_address && (
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-primary/60" />
                 <span>{event.venue_address}</span>
-              </div>
-            )}
-            {event.min_age && (
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-primary/60" />
-                <span>{event.min_age}+ only</span>
               </div>
             )}
           </div>

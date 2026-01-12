@@ -46,7 +46,6 @@ export function transformBATourismEvent(
       categories: [], // Assigned via AI during import
       price: null, // BA Tourism doesn't provide specific prices
       is_free: event.isFree,
-      min_age: null,
       image_url: null, // Could be scraped from detail page later
       link: normalizeUrl(event.moreInfoUrl),
       ticket_url: normalizeUrl(event.moreInfoUrl),

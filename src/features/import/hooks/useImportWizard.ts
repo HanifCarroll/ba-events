@@ -97,7 +97,6 @@ interface CSVRow {
   categories?: string
   price?: string
   is_free?: string
-  min_age?: string
   link?: string
   ticket_url?: string
   description_es?: string
@@ -296,16 +295,6 @@ export function useImportWizard(
       }
     }
 
-    let minAge: number | null = null
-    if (row.min_age?.trim()) {
-      const parsed = parseInt(row.min_age, 10)
-      if (isNaN(parsed) || parsed < 0) {
-        errors.push('Min age must be a positive integer')
-      } else {
-        minAge = parsed
-      }
-    }
-
     let status: EventStatus = 'scheduled'
     if (row.status?.trim()) {
       const s = row.status.trim().toLowerCase()
@@ -329,7 +318,6 @@ export function useImportWizard(
         categories,
         price: isFree ? null : price,
         is_free: isFree,
-        min_age: minAge,
         link: row.link?.trim() || null,
         ticket_url: row.ticket_url?.trim() || null,
         description_es: row.description_es?.trim() || null,

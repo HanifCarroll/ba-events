@@ -72,7 +72,6 @@ export function transformLumaEvent(
     categories: [], // Enriched later via AI
     price: event.is_free ? null : price,
     is_free: event.is_free,
-    min_age: null, // Not available from Luma
     image_url: normalizeImageUrl(event.cover_url),
     link: normalizeUrl(event.url),
     ticket_url: normalizeUrl(event.url), // Same as event URL for Luma

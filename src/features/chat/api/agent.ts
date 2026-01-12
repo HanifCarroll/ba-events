@@ -449,7 +449,6 @@ function formatToolResult(events: EventWithVenue[]): string {
       endsAt: e.ends_at ? formatInBA(e.ends_at) : null,
       price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
       categories: e.categories,
-      minAge: e.min_age,
       ticketUrl: e.ticket_url,
     })),
   })

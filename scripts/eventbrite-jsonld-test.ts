@@ -236,12 +236,6 @@ function analyzeFieldCoverage(event: EventbriteJsonLdEvent): {
       sample: null,
     },
     {
-      field: 'min_age',
-      available: false,
-      source: 'NOT AVAILABLE',
-      sample: null,
-    },
-    {
       field: 'is_all_day',
       available: true,
       source: 'Can derive from startDate/endDate',

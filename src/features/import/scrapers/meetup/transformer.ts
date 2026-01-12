@@ -63,7 +63,6 @@ export function transformMeetupEvent(
     categories: [], // Assigned via AI during import
     price: price,
     is_free: price === null || price === 0,
-    min_age: null,
     image_url: normalizeImageUrl(event.imageUrl),
     link: normalizeUrl(event.eventUrl),
     ticket_url: normalizeUrl(event.eventUrl),
@@ -124,7 +123,6 @@ export function transformMeetupEventWithExpansion(
       categories: [], // Assigned via AI during import
       price: price,
       is_free: price === null || price === 0,
-      min_age: null,
       image_url: normalizeImageUrl(event.imageUrl),
       link: normalizeUrl(event.eventUrl),
       ticket_url: normalizeUrl(event.eventUrl),
