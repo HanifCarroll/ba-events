@@ -450,3 +450,73 @@ export interface VenueReviewQueueWithDetails extends VenueReviewQueue {
   final_venue_name: string | null
   reviewed_by_email: string | null
 }
+
+// =============================================================================
+// CONCIERGE UX TYPES
+// =============================================================================
+
+/**
+ * A recommendation with Claude's commentary and tips.
+ * Used for the unified recommendation card in Phase 2.
+ */
+export interface Recommendation {
+  event: EventWithVenue
+  /** Claude's personalized take on why this event fits */
+  commentary: string
+  /** Practical tips like "get there around 10pm" */
+  tips: string[]
+  /** How well this matches the query (0-100) */
+  matchScore?: number
+  /** Context-aware refinement options for this recommendation */
+  refinements: RefinementOption[]
+}
+
+/**
+ * A contextual refinement option shown below a recommendation.
+ * Different from RefinementSuggestion - these are per-recommendation.
+ */
+export interface RefinementOption {
+  id: string
+  /** Display text like "More upscale" or "Different area" */
+  label: string
+  /** The prompt to send as a follow-up message */
+  prompt: string
+  /** Lucide icon name */
+  icon?: string
+  /** Type of refinement for grouping/styling */
+  type?: 'vibe' | 'price' | 'neighborhood' | 'venue' | 'time' | 'alternatives'
+}
+
+/**
+ * Session-level context for smarter recommendations.
+ * Tracks what the user has mentioned, rejected, and decided.
+ */
+export interface ConversationContext {
+  /** Neighborhoods mentioned in conversation */
+  mentionedNeighborhoods: string[]
+  /** Neighborhoods user has rejected or shown disinterest in */
+  rejectedNeighborhoods: string[]
+  /** Vibe preferences expressed */
+  vibePreferences: string[]
+  /** Price sensitivity signals */
+  priceSignals: 'budget' | 'moderate' | 'splurge' | null
+  /** Who they're going with */
+  groupType: 'solo' | 'date' | 'friends' | 'group' | null
+  /** Has the user confirmed a choice? */
+  decisionMade: boolean
+  /** The event they selected (for YourPlanCard) */
+  selectedEvent?: EventWithVenue
+}
+
+/**
+ * Extended ChatMessage for concierge UX.
+ * Adds support for recommendations and decision state.
+ */
+export interface ConciergeMessage extends ChatMessage {
+  /** Primary recommendation with commentary (single recommendation mode) */
+  recommendation?: Recommendation
+  /** Alternative recommendations if user asked for options */
+  alternatives?: Recommendation[]
+  /** User has confirmed this recommendation */
+  isDecision?: boolean
+}

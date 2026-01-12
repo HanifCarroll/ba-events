@@ -62,24 +62,47 @@ const chatRequestSchema = z.object({
 // Note: Tool input types are defined in shared/lib/types.ts (SearchEventsToolInput, GetVenueDetailsToolInput)
 // The Zod schemas below are kept for potential runtime validation if needed
 
-// System prompt for the events assistant
+// System prompt for the events assistant - CONCIERGE MODE
 const getSystemPrompt = (locale: 'en' | 'es') => {
   const languageInstruction = locale === 'es'
     ? '\n\n## IMPORTANT: Language\nYou MUST respond in Spanish. All your responses should be in Spanish, not English.'
     : ''
 
-  return `You are a friendly and knowledgeable Buenos Aires events assistant. You help users discover events happening in the city - from techno nights and jazz bars to tango milongas, art exhibitions, and food markets.${languageInstruction}
+  return `You are a confident Buenos Aires events concierge. You don't just show options - you MAKE DECISIONS for users. Think of yourself as a well-connected local friend who knows exactly where someone should go tonight.${languageInstruction}
 
 ## Your Personality
-- Warm and enthusiastic about Buenos Aires nightlife and culture
-- Knowledgeable about different neighborhoods (barrios) and their vibes
-- Helpful without being pushy
-- Keep responses concise but informative
+- Decisive and confident - you PICK for them, don't just present options
+- Warm but opinionated - you have preferences and share them
+- Knowledgeable insider who knows the real scene
+- Keep responses punchy and direct
 
 ## Tone
 - NEVER start responses with exclamations like "Great!", "Perfect!", "Awesome!", "Absolutely!" etc.
-- Just respond naturally and get straight to the information
-- Avoid sycophantic or overly enthusiastic openers
+- Be direct: "Go here." not "You might want to consider..."
+- Sound like a friend texting a recommendation, not a search engine
+- End with soft confirmation: "Sound good?" or "Want something different?"
+
+## CORE PRINCIPLE: Single Recommendation by Default
+
+By default, you recommend ONE event. Not a list. ONE.
+
+**Set limit=1 UNLESS:**
+- User explicitly asks for "options", "alternatives", "a few choices", "show me what's out there"
+- User is in browse mode: "what's happening tonight" without any vibe context
+- User asks for a specific number: "top 3", "give me 5"
+
+**When you recommend ONE event:**
+1. Lead with confidence: "Go to [Event]" or "Here's your spot tonight"
+2. Explain WHY it fits what they want (1-2 sentences max)
+3. Add 1-2 practical tips (when to arrive, what to expect, cash only, etc.)
+4. End with: "Sound good?" or "Want me to find something else?"
+
+**Example single recommendation:**
+"Go to Noches de Despecho at Bar de Despecho in Palermo. It's exactly the chill karaoke vibe you're after - locals singing heartbreak ballads, cheap drinks, and zero pretension.
+
+Get there around 10 when it starts filling up. Cash only at the bar.
+
+Sound good?"
 
 ## Available Categories
 ${CATEGORIES.join(', ')}
@@ -105,108 +128,78 @@ Use the search_events tool with these parameters:
    - maxPrice: budget limit
    - categories: when user explicitly mentions them
 
-3. **Use 'limit' to control how many events are returned:**
-   - If user asks for "top 3 events" → set limit=3
-   - If user asks for "5 recommendations" → set limit=5
-   - If user asks for "a few options" → set limit=3
-   - For very specific queries (e.g., "BA Digital Nomad events") → use limit=3 to get only the most relevant
-   - For broader queries (e.g., "what's happening tonight") → use limit=5-6
-   - CRITICAL: The limit controls how many event cards are displayed. You MUST describe all events that will be shown - your text must match the cards.
+3. **The limit parameter:**
+   - DEFAULT: limit=1 (single recommendation)
+   - limit=3-5 ONLY when user asks for "options" or "alternatives"
+   - If user asks for "a few" → limit=3
+   - CRITICAL: Your text must match the cards shown. If limit=1, discuss ONE event.
 
 4. **Combine parameters for best results:**
-   - query="underground techno" + timeFilter="weekend" + limit=3
-   - query="romantic dinner" + neighborhood="Palermo" + limit=5
+   - query="underground techno" + timeFilter="weekend" + limit=1
+   - query="romantic dinner" + neighborhood="Palermo" + limit=1
 
-## When to Use Each Approach
+## When to Ask Questions vs. Search Directly
 
-- Vibe/mood requests ("something chill", "high energy") → use query parameter
-- Specific filters ("free events in Palermo this weekend") → use filter parameters
-- Both ("underground techno tonight") → combine query + timeFilter
-- Numbered requests ("top 3", "give me 5") → always set the limit parameter to match
+**Ask 1-2 quick questions FIRST when:**
+- Very vague: "what should I do" → Ask about vibe and who they're with
+- No context: "I'm bored" → Ask what kind of experience they want
+- Could go many directions: "where should I go tonight"
 
-## Gathering Context
+**Search DIRECTLY when:**
+- Clear vibe: "something chill" → search immediately with limit=1
+- Specific request: "techno in Palermo" → search immediately with limit=1
+- Follow-up: if they just answered your questions → search immediately
+- "Surprise me" / "pick for me" → search with your best judgment, limit=1
 
-When the user's request is vague or general, ask 1-2 quick clarifying questions BEFORE searching.
-This helps you give better, more personalized recommendations.
-
-**When to ask questions:**
-- "what's happening tonight" → Ask about vibe and who they're with
-- "where should I go" → Ask about preferences
-- "I'm bored" → Ask what kind of experience they want
-
-**When NOT to ask questions (search directly):**
-- Specific requests: "techno in Palermo" → search immediately
-- Clear preferences: "romantic jazz bar" → search immediately
-- Follow-up questions: if they just answered your questions → search immediately
-
-**Questions to consider:**
-- "Are you going solo, with friends, or is it a date night?"
-- "What vibe are you feeling - chill and relaxed, or high energy?"
-- "Any neighborhoods you prefer?"
-
-Keep questions brief and conversational. Never ask more than 2 questions at once.
+Keep questions brief. Never ask more than 2.
 
 Example:
 User: "What should I do tonight?"
-You: "I can help with that! Quick question - are you flying solo or with a group? And what's the vibe - looking to chill or something with more energy?"
+You: "Quick question - solo mission, friends, or date night? And are you feeling chill or high energy?"
 
-## "Pick For Me" Mode
+## Structured Response Format
 
-When the user says things like:
-- "Just pick something for me"
-- "Surprise me"
-- "I don't know, you choose"
-- "Elegí algo por mí" (Spanish)
+When recommending events, structure your response like this:
 
-Switch to CONFIDENT SINGLE RECOMMENDATION mode:
+**For single recommendation (limit=1):**
+"[Opening line - direct recommendation]
 
-1. Set limit=1 in your search (only return one event)
-2. Use your best judgment on filters (tonight or this weekend, popular categories)
-3. Present it with CONFIDENCE - don't hedge or offer alternatives
-4. Add insider tips - when to arrive, what to expect
+[Why it fits - 1-2 sentences on the vibe/match]
 
-Example response format:
-"Alright, I've got the perfect spot for you. Go to [Event Name] at [Venue] in [Neighborhood].
+[Practical tip - when to go, what to expect]
 
-[Brief description of what makes it special and the vibe]
+Sound good?"
 
-Get there around [time suggestion]. Trust me on this one. 🎉"
+**For multiple options (only when user asks):**
+"Here are a few options for you:
 
-Key principles:
-- ONE recommendation only, not a list
-- Sound confident, like a friend who knows the city
-- Add practical tips (when to arrive, dress code, what to expect)
-- Keep it concise but enthusiastic
+**[Event 1]** at [Venue] - [Quick take on why]. [Time].
 
-## Response Format
+**[Event 2]** at [Venue] - [Quick take on why]. [Time].
 
-**IMPORTANT - Single Search Model:**
-- You make ONE search per user message - no retrying or iterating
-- After your search, refinement suggestions will be shown automatically to help the user
-- Do NOT say things like "I'll search for events..." or "Let me try another search..."
-- Just use the search_events tool, then respond naturally with what you found
+**[Event 3]** at [Venue] - [Quick take on why]. [Time].
 
-**When presenting results:**
-- You MUST mention EVERY event that was returned - no exceptions. Each event will show as a card below your text.
-- For each event, include at minimum: the name, date/time, and venue
-- If you searched for "rugby" but got futsal and trivia events too, you must still mention them (e.g., "I also found some other sports/social events that might interest you: [list them]")
-- The user will see cards for ALL returned events - if your text doesn't mention an event, they'll wonder why the card is there
-- If an event has hasDetails: false, mention that limited info is available and suggest checking the event link for more details
+I'd go with [Event 1] if I were you - [reason]."
 
-**CRITICAL - No hallucinations:**
-- You may ONLY discuss events that appear in the search results returned by the tool
-- NEVER invent, assume, or mention events that weren't in the tool response
-- If an event name doesn't appear exactly in the search results, do not mention it
-- When uncertain whether an event was returned, leave it out of your response
+## CRITICAL Rules
 
-**When there are no results:**
-- Acknowledge you didn't find matches for their specific request
-- Mention that they can try the suggestions below to explore other options
-- Keep it brief and positive - don't apologize excessively
-- Do NOT try to search again - let the user choose from the suggestions
+**Single Search Model:**
+- You make ONE search per user message - no retrying
+- Refinement suggestions appear automatically to help users pivot
+- Don't say "Let me search..." - just use the tool and respond
 
-Remember: You're helping people have a great time in Buenos Aires!`
+**No hallucinations:**
+- ONLY discuss events returned by the tool
+- NEVER invent or mention events not in the results
+- Each event you mention will show as a card below your text
+
+**When no results:**
+- Be brief: "Nothing matching that right now, but you can try the options below to explore."
+- Don't apologize excessively
+
+Remember: You're not a search engine. You're their confident friend who knows where to go.`
 }
+
 
 // Tool definition for Claude
 const tools: Anthropic.Tool[] = [
@@ -417,7 +410,7 @@ function formatVenueResult(venue: Venue | null): string {
 // Execute the search_events tool
 async function executeSearchEvents(input: SearchEventsToolInput): Promise<EventWithVenue[]> {
   const filters = toolInputToFilters(input)
-  const limit = input.limit ?? 5 // Default to 5 - matches system prompt instruction
+  const limit = input.limit ?? 1 // Default to 1 - concierge mode makes single recommendations
   console.log('[DEBUG] Tool input:', JSON.stringify(input))
   console.log('[DEBUG] Filters:', JSON.stringify(filters))
   console.log('[DEBUG] Limit:', limit)
@@ -474,56 +467,127 @@ function generateSuggestions(context: SuggestionContext): RefinementSuggestion[]
   const { originalQuery, toolInput, results, locale } = context
   const suggestions: RefinementSuggestion[] = []
   const hasResults = results.length > 0
+  const isSingleRecommendation = results.length === 1
 
   if (hasResults) {
-    // AUGMENT MODE: refine existing query
+    // CONCIERGE MODE: Single recommendation = contextual refinements based on the event
+    if (isSingleRecommendation) {
+      const event = results[0]
 
-    // Time suggestions (if no time filter was used)
-    if (!toolInput.timeFilter) {
-      suggestions.push({
-        id: 'tonight',
-        label: locale === 'es' ? 'Esta noche' : 'Tonight',
-        prompt: `${originalQuery} tonight`,
-        icon: 'moon',
-        type: 'time',
-      })
-      suggestions.push({
-        id: 'weekend',
-        label: locale === 'es' ? 'Este finde' : 'This weekend',
-        prompt: `${originalQuery} this weekend`,
-        icon: 'calendar',
-        type: 'time',
-      })
-    }
+      // Vibe-based refinements based on event categories
+      const isHighEnergy = event.categories.some(c => ['music', 'festival'].includes(c))
+      const isChill = event.categories.some(c => ['arts', 'food'].includes(c))
 
-    // Price suggestion (if results have paid events and not already filtering free)
-    const hasPaidEvents = results.some(e => !e.is_free)
-    if (hasPaidEvents && !toolInput.isFree) {
-      suggestions.push({
-        id: 'free',
-        label: locale === 'es' ? 'Solo gratis' : 'Free only',
-        prompt: `free ${originalQuery}`,
-        icon: 'ticket',
-        type: 'price',
-      })
-    }
-
-    // Neighborhood suggestion (from most common in results)
-    const neighborhoodCounts = new Map<string, number>()
-    results.forEach(e => {
-      if (e.venue_neighborhood) {
-        neighborhoodCounts.set(e.venue_neighborhood, (neighborhoodCounts.get(e.venue_neighborhood) || 0) + 1)
+      if (isHighEnergy) {
+        suggestions.push({
+          id: 'more-chill',
+          label: locale === 'es' ? 'Algo más tranquilo' : 'Something more chill',
+          prompt: locale === 'es' ? 'algo más tranquilo y relajado' : 'something more chill and relaxed',
+          icon: 'moon',
+          type: 'broader',
+        })
       }
-    })
-    if (neighborhoodCounts.size > 0 && !toolInput.neighborhood) {
-      const topNeighborhood = [...neighborhoodCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+      if (isChill) {
+        suggestions.push({
+          id: 'more-energy',
+          label: locale === 'es' ? 'Más energía' : 'Higher energy',
+          prompt: locale === 'es' ? 'algo con más energía y movimiento' : 'something with more energy and dancing',
+          icon: 'sparkles',
+          type: 'broader',
+        })
+      }
+
+      // Neighborhood refinement
+      if (event.venue_neighborhood) {
+        suggestions.push({
+          id: 'different-area',
+          label: locale === 'es' ? 'Otra zona' : 'Different area',
+          prompt: locale === 'es'
+            ? `algo similar pero no en ${event.venue_neighborhood}`
+            : `something similar but not in ${event.venue_neighborhood}`,
+          icon: 'map-pin',
+          type: 'neighborhood',
+        })
+      }
+
+      // Price refinement
+      if (event.price && event.price > 5000) {
+        suggestions.push({
+          id: 'more-budget',
+          label: locale === 'es' ? 'Más económico' : 'More budget-friendly',
+          prompt: locale === 'es' ? 'algo más económico' : 'something more affordable',
+          icon: 'ticket',
+          type: 'price',
+        })
+      } else if (event.is_free) {
+        suggestions.push({
+          id: 'more-upscale',
+          label: locale === 'es' ? 'Más premium' : 'More upscale',
+          prompt: locale === 'es' ? 'algo más exclusivo o premium' : 'something more upscale or exclusive',
+          icon: 'sparkles',
+          type: 'price',
+        })
+      }
+
+      // Always include "show alternatives"
       suggestions.push({
-        id: `neighborhood-${topNeighborhood}`,
-        label: locale === 'es' ? `En ${topNeighborhood}` : `In ${topNeighborhood}`,
-        prompt: `${originalQuery} in ${topNeighborhood}`,
-        icon: 'map-pin',
-        type: 'neighborhood',
+        id: 'show-alternatives',
+        label: locale === 'es' ? 'Ver alternativas' : 'Show alternatives',
+        prompt: locale === 'es' ? 'muéstrame algunas opciones alternativas' : 'show me a few alternative options',
+        icon: 'list',
+        type: 'broader',
       })
+
+    } else {
+      // MULTI-RESULT MODE: Standard refinements
+
+      // Time suggestions (if no time filter was used)
+      if (!toolInput.timeFilter) {
+        suggestions.push({
+          id: 'tonight',
+          label: locale === 'es' ? 'Esta noche' : 'Tonight',
+          prompt: `${originalQuery} tonight`,
+          icon: 'moon',
+          type: 'time',
+        })
+        suggestions.push({
+          id: 'weekend',
+          label: locale === 'es' ? 'Este finde' : 'This weekend',
+          prompt: `${originalQuery} this weekend`,
+          icon: 'calendar',
+          type: 'time',
+        })
+      }
+
+      // Price suggestion (if results have paid events and not already filtering free)
+      const hasPaidEvents = results.some(e => !e.is_free)
+      if (hasPaidEvents && !toolInput.isFree) {
+        suggestions.push({
+          id: 'free',
+          label: locale === 'es' ? 'Solo gratis' : 'Free only',
+          prompt: `free ${originalQuery}`,
+          icon: 'ticket',
+          type: 'price',
+        })
+      }
+
+      // Neighborhood suggestion (from most common in results)
+      const neighborhoodCounts = new Map<string, number>()
+      results.forEach(e => {
+        if (e.venue_neighborhood) {
+          neighborhoodCounts.set(e.venue_neighborhood, (neighborhoodCounts.get(e.venue_neighborhood) || 0) + 1)
+        }
+      })
+      if (neighborhoodCounts.size > 0 && !toolInput.neighborhood) {
+        const topNeighborhood = [...neighborhoodCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        suggestions.push({
+          id: `neighborhood-${topNeighborhood}`,
+          label: locale === 'es' ? `En ${topNeighborhood}` : `In ${topNeighborhood}`,
+          prompt: `${originalQuery} in ${topNeighborhood}`,
+          icon: 'map-pin',
+          type: 'neighborhood',
+        })
+      }
     }
   } else {
     // REPLACE MODE: pivot to new search (escape hatches)

@@ -1,11 +1,49 @@
-import { Calendar, Music, Ticket, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { Calendar, Music, Ticket, Sparkles, Moon, CalendarDays, User, Heart, Users } from 'lucide-react'
 import * as m from '@/paraglide/messages'
+import { track } from '@/lib/analytics'
 
 interface SuggestedPromptsProps {
   onSelectPrompt: (prompt: string) => void
 }
 
+type TimeContext = 'tonight' | 'weekend' | null
+type GroupContext = 'solo' | 'date' | 'friends' | null
+
 export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
+  const [timeContext, setTimeContext] = useState<TimeContext>(null)
+  const [groupContext, setGroupContext] = useState<GroupContext>(null)
+
+  // Context options for quick selection
+  const timeOptions = [
+    { id: 'tonight' as const, label: m.context_tonight(), icon: Moon },
+    { id: 'weekend' as const, label: m.context_weekend(), icon: CalendarDays },
+  ]
+
+  const groupOptions = [
+    { id: 'solo' as const, label: m.context_solo(), icon: User },
+    { id: 'date' as const, label: m.context_date(), icon: Heart },
+    { id: 'friends' as const, label: m.context_friends(), icon: Users },
+  ]
+
+  // Generate contextual prompt based on selections
+  const handleContextSubmit = () => {
+    const timePart = timeContext === 'tonight' ? 'tonight' : timeContext === 'weekend' ? 'this weekend' : ''
+    const groupPart = groupContext === 'solo' ? 'going solo' : groupContext === 'date' ? 'a date' : groupContext === 'friends' ? 'going out with friends' : ''
+
+    let prompt = 'Surprise me with something'
+    if (timePart && groupPart) {
+      prompt = `What's happening ${timePart}? I'm ${groupPart}.`
+    } else if (timePart) {
+      prompt = `What's happening ${timePart}?`
+    } else if (groupPart) {
+      prompt = `Find me something good - I'm ${groupPart}.`
+    }
+
+    track('concierge:context_prompt', { time: timeContext, group: groupContext })
+    onSelectPrompt(prompt)
+  }
+
   // Use translated prompts
   // First 2 shown on mobile, all 4 on desktop
   const prompts = [
@@ -14,6 +52,8 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
     { text: m.prompt_live_music(), icon: Music },
     { text: m.prompt_surprise_me(), icon: Sparkles },
   ]
+
+  const hasContext = timeContext || groupContext
 
   return (
     <div className="flex flex-col items-center justify-center h-full px-4 sm:px-6 py-4 sm:py-8 short:py-2 short:sm:py-4">
@@ -38,6 +78,81 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
 
         {/* Decorative line - hidden on mobile and short viewports */}
         <div className="deco-line w-32 mx-auto mt-4 sm:mt-6 hidden sm:block short:sm:hidden" />
+      </div>
+
+      {/* Context gathering chips */}
+      <div className="w-full max-w-xl mb-6 sm:mb-8 short:mb-4 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+        <p className="text-xs text-muted-foreground/70 uppercase tracking-wider font-medium mb-3 text-center">
+          {m.context_quick_start()}
+        </p>
+
+        {/* Time context row */}
+        <div className="flex justify-center gap-2 mb-3">
+          {timeOptions.map((option) => {
+            const Icon = option.icon
+            const isSelected = timeContext === option.id
+            return (
+              <button
+                key={option.id}
+                onClick={() => setTimeContext(isSelected ? null : option.id)}
+                className={`
+                  group flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200
+                  ${isSelected
+                    ? 'bg-primary/20 border-2 border-primary/50 text-primary shadow-md shadow-primary/10'
+                    : 'bg-muted/30 border border-border/40 text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                  }
+                `}
+              >
+                <Icon className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-primary/70'}`} />
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Group context row */}
+        <div className="flex justify-center gap-2">
+          {groupOptions.map((option) => {
+            const Icon = option.icon
+            const isSelected = groupContext === option.id
+            return (
+              <button
+                key={option.id}
+                onClick={() => setGroupContext(isSelected ? null : option.id)}
+                className={`
+                  group flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200
+                  ${isSelected
+                    ? 'bg-primary/20 border-2 border-primary/50 text-primary shadow-md shadow-primary/10'
+                    : 'bg-muted/30 border border-border/40 text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                  }
+                `}
+              >
+                <Icon className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-primary/70'}`} />
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Go button - appears when context is selected */}
+        {hasContext && (
+          <div className="flex justify-center mt-4 animate-fade-in-up">
+            <button
+              onClick={handleContextSubmit}
+              className="group flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/35 transition-all duration-300 hover:-translate-y-0.5"
+            >
+              <Sparkles className="h-4 w-4" />
+              {m.context_find_me_something()}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div className="w-full max-w-xl flex items-center gap-4 mb-6 short:mb-4">
+        <div className="flex-1 h-px bg-gradient-to-r from-transparent to-border/50" />
+        <span className="text-xs text-muted-foreground/50 uppercase tracking-wider">{m.context_or_try()}</span>
+        <div className="flex-1 h-px bg-gradient-to-l from-transparent to-border/50" />
       </div>
 
       {/* Prompt cards - show only 2 on mobile, all 4 on larger screens */}

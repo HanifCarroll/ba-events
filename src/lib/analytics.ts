@@ -37,6 +37,11 @@ export type AdminEvent =
 export type ConciergeEvent =
   | 'concierge:recommendation_shown'
   | 'concierge:ticket_clicked'
+  | 'concierge:refinement_clicked'
+  | 'concierge:context_prompt'
+  | 'concierge:add_to_calendar'
+  | 'concierge:get_directions'
+  | 'concierge:share_plan'
 
 export type AnalyticsEvent =
   | ChatEvent
