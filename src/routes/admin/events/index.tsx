@@ -621,7 +621,7 @@ function EventListPage() {
   )
 
   return (
-    <div className="max-w-6xl mx-auto h-full overflow-auto sm:overflow-hidden flex flex-col gap-6 p-6 animate-fade-in-up">
+    <div className="max-w-6xl mx-auto h-full overflow-auto sm:overflow-hidden overflow-x-hidden flex flex-col gap-6 p-6 animate-fade-in-up">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -660,7 +660,7 @@ function EventListPage() {
                 value="all"
                 className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary px-4 py-2"
               >
-                {m.admin_tab_all()}
+                {m.admin_tab_active()}
                 <span className="ml-2 text-xs opacity-70">({tabCounts?.all ?? 0})</span>
               </TabsTrigger>
               <TabsTrigger
@@ -825,8 +825,8 @@ function EventListPage() {
             />
 
             {/* Desktop Table View with DataTable */}
-            <div className="hidden sm:flex flex-1 min-h-0">
-              <div className="relative flex-1 flex flex-col min-h-0">
+            <div className="hidden sm:flex flex-1 min-h-0 min-w-0">
+              <div className="relative flex-1 flex flex-col min-h-0 min-w-0">
                 {/* Bulk action overlay - needs z-20 to be above sticky table header (z-10) */}
                 <div className="absolute top-0 left-0 right-0 z-20">
                   <BulkActionBar

@@ -295,7 +295,7 @@ function VenueListPage() {
   )
 
   return (
-    <div className="max-w-6xl mx-auto h-full overflow-auto sm:overflow-hidden flex flex-col gap-6 p-6 animate-fade-in-up">
+    <div className="max-w-6xl mx-auto h-full overflow-auto sm:overflow-hidden overflow-x-hidden flex flex-col gap-6 p-6 animate-fade-in-up">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -467,8 +467,8 @@ function VenueListPage() {
           </div>
 
           {/* Desktop Table View */}
-          <div className="hidden sm:flex flex-1 min-h-0">
-            <div className="relative flex-1 flex flex-col min-h-0">
+          <div className="hidden sm:flex flex-1 min-h-0 min-w-0">
+            <div className="relative flex-1 flex flex-col min-h-0 min-w-0">
               {/* Bulk action overlay */}
               <div className="absolute top-0 left-0 right-0 z-20">
                 <VenueBulkActionBar
@@ -529,8 +529,8 @@ function VenueListPage() {
               </div>
 
               {/* Desktop Table View */}
-              <div className="hidden sm:flex flex-1 min-h-0">
-                <div className="relative flex-1 flex flex-col min-h-0">
+              <div className="hidden sm:flex flex-1 min-h-0 min-w-0">
+                <div className="relative flex-1 flex flex-col min-h-0 min-w-0">
                   {/* Bulk action overlay */}
                   <div className="absolute top-0 left-0 right-0 z-20">
                     <VenueBulkActionBar

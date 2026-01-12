@@ -110,7 +110,7 @@
   "admin_events_count": "{count} eventos en la base de datos",
   "admin_import": "Importar",
   "admin_add_event": "Agregar Evento",
-  "admin_tab_all": "Eventos Activos",
+  "admin_tab_active": "Eventos Activos",
   "admin_tab_needs_attention": "Requiere Atención",
   "admin_tab_pending": "Revisión Pendiente",
   "admin_tab_past": "Pasados",

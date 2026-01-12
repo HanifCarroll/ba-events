@@ -312,6 +312,22 @@ Edit `messages/en.json` and `messages/es.json`. Keys are organized by feature:
 - `common_*` - Shared strings
 - `saved_*` - Saved events
 
+### Key Naming Conventions
+
+**Keys should reflect purpose/meaning, not literal content:**
+- Keys represent the semantic purpose of the text, not its exact wording
+- When content changes significantly, **rename the key** to match the new meaning
+- Example: `admin_tab_all` → `admin_tab_active` when changing from "All Events" to "Active Events"
+
+**Why this matters:**
+- Prevents confusion when keys don't match their content
+- Makes code more self-documenting
+- Helps translators understand context
+
+**When to rename vs. keep:**
+- **Rename** when the meaning/purpose changes (e.g., "All" → "Active")
+- **Keep** when only wording changes but meaning stays the same (e.g., "Sign In" → "Log In")
+
 Runtime locale access:
 ```tsx
 import { getLocale } from '@/paraglide/runtime'

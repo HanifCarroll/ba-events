@@ -248,6 +248,7 @@ export interface DataTableProps<TData extends { id: string }> {
   enableColumnFiltering?: boolean
   enableMultiSort?: boolean
   enableVirtualization?: boolean
+  enablePagination?: boolean
 
   // Selection (controlled)
   selectedIds?: Set<string>
@@ -304,6 +305,7 @@ export function DataTable<TData extends { id: string }>({
   enableColumnFiltering = false,
   enableMultiSort = true,
   enableVirtualization = false,
+  enablePagination = true,
   selectedIds,
   onSelectionChange,
   columnFilters: controlledColumnFilters,
@@ -495,7 +497,7 @@ export function DataTable<TData extends { id: string }>({
       columnVisibility,
       columnOrder: enableRowSelection ? ['select', ...columnOrder] : columnOrder,
       rowSelection,
-      pagination,
+      ...(enablePagination ? { pagination } : {}),
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -514,7 +516,8 @@ export function DataTable<TData extends { id: string }>({
     getFacetedRowModel: enableColumnFiltering ? getFacetedRowModel() : undefined,
     getFacetedUniqueValues: enableColumnFiltering ? getFacetedUniqueValues() : undefined,
     getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: manualPagination ? undefined : getPaginationRowModel(),
+    getPaginationRowModel:
+      enablePagination && !manualPagination ? getPaginationRowModel() : undefined,
     columnResizeMode: 'onChange',
     enableMultiSort,
     enableRowSelection,
@@ -572,11 +575,19 @@ export function DataTable<TData extends { id: string }>({
     return <>{emptyState}</>
   }
 
+  // Check if using percentage-based height (needs special handling for flex containers)
+  const isPercentageHeight = enableVirtualization && containerHeight.includes('%')
+
   return (
-    <div className="space-y-4">
+    <div className={cn(
+      isPercentageHeight ? 'h-full flex flex-col' : 'space-y-4'
+    )}>
       {/* Toolbar */}
       {(toolbarLeft || toolbarRight) && (
-        <div className="flex items-center justify-between gap-4">
+        <div className={cn(
+          'flex items-center justify-between gap-4',
+          isPercentageHeight && 'shrink-0 mb-4'
+        )}>
           <div className="flex items-center gap-4">{toolbarLeft}</div>
           <div className="flex items-center gap-2">
             {toolbarRight}
@@ -588,12 +599,20 @@ export function DataTable<TData extends { id: string }>({
       {/* Table container - single scroll container for both header and body */}
       <div className={cn(
         'bg-card/50 rounded-xl border border-border/50 overflow-hidden transition-opacity',
-        isLoading && 'opacity-60'
+        isLoading && 'opacity-60',
+        isPercentageHeight && 'flex-1 min-h-0 flex flex-col'
       )}>
         <div
           ref={scrollContainerRef}
-          className="overflow-auto"
-          style={{ maxHeight: enableVirtualization ? containerHeight : undefined }}
+          className={cn(
+            'overflow-auto',
+            isPercentageHeight && 'flex-1 min-h-0'
+          )}
+          style={{
+            ...(!isPercentageHeight && enableVirtualization
+              ? { maxHeight: containerHeight }
+              : {}),
+          }}
         >
           <DndContext
             sensors={enableColumnReordering ? sensors : undefined}
