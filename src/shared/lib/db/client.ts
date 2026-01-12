@@ -359,6 +359,18 @@ export async function bulkUpdateEventStatus(eventIds: string[], status: EventSta
   return data as Event[]
 }
 
+export async function bulkUpdateLocationTba(eventIds: string[], locationTba: boolean, client?: SupabaseClient) {
+  const db = client ?? supabase
+  const { data, error } = await db
+    .from('events')
+    .update({ location_tba: locationTba })
+    .in('id', eventIds)
+    .select()
+
+  if (error) throw error
+  return data as Event[]
+}
+
 export async function bulkDeleteEvents(eventIds: string[], client?: SupabaseClient) {
   const db = client ?? supabase
   const { error } = await db.from('events').delete().in('id', eventIds)

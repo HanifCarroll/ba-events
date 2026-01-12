@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, MapPinOff } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import type { BulkActionType } from '@/features/events'
@@ -46,6 +46,15 @@ export function BulkActionBar({
           {enrichments.map(({ key, ...config }) => (
             <EnrichmentButton key={key} {...config} overlay />
           ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSetBulkAction('location_tba')}
+            className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
+          >
+            <MapPinOff className="h-4 w-4 mr-1.5" />
+            Venue TBA
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -102,6 +111,15 @@ export function BulkActionBar({
         {enrichments.map(({ key, ...config }) => (
           <EnrichmentButton key={key} {...config} overlay={false} />
         ))}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onSetBulkAction('location_tba')}
+          className="border-border/50"
+        >
+          <MapPinOff className="h-4 w-4 mr-1.5" />
+          Venue TBA
+        </Button>
         <Button
           variant="outline"
           size="sm"
