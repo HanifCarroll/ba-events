@@ -140,6 +140,8 @@
   "admin_mark_past_confirm": "Mark {count} events as past? They will no longer appear in the main event list.",
   "admin_mark_cancelled": "Mark Events as Cancelled",
   "admin_mark_cancelled_confirm": "Mark {count} events as cancelled?",
+  "admin_mark_venue_tba": "Mark Events as Venue TBA",
+  "admin_mark_venue_tba_confirm": "Mark {count} events as venue TBA? This indicates the venue will be announced later.",
   "admin_status_scheduled": "Scheduled",
   "admin_status_pending": "Pending",
   "admin_status_cancelled": "Cancelled",

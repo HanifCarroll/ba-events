@@ -138,6 +138,8 @@
   "admin_mark_past_confirm": "¿Marcar {count} eventos como pasados? Ya no aparecerán en la lista principal de eventos.",
   "admin_mark_cancelled": "Marcar Eventos como Cancelados",
   "admin_mark_cancelled_confirm": "¿Marcar {count} eventos como cancelados?",
+  "admin_mark_venue_tba": "Marcar Eventos como Lugar TBA",
+  "admin_mark_venue_tba_confirm": "¿Marcar {count} eventos como lugar a confirmar? Esto indica que el lugar se anunciará más tarde.",
   "admin_status_scheduled": "Programado",
   "admin_status_pending": "Pendiente",
   "admin_status_cancelled": "Cancelado",

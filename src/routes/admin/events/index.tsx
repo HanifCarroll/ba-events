@@ -23,14 +23,7 @@ import { Badge } from '@/shared/ui/badge'
 import { Checkbox } from '@/shared/ui/checkbox'
 import { Input } from '@/shared/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/shared/ui/dialog'
+import { ConfirmationDialog } from '@/shared/ui/confirmation-dialog'
 import { Combobox } from '@/shared/ui/combobox'
 import { DataTable, getEventColumns } from '@/shared/ui/data-table'
 import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState } from '@/shared/ui/EmptyState'
@@ -255,11 +248,45 @@ export const Route = createFileRoute('/admin/events/')({
   component: EventListPage,
 })
 
-/** Get button text for bulk action dialog - avoids nested ternary */
-function getBulkActionButtonText(isProcessing: boolean, action: string | null): string {
-  if (isProcessing) return m.common_processing()
-  if (action === 'delete') return m.common_delete()
-  return m.common_confirm()
+/** Get dialog config for bulk actions */
+function getBulkActionConfig(action: string | null, count: number) {
+  const configs: Record<string, {
+    title: string
+    description: string
+    confirmText: string
+    confirmingText: string
+    variant: 'default' | 'destructive'
+  }> = {
+    delete: {
+      title: m.admin_delete_events(),
+      description: m.admin_delete_events_confirm({ count }),
+      confirmText: m.common_delete(),
+      confirmingText: m.common_deleting(),
+      variant: 'destructive',
+    },
+    past: {
+      title: m.admin_mark_past(),
+      description: m.admin_mark_past_confirm({ count }),
+      confirmText: m.common_confirm(),
+      confirmingText: m.common_processing(),
+      variant: 'default',
+    },
+    cancelled: {
+      title: m.admin_mark_cancelled(),
+      description: m.admin_mark_cancelled_confirm({ count }),
+      confirmText: m.common_confirm(),
+      confirmingText: m.common_processing(),
+      variant: 'default',
+    },
+    location_tba: {
+      title: m.admin_mark_venue_tba(),
+      description: m.admin_mark_venue_tba_confirm({ count }),
+      confirmText: m.common_confirm(),
+      confirmingText: m.common_processing(),
+      variant: 'default',
+    },
+  }
+  return action ? configs[action] : null
 }
 
 function getStatusBadge(status: string) {
@@ -899,97 +926,52 @@ function EventListPage() {
       </div>
 
       {/* Delete confirmation dialog */}
-      <Dialog open={!!singleActions.deleteTarget} onOpenChange={() => singleActions.setDeleteTarget(null)}>
-        <DialogContent className="bg-card border-border/50">
-          <DialogHeader>
-            <DialogTitle className="font-display text-foreground">{m.admin_delete_event()}</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {m.admin_delete_event_confirm({ name: singleActions.deleteTarget?.name || '' })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => singleActions.setDeleteTarget(null)}
-              className="text-muted-foreground"
-            >
-              {m.common_cancel()}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={singleActions.handleDelete}
-              disabled={singleActions.isDeleting}
-            >
-              {singleActions.isDeleting ? m.common_deleting() : m.common_delete()}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmationDialog
+        open={!!singleActions.deleteTarget}
+        onOpenChange={() => singleActions.setDeleteTarget(null)}
+        title={m.admin_delete_event()}
+        description={m.admin_delete_event_confirm({ name: singleActions.deleteTarget?.name || '' })}
+        variant="destructive"
+        confirmText={m.common_delete()}
+        confirmingText={m.common_deleting()}
+        onConfirm={singleActions.handleDelete}
+        isConfirming={singleActions.isDeleting}
+      />
 
       {/* Bulk action confirmation dialog */}
-      <Dialog open={!!bulk.bulkAction} onOpenChange={() => bulk.setBulkAction(null)}>
-        <DialogContent className="bg-card border-border/50">
-          <DialogHeader>
-            <DialogTitle className="font-display text-foreground">
-              {bulk.bulkAction === 'delete' && m.admin_delete_events()}
-              {bulk.bulkAction === 'past' && m.admin_mark_past()}
-              {bulk.bulkAction === 'cancelled' && m.admin_mark_cancelled()}
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {bulk.bulkAction === 'delete' && m.admin_delete_events_confirm({ count: bulk.selectedIds.size })}
-              {bulk.bulkAction === 'past' && m.admin_mark_past_confirm({ count: bulk.selectedIds.size })}
-              {bulk.bulkAction === 'cancelled' && m.admin_mark_cancelled_confirm({ count: bulk.selectedIds.size })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => bulk.setBulkAction(null)}
-              className="text-muted-foreground"
-            >
-              {m.common_cancel()}
-            </Button>
-            <Button
-              variant={bulk.bulkAction === 'delete' ? 'destructive' : 'default'}
-              onClick={bulk.handleBulkAction}
-              disabled={bulk.isBulkProcessing}
-            >
-              {getBulkActionButtonText(bulk.isBulkProcessing, bulk.bulkAction)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {(() => {
+        const config = getBulkActionConfig(bulk.bulkAction, bulk.selectedIds.size)
+        return config ? (
+          <ConfirmationDialog
+            open={!!bulk.bulkAction}
+            onOpenChange={() => bulk.setBulkAction(null)}
+            title={config.title}
+            description={config.description}
+            variant={config.variant}
+            confirmText={config.confirmText}
+            confirmingText={config.confirmingText}
+            onConfirm={bulk.handleBulkAction}
+            isConfirming={bulk.isBulkProcessing}
+          />
+        ) : null
+      })()}
 
       {/* Mark past events dialog - kept for manual triggering if needed */}
-      <Dialog open={markPast.showMarkPastDialog} onOpenChange={markPast.setShowMarkPastDialog}>
-        <DialogContent className="bg-card border-border/50">
-          <DialogHeader>
-            <DialogTitle className="font-display text-foreground">{m.admin_mark_past_dialog()}</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {markPast.pastEventsCount === 0 ? (
-                m.admin_no_past_events()
-              ) : (
-                m.admin_found_past_events({ count: markPast.pastEventsCount })
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => markPast.setShowMarkPastDialog(false)}
-              className="text-muted-foreground"
-            >
-              {m.common_cancel()}
-            </Button>
-            <Button
-              onClick={markPast.handleMarkPastEvents}
-              disabled={markPast.isMarkingPast || markPast.pastEventsCount === 0}
-            >
-              {markPast.isMarkingPast ? m.admin_marking() : m.admin_mark_count_past({ count: markPast.pastEventsCount })}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmationDialog
+        open={markPast.showMarkPastDialog}
+        onOpenChange={markPast.setShowMarkPastDialog}
+        title={m.admin_mark_past_dialog()}
+        description={
+          markPast.pastEventsCount === 0
+            ? m.admin_no_past_events()
+            : m.admin_found_past_events({ count: markPast.pastEventsCount })
+        }
+        confirmText={m.admin_mark_count_past({ count: markPast.pastEventsCount })}
+        confirmingText={m.admin_marking()}
+        onConfirm={markPast.handleMarkPastEvents}
+        isConfirming={markPast.isMarkingPast}
+        confirmDisabled={markPast.pastEventsCount === 0}
+      />
 
       {/* Edit event sheet - only mount when needed to avoid unnecessary renders */}
       {editingEvent && <EditEventSheet event={editingEvent} onClose={handleCloseEdit} />}
