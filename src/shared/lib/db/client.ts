@@ -325,15 +325,20 @@ export async function createEvents(events: EventInsert[], client?: SupabaseClien
 
 export async function updateEvent(id: string, updates: EventUpdate, client?: SupabaseClient) {
   const db = client ?? supabase
-  const { data, error } = await db
-    .from('events')
-    .update(updates)
+
+  // Update the event
+  const { error: updateError } = await db.from('events').update(updates).eq('id', id)
+  if (updateError) throw updateError
+
+  // Fetch the updated event with venue data from the view
+  const { data, error: fetchError } = await db
+    .from('events_with_venues')
+    .select('*')
     .eq('id', id)
-    .select()
     .single()
 
-  if (error) throw error
-  return data as Event
+  if (fetchError) throw fetchError
+  return data as EventWithVenue
 }
 
 export async function deleteEvent(id: string, client?: SupabaseClient) {

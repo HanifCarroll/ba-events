@@ -35,7 +35,7 @@ export function useUpdateEvent() {
       updateEventAction({ data: { id, data } }),
     onSuccess: (updatedEvent, variables) => {
       track('admin:event_updated', { event_id: variables.id })
-      // Update event in cache directly - merge with existing venue data
+      // Update event in cache directly with fresh data including venue
       queryClient.setQueriesData<EventWithVenue[]>(
         { queryKey: queryKeys.events.all },
         (old) => old?.map((e) => (e.id === variables.id ? { ...e, ...updatedEvent } : e))
