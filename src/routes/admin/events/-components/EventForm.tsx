@@ -74,6 +74,7 @@ export function EventForm({ event, mode }: EventFormProps) {
       ends_at: toLocalDatetime(event?.ends_at) || '',
       is_all_day: event?.is_all_day || false,
       venue_id: event?.venue_id || '_none',
+      location_tba: event?.location_tba || false,
       categories: (event?.categories || []) as Category[],
       price: event?.price ?? undefined,
       is_free: event?.is_free || false,
@@ -107,6 +108,7 @@ export function EventForm({ event, mode }: EventFormProps) {
         ends_at: endsAtISO,
         is_all_day: data.is_all_day,
         venue_id: data.venue_id === '_none' ? null : data.venue_id,
+        location_tba: data.location_tba,
         categories: data.categories,
         price: data.price ?? null,
         is_free: data.is_free,
@@ -331,7 +333,7 @@ export function EventForm({ event, mode }: EventFormProps) {
             <CardHeader>
               <CardTitle className="text-lg text-foreground">Venue</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <FormField
                 control={form.control}
                 name="venue_id"
@@ -356,6 +358,25 @@ export function EventForm({ event, mode }: EventFormProps) {
                       />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Venue TBA */}
+              <FormField
+                control={form.control}
+                name="location_tba"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormLabel className="font-normal cursor-pointer">
+                      Venue TBA (location to be announced)
+                    </FormLabel>
                   </FormItem>
                 )}
               />

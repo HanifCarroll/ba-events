@@ -191,48 +191,6 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
               )}
             />
 
-            {/* Description (Spanish) */}
-            <FormField
-              control={form.control}
-              name="description_es"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description (Spanish)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      value={field.value || ''}
-                      placeholder="Describe el evento..."
-                      rows={3}
-                      className="bg-background/50 border-border/50 resize-none"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Description (English) */}
-            <FormField
-              control={form.control}
-              name="description_en"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description (English)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      value={field.value || ''}
-                      placeholder="Describe the event..."
-                      rows={3}
-                      className="bg-background/50 border-border/50 resize-none"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             {/* Status */}
             <FormField
               control={form.control}
@@ -404,6 +362,48 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
                     })}
                   </div>
                 </div>
+              )}
+            />
+
+            {/* Description (Spanish) */}
+            <FormField
+              control={form.control}
+              name="description_es"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (Spanish)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      value={field.value || ''}
+                      placeholder="Describe el evento..."
+                      rows={3}
+                      className="bg-background/50 border-border/50 resize-none"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Description (English) */}
+            <FormField
+              control={form.control}
+              name="description_en"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (English)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      value={field.value || ''}
+                      placeholder="Describe the event..."
+                      rows={3}
+                      className="bg-background/50 border-border/50 resize-none"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
               )}
             />
 
