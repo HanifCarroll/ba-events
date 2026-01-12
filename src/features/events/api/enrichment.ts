@@ -5,9 +5,11 @@ import {
   enrichEventDescriptionBilingual,
   getKnownLanguageForSource,
   translateText,
+  detectLanguage,
 } from '@/shared/lib/ai/enrichment'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import { fetchPasslineDescription } from '@/features/import/scrapers/passline/description-enrichment'
+import { fetchMeetupDescriptionFromDetailPage } from '@/features/import/scrapers/meetup/description-enrichment'
 import type { EventWithVenue } from '@/shared/lib/types'
 import type {
   EmbeddingProgress,
@@ -58,11 +60,31 @@ async function enrichSingleEvent(
   }
 
   try {
-    // Get known language for source, or undefined to trigger detection
-    const knownLanguage = getKnownLanguageForSource(source)
+    let bilingual: { description_es: string | null; description_en: string | null } | null = null
 
-    // Fetch and extract bilingual descriptions using Jina + Haiku
-    const bilingual = await enrichEventDescriptionBilingual(link, knownLanguage)
+    // Use specialized adapter for Meetup (Jina returns 451 for Meetup pages)
+    if (source === 'meetup') {
+      console.log(`[server] Using Meetup adapter for ${id}`)
+      const description = await fetchMeetupDescriptionFromDetailPage(link)
+
+      if (description) {
+        // Detect language and translate
+        const language = await detectLanguage(description)
+        console.log(`[server] Meetup event ${id}: detected language = ${language}`)
+
+        if (language === 'spanish') {
+          const description_en = await translateText(description, 'es-to-en')
+          bilingual = { description_es: description, description_en }
+        } else {
+          const description_es = await translateText(description, 'en-to-es')
+          bilingual = { description_es, description_en: description }
+        }
+      }
+    } else {
+      // Use Jina + Haiku for other sources (BA Tourism, Eventbrite, etc.)
+      const knownLanguage = getKnownLanguageForSource(source)
+      bilingual = await enrichEventDescriptionBilingual(link, knownLanguage)
+    }
     console.log(`[server] Got descriptions for ${id}: ES=${bilingual?.description_es ? 'yes' : 'no'}, EN=${bilingual?.description_en ? 'yes' : 'no'}`)
 
     if (!bilingual?.description_es) {

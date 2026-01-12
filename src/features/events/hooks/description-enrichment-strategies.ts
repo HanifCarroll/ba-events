@@ -41,12 +41,12 @@ const STRATEGY_MAP: Record<ImportSource, StrategyConfig> = {
   },
   luma: {
     method: 'luma',
-    reason: 'Requires Playwright to render JavaScript content',
+    reason: 'Uses direct fetch; extracts from __NEXT_DATA__ and JSON-LD',
     isStoppable: true,
   },
   meetup: {
     method: 'background',
-    reason: 'Works with Jina Reader for description extraction',
+    reason: 'Uses direct fetch (Jina returns HTTP 451); extracts from __NEXT_DATA__',
     isStoppable: true,
   },
   eventbrite: {

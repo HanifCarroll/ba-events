@@ -19,8 +19,9 @@ import type { UseLumaDescriptionEnrichmentReturn } from './useLumaDescriptionEnr
 import type { DescriptionEnrichmentMethod } from './description-enrichment-strategies'
 
 // Execution order for enrichment methods
-// Source-specific methods first (more efficient), then generic fallback
-const EXECUTION_ORDER: DescriptionEnrichmentMethod[] = ['passline', 'luma', 'background']
+// Note: Passline is excluded - Cloudflare blocks all server-side requests
+// Users must use the /enrich-passline command with Playwriter instead
+const EXECUTION_ORDER: DescriptionEnrichmentMethod[] = ['luma', 'background']
 
 interface EnrichmentProgress {
   isEnriching: boolean
@@ -88,13 +89,17 @@ export function useUnifiedDescriptionEnrichment(
 
   /**
    * Get total count of enrichable events across all methods.
+   * Note: Excludes Passline events since they require manual enrichment.
    */
   const getEnrichableCount = useCallback(
     (events: EventWithVenue[], selectedIds: Set<string>): number => {
       const byMethod = getEnrichableEventsByMethod(events, selectedIds)
       let total = 0
-      for (const eventList of byMethod.values()) {
-        total += eventList.length
+      for (const [method, eventList] of byMethod) {
+        // Exclude Passline - requires manual enrichment via /enrich-passline
+        if (method !== 'passline') {
+          total += eventList.length
+        }
       }
       return total
     },
@@ -162,6 +167,7 @@ export function useUnifiedDescriptionEnrichment(
   /**
    * Unified enrichment function that processes all selected events.
    * Routes each event to the appropriate enrichment method based on source.
+   * Note: Passline events are skipped - Cloudflare blocks server-side requests.
    */
   const enrichDescriptions = useCallback(
     async (
@@ -171,17 +177,38 @@ export function useUnifiedDescriptionEnrichment(
     ) => {
       const byMethod = getEnrichableEventsByMethod(events, selectedIds)
 
-      // Calculate total
+      // Check for Passline events (which we skip due to Cloudflare blocking)
+      const passlineEvents = byMethod.get('passline') ?? []
+      const passlineCount = passlineEvents.length
+
+      // Calculate total (excluding Passline)
       let total = 0
-      for (const eventList of byMethod.values()) {
-        total += eventList.length
+      for (const [method, eventList] of byMethod) {
+        if (method !== 'passline') {
+          total += eventList.length
+        }
+      }
+
+      // Show toast about skipped Passline events
+      if (passlineCount > 0) {
+        toast.info(
+          `${passlineCount} Passline event${passlineCount > 1 ? 's' : ''} skipped`,
+          {
+            description:
+              'Passline blocks automated requests. Use the /enrich-passline command with Playwriter instead.',
+            duration: 6000,
+          }
+        )
       }
 
       if (total === 0) {
-        toast.info('No events need descriptions', {
-          description:
-            'Selected events either have descriptions or no source URLs to fetch from.',
-        })
+        // If only Passline events were selected, we already showed the toast above
+        if (passlineCount === 0) {
+          toast.info('No events need descriptions', {
+            description:
+              'Selected events either have descriptions or no source URLs to fetch from.',
+          })
+        }
         return
       }
 
