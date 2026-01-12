@@ -11,6 +11,7 @@ import { formatPrice } from '@/features/chat'
 import { formatShortDate, formatTime, formatEventTime } from '@/shared/lib/utils/formatting'
 import { track } from '@/lib/analytics'
 import { getEventUrl } from '@/shared/lib/utils/url'
+import { Badge } from '@/shared/ui/badge'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 interface EventCardProps {
@@ -30,6 +31,8 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
 
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free
+  const hasDescription = Boolean(event.description_en || event.description_es)
+  const sourceLabel = getSourceLabel(event.source)
 
   const handleToggle = () => {
     const willOpen = !isOpen
@@ -154,10 +157,28 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
 
             {/* Expanded view */}
             <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {sourceLabel && (
+                  <Badge className="bg-muted text-muted-foreground border-border/60">
+                    {sourceLabel}
+                  </Badge>
+                )}
+                {!hasDescription && (
+                  <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                    Limited info
+                  </Badge>
+                )}
+              </div>
+
               {/* Description */}
               {event.description_en && (
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {event.description_en}
+                </p>
+              )}
+              {!event.description_en && event.description_es && (
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {event.description_es}
                 </p>
               )}
 
@@ -233,4 +254,20 @@ export function EventCard({ event, position, source = 'chat' }: EventCardProps) 
       </div>
     </Collapsible>
   )
+}
+
+function getSourceLabel(source: string | null | undefined): string | null {
+  if (!source) return null
+  switch (source) {
+    case 'passline':
+      return 'Passline'
+    case 'eventbrite':
+      return 'Eventbrite'
+    case 'ba-tourism':
+      return 'BA Tourism'
+    case 'meetup':
+      return 'Meetup'
+    default:
+      return null
+  }
 }

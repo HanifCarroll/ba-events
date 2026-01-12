@@ -7,9 +7,14 @@ import {
   updateVenue,
   deleteVenue,
   bulkDeleteVenues,
+  getVenueEventCounts,
+  getAllEventsByVenue,
 } from '@/shared/lib/db/client'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
-import type { VenueInsert, VenueUpdate } from '@/shared/lib/types'
+import type { VenueInsert, VenueUpdate, Event } from '@/shared/lib/types'
+
+// Type for venue event preview (subset of Event) - different from review.ts VenueEventPreview
+export type VenueEventItem = Pick<Event, 'id' | 'name' | 'starts_at' | 'status' | 'link' | 'source'>
 
 export const listVenues = createServerFn({ method: 'GET' }).handler(async () => {
   return getVenues(1000)
@@ -70,4 +75,16 @@ export const bulkDeleteVenuesAction = createServerFn({ method: 'POST' })
     const client = await requireAdminAccess()
     await bulkDeleteVenues(ids, client)
     return { success: true, count: ids.length }
+  })
+
+// Get event counts for all venues (different from review.ts which takes specific IDs)
+export const listAllVenueEventCountsAction = createServerFn({ method: 'GET' }).handler(async () => {
+  return getVenueEventCounts()
+})
+
+// Get all events for a specific venue (different from review.ts which takes array of IDs)
+export const listVenueEventsAction = createServerFn({ method: 'GET' })
+  .inputValidator((venueId: string) => venueId)
+  .handler(async ({ data: venueId }): Promise<VenueEventItem[]> => {
+    return getAllEventsByVenue(venueId)
   })

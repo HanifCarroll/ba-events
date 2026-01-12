@@ -45,7 +45,7 @@ import { VenueBulkActionBar } from './-components/VenueBulkActionBar'
 import { MergeVenueDialog } from './-components/MergeVenueDialog'
 import { DismissedDuplicatesDialog } from './-components/DismissedDuplicatesDialog'
 import { EditVenueDialog } from './-components/EditVenueDialog'
-import { listVenues, deleteVenueAction, useVenueReview, useVenueBulkActions, useVenueNominatimEnrichment } from '@/features/venues'
+import { listVenues, deleteVenueAction, useVenueReview, useVenueBulkActions, useVenueNominatimEnrichment, listAllVenueEventCountsAction } from '@/features/venues'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
 import type { Venue, Neighborhood } from '@/shared/lib/types'
 import type { ReviewTab } from '@/features/venues'
@@ -66,13 +66,17 @@ export const Route = createFileRoute('/admin/venues/')({
   // This prevents reloading when editId or other search params change
   loaderDeps: () => ({}),
   loader: async () => {
-    return listVenues()
+    const [venues, eventCounts] = await Promise.all([
+      listVenues(),
+      listAllVenueEventCountsAction(),
+    ])
+    return { venues, eventCounts }
   },
   component: VenueListPage,
 })
 
 function VenueListPage() {
-  const venues = Route.useLoaderData()
+  const { venues, eventCounts } = Route.useLoaderData()
   const router = useRouter()
   const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -286,8 +290,8 @@ function VenueListPage() {
 
   // Column definitions with edit and delete handlers
   const columns = useMemo(
-    () => getVenueColumns({ onEdit: handleEdit, onDelete: setDeleteTarget, venuesMap }),
-    [handleEdit, venuesMap]
+    () => getVenueColumns({ onEdit: handleEdit, onDelete: setDeleteTarget, venuesMap, eventCounts }),
+    [handleEdit, venuesMap, eventCounts]
   )
 
   return (

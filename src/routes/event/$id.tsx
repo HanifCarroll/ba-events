@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { Calendar, Clock, MapPin, Ticket, Share2, Check, ArrowLeft } from 'lucide-react'
+import { Calendar, Clock, MapPin, Ticket, Share2, Check } from 'lucide-react'
 import { getEventWithVenueAction } from '@/features/events'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
@@ -70,6 +70,8 @@ function EventDetailPage() {
   }, [event.location_hidden, event.venue_address, event.venue_name])
 
   const shareUrl = getEventUrl(event.id)
+  const hasDescription = Boolean(event.description_en || event.description_es)
+  const sourceLabel = getSourceLabel(event.source)
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -99,14 +101,6 @@ function EventDetailPage() {
 
       <div className="relative px-6 py-6 border-b border-border/30">
         <div className="max-w-4xl mx-auto">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to events
-          </Link>
-
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
@@ -175,6 +169,19 @@ function EventDetailPage() {
           )}
 
           <div className="rounded-2xl border border-border/30 bg-card p-6 space-y-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {sourceLabel && (
+                <Badge className="bg-muted text-muted-foreground border-border/60">
+                  {sourceLabel}
+                </Badge>
+              )}
+              {!hasDescription && (
+                <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                  Limited info
+                </Badge>
+              )}
+            </div>
+
             <div className="grid gap-3 md:grid-cols-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-primary/70" />
@@ -200,9 +207,14 @@ function EventDetailPage() {
               </div>
             )}
 
-            {(event.description_en || event.description_es) && (
+            {event.description_en && (
               <p className="text-sm text-muted-foreground leading-relaxed">
-                {event.description_en || event.description_es}
+                {event.description_en}
+              </p>
+            )}
+            {!event.description_en && event.description_es && (
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {event.description_es}
               </p>
             )}
 
@@ -233,6 +245,22 @@ function buildEventSummary(event: EventWithVenue): string {
 
   if (base.length <= maxLength) return base
   return `${base.slice(0, maxLength - 3).trim()}...`
+}
+
+function getSourceLabel(source: string | null | undefined): string | null {
+  if (!source) return null
+  switch (source) {
+    case 'passline':
+      return 'Passline'
+    case 'eventbrite':
+      return 'Eventbrite'
+    case 'ba-tourism':
+      return 'BA Tourism'
+    case 'meetup':
+      return 'Meetup'
+    default:
+      return null
+  }
 }
 
 function buildEventJsonLd(event: EventWithVenue, eventUrl: string, imageUrl: string) {

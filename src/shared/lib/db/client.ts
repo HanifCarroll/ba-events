@@ -270,6 +270,36 @@ export async function getEventsByVenue(venueId: string) {
   return data as Event[]
 }
 
+// Get all events for a venue (including past events, all statuses)
+export async function getAllEventsByVenue(venueId: string) {
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, name, starts_at, status, link, source')
+    .eq('venue_id', venueId)
+    .order('starts_at', { ascending: false })
+
+  if (error) throw error
+  return data as Pick<Event, 'id' | 'name' | 'starts_at' | 'status' | 'link' | 'source'>[]
+}
+
+// Get event counts for all venues in a single query
+export async function getVenueEventCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from('events')
+    .select('venue_id')
+    .not('venue_id', 'is', null)
+
+  if (error) throw error
+
+  // Aggregate counts in JavaScript since Supabase doesn't support GROUP BY directly
+  const counts: Record<string, number> = {}
+  for (const row of data) {
+    const venueId = row.venue_id as string
+    counts[venueId] = (counts[venueId] || 0) + 1
+  }
+  return counts
+}
+
 export async function createEvent(event: EventInsert, client?: SupabaseClient) {
   const db = client ?? supabase
   const { data, error } = await db
