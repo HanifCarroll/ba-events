@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute, Link, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound } from '@tanstack/react-router'
 import { Calendar, Clock, MapPin, Ticket, Share2, Check } from 'lucide-react'
 import { getEventWithVenueAction } from '@/features/events'
 import { Button } from '@/shared/ui/button'
@@ -17,6 +17,13 @@ export const Route = createFileRoute('/event/$id')({
     }
   },
   head: ({ loaderData }) => {
+    // loaderData can be undefined during SSR or if loader hasn't completed
+    if (!loaderData) {
+      return {
+        meta: [{ title: 'Event - BA Eventos' }],
+      }
+    }
+
     const eventUrl = getEventUrl(loaderData.id)
     const summary = buildEventSummary(loaderData)
     const imageUrl = loaderData.image_url

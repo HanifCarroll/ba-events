@@ -33,11 +33,17 @@ export type AdminEvent =
   | 'admin:import_started'
   | 'admin:import_completed'
 
+// Concierge/recommendation events
+export type ConciergeEvent =
+  | 'concierge:recommendation_shown'
+  | 'concierge:ticket_clicked'
+
 export type AnalyticsEvent =
   | ChatEvent
   | EventEngagementEvent
   | AuthEvent
   | AdminEvent
+  | ConciergeEvent
 
 // Lazy-loaded PostHog instance (client-side only)
 let posthogInstance: typeof import('posthog-js').default | null = null
