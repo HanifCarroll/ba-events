@@ -409,3 +409,17 @@ export function getVenueIdFromResults(
   const key = venueName.trim().toLowerCase()
   return results.get(key)?.venueId || null
 }
+
+/**
+ * Check if a venue name was detected as a placeholder (e.g., "TBA", "Register to See Address")
+ * during venue settlement. Use this to set location_tba or location_hidden on events.
+ */
+export function isPlaceholderResult(
+  results: Map<string, VenueSettlementResult>,
+  venueName: string | null | undefined
+): boolean {
+  if (!venueName) return false
+  const key = venueName.trim().toLowerCase()
+  const result = results.get(key)
+  return result?.action === 'placeholder'
+}

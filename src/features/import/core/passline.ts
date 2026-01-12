@@ -17,7 +17,7 @@ import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
-import { settleVenues, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement'
+import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
 import { delay } from './nominatim'
 import type { EventInsert } from '@/shared/lib/types'
 
@@ -148,6 +148,12 @@ export async function processPasslineImport(
     const venueId = getVenueIdFromResults(venueResults, event.lugar)
     const transformed = transformPasslineEvent(event, venueId)
 
+    // Check if venue was detected as a placeholder (TBA)
+    const isPlaceholder = isPlaceholderResult(venueResults, event.lugar)
+    if (isPlaceholder) {
+      transformed.location_tba = true
+    }
+
     const existing = existingEventsMap.get(event.id)
     if (existing) {
       // Event exists - check if we should update
@@ -208,6 +214,7 @@ export async function processPasslineImport(
             is_free: eventWithEmbedding.is_free,
             image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
+            location_tba: eventWithEmbedding.location_tba ?? false,
           })
           .eq('id', existing!.id)
 

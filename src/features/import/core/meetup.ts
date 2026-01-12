@@ -23,7 +23,7 @@ import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
-import { settleVenues, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement'
+import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
 import { delay } from './nominatim'
 import type { EventInsert } from '@/shared/lib/types'
 
@@ -183,7 +183,14 @@ export async function processMeetupImport(
     const venueName = event.venue?.name || null
     const venueId = getVenueIdFromResults(venueResults, venueName)
     const expanded = transformMeetupEventWithExpansion(event, venueId, expandRecurringWeeks)
+
+    // Check if venue was detected as a placeholder (TBA)
+    const isPlaceholder = isPlaceholderResult(venueResults, venueName)
+
     for (const transformed of expanded) {
+      if (isPlaceholder) {
+        transformed.location_tba = true
+      }
       transformedEvents.push(transformed)
       eventSourceMap.set(transformed, event)
     }
@@ -261,6 +268,7 @@ export async function processMeetupImport(
             is_free: eventWithEmbedding.is_free,
             image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
+            location_tba: eventWithEmbedding.location_tba ?? false,
           })
           .eq('id', existing!.id)
 

@@ -22,7 +22,7 @@ import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
-import { settleVenues, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement'
+import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
 import { delay } from './nominatim'
 import type { EventInsert } from '@/shared/lib/types'
 
@@ -180,6 +180,12 @@ export async function processEventbriteImport(
     const venueId = getVenueIdFromResults(venueResults, venueName)
     const transformed = transformEventbriteEvent(event, venueId)
 
+    // Check if venue was detected as a placeholder (TBA)
+    const isPlaceholder = isPlaceholderResult(venueResults, venueName)
+    if (isPlaceholder) {
+      transformed.location_tba = true
+    }
+
     const externalId = extractEventId(event.url)
     const existing = externalId ? existingEventsMap.get(externalId) : undefined
     if (existing) {
@@ -241,6 +247,7 @@ export async function processEventbriteImport(
             is_free: eventWithEmbedding.is_free,
             image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
+            location_tba: eventWithEmbedding.location_tba ?? false,
           })
           .eq('id', existing!.id)
 

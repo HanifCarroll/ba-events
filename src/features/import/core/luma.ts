@@ -19,7 +19,7 @@ import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
-import { settleVenues, getVenueIdFromResults, type VenueSettlementInput, type VenueSettlementResult } from './venue-settlement'
+import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
 import { delay } from './nominatim'
 import type { EventInsert } from '@/shared/lib/types'
 
@@ -57,19 +57,6 @@ export interface LumaImportResult {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-/**
- * Check if a venue name was detected as a placeholder (e.g., "Register to See Address")
- */
-function isPlaceholderResult(
-  results: Map<string, VenueSettlementResult>,
-  venueName: string | null | undefined
-): boolean {
-  if (!venueName) return false
-  const key = venueName.trim().toLowerCase()
-  const result = results.get(key)
-  return result?.action === 'placeholder'
-}
 
 /**
  * Filter events by blocklist

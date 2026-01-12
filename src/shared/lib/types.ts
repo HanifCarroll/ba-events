@@ -127,6 +127,7 @@ export interface Event {
   external_id: string | null // ID from external source for deduplication
   status: EventStatus
   location_hidden: boolean // True if address is hidden until registration (e.g., Luma)
+  location_tba: boolean // True if venue is TBA or varies per event instance
   embedding?: number[]
   enrichment_status: EnrichmentStatus
   enrichment_error: string | null
@@ -162,6 +163,7 @@ export interface EventInsert {
   external_id?: string | null
   status?: EventStatus
   location_hidden?: boolean
+  location_tba?: boolean
   embedding?: number[]
   enrichment_status?: EnrichmentStatus
   enrichment_error?: string | null
