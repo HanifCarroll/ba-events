@@ -26,18 +26,29 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
     { id: 'friends' as const, label: m.context_friends(), icon: Users },
   ]
 
-  // Generate contextual prompt based on selections
+  // Generate contextual prompt based on selections (localized)
   const handleContextSubmit = () => {
-    const timePart = timeContext === 'tonight' ? 'tonight' : timeContext === 'weekend' ? 'this weekend' : ''
-    const groupPart = groupContext === 'solo' ? 'going solo' : groupContext === 'date' ? 'a date' : groupContext === 'friends' ? 'going out with friends' : ''
+    const timePart = timeContext === 'tonight'
+      ? m.context_prompt_time_tonight()
+      : timeContext === 'weekend'
+        ? m.context_prompt_time_weekend()
+        : ''
 
-    let prompt = 'Surprise me with something'
+    const groupPart = groupContext === 'solo'
+      ? m.context_prompt_group_solo()
+      : groupContext === 'date'
+        ? m.context_prompt_group_date()
+        : groupContext === 'friends'
+          ? m.context_prompt_group_friends()
+          : ''
+
+    let prompt = m.context_prompt_surprise()
     if (timePart && groupPart) {
-      prompt = `What's happening ${timePart}? I'm ${groupPart}.`
+      prompt = m.context_prompt_time_and_group({ time: timePart, group: groupPart })
     } else if (timePart) {
-      prompt = `What's happening ${timePart}?`
+      prompt = m.context_prompt_time_only({ time: timePart })
     } else if (groupPart) {
-      prompt = `Find me something good - I'm ${groupPart}.`
+      prompt = m.context_prompt_group_only({ group: groupPart })
     }
 
     track('concierge:context_prompt', { time: timeContext, group: groupContext })
