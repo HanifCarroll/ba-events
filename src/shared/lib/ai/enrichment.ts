@@ -11,6 +11,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { CLAUDE_MODEL } from './constants'
+import { HttpError } from '../errors'
 
 // Lazy initialization to avoid instantiating in browser bundle
 let anthropicClient: Anthropic | null = null
@@ -163,7 +164,9 @@ const VENUE_EXTRACTION_SCHEMA = {
 } as const
 
 /**
- * Fetch a URL's content as markdown using Jina Reader
+ * Fetch a URL's content as markdown using Jina Reader.
+ * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to distinguish error types.
+ * Returns null only for network errors (no response received).
  */
 export async function fetchWithJina(url: string): Promise<string | null> {
   const jinaUrl = `https://r.jina.ai/${url}`
@@ -176,13 +179,18 @@ export async function fetchWithJina(url: string): Promise<string | null> {
     })
 
     if (!response.ok) {
-      console.error(`Jina fetch error for ${url}: ${response.status} ${response.statusText}`)
-      return null
+      // Jina returns HTTP errors that reflect the original page status
+      // Throw HttpError so callers can detect 404s and mark events as cancelled
+      throw new HttpError(response.status, response.statusText, url)
     }
 
     const markdown = await response.text()
     return markdown
   } catch (error) {
+    // Re-throw HttpError as-is for upstream handling
+    if (error instanceof HttpError) {
+      throw error
+    }
     console.error(`Jina fetch error for ${url}:`, error)
     return null
   }

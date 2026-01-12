@@ -11,6 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Category } from '@/shared/lib/types'
 import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
+import { HttpError } from '@/shared/lib/errors'
 
 // Lazy initialization to avoid instantiating in browser bundle
 // (Anthropic SDK throws when instantiated client-side)
@@ -33,7 +34,9 @@ export interface EventbritePriceInfo {
 }
 
 /**
- * Fetch an Eventbrite event page and extract price information
+ * Fetch an Eventbrite event page and extract price information.
+ * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to detect cancelled events.
+ * Returns null only for network errors (no response received).
  */
 export async function fetchEventbritePrice(url: string): Promise<EventbritePriceInfo | null> {
   try {
@@ -47,13 +50,17 @@ export async function fetchEventbritePrice(url: string): Promise<EventbritePrice
     })
 
     if (!response.ok) {
-      console.error(`[eventbrite] Price fetch failed for ${url}: ${response.status}`)
-      return null
+      // Throw HttpError so callers can detect 404s and mark events as cancelled
+      throw new HttpError(response.status, response.statusText, url)
     }
 
     const html = await response.text()
     return extractPriceFromHtml(html)
   } catch (error) {
+    // Re-throw HttpError as-is for upstream handling
+    if (error instanceof HttpError) {
+      throw error
+    }
     console.error(`[eventbrite] Price fetch error for ${url}:`, error)
     return null
   }
@@ -275,7 +282,9 @@ export interface EventbriteVenueInfo {
 }
 
 /**
- * Extract venue info from Eventbrite event page JSON-LD
+ * Extract venue info from Eventbrite event page JSON-LD.
+ * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to detect cancelled events.
+ * Returns null only for network errors or if no venue data found.
  */
 export async function extractEventbriteVenueInfo(
   link: string
@@ -291,8 +300,8 @@ export async function extractEventbriteVenueInfo(
     })
 
     if (!response.ok) {
-      console.error(`[Eventbrite] Failed to fetch ${link}: ${response.status}`)
-      return null
+      // Throw HttpError so callers can detect 404s and mark events as cancelled
+      throw new HttpError(response.status, response.statusText, link)
     }
 
     const html = await response.text()
@@ -358,6 +367,10 @@ export async function extractEventbriteVenueInfo(
       return null
     }
   } catch (error) {
+    // Re-throw HttpError as-is for upstream handling
+    if (error instanceof HttpError) {
+      throw error
+    }
     console.error(`[Eventbrite] Error fetching ${link}:`, error)
     return null
   }

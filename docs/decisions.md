@@ -26,6 +26,87 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Mark Events as Cancelled When Enrichment Encounters 404
+
+**Date:** 2026-01-12
+
+**Decision:** When event enrichment encounters a 404 or 410 HTTP error (event page no longer exists), mark the event as `status: 'cancelled'` for audit purposes instead of just marking enrichment as failed.
+
+**Problem:**
+During enrichment, some event pages return 404 errors because:
+- The event was cancelled by the organizer
+- The event listing expired
+- The event page was removed
+- The URL structure changed
+
+Previously, these events were marked with `enrichment_status: 'failed'` but kept `status: 'scheduled'`, meaning they would still appear in chat recommendations and the admin would keep retrying enrichment.
+
+**Solution:**
+Created `HttpError` class pattern to distinguish HTTP errors from other failures:
+
+```typescript
+// src/shared/lib/errors.ts
+export class HttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly statusText: string,
+    public readonly url: string
+  ) { ... }
+
+  get isNotFound(): boolean {
+    return this.status === 404 || this.status === 410
+  }
+}
+```
+
+Fetch functions (`fetchHtml`, `fetchWithJina`, Eventbrite fetchers) now throw `HttpError` on non-OK responses. The enrichment catch block detects this and marks events as cancelled:
+
+```typescript
+catch (error) {
+  if (error instanceof HttpError && error.isNotFound) {
+    await updateEventEnrichment(client, id, {
+      status: 'cancelled',
+      enrichment_status: 'failed',
+      enrichment_error: `HTTP ${error.status} - Event page not found`,
+    })
+    return { eventId: id, success: false, enriched: false, cancelled: true }
+  }
+  // ... existing error handling
+}
+```
+
+**Why `cancelled` status:**
+- The `cancelled` status already existed in the database enum - no migration needed
+- Chat agent filters to `status = 'scheduled'` only - cancelled events automatically hidden from users
+- Admin UI already has red badge styling for cancelled events
+- Preserves audit trail (vs. deleting events entirely)
+
+**Alternatives Considered:**
+- **Delete events**: Loses audit trail, makes debugging harder
+- **Mark as `past`**: Incorrect semantically - the event didn't happen, it was removed
+- **Change return types**: Would require updating many callers; throwing errors is cleaner
+- **Retry later**: Events removed from source don't come back; retrying wastes resources
+
+**Rationale:**
+1. **Data integrity**: Events aren't lost, just marked as unavailable
+2. **User experience**: Cancelled events don't pollute recommendations
+3. **Audit trail**: Admin can see which events were cancelled and why
+4. **Error class pattern**: Centralizes HTTP error handling, makes 404 detection explicit
+5. **Existing infrastructure**: Leverages existing `cancelled` status and UI styling
+
+**Files Created:**
+- `src/shared/lib/errors.ts` - HttpError class
+
+**Files Modified:**
+- `src/shared/lib/html-parsing.ts` - fetchHtml throws HttpError
+- `src/shared/lib/ai/enrichment.ts` - fetchWithJina throws HttpError
+- `src/features/import/core/event-enrichment.ts` - Catches HttpError, marks cancelled, tracks stats
+- `src/features/import/scrapers/eventbrite/enrichment.ts` - Eventbrite fetchers throw HttpError
+- `src/trigger/jobs/enrich-events.ts` - Tracks cancelled count in metadata/logs
+- `src/trigger/jobs/enrichment-catchup.ts` - Tracks cancelled count in metadata/logs
+
+---
+
 ### Unified Description Enrichment Button
 
 **Date:** 2026-01-11

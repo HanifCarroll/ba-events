@@ -48,6 +48,7 @@ export const enrichEventsJob = task({
         total: 0,
         enriched: 0,
         failed: 0,
+        cancelled: 0,
         currentEvent: null,
       })
       return {
@@ -55,6 +56,7 @@ export const enrichEventsJob = task({
         enriched: 0,
         skipped: 0,
         failed: 0,
+        cancelled: 0,
         errors: [],
       }
     }
@@ -67,6 +69,7 @@ export const enrichEventsJob = task({
       total: events.length,
       enriched: 0,
       failed: 0,
+      cancelled: 0,
       venuesMatched: 0,
       venuesCreated: 0,
       currentEvent: events[0]?.name ?? null,
@@ -75,6 +78,7 @@ export const enrichEventsJob = task({
     // Track stats for metadata updates
     let enrichedCount = 0
     let failedCount = 0
+    let cancelledCount = 0
     let venuesMatched = 0
     let venuesCreated = 0
 
@@ -83,7 +87,9 @@ export const enrichEventsJob = task({
       delayMs: 1000, // 1 second between requests
       onProgress: (current, total, result) => {
         // Update counts
-        if (result.enriched) {
+        if (result.cancelled) {
+          cancelledCount++
+        } else if (result.enriched) {
           enrichedCount++
         } else if (!result.success) {
           failedCount++
@@ -107,6 +113,7 @@ export const enrichEventsJob = task({
           total,
           enriched: enrichedCount,
           failed: failedCount,
+          cancelled: cancelledCount,
           venuesMatched,
           venuesCreated,
           currentEvent: currentEventName,
@@ -114,9 +121,11 @@ export const enrichEventsJob = task({
 
         // Console logging (every 10 or at completion)
         if (current % 10 === 0 || current === total) {
-          console.log(`[enrich-events] Progress: ${current}/${total} (venues: ${venuesMatched} matched, ${venuesCreated} created)`)
+          console.log(`[enrich-events] Progress: ${current}/${total} (venues: ${venuesMatched} matched, ${venuesCreated} created, ${cancelledCount} cancelled)`)
         }
-        if (!result.success) {
+        if (result.cancelled) {
+          console.log(`[enrich-events] Event page gone, marked as cancelled: ${result.eventId}`)
+        } else if (!result.success) {
           console.warn(`[enrich-events] Failed: ${result.eventId} - ${result.error}`)
         }
       },

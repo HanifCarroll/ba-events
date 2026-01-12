@@ -8,6 +8,8 @@
  * serverless compatibility.
  */
 
+import { HttpError } from './errors'
+
 /**
  * Extract all JSON-LD structured data from HTML
  * Returns array of parsed JSON objects from <script type="application/ld+json"> tags
@@ -165,20 +167,26 @@ export const browserHeaders = {
 }
 
 /**
- * Fetch HTML content from a URL with browser-like headers
- * Returns null if the request fails
+ * Fetch HTML content from a URL with browser-like headers.
+ * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to distinguish error types.
+ * Returns null only for network errors (no response received).
  */
 export async function fetchHtml(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, { headers: browserHeaders })
 
     if (!response.ok) {
-      console.log(`[HTML Fetch] HTTP ${response.status} for ${url}`)
-      return null
+      // Throw HttpError so callers can distinguish 404s from other errors
+      throw new HttpError(response.status, response.statusText, url)
     }
 
     return await response.text()
   } catch (error) {
+    // Re-throw HttpError as-is for upstream handling
+    if (error instanceof HttpError) {
+      throw error
+    }
+    // Network errors, timeouts, etc. - log and return null
     console.log(`[HTML Fetch] Failed to fetch ${url}:`, error)
     return null
   }
