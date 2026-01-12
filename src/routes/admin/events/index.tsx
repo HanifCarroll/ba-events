@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   AlertCircle,
   FileText,
+  Link2,
 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
@@ -51,7 +52,6 @@ import { formatDateTime } from '@/shared/lib/utils/formatting'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
 import { buildEnrichmentsConfig } from './-components/enrichments-config'
-import { BackfillCard } from './-components/BackfillCard'
 import { EditEventSheet } from './-components/EditEventSheet'
 import type { EventWithVenue } from '@/shared/lib/types'
 import type { EventSearchParams } from '@/shared/lib/types/pagination'
@@ -75,6 +75,7 @@ const eventSearchSchema = z.object({
   // Data gap filters (for needs_attention tab) - server-side
   missingDescription: z.boolean().optional(),
   missingVenue: z.boolean().optional(),
+  missingLink: z.boolean().optional(),
   // Column filters (for DataTable)
   name: z.string().optional(),
   venue_name: z.string().optional(),
@@ -139,11 +140,12 @@ interface TabCounts {
   past: number
 }
 
-/** Check if event needs attention (missing description with link OR missing venue) */
+/** Check if event needs attention (missing description with link OR missing venue OR missing link) */
 function eventNeedsAttention(event: EventWithVenue): boolean {
   const missingDescriptionWithLink = !event.description_es && !!event.link
   const missingVenue = !event.venue_id
-  return missingDescriptionWithLink || missingVenue
+  const missingLink = !event.link
+  return missingDescriptionWithLink || missingVenue || missingLink
 }
 
 // Note: Tab counts are now fetched from the server via getEventTabCountsAction
@@ -158,7 +160,7 @@ function filterEvents(events: EventWithVenue[], params: EventSearchParams): Even
     // Tab filtering
     switch (tab) {
       case 'needs_attention':
-        if (event.status === 'past') return false
+        if (event.status === 'past' || event.status === 'cancelled') return false
         if (!eventNeedsAttention(event)) return false
         break
       case 'pending_review':
@@ -180,6 +182,9 @@ function filterEvents(events: EventWithVenue[], params: EventSearchParams): Even
     }
     if (params.missingVenue) {
       if (event.venue_id) return false
+    }
+    if (params.missingLink) {
+      if (event.link) return false
     }
 
     // Search filter
@@ -319,6 +324,18 @@ function EventListPage() {
     past: pastEvents !== null ? pastEvents.length : serverTabCounts.past,
   }), [serverTabCounts, pastEvents])
 
+  // Calculate filter counts for needs_attention tab (from active events only, excluding past/cancelled)
+  const filterCounts = useMemo(() => {
+    // Count from active events only (exclude past and cancelled)
+    const eventsToCount = activeEvents.filter(e => e.status !== 'past' && e.status !== 'cancelled')
+
+    return {
+      missingDescription: eventsToCount.filter(e => !e.description_es && !!e.link).length,
+      missingVenue: eventsToCount.filter(e => !e.venue_id).length,
+      missingLink: eventsToCount.filter(e => !e.link).length,
+    }
+  }, [activeEvents])
+
   // Filter events based on current params
   const filteredEvents = useMemo(
     () => filterEvents(allEvents, searchParams),
@@ -343,6 +360,7 @@ function EventListPage() {
     status: searchParams.status,
     missingDescription: searchParams.missingDescription ?? false,
     missingVenue: searchParams.missingVenue ?? false,
+    missingLink: searchParams.missingLink ?? false,
     sortBy: searchParams.sortBy ?? 'starts_at',
     sortOrder: (searchParams.sortDir ?? 'desc') as 'asc' | 'desc',
   }), [searchParams])
@@ -356,6 +374,7 @@ function EventListPage() {
     searchParams.status ||
     searchParams.missingDescription ||
     searchParams.missingVenue ||
+    searchParams.missingLink ||
     searchParams.sortBy
   )
 
@@ -386,6 +405,10 @@ function EventListPage() {
 
   const setMissingVenue = useCallback((value: boolean) => {
     navigate({ search: (prev) => ({ ...prev, missingVenue: value || undefined }), replace: true })
+  }, [navigate])
+
+  const setMissingLink = useCallback((value: boolean) => {
+    navigate({ search: (prev) => ({ ...prev, missingLink: value || undefined }), replace: true })
   }, [navigate])
 
   const setSorting = useCallback((sortBy: string | undefined, sortDir: 'asc' | 'desc' | undefined) => {
@@ -698,30 +721,38 @@ function EventListPage() {
 
           {/* Data quality filters - only show on needs_attention tab */}
           {activeTab === 'needs_attention' && (
-            <div className="space-y-3">
-              {/* Backfill Card for enriching pending records */}
-              <BackfillCard />
-
-              {/* Data gap filter checkboxes */}
-              <div className="flex items-center gap-4 flex-wrap">
-                <span className="text-sm text-muted-foreground">{m.admin_filter_by()}</span>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <Checkbox
-                    checked={filters.missingDescription}
-                    onCheckedChange={(checked) => setMissingDescription(checked === true)}
-                  />
-                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">{m.admin_missing_description()}</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <Checkbox
-                    checked={filters.missingVenue}
-                    onCheckedChange={(checked) => setMissingVenue(checked === true)}
-                  />
-                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">{m.admin_missing_venue()}</span>
-                </label>
-              </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="text-sm text-muted-foreground">{m.admin_filter_by()}</span>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={filters.missingDescription}
+                  onCheckedChange={(checked) => setMissingDescription(checked === true)}
+                />
+                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {m.admin_missing_description()} ({filterCounts.missingDescription})
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={filters.missingVenue}
+                  onCheckedChange={(checked) => setMissingVenue(checked === true)}
+                />
+                <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {m.admin_missing_venue()} ({filterCounts.missingVenue})
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={filters.missingLink}
+                  onCheckedChange={(checked) => setMissingLink(checked === true)}
+                />
+                <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {m.admin_missing_link()} ({filterCounts.missingLink})
+                </span>
+              </label>
             </div>
           )}
 

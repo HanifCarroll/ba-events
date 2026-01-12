@@ -121,6 +121,7 @@
   "admin_all_gaps": "All Gaps",
   "admin_missing_description": "Missing Description",
   "admin_missing_venue": "Missing Venue",
+  "admin_missing_link": "Missing Link",
   "admin_missing_categories": "Missing Categories",
   "admin_search_events": "Search events...",
   "admin_all_venues": "All Venues",
