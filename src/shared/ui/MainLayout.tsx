@@ -378,11 +378,11 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       {/* Main content */}
-      <main id="main-content" className="flex-1 min-h-0 overflow-hidden relative flex flex-col">
+      <main id="main-content" className="flex-1 min-h-0 relative flex flex-col">
         {/* Background gradient */}
         <div className="fixed inset-0 bg-gradient-to-br from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none" />
 
-        <div className="relative flex-1 min-h-0 overflow-hidden">
+        <div className="relative flex-1 min-h-0">
           {children}
         </div>
       </main>

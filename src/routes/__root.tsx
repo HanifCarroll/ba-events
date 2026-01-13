@@ -162,7 +162,7 @@ function RootDocument() {
       <head>
         <HeadContent />
       </head>
-      <body className="bg-background text-foreground antialiased overflow-hidden bg-grain">
+      <body className="bg-background text-foreground antialiased bg-grain">
         <ErrorBoundary>
           <ClientPostHogProvider>
             <QueryClientProvider client={queryClient}>
