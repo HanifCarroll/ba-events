@@ -4,7 +4,7 @@ import { getRequestHeader } from '@tanstack/react-start/server'
 import { z } from 'zod'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
-import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from '@/shared/lib/db/client'
+import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName, getEventsHappeningNow, getTonightsEvents } from '@/shared/lib/db/client'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth'
 import { trackServer } from '@/lib/analytics'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
@@ -33,6 +33,8 @@ import type {
   ListSavedEventsToolInput,
   GetEventDetailsToolInput,
   CheckEventSavedToolInput,
+  GetHappeningNowToolInput,
+  GetTonightsEventsToolInput,
 } from '@/shared/lib/types'
 
 // Initialize Anthropic client
@@ -221,6 +223,23 @@ You can help users save and manage events they're interested in:
 - Returns isSaved: true/false
 - Example: "This one's already on your list!" or "You haven't saved this one yet"
 
+## Context Tools
+
+These tools help you get quick context about what's happening:
+
+**get_happening_now** - Get events happening right now
+- Use when the user asks "what's happening right now?", "what's going on?", "anything happening?"
+- Returns events that have already started but haven't ended yet
+- Great for spontaneous plans - user can go immediately
+- Optional limit parameter (default: 5)
+
+**get_tonights_events** - Get tonight's events (6pm-6am)
+- Use when the user asks "what's on tonight?", "tonight's events"
+- Faster than search_events with timeFilter="tonight" for simple queries
+- Optional category and neighborhood filters
+- Optional limit parameter (default: 10)
+- Use search_events instead when user wants semantic/vibe-based search for tonight
+
 **When user is not logged in:**
 - These tools will return a helpful message asking them to log in
 - Don't apologize excessively - just let them know they need to sign in
@@ -377,6 +396,40 @@ or descriptive searches like "romantic date spot", "high energy dance party",
         },
       },
       required: ['eventId'],
+    },
+  },
+  {
+    name: 'get_happening_now',
+    description: `Get events that are currently happening right now. Use this when the user asks "what's happening right now?", "what's going on?", "anything happening?", or wants to find an event they can go to immediately. Returns events that have already started but haven't ended yet.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Maximum number of events to return (default: 5)',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_tonights_events',
+    description: `Get all events happening tonight (6pm today to 6am tomorrow). Use this when the user asks "what's on tonight?", "tonight's events", or wants to plan their evening. More focused than search_events with timeFilter="tonight" - returns events already filtered to tonight only.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        category: {
+          type: 'string',
+          description: `Optional category filter. Options: ${CATEGORIES.join(', ')}`,
+        },
+        neighborhood: {
+          type: 'string',
+          description: 'Optional Buenos Aires neighborhood filter',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of events to return (default: 10)',
+        },
+      },
     },
   },
 ]
@@ -787,6 +840,18 @@ interface CheckEventSavedToolUse {
   input: CheckEventSavedToolInput
 }
 
+interface GetHappeningNowToolUse {
+  id: string
+  name: 'get_happening_now'
+  input: GetHappeningNowToolInput
+}
+
+interface GetTonightsEventsToolUse {
+  id: string
+  name: 'get_tonights_events'
+  input: GetTonightsEventsToolInput
+}
+
 type ParsedToolUse =
   | SearchEventsToolUse
   | GetVenueDetailsToolUse
@@ -795,6 +860,8 @@ type ParsedToolUse =
   | ListSavedEventsToolUse
   | GetEventDetailsToolUse
   | CheckEventSavedToolUse
+  | GetHappeningNowToolUse
+  | GetTonightsEventsToolUse
 
 /**
  * Type guard for search_events tool input.
@@ -898,6 +965,28 @@ function isCheckEventSavedInput(input: unknown): input is CheckEventSavedToolInp
 }
 
 /**
+ * Type guard for get_happening_now tool input.
+ */
+function isGetHappeningNowInput(input: unknown): input is GetHappeningNowToolInput {
+  if (typeof input !== 'object' || input === null) return false
+  const obj = input as Record<string, unknown>
+  if (obj.limit !== undefined && typeof obj.limit !== 'number') return false
+  return true
+}
+
+/**
+ * Type guard for get_tonights_events tool input.
+ */
+function isGetTonightsEventsInput(input: unknown): input is GetTonightsEventsToolInput {
+  if (typeof input !== 'object' || input === null) return false
+  const obj = input as Record<string, unknown>
+  if (obj.category !== undefined && typeof obj.category !== 'string') return false
+  if (obj.neighborhood !== undefined && typeof obj.neighborhood !== 'string') return false
+  if (obj.limit !== undefined && typeof obj.limit !== 'number') return false
+  return true
+}
+
+/**
  * Type guards for new tools - narrow ParsedToolUse to specific types
  */
 function isSaveEventTool(toolUse: ParsedToolUse): toolUse is SaveEventToolUse {
@@ -918,6 +1007,14 @@ function isGetEventDetailsTool(toolUse: ParsedToolUse): toolUse is GetEventDetai
 
 function isCheckEventSavedTool(toolUse: ParsedToolUse): toolUse is CheckEventSavedToolUse {
   return toolUse.name === 'check_event_saved'
+}
+
+function isGetHappeningNowTool(toolUse: ParsedToolUse): toolUse is GetHappeningNowToolUse {
+  return toolUse.name === 'get_happening_now'
+}
+
+function isGetTonightsEventsTool(toolUse: ParsedToolUse): toolUse is GetTonightsEventsToolUse {
+  return toolUse.name === 'get_tonights_events'
 }
 
 // Process stream and collect response data
@@ -1000,6 +1097,18 @@ async function processStream(
           toolUses.push({
             id: currentToolUse.id,
             name: 'check_event_saved',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'get_happening_now' && isGetHappeningNowInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'get_happening_now',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'get_tonights_events' && isGetTonightsEventsInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'get_tonights_events',
             input: rawInput,
           })
         } else {
@@ -1179,6 +1288,20 @@ export const chat = createServerFn({ method: 'POST' })
                   type: 'tool_use',
                   id: toolUse.id,
                   name: 'check_event_saved',
+                  input: toolUse.input,
+                })
+              } else if (isGetHappeningNowTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'get_happening_now',
+                  input: toolUse.input,
+                })
+              } else if (isGetTonightsEventsTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'get_tonights_events',
                   input: toolUse.input,
                 })
               }
@@ -1374,6 +1497,80 @@ export const chat = createServerFn({ method: 'POST' })
                   isSaved: result.isSaved,
                   authenticated: userContext.isAuthenticated,
                 })
+              } else if (isGetHappeningNowTool(toolUse)) {
+                // Get events happening right now
+                try {
+                  const events = await getEventsHappeningNow()
+                  const limit = toolUse.input.limit ?? 5
+                  const limitedEvents = events.slice(0, limit)
+                  searchEvents = limitedEvents
+
+                  const resultContent = formatToolResult(limitedEvents)
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+
+                  console.log(`[DEBUG] get_happening_now returned ${limitedEvents.length} events`)
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'get_happening_now',
+                    success: true,
+                    resultCount: limitedEvents.length,
+                  })
+                } catch (toolError) {
+                  console.error('Tool execution error:', toolError)
+                  const errorContent = JSON.stringify({ error: 'Failed to get happening now events' })
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'get_happening_now',
+                    success: false,
+                    error: 'execution_error',
+                  })
+                }
+              } else if (isGetTonightsEventsTool(toolUse)) {
+                // Get tonight's events with optional category/neighborhood filtering
+                try {
+                  let events = await getTonightsEvents()
+
+                  // Apply optional filters
+                  if (toolUse.input.category) {
+                    events = events.filter(e => e.categories.includes(toolUse.input.category!))
+                  }
+                  if (toolUse.input.neighborhood) {
+                    const matchNeighborhood = NEIGHBORHOODS.find(
+                      n => n.toLowerCase() === toolUse.input.neighborhood?.toLowerCase()
+                    )
+                    if (matchNeighborhood) {
+                      events = events.filter(e => e.venue_neighborhood === matchNeighborhood)
+                    }
+                  }
+
+                  const limit = toolUse.input.limit ?? 10
+                  const limitedEvents = events.slice(0, limit)
+                  searchEvents = limitedEvents
+
+                  const resultContent = formatToolResult(limitedEvents)
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+
+                  console.log(`[DEBUG] get_tonights_events returned ${limitedEvents.length} events`)
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'get_tonights_events',
+                    success: true,
+                    resultCount: limitedEvents.length,
+                    hasCategory: !!toolUse.input.category,
+                    hasNeighborhood: !!toolUse.input.neighborhood,
+                  })
+                } catch (toolError) {
+                  console.error('Tool execution error:', toolError)
+                  const errorContent = JSON.stringify({ error: "Failed to get tonight's events" })
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'get_tonights_events',
+                    success: false,
+                    error: 'execution_error',
+                  })
+                }
               }
             }
 

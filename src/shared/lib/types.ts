@@ -254,6 +254,20 @@ export interface CheckEventSavedToolInput {
   eventId: string
 }
 
+export interface GetHappeningNowToolInput {
+  /** Maximum number of events to return */
+  limit?: number
+}
+
+export interface GetTonightsEventsToolInput {
+  /** Optional category filter */
+  category?: string
+  /** Optional neighborhood filter */
+  neighborhood?: string
+  /** Maximum number of events to return */
+  limit?: number
+}
+
 // Discriminated union for type-safe tool use blocks
 export type SearchEventsToolUseBlock = {
   type: 'tool_use'
@@ -304,6 +318,20 @@ export type CheckEventSavedToolUseBlock = {
   input: CheckEventSavedToolInput
 }
 
+export type GetHappeningNowToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'get_happening_now'
+  input: GetHappeningNowToolInput
+}
+
+export type GetTonightsEventsToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'get_tonights_events'
+  input: GetTonightsEventsToolInput
+}
+
 export type ToolUseBlock =
   | SearchEventsToolUseBlock
   | GetVenueDetailsToolUseBlock
@@ -312,6 +340,8 @@ export type ToolUseBlock =
   | ListSavedEventsToolUseBlock
   | GetEventDetailsToolUseBlock
   | CheckEventSavedToolUseBlock
+  | GetHappeningNowToolUseBlock
+  | GetTonightsEventsToolUseBlock
 
 export type ToolResultBlock = {
   type: 'tool_result'
