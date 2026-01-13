@@ -7,6 +7,8 @@ import { ChatInput } from './ChatInput'
 import { SuggestedPrompts } from './SuggestedPrompts'
 import { getLocale } from '@/paraglide/runtime'
 import { track } from '@/lib/analytics'
+import { usePullToRefresh } from '@/shared/hooks/usePullToRefresh'
+import { PullToRefreshIndicator } from '@/shared/ui/PullToRefreshIndicator'
 
 export function ChatContainer() {
   // Track events, suggestions, and directions separately since they come as data parts
@@ -15,6 +17,11 @@ export function ChatContainer() {
   const [directions, setDirections] = useState<DirectionsData | null>(null)
   const startTimeRef = useRef<number>(0)
   const eventsCountRef = useRef<number>(0)
+
+  // Pull-to-refresh for mobile
+  const { containerRef, pullDistance, isRefreshing } = usePullToRefresh({
+    onRefresh: () => window.location.reload(),
+  })
 
   const {
     messages,
@@ -152,7 +159,16 @@ export function ChatContainer() {
   return (
     <div className="relative h-full min-h-0 flex flex-col">
       {/* Message area - scrollable */}
-      <div className="flex-1 min-h-0 overflow-y-auto touch-pan-y">
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 overflow-y-auto touch-pan-y"
+      >
+        {/* Pull-to-refresh indicator */}
+        <PullToRefreshIndicator
+          pullDistance={pullDistance}
+          isRefreshing={isRefreshing}
+        />
+
         {hasMessages ? (
           <MessageList
             messages={displayMessages}
