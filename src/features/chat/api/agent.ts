@@ -6,9 +6,18 @@ import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
 import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName } from '@/shared/lib/db/client'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth'
+import { trackServer } from '@/lib/analytics'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
 import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
+import {
+  getUserToolContext,
+  saveEventForUser,
+  unsaveEventForUser,
+  listSavedEventsForUser,
+  getEventDetailsForUser,
+  checkEventSavedForUser,
+} from './user-tools'
 import type {
   EventWithVenue,
   EventFilters,
@@ -19,6 +28,11 @@ import type {
   StreamEvent,
   SearchEventsToolInput,
   GetVenueDetailsToolInput,
+  SaveEventToolInput,
+  UnsaveEventToolInput,
+  ListSavedEventsToolInput,
+  GetEventDetailsToolInput,
+  CheckEventSavedToolInput,
 } from '@/shared/lib/types'
 
 // Initialize Anthropic client
@@ -181,6 +195,37 @@ Sound good?"
 
 I'd go with [Event 1] if I were you - [reason]."
 
+## User Actions (Saved Events)
+
+You can help users save and manage events they're interested in:
+
+**save_event** - Save an event to their list
+- Use when they say: "save that", "I want to go", "add to my list", "bookmark it"
+- You need the event ID from a previous search result
+- Example: User says "save the first one" after seeing options → use save_event with that event's ID
+
+**unsave_event** - Remove an event from their list
+- Use when they say: "remove that", "unsave it", "take it off my list"
+
+**list_saved_events** - Show their saved events
+- Use when they ask: "what did I save?", "my events", "show my list", "what's on my calendar?"
+- Can filter: "upcoming" (future), "past" (already happened), or "all"
+- Default to "upcoming" unless they specifically ask about past events
+
+**get_event_details** - Get full details about an event
+- Use when they want more info: "tell me more about that", "what time does it start?"
+- Useful when they reference a previously mentioned event
+
+**check_event_saved** - Check if an event is already saved
+- Use proactively when showing events to let users know if they've already saved something
+- Returns isSaved: true/false
+- Example: "This one's already on your list!" or "You haven't saved this one yet"
+
+**When user is not logged in:**
+- These tools will return a helpful message asking them to log in
+- Don't apologize excessively - just let them know they need to sign in
+- Example: "You'll need to sign in to save events. Want me to help you find the login?"
+
 ## CRITICAL Rules
 
 **Single Search Model:**
@@ -262,6 +307,76 @@ or descriptive searches like "romantic date spot", "high energy dance party",
           description: 'The name of the venue to search for',
         },
       },
+    },
+  },
+  {
+    name: 'save_event',
+    description: `Save an event to the user's saved events list. Use when the user expresses interest in an event ("save that", "bookmark it", "I want to go", "add to my list"). Requires the user to be logged in.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        eventId: {
+          type: 'string',
+          description: 'The event ID to save (from a previous search result)',
+        },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'unsave_event',
+    description: `Remove an event from the user's saved events list. Use when the user wants to remove a saved event ("remove that", "unsave it", "take it off my list").`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        eventId: {
+          type: 'string',
+          description: 'The event ID to remove from saved events',
+        },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'list_saved_events',
+    description: `Get the user's saved events. Use when the user asks about their saved events ("what did I save?", "my events", "my list", "what's on my calendar?"). Can filter by upcoming or past events.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        filter: {
+          type: 'string',
+          enum: ['all', 'upcoming', 'past'],
+          description: 'Filter saved events: "upcoming" for future events, "past" for past events, "all" for everything',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_event_details',
+    description: `Get complete details about a specific event. Use when the user wants more information about an event you previously mentioned, or asks "tell me more about that".`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        eventId: {
+          type: 'string',
+          description: 'The event ID to get details for',
+        },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'check_event_saved',
+    description: `Check if a specific event is saved in the user's list. Use this proactively before mentioning an event to let the user know if they've already saved it. Returns isSaved: true/false.`,
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        eventId: {
+          type: 'string',
+          description: 'The event ID to check',
+        },
+      },
+      required: ['eventId'],
     },
   },
 ]
@@ -641,7 +756,45 @@ interface GetVenueDetailsToolUse {
   input: GetVenueDetailsToolInput
 }
 
-type ParsedToolUse = SearchEventsToolUse | GetVenueDetailsToolUse
+// New user action tool use types (input types imported from shared/lib/types)
+interface SaveEventToolUse {
+  id: string
+  name: 'save_event'
+  input: SaveEventToolInput
+}
+
+interface UnsaveEventToolUse {
+  id: string
+  name: 'unsave_event'
+  input: UnsaveEventToolInput
+}
+
+interface ListSavedEventsToolUse {
+  id: string
+  name: 'list_saved_events'
+  input: ListSavedEventsToolInput
+}
+
+interface GetEventDetailsToolUse {
+  id: string
+  name: 'get_event_details'
+  input: GetEventDetailsToolInput
+}
+
+interface CheckEventSavedToolUse {
+  id: string
+  name: 'check_event_saved'
+  input: CheckEventSavedToolInput
+}
+
+type ParsedToolUse =
+  | SearchEventsToolUse
+  | GetVenueDetailsToolUse
+  | SaveEventToolUse
+  | UnsaveEventToolUse
+  | ListSavedEventsToolUse
+  | GetEventDetailsToolUse
+  | CheckEventSavedToolUse
 
 /**
  * Type guard for search_events tool input.
@@ -698,6 +851,75 @@ function isGetVenueDetailsTool(toolUse: ParsedToolUse): toolUse is GetVenueDetai
   return toolUse.name === 'get_venue_details'
 }
 
+/**
+ * Type guard for save_event tool input.
+ */
+function isSaveEventInput(input: unknown): input is SaveEventToolInput {
+  if (typeof input !== 'object' || input === null) return false
+  const obj = input as Record<string, unknown>
+  return typeof obj.eventId === 'string'
+}
+
+/**
+ * Type guard for unsave_event tool input.
+ */
+function isUnsaveEventInput(input: unknown): input is UnsaveEventToolInput {
+  if (typeof input !== 'object' || input === null) return false
+  const obj = input as Record<string, unknown>
+  return typeof obj.eventId === 'string'
+}
+
+/**
+ * Type guard for list_saved_events tool input.
+ */
+function isListSavedEventsInput(input: unknown): input is ListSavedEventsToolInput {
+  if (typeof input !== 'object' || input === null) return false
+  const obj = input as Record<string, unknown>
+  if (obj.filter !== undefined && !['all', 'upcoming', 'past'].includes(obj.filter as string)) return false
+  return true
+}
+
+/**
+ * Type guard for get_event_details tool input.
+ */
+function isGetEventDetailsInput(input: unknown): input is GetEventDetailsToolInput {
+  if (typeof input !== 'object' || input === null) return false
+  const obj = input as Record<string, unknown>
+  return typeof obj.eventId === 'string'
+}
+
+/**
+ * Type guard for check_event_saved tool input.
+ */
+function isCheckEventSavedInput(input: unknown): input is CheckEventSavedToolInput {
+  if (typeof input !== 'object' || input === null) return false
+  const obj = input as Record<string, unknown>
+  return typeof obj.eventId === 'string'
+}
+
+/**
+ * Type guards for new tools - narrow ParsedToolUse to specific types
+ */
+function isSaveEventTool(toolUse: ParsedToolUse): toolUse is SaveEventToolUse {
+  return toolUse.name === 'save_event'
+}
+
+function isUnsaveEventTool(toolUse: ParsedToolUse): toolUse is UnsaveEventToolUse {
+  return toolUse.name === 'unsave_event'
+}
+
+function isListSavedEventsTool(toolUse: ParsedToolUse): toolUse is ListSavedEventsToolUse {
+  return toolUse.name === 'list_saved_events'
+}
+
+function isGetEventDetailsTool(toolUse: ParsedToolUse): toolUse is GetEventDetailsToolUse {
+  return toolUse.name === 'get_event_details'
+}
+
+function isCheckEventSavedTool(toolUse: ParsedToolUse): toolUse is CheckEventSavedToolUse {
+  return toolUse.name === 'check_event_saved'
+}
+
 // Process stream and collect response data
 interface StreamResult {
   text: string
@@ -748,6 +970,36 @@ async function processStream(
           toolUses.push({
             id: currentToolUse.id,
             name: 'get_venue_details',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'save_event' && isSaveEventInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'save_event',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'unsave_event' && isUnsaveEventInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'unsave_event',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'list_saved_events' && isListSavedEventsInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'list_saved_events',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'get_event_details' && isGetEventDetailsInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'get_event_details',
+            input: rawInput,
+          })
+        } else if (currentToolUse.name === 'check_event_saved' && isCheckEventSavedInput(rawInput)) {
+          toolUses.push({
+            id: currentToolUse.id,
+            name: 'check_event_saved',
             input: rawInput,
           })
         } else {
@@ -817,6 +1069,11 @@ export const chat = createServerFn({ method: 'POST' })
       console.log(`[RATE LIMIT] IP ${ip} exceeded rate limit, reset at ${new Date(reset).toISOString()}`)
       return createRateLimitErrorStream(reset)
     }
+
+    // Get user context for authenticated actions (save events, etc.)
+    // User identity comes from server-side session cookies - never from client input
+    const userContext = await getUserToolContext()
+    console.log(`[DEBUG] User context: authenticated=${userContext.isAuthenticated}, userId=${userContext.userId?.slice(0, 8) ?? 'none'}`)
 
     // Build messages from history (already in proper APIMessage format)
     const messages: Anthropic.MessageParam[] = [
@@ -889,6 +1146,41 @@ export const chat = createServerFn({ method: 'POST' })
                   name: 'get_venue_details',
                   input: toolUse.input,
                 })
+              } else if (isSaveEventTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'save_event',
+                  input: toolUse.input,
+                })
+              } else if (isUnsaveEventTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'unsave_event',
+                  input: toolUse.input,
+                })
+              } else if (isListSavedEventsTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'list_saved_events',
+                  input: toolUse.input,
+                })
+              } else if (isGetEventDetailsTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'get_event_details',
+                  input: toolUse.input,
+                })
+              } else if (isCheckEventSavedTool(toolUse)) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: 'check_event_saved',
+                  input: toolUse.input,
+                })
               }
             }
 
@@ -916,11 +1208,23 @@ export const chat = createServerFn({ method: 'POST' })
                   toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
 
                   console.log(`[DEBUG] search_events returned ${events.length} events`)
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'search_events',
+                    success: true,
+                    resultCount: events.length,
+                    hasQuery: !!toolUse.input.query,
+                    hasFilters: !!(toolUse.input.categories || toolUse.input.neighborhood || toolUse.input.timeFilter),
+                  })
                 } catch (toolError) {
                   console.error('Tool execution error:', toolError)
                   const errorContent = JSON.stringify({ error: 'Failed to search for events' })
                   toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
                   toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'search_events',
+                    success: false,
+                    error: 'execution_error',
+                  })
                 }
               } else if (isGetVenueDetailsTool(toolUse)) {
                 try {
@@ -931,12 +1235,145 @@ export const chat = createServerFn({ method: 'POST' })
                   toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
 
                   console.log(`[DEBUG] get_venue_details returned: ${venue?.name ?? 'not found'}`)
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'get_venue_details',
+                    success: true,
+                    found: !!venue,
+                  })
                 } catch (toolError) {
                   console.error('Tool execution error:', toolError)
                   const errorContent = JSON.stringify({ error: 'Failed to get venue details' })
                   toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
                   toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
+                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                    tool: 'get_venue_details',
+                    success: false,
+                    error: 'execution_error',
+                  })
                 }
+              } else if (isSaveEventTool(toolUse)) {
+                // Save event - requires auth, uses userContext
+                const result = await saveEventForUser(toolUse.input.eventId, userContext)
+                const resultContent = JSON.stringify(result)
+                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                console.log(`[DEBUG] save_event: success=${result.success}, error=${result.error ?? 'none'}`)
+                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                  tool: 'save_event',
+                  success: result.success,
+                  error: result.error,
+                  authenticated: userContext.isAuthenticated,
+                })
+              } else if (isUnsaveEventTool(toolUse)) {
+                // Unsave event - requires auth, uses userContext
+                const result = await unsaveEventForUser(toolUse.input.eventId, userContext)
+                const resultContent = JSON.stringify(result)
+                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                console.log(`[DEBUG] unsave_event: success=${result.success}, error=${result.error ?? 'none'}`)
+                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                  tool: 'unsave_event',
+                  success: result.success,
+                  error: result.error,
+                  authenticated: userContext.isAuthenticated,
+                })
+              } else if (isListSavedEventsTool(toolUse)) {
+                // List saved events - requires auth, uses userContext
+                const filter = toolUse.input.filter ?? 'all'
+                const result = await listSavedEventsForUser(filter, userContext)
+
+                // Format the result for Claude
+                const formattedResult = {
+                  success: result.success,
+                  error: result.error,
+                  count: result.count ?? 0,
+                  upcomingCount: result.upcomingCount ?? 0,
+                  pastCount: result.pastCount ?? 0,
+                  events: (result.events ?? []).map(e => ({
+                    id: e.id,
+                    name: e.name,
+                    description: e.description_en,
+                    venue: e.venue_name,
+                    neighborhood: e.venue_neighborhood,
+                    dateTime: formatInBA(e.starts_at),
+                    price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
+                    categories: e.categories,
+                    isPast: new Date(e.starts_at) < new Date(),
+                  })),
+                }
+
+                const resultContent = JSON.stringify(formattedResult)
+                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+
+                // Also send events to the UI if we have them
+                if (result.events && result.events.length > 0) {
+                  searchEvents = result.events
+                }
+
+                console.log(`[DEBUG] list_saved_events: count=${result.count ?? 0}, filter=${filter}`)
+                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                  tool: 'list_saved_events',
+                  success: result.success,
+                  error: result.error,
+                  authenticated: userContext.isAuthenticated,
+                  filter,
+                  count: result.count ?? 0,
+                })
+              } else if (isGetEventDetailsTool(toolUse)) {
+                // Get event details - no auth required (public data)
+                const result = await getEventDetailsForUser(toolUse.input.eventId)
+
+                if (result.success && result.event) {
+                  const formattedResult = {
+                    success: true,
+                    event: {
+                      id: result.event.id,
+                      name: result.event.name,
+                      description: result.event.description_en || result.event.description_es,
+                      venue: result.event.venue_name,
+                      venueAddress: result.event.venue_address,
+                      neighborhood: result.event.venue_neighborhood,
+                      dateTime: formatInBA(result.event.starts_at),
+                      endsAt: result.event.ends_at ? formatInBA(result.event.ends_at) : null,
+                      price: result.event.is_free ? 'Free' : result.event.price ? `$${result.event.price} ARS` : 'TBA',
+                      categories: result.event.categories,
+                      ticketUrl: result.event.ticket_url,
+                      link: result.event.link,
+                      imageUrl: result.event.image_url,
+                    },
+                  }
+                  const resultContent = JSON.stringify(formattedResult)
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+
+                  // Send as a single event to the UI
+                  searchEvents = [result.event]
+                } else {
+                  const resultContent = JSON.stringify({ success: false, error: 'Event not found' })
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                }
+
+                console.log(`[DEBUG] get_event_details: success=${result.success}`)
+                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                  tool: 'get_event_details',
+                  success: result.success,
+                  found: result.success && !!result.event,
+                })
+              } else if (isCheckEventSavedTool(toolUse)) {
+                // Check if event is saved - requires auth
+                const result = await checkEventSavedForUser(toolUse.input.eventId, userContext)
+                const resultContent = JSON.stringify(result)
+                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
+                console.log(`[DEBUG] check_event_saved: isSaved=${result.isSaved}, success=${result.success}`)
+                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                  tool: 'check_event_saved',
+                  success: result.success,
+                  isSaved: result.isSaved,
+                  authenticated: userContext.isAuthenticated,
+                })
               }
             }
 

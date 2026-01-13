@@ -26,6 +26,83 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Agent-Native Architecture: Tier 1 User Action Tools
+
+**Date:** 2026-01-13
+
+**Decision:** Implement user action tools for the AI agent following the "Agent-native Architecture" principles from the article by Dan Shipper and Claude. Added tools for save_event, unsave_event, list_saved_events, get_event_details, and check_event_saved.
+
+**Inspiration:**
+The "Agent-native Architectures" article outlines 5 key principles:
+1. **Parity** - Whatever the user can do through the UI, the agent should be able to achieve through tools
+2. **Granularity** - Tools should be atomic primitives
+3. **Composability** - With atomic tools and parity, you can create new features just by writing prompts
+4. **Emergent Capability** - The agent can accomplish things you didn't explicitly design for
+5. **Improvement Over Time** - Agent-native apps get better through accumulated context
+
+**Problem:**
+Our AI concierge had only 2 tools (search_events, get_venue_details), creating a significant parity gap:
+- Users could save events via UI but agent could not
+- Agent had no knowledge of user's saved events
+- Agent couldn't help users manage their event list
+- Agent had no user context (was effectively anonymous)
+
+**Solution:**
+
+Implemented Tier 1 tools with secure session-based authentication:
+
+| Tool | Purpose | Auth Required |
+|------|---------|---------------|
+| save_event | Save event to user's list | Yes |
+| unsave_event | Remove event from list | Yes |
+| list_saved_events | Get user's saved events | Yes |
+| get_event_details | Get full event info | No |
+| check_event_saved | Check if event is saved | Yes |
+
+**Security Model:**
+- User identity derived from server-side session cookies via `getSessionUser()`
+- LLM never sees user IDs or tokens (brokered credentials pattern)
+- Supabase Row-Level Security (RLS) provides secondary protection
+- Graceful degradation for anonymous users (helpful error messages)
+
+**Analytics:**
+Added server-side PostHog tracking for all tool usage to understand:
+- Which tools users actually use
+- Success/failure rates
+- Auth patterns (how often tools fail due to not being logged in)
+
+**Alternatives Considered:**
+- **OAuth On-Behalf-Of**: Enterprise pattern, too complex for this use case
+- **Passing user tokens to LLM**: Security risk, LLM could leak tokens
+- **MCP Authorization**: Anthropic's emerging pattern, not yet production-ready
+- **Client-side only tools**: Would lose the ability to act on user's behalf
+
+**Rationale:**
+1. **Parity principle**: Users can now say "save that" instead of clicking buttons
+2. **Security**: Session-based delegation is simple and well-understood
+3. **Extensibility**: Pattern easily extends to future tools (Tier 2, Tier 3)
+4. **Analytics**: Tool usage data will inform which features to build next
+
+**Files Created:**
+- `src/features/chat/api/user-tools.ts` - Server functions for user actions
+- `docs/agent-native-architecture.md` - Analysis and recommendations document
+
+**Files Modified:**
+- `src/features/chat/api/agent.ts` - Added tools, type guards, executors, system prompt
+- `src/shared/lib/types.ts` - Added tool input types and tool use block types
+- `src/lib/analytics.ts` - Added server-side tracking with posthog-node
+
+**Next Steps (Tier 2 Tools):**
+- `get_user_context` - User preferences, saved count, recent searches
+- `get_happening_now` - Events currently in progress
+- `get_tonights_events` - Quick access to tonight's events
+
+**References:**
+- "Agent-native Architectures" by Dan Shipper and Claude (Every)
+- See `docs/agent-native-architecture.md` for full analysis
+
+---
+
 ### Mark Events as Cancelled When Enrichment Encounters 404
 
 **Date:** 2026-01-12

@@ -229,6 +229,31 @@ export interface GetVenueDetailsToolInput {
   venueName?: string
 }
 
+export interface SaveEventToolInput {
+  /** The event ID to save */
+  eventId: string
+}
+
+export interface UnsaveEventToolInput {
+  /** The event ID to remove from saved events */
+  eventId: string
+}
+
+export interface ListSavedEventsToolInput {
+  /** Filter saved events by time */
+  filter?: 'all' | 'upcoming' | 'past'
+}
+
+export interface GetEventDetailsToolInput {
+  /** The event ID to get details for */
+  eventId: string
+}
+
+export interface CheckEventSavedToolInput {
+  /** The event ID to check if saved */
+  eventId: string
+}
+
 // Discriminated union for type-safe tool use blocks
 export type SearchEventsToolUseBlock = {
   type: 'tool_use'
@@ -244,7 +269,49 @@ export type GetVenueDetailsToolUseBlock = {
   input: GetVenueDetailsToolInput
 }
 
-export type ToolUseBlock = SearchEventsToolUseBlock | GetVenueDetailsToolUseBlock
+export type SaveEventToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'save_event'
+  input: SaveEventToolInput
+}
+
+export type UnsaveEventToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'unsave_event'
+  input: UnsaveEventToolInput
+}
+
+export type ListSavedEventsToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'list_saved_events'
+  input: ListSavedEventsToolInput
+}
+
+export type GetEventDetailsToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'get_event_details'
+  input: GetEventDetailsToolInput
+}
+
+export type CheckEventSavedToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: 'check_event_saved'
+  input: CheckEventSavedToolInput
+}
+
+export type ToolUseBlock =
+  | SearchEventsToolUseBlock
+  | GetVenueDetailsToolUseBlock
+  | SaveEventToolUseBlock
+  | UnsaveEventToolUseBlock
+  | ListSavedEventsToolUseBlock
+  | GetEventDetailsToolUseBlock
+  | CheckEventSavedToolUseBlock
 
 export type ToolResultBlock = {
   type: 'tool_result'

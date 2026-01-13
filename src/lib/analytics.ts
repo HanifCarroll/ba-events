@@ -1,4 +1,5 @@
 import { getLocale } from '@/paraglide/runtime'
+import { PostHog } from 'posthog-node'
 
 // Chat events - core feature tracking
 export type ChatEvent =
@@ -43,12 +44,17 @@ export type ConciergeEvent =
   | 'concierge:get_directions'
   | 'concierge:share_plan'
 
+// Agent tool usage events (server-side tracking)
+export type AgentToolEvent =
+  | 'agent:tool_used'
+
 export type AnalyticsEvent =
   | ChatEvent
   | EventEngagementEvent
   | AuthEvent
   | AdminEvent
   | ConciergeEvent
+  | AgentToolEvent
 
 // Lazy-loaded PostHog instance (client-side only)
 let posthogInstance: typeof import('posthog-js').default | null = null
@@ -86,5 +92,51 @@ export function track(
         locale: getLocale(),
       })
     }
+  })
+}
+
+// Server-side PostHog client (lazy initialized)
+let serverPostHogClient: PostHog | null = null
+
+function getServerPostHog(): PostHog | null {
+  if (typeof window !== 'undefined') return null // Client-side, don't use server client
+
+  if (!serverPostHogClient) {
+    const apiKey = process.env.VITE_POSTHOG_KEY
+    if (!apiKey) {
+      console.warn('[Analytics] VITE_POSTHOG_KEY not set, server-side tracking disabled')
+      return null
+    }
+    serverPostHogClient = new PostHog(apiKey, {
+      host: 'https://us.i.posthog.com',
+      flushAt: 1, // Flush immediately for serverless
+      flushInterval: 0,
+    })
+  }
+  return serverPostHogClient
+}
+
+/**
+ * Track an analytics event from the server.
+ * Used for agent tool usage and other server-side events.
+ * @param event - The event name
+ * @param distinctId - User ID or 'anonymous' for unauthenticated users
+ * @param properties - Additional event properties
+ */
+export function trackServer(
+  event: AnalyticsEvent,
+  distinctId: string,
+  properties?: Record<string, unknown>
+) {
+  const client = getServerPostHog()
+  if (!client) return
+
+  client.capture({
+    distinctId,
+    event,
+    properties: {
+      ...properties,
+      source: 'server',
+    },
   })
 }
