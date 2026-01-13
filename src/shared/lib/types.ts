@@ -357,6 +357,14 @@ export interface APIMessage {
   content: string | ContentBlock[]
 }
 
+// Directions data for Maps links
+export interface DirectionsData {
+  venueName: string
+  address: string
+  mapsUrl: string
+  eventName?: string
+}
+
 // Chat message types (for UI display)
 export interface ChatMessage {
   id: string
@@ -364,6 +372,7 @@ export interface ChatMessage {
   content: string // Display text
   events?: EventWithVenue[]
   suggestions?: RefinementSuggestion[]
+  directions?: DirectionsData
   timestamp: Date
   isStreaming?: boolean
 }

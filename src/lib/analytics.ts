@@ -6,6 +6,7 @@ export type ChatEvent =
   | 'chat:response_received'
   | 'chat:event_clicked'
   | 'chat:no_results'
+  | 'chat:directions_opened'
   | 'chat:error'
 
 // Event engagement tracking

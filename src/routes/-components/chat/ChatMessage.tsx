@@ -4,6 +4,7 @@ import { cn } from '@/shared/lib/utils'
 import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
 import { EventList } from './../events/EventList'
 import { RefinementSuggestions } from './RefinementSuggestions'
+import { DirectionsCard } from './DirectionsCard'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -16,10 +17,11 @@ export const ChatMessage = memo(function ChatMessage({ message, onSuggestionSele
   const hasContent = message.content.trim().length > 0
   const hasEvents = message.events && message.events.length > 0
   const hasSuggestions = message.suggestions && message.suggestions.length > 0
+  const hasDirections = !!message.directions
 
   // Don't render empty assistant messages that are still streaming (waiting for tool results)
   // The loading indicator in MessageList handles this state
-  if (!isUser && !hasContent && !hasEvents && message.isStreaming) {
+  if (!isUser && !hasContent && !hasEvents && !hasDirections && message.isStreaming) {
     return null
   }
 
@@ -63,6 +65,13 @@ export const ChatMessage = memo(function ChatMessage({ message, onSuggestionSele
           </div>
         )}
 
+        {/* Directions card for assistant messages */}
+        {!isUser && hasDirections && (
+          <div className={hasContent || hasEvents ? 'mt-4' : ''}>
+            <DirectionsCard directions={message.directions!} />
+          </div>
+        )}
+
         {/* Refinement suggestions - show after events when not streaming */}
         {!isUser && hasSuggestions && !message.isStreaming && onSuggestionSelect && (
           <RefinementSuggestions
@@ -73,7 +82,7 @@ export const ChatMessage = memo(function ChatMessage({ message, onSuggestionSele
         )}
 
         {/* Timestamp - only show when there's content or message is complete */}
-        {(hasContent || hasEvents || !message.isStreaming) && (
+        {(hasContent || hasEvents || hasDirections || !message.isStreaming) && (
           <p
             className={cn(
               'text-[10px] text-muted-foreground/60 mt-1.5 tracking-wide',

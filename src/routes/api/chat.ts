@@ -20,7 +20,7 @@ import { getSystemPrompt } from '@/features/chat/api/prompts'
 import { generateSuggestions } from '@/features/chat/api/suggestions'
 import { trackServer } from '@/lib/analytics.server'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventWithVenue, DirectionsData } from '@/shared/lib/types'
 import type { SearchEventsInput } from '@/features/chat/api/tools/search-events'
 
 // Initialize Anthropic provider
@@ -117,6 +117,7 @@ export const Route = createFileRoute('/api/chat' as any)({
         const allEvents = new Map<string, EventWithVenue>()
         let lastSearchInput: SearchEventsInput | null = null
         let lastOriginalQuery = ''
+        let directionsData: DirectionsData | null = null
 
         // Get the last user message for suggestions
         const lastUserMessage = messages.filter(m => m.role === 'user').pop()
@@ -140,7 +141,17 @@ export const Route = createFileRoute('/api/chat' as any)({
                 onStepFinish: ({ toolCalls, toolResults }) => {
                   // Accumulate events from each step
                   for (const result of toolResults) {
-                    const toolOutput = result.output as { events?: EventWithVenue[]; metadata?: { toolInput?: SearchEventsInput } } | undefined
+                    const toolOutput = result.output as {
+                      events?: EventWithVenue[]
+                      metadata?: { toolInput?: SearchEventsInput }
+                      // For get_directions tool
+                      success?: boolean
+                      venueName?: string
+                      address?: string
+                      mapsUrl?: string
+                      eventName?: string
+                    } | undefined
+
                     if (toolOutput?.events) {
                       for (const event of toolOutput.events) {
                         allEvents.set(event.id, event)
@@ -149,6 +160,15 @@ export const Route = createFileRoute('/api/chat' as any)({
                     // Track last search input for suggestions
                     if (result.toolName === 'search_events' && toolOutput?.metadata?.toolInput) {
                       lastSearchInput = toolOutput.metadata.toolInput
+                    }
+                    // Capture directions data
+                    if (result.toolName === 'get_directions' && toolOutput?.success && toolOutput?.mapsUrl) {
+                      directionsData = {
+                        venueName: toolOutput.venueName!,
+                        address: toolOutput.address!,
+                        mapsUrl: toolOutput.mapsUrl,
+                        eventName: toolOutput.eventName,
+                      }
                     }
                   }
 
@@ -193,6 +213,15 @@ export const Route = createFileRoute('/api/chat' as any)({
                   })
                   console.log(`[DEBUG] Generated ${suggestions.length} suggestions`)
                 }
+              }
+
+              // Send directions data if available
+              if (directionsData) {
+                writer.write({
+                  type: 'data-directions' as const,
+                  data: directionsData,
+                })
+                console.log(`[DEBUG] Sending directions for "${directionsData.venueName}"`)
               }
             } catch (error) {
               console.error('[Chat API] Error:', error)

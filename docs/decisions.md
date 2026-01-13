@@ -26,6 +26,131 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Migrate to Vercel AI SDK
+
+**Date:** 2026-01-13
+
+**Decision:** Replace the custom Anthropic SDK streaming implementation with Vercel AI SDK (`ai`, `@ai-sdk/anthropic`, `@ai-sdk/react`) for simplified agent loops, built-in streaming, and better TypeScript integration.
+
+**Related Decisions:**
+- True Agent Loop with Event Accumulation (2026-01-13) - Previous custom implementation
+- Agent-Native Architecture: Tier 1 User Action Tools (2026-01-13) - Tools migrated to AI SDK format
+
+**Problem:**
+The custom agent implementation in `agent.ts` (~571 lines) had:
+1. Manual agent loop logic with iteration tracking
+2. Custom SSE streaming with `sendEvent()` helper
+3. Manual tool execution with type guards
+4. Complex stream parsing on client with `processStream()`
+5. Manual message history management
+
+**Solution:**
+Migrate to Vercel AI SDK which provides:
+
+1. **Server-side (`/api/chat`):**
+```typescript
+import { streamText, createUIMessageStream } from 'ai'
+import { createAnthropic } from '@ai-sdk/anthropic'
+
+return createUIMessageStream({
+  execute: async (writer) => {
+    const result = streamText({
+      model: anthropic('claude-sonnet-4-5-20250929'),
+      system: getSystemPrompt(locale),
+      messages: convertToAIMessages(history),
+      tools: createTools(userContext, locale),
+      maxSteps: 5, // Replaces manual iteration loop
+      onStepFinish: ({ toolCalls, toolResults }) => {
+        // Accumulate events from tool results
+      },
+    })
+    // Stream text and send custom data
+    result.pipeTextStreamToResponse(writer)
+    writer.write({ type: 'data-events', data: events })
+  },
+})
+```
+
+2. **Client-side (`ChatContainer`):**
+```typescript
+import { useChat } from '@ai-sdk/react'
+
+const { messages, sendMessage, status } = useChat({
+  api: '/api/chat',
+  body: { locale: getLocale() },
+  onData: (dataPart) => {
+    if (dataPart.type === 'data-events') setEvents(dataPart.data)
+  },
+})
+```
+
+3. **Tool wrappers (`tools-ai-sdk.ts`):**
+```typescript
+import { tool } from 'ai'
+
+export function createTools(userContext, locale) {
+  return {
+    search_events: tool({
+      description: searchEventsTool.description,
+      parameters: searchEventsInputSchema, // Reuse existing Zod schemas!
+      execute: async (input) => searchEventsTool.execute(input, context),
+    }),
+    // ... 16 more tools
+  }
+}
+```
+
+**Key Architectural Changes:**
+
+| Before (Custom) | After (AI SDK) |
+|-----------------|----------------|
+| Manual `while` loop with `MAX_ITERATIONS` | `maxSteps: 5` parameter |
+| Custom `sendEvent()` for SSE | `createUIMessageStream` + `writer.write()` |
+| Manual tool type guards | Built-in tool result typing |
+| Custom `processStream()` parsing | `useChat` hook with `onData` |
+| `anthropicSchema` for tool definitions | Direct Zod schema usage |
+
+**Files Created:**
+- `src/routes/api/chat.ts` - New API route using AI SDK
+- `src/features/chat/api/tools-ai-sdk.ts` - Tool wrappers for AI SDK format
+- `src/features/chat/api/suggestions.ts` - Extracted from agent.ts
+
+**Files Modified:**
+- `src/routes/-components/chat/ChatContainer.tsx` - Migrated to `useChat` hook
+- `src/features/chat/index.ts` - Updated exports
+
+**Files Deleted:**
+- `src/features/chat/api/agent.ts` - Replaced by API route
+
+**Alternatives Considered:**
+- **Keep custom implementation**: Rejected - more code to maintain, no ecosystem benefits
+- **LangChain**: Rejected - heavier abstraction, less control, not needed for single-model use
+- **Migrate incrementally**: Considered but rejected - clean break simpler than maintaining two systems
+
+**Rationale:**
+1. **Simpler agent loop**: `maxSteps` replaces 50+ lines of iteration logic
+2. **Built-in streaming**: No more manual SSE formatting or parsing
+3. **Provider abstraction**: Easy to switch models (Anthropic → OpenAI) if needed
+4. **Better TypeScript**: First-class Zod integration, typed tool results
+5. **Ecosystem**: Well-maintained by Vercel, active community
+6. **Reduced code**: ~571 lines in agent.ts → ~150 lines in API route
+
+**Custom Data Streaming Pattern:**
+For sending non-text data (events, suggestions, directions) alongside the streamed response:
+
+```typescript
+// Server: After streaming completes
+writer.write({ type: 'data-events', data: events })
+writer.write({ type: 'data-suggestions', data: suggestions })
+
+// Client: In onData callback
+onData: (dataPart) => {
+  if (dataPart.type === 'data-events') setEvents(dataPart.data)
+}
+```
+
+---
+
 ### True Agent Loop with Event Accumulation
 
 **Date:** 2026-01-13

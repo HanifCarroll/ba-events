@@ -134,20 +134,23 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
       // Generate the Maps URL
       const mapsUrl = generateMapsUrl(fullAddress, venueName)
 
-      const result = {
+      console.log(`[DEBUG] get_directions: generated link for "${venueName}"`)
+
+      // Return structured data for the DirectionsCard
+      // The LLM will provide a short message, and the card renders the clickable link
+      return {
         success: true,
         venueName,
         address: fullAddress,
         mapsUrl,
         eventName,
-        message: `Here's the link for directions to ${venueName}: ${mapsUrl}`,
-      }
-
-      console.log(`[DEBUG] get_directions: generated link for "${venueName}"`)
-
-      return {
-        success: true,
-        formatted: JSON.stringify(result),
+        formatted: JSON.stringify({
+          success: true,
+          venueName,
+          address: fullAddress,
+          // Don't include mapsUrl in formatted - the LLM shouldn't paste the URL
+          message: `I've prepared directions to ${venueName} at ${fullAddress}. You can open them with the button below.`,
+        }),
         metadata: {
           venueName,
           hasAddress: !!venueAddress,
