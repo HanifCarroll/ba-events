@@ -45,6 +45,7 @@ export function ChatInput({
 
       <form
         onSubmit={handleSubmit}
+        autoComplete="off"
         className="relative px-4 py-4 sm:px-6 sm:py-5 bg-background"
       >
         <div className="max-w-3xl mx-auto">
@@ -64,6 +65,7 @@ export function ChatInput({
             <input
               ref={inputRef}
               type="text"
+              name="ba-events-chat-query"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -71,7 +73,7 @@ export function ChatInput({
               onBlur={() => setIsFocused(false)}
               placeholder={m.chat_placeholder()}
               disabled={disabled}
-              autoComplete="off"
+              autoComplete="chat-message"
               className={`
                 flex-1 bg-transparent py-3.5 pl-11 pr-4 text-base sm:text-sm text-foreground
                 placeholder:text-muted-foreground/60
