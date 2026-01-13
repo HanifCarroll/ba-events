@@ -23,7 +23,7 @@ Agent-native applications get better through accumulated context and prompt refi
 
 ## Current Agent State
 
-The AI agent (the "concierge") now has **13 tools** (updated 2025-01-13):
+The AI agent (the "concierge") now has **15 tools** (updated 2025-01-13):
 
 ### Core Tools
 1. `search_events` - Semantic + filtered event search
@@ -46,6 +46,10 @@ The AI agent (the "concierge") now has **13 tools** (updated 2025-01-13):
 12. `list_neighborhoods_with_events` - Neighborhoods with event counts
 13. `list_categories_with_events` - Categories with event counts
 
+### Sharing & Directions Tools
+14. `share_event` - Generate shareable link for an event
+15. `get_directions` - Generate Google Maps directions to venue
+
 It uses a **single-search model** (max 2 Claude calls), not a true agent loop.
 
 ---
@@ -65,7 +69,8 @@ The article's #1 principle: **"Whatever the user can do through the UI, the agen
 | See what's happening now | ✅ | `get_happening_now` |
 | Explore neighborhoods | ✅ | `list_neighborhoods_with_events` |
 | Explore categories | ✅ | `list_categories_with_events` |
-| Share event | ❌ | (not implemented) |
+| Share event | ✅ | `share_event` |
+| Get directions | ✅ | `get_directions` |
 | Get tickets | Partial | (returns URL in event) |
 
 ### CRUD Completeness for User Entities
@@ -324,8 +329,10 @@ These let the agent take actions on behalf of the user.
 | `list_neighborhoods_with_events` | Low | Medium | Medium | **P2** | ✅ Done |
 | `list_categories_with_events` | Low | Medium | Medium | **P2** | ✅ Done |
 | `get_event_stats` | Low | Medium | Low | **P2** | ✅ Done |
-| `share_event` | Medium | Medium | Low | **P2** | ❌ Pending |
-| `get_directions` | Medium | Medium | Low | **P2** | ❌ Pending |
+| `share_event` | Medium | Medium | Low | **P2** | ✅ Done |
+| `get_directions` | Medium | Medium | Low | **P2** | ✅ Done |
+
+**All recommended tools have been implemented! (12/12 = 100%)**
 
 ---
 

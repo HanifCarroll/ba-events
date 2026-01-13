@@ -25,6 +25,8 @@ import { getUserContextTool } from './get-user-context'
 import { getEventStatsTool } from './get-event-stats'
 import { listNeighborhoodsWithEventsTool } from './list-neighborhoods-with-events'
 import { listCategoriesWithEventsTool } from './list-categories-with-events'
+import { shareEventTool } from './share-event'
+import { getDirectionsTool } from './get-directions'
 
 // Re-export types
 export type { ToolDefinition, ToolExecutionContext, ToolResult, ToolName } from './types'
@@ -55,6 +57,8 @@ export const tools = {
   get_event_stats: getEventStatsTool,
   list_neighborhoods_with_events: listNeighborhoodsWithEventsTool,
   list_categories_with_events: listCategoriesWithEventsTool,
+  share_event: shareEventTool,
+  get_directions: getDirectionsTool,
 } as const
 
 /**
