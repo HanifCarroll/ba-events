@@ -73,7 +73,7 @@ export function ChatInput({
               onBlur={() => setIsFocused(false)}
               placeholder={m.chat_placeholder()}
               disabled={disabled}
-              autoComplete="chat-message"
+              autoComplete="one-time-code"
               className={`
                 flex-1 bg-transparent py-3.5 pl-11 pr-4 text-base sm:text-sm text-foreground
                 placeholder:text-muted-foreground/60
