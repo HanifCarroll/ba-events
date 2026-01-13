@@ -152,7 +152,7 @@ export function ChatContainer() {
   return (
     <div className="relative h-full min-h-0 flex flex-col">
       {/* Message area - scrollable */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y">
+      <div className="flex-1 min-h-0 overflow-y-auto touch-pan-y">
         {hasMessages ? (
           <MessageList
             messages={displayMessages}
