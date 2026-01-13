@@ -2,39 +2,24 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader } from '@tanstack/react-start/server'
 import { z } from 'zod'
-import { toZonedTime, fromZonedTime } from 'date-fns-tz'
-import { addDays, setHours, startOfDay, getDay, getHours, format } from 'date-fns'
-import { searchEventsWithFilters, hybridEventSearch, getVenueById, searchVenuesByName, getEventsHappeningNow, getTonightsEvents } from '@/shared/lib/db/client'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth'
 import { trackServer } from '@/lib/analytics'
-import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
+import { CATEGORIES } from '@/shared/lib/types'
 import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
+import { getUserToolContext } from './user-tools'
 import {
-  getUserToolContext,
-  saveEventForUser,
-  unsaveEventForUser,
-  listSavedEventsForUser,
-  getEventDetailsForUser,
-  checkEventSavedForUser,
-} from './user-tools'
+  getAnthropicTools,
+  executeTool,
+  isValidToolName,
+  type SearchEventsInput,
+} from './tools'
 import type {
   EventWithVenue,
-  EventFilters,
   APIMessage,
   ContentBlock,
-  Venue,
   RefinementSuggestion,
   StreamEvent,
-  SearchEventsToolInput,
-  GetVenueDetailsToolInput,
-  SaveEventToolInput,
-  UnsaveEventToolInput,
-  ListSavedEventsToolInput,
-  GetEventDetailsToolInput,
-  CheckEventSavedToolInput,
-  GetHappeningNowToolInput,
-  GetTonightsEventsToolInput,
 } from '@/shared/lib/types'
 
 // Initialize Anthropic client
@@ -265,367 +250,15 @@ Remember: You're not a search engine. You're their confident friend who knows wh
 }
 
 
-// Tool definition for Claude
-const tools: Anthropic.Tool[] = [
-  {
-    name: 'search_events',
-    description: `Search for events in Buenos Aires using semantic search and/or filters.
-Use the 'query' parameter for natural language searches describing the desired experience
-(e.g., "romantic jazz night", "underground techno party", "chill outdoor activities").
-Use other parameters for specific requirements. Combine both for best results.`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        query: {
-          type: 'string',
-          description: `Natural language search query for semantic matching. Use for vibe-based
-or descriptive searches like "romantic date spot", "high energy dance party",
-"relaxed afternoon activity", "underground warehouse vibes".`,
-        },
-        categories: {
-          type: 'array',
-          items: { type: 'string' },
-          description: `Event categories to filter by. Options: ${CATEGORIES.join(', ')}`,
-        },
-        neighborhood: {
-          type: 'string',
-          description: 'Buenos Aires neighborhood to filter by',
-        },
-        isFree: {
-          type: 'boolean',
-          description: 'Set to true to only show free events',
-        },
-        maxPrice: {
-          type: 'number',
-          description: 'Maximum price in ARS',
-        },
-        timeFilter: {
-          type: 'string',
-          enum: ['tonight', 'tomorrow', 'weekend', 'week'],
-          description: 'Time period filter. tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days',
-        },
-        limit: {
-          type: 'number',
-          description: 'Maximum number of events to return and display (1-10). Use this to match the user\'s request - e.g., if they ask for "top 3 events", set limit to 3.',
-        },
-      },
-    },
-  },
-  {
-    name: 'get_venue_details',
-    description: `Get detailed information about a specific venue, including website, Instagram, and address. Use this when users ask about a venue's website, contact info, or want more details about where an event is held.`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        venueId: {
-          type: 'string',
-          description: 'The venue ID (if known from a previous event search)',
-        },
-        venueName: {
-          type: 'string',
-          description: 'The name of the venue to search for',
-        },
-      },
-    },
-  },
-  {
-    name: 'save_event',
-    description: `Save an event to the user's saved events list. Use when the user expresses interest in an event ("save that", "bookmark it", "I want to go", "add to my list"). Requires the user to be logged in.`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        eventId: {
-          type: 'string',
-          description: 'The event ID to save (from a previous search result)',
-        },
-      },
-      required: ['eventId'],
-    },
-  },
-  {
-    name: 'unsave_event',
-    description: `Remove an event from the user's saved events list. Use when the user wants to remove a saved event ("remove that", "unsave it", "take it off my list").`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        eventId: {
-          type: 'string',
-          description: 'The event ID to remove from saved events',
-        },
-      },
-      required: ['eventId'],
-    },
-  },
-  {
-    name: 'list_saved_events',
-    description: `Get the user's saved events. Use when the user asks about their saved events ("what did I save?", "my events", "my list", "what's on my calendar?"). Can filter by upcoming or past events.`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        filter: {
-          type: 'string',
-          enum: ['all', 'upcoming', 'past'],
-          description: 'Filter saved events: "upcoming" for future events, "past" for past events, "all" for everything',
-        },
-      },
-    },
-  },
-  {
-    name: 'get_event_details',
-    description: `Get complete details about a specific event. Use when the user wants more information about an event you previously mentioned, or asks "tell me more about that".`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        eventId: {
-          type: 'string',
-          description: 'The event ID to get details for',
-        },
-      },
-      required: ['eventId'],
-    },
-  },
-  {
-    name: 'check_event_saved',
-    description: `Check if a specific event is saved in the user's list. Use this proactively before mentioning an event to let the user know if they've already saved it. Returns isSaved: true/false.`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        eventId: {
-          type: 'string',
-          description: 'The event ID to check',
-        },
-      },
-      required: ['eventId'],
-    },
-  },
-  {
-    name: 'get_happening_now',
-    description: `Get events that are currently happening right now. Use this when the user asks "what's happening right now?", "what's going on?", "anything happening?", or wants to find an event they can go to immediately. Returns events that have already started but haven't ended yet.`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        limit: {
-          type: 'number',
-          description: 'Maximum number of events to return (default: 5)',
-        },
-      },
-    },
-  },
-  {
-    name: 'get_tonights_events',
-    description: `Get all events happening tonight (6pm today to 6am tomorrow). Use this when the user asks "what's on tonight?", "tonight's events", or wants to plan their evening. More focused than search_events with timeFilter="tonight" - returns events already filtered to tonight only.`,
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        category: {
-          type: 'string',
-          description: `Optional category filter. Options: ${CATEGORIES.join(', ')}`,
-        },
-        neighborhood: {
-          type: 'string',
-          description: 'Optional Buenos Aires neighborhood filter',
-        },
-        limit: {
-          type: 'number',
-          description: 'Maximum number of events to return (default: 10)',
-        },
-      },
-    },
-  },
-]
+// Get tools from registry
+const tools = getAnthropicTools()
 
 
-// Get current time in Buenos Aires
-function getNowInBA(): Date {
-  return toZonedTime(new Date(), BA_TIMEZONE)
-}
-
-// Convert a BA local time to UTC ISO string
-function baToUTC(baDate: Date): string {
-  return fromZonedTime(baDate, BA_TIMEZONE).toISOString()
-}
-
-// Format a UTC date as BA local time string
-function formatInBA(utcDateStr: string): string {
-  const utcDate = new Date(utcDateStr)
-  const baDate = toZonedTime(utcDate, BA_TIMEZONE)
-  return format(baDate, "EEEE, MMM d 'at' h:mm a") // e.g., "Sunday, Dec 28 at 4:00 PM"
-}
-
-// Convert tool input to EventFilters
-function toolInputToFilters(input: SearchEventsToolInput): EventFilters {
-  const filters: EventFilters = {}
-  const now = getNowInBA()
-  const currentHour = getHours(now)
-
-  // Time filter
-  if (input.timeFilter === 'tonight') {
-    // If it's between midnight and 6am, "tonight" means the current ongoing night
-    // Otherwise, "tonight" means starting from 6pm today
-    let tonight: Date
-    let tomorrowMorning: Date
-
-    if (currentHour < 6) {
-      // It's late night/early morning - "tonight" is already happening
-      tonight = now
-      tomorrowMorning = setHours(startOfDay(now), 6)
-    } else {
-      // It's daytime - tonight starts at 6pm
-      tonight = setHours(startOfDay(now), 18)
-      tomorrowMorning = setHours(startOfDay(addDays(now, 1)), 6)
-    }
-    filters.startsAfter = baToUTC(tonight)
-    filters.startsBefore = baToUTC(tomorrowMorning)
-  } else if (input.timeFilter === 'tomorrow') {
-    const tomorrow = startOfDay(addDays(now, 1))
-    const dayAfter = startOfDay(addDays(now, 2))
-    filters.startsAfter = baToUTC(tomorrow)
-    filters.startsBefore = baToUTC(dayAfter)
-  } else if (input.timeFilter === 'weekend') {
-    const dayOfWeek = getDay(now)
-
-    if (dayOfWeek === 6 || dayOfWeek === 0) {
-      // Already weekend - start from now, end Monday midnight
-      const daysUntilMonday = dayOfWeek === 6 ? 2 : 1
-      const monday = startOfDay(addDays(now, daysUntilMonday))
-      filters.startsAfter = baToUTC(now)
-      filters.startsBefore = baToUTC(monday)
-    } else {
-      // Weekday - find next Saturday
-      const daysUntilSaturday = 6 - dayOfWeek
-      const saturday = startOfDay(addDays(now, daysUntilSaturday))
-      const monday = startOfDay(addDays(saturday, 2))
-      filters.startsAfter = baToUTC(saturday)
-      filters.startsBefore = baToUTC(monday)
-    }
-  } else if (input.timeFilter === 'week') {
-    const nextWeek = addDays(now, 7)
-    filters.startsAfter = baToUTC(now)
-    filters.startsBefore = baToUTC(nextWeek)
-  } else {
-    // Default: upcoming events
-    filters.startsAfter = baToUTC(now)
-  }
-
-  // Other filters
-  if (input.categories?.length) {
-    filters.categories = input.categories
-  }
-  if (input.neighborhood) {
-    // Try to match neighborhood (case-insensitive)
-    const match = NEIGHBORHOODS.find(
-      n => n.toLowerCase() === input.neighborhood?.toLowerCase()
-    )
-    if (match) {
-      filters.neighborhood = match
-    }
-  }
-  if (input.isFree) {
-    filters.isFree = true
-  }
-  if (input.maxPrice !== undefined) {
-    filters.maxPrice = input.maxPrice
-  }
-
-  return filters
-}
-
-// Execute the get_venue_details tool
-async function executeGetVenueDetails(input: GetVenueDetailsToolInput): Promise<Venue | null> {
-  console.log('[DEBUG] Get venue details input:', JSON.stringify(input))
-
-  // If we have a venue ID, fetch directly
-  if (input.venueId) {
-    try {
-      const venue = await getVenueById(input.venueId)
-      return venue
-    } catch (error) {
-      console.log('[DEBUG] Venue not found by ID:', input.venueId)
-      return null
-    }
-  }
-
-  // Otherwise search by name
-  if (input.venueName) {
-    const venues = await searchVenuesByName(input.venueName)
-    if (venues.length > 0) {
-      // Return the best match (first result)
-      return venues[0]
-    }
-  }
-
-  return null
-}
-
-// Format venue result for Claude
-function formatVenueResult(venue: Venue | null): string {
-  if (!venue) {
-    return JSON.stringify({ found: false, message: 'Venue not found' })
-  }
-
-  return JSON.stringify({
-    found: true,
-    venue: {
-      name: venue.name,
-      neighborhood: venue.neighborhood,
-      address: venue.address,
-      website: venue.website,
-      instagram: venue.instagram_handle,
-    },
-  })
-}
-
-// Execute the search_events tool
-async function executeSearchEvents(input: SearchEventsToolInput): Promise<EventWithVenue[]> {
-  const filters = toolInputToFilters(input)
-  const limit = input.limit ?? 1 // Default to 1 - concierge mode makes single recommendations
-  console.log('[DEBUG] Tool input:', JSON.stringify(input))
-  console.log('[DEBUG] Filters:', JSON.stringify(filters))
-  console.log('[DEBUG] Limit:', limit)
-  console.log('[DEBUG] Current time:', new Date().toISOString())
-  console.log('[DEBUG] BA time:', getNowInBA().toISOString())
-
-  let results: EventWithVenue[]
-
-  // If semantic query provided, use hybrid search
-  if (input.query && input.query.trim()) {
-    console.log('[DEBUG] Using hybrid search with query:', input.query)
-    results = await hybridEventSearch(input.query, filters, limit)
-  } else {
-    // Otherwise, use filter-only search
-    console.log('[DEBUG] Using filter-only search')
-    results = await searchEventsWithFilters(filters, limit)
-  }
-
-  console.log('[DEBUG] Results count:', results.length)
-  return results
-}
-
-// Format tool result for Claude
-function formatToolResult(events: EventWithVenue[]): string {
-  return JSON.stringify({
-    count: events.length,
-    events: events.slice(0, 10).map(e => ({
-      id: e.id, // Include ID for filtering
-      name: e.name,
-      description: e.description_en,
-      hasDetails: !!(e.description_en || e.description_es), // Flag for events with full info
-      venue: e.venue_name,
-      venueAddress: e.venue_address,
-      neighborhood: e.venue_neighborhood,
-      dateTime: formatInBA(e.starts_at),
-      endsAt: e.ends_at ? formatInBA(e.ends_at) : null,
-      price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
-      categories: e.categories,
-      ticketUrl: e.ticket_url,
-    })),
-  })
-}
 
 // Generate refinement suggestions based on search context
 interface SuggestionContext {
   originalQuery: string
-  toolInput: SearchEventsToolInput
+  toolInput: SearchEventsInput
   results: EventWithVenue[]
   locale: 'en' | 'es'
 }
@@ -796,225 +429,11 @@ function generateSuggestions(context: SuggestionContext): RefinementSuggestion[]
   return suggestions.slice(0, 4)
 }
 
-// Type for parsed tool use from stream - discriminated union based on tool name
-interface SearchEventsToolUse {
+// Type for parsed tool use from stream - now uses ToolName from registry
+interface ParsedToolUse {
   id: string
-  name: 'search_events'
-  input: SearchEventsToolInput
-}
-
-interface GetVenueDetailsToolUse {
-  id: string
-  name: 'get_venue_details'
-  input: GetVenueDetailsToolInput
-}
-
-// New user action tool use types (input types imported from shared/lib/types)
-interface SaveEventToolUse {
-  id: string
-  name: 'save_event'
-  input: SaveEventToolInput
-}
-
-interface UnsaveEventToolUse {
-  id: string
-  name: 'unsave_event'
-  input: UnsaveEventToolInput
-}
-
-interface ListSavedEventsToolUse {
-  id: string
-  name: 'list_saved_events'
-  input: ListSavedEventsToolInput
-}
-
-interface GetEventDetailsToolUse {
-  id: string
-  name: 'get_event_details'
-  input: GetEventDetailsToolInput
-}
-
-interface CheckEventSavedToolUse {
-  id: string
-  name: 'check_event_saved'
-  input: CheckEventSavedToolInput
-}
-
-interface GetHappeningNowToolUse {
-  id: string
-  name: 'get_happening_now'
-  input: GetHappeningNowToolInput
-}
-
-interface GetTonightsEventsToolUse {
-  id: string
-  name: 'get_tonights_events'
-  input: GetTonightsEventsToolInput
-}
-
-type ParsedToolUse =
-  | SearchEventsToolUse
-  | GetVenueDetailsToolUse
-  | SaveEventToolUse
-  | UnsaveEventToolUse
-  | ListSavedEventsToolUse
-  | GetEventDetailsToolUse
-  | CheckEventSavedToolUse
-  | GetHappeningNowToolUse
-  | GetTonightsEventsToolUse
-
-/**
- * Type guard for search_events tool input.
- * Validates that the input has the expected shape for search_events.
- */
-function isSearchEventsInput(input: unknown): input is SearchEventsToolInput {
-  if (typeof input !== 'object' || input === null) {
-    return false
-  }
-  const obj = input as Record<string, unknown>
-  // All fields are optional, but if present they should have correct types
-  if (obj.query !== undefined && typeof obj.query !== 'string') return false
-  if (obj.categories !== undefined && !Array.isArray(obj.categories)) return false
-  if (obj.vibes !== undefined && !Array.isArray(obj.vibes)) return false
-  if (obj.neighborhoods !== undefined && !Array.isArray(obj.neighborhoods)) return false
-  if (obj.neighborhood !== undefined && typeof obj.neighborhood !== 'string') return false
-  if (obj.dateFrom !== undefined && typeof obj.dateFrom !== 'string') return false
-  if (obj.dateTo !== undefined && typeof obj.dateTo !== 'string') return false
-  if (obj.priceMin !== undefined && typeof obj.priceMin !== 'number') return false
-  if (obj.priceMax !== undefined && typeof obj.priceMax !== 'number') return false
-  if (obj.maxPrice !== undefined && typeof obj.maxPrice !== 'number') return false
-  if (obj.isFree !== undefined && typeof obj.isFree !== 'boolean') return false
-  if (obj.timeFilter !== undefined && !['tonight', 'tomorrow', 'weekend', 'week'].includes(obj.timeFilter as string)) return false
-  if (obj.limit !== undefined && typeof obj.limit !== 'number') return false
-  return true
-}
-
-/**
- * Type guard for get_venue_details tool input.
- * Validates that the input has the expected shape for get_venue_details.
- */
-function isGetVenueDetailsInput(input: unknown): input is GetVenueDetailsToolInput {
-  if (typeof input !== 'object' || input === null) {
-    return false
-  }
-  const obj = input as Record<string, unknown>
-  // At least one of venueId or venueName should be present
-  if (obj.venueId !== undefined && typeof obj.venueId !== 'string') return false
-  if (obj.venueName !== undefined && typeof obj.venueName !== 'string') return false
-  return obj.venueId !== undefined || obj.venueName !== undefined
-}
-
-/**
- * Type guard for search_events tool - narrows ParsedToolUse to SearchEventsToolUse
- */
-function isSearchEventsTool(toolUse: ParsedToolUse): toolUse is SearchEventsToolUse {
-  return toolUse.name === 'search_events'
-}
-
-/**
- * Type guard for get_venue_details tool - narrows ParsedToolUse to GetVenueDetailsToolUse
- */
-function isGetVenueDetailsTool(toolUse: ParsedToolUse): toolUse is GetVenueDetailsToolUse {
-  return toolUse.name === 'get_venue_details'
-}
-
-/**
- * Type guard for save_event tool input.
- */
-function isSaveEventInput(input: unknown): input is SaveEventToolInput {
-  if (typeof input !== 'object' || input === null) return false
-  const obj = input as Record<string, unknown>
-  return typeof obj.eventId === 'string'
-}
-
-/**
- * Type guard for unsave_event tool input.
- */
-function isUnsaveEventInput(input: unknown): input is UnsaveEventToolInput {
-  if (typeof input !== 'object' || input === null) return false
-  const obj = input as Record<string, unknown>
-  return typeof obj.eventId === 'string'
-}
-
-/**
- * Type guard for list_saved_events tool input.
- */
-function isListSavedEventsInput(input: unknown): input is ListSavedEventsToolInput {
-  if (typeof input !== 'object' || input === null) return false
-  const obj = input as Record<string, unknown>
-  if (obj.filter !== undefined && !['all', 'upcoming', 'past'].includes(obj.filter as string)) return false
-  return true
-}
-
-/**
- * Type guard for get_event_details tool input.
- */
-function isGetEventDetailsInput(input: unknown): input is GetEventDetailsToolInput {
-  if (typeof input !== 'object' || input === null) return false
-  const obj = input as Record<string, unknown>
-  return typeof obj.eventId === 'string'
-}
-
-/**
- * Type guard for check_event_saved tool input.
- */
-function isCheckEventSavedInput(input: unknown): input is CheckEventSavedToolInput {
-  if (typeof input !== 'object' || input === null) return false
-  const obj = input as Record<string, unknown>
-  return typeof obj.eventId === 'string'
-}
-
-/**
- * Type guard for get_happening_now tool input.
- */
-function isGetHappeningNowInput(input: unknown): input is GetHappeningNowToolInput {
-  if (typeof input !== 'object' || input === null) return false
-  const obj = input as Record<string, unknown>
-  if (obj.limit !== undefined && typeof obj.limit !== 'number') return false
-  return true
-}
-
-/**
- * Type guard for get_tonights_events tool input.
- */
-function isGetTonightsEventsInput(input: unknown): input is GetTonightsEventsToolInput {
-  if (typeof input !== 'object' || input === null) return false
-  const obj = input as Record<string, unknown>
-  if (obj.category !== undefined && typeof obj.category !== 'string') return false
-  if (obj.neighborhood !== undefined && typeof obj.neighborhood !== 'string') return false
-  if (obj.limit !== undefined && typeof obj.limit !== 'number') return false
-  return true
-}
-
-/**
- * Type guards for new tools - narrow ParsedToolUse to specific types
- */
-function isSaveEventTool(toolUse: ParsedToolUse): toolUse is SaveEventToolUse {
-  return toolUse.name === 'save_event'
-}
-
-function isUnsaveEventTool(toolUse: ParsedToolUse): toolUse is UnsaveEventToolUse {
-  return toolUse.name === 'unsave_event'
-}
-
-function isListSavedEventsTool(toolUse: ParsedToolUse): toolUse is ListSavedEventsToolUse {
-  return toolUse.name === 'list_saved_events'
-}
-
-function isGetEventDetailsTool(toolUse: ParsedToolUse): toolUse is GetEventDetailsToolUse {
-  return toolUse.name === 'get_event_details'
-}
-
-function isCheckEventSavedTool(toolUse: ParsedToolUse): toolUse is CheckEventSavedToolUse {
-  return toolUse.name === 'check_event_saved'
-}
-
-function isGetHappeningNowTool(toolUse: ParsedToolUse): toolUse is GetHappeningNowToolUse {
-  return toolUse.name === 'get_happening_now'
-}
-
-function isGetTonightsEventsTool(toolUse: ParsedToolUse): toolUse is GetTonightsEventsToolUse {
-  return toolUse.name === 'get_tonights_events'
+  name: string
+  input: unknown
 }
 
 // Process stream and collect response data
@@ -1054,65 +473,21 @@ async function processStream(
       }
     } else if (event.type === 'content_block_stop') {
       if (currentToolUse) {
-        const rawInput: unknown = JSON.parse(currentToolUse.inputJson)
+        try {
+          const rawInput: unknown = JSON.parse(currentToolUse.inputJson)
 
-        // Use type guards to validate and type the input
-        if (currentToolUse.name === 'search_events' && isSearchEventsInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'search_events',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'get_venue_details' && isGetVenueDetailsInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'get_venue_details',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'save_event' && isSaveEventInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'save_event',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'unsave_event' && isUnsaveEventInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'unsave_event',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'list_saved_events' && isListSavedEventsInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'list_saved_events',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'get_event_details' && isGetEventDetailsInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'get_event_details',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'check_event_saved' && isCheckEventSavedInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'check_event_saved',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'get_happening_now' && isGetHappeningNowInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'get_happening_now',
-            input: rawInput,
-          })
-        } else if (currentToolUse.name === 'get_tonights_events' && isGetTonightsEventsInput(rawInput)) {
-          toolUses.push({
-            id: currentToolUse.id,
-            name: 'get_tonights_events',
-            input: rawInput,
-          })
-        } else {
-          console.warn(`[DEBUG] Invalid tool input for ${currentToolUse.name}:`, rawInput)
+          // Validate tool name is known, then push - Zod validation happens in executeTool
+          if (isValidToolName(currentToolUse.name)) {
+            toolUses.push({
+              id: currentToolUse.id,
+              name: currentToolUse.name,
+              input: rawInput,
+            })
+          } else {
+            console.warn(`[DEBUG] Unknown tool name: ${currentToolUse.name}`)
+          }
+        } catch (parseError) {
+          console.error(`[DEBUG] Failed to parse tool input for ${currentToolUse.name}:`, parseError)
         }
         currentToolUse = null
       }
@@ -1234,344 +609,67 @@ export const chat = createServerFn({ method: 'POST' })
 
           // Handle tool use
           if (result1.stopReason === 'tool_use' && result1.toolUses.length > 0) {
-            // Build assistant message content - ToolUseBlock already has proper discriminated union type
+            // Build assistant message content
             const assistantContent: ContentBlock[] = []
             if (result1.text) {
               assistantContent.push({ type: 'text', text: result1.text })
             }
             for (const toolUse of result1.toolUses) {
-              // Type-safe building of ToolUseBlock based on tool name
-              if (isSearchEventsTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'search_events',
-                  input: toolUse.input,
-                })
-              } else if (isGetVenueDetailsTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'get_venue_details',
-                  input: toolUse.input,
-                })
-              } else if (isSaveEventTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'save_event',
-                  input: toolUse.input,
-                })
-              } else if (isUnsaveEventTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'unsave_event',
-                  input: toolUse.input,
-                })
-              } else if (isListSavedEventsTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'list_saved_events',
-                  input: toolUse.input,
-                })
-              } else if (isGetEventDetailsTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'get_event_details',
-                  input: toolUse.input,
-                })
-              } else if (isCheckEventSavedTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'check_event_saved',
-                  input: toolUse.input,
-                })
-              } else if (isGetHappeningNowTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'get_happening_now',
-                  input: toolUse.input,
-                })
-              } else if (isGetTonightsEventsTool(toolUse)) {
-                assistantContent.push({
-                  type: 'tool_use',
-                  id: toolUse.id,
-                  name: 'get_tonights_events',
-                  input: toolUse.input,
-                })
-              }
+              // Cast as ContentBlock since we've already validated tool name via registry
+              assistantContent.push({
+                type: 'tool_use',
+                id: toolUse.id,
+                name: toolUse.name,
+                input: toolUse.input,
+              } as ContentBlock)
             }
 
             messages.push({ role: 'assistant', content: assistantContent as Anthropic.ContentBlockParam[] })
             newMessages.push({ role: 'assistant', content: assistantContent })
 
-            // Execute tools and collect results
+            // Execute tools and collect results using the registry
             const toolResults: Anthropic.ToolResultBlockParam[] = []
             const toolResultsForHistory: ContentBlock[] = []
             let searchEvents: EventWithVenue[] = []
-            let searchInput: SearchEventsToolInput | null = null
+            let searchInput: SearchEventsInput | null = null
 
             for (const toolUse of result1.toolUses) {
-              // Use type guards for proper type narrowing instead of assertions
-              if (isSearchEventsTool(toolUse)) {
-                try {
-                  searchInput = toolUse.input
-                  const events = await executeSearchEvents(toolUse.input)
-                  searchEvents = events
+              // Execute tool using the registry
+              const result = await executeTool(toolUse.name, toolUse.input, {
+                userContext,
+                locale,
+              })
 
-                  // DON'T send events yet - wait for Claude to filter them
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: result.formatted,
+                is_error: !result.success,
+              })
+              toolResultsForHistory.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: result.formatted,
+              })
 
-                  const resultContent = formatToolResult(events)
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-
-                  console.log(`[DEBUG] search_events returned ${events.length} events`)
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'search_events',
-                    success: true,
-                    resultCount: events.length,
-                    hasQuery: !!toolUse.input.query,
-                    hasFilters: !!(toolUse.input.categories || toolUse.input.neighborhood || toolUse.input.timeFilter),
-                  })
-                } catch (toolError) {
-                  console.error('Tool execution error:', toolError)
-                  const errorContent = JSON.stringify({ error: 'Failed to search for events' })
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'search_events',
-                    success: false,
-                    error: 'execution_error',
-                  })
-                }
-              } else if (isGetVenueDetailsTool(toolUse)) {
-                try {
-                  const venue = await executeGetVenueDetails(toolUse.input)
-
-                  const resultContent = formatVenueResult(venue)
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-
-                  console.log(`[DEBUG] get_venue_details returned: ${venue?.name ?? 'not found'}`)
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'get_venue_details',
-                    success: true,
-                    found: !!venue,
-                  })
-                } catch (toolError) {
-                  console.error('Tool execution error:', toolError)
-                  const errorContent = JSON.stringify({ error: 'Failed to get venue details' })
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'get_venue_details',
-                    success: false,
-                    error: 'execution_error',
-                  })
-                }
-              } else if (isSaveEventTool(toolUse)) {
-                // Save event - requires auth, uses userContext
-                const result = await saveEventForUser(toolUse.input.eventId, userContext)
-                const resultContent = JSON.stringify(result)
-                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                console.log(`[DEBUG] save_event: success=${result.success}, error=${result.error ?? 'none'}`)
-                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                  tool: 'save_event',
-                  success: result.success,
-                  error: result.error,
-                  authenticated: userContext.isAuthenticated,
-                })
-              } else if (isUnsaveEventTool(toolUse)) {
-                // Unsave event - requires auth, uses userContext
-                const result = await unsaveEventForUser(toolUse.input.eventId, userContext)
-                const resultContent = JSON.stringify(result)
-                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                console.log(`[DEBUG] unsave_event: success=${result.success}, error=${result.error ?? 'none'}`)
-                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                  tool: 'unsave_event',
-                  success: result.success,
-                  error: result.error,
-                  authenticated: userContext.isAuthenticated,
-                })
-              } else if (isListSavedEventsTool(toolUse)) {
-                // List saved events - requires auth, uses userContext
-                const filter = toolUse.input.filter ?? 'all'
-                const result = await listSavedEventsForUser(filter, userContext)
-
-                // Format the result for Claude
-                const formattedResult = {
-                  success: result.success,
-                  error: result.error,
-                  count: result.count ?? 0,
-                  upcomingCount: result.upcomingCount ?? 0,
-                  pastCount: result.pastCount ?? 0,
-                  events: (result.events ?? []).map(e => ({
-                    id: e.id,
-                    name: e.name,
-                    description: e.description_en,
-                    venue: e.venue_name,
-                    neighborhood: e.venue_neighborhood,
-                    dateTime: formatInBA(e.starts_at),
-                    price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
-                    categories: e.categories,
-                    isPast: new Date(e.starts_at) < new Date(),
-                  })),
-                }
-
-                const resultContent = JSON.stringify(formattedResult)
-                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-
-                // Also send events to the UI if we have them
-                if (result.events && result.events.length > 0) {
-                  searchEvents = result.events
-                }
-
-                console.log(`[DEBUG] list_saved_events: count=${result.count ?? 0}, filter=${filter}`)
-                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                  tool: 'list_saved_events',
-                  success: result.success,
-                  error: result.error,
-                  authenticated: userContext.isAuthenticated,
-                  filter,
-                  count: result.count ?? 0,
-                })
-              } else if (isGetEventDetailsTool(toolUse)) {
-                // Get event details - no auth required (public data)
-                const result = await getEventDetailsForUser(toolUse.input.eventId)
-
-                if (result.success && result.event) {
-                  const formattedResult = {
-                    success: true,
-                    event: {
-                      id: result.event.id,
-                      name: result.event.name,
-                      description: result.event.description_en || result.event.description_es,
-                      venue: result.event.venue_name,
-                      venueAddress: result.event.venue_address,
-                      neighborhood: result.event.venue_neighborhood,
-                      dateTime: formatInBA(result.event.starts_at),
-                      endsAt: result.event.ends_at ? formatInBA(result.event.ends_at) : null,
-                      price: result.event.is_free ? 'Free' : result.event.price ? `$${result.event.price} ARS` : 'TBA',
-                      categories: result.event.categories,
-                      ticketUrl: result.event.ticket_url,
-                      link: result.event.link,
-                      imageUrl: result.event.image_url,
-                    },
-                  }
-                  const resultContent = JSON.stringify(formattedResult)
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-
-                  // Send as a single event to the UI
-                  searchEvents = [result.event]
-                } else {
-                  const resultContent = JSON.stringify({ success: false, error: 'Event not found' })
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                }
-
-                console.log(`[DEBUG] get_event_details: success=${result.success}`)
-                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                  tool: 'get_event_details',
-                  success: result.success,
-                  found: result.success && !!result.event,
-                })
-              } else if (isCheckEventSavedTool(toolUse)) {
-                // Check if event is saved - requires auth
-                const result = await checkEventSavedForUser(toolUse.input.eventId, userContext)
-                const resultContent = JSON.stringify(result)
-                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                console.log(`[DEBUG] check_event_saved: isSaved=${result.isSaved}, success=${result.success}`)
-                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                  tool: 'check_event_saved',
-                  success: result.success,
-                  isSaved: result.isSaved,
-                  authenticated: userContext.isAuthenticated,
-                })
-              } else if (isGetHappeningNowTool(toolUse)) {
-                // Get events happening right now
-                try {
-                  const events = await getEventsHappeningNow()
-                  const limit = toolUse.input.limit ?? 5
-                  const limitedEvents = events.slice(0, limit)
-                  searchEvents = limitedEvents
-
-                  const resultContent = formatToolResult(limitedEvents)
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-
-                  console.log(`[DEBUG] get_happening_now returned ${limitedEvents.length} events`)
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'get_happening_now',
-                    success: true,
-                    resultCount: limitedEvents.length,
-                  })
-                } catch (toolError) {
-                  console.error('Tool execution error:', toolError)
-                  const errorContent = JSON.stringify({ error: 'Failed to get happening now events' })
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'get_happening_now',
-                    success: false,
-                    error: 'execution_error',
-                  })
-                }
-              } else if (isGetTonightsEventsTool(toolUse)) {
-                // Get tonight's events with optional category/neighborhood filtering
-                try {
-                  let events = await getTonightsEvents()
-
-                  // Apply optional filters
-                  if (toolUse.input.category) {
-                    events = events.filter(e => e.categories.includes(toolUse.input.category!))
-                  }
-                  if (toolUse.input.neighborhood) {
-                    const matchNeighborhood = NEIGHBORHOODS.find(
-                      n => n.toLowerCase() === toolUse.input.neighborhood?.toLowerCase()
-                    )
-                    if (matchNeighborhood) {
-                      events = events.filter(e => e.venue_neighborhood === matchNeighborhood)
-                    }
-                  }
-
-                  const limit = toolUse.input.limit ?? 10
-                  const limitedEvents = events.slice(0, limit)
-                  searchEvents = limitedEvents
-
-                  const resultContent = formatToolResult(limitedEvents)
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultContent })
-
-                  console.log(`[DEBUG] get_tonights_events returned ${limitedEvents.length} events`)
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'get_tonights_events',
-                    success: true,
-                    resultCount: limitedEvents.length,
-                    hasCategory: !!toolUse.input.category,
-                    hasNeighborhood: !!toolUse.input.neighborhood,
-                  })
-                } catch (toolError) {
-                  console.error('Tool execution error:', toolError)
-                  const errorContent = JSON.stringify({ error: "Failed to get tonight's events" })
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent, is_error: true })
-                  toolResultsForHistory.push({ type: 'tool_result', tool_use_id: toolUse.id, content: errorContent })
-                  trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                    tool: 'get_tonights_events',
-                    success: false,
-                    error: 'execution_error',
-                  })
-                }
+              // Collect events for display and track analytics
+              if (result.events && result.events.length > 0) {
+                searchEvents = result.events
               }
+
+              // Track search input for suggestions
+              if (toolUse.name === 'search_events' && result.metadata?.toolInput) {
+                searchInput = result.metadata.toolInput as SearchEventsInput
+              }
+
+              // Track tool usage
+              trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                tool: toolUse.name,
+                success: result.success,
+                ...(result.metadata ?? {}),
+              })
+
+              console.log(`[DEBUG] ${toolUse.name}: success=${result.success}`)
             }
 
             // Add tool results to conversation
