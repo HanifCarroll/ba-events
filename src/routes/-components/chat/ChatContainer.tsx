@@ -18,8 +18,8 @@ export function ChatContainer() {
   const startTimeRef = useRef<number>(0)
   const eventsCountRef = useRef<number>(0)
 
-  // Pull-to-refresh for mobile
-  const { containerRef, pullDistance, isRefreshing } = usePullToRefresh({
+  // Pull-to-refresh for mobile (uses direct DOM manipulation for 60fps)
+  const { containerRef, indicatorRef } = usePullToRefresh({
     onRefresh: () => window.location.reload(),
   })
 
@@ -163,11 +163,8 @@ export function ChatContainer() {
         ref={containerRef}
         className="flex-1 min-h-0 overflow-y-auto touch-pan-y"
       >
-        {/* Pull-to-refresh indicator */}
-        <PullToRefreshIndicator
-          pullDistance={pullDistance}
-          isRefreshing={isRefreshing}
-        />
+        {/* Pull-to-refresh indicator (controlled via DOM manipulation) */}
+        <PullToRefreshIndicator ref={indicatorRef} />
 
         {hasMessages ? (
           <MessageList
