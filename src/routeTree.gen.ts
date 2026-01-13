@@ -19,6 +19,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as EventIdRouteImport } from './routes/event/$id'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as ApiEventsRouteImport } from './routes/api/events'
+import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/index'
 import { Route as AdminScrapingIndexRouteImport } from './routes/admin/scraping/index'
 import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/index'
@@ -81,6 +82,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
 const ApiEventsRoute = ApiEventsRouteImport.update({
   id: '/api/events',
   path: '/api/events',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiChatRoute = ApiChatRouteImport.update({
+  id: '/api/chat',
+  path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminVenuesIndexRoute = AdminVenuesIndexRouteImport.update({
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/saved': typeof SavedRoute
+  '/api/chat': typeof ApiChatRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/event/$id': typeof EventIdRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/saved': typeof SavedRoute
+  '/api/chat': typeof ApiChatRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/event/$id': typeof EventIdRoute
@@ -207,6 +215,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/saved': typeof SavedRoute
+  '/api/chat': typeof ApiChatRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/event/$id': typeof EventIdRoute
@@ -234,6 +243,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/register'
     | '/saved'
+    | '/api/chat'
     | '/api/events'
     | '/auth/callback'
     | '/event/$id'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/register'
     | '/saved'
+    | '/api/chat'
     | '/api/events'
     | '/auth/callback'
     | '/event/$id'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/register'
     | '/saved'
+    | '/api/chat'
     | '/api/events'
     | '/auth/callback'
     | '/event/$id'
@@ -309,6 +321,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   RegisterRoute: typeof RegisterRoute
   SavedRoute: typeof SavedRoute
+  ApiChatRoute: typeof ApiChatRoute
   ApiEventsRoute: typeof ApiEventsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   EventIdRoute: typeof EventIdRoute
@@ -384,6 +397,13 @@ declare module '@tanstack/react-router' {
       path: '/api/events'
       fullPath: '/api/events'
       preLoaderRoute: typeof ApiEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/chat': {
+      id: '/api/chat'
+      path: '/api/chat'
+      fullPath: '/api/chat'
+      preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/venues/': {
@@ -523,6 +543,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   RegisterRoute: RegisterRoute,
   SavedRoute: SavedRoute,
+  ApiChatRoute: ApiChatRoute,
   ApiEventsRoute: ApiEventsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   EventIdRoute: EventIdRoute,

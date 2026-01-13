@@ -2,8 +2,9 @@
 // This is the public interface for the chat feature.
 // Import from '@/features/chat' instead of reaching into internal modules.
 
-// API - Server function for AI chat
-export { chat } from './api/agent'
+// Suggestions generator (used by API route)
+export { generateSuggestions } from './api/suggestions'
+export type { SuggestionContext } from './api/suggestions'
 
 // Message utilities
 export {

@@ -6,7 +6,7 @@ Always use **Bun** instead of Node.js, npm, pnpm, or yarn.
 
 ```bash
 bun install          # Install dependencies
-bun run dev          # Start dev server (port 3000)
+bun run dev          # Start dev server (port 3001)
 bun run build        # Production build
 bun run preview      # Preview production build
 bun test             # Run tests
