@@ -12,7 +12,8 @@ COMMENT ON COLUMN events.location_tba IS 'True if the venue/location is TBA or v
 -- Update the events_with_venues view to include location_tba
 DROP VIEW IF EXISTS events_with_venues;
 
-CREATE VIEW events_with_venues AS
+CREATE VIEW events_with_venues
+WITH (security_invoker = true) AS
 SELECT
   e.*,
   v.name AS venue_name,
@@ -20,3 +21,5 @@ SELECT
   v.address AS venue_address
 FROM events e
 LEFT JOIN venues v ON e.venue_id = v.id;
+
+COMMENT ON VIEW events_with_venues IS 'Events joined with venue details. Uses SECURITY INVOKER to respect RLS policies.';

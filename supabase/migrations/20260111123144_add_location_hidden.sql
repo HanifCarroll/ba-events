@@ -13,7 +13,8 @@ COMMENT ON COLUMN events.location_hidden IS 'True if the event address is hidden
 -- (PostgreSQL views with SELECT * don't automatically pick up new columns)
 DROP VIEW IF EXISTS events_with_venues;
 
-CREATE VIEW events_with_venues AS
+CREATE VIEW events_with_venues
+WITH (security_invoker = true) AS
 SELECT
   e.*,
   v.name AS venue_name,
@@ -22,4 +23,4 @@ SELECT
 FROM events e
 LEFT JOIN venues v ON e.venue_id = v.id;
 
-COMMENT ON VIEW events_with_venues IS 'Events joined with venue details. Recreate this view if new columns are added to the events table.';
+COMMENT ON VIEW events_with_venues IS 'Events joined with venue details. Uses SECURITY INVOKER to respect RLS policies. Recreate this view if new columns are added to the events table.';

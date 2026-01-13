@@ -243,7 +243,9 @@ end;
 $$;
 
 -- Helper view: events with venue details
-create view events_with_venues as
+-- Uses security_invoker = true to ensure RLS policies are respected
+create view events_with_venues
+with (security_invoker = true) as
 select
   e.*,
   v.name as venue_name,

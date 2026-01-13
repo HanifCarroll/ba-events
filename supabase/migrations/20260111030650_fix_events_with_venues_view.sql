@@ -7,7 +7,8 @@
 -- Drop and recreate the view to pick up all current columns from events
 DROP VIEW IF EXISTS events_with_venues;
 
-CREATE VIEW events_with_venues AS
+CREATE VIEW events_with_venues
+WITH (security_invoker = true) AS
 SELECT
   e.*,
   v.name AS venue_name,
@@ -17,4 +18,4 @@ FROM events e
 LEFT JOIN venues v ON e.venue_id = v.id;
 
 -- Add a comment explaining the view
-COMMENT ON VIEW events_with_venues IS 'Events joined with venue details. Recreate this view if new columns are added to the events table.';
+COMMENT ON VIEW events_with_venues IS 'Events joined with venue details. Uses SECURITY INVOKER to respect RLS policies. Recreate this view if new columns are added to the events table.';

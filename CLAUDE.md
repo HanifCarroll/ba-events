@@ -241,6 +241,23 @@ See `supabase/schema.sql` for the complete schema including:
 - Event status enum
 - pgvector indexes for semantic search
 
+### Views Security
+
+**Always use `security_invoker = true` when creating views.** This ensures Row Level Security (RLS) policies are respected by running the view with the querying user's permissions, not the view creator's.
+
+```sql
+-- CORRECT: View respects RLS
+CREATE VIEW my_view
+WITH (security_invoker = true) AS
+SELECT * FROM my_table;
+
+-- WRONG: View bypasses RLS (security risk)
+CREATE VIEW my_view AS
+SELECT * FROM my_table;
+```
+
+Without `security_invoker = true`, views default to `SECURITY DEFINER` which bypasses RLS and triggers Supabase Security Advisor warnings.
+
 ### Query Keys
 
 Use centralized query keys from `@/shared/lib/query`:
