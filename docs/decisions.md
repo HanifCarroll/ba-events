@@ -26,6 +26,88 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### True Agent Loop with Event Accumulation
+
+**Date:** 2026-01-13
+
+**Decision:** Replace the fixed 2-call maximum model with a true agent loop that continues until Claude naturally stops using tools (`stop_reason === 'end_turn'`) or hits a configurable maximum iteration limit (default: 5).
+
+**Related Decisions:**
+- Single-Search with Relevance Filtering for Chat Agent (2025-12-30) - This decision supersedes that approach
+- Remove RELEVANT Event Filtering from Chat Agent (2025-12-31)
+
+**Problem:**
+The previous 2-call maximum architecture (search → forced response) limited the agent's ability to handle complex multi-step queries like:
+- "Help me plan my weekend" (requires: list saved events + search new events + compare)
+- "Find techno tonight, but show me what I've already saved first" (requires: list saved → search → compare)
+- "What's happening now? Actually, save that one" (requires: get_happening_now → get_event_details → save_event)
+
+**Historical Context:**
+The 2-call limit was introduced in the "Single-Search with Relevance Filtering" decision (2025-12-30) due to "Text/events mismatch" - events were streamed immediately per iteration, so Claude's final text might describe different events than displayed.
+
+**Why It's Now Safe to Revisit:**
+1. The concierge approach (2025-01-13) defaults to `limit=1` single recommendations
+2. Most queries still complete in 1-2 iterations naturally
+3. The synchronization fix (events sent only at end) solves the root cause
+
+**Solution:**
+
+```typescript
+// Configuration
+const MAX_ITERATIONS = 5
+
+// True agent loop
+while (!done && iteration < MAX_ITERATIONS) {
+  const response = await anthropic.messages.create({ ... })
+
+  if (result.stopReason === 'end_turn') {
+    done = true  // Natural completion
+  } else if (result.stopReason === 'tool_use') {
+    // Execute tools, accumulate events, continue loop
+  }
+}
+
+// Safety valve
+if (!done) {
+  // Force final response with tool_choice: { type: 'none' }
+}
+```
+
+**Key Architectural Changes:**
+
+1. **Event Accumulation**: Events are collected across ALL iterations using a Map (keyed by ID for deduplication). Events are only sent to the client after the loop completes.
+
+2. **Natural Termination**: Agent stops when Claude returns `stop_reason === 'end_turn'`, not after a fixed number of calls.
+
+3. **Safety Limits**: `MAX_ITERATIONS = 5` prevents runaway loops. If hit, forces a text response.
+
+4. **Analytics**: Each tool call includes `iteration` count for monitoring loop behavior.
+
+**Why This Solves the Historical Issues:**
+
+| Historical Issue | Solution |
+|------------------|----------|
+| Events sent immediately | Events accumulated, sent only at end |
+| Text/events mismatch | Final text generated after all tools complete |
+| Runaway iterations | MAX_ITERATIONS safety limit |
+| Cost concerns | Concierge defaults to limit=1, most queries complete in 1-2 iterations |
+
+**Alternatives Considered:**
+- **Keep 2-call maximum**: Rejected - limits emergent capability for complex queries
+- **Explicit `complete` tool**: Rejected - research showed implicit termination (`end_turn`) is best practice
+- **Higher iteration limit (10+)**: Rejected - 5 is sufficient for foreseeable use cases, can increase later
+
+**Rationale:**
+1. **Emergent capability**: Agent can now handle queries we didn't explicitly design for
+2. **User agency**: "Save that, then find me something else" just works
+3. **Maintains safety**: Event accumulation + max iterations prevent historical issues
+4. **Monitoring**: Iteration tracking reveals actual usage patterns
+
+**Files Modified:**
+- `src/features/chat/api/agent.ts` - Replaced 2-call model with true loop
+
+---
+
 ### Agent-Native Architecture: Tier 1 User Action Tools
 
 **Date:** 2026-01-13

@@ -349,7 +349,11 @@ function createRateLimitErrorStream(resetTimestamp: number): ReadableStream<Uint
   })
 }
 
-// Server function for chat with proper agentic loop
+// Agent loop configuration
+const MAX_ITERATIONS = 5 // Maximum tool use iterations to prevent infinite loops
+const MAX_TOKENS_PER_TURN = 1024
+
+// Server function for chat with true agentic loop
 export const chat = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => chatRequestSchema.parse(data))
   .handler(async ({ data }): Promise<ReadableStream<Uint8Array>> => {
@@ -388,147 +392,164 @@ export const chat = createServerFn({ method: 'POST' })
         }
 
         try {
-          // SINGLE SEARCH MODEL: One Claude call, if tool use then execute and get response
-          console.log('[DEBUG] Single search - first Claude call')
+          // TRUE AGENT LOOP: Continue until Claude stops using tools or max iterations reached
+          // Events are accumulated across all iterations and only sent at the end
+          let iteration = 0
+          let done = false
+          let finalText = ''
 
-          const response1 = await anthropic.messages.create({
-            model: CLAUDE_MODEL,
-            max_tokens: 1024,
-            system: getSystemPrompt(locale),
-            tools,
-            messages,
-            stream: true,
-          })
+          // Accumulate events across ALL iterations (keyed by ID to avoid duplicates)
+          const allEvents = new Map<string, EventWithVenue>()
+          let lastSearchInput: SearchEventsInput | null = null
 
-          // Process the first response - DON'T stream text yet (might be tool use)
-          const result1 = await processStream(response1, sendEvent, false)
-          console.log(`[DEBUG] First response - stop reason: ${result1.stopReason}, tool uses: ${result1.toolUses.length}`)
+          console.log('[DEBUG] Starting agent loop')
 
-          // If Claude responded without tool use, we're done - now send the text
-          if (result1.stopReason === 'end_turn' || result1.stopReason === 'max_tokens') {
-            console.log('[DEBUG] Claude responded without tool use')
-            if (result1.text) {
-              // Now send the text since there's no tool use
-              sendEvent({ type: 'text', content: result1.text })
-              newMessages.push({ role: 'assistant', content: result1.text })
-            }
-            sendEvent({ type: 'history', messages: newMessages })
-            sendEvent({ type: 'done' })
-            return
-          }
+          while (!done && iteration < MAX_ITERATIONS) {
+            iteration++
+            console.log(`[DEBUG] Agent loop iteration ${iteration}/${MAX_ITERATIONS}`)
 
-          // Handle tool use
-          if (result1.stopReason === 'tool_use' && result1.toolUses.length > 0) {
-            // Build assistant message content
-            const assistantContent: ContentBlock[] = []
-            if (result1.text) {
-              assistantContent.push({ type: 'text', text: result1.text })
-            }
-            for (const toolUse of result1.toolUses) {
-              // Cast as ContentBlock since we've already validated tool name via registry
-              assistantContent.push({
-                type: 'tool_use',
-                id: toolUse.id,
-                name: toolUse.name,
-                input: toolUse.input,
-              } as ContentBlock)
-            }
-
-            messages.push({ role: 'assistant', content: assistantContent as Anthropic.ContentBlockParam[] })
-            newMessages.push({ role: 'assistant', content: assistantContent })
-
-            // Execute tools and collect results using the registry
-            const toolResults: Anthropic.ToolResultBlockParam[] = []
-            const toolResultsForHistory: ContentBlock[] = []
-            let searchEvents: EventWithVenue[] = []
-            let searchInput: SearchEventsInput | null = null
-
-            for (const toolUse of result1.toolUses) {
-              // Execute tool using the registry
-              const result = await executeTool(toolUse.name, toolUse.input, {
-                userContext,
-                locale,
-              })
-
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: toolUse.id,
-                content: result.formatted,
-                is_error: !result.success,
-              })
-              toolResultsForHistory.push({
-                type: 'tool_result',
-                tool_use_id: toolUse.id,
-                content: result.formatted,
-              })
-
-              // Collect events for display and track analytics
-              if (result.events && result.events.length > 0) {
-                searchEvents = result.events
-              }
-
-              // Track search input for suggestions
-              if (toolUse.name === 'search_events' && result.metadata?.toolInput) {
-                searchInput = result.metadata.toolInput as SearchEventsInput
-              }
-
-              // Track tool usage
-              trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                tool: toolUse.name,
-                success: result.success,
-                ...(result.metadata ?? {}),
-              })
-
-              console.log(`[DEBUG] ${toolUse.name}: success=${result.success}`)
-            }
-
-            // Add tool results to conversation
-            messages.push({ role: 'user', content: toolResults })
-            newMessages.push({ role: 'user', content: toolResultsForHistory })
-
-            // Second Claude call to get response to tool results (NO MORE TOOL USE)
-            console.log('[DEBUG] Single search - second Claude call for response')
-            const response2 = await anthropic.messages.create({
+            const response = await anthropic.messages.create({
               model: CLAUDE_MODEL,
-              max_tokens: 1024,
+              max_tokens: MAX_TOKENS_PER_TURN,
               system: getSystemPrompt(locale),
               tools,
               messages,
               stream: true,
-              tool_choice: { type: 'none' }, // Force no tool use - just respond
             })
 
-            // DON'T stream text yet - we need to parse and filter first
-            const result2 = await processStream(response2, sendEvent, false)
-            console.log(`[DEBUG] Second response - text length: ${result2.text.length}`)
+            // Process response - DON'T stream text yet (we accumulate it)
+            const result = await processStream(response, sendEvent, false)
+            console.log(`[DEBUG] Iteration ${iteration} - stop reason: ${result.stopReason}, tool uses: ${result.toolUses.length}`)
 
-            if (result2.text) {
-              // Send all search events (no filtering)
-              if (searchEvents.length > 0) {
-                sendEvent({ type: 'events', data: searchEvents })
-                console.log(`[DEBUG] Showing ${searchEvents.length} events`)
+            // If Claude responded without tool use, we're done
+            if (result.stopReason === 'end_turn' || result.stopReason === 'max_tokens') {
+              console.log(`[DEBUG] Agent loop complete after ${iteration} iteration(s) - ${result.stopReason}`)
+              finalText = result.text
+              done = true
+
+              // Add final response to history
+              if (result.text) {
+                newMessages.push({ role: 'assistant', content: result.text })
+              }
+              break
+            }
+
+            // Handle tool use
+            if (result.stopReason === 'tool_use' && result.toolUses.length > 0) {
+              // Build assistant message content
+              const assistantContent: ContentBlock[] = []
+              if (result.text) {
+                assistantContent.push({ type: 'text', text: result.text })
+              }
+              for (const toolUse of result.toolUses) {
+                assistantContent.push({
+                  type: 'tool_use',
+                  id: toolUse.id,
+                  name: toolUse.name,
+                  input: toolUse.input,
+                } as ContentBlock)
               }
 
-              // Generate and send suggestions
-              if (searchInput) {
-                const suggestions = generateSuggestions({
-                  originalQuery: message,
-                  toolInput: searchInput,
-                  results: searchEvents,
+              messages.push({ role: 'assistant', content: assistantContent as Anthropic.ContentBlockParam[] })
+              newMessages.push({ role: 'assistant', content: assistantContent })
+
+              // Execute tools and collect results
+              const toolResults: Anthropic.ToolResultBlockParam[] = []
+              const toolResultsForHistory: ContentBlock[] = []
+
+              for (const toolUse of result.toolUses) {
+                const toolResult = await executeTool(toolUse.name, toolUse.input, {
+                  userContext,
                   locale,
                 })
-                if (suggestions.length > 0) {
-                  sendEvent({ type: 'suggestions', data: suggestions })
-                  console.log(`[DEBUG] Generated ${suggestions.length} suggestions`)
+
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: toolUse.id,
+                  content: toolResult.formatted,
+                  is_error: !toolResult.success,
+                })
+                toolResultsForHistory.push({
+                  type: 'tool_result',
+                  tool_use_id: toolUse.id,
+                  content: toolResult.formatted,
+                })
+
+                // ACCUMULATE events across iterations (keyed by ID to dedupe)
+                if (toolResult.events && toolResult.events.length > 0) {
+                  for (const event of toolResult.events) {
+                    allEvents.set(event.id, event)
+                  }
+                  console.log(`[DEBUG] Accumulated ${toolResult.events.length} events, total unique: ${allEvents.size}`)
                 }
+
+                // Track last search input for suggestions
+                if (toolUse.name === 'search_events' && toolResult.metadata?.toolInput) {
+                  lastSearchInput = toolResult.metadata.toolInput as SearchEventsInput
+                }
+
+                // Track tool usage
+                trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+                  tool: toolUse.name,
+                  success: toolResult.success,
+                  iteration,
+                  ...(toolResult.metadata ?? {}),
+                })
+
+                console.log(`[DEBUG] ${toolUse.name}: success=${toolResult.success}`)
               }
 
-              // Send response text
-              sendEvent({ type: 'text', content: result2.text })
-
-              // Store in history
-              newMessages.push({ role: 'assistant', content: result2.text })
+              // Add tool results to conversation for next iteration
+              messages.push({ role: 'user', content: toolResults })
+              newMessages.push({ role: 'user', content: toolResultsForHistory })
             }
+          }
+
+          // Safety: If we hit max iterations without natural completion, force a response
+          if (!done) {
+            console.log(`[DEBUG] Hit max iterations (${MAX_ITERATIONS}), forcing final response`)
+
+            const finalResponse = await anthropic.messages.create({
+              model: CLAUDE_MODEL,
+              max_tokens: MAX_TOKENS_PER_TURN,
+              system: getSystemPrompt(locale),
+              tools,
+              messages,
+              stream: true,
+              tool_choice: { type: 'none' }, // Force text response
+            })
+
+            const finalResult = await processStream(finalResponse, sendEvent, false)
+            finalText = finalResult.text
+            if (finalText) {
+              newMessages.push({ role: 'assistant', content: finalText })
+            }
+          }
+
+          // NOW send accumulated events (only at the very end)
+          const eventsToSend = Array.from(allEvents.values())
+          if (eventsToSend.length > 0) {
+            sendEvent({ type: 'events', data: eventsToSend })
+            console.log(`[DEBUG] Sending ${eventsToSend.length} accumulated events`)
+          }
+
+          // Generate and send suggestions based on last search
+          if (lastSearchInput) {
+            const suggestions = generateSuggestions({
+              originalQuery: message,
+              toolInput: lastSearchInput,
+              results: eventsToSend,
+              locale,
+            })
+            if (suggestions.length > 0) {
+              sendEvent({ type: 'suggestions', data: suggestions })
+              console.log(`[DEBUG] Generated ${suggestions.length} suggestions`)
+            }
+          }
+
+          // Send response text
+          if (finalText) {
+            sendEvent({ type: 'text', content: finalText })
           }
 
           // Send history and done
