@@ -16,6 +16,7 @@ interface ChatInputProps {
  * - Max height with scroll to prevent excessive growth
  * - Enter to send, Shift+Enter for newline (universal chat pattern)
  * - Mobile-friendly with proper touch targets
+ * - No <form> wrapper to prevent Chrome autofill suggestions
  *
  * @see https://css-tricks.com/the-cleanest-trick-for-autogrowing-textareas/
  */
@@ -41,8 +42,7 @@ export function ChatInput({
     }
   }, [value])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = () => {
     if (value.trim() && !disabled) {
       onSend(value.trim())
       setValue('')
@@ -53,7 +53,7 @@ export function ChatInput({
     // Enter to send, Shift+Enter for newline
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit(e)
+      handleSubmit()
     }
   }
 
@@ -64,11 +64,8 @@ export function ChatInput({
       {/* Top border with gradient */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 
-      <form
-        onSubmit={handleSubmit}
-        autoComplete="off"
-        className="relative px-4 py-4 sm:px-6 sm:py-5 bg-background"
-      >
+      {/* No <form> wrapper - prevents Chrome autofill bar on mobile */}
+      <div className="relative px-4 py-4 sm:px-6 sm:py-5 bg-background">
         <div className="max-w-3xl mx-auto">
           <div
             className={`
@@ -78,8 +75,8 @@ export function ChatInput({
               ${disabled ? 'opacity-60' : ''}
             `}
           >
-            {/* Decorative sparkle - aligned to top when expanded */}
-            <div className="absolute left-4 top-3.5 text-primary/30">
+            {/* Decorative sparkle - aligned to center vertically for single line */}
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/30 pointer-events-none">
               <Sparkles className="h-4 w-4" />
             </div>
 
@@ -87,14 +84,15 @@ export function ChatInput({
             <div
               ref={wrapperRef}
               className="
-                flex-1 grid
+                flex-1 grid min-h-[46px]
                 after:content-[attr(data-replicated-value)_'_']
                 after:whitespace-pre-wrap
                 after:invisible
                 after:col-start-1 after:col-end-2
                 after:row-start-1 after:row-end-2
-                after:py-3.5 after:pl-11 after:pr-4
+                after:py-3 after:pl-11 after:pr-4
                 after:text-base after:sm:text-sm
+                after:leading-normal
                 after:font-[inherit]
                 after:border after:border-transparent
               "
@@ -110,11 +108,21 @@ export function ChatInput({
                 placeholder={m.chat_placeholder()}
                 disabled={disabled}
                 rows={1}
+                // All the attributes to prevent autofill
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                aria-autocomplete="none"
                 className={`
                   col-start-1 col-end-2 row-start-1 row-end-2
-                  resize-none overflow-hidden
-                  max-h-40
-                  bg-transparent py-3.5 pl-11 pr-4 text-base sm:text-sm text-foreground
+                  resize-none overflow-y-auto
+                  max-h-40 min-h-[46px]
+                  bg-transparent py-3 pl-11 pr-4 text-base sm:text-sm text-foreground
+                  leading-normal
                   placeholder:text-muted-foreground/60
                   focus:outline-none
                   disabled:cursor-not-allowed
@@ -123,7 +131,8 @@ export function ChatInput({
             </div>
 
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={!canSubmit}
               className={`
                 mr-2 mb-2 p-2.5 rounded-xl shrink-0
@@ -145,7 +154,7 @@ export function ChatInput({
             {m.chat_powered()}
           </p>
         </div>
-      </form>
+      </div>
     </div>
   )
 }
