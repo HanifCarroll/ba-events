@@ -16,6 +16,8 @@ import {
   AlertCircle,
   FileText,
   Link2,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
@@ -25,6 +27,8 @@ import { Input } from '@/shared/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import { ConfirmationDialog } from '@/shared/ui/confirmation-dialog'
 import { Combobox } from '@/shared/ui/combobox'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/shared/ui/sheet'
+import { SwipeableCard } from '@/shared/ui/SwipeableCard'
 import { DataTable, getEventColumns } from '@/shared/ui/data-table'
 import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState } from '@/shared/ui/EmptyState'
 import {
@@ -647,6 +651,25 @@ function EventListPage() {
   // Edit modal handlers - local state for instant open/close
   const [editingEvent, setEditingEvent] = useState<EventWithVenue | null>(null)
 
+  // Mobile selection mode (triggered by long press)
+  const [mobileSelectionMode, setMobileSelectionMode] = useState(false)
+
+  const handleEnterSelectionMode = useCallback(() => {
+    setMobileSelectionMode(true)
+  }, [])
+
+  const handleExitSelectionMode = useCallback(() => {
+    setMobileSelectionMode(false)
+    bulk.clearSelection()
+  }, [bulk])
+
+  // Exit selection mode when selection is cleared
+  useEffect(() => {
+    if (mobileSelectionMode && bulk.selectedIds.size === 0) {
+      setMobileSelectionMode(false)
+    }
+  }, [mobileSelectionMode, bulk.selectedIds.size])
+
   const handleEdit = useCallback((event: EventWithVenue) => {
     setEditingEvent(event)
   }, [])
@@ -705,7 +728,9 @@ function EventListPage() {
       {(tabCounts?.all ?? 0) > 0 && (
         <div className="space-y-4">
           <Tabs value={activeTab} onValueChange={handleTabChange}>
-            <TabsList className="bg-card/50 border border-border/50 p-1 h-auto">
+            {/* Horizontally scrollable on mobile */}
+            <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+              <TabsList className="bg-card/50 border border-border/50 p-1 h-auto inline-flex w-auto min-w-full sm:min-w-0">
               <TabsTrigger
                 value="all"
                 className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary px-4 py-2"
@@ -743,7 +768,8 @@ function EventListPage() {
                 {m.admin_tab_past()}
                 <span className="ml-2 text-xs opacity-70">({tabCounts?.past ?? 0})</span>
               </TabsTrigger>
-            </TabsList>
+              </TabsList>
+            </div>
           </Tabs>
 
           {/* Data quality filters - only show on needs_attention tab */}
@@ -783,9 +809,10 @@ function EventListPage() {
             </div>
           )}
 
-          {/* Search and Venue filter - compact row */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative flex-1 max-w-sm min-w-[200px]">
+          {/* Search and Filters */}
+          <div className="flex items-center gap-3">
+            {/* Search - always visible */}
+            <div className="relative flex-1 min-w-0 sm:max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={m.admin_search_events()}
@@ -794,45 +821,114 @@ function EventListPage() {
                 className="pl-9 bg-background/50 border-border/50"
               />
             </div>
-            <Combobox
-              options={venueOptions}
-              value={filters.venueId}
-              onValueChange={setVenueFilter}
-              placeholder={m.admin_all_venues()}
-              emptyText={m.admin_no_venues_found()}
-              className="w-48"
-            />
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <Checkbox
-                checked={filters.importedToday}
-                onCheckedChange={(checked) => setImportedToday(checked === true)}
+
+            {/* Mobile: Filter button that opens sheet */}
+            <div className="sm:hidden">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline" size="icon" className="relative shrink-0">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    {hasActiveFilters && (
+                      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center">
+                        !
+                      </span>
+                    )}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="bottom" className="h-auto max-h-[70vh] rounded-t-xl">
+                  <SheetHeader>
+                    <SheetTitle>{m.admin_filter_by()}</SheetTitle>
+                  </SheetHeader>
+                  <div className="space-y-4 py-4">
+                    {/* Venue filter */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{m.admin_all_venues()}</label>
+                      <Combobox
+                        options={venueOptions}
+                        value={filters.venueId}
+                        onValueChange={setVenueFilter}
+                        placeholder={m.admin_all_venues()}
+                        emptyText={m.admin_no_venues_found()}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* Quick filters */}
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                        <Checkbox
+                          checked={filters.importedToday}
+                          onCheckedChange={(checked) => setImportedToday(checked === true)}
+                        />
+                        <span className="text-sm">{m.admin_imported_today()}</span>
+                      </label>
+                      {activeTab !== 'past' && (
+                        <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                          <Checkbox
+                            checked={filters.showPast}
+                            onCheckedChange={(checked) => setShowPast(checked === true)}
+                          />
+                          <span className="text-sm">{m.admin_show_past_events()}</span>
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Clear filters */}
+                    {hasActiveFilters && (
+                      <Button
+                        variant="outline"
+                        onClick={handleClearFilters}
+                        className="w-full"
+                      >
+                        {m.common_clear()}
+                      </Button>
+                    )}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            {/* Desktop: Inline filters */}
+            <div className="hidden sm:flex items-center gap-3 flex-wrap">
+              <Combobox
+                options={venueOptions}
+                value={filters.venueId}
+                onValueChange={setVenueFilter}
+                placeholder={m.admin_all_venues()}
+                emptyText={m.admin_no_venues_found()}
+                className="w-48"
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                {m.admin_imported_today()}
-              </span>
-            </label>
-            {/* Show past events checkbox - hidden on Past tab since it's redundant */}
-            {activeTab !== 'past' && (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <Checkbox
-                  checked={filters.showPast}
-                  onCheckedChange={(checked) => setShowPast(checked === true)}
+                  checked={filters.importedToday}
+                  onCheckedChange={(checked) => setImportedToday(checked === true)}
                 />
                 <span className="text-sm text-muted-foreground whitespace-nowrap">
-                  {m.admin_show_past_events()}
+                  {m.admin_imported_today()}
                 </span>
               </label>
-            )}
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleClearFilters}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                {m.common_clear()}
-              </Button>
-            )}
+              {activeTab !== 'past' && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <Checkbox
+                    checked={filters.showPast}
+                    onCheckedChange={(checked) => setShowPast(checked === true)}
+                  />
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    {m.admin_show_past_events()}
+                  </span>
+                </label>
+              )}
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearFilters}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  {m.common_clear()}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -860,14 +956,43 @@ function EventListPage() {
           <>
             {/* Mobile Card View */}
             <div className="sm:hidden">
-              <BulkActionBar
-                selectedCount={bulk.selectedIds.size}
-                filteredEventsLength={events.length}
-                onToggleSelectAll={bulk.toggleSelectAll}
-                onSetBulkAction={bulk.setBulkAction}
-                onClearSelection={bulk.clearSelection}
-                enrichments={enrichments}
-              />
+              {/* Selection mode header */}
+              {mobileSelectionMode && (
+                <div className="flex items-center justify-between p-3 mb-2 bg-primary/10 border border-primary/20 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleExitSelectionMode}
+                      className="h-8 w-8"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm font-medium">
+                      {bulk.selectedIds.size} selected
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={bulk.toggleSelectAll}
+                    className="text-primary"
+                  >
+                    {bulk.selectedIds.size === events.length ? 'Deselect all' : 'Select all'}
+                  </Button>
+                </div>
+              )}
+              {/* Bulk action bar - only show when items are selected */}
+              {bulk.selectedIds.size > 0 && (
+                <BulkActionBar
+                  selectedCount={bulk.selectedIds.size}
+                  filteredEventsLength={events.length}
+                  onToggleSelectAll={bulk.toggleSelectAll}
+                  onSetBulkAction={bulk.setBulkAction}
+                  onClearSelection={handleExitSelectionMode}
+                  enrichments={enrichments}
+                />
+              )}
             </div>
             <MobileEventCards
               events={events}
@@ -880,6 +1005,8 @@ function EventListPage() {
               isApproving={singleActions.isApproving}
               isRejecting={singleActions.isRejecting}
               showNeedsAttention={activeTab === 'needs_attention'}
+              selectionMode={mobileSelectionMode}
+              onEnterSelectionMode={handleEnterSelectionMode}
             />
 
             {/* Desktop Table View with DataTable */}
@@ -1053,9 +1180,11 @@ interface EventListProps {
   isApproving: string | null
   isRejecting: string | null
   showNeedsAttention?: boolean
+  selectionMode?: boolean
+  onEnterSelectionMode?: () => void
 }
 
-// Memoized mobile card component
+// Memoized mobile card component with swipe actions
 const MobileEventCard = memo(function MobileEventCard({
   event,
   isSelected,
@@ -1064,9 +1193,11 @@ const MobileEventCard = memo(function MobileEventCard({
   onApprove,
   onReject,
   onDelete,
-  isApproving,
-  isRejecting,
+  isApproving: _isApproving,
+  isRejecting: _isRejecting,
   showNeedsAttention,
+  selectionMode,
+  onEnterSelectionMode,
 }: {
   event: EventWithVenue
   isSelected: boolean
@@ -1078,25 +1209,82 @@ const MobileEventCard = memo(function MobileEventCard({
   isApproving: string | null
   isRejecting: string | null
   showNeedsAttention?: boolean
+  selectionMode: boolean
+  onEnterSelectionMode: () => void
 }) {
   const needsDescription = !event.description_es && event.link
 
-  return (
+  // Swipe actions based on event status
+  const leftActions = event.status === 'pending_review'
+    ? [
+        {
+          icon: <CheckCircle2 className="h-5 w-5" />,
+          label: m.admin_approve(),
+          onClick: () => onApprove(event.id),
+          variant: 'primary' as const,
+        },
+      ]
+    : [
+        {
+          icon: <Pencil className="h-5 w-5" />,
+          label: m.common_edit(),
+          onClick: () => onEdit(event),
+          variant: 'primary' as const,
+        },
+      ]
+
+  const rightActions = event.status === 'pending_review'
+    ? [
+        {
+          icon: <XCircle className="h-5 w-5" />,
+          label: m.admin_reject(),
+          onClick: () => onReject(event.id),
+          variant: 'destructive' as const,
+        },
+      ]
+    : [
+        {
+          icon: <Trash2 className="h-5 w-5" />,
+          label: m.common_delete(),
+          onClick: () => onDelete(event),
+          variant: 'destructive' as const,
+        },
+      ]
+
+  const handleLongPress = useCallback(() => {
+    onEnterSelectionMode()
+    onToggleSelect(event.id)
+  }, [onEnterSelectionMode, onToggleSelect, event.id])
+
+  const handleCardClick = useCallback(() => {
+    if (selectionMode) {
+      onToggleSelect(event.id)
+    }
+  }, [selectionMode, onToggleSelect, event.id])
+
+  const cardContent = (
     <div
-      className={`bg-card/50 rounded-xl border border-border/50 p-4 space-y-3 ${
+      className={`bg-card/50 rounded-xl border border-border/50 p-4 space-y-2 transition-colors ${
         isSelected ? 'border-primary/50 bg-primary/5' : ''
       }`}
+      onClick={handleCardClick}
     >
+      {/* Header with title and status */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
-          <Checkbox
-            checked={isSelected}
-            onCheckedChange={() => onToggleSelect(event.id)}
-            className="mt-0.5"
-          />
+          {/* Checkbox only in selection mode */}
+          {selectionMode && (
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={() => onToggleSelect(event.id)}
+              className="mt-0.5 shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-foreground truncate">{event.name}</p>
-            <div className="flex flex-wrap gap-1 mt-1">
+            {/* Allow 2 lines for title */}
+            <p className="font-medium text-foreground line-clamp-2 leading-tight">{event.name}</p>
+            <div className="flex flex-wrap gap-1 mt-1.5">
               {showNeedsAttention && needsDescription && (
                 <Badge
                   variant="outline"
@@ -1125,67 +1313,36 @@ const MobileEventCard = memo(function MobileEventCard({
         {getStatusBadge(event.status)}
       </div>
 
-      <div className="space-y-1.5 text-sm text-muted-foreground">
-        {event.venue_name && (
-          <div className="flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{event.venue_name}</span>
-          </div>
-        )}
+      {/* Event details */}
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <Calendar className="h-3.5 w-3.5 shrink-0" />
           <span>{formatDateTime(event.starts_at)}</span>
         </div>
-      </div>
-
-      <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-        {event.status === 'pending_review' ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-1 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-              onClick={() => onApprove(event.id)}
-              disabled={isApproving === event.id}
-            >
-              <CheckCircle2 className="h-4 w-4 mr-2" />
-              {m.admin_approve()}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-1 text-destructive hover:bg-destructive/10"
-              onClick={() => onReject(event.id)}
-              disabled={isRejecting === event.id}
-            >
-              <XCircle className="h-4 w-4 mr-2" />
-              {m.admin_reject()}
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-1 text-muted-foreground hover:text-foreground"
-              onClick={() => onEdit(event)}
-            >
-              <Pencil className="h-4 w-4 mr-2" />
-              {m.common_edit()}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-1 text-muted-foreground hover:text-destructive"
-              onClick={() => onDelete(event)}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              {m.common_delete()}
-            </Button>
-          </>
+        {event.venue_name && (
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{event.venue_name}</span>
+          </div>
         )}
       </div>
     </div>
+  )
+
+  // In selection mode, don't wrap with swipeable (prevents accidental actions)
+  if (selectionMode) {
+    return cardContent
+  }
+
+  return (
+    <SwipeableCard
+      leftActions={leftActions}
+      rightActions={rightActions}
+      onLongPress={handleLongPress}
+      className="rounded-xl"
+    >
+      {cardContent}
+    </SwipeableCard>
   )
 })
 
@@ -1200,20 +1357,22 @@ function MobileEventCards({
   isApproving,
   isRejecting,
   showNeedsAttention,
+  selectionMode = false,
+  onEnterSelectionMode = () => {},
 }: EventListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
 
   const virtualizer = useVirtualizer({
     count: events.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 180,
+    estimateSize: () => 120, // Reduced from 180 since we removed action buttons
     overscan: 5,
   })
 
   return (
     <div
       ref={parentRef}
-      className="sm:hidden h-[calc(100vh-400px)] overflow-auto"
+      className="sm:hidden h-[calc(100vh-340px)] overflow-auto"
     >
       <div
         style={{
@@ -1247,6 +1406,8 @@ function MobileEventCards({
                 isApproving={isApproving}
                 isRejecting={isRejecting}
                 showNeedsAttention={showNeedsAttention}
+                selectionMode={selectionMode}
+                onEnterSelectionMode={onEnterSelectionMode}
               />
             </div>
           )

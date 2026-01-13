@@ -17,7 +17,7 @@ function debounce<T extends (...args: Parameters<T>) => void>(
   }
   return debounced as T & { cancel: () => void }
 }
-import { Plus, MapPin, Search, X, Filter, Upload, Loader2, AlertCircle, ChevronDown, ChevronRight, ExternalLink, Pencil } from 'lucide-react'
+import { Plus, MapPin, Search, X, Filter, Upload, Loader2, AlertCircle, ChevronDown, ChevronRight, ExternalLink, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
@@ -39,6 +39,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/shared/ui/collapsible'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/shared/ui/sheet'
+import { SwipeableCard } from '@/shared/ui/SwipeableCard'
 import { DataTable, getVenueColumns } from '@/shared/ui/data-table'
 import { VenueDuplicatesPanel } from './-components/VenueDuplicatesPanel'
 import { VenueAddressNamesPanel } from './-components/VenueAddressNamesPanel'
@@ -116,8 +124,10 @@ function VenueListPage() {
   const review = useVenueReview({ venues, activeTab, setActiveTab })
 
   // Local state for UI
-  const [showFilters, setShowFilters] = useState(false)
   const [searchInput, setSearchInput] = useState(search)
+
+  // Mobile selection mode state
+  const [mobileSelectionMode, setMobileSelectionMode] = useState(false)
 
   // Sync search input when URL changes
   useEffect(() => {
@@ -213,6 +223,16 @@ function VenueListPage() {
 
   // Bulk actions
   const bulk = useVenueBulkActions(filteredVenues)
+
+  // Selection mode callbacks (after bulk is defined)
+  const handleEnterSelectionMode = useCallback(() => {
+    setMobileSelectionMode(true)
+  }, [])
+
+  const handleExitSelectionMode = useCallback(() => {
+    setMobileSelectionMode(false)
+    bulk.clearSelection()
+  }, [bulk])
 
   const hasActiveFilters = search || neighborhoodFilter || failedVenueFilter || importedToday
 
@@ -326,32 +346,10 @@ function VenueListPage() {
       {/* Filter Bar */}
       {venues.length > 0 && (
         <div className="space-y-3">
-          {/* Mobile filter toggle */}
-          <div className="sm:hidden">
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className="w-full justify-between border-border/50"
-            >
-              <span className="flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                {m.common_filters()}
-                {hasActiveFilters && (
-                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                    {m.common_active()}
-                  </Badge>
-                )}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {showFilters ? m.common_hide() : m.common_show()}
-              </span>
-            </Button>
-          </div>
-
-          {/* Filter controls */}
-          <div className={`flex flex-col gap-3 ${showFilters ? 'flex' : 'hidden'} sm:flex sm:flex-row sm:flex-wrap sm:items-center`}>
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
+          {/* Search + Filter button row for mobile */}
+          <div className="flex items-center gap-2">
+            {/* Search - always visible */}
+            <div className="relative flex-1 sm:flex-none sm:min-w-[200px] sm:max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 value={searchInput}
@@ -361,46 +359,146 @@ function VenueListPage() {
               />
             </div>
 
-            {/* Neighborhood filter */}
-            <Combobox
-              options={neighborhoodOptions}
-              value={neighborhoodFilter}
-              onValueChange={handleNeighborhoodChange}
-              placeholder={m.admin_all_neighborhoods()}
-              emptyText={m.admin_no_neighborhood()}
-              className="w-48"
-            />
+            {/* Mobile filter sheet */}
+            <div className="sm:hidden">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline" size="icon" className="relative shrink-0 border-border/50">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    {hasActiveFilters && (
+                      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center font-bold">
+                        !
+                      </span>
+                    )}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="bottom" className="h-auto max-h-[70vh] rounded-t-xl">
+                  <SheetHeader className="pb-4">
+                    <SheetTitle className="font-display">{m.common_filters()}</SheetTitle>
+                  </SheetHeader>
+                  <div className="space-y-4 pb-6">
+                    {/* Neighborhood filter */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">{m.admin_neighborhood()}</label>
+                      <Combobox
+                        options={neighborhoodOptions}
+                        value={neighborhoodFilter}
+                        onValueChange={handleNeighborhoodChange}
+                        placeholder={m.admin_all_neighborhoods()}
+                        emptyText={m.admin_no_neighborhood()}
+                        className="w-full"
+                      />
+                    </div>
 
-            {/* Imported today filter */}
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <Checkbox
-                checked={importedToday}
-                onCheckedChange={(checked) => handleImportedTodayChange(checked === true)}
+                    {/* Imported today filter */}
+                    <label className="flex items-center gap-3 cursor-pointer select-none p-3 bg-muted/30 rounded-lg">
+                      <Checkbox
+                        checked={importedToday}
+                        onCheckedChange={(checked) => handleImportedTodayChange(checked === true)}
+                      />
+                      <span className="text-sm text-foreground">
+                        {m.admin_imported_today()}
+                      </span>
+                    </label>
+
+                    {/* Clear filters button */}
+                    {hasActiveFilters && (
+                      <Button
+                        variant="outline"
+                        className="w-full border-border/50"
+                        onClick={clearFilters}
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        {m.common_clear_filters()}
+                      </Button>
+                    )}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            {/* Desktop filter controls */}
+            <div className="hidden sm:flex sm:items-center sm:gap-3 sm:flex-1">
+              {/* Neighborhood filter */}
+              <Combobox
+                options={neighborhoodOptions}
+                value={neighborhoodFilter}
+                onValueChange={handleNeighborhoodChange}
+                placeholder={m.admin_all_neighborhoods()}
+                emptyText={m.admin_no_neighborhood()}
+                className="w-48"
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                {m.admin_imported_today()}
-              </span>
-            </label>
-          </div>
 
-          {/* Clear filters */}
-          {hasActiveFilters && (
+              {/* Imported today filter */}
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={importedToday}
+                  onCheckedChange={(checked) => handleImportedTodayChange(checked === true)}
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                  {m.admin_imported_today()}
+                </span>
+              </label>
+
+              {/* Clear filters */}
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearFilters}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5 mr-1.5" />
+                  {m.common_clear_filters()}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile selection mode header */}
+      {mobileSelectionMode && (
+        <div className="sm:hidden flex items-center justify-between p-3 mb-2 bg-primary/10 border border-primary/20 rounded-xl">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleExitSelectionMode}
+            className="h-8 w-8"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          <span className="text-sm font-medium">
+            {bulk.selectedIds.size} selected
+          </span>
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
-              onClick={clearFilters}
-              className="text-muted-foreground hover:text-foreground"
+              onClick={bulk.toggleSelectAll}
+              className="text-xs"
             >
-              <X className="h-3.5 w-3.5 mr-1.5" />
-              {m.common_clear_filters()}
+              {bulk.selectedIds.size === filteredVenues.length ? 'Deselect all' : 'Select all'}
             </Button>
-          )}
+            {bulk.selectedIds.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => bulk.setBulkAction('delete')}
+                className="text-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
       {/* Tabs - flex-1 to fill remaining space */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReviewTab)} className="flex-1 min-h-0 flex flex-col">
-        <TabsList className="bg-muted/50 border border-border/50 shrink-0">
+        {/* Horizontally scrollable tabs on mobile */}
+        <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0 shrink-0">
+          <TabsList className="inline-flex w-auto min-w-full sm:min-w-0 bg-muted/50 border border-border/50">
           <TabsTrigger value="all" className="data-[state=active]:bg-background">
             {m.admin_all_venues()}
           </TabsTrigger>
@@ -428,7 +526,8 @@ function VenueListPage() {
               </Badge>
             )}
           </TabsTrigger>
-        </TabsList>
+          </TabsList>
+        </div>
 
         {/* All Venues Tab */}
         <TabsContent value="all" className="mt-4 flex-1 min-h-0 flex flex-col">
@@ -461,8 +560,16 @@ function VenueListPage() {
               <MobileVenueCard
                 key={venue.id}
                 venue={venue}
+                isSelected={bulk.selectedIds.has(venue.id)}
+                onToggleSelect={() => bulk.handleSelectionChange(
+                  bulk.selectedIds.has(venue.id)
+                    ? new Set([...bulk.selectedIds].filter(id => id !== venue.id))
+                    : new Set([...bulk.selectedIds, venue.id])
+                )}
                 onEdit={() => handleEdit(venue)}
                 onDelete={() => setDeleteTarget(venue)}
+                selectionMode={mobileSelectionMode}
+                onEnterSelectionMode={handleEnterSelectionMode}
               />
             ))}
           </div>
@@ -523,8 +630,16 @@ function VenueListPage() {
                   <MobileVenueCard
                     key={venue.id}
                     venue={venue}
+                    isSelected={bulk.selectedIds.has(venue.id)}
+                    onToggleSelect={() => bulk.handleSelectionChange(
+                      bulk.selectedIds.has(venue.id)
+                        ? new Set([...bulk.selectedIds].filter(id => id !== venue.id))
+                        : new Set([...bulk.selectedIds, venue.id])
+                    )}
                     onEdit={() => handleEdit(venue)}
                     onDelete={() => setDeleteTarget(venue)}
+                    selectionMode={mobileSelectionMode}
+                    onEnterSelectionMode={handleEnterSelectionMode}
                   />
                 ))}
               </div>
@@ -871,19 +986,70 @@ function VenueListPage() {
   )
 }
 
-// Mobile venue card component
+// Mobile venue card component with swipe actions
 function MobileVenueCard({
   venue,
+  isSelected,
+  onToggleSelect,
   onEdit,
   onDelete,
+  selectionMode,
+  onEnterSelectionMode,
 }: {
   venue: Venue
+  isSelected: boolean
+  onToggleSelect: () => void
   onEdit: () => void
   onDelete: () => void
+  selectionMode: boolean
+  onEnterSelectionMode: () => void
 }) {
-  return (
-    <div className="bg-card/50 rounded-xl border border-border/50 p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
+  const handleLongPress = useCallback(() => {
+    onEnterSelectionMode()
+    // Auto-select this venue when entering selection mode
+    if (!isSelected) {
+      onToggleSelect()
+    }
+  }, [onEnterSelectionMode, isSelected, onToggleSelect])
+
+  // Swipe actions
+  const leftActions = [
+    {
+      icon: <Pencil className="h-5 w-5" />,
+      label: m.common_edit(),
+      onClick: onEdit,
+      variant: 'primary' as const,
+    },
+  ]
+
+  const rightActions = [
+    {
+      icon: <Trash2 className="h-5 w-5" />,
+      label: m.common_delete(),
+      onClick: onDelete,
+      variant: 'destructive' as const,
+    },
+  ]
+
+  const cardContent = (
+    <div
+      className={`bg-card/50 rounded-xl border p-4 ${
+        isSelected ? 'border-primary bg-primary/5' : 'border-border/50'
+      } ${selectionMode ? 'cursor-pointer' : ''}`}
+      onClick={selectionMode ? onToggleSelect : undefined}
+    >
+      <div className="flex items-start gap-3">
+        {/* Selection checkbox in selection mode */}
+        {selectionMode && (
+          <div className="pt-0.5">
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={onToggleSelect}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+
         <div className="flex-1 min-w-0">
           <p className="font-medium text-foreground truncate">{venue.name}</p>
           {venue.neighborhood ? (
@@ -895,27 +1061,27 @@ function MobileVenueCard({
               {m.admin_no_neighborhood()}
             </span>
           )}
+          {venue.address && (
+            <p className="text-xs text-muted-foreground mt-1 truncate">{venue.address}</p>
+          )}
         </div>
       </div>
-
-      <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="flex-1 text-muted-foreground hover:text-foreground"
-          onClick={onEdit}
-        >
-          {m.common_edit()}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="flex-1 text-muted-foreground hover:text-destructive"
-          onClick={onDelete}
-        >
-          {m.common_delete()}
-        </Button>
-      </div>
     </div>
+  )
+
+  // In selection mode, don't wrap with swipeable card
+  if (selectionMode) {
+    return cardContent
+  }
+
+  return (
+    <SwipeableCard
+      leftActions={leftActions}
+      rightActions={rightActions}
+      onLongPress={handleLongPress}
+      className="rounded-xl"
+    >
+      {cardContent}
+    </SwipeableCard>
   )
 }
