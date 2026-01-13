@@ -23,9 +23,28 @@ Agent-native applications get better through accumulated context and prompt refi
 
 ## Current Agent State
 
-The AI agent (the "concierge") currently has **only 2 tools**:
+The AI agent (the "concierge") now has **13 tools** (updated 2025-01-13):
+
+### Core Tools
 1. `search_events` - Semantic + filtered event search
 2. `get_venue_details` - Venue information lookup
+3. `get_event_details` - Full event details by ID
+
+### User Action Tools (require auth)
+4. `save_event` - Save event to user's list
+5. `unsave_event` - Remove event from user's list
+6. `list_saved_events` - Show user's saved events (upcoming/past/all)
+7. `check_event_saved` - Check if event is already saved
+
+### Context Tools
+8. `get_happening_now` - Events in progress right now
+9. `get_tonights_events` - Tonight's events (6pm-6am)
+10. `get_user_context` - User auth status and saved counts
+
+### Discovery Tools
+11. `get_event_stats` - Overview statistics (counts by category, neighborhood)
+12. `list_neighborhoods_with_events` - Neighborhoods with event counts
+13. `list_categories_with_events` - Categories with event counts
 
 It uses a **single-search model** (max 2 Claude calls), not a true agent loop.
 
@@ -35,24 +54,26 @@ It uses a **single-search model** (max 2 Claude calls), not a true agent loop.
 
 The article's #1 principle: **"Whatever the user can do through the UI, the agent should be able to achieve through tools."**
 
-| User Action (UI) | Agent Can Do? |
-|------------------|---------------|
-| Search events | ✅ |
-| Get venue details | ✅ |
-| **Save event** | ❌ |
-| **Unsave event** | ❌ |
-| **View saved events** | ❌ |
-| **Get full event details** | ❌ (only partial via search) |
-| Share event | ❌ |
-| Get tickets | Partial (returns URL) |
-| See what's happening now | ❌ |
+| User Action (UI) | Agent Can Do? | Tool |
+|------------------|---------------|------|
+| Search events | ✅ | `search_events` |
+| Get venue details | ✅ | `get_venue_details` |
+| Save event | ✅ | `save_event` |
+| Unsave event | ✅ | `unsave_event` |
+| View saved events | ✅ | `list_saved_events` |
+| Get full event details | ✅ | `get_event_details` |
+| See what's happening now | ✅ | `get_happening_now` |
+| Explore neighborhoods | ✅ | `list_neighborhoods_with_events` |
+| Explore categories | ✅ | `list_categories_with_events` |
+| Share event | ❌ | (not implemented) |
+| Get tickets | Partial | (returns URL in event) |
 
 ### CRUD Completeness for User Entities
 
 | Entity | Create | Read | Update | Delete |
 |--------|--------|------|--------|--------|
-| Saved Events | ❌ | ❌ | N/A | ❌ |
-| User Preferences | ❌ | ❌ | ❌ | ❌ |
+| Saved Events | ✅ `save_event` | ✅ `list_saved_events` | N/A | ✅ `unsave_event` |
+| User Preferences | ❌ | ✅ `get_user_context` | ❌ | ❌ |
 
 ---
 
@@ -291,20 +312,20 @@ These let the agent take actions on behalf of the user.
 
 ## Implementation Priority Matrix
 
-| Tool | Parity Impact | User Value | Implementation Effort | Priority |
-|------|--------------|------------|----------------------|----------|
-| `save_event` | High | High | Low | **P0** |
-| `list_saved_events` | High | High | Low | **P0** |
-| `unsave_event` | High | Medium | Low | **P1** |
-| `get_event_details` | High | High | Low | **P0** |
-| `get_user_context` | Medium | High | Medium | **P1** |
-| `get_happening_now` | Medium | High | Low | **P1** |
-| `get_tonights_events` | Low | High | Low | **P2** |
-| `list_neighborhoods_with_events` | Low | Medium | Medium | **P2** |
-| `list_categories_with_events` | Low | Medium | Medium | **P2** |
-| `get_event_stats` | Low | Medium | Low | **P2** |
-| `share_event` | Medium | Medium | Low | **P2** |
-| `get_directions` | Medium | Medium | Low | **P2** |
+| Tool | Parity Impact | User Value | Implementation Effort | Priority | Status |
+|------|--------------|------------|----------------------|----------|--------|
+| `save_event` | High | High | Low | **P0** | ✅ Done |
+| `list_saved_events` | High | High | Low | **P0** | ✅ Done |
+| `unsave_event` | High | Medium | Low | **P1** | ✅ Done |
+| `get_event_details` | High | High | Low | **P0** | ✅ Done |
+| `get_user_context` | Medium | High | Medium | **P1** | ✅ Done |
+| `get_happening_now` | Medium | High | Low | **P1** | ✅ Done |
+| `get_tonights_events` | Low | High | Low | **P2** | ✅ Done |
+| `list_neighborhoods_with_events` | Low | Medium | Medium | **P2** | ✅ Done |
+| `list_categories_with_events` | Low | Medium | Medium | **P2** | ✅ Done |
+| `get_event_stats` | Low | Medium | Low | **P2** | ✅ Done |
+| `share_event` | Medium | Medium | Low | **P2** | ❌ Pending |
+| `get_directions` | Medium | Medium | Low | **P2** | ❌ Pending |
 
 ---
 

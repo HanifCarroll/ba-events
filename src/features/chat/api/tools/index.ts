@@ -21,6 +21,10 @@ import { getEventDetailsTool } from './get-event-details'
 import { checkEventSavedTool } from './check-event-saved'
 import { getHappeningNowTool } from './get-happening-now'
 import { getTonightsEventsTool } from './get-tonights-events'
+import { getUserContextTool } from './get-user-context'
+import { getEventStatsTool } from './get-event-stats'
+import { listNeighborhoodsWithEventsTool } from './list-neighborhoods-with-events'
+import { listCategoriesWithEventsTool } from './list-categories-with-events'
 
 // Re-export types
 export type { ToolDefinition, ToolExecutionContext, ToolResult, ToolName } from './types'
@@ -47,6 +51,10 @@ export const tools = {
   check_event_saved: checkEventSavedTool,
   get_happening_now: getHappeningNowTool,
   get_tonights_events: getTonightsEventsTool,
+  get_user_context: getUserContextTool,
+  get_event_stats: getEventStatsTool,
+  list_neighborhoods_with_events: listNeighborhoodsWithEventsTool,
+  list_categories_with_events: listCategoriesWithEventsTool,
 } as const
 
 /**
