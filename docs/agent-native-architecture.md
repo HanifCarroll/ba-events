@@ -75,10 +75,47 @@ The article's #1 principle: **"Whatever the user can do through the UI, the agen
 
 ### CRUD Completeness for User Entities
 
-| Entity | Create | Read | Update | Delete |
-|--------|--------|------|--------|--------|
-| Saved Events | ✅ `save_event` | ✅ `list_saved_events` | N/A | ✅ `unsave_event` |
-| User Preferences | ❌ | ✅ `get_user_context` | ❌ | ❌ |
+This table tracks whether the agent can perform the same operations as the UI for each user-facing entity. Use this as an audit checklist when adding new user features.
+
+| Entity | Create | Read | Update | Delete | Notes |
+|--------|--------|------|--------|--------|-------|
+| **Saved Events** | ✅ `save_event` | ✅ `list_saved_events`, `check_event_saved` | N/A | ✅ `unsave_event` | **Complete** - Full parity with UI |
+| **User Profile** | N/A (auth) | ✅ `get_user_context` (partial) | ❌ | N/A | Agent can read auth status and saved counts, but cannot update name/email |
+| **User Preferences** | ❌ | ❌ | ❌ | ❌ | **Future** - No preference system exists yet. When added (e.g., favorite neighborhoods, notification settings), agent should have matching tools |
+| **Chat History** | ✅ (implicit) | ❌ | ❌ | ❌ | User sends messages, but agent cannot recall past conversations |
+
+### External Action Parity
+
+These aren't CRUD operations but represent user actions the agent can facilitate:
+
+| User Action | Agent Support | Tool/Method |
+|-------------|---------------|-------------|
+| Get directions to venue | ✅ | `get_directions` → Google Maps link |
+| Share event with friends | ✅ | `share_event` → shareable URL |
+| Buy tickets | ⚠️ Partial | Returns ticket URL from event data (user completes purchase) |
+| Add to calendar | ❌ | **Gap** - Could generate .ics file or Google Calendar link |
+| Contact venue | ❌ | **Gap** - Venue data has contact info but no tool exposes it |
+
+### Admin Entities (Not Agent-Accessible)
+
+These entities are managed by admins only. The concierge agent intentionally has no access:
+
+| Entity | UI Location | Agent Access |
+|--------|-------------|--------------|
+| Events (CRUD) | `/admin/events` | Read-only via search/details tools |
+| Venues (CRUD) | `/admin/venues` | Read-only via `get_venue_details` |
+| Event Import | `/admin/events/import` | None |
+| Blocklist | Admin settings | None |
+
+### Parity Audit Checklist
+
+When adding a new user-facing feature, ask:
+
+1. **Can users do this in the UI?** If yes, continue.
+2. **Should the agent be able to do this?** Consider conversational value.
+3. **What's the atomic operation?** One tool per action (Granularity principle).
+4. **Does it require auth?** Mark `requiresAuth: true` in tool definition.
+5. **Update this table** to track the new entity/action.
 
 ---
 
