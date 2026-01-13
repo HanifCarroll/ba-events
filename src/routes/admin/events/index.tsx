@@ -16,7 +16,6 @@ import {
   AlertCircle,
   FileText,
   Link2,
-  SlidersHorizontal,
   X,
 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
@@ -27,8 +26,9 @@ import { Input } from '@/shared/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import { ConfirmationDialog } from '@/shared/ui/confirmation-dialog'
 import { Combobox } from '@/shared/ui/combobox'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/shared/ui/sheet'
 import { SwipeableCard } from '@/shared/ui/SwipeableCard'
+import { MobileFilterSheet } from '@/shared/ui/MobileFilterSheet'
+import { useMobileSelectionMode } from '@/shared/hooks/useMobileSelectionMode'
 import { DataTable, getEventColumns } from '@/shared/ui/data-table'
 import { EmptyState as SharedEmptyState, NoMatchesState as SharedNoMatchesState } from '@/shared/ui/EmptyState'
 import {
@@ -652,23 +652,10 @@ function EventListPage() {
   const [editingEvent, setEditingEvent] = useState<EventWithVenue | null>(null)
 
   // Mobile selection mode (triggered by long press)
-  const [mobileSelectionMode, setMobileSelectionMode] = useState(false)
-
-  const handleEnterSelectionMode = useCallback(() => {
-    setMobileSelectionMode(true)
-  }, [])
-
-  const handleExitSelectionMode = useCallback(() => {
-    setMobileSelectionMode(false)
-    bulk.clearSelection()
-  }, [bulk])
-
-  // Exit selection mode when selection is cleared
-  useEffect(() => {
-    if (mobileSelectionMode && bulk.selectedIds.size === 0) {
-      setMobileSelectionMode(false)
-    }
-  }, [mobileSelectionMode, bulk.selectedIds.size])
+  const mobileSelection = useMobileSelectionMode({
+    items: events,
+    externalSelection: bulk,
+  })
 
   const handleEdit = useCallback((event: EventWithVenue) => {
     setEditingEvent(event)
@@ -824,68 +811,42 @@ function EventListPage() {
 
             {/* Mobile: Filter button that opens sheet */}
             <div className="sm:hidden">
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="icon" className="relative shrink-0">
-                    <SlidersHorizontal className="h-4 w-4" />
-                    {hasActiveFilters && (
-                      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center">
-                        !
-                      </span>
-                    )}
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="bottom" className="h-auto max-h-[70vh] rounded-t-xl">
-                  <SheetHeader>
-                    <SheetTitle>{m.admin_filter_by()}</SheetTitle>
-                  </SheetHeader>
-                  <div className="space-y-4 py-4">
-                    {/* Venue filter */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{m.admin_all_venues()}</label>
-                      <Combobox
-                        options={venueOptions}
-                        value={filters.venueId}
-                        onValueChange={setVenueFilter}
-                        placeholder={m.admin_all_venues()}
-                        emptyText={m.admin_no_venues_found()}
-                        className="w-full"
-                      />
-                    </div>
+              <MobileFilterSheet
+                hasActiveFilters={hasActiveFilters}
+                onClearFilters={handleClearFilters}
+                title={m.admin_filter_by()}
+              >
+                {/* Venue filter */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">{m.admin_all_venues()}</label>
+                  <Combobox
+                    options={venueOptions}
+                    value={filters.venueId}
+                    onValueChange={setVenueFilter}
+                    placeholder={m.admin_all_venues()}
+                    emptyText={m.admin_no_venues_found()}
+                    className="w-full"
+                  />
+                </div>
 
-                    {/* Quick filters */}
-                    <div className="space-y-3">
-                      <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                        <Checkbox
-                          checked={filters.importedToday}
-                          onCheckedChange={(checked) => setImportedToday(checked === true)}
-                        />
-                        <span className="text-sm">{m.admin_imported_today()}</span>
-                      </label>
-                      {activeTab !== 'past' && (
-                        <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                          <Checkbox
-                            checked={filters.showPast}
-                            onCheckedChange={(checked) => setShowPast(checked === true)}
-                          />
-                          <span className="text-sm">{m.admin_show_past_events()}</span>
-                        </label>
-                      )}
-                    </div>
-
-                    {/* Clear filters */}
-                    {hasActiveFilters && (
-                      <Button
-                        variant="outline"
-                        onClick={handleClearFilters}
-                        className="w-full"
-                      >
-                        {m.common_clear()}
-                      </Button>
-                    )}
-                  </div>
-                </SheetContent>
-              </Sheet>
+                {/* Quick filters */}
+                <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                  <Checkbox
+                    checked={filters.importedToday}
+                    onCheckedChange={(checked) => setImportedToday(checked === true)}
+                  />
+                  <span className="text-sm">{m.admin_imported_today()}</span>
+                </label>
+                {activeTab !== 'past' && (
+                  <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <Checkbox
+                      checked={filters.showPast}
+                      onCheckedChange={(checked) => setShowPast(checked === true)}
+                    />
+                    <span className="text-sm">{m.admin_show_past_events()}</span>
+                  </label>
+                )}
+              </MobileFilterSheet>
             </div>
 
             {/* Desktop: Inline filters */}
@@ -957,13 +918,13 @@ function EventListPage() {
             {/* Mobile Card View */}
             <div className="sm:hidden">
               {/* Selection mode header */}
-              {mobileSelectionMode && (
+              {mobileSelection.isSelectionMode && (
                 <div className="flex items-center justify-between p-3 mb-2 bg-primary/10 border border-primary/20 rounded-xl">
                   <div className="flex items-center gap-3">
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={handleExitSelectionMode}
+                      onClick={mobileSelection.exitSelectionMode}
                       className="h-8 w-8"
                     >
                       <X className="h-4 w-4" />
@@ -989,7 +950,7 @@ function EventListPage() {
                   filteredEventsLength={events.length}
                   onToggleSelectAll={bulk.toggleSelectAll}
                   onSetBulkAction={bulk.setBulkAction}
-                  onClearSelection={handleExitSelectionMode}
+                  onClearSelection={mobileSelection.exitSelectionMode}
                   enrichments={enrichments}
                 />
               )}
@@ -1005,8 +966,8 @@ function EventListPage() {
               isApproving={singleActions.isApproving}
               isRejecting={singleActions.isRejecting}
               showNeedsAttention={activeTab === 'needs_attention'}
-              selectionMode={mobileSelectionMode}
-              onEnterSelectionMode={handleEnterSelectionMode}
+              selectionMode={mobileSelection.isSelectionMode}
+              onEnterSelectionMode={mobileSelection.enterSelectionMode}
             />
 
             {/* Desktop Table View with DataTable */}

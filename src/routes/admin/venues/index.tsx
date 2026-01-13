@@ -17,7 +17,7 @@ function debounce<T extends (...args: Parameters<T>) => void>(
   }
   return debounced as T & { cancel: () => void }
 }
-import { Plus, MapPin, Search, X, Filter, Upload, Loader2, AlertCircle, ChevronDown, ChevronRight, ExternalLink, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Plus, MapPin, Search, X, Filter, Upload, Loader2, AlertCircle, ChevronDown, ChevronRight, ExternalLink, Pencil, Trash2 } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
@@ -39,14 +39,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/shared/ui/collapsible'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/shared/ui/sheet'
 import { SwipeableCard } from '@/shared/ui/SwipeableCard'
+import { MobileFilterSheet } from '@/shared/ui/MobileFilterSheet'
+import { useMobileSelectionMode } from '@/shared/hooks/useMobileSelectionMode'
 import { DataTable, getVenueColumns } from '@/shared/ui/data-table'
 import { VenueDuplicatesPanel } from './-components/VenueDuplicatesPanel'
 import { VenueAddressNamesPanel } from './-components/VenueAddressNamesPanel'
@@ -126,9 +121,7 @@ function VenueListPage() {
   // Local state for UI
   const [searchInput, setSearchInput] = useState(search)
 
-  // Mobile selection mode state
-  const [mobileSelectionMode, setMobileSelectionMode] = useState(false)
-
+  
   // Sync search input when URL changes
   useEffect(() => {
     setSearchInput(search)
@@ -224,17 +217,13 @@ function VenueListPage() {
   // Bulk actions
   const bulk = useVenueBulkActions(filteredVenues)
 
-  // Selection mode callbacks (after bulk is defined)
-  const handleEnterSelectionMode = useCallback(() => {
-    setMobileSelectionMode(true)
-  }, [])
+  // Mobile selection mode (integrates with bulk selection)
+  const mobileSelection = useMobileSelectionMode({
+    items: filteredVenues,
+    externalSelection: bulk,
+  })
 
-  const handleExitSelectionMode = useCallback(() => {
-    setMobileSelectionMode(false)
-    bulk.clearSelection()
-  }, [bulk])
-
-  const hasActiveFilters = search || neighborhoodFilter || failedVenueFilter || importedToday
+  const hasActiveFilters = !!(search || neighborhoodFilter || failedVenueFilter || importedToday)
 
   // Get count of venues that can be enriched from selection
   const enrichableVenues = useMemo(() => {
@@ -361,60 +350,34 @@ function VenueListPage() {
 
             {/* Mobile filter sheet */}
             <div className="sm:hidden">
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="icon" className="relative shrink-0 border-border/50">
-                    <SlidersHorizontal className="h-4 w-4" />
-                    {hasActiveFilters && (
-                      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center font-bold">
-                        !
-                      </span>
-                    )}
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="bottom" className="h-auto max-h-[70vh] rounded-t-xl">
-                  <SheetHeader className="pb-4">
-                    <SheetTitle className="font-display">{m.common_filters()}</SheetTitle>
-                  </SheetHeader>
-                  <div className="space-y-4 pb-6">
-                    {/* Neighborhood filter */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">{m.admin_neighborhood()}</label>
-                      <Combobox
-                        options={neighborhoodOptions}
-                        value={neighborhoodFilter}
-                        onValueChange={handleNeighborhoodChange}
-                        placeholder={m.admin_all_neighborhoods()}
-                        emptyText={m.admin_no_neighborhood()}
-                        className="w-full"
-                      />
-                    </div>
+              <MobileFilterSheet
+                hasActiveFilters={hasActiveFilters}
+                onClearFilters={clearFilters}
+              >
+                {/* Neighborhood filter */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">{m.admin_neighborhood()}</label>
+                  <Combobox
+                    options={neighborhoodOptions}
+                    value={neighborhoodFilter}
+                    onValueChange={handleNeighborhoodChange}
+                    placeholder={m.admin_all_neighborhoods()}
+                    emptyText={m.admin_no_neighborhood()}
+                    className="w-full"
+                  />
+                </div>
 
-                    {/* Imported today filter */}
-                    <label className="flex items-center gap-3 cursor-pointer select-none p-3 bg-muted/30 rounded-lg">
-                      <Checkbox
-                        checked={importedToday}
-                        onCheckedChange={(checked) => handleImportedTodayChange(checked === true)}
-                      />
-                      <span className="text-sm text-foreground">
-                        {m.admin_imported_today()}
-                      </span>
-                    </label>
-
-                    {/* Clear filters button */}
-                    {hasActiveFilters && (
-                      <Button
-                        variant="outline"
-                        className="w-full border-border/50"
-                        onClick={clearFilters}
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        {m.common_clear_filters()}
-                      </Button>
-                    )}
-                  </div>
-                </SheetContent>
-              </Sheet>
+                {/* Imported today filter */}
+                <label className="flex items-center gap-3 cursor-pointer select-none p-3 bg-muted/30 rounded-lg">
+                  <Checkbox
+                    checked={importedToday}
+                    onCheckedChange={(checked) => handleImportedTodayChange(checked === true)}
+                  />
+                  <span className="text-sm text-foreground">
+                    {m.admin_imported_today()}
+                  </span>
+                </label>
+              </MobileFilterSheet>
             </div>
 
             {/* Desktop filter controls */}
@@ -458,12 +421,12 @@ function VenueListPage() {
       )}
 
       {/* Mobile selection mode header */}
-      {mobileSelectionMode && (
+      {mobileSelection.isSelectionMode && (
         <div className="sm:hidden flex items-center justify-between p-3 mb-2 bg-primary/10 border border-primary/20 rounded-xl">
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleExitSelectionMode}
+            onClick={mobileSelection.exitSelectionMode}
             className="h-8 w-8"
           >
             <X className="h-4 w-4" />
@@ -568,8 +531,8 @@ function VenueListPage() {
                 )}
                 onEdit={() => handleEdit(venue)}
                 onDelete={() => setDeleteTarget(venue)}
-                selectionMode={mobileSelectionMode}
-                onEnterSelectionMode={handleEnterSelectionMode}
+                selectionMode={mobileSelection.isSelectionMode}
+                onEnterSelectionMode={mobileSelection.enterSelectionMode}
               />
             ))}
           </div>
@@ -638,8 +601,8 @@ function VenueListPage() {
                     )}
                     onEdit={() => handleEdit(venue)}
                     onDelete={() => setDeleteTarget(venue)}
-                    selectionMode={mobileSelectionMode}
-                    onEnterSelectionMode={handleEnterSelectionMode}
+                    selectionMode={mobileSelection.isSelectionMode}
+                    onEnterSelectionMode={mobileSelection.enterSelectionMode}
                   />
                 ))}
               </div>
