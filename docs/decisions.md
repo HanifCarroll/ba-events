@@ -26,6 +26,90 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Trigger.dev Scraper Reliability Fixes
+
+**Date:** 2026-01-15
+
+**Decision:** Implement three fixes to improve reliability of automated Trigger.dev scraper jobs: rate limiting with exponential backoff for AI categorization, client consistency for duplicate detection, and retry logic for browser frame detachment.
+
+**Problems Observed:**
+1. **Rate limit 429 errors** in `scrape-eventbrite` and `scrape-ba-tourism`: Anthropic API was being hit too fast during AI categorization
+2. **Duplicate key constraint violations** in `scrape-eventbrite`: Events already existed in database but duplicate check returned false
+3. **Frame detachment errors** in `scrape-meetup`: "Navigating frame was detached" failed for every day in a 30-day period
+
+**Solutions:**
+
+**1. AI Categorizer Rate Limiting (`src/features/import/scrapers/ai-categorizer.ts`):**
+- Increased delay between requests from 100ms to 1500ms (Anthropic limit is 50 req/min)
+- Added exponential backoff retry logic: 3 attempts with 2s, 4s, 8s delays
+- Added `isRateLimitError()` helper to detect 429 responses
+
+```typescript
+for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+  try {
+    // ... API call
+  } catch (err) {
+    if (isRateLimitError(err) && attempt < MAX_RETRIES - 1) {
+      const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt)
+      await sleep(backoffMs)
+      continue
+    }
+    throw err
+  }
+}
+```
+
+**2. Duplicate Detection Client Mismatch (`src/features/import/api/duplicate-detection.ts`):**
+- Root cause: Duplicate check used anonymous Supabase client while inserts used service role client
+- RLS policies may have hidden existing events from the anonymous client, causing "new event" false positives
+- Fix: Added optional `client` parameter to `checkDuplicateEvents()` and `checkDuplicateEventsWithData()`
+- Updated all 5 core import files to pass the service role client
+
+**3. Meetup Frame Detachment (`src/features/import/scrapers/meetup/browser-scraper.ts`):**
+- Root cause: Known Chromium bug (marked P2) that occurs with dynamic iframes and `puppeteer.connect()`
+- Added `--disable-features=site-per-process` to browser launch args (documented workaround)
+- Added retry logic: 3 attempts per date with page recreation on frame detachment
+- Added `isFrameDetachmentError()` helper to detect various frame error messages
+- Added failed days tracking for visibility in logs
+
+```typescript
+for (let retry = 0; retry < MAX_PAGE_RETRIES && !success; retry++) {
+  try {
+    await scrapePageForEvents(page, url, seenIds, collectedEvents)
+    success = true
+  } catch (error) {
+    if (isFrameDetachmentError(error) && retry < MAX_PAGE_RETRIES - 1) {
+      await page.close().catch(() => {})
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+      page = await browser.newPage() // Recreate page
+    }
+  }
+}
+```
+
+**Files Modified:**
+- `src/features/import/scrapers/ai-categorizer.ts` - Rate limiting + exponential backoff
+- `src/features/import/api/duplicate-detection.ts` - Optional client parameter
+- `src/features/import/core/eventbrite.ts` - Pass client to duplicate detection
+- `src/features/import/core/meetup.ts` - Pass client to duplicate detection
+- `src/features/import/core/ba-tourism.ts` - Pass client to duplicate detection
+- `src/features/import/core/passline.ts` - Pass client to duplicate detection
+- `src/features/import/core/luma.ts` - Pass client to duplicate detection
+- `src/features/import/scrapers/meetup/browser-scraper.ts` - Frame detachment retry logic
+- `src/shared/lib/browser/constants.ts` - Added `--disable-features=site-per-process` to shared args
+
+**Alternatives Considered:**
+- **For rate limiting**: Batch API calls - Anthropic doesn't support batching for messages API
+- **For duplicate detection**: Use blind upsert - Rejected because we want to track inserted vs updated counts
+- **For frame detachment**: Switch to Puppeteer - Same underlying Chromium issue; specialized services add cost
+
+**Rationale:**
+1. **Exponential backoff** is industry standard for handling rate limits gracefully
+2. **Client consistency** ensures RLS doesn't cause false negatives in duplicate detection
+3. **Page recreation** is the documented workaround for Chromium frame detachment bug
+
+---
+
 ### Migrate to Vercel AI SDK
 
 **Date:** 2026-01-13

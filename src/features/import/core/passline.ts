@@ -138,7 +138,7 @@ export async function processPasslineImport(
   const externalIds = filteredEvents.map((e) => e.id)
   const existingEventsMap = options.skipDuplicateCheck
     ? new Map()
-    : await checkDuplicateEventsWithData(externalIds, 'passline')
+    : await checkDuplicateEventsWithData(externalIds, 'passline', client)
 
   // Step 5: Transform events with venue IDs
   console.log('[passline] Transforming events...')

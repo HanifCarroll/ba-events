@@ -154,7 +154,7 @@ export async function processLumaImport(
     .filter((id): id is string => id !== null)
   const existingEventsMap = options.skipDuplicateCheck
     ? new Map()
-    : await checkDuplicateEventsWithData(externalIds, 'luma')
+    : await checkDuplicateEventsWithData(externalIds, 'luma', client)
 
   // Step 5: Transform events with venue IDs
   console.log('[luma] Transforming events...')

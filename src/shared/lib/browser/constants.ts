@@ -23,11 +23,17 @@ export const BROWSER_VIEWPORT = {
 
 /**
  * Launch arguments for stealth mode.
- * Helps avoid bot detection.
+ * Helps avoid bot detection and frame detachment issues.
+ *
+ * --disable-features=site-per-process is a workaround for the Chromium
+ * "Navigating frame was detached" bug that occurs with dynamic iframes.
+ * See: https://github.com/puppeteer/puppeteer/issues/5123
  */
 export const STEALTH_LAUNCH_ARGS = [
   '--disable-blink-features=AutomationControlled',
   '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-features=site-per-process',
 ] as const
 
 /**

@@ -19,6 +19,36 @@ import { getBrowserlessEndpoint } from '@/shared/lib/browser'
 
 const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
 
+// Retry constants for frame detachment handling
+const MAX_PAGE_RETRIES = 3
+const RETRY_DELAY_MS = 2000
+
+// Browser args to mitigate frame detachment issues
+// --disable-features=site-per-process is the most commonly suggested workaround
+// for the "Navigating frame was detached" Chromium bug
+const BROWSER_ARGS = [
+  '--disable-features=site-per-process',
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+]
+
+/**
+ * Check if an error is a frame detachment error
+ * These errors occur when the browser frame becomes invalid during navigation
+ */
+function isFrameDetachmentError(error: unknown): boolean {
+  if (!error) return false
+  const message = error instanceof Error ? error.message : String(error)
+  return (
+    message.includes('frame was detached') ||
+    message.includes('detached Frame') ||
+    message.includes('Frame has been detached') ||
+    message.includes('Navigating frame was detached') ||
+    message.includes('Target closed') ||
+    message.includes('Session closed')
+  )
+}
+
 /**
  * Build a Meetup search URL for a specific date
  * Uses customStartDate/customEndDate to get events for a single day
@@ -412,19 +442,21 @@ async function scrapePageForEvents(
 
 /**
  * Scrape events using local Playwright for a date range
+ * Includes retry logic with page recreation for frame detachment errors
  */
 async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEvent[]> {
   const { chromium } = await import('playwright')
 
   const browser = await chromium.launch({
     headless: true,
+    args: BROWSER_ARGS,
   })
 
   const collectedEvents: MeetupEvent[] = []
   const seenIds = new Set<string>()
 
   try {
-    const page = await browser.newPage()
+    let page = await browser.newPage()
 
     const dates = getDateRange(options.startDate, options.endDate)
     console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
@@ -436,7 +468,27 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
 
       console.log(`[Meetup] Scraping day ${i + 1}/${dates.length}: ${dateStr}`)
 
-      await scrapePageForEvents(page, url, seenIds, collectedEvents)
+      // Retry logic with page recreation for frame detachment errors
+      let success = false
+      for (let retry = 0; retry < MAX_PAGE_RETRIES && !success; retry++) {
+        try {
+          await scrapePageForEvents(page, url, seenIds, collectedEvents)
+          success = true
+        } catch (error) {
+          if (isFrameDetachmentError(error) && retry < MAX_PAGE_RETRIES - 1) {
+            console.warn(
+              `[Meetup] Frame detached for ${dateStr}, recreating page (attempt ${retry + 2}/${MAX_PAGE_RETRIES})`
+            )
+            // Close old page and create fresh one
+            await page.close().catch(() => {})
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+            page = await browser.newPage()
+          } else {
+            // Non-frame error or max retries reached - log and continue
+            console.error(`[Meetup] Error scraping ${dateStr}:`, sanitizeError(error))
+          }
+        }
+      }
 
       console.log(`[Meetup] Total events so far: ${collectedEvents.length}`)
 
@@ -547,6 +599,11 @@ async function scrapeBrowserlessPage(
 
 /**
  * Scrape events using Browserless (production/serverless mode) for a date range
+ *
+ * Includes retry logic with page recreation for frame detachment errors.
+ * Note: Browser args like --disable-features=site-per-process cannot be passed
+ * when connecting to Browserless.io (browser is already running). The retry
+ * mechanism is our primary defense against frame detachment issues.
  */
 async function scrapeWithBrowserless(token: string, options: ScraperOptions): Promise<MeetupEvent[]> {
   const puppeteer = await import('puppeteer-core')
@@ -566,7 +623,8 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
   const seenIds = new Set<string>()
 
   try {
-    const page = await browser.newPage()
+    let page = await browser.newPage()
+    let failedDays: string[] = []
 
     const dates = getDateRange(options.startDate, options.endDate)
     console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
@@ -578,12 +636,29 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
 
       console.log(`[Meetup] Scraping day ${i + 1}/${dates.length}: ${dateStr}`)
 
-      try {
-        await scrapeBrowserlessPage(page, url, seenIds, collectedEvents)
-      } catch (error) {
-        // Sanitize error to prevent any sensitive data leakage
-        console.error(`[Meetup] Error scraping page for ${dateStr}:`, sanitizeError(error))
-        // Continue with next date rather than failing entirely
+      // Retry logic with page recreation for frame detachment errors
+      let success = false
+      for (let retry = 0; retry < MAX_PAGE_RETRIES && !success; retry++) {
+        try {
+          await scrapeBrowserlessPage(page, url, seenIds, collectedEvents)
+          success = true
+        } catch (error) {
+          if (isFrameDetachmentError(error) && retry < MAX_PAGE_RETRIES - 1) {
+            console.warn(
+              `[Meetup] Frame detached for ${dateStr}, recreating page (attempt ${retry + 2}/${MAX_PAGE_RETRIES})`
+            )
+            // Close old page and create fresh one
+            await page.close().catch(() => {})
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+            page = await browser.newPage()
+          } else {
+            // Non-frame error or max retries reached - log and continue
+            console.error(`[Meetup] Error scraping ${dateStr}:`, sanitizeError(error))
+            if (isFrameDetachmentError(error)) {
+              failedDays.push(dateStr)
+            }
+          }
+        }
       }
 
       console.log(`[Meetup] Total events so far: ${collectedEvents.length}`)
@@ -592,6 +667,11 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
       if (i < dates.length - 1) {
         await new Promise((r) => setTimeout(r, 1000))
       }
+    }
+
+    // Log summary of failed days
+    if (failedDays.length > 0) {
+      console.warn(`[Meetup] Failed to scrape ${failedDays.length} days due to frame detachment: ${failedDays.join(', ')}`)
     }
 
     console.log(`[Meetup] Finished scraping. Total events: ${collectedEvents.length}`)

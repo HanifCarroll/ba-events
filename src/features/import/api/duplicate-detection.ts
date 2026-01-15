@@ -4,9 +4,12 @@
  * Checks if events with given external_ids already exist in the database.
  * Used by all import sources to flag already-imported events.
  * Enhanced to support field-by-field diff comparison.
+ *
+ * IMPORTANT: When using from Trigger.dev jobs, pass the service role client
+ * to ensure visibility of all events (bypasses RLS).
  */
 
-import { supabase } from '@/shared/lib/db/client'
+import { supabase, type SupabaseClient } from '@/shared/lib/db/client'
 import type { EventInsert } from '@/shared/lib/types'
 import type { ImportSource } from '../adapters/types'
 
@@ -55,15 +58,18 @@ export interface ExistingEventData {
  *
  * @param externalIds - Array of external IDs to check
  * @param source - The import source (passline, eventbrite, etc.)
+ * @param client - Optional Supabase client (use service role client in Trigger.dev jobs)
  * @returns Set of external IDs that already exist
  */
 export async function checkDuplicateEvents(
   externalIds: string[],
-  source: ImportSource
+  source: ImportSource,
+  client?: SupabaseClient
 ): Promise<Set<string>> {
   if (externalIds.length === 0) return new Set()
 
-  const { data: existingEvents } = await supabase
+  const db = client ?? supabase
+  const { data: existingEvents } = await db
     .from('events')
     .select('external_id')
     .eq('source', source)
@@ -115,15 +121,18 @@ export function extractExternalIds<T>(
  *
  * @param externalIds - Array of external IDs to check
  * @param source - The import source (passline, eventbrite, etc.)
+ * @param client - Optional Supabase client (use service role client in Trigger.dev jobs)
  * @returns Map of external_id -> existing event data
  */
 export async function checkDuplicateEventsWithData(
   externalIds: string[],
-  source: ImportSource
+  source: ImportSource,
+  client?: SupabaseClient
 ): Promise<Map<string, ExistingEventData>> {
   if (externalIds.length === 0) return new Map()
 
-  const { data: existingEvents } = await supabase
+  const db = client ?? supabase
+  const { data: existingEvents } = await db
     .from('events')
     .select('id, external_id, name, starts_at, ends_at, venue_id, price, image_url, link')
     .eq('source', source)

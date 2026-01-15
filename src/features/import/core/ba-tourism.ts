@@ -196,7 +196,7 @@ export async function processBATourismImport(
     .filter((id): id is string => id !== null)
   const existingEventsMap = options.skipDuplicateCheck
     ? new Map()
-    : await checkDuplicateEventsWithData(externalIds, 'ba-tourism')
+    : await checkDuplicateEventsWithData(externalIds, 'ba-tourism', client)
 
   // Build list of events to process with update status
   const eventsToProcess: Array<{ transformed: EventInsert; sourceEvent: BATourismEvent; isUpdate: boolean }> = []

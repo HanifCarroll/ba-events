@@ -204,7 +204,7 @@ export async function processMeetupImport(
     .filter((id): id is string => id !== null)
   const existingEventsMap = options.skipDuplicateCheck
     ? new Map()
-    : await checkDuplicateEventsWithData(externalIds, 'meetup')
+    : await checkDuplicateEventsWithData(externalIds, 'meetup', client)
 
   // Build list of events to process with update status
   const eventsToProcess: Array<{ transformed: EventInsert; sourceEvent: MeetupEvent; isUpdate: boolean }> = []

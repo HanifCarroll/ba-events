@@ -169,7 +169,7 @@ export async function processEventbriteImport(
     .filter((id): id is string => id !== null)
   const existingEventsMap = options.skipDuplicateCheck
     ? new Map()
-    : await checkDuplicateEventsWithData(externalIds, 'eventbrite')
+    : await checkDuplicateEventsWithData(externalIds, 'eventbrite', client)
 
   // Step 5: Transform events with venue IDs
   console.log('[eventbrite] Transforming events...')
