@@ -17,6 +17,7 @@ import {
   MapPin,
   Ban,
   Bot,
+  MessageCircle,
 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -68,6 +69,14 @@ export function MainLayout({ children }: MainLayoutProps) {
     setMobileMenuOpen(false)
   }
 
+  const handleFeedback = () => {
+    // Render the PostHog feedback survey (API mode)
+    const posthog = (window as unknown as { posthog?: { renderSurvey: (id: string) => void } }).posthog
+    posthog?.renderSurvey('019b8421-0e55-0000-10bc-3acd5494b9b2')
+    track('feedback:opened')
+    setMobileMenuOpen(false)
+  }
+
   const handleSignOut = async () => {
     setIsSigningOut(true)
     try {
@@ -94,6 +103,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     { to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat, exact: true },
     { to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
     { to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
+    { label: 'Feedback', icon: MessageCircle, action: handleFeedback },
   ]
 
   const adminNavItems: NavItem[] = [
