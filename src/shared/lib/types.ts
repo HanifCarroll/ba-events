@@ -158,6 +158,7 @@ export interface EventListItem {
   link: string | null
   created_at: string
   enrichment_status: EnrichmentStatus
+  location_tba: boolean
   // Boolean flags instead of full text
   has_description_es: boolean
   has_description_en: boolean

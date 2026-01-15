@@ -74,7 +74,8 @@ export async function queryEventsPaginated(
   }
 
   if (filters.missingVenue) {
-    query = query.is('venue_id', null)
+    // Exclude events marked as TBA (intentionally without venue)
+    query = query.is('venue_id', null).eq('location_tba', false)
   }
 
   // Imported today filter

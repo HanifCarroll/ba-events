@@ -140,7 +140,8 @@ interface TabCounts {
 /** Check if event needs attention (missing description with link OR missing venue OR missing link) */
 function eventNeedsAttention(event: EventListItem): boolean {
   const missingDescriptionWithLink = !event.has_description_es && !!event.link
-  const missingVenue = !event.venue_id
+  // Events marked as "venue TBA" are intentionally without venue, not missing one
+  const missingVenue = !event.venue_id && !event.location_tba
   const missingLink = !event.link
   return missingDescriptionWithLink || missingVenue || missingLink
 }
@@ -178,7 +179,8 @@ function filterEvents(events: EventListItem[], params: EventSearchParams): Event
       if (event.has_description_es || !event.link) return false
     }
     if (params.missingVenue) {
-      if (event.venue_id) return false
+      // Exclude events with venue OR marked as TBA (intentionally without venue)
+      if (event.venue_id || event.location_tba) return false
     }
     if (params.missingLink) {
       if (event.link) return false
@@ -362,7 +364,8 @@ function EventListPage() {
 
     return {
       missingDescription: eventsToCount.filter(e => !e.has_description_es && !!e.link).length,
-      missingVenue: eventsToCount.filter(e => !e.venue_id).length,
+      // Exclude events marked as TBA (intentionally without venue)
+      missingVenue: eventsToCount.filter(e => !e.venue_id && !e.location_tba).length,
       missingLink: eventsToCount.filter(e => !e.link).length,
     }
   }, [activeEvents])
