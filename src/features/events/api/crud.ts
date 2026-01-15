@@ -1,8 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 import {
   getEventsWithVenues,
-  getActiveEventsWithVenues,
-  getPastEventsWithVenues,
+  getActiveEventsForList,
+  getPastEventsForList,
   getEventById,
   getEventWithVenue,
   createEvent,
@@ -18,7 +18,7 @@ import {
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import { queryEventsPaginated, queryEventTabCounts } from './queries'
-import type { EventInsert, EventUpdate, EventWithVenue, EventStatus } from '@/shared/lib/types'
+import type { EventInsert, EventUpdate, EventWithVenue, EventListItem, EventStatus } from '@/shared/lib/types'
 import type { EventListParams, EventFilterParams, PaginatedResponse, EventTabCounts } from '@/shared/lib/types/pagination'
 
 export const listEvents = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
@@ -38,20 +38,21 @@ export const listAllEventsAdmin = createServerFn({ method: 'GET' }).handler(asyn
 
 /**
  * List active (non-past) events for admin - initial page load
- * Excludes embedding column for better performance
+ * Uses lightweight view that excludes heavy columns (descriptions).
+ * Reduces payload from ~2-10MB to ~200-400KB for 2000 events.
  */
-export const listActiveEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
+export const listActiveEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventListItem[]> => {
   await requireAdminAccess()
-  return getActiveEventsWithVenues(5000)
+  return getActiveEventsForList(5000)
 })
 
 /**
  * List past events for admin - lazy loaded when Past tab is clicked
- * Excludes embedding column for better performance
+ * Uses lightweight view that excludes heavy columns (descriptions).
  */
-export const listPastEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
+export const listPastEventsAdmin = createServerFn({ method: 'GET' }).handler(async (): Promise<EventListItem[]> => {
   await requireAdminAccess()
-  return getPastEventsWithVenues(5000)
+  return getPastEventsForList(5000)
 })
 
 /**

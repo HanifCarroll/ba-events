@@ -2,11 +2,10 @@ import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { bulkUpdateEventStatusAction, bulkUpdateLocationTbaAction, bulkDeleteEventsAction } from '../api/crud'
 import { useBulkSelection } from '@/shared/hooks/useBulkSelection'
-import type { EventWithVenue } from '@/shared/lib/types'
 
 export type BulkActionType = 'delete' | 'past' | 'cancelled' | 'location_tba' | null
 
-export function useBulkActions(filteredEvents: EventWithVenue[]) {
+export function useBulkActions<T extends { id: string }>(filteredEvents: T[]) {
   const router = useRouter()
   const selection = useBulkSelection(filteredEvents)
   const [bulkAction, setBulkAction] = useState<BulkActionType>(null)

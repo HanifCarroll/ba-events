@@ -7,7 +7,7 @@ import {
   type DescriptionEnrichComplete,
 } from '../api/enrichment'
 import type { DescriptionEnrichProgress } from '../api/streaming-types'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventForEnrichment } from '@/shared/lib/types'
 
 export function useBackgroundEnrichment() {
   const { invalidateEvents } = useInvalidateCache()
@@ -76,7 +76,7 @@ export function useBackgroundEnrichment() {
   /**
    * Check if an event can be enriched (enrichment_status is 'pending' or 'failed' and has a link)
    */
-  const canEnrichEvent = useCallback((event: EventWithVenue) => {
+  const canEnrichEvent = useCallback((event: EventForEnrichment) => {
     const canEnrich = event.enrichment_status === 'pending' || event.enrichment_status === 'failed'
     return canEnrich && !!event.link
   }, [])
@@ -85,7 +85,7 @@ export function useBackgroundEnrichment() {
    * Get enrichable events from a selection
    */
   const getEnrichableEvents = useCallback(
-    (events: EventWithVenue[], selectedIds: Set<string>) => {
+    <T extends EventForEnrichment>(events: T[], selectedIds: Set<string>): T[] => {
       return events.filter((e) => selectedIds.has(e.id) && canEnrichEvent(e))
     },
     [canEnrichEvent]
@@ -96,8 +96,8 @@ export function useBackgroundEnrichment() {
    * Streams real-time progress updates from the server
    */
   const enrichEvents = useCallback(
-    async (
-      events: EventWithVenue[],
+    async <T extends EventForEnrichment>(
+      events: T[],
       selectedIds: Set<string>,
       onComplete?: () => void
     ) => {

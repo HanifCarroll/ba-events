@@ -42,6 +42,7 @@ import {
   listActiveEventsAdmin,
   listPastEventsAdmin,
   getEventTabCountsAction,
+  type EventListItem,
 } from '@/features/events'
 // EventTabCounts type is compatible with local TabCounts interface
 import { listVenues } from '@/features/venues'
@@ -50,7 +51,6 @@ import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
 import { buildEnrichmentsConfig } from './-components/enrichments-config'
 import { EditEventSheet } from './-components/EditEventSheet'
-import type { EventWithVenue } from '@/shared/lib/types'
 import type { EventSearchParams } from '@/shared/lib/types/pagination'
 
 import { z } from 'zod'
@@ -138,8 +138,8 @@ interface TabCounts {
 }
 
 /** Check if event needs attention (missing description with link OR missing venue OR missing link) */
-function eventNeedsAttention(event: EventWithVenue): boolean {
-  const missingDescriptionWithLink = !event.description_es && !!event.link
+function eventNeedsAttention(event: EventListItem): boolean {
+  const missingDescriptionWithLink = !event.has_description_es && !!event.link
   const missingVenue = !event.venue_id
   const missingLink = !event.link
   return missingDescriptionWithLink || missingVenue || missingLink
@@ -149,7 +149,7 @@ function eventNeedsAttention(event: EventWithVenue): boolean {
 // instead of being computed client-side for better performance
 
 /** Filter events based on tab and search params */
-function filterEvents(events: EventWithVenue[], params: EventSearchParams): EventWithVenue[] {
+function filterEvents(events: EventListItem[], params: EventSearchParams): EventListItem[] {
   const tab = params.tab ?? 'all'
   const showPast = params.showPast ?? false
 
@@ -175,7 +175,7 @@ function filterEvents(events: EventWithVenue[], params: EventSearchParams): Even
 
     // Data gap filters (for needs_attention tab)
     if (params.missingDescription) {
-      if (event.description_es || !event.link) return false
+      if (event.has_description_es || !event.link) return false
     }
     if (params.missingVenue) {
       if (event.venue_id) return false
@@ -213,13 +213,13 @@ function filterEvents(events: EventWithVenue[], params: EventSearchParams): Even
 }
 
 /** Sort events based on sort params */
-function sortEvents(events: EventWithVenue[], sortBy?: string, sortDir?: 'asc' | 'desc'): EventWithVenue[] {
+function sortEvents(events: EventListItem[], sortBy?: string, sortDir?: 'asc' | 'desc'): EventListItem[] {
   const column = sortBy ?? 'starts_at'
   const ascending = sortDir === 'asc'
 
   return [...events].sort((a, b) => {
-    let aVal = a[column as keyof EventWithVenue]
-    let bVal = b[column as keyof EventWithVenue]
+    let aVal = a[column as keyof EventListItem]
+    let bVal = b[column as keyof EventListItem]
 
     // Handle null/undefined
     if (aVal == null && bVal == null) return 0
@@ -336,7 +336,7 @@ function EventListPage() {
   const activeTab: EventTab = (searchParams.tab ?? 'all') as EventTab
 
   // Lazy-loaded past events (null = not loaded yet)
-  const [pastEvents, setPastEvents] = useState<EventWithVenue[] | null>(null)
+  const [pastEvents, setPastEvents] = useState<EventListItem[] | null>(null)
   const [isPastLoading, setIsPastLoading] = useState(false)
 
   // Derive allEvents based on current tab
@@ -361,7 +361,7 @@ function EventListPage() {
     const eventsToCount = activeEvents.filter(e => e.status !== 'past' && e.status !== 'cancelled')
 
     return {
-      missingDescription: eventsToCount.filter(e => !e.description_es && !!e.link).length,
+      missingDescription: eventsToCount.filter(e => !e.has_description_es && !!e.link).length,
       missingVenue: eventsToCount.filter(e => !e.venue_id).length,
       missingLink: eventsToCount.filter(e => !e.link).length,
     }
@@ -648,8 +648,9 @@ function EventListPage() {
     [bulk]
   )
 
-  // Edit modal handlers - local state for instant open/close
-  const [editingEvent, setEditingEvent] = useState<EventWithVenue | null>(null)
+  // Edit modal handlers - store just ID and name for the sheet
+  const [editingEventId, setEditingEventId] = useState<string | null>(null)
+  const [editingEventName, setEditingEventName] = useState<string>('')
 
   // Mobile selection mode (triggered by long press)
   const mobileSelection = useMobileSelectionMode({
@@ -657,12 +658,14 @@ function EventListPage() {
     externalSelection: bulk,
   })
 
-  const handleEdit = useCallback((event: EventWithVenue) => {
-    setEditingEvent(event)
+  const handleEdit = useCallback((event: EventListItem) => {
+    setEditingEventId(event.id)
+    setEditingEventName(event.name)
   }, [])
 
   const handleCloseEdit = useCallback(() => {
-    setEditingEvent(null)
+    setEditingEventId(null)
+    setEditingEventName('')
   }, [])
 
   // Column definitions
@@ -681,7 +684,7 @@ function EventListPage() {
   )
 
   return (
-    <div className="max-w-6xl mx-auto h-full overflow-auto sm:overflow-hidden overflow-x-hidden flex flex-col gap-6 p-6 animate-fade-in-up">
+    <div className="w-full max-w-6xl mx-auto h-full overflow-auto flex flex-col gap-4 sm:gap-6 p-4 sm:p-6 animate-fade-in-up">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -716,7 +719,7 @@ function EventListPage() {
         <div className="space-y-4">
           <Tabs value={activeTab} onValueChange={handleTabChange}>
             {/* Horizontally scrollable on mobile */}
-            <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+            <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
               <TabsList className="bg-card/50 border border-border/50 p-1 h-auto inline-flex w-auto min-w-full sm:min-w-0">
               <TabsTrigger
                 value="all"
@@ -971,8 +974,8 @@ function EventListPage() {
             />
 
             {/* Desktop Table View with DataTable */}
-            <div className="hidden sm:flex flex-1 min-h-0 min-w-0">
-              <div className="relative flex-1 flex flex-col min-h-0 min-w-0">
+            <div className="hidden sm:block flex-1 min-h-0 overflow-x-auto">
+              <div className="relative min-w-[800px]">
                 {/* Bulk action overlay - needs z-20 to be above sticky table header (z-10) */}
                 <div className="absolute top-0 left-0 right-0 z-20">
                   <BulkActionBar
@@ -986,7 +989,7 @@ function EventListPage() {
                   />
                 </div>
 
-                <div className="flex-1 min-h-0">
+                <div className="h-full">
                   <DataTable
                     columns={columns}
                     data={events}
@@ -1061,8 +1064,8 @@ function EventListPage() {
         confirmDisabled={markPast.pastEventsCount === 0}
       />
 
-      {/* Edit event sheet - only mount when needed to avoid unnecessary renders */}
-      {editingEvent && <EditEventSheet event={editingEvent} onClose={handleCloseEdit} />}
+      {/* Edit event sheet - fetches full event data by ID */}
+      <EditEventSheet eventId={editingEventId} eventName={editingEventName} onClose={handleCloseEdit} />
     </div>
   )
 }
@@ -1131,13 +1134,13 @@ function TabEmptyState({ tab }: { tab: EventTab }) {
 }
 
 interface EventListProps {
-  events: EventWithVenue[]
+  events: EventListItem[]
   selectedIds: Set<string>
   onToggleSelect: (id: string) => void
-  onEdit: (event: EventWithVenue) => void
+  onEdit: (event: EventListItem) => void
   onApprove: (id: string) => void
   onReject: (id: string) => void
-  onDelete: (event: EventWithVenue) => void
+  onDelete: (event: EventListItem) => void
   isApproving: string | null
   isRejecting: string | null
   showNeedsAttention?: boolean
@@ -1160,20 +1163,20 @@ const MobileEventCard = memo(function MobileEventCard({
   selectionMode,
   onEnterSelectionMode,
 }: {
-  event: EventWithVenue
+  event: EventListItem
   isSelected: boolean
   onToggleSelect: (id: string) => void
-  onEdit: (event: EventWithVenue) => void
+  onEdit: (event: EventListItem) => void
   onApprove: (id: string) => void
   onReject: (id: string) => void
-  onDelete: (event: EventWithVenue) => void
+  onDelete: (event: EventListItem) => void
   isApproving: string | null
   isRejecting: string | null
   showNeedsAttention?: boolean
   selectionMode: boolean
   onEnterSelectionMode: () => void
 }) {
-  const needsDescription = !event.description_es && event.link
+  const needsDescription = !event.has_description_es && event.link
 
   // Swipe actions based on event status
   const leftActions = event.status === 'pending_review'

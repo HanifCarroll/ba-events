@@ -12,7 +12,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventForEnrichment } from '@/shared/lib/types'
 import type { UseBackgroundEnrichmentReturn } from './useBackgroundEnrichment'
 import type { UsePasslineDescriptionEnrichmentReturn } from './usePasslineDescriptionEnrichment'
 import type { UseLumaDescriptionEnrichmentReturn } from './useLumaDescriptionEnrichment'
@@ -49,8 +49,8 @@ export function useUnifiedDescriptionEnrichment(
    * This respects each hook's enrichment eligibility logic.
    */
   const getEnrichableEventsByMethod = useCallback(
-    (events: EventWithVenue[], selectedIds: Set<string>) => {
-      const result = new Map<DescriptionEnrichmentMethod, EventWithVenue[]>()
+    <T extends EventForEnrichment>(events: T[], selectedIds: Set<string>) => {
+      const result = new Map<DescriptionEnrichmentMethod, T[]>()
 
       // Use each hook's own filter function to determine eligibility
       // This respects source-specific enrichment_status checks
@@ -92,7 +92,7 @@ export function useUnifiedDescriptionEnrichment(
    * Note: Excludes Passline events since they require manual enrichment.
    */
   const getEnrichableCount = useCallback(
-    (events: EventWithVenue[], selectedIds: Set<string>): number => {
+    <T extends EventForEnrichment>(events: T[], selectedIds: Set<string>): number => {
       const byMethod = getEnrichableEventsByMethod(events, selectedIds)
       let total = 0
       for (const [method, eventList] of byMethod) {
@@ -110,8 +110,8 @@ export function useUnifiedDescriptionEnrichment(
    * Get counts broken down by enrichment method.
    */
   const getEnrichableCountByMethod = useCallback(
-    (
-      events: EventWithVenue[],
+    <T extends EventForEnrichment>(
+      events: T[],
       selectedIds: Set<string>
     ): Map<DescriptionEnrichmentMethod, number> => {
       const byMethod = getEnrichableEventsByMethod(events, selectedIds)
@@ -129,9 +129,9 @@ export function useUnifiedDescriptionEnrichment(
    * Returns a promise that resolves when enrichment completes or is stopped.
    */
   const executeMethodEnrichment = useCallback(
-    async (
+    async <T extends EventForEnrichment>(
       method: DescriptionEnrichmentMethod,
-      events: EventWithVenue[],
+      events: T[],
       selectedIds: Set<string>
     ): Promise<boolean> => {
       // Check if we should stop before starting this method
@@ -170,8 +170,8 @@ export function useUnifiedDescriptionEnrichment(
    * Note: Passline events are skipped - Cloudflare blocks server-side requests.
    */
   const enrichDescriptions = useCallback(
-    async (
-      events: EventWithVenue[],
+    async <T extends EventForEnrichment>(
+      events: T[],
       selectedIds: Set<string>,
       onComplete?: () => void
     ) => {

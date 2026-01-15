@@ -9,6 +9,7 @@ import type {
   EventUpdate,
   EventSearchResult,
   EventWithVenue,
+  EventListItem,
   EventFilters,
   EventStatus,
   Venue,
@@ -218,6 +219,43 @@ export async function getPastEventsWithVenues(limit = 5000) {
 
   if (error) throw error
   return data as EventWithVenue[]
+}
+
+// ============================================================================
+// LIGHTWEIGHT ADMIN LIST QUERIES (Performance Optimized)
+// ============================================================================
+
+/**
+ * Fetch active events for admin list view (lightweight).
+ * Uses events_admin_list view which excludes heavy columns (descriptions).
+ * Reduces payload from ~2-10MB to ~200-400KB for 2000 events.
+ */
+export async function getActiveEventsForList(limit = 5000): Promise<EventListItem[]> {
+  const { data, error } = await supabase
+    .from('events_admin_list')
+    .select('*')
+    .neq('status', 'past')
+    .order('starts_at', { ascending: true })
+    .limit(limit)
+
+  if (error) throw error
+  return data as EventListItem[]
+}
+
+/**
+ * Fetch past events for admin list view (lightweight).
+ * Uses events_admin_list view which excludes heavy columns (descriptions).
+ */
+export async function getPastEventsForList(limit = 5000): Promise<EventListItem[]> {
+  const { data, error } = await supabase
+    .from('events_admin_list')
+    .select('*')
+    .eq('status', 'past')
+    .order('starts_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data as EventListItem[]
 }
 
 export async function getEventById(id: string) {

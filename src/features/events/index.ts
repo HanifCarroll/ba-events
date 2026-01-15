@@ -75,6 +75,7 @@ export {
 } from './hooks/useEventsPaginated'
 
 // Types
+export type { EventListItem, EventForEnrichment, EventDeleteTarget } from '@/shared/lib/types'
 export type {
   EmbeddingProgress,
   EmbeddingComplete,

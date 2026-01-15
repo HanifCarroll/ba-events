@@ -4,7 +4,7 @@ import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
 import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
 import { enrichLumaDescriptionsAction } from '@/features/import'
 import type { DescriptionEnrichProgress, DescriptionEnrichComplete } from '@/shared/lib/streaming-types'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventForEnrichment } from '@/shared/lib/types'
 
 /**
  * Hook for enriching Luma events with descriptions fetched from their event pages.
@@ -78,7 +78,7 @@ export function useLumaDescriptionEnrichment() {
    * Check if an event is a Luma event that can be enriched.
    * Allows both 'pending' (never enriched) and 'failed' (retry) events.
    */
-  const canEnrichEvent = useCallback((event: EventWithVenue) => {
+  const canEnrichEvent = useCallback((event: EventForEnrichment) => {
     const canEnrich =
       event.enrichment_status === 'pending' || event.enrichment_status === 'failed'
     return event.source === 'luma' && canEnrich && !!event.link
@@ -88,7 +88,7 @@ export function useLumaDescriptionEnrichment() {
    * Get Luma events that can be enriched from a selection
    */
   const getLumaEnrichableEvents = useCallback(
-    (events: EventWithVenue[], selectedIds: Set<string>) => {
+    <T extends EventForEnrichment>(events: T[], selectedIds: Set<string>): T[] => {
       return events.filter((e) => selectedIds.has(e.id) && canEnrichEvent(e))
     },
     [canEnrichEvent]
@@ -99,8 +99,8 @@ export function useLumaDescriptionEnrichment() {
    * Streams real-time progress updates from the server
    */
   const enrichLumaEvents = useCallback(
-    async (
-      events: EventWithVenue[],
+    async <T extends EventForEnrichment>(
+      events: T[],
       selectedIds: Set<string>,
       onComplete?: () => void
     ) => {

@@ -38,7 +38,9 @@ export function useUpdateEvent() {
       // Update event in cache directly with fresh data including venue
       queryClient.setQueriesData<EventWithVenue[]>(
         { queryKey: queryKeys.events.all },
-        (old) => old?.map((e) => (e.id === variables.id ? { ...e, ...updatedEvent } : e))
+        (old) => Array.isArray(old)
+          ? old.map((e) => (e.id === variables.id ? { ...e, ...updatedEvent } : e))
+          : old
       )
       // Update detail cache if it exists
       queryClient.setQueryData<EventWithVenue>(
@@ -63,7 +65,7 @@ export function useDeleteEvent() {
       // Remove from cache directly - no refetch needed
       queryClient.setQueriesData<EventWithVenue[]>(
         { queryKey: queryKeys.events.all },
-        (old) => old?.filter((e) => e.id !== eventId)
+        (old) => Array.isArray(old) ? old.filter((e) => e.id !== eventId) : old
       )
       toast.success('Event deleted successfully')
     },

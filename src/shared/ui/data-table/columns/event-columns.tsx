@@ -5,7 +5,7 @@ import { Badge } from '@/shared/ui/badge'
 import { Button } from '@/shared/ui/button'
 import { DataTableColumnHeader } from '../DataTableColumnHeader'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventListItem } from '@/shared/lib/types'
 
 // Label maps for select filters (value -> display label)
 const sourceLabelMap: Record<string, string> = {
@@ -100,8 +100,8 @@ function getStatusBadge(status: string) {
 }
 
 interface EventColumnsOptions {
-  onEdit?: (event: EventWithVenue) => void
-  onDelete?: (event: EventWithVenue) => void
+  onEdit?: (event: EventListItem) => void
+  onDelete?: (event: EventListItem) => void
   onApprove?: (id: string) => void
   onReject?: (id: string) => void
   isApproving?: string | null
@@ -109,7 +109,7 @@ interface EventColumnsOptions {
   showNeedsAttention?: boolean
 }
 
-export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventWithVenue>[] {
+export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventListItem>[] {
   const {
     onEdit,
     onDelete,
@@ -138,7 +138,7 @@ export function getEventColumns(options?: EventColumnsOptions): ColumnDef<EventW
       ),
       cell: ({ row }) => {
         const event = row.original
-        const needsDescription = !event.description_es && event.link
+        const needsDescription = !event.has_description_es && event.link
 
         return (
           <div className="min-w-0">

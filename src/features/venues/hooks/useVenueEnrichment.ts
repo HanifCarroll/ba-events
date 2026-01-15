@@ -15,7 +15,7 @@ import {
   type LumaVenueEnrichComplete,
   extractPasslineVenuesBatchClient,
 } from '@/features/import'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventForEnrichment } from '@/shared/lib/types'
 
 interface VenueEnrichmentState {
   isEnriching: boolean
@@ -46,7 +46,7 @@ export function useVenueEnrichment() {
    * Check if an event can be venue-enriched
    * Must be missing venue_id, have a link, and be from a supported source
    */
-  const canEnrichVenue = useCallback((event: EventWithVenue) => {
+  const canEnrichVenue = useCallback((event: EventForEnrichment) => {
     if (event.venue_id || !event.link) return false
 
     // Check source-specific conditions
@@ -70,7 +70,7 @@ export function useVenueEnrichment() {
    * Get enrichable events from a selection
    */
   const getVenueEnrichableEvents = useCallback(
-    (events: EventWithVenue[], selectedIds: Set<string>) => {
+    <T extends EventForEnrichment>(events: T[], selectedIds: Set<string>): T[] => {
       return events.filter((e) => selectedIds.has(e.id) && canEnrichVenue(e))
     },
     [canEnrichVenue]
@@ -80,8 +80,8 @@ export function useVenueEnrichment() {
    * Group events by source for batch processing
    */
   const groupBySource = useCallback(
-    (events: EventWithVenue[]): Map<string, EventWithVenue[]> => {
-      const groups = new Map<string, EventWithVenue[]>()
+    <T extends EventForEnrichment>(events: T[]): Map<string, T[]> => {
+      const groups = new Map<string, T[]>()
       for (const event of events) {
         const source = event.source
         if (!groups.has(source)) {
@@ -98,9 +98,9 @@ export function useVenueEnrichment() {
    * Enrich events for a specific source
    */
   const enrichBySource = useCallback(
-    async (
+    async <T extends EventForEnrichment>(
       source: string,
-      events: EventWithVenue[]
+      events: T[]
     ): Promise<{ enriched: number; venuesCreated: number; errors: number }> => {
       const eventsToEnrich = events.map((e) => ({
         id: e.id,
@@ -273,8 +273,8 @@ export function useVenueEnrichment() {
    * Enrich selected events with venue data
    */
   const enrichVenues = useCallback(
-    async (
-      events: EventWithVenue[],
+    async <T extends EventForEnrichment>(
+      events: T[],
       selectedIds: Set<string>,
       onComplete?: () => void
     ) => {

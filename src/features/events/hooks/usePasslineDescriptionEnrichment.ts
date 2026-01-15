@@ -7,7 +7,7 @@ import type {
   PasslineDescriptionEnrichProgress,
   PasslineDescriptionEnrichComplete,
 } from '@/shared/lib/streaming-types'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventForEnrichment } from '@/shared/lib/types'
 
 /**
  * Hook for enriching Passline events with descriptions using Playwright.
@@ -92,7 +92,7 @@ export function usePasslineDescriptionEnrichment() {
    * Check if an event is a Passline event that can be enriched.
    * Allows both 'pending' (never enriched) and 'failed' (retry) events.
    */
-  const canEnrichEvent = useCallback((event: EventWithVenue) => {
+  const canEnrichEvent = useCallback((event: EventForEnrichment) => {
     const canEnrich =
       event.enrichment_status === 'pending' || event.enrichment_status === 'failed'
     return event.source === 'passline' && canEnrich && !!event.link
@@ -102,7 +102,7 @@ export function usePasslineDescriptionEnrichment() {
    * Get Passline events that can be enriched from a selection
    */
   const getPasslineEnrichableEvents = useCallback(
-    (events: EventWithVenue[], selectedIds: Set<string>) => {
+    <T extends EventForEnrichment>(events: T[], selectedIds: Set<string>): T[] => {
       return events.filter((e) => selectedIds.has(e.id) && canEnrichEvent(e))
     },
     [canEnrichEvent]
@@ -117,8 +117,8 @@ export function usePasslineDescriptionEnrichment() {
    * - Translation and embedding generation
    */
   const enrichPasslineEvents = useCallback(
-    async (
-      events: EventWithVenue[],
+    async <T extends EventForEnrichment>(
+      events: T[],
       selectedIds: Set<string>,
       onComplete?: () => void
     ) => {

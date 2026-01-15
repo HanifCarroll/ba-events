@@ -79,29 +79,38 @@ export function Combobox({
     setSearch('')
   }
 
-  // Display value: show search when typing, otherwise show selected label
-  const displayValue = open && search ? search : (selectedOption?.label || '')
-
   return (
     <div ref={containerRef} className={cn('relative', className)}>
       <div className="relative">
-        <Input
-          ref={inputRef}
-          value={displayValue}
-          onChange={(e) => {
-            setSearch(e.target.value)
-            if (!open) setOpen(true)
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          className={cn(
-            'pr-16 bg-background/50 border-border/50',
-            !value && !search && 'text-muted-foreground'
-          )}
-        />
+        {open ? (
+          // Search input - completely separate from display
+          <Input
+            ref={inputRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type to search..."
+            autoFocus
+            className="pr-16 bg-background/50 border-border/50"
+          />
+        ) : (
+          // Display input - shows selected value, opens on focus
+          <Input
+            value={selectedOption?.label || ''}
+            onFocus={() => {
+              setOpen(true)
+              setSearch('')
+            }}
+            readOnly
+            placeholder={placeholder}
+            className={cn(
+              'pr-16 bg-background/50 border-border/50 cursor-pointer',
+              !value && 'text-muted-foreground'
+            )}
+          />
+        )}
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          {value && (
+          {value && !open && (
             <button
               type="button"
               onClick={handleClear}

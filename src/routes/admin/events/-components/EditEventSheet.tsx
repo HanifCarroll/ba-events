@@ -33,14 +33,17 @@ import {
   FormMessage,
 } from '@/shared/ui/form'
 import { getVenuesForSelect } from '@/features/venues'
-import { useUpdateEvent } from '@/features/events'
+import { useUpdateEvent, getEventWithVenueAction } from '@/features/events'
 import { eventFormSchema, type EventFormInput } from '@/shared/lib/schemas'
 import { queryKeys } from '@/shared/lib/query'
 import { CATEGORIES, EVENT_STATUSES } from '@/shared/lib/types'
-import type { EventWithVenue, EventStatus, Category } from '@/shared/lib/types'
+import type { EventStatus, Category } from '@/shared/lib/types'
 
 interface EditEventSheetProps {
-  event: EventWithVenue | null
+  /** Event ID to edit, or null to close the sheet */
+  eventId: string | null
+  /** Optional event name for display while loading */
+  eventName?: string
   onClose: () => void
 }
 
@@ -60,8 +63,16 @@ function toLocalDatetime(isoString: string | null | undefined): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
+export function EditEventSheet({ eventId, eventName, onClose }: EditEventSheetProps) {
   const updateMutation = useUpdateEvent()
+
+  // Fetch full event data when sheet opens
+  const { data: event, isLoading: isLoadingEvent } = useQuery({
+    queryKey: queryKeys.events.detail(eventId ?? ''),
+    queryFn: () => getEventWithVenueAction({ data: eventId! }),
+    enabled: !!eventId,
+    staleTime: 0, // Always refetch to get latest data
+  })
 
   // Load venues for dropdown (cached via React Query)
   const { data: venues = [] } = useQuery({
@@ -99,7 +110,7 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
     }
   }, [isFree, form])
 
-  // Reset form when event changes (critical for controlled sheet!)
+  // Reset form when event data is loaded
   useEffect(() => {
     if (event) {
       form.reset({
@@ -123,7 +134,7 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
   }, [event, form])
 
   async function onSubmit(data: EventFormInput) {
-    if (!event) return
+    if (!eventId) return
 
     try {
       const startsAtISO = new Date(data.starts_at).toISOString()
@@ -146,92 +157,49 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
         status: data.status,
       }
 
-      await updateMutation.mutateAsync({ id: event.id, data: submitData })
+      await updateMutation.mutateAsync({ id: eventId, data: submitData })
       onClose()
     } catch {
       // Error is handled by mutation's onError (shows toast)
     }
   }
 
-  if (!event) return null
-
   return (
-    <Sheet open={!!event} onOpenChange={() => onClose()}>
+    <Sheet open={!!eventId} onOpenChange={() => onClose()}>
       <SheetContent className="w-full sm:max-w-xl bg-card border-border/50 flex flex-col p-0">
         {/* Sticky Header */}
         <SheetHeader className="sticky top-0 z-10 bg-card border-b border-border/50 px-6 py-4 shrink-0">
           <SheetTitle className="font-display text-foreground">Edit Event</SheetTitle>
           <SheetDescription className="text-muted-foreground">
-            Editing {event.name}
+            Editing {event?.name ?? eventName ?? 'event'}
           </SheetDescription>
         </SheetHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
-            {/* Name */}
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Name <span className="text-destructive">*</span>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder="Event name"
-                      className="bg-background/50 border-border/50"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Status */}
-            <FormField
-              control={form.control}
-              name="status"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="bg-background/50 border-border/50">
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {EVENT_STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {statusLabels[s]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Date/Time row */}
-            <div className="grid grid-cols-2 gap-3">
-              {/* Starts at */}
+        {isLoadingEvent ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center space-y-3">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Loading event...</p>
+            </div>
+          </div>
+        ) : (
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+              {/* Name */}
               <FormField
                 control={form.control}
-                name="starts_at"
+                name="name"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Starts at <span className="text-destructive">*</span>
+                      Name <span className="text-destructive">*</span>
                     </FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        type="datetime-local"
+                        placeholder="Event name"
                         className="bg-background/50 border-border/50"
                       />
                     </FormControl>
@@ -240,179 +208,80 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
                 )}
               />
 
-              {/* Ends at */}
+              {/* Status */}
               <FormField
                 control={form.control}
-                name="ends_at"
+                name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Ends at</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value || ''}
-                        type="datetime-local"
-                        className="bg-background/50 border-border/50"
-                      />
-                    </FormControl>
+                    <FormLabel>Status</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="bg-background/50 border-border/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {EVENT_STATUSES.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {statusLabels[s]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            </div>
 
-            {/* All day */}
-            <FormField
-              control={form.control}
-              name="is_all_day"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-2 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <FormLabel className="font-normal cursor-pointer">
-                    All-day event
-                  </FormLabel>
-                </FormItem>
-              )}
-            />
+              {/* Date/Time row */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Starts at */}
+                <FormField
+                  control={form.control}
+                  name="starts_at"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Starts at <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="datetime-local"
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            {/* Venue */}
-            <FormField
-              control={form.control}
-              name="venue_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Venue</FormLabel>
-                  <FormControl>
-                    <Combobox
-                      options={[
-                        { value: '_none', label: 'No venue' },
-                        ...venues.map((v) => ({
-                          value: v.id,
-                          label: v.name,
-                          sublabel: v.neighborhood ?? undefined,
-                        })),
-                      ]}
-                      value={field.value || '_none'}
-                      onValueChange={(value) => field.onChange(value || '_none')}
-                      placeholder="Choose a venue"
-                      searchPlaceholder="Search venues..."
-                      emptyText="No venue found."
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                {/* Ends at */}
+                <FormField
+                  control={form.control}
+                  name="ends_at"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Ends at</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value || ''}
+                          type="datetime-local"
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            {/* Venue TBA */}
-            <FormField
-              control={form.control}
-              name="location_tba"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-2 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <FormLabel className="font-normal cursor-pointer">
-                    Venue TBA (location to be announced)
-                  </FormLabel>
-                </FormItem>
-              )}
-            />
-
-            {/* Categories */}
-            <Controller
-              control={form.control}
-              name="categories"
-              render={({ field }) => (
-                <div className="space-y-2">
-                  <FormLabel>
-                    Categories <span className="text-destructive">*</span>
-                  </FormLabel>
-                  <div className="flex flex-wrap gap-1.5">
-                    {CATEGORIES.map((cat) => {
-                      const isSelected = field.value.includes(cat)
-                      return (
-                        <Badge
-                          key={cat}
-                          variant="outline"
-                          onClick={() => {
-                            const newValue = isSelected
-                              ? field.value.filter((c: string) => c !== cat)
-                              : [...field.value, cat]
-                            field.onChange(newValue)
-                          }}
-                          className={`cursor-pointer transition-all text-xs ${
-                            isSelected
-                              ? 'bg-primary/20 text-primary border-primary/50'
-                              : 'border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                          }`}
-                        >
-                          {cat}
-                        </Badge>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            />
-
-            {/* Description (Spanish) */}
-            <FormField
-              control={form.control}
-              name="description_es"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description (Spanish)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      value={field.value || ''}
-                      placeholder="Describe el evento..."
-                      rows={3}
-                      className="bg-background/50 border-border/50 resize-none"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Description (English) */}
-            <FormField
-              control={form.control}
-              name="description_en"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description (English)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      value={field.value || ''}
-                      placeholder="Describe the event..."
-                      rows={3}
-                      className="bg-background/50 border-border/50 resize-none"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Pricing row */}
-            <div className="space-y-3">
-              {/* Free checkbox */}
+              {/* All day */}
               <FormField
                 control={form.control}
-                name="is_free"
+                name="is_all_day"
                 render={({ field }) => (
                   <FormItem className="flex items-center gap-2 space-y-0">
                     <FormControl>
@@ -422,55 +291,107 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
                       />
                     </FormControl>
                     <FormLabel className="font-normal cursor-pointer">
-                      Free event
+                      All-day event
                     </FormLabel>
                   </FormItem>
                 )}
               />
 
-              {/* Price */}
+              {/* Venue */}
               <FormField
                 control={form.control}
-                name="price"
+                name="venue_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Price (ARS)</FormLabel>
+                    <FormLabel>Venue</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={field.value ?? ''}
-                        onChange={(e) =>
-                          field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)
-                        }
-                        placeholder="0.00"
-                        disabled={isFree}
-                        className="bg-background/50 border-border/50 max-w-[200px]"
+                      <Combobox
+                        options={venues.map((v) => ({
+                          value: v.id,
+                          label: v.name,
+                          sublabel: v.neighborhood ?? undefined,
+                        }))}
+                        value={field.value === '_none' ? undefined : field.value}
+                        onValueChange={(value) => field.onChange(value || '_none')}
+                        placeholder="Select a venue..."
+                        emptyText="No venue found."
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            </div>
 
-            {/* Links row */}
-            <div className="grid grid-cols-2 gap-3">
-              {/* Event link */}
+              {/* Venue TBA */}
               <FormField
                 control={form.control}
-                name="link"
+                name="location_tba"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-2 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormLabel className="font-normal cursor-pointer">
+                      Venue TBA (location to be announced)
+                    </FormLabel>
+                  </FormItem>
+                )}
+              />
+
+              {/* Categories */}
+              <Controller
+                control={form.control}
+                name="categories"
+                render={({ field }) => (
+                  <div className="space-y-2">
+                    <FormLabel>
+                      Categories <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CATEGORIES.map((cat) => {
+                        const isSelected = field.value.includes(cat)
+                        return (
+                          <Badge
+                            key={cat}
+                            variant="outline"
+                            onClick={() => {
+                              const newValue = isSelected
+                                ? field.value.filter((c: string) => c !== cat)
+                                : [...field.value, cat]
+                              field.onChange(newValue)
+                            }}
+                            className={`cursor-pointer transition-all text-xs ${
+                              isSelected
+                                ? 'bg-primary/20 text-primary border-primary/50'
+                                : 'border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                            }`}
+                          >
+                            {cat}
+                          </Badge>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              />
+
+              {/* Description (Spanish) */}
+              <FormField
+                control={form.control}
+                name="description_es"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Event Link</FormLabel>
+                    <FormLabel>Description (Spanish)</FormLabel>
                     <FormControl>
-                      <Input
+                      <Textarea
                         {...field}
                         value={field.value || ''}
-                        type="url"
-                        placeholder="https://..."
-                        className="bg-background/50 border-border/50"
+                        placeholder="Describe el evento..."
+                        rows={3}
+                        className="bg-background/50 border-border/50 resize-none"
                       />
                     </FormControl>
                     <FormMessage />
@@ -478,61 +399,154 @@ export function EditEventSheet({ event, onClose }: EditEventSheetProps) {
                 )}
               />
 
-              {/* Ticket URL */}
+              {/* Description (English) */}
               <FormField
                 control={form.control}
-                name="ticket_url"
+                name="description_en"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Ticket URL</FormLabel>
+                    <FormLabel>Description (English)</FormLabel>
                     <FormControl>
-                      <Input
+                      <Textarea
                         {...field}
                         value={field.value || ''}
-                        type="url"
-                        placeholder="https://..."
-                        className="bg-background/50 border-border/50"
+                        placeholder="Describe the event..."
+                        rows={3}
+                        className="bg-background/50 border-border/50 resize-none"
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            </div>
 
-            {/* Error message */}
-            {updateMutation.error && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                {updateMutation.error instanceof Error
-                  ? updateMutation.error.message
-                  : 'Failed to save event'}
+              {/* Pricing row */}
+              <div className="space-y-3">
+                {/* Free checkbox */}
+                <FormField
+                  control={form.control}
+                  name="is_free"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center gap-2 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="font-normal cursor-pointer">
+                        Free event
+                      </FormLabel>
+                    </FormItem>
+                  )}
+                />
+
+                {/* Price */}
+                <FormField
+                  control={form.control}
+                  name="price"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price (ARS)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)
+                          }
+                          placeholder="0.00"
+                          disabled={isFree}
+                          className="bg-background/50 border-border/50 max-w-[200px]"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
-            )}
-            </div>
 
-            {/* Sticky Footer */}
-            <SheetFooter className="sticky bottom-0 z-10 bg-card border-t border-border/50 px-6 py-4 gap-2 sm:gap-0 shrink-0">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onClose}
-                className="text-muted-foreground"
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  'Save Changes'
-                )}
-              </Button>
-            </SheetFooter>
-          </form>
-        </Form>
+              {/* Links row */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Event link */}
+                <FormField
+                  control={form.control}
+                  name="link"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Event Link</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value || ''}
+                          type="url"
+                          placeholder="https://..."
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Ticket URL */}
+                <FormField
+                  control={form.control}
+                  name="ticket_url"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Ticket URL</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value || ''}
+                          type="url"
+                          placeholder="https://..."
+                          className="bg-background/50 border-border/50"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Error message */}
+              {updateMutation.error && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+                  {updateMutation.error instanceof Error
+                    ? updateMutation.error.message
+                    : 'Failed to save event'}
+                </div>
+              )}
+              </div>
+
+              {/* Sticky Footer */}
+              <SheetFooter className="sticky bottom-0 z-10 bg-card border-t border-border/50 px-6 py-4 gap-2 sm:gap-0 shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={onClose}
+                  className="text-muted-foreground"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateMutation.isPending}>
+                  {updateMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </SheetFooter>
+            </form>
+          </Form>
+        )}
       </SheetContent>
     </Sheet>
   )

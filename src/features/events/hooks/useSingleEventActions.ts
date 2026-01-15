@@ -2,11 +2,11 @@ import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { deleteEventAction } from '../api/crud'
 import { approveEventAction, rejectEventAction } from '../api/moderation'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { EventDeleteTarget } from '@/shared/lib/types'
 
 export function useSingleEventActions() {
   const router = useRouter()
-  const [deleteTarget, setDeleteTarget] = useState<EventWithVenue | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<EventDeleteTarget | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isApproving, setIsApproving] = useState<string | null>(null)
   const [isRejecting, setIsRejecting] = useState<string | null>(null)

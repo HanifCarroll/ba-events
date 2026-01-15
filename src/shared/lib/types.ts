@@ -142,6 +142,50 @@ export interface EventWithVenue extends Event {
   venue_address: string | null
 }
 
+/**
+ * Lightweight event type for admin list views.
+ * Uses boolean flags instead of full description text for better performance.
+ * Reduces payload from ~2-10KB to ~200 bytes per event.
+ */
+export interface EventListItem {
+  id: string
+  name: string
+  starts_at: string
+  venue_id: string | null
+  categories: string[]
+  source: string
+  status: EventStatus
+  link: string | null
+  created_at: string
+  enrichment_status: EnrichmentStatus
+  // Boolean flags instead of full text
+  has_description_es: boolean
+  has_description_en: boolean
+  // Venue info
+  venue_name: string | null
+}
+
+/**
+ * Minimal event type for enrichment operations.
+ * Both EventListItem and EventWithVenue satisfy this interface.
+ */
+export interface EventForEnrichment {
+  id: string
+  name: string
+  source: string
+  link: string | null
+  venue_id: string | null
+  enrichment_status: EnrichmentStatus
+}
+
+/**
+ * Minimal event info for delete confirmation dialog.
+ */
+export interface EventDeleteTarget {
+  id: string
+  name: string
+}
+
 // For inserting new events
 export interface EventInsert {
   name: string
