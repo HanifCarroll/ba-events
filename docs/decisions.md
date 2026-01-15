@@ -26,6 +26,62 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### React Query for Instant Admin Event List Updates
+
+**Date:** 2026-01-15
+
+**Decision:** Replace `router.invalidate()` with React Query's `setQueryData()` for instant UI updates after event mutations in the admin events page.
+
+**Problem:**
+After updating an event (e.g., adding a venue), it took ~10 seconds for the event to disappear from filtered views like "missing venue". This was because `router.invalidate()` triggered a full route refetch of all events from the database.
+
+**Solution:**
+Use React Query with `initialData` from the route loader, then update the cache directly on mutation success:
+
+```typescript
+// Route still loads data (no loading flash)
+loader: async () => ({
+  activeEvents: await listActiveEventsAdmin(),
+  tabCounts: await getEventTabCountsAction({ data: {} }),
+})
+
+// Component wraps with useQuery for cache management
+const { data: activeEvents } = useQuery({
+  queryKey: queryKeys.events.adminList(),
+  queryFn: listActiveEventsAdmin,
+  initialData: loaderActiveEvents,
+  staleTime: 30_000,
+})
+
+// Mutations update cache directly
+onSuccess: (updatedEvent) => {
+  queryClient.setQueryData<EventListItem[]>(
+    queryKeys.events.adminList(),
+    (old) => old?.map(e => e.id === updatedEvent.id ? { ...e, ...updatedEvent } : e)
+  )
+  queryClient.invalidateQueries({ queryKey: queryKeys.events.tabCounts({}) })
+}
+```
+
+**Alternatives Considered:**
+- **Keep router.invalidate()**: Rejected - 10 second delay is poor UX
+- **Optimistic updates before server response**: Rejected - we have the real data from the server, no need to guess
+- **useState initialized from loader + useEffect sync**: Rejected - TkDodo's blog warns this is an anti-pattern that causes sync bugs
+- **Full migration away from route loader**: Rejected - loader provides instant initial render, React Query provides instant updates; best of both worlds
+
+**Rationale:**
+1. **Instant updates**: Events disappear from filtered views immediately after mutation
+2. **No loading flash**: `initialData` from loader means data is available on first render
+3. **Official pattern**: TanStack Query docs recommend `setQueryData` for updating cache with mutation responses
+4. **Granular invalidation**: Tab counts refresh in background (~1-2s) while list updates instantly
+
+**Files Modified:**
+- `src/shared/lib/query.ts` - Added `adminList()` and `adminPastList()` query keys
+- `src/routes/admin/events/index.tsx` - Wrapped loader data with `useQuery`
+- `src/features/events/hooks/useEventMutations.ts` - Replaced `router.invalidate()` with `setQueryData()`
+
+---
+
 ### Trigger.dev Scraper Reliability Fixes
 
 **Date:** 2026-01-15
