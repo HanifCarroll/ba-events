@@ -70,9 +70,13 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   const handleFeedback = () => {
-    // Render the PostHog feedback survey (API mode)
-    const posthog = (window as unknown as { posthog?: { renderSurvey: (id: string) => void } }).posthog
-    posthog?.renderSurvey('019b8421-0e55-0000-10bc-3acd5494b9b2')
+    const posthog = (window as unknown as { posthog?: {
+      onSurveysLoaded: (cb: () => void) => void
+      displaySurvey: (id: string) => void
+    } }).posthog
+    posthog?.onSurveysLoaded(() => {
+      posthog.displaySurvey('019b8421-0e55-0000-10bc-3acd5494b9b2')
+    })
     track('feedback:opened')
     setMobileMenuOpen(false)
   }
