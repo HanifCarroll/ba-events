@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
@@ -34,6 +34,7 @@ import {
 } from '@/shared/ui/form'
 import { getVenuesForSelect } from '@/features/venues'
 import { useUpdateEvent, getEventWithVenueAction } from '@/features/events'
+import { CreateVenueDialog } from './CreateVenueDialog'
 import { eventFormSchema, type EventFormInput } from '@/shared/lib/schemas'
 import { queryKeys } from '@/shared/lib/query'
 import { CATEGORIES, EVENT_STATUSES } from '@/shared/lib/types'
@@ -64,7 +65,12 @@ function toLocalDatetime(isoString: string | null | undefined): string {
 }
 
 export function EditEventSheet({ eventId, eventName, onClose }: EditEventSheetProps) {
+  const queryClient = useQueryClient()
   const updateMutation = useUpdateEvent()
+
+  // Create venue dialog state
+  const [createVenueOpen, setCreateVenueOpen] = useState(false)
+  const [createVenueName, setCreateVenueName] = useState('')
 
   // Fetch full event data when sheet opens
   const { data: event, isLoading: isLoadingEvent } = useQuery({
@@ -315,6 +321,11 @@ export function EditEventSheet({ eventId, eventName, onClose }: EditEventSheetPr
                         onValueChange={(value) => field.onChange(value || '_none')}
                         placeholder="Select a venue..."
                         emptyText="No venue found."
+                        onCreate={(searchTerm) => {
+                          setCreateVenueName(searchTerm)
+                          setCreateVenueOpen(true)
+                        }}
+                        createLabel="Create new venue"
                       />
                     </FormControl>
                     <FormMessage />
@@ -548,6 +559,19 @@ export function EditEventSheet({ eventId, eventName, onClose }: EditEventSheetPr
           </Form>
         )}
       </SheetContent>
+
+      {/* Create Venue Dialog */}
+      <CreateVenueDialog
+        open={createVenueOpen}
+        onOpenChange={setCreateVenueOpen}
+        initialName={createVenueName}
+        onCreated={(venueId) => {
+          // Select the newly created venue
+          form.setValue('venue_id', venueId)
+          // Refresh venues list
+          queryClient.invalidateQueries({ queryKey: queryKeys.venues.select() })
+        }}
+      />
     </Sheet>
   )
 }

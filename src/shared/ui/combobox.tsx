@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Check, ChevronsUpDown, X } from 'lucide-react'
+import { Check, ChevronsUpDown, X, Plus } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { Input } from '@/shared/ui/input'
 
@@ -17,6 +17,10 @@ interface ComboboxProps {
   searchPlaceholder?: string
   emptyText?: string
   className?: string
+  /** Called when user wants to create a new item. Receives the current search term. */
+  onCreate?: (searchTerm: string) => void
+  /** Label for the create action. Defaults to "Create new" */
+  createLabel?: string
 }
 
 export function Combobox({
@@ -26,6 +30,8 @@ export function Combobox({
   placeholder = 'Select...',
   emptyText = 'No results found.',
   className,
+  onCreate,
+  createLabel = 'Create new',
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
@@ -127,37 +133,75 @@ export function Combobox({
         <div className="absolute z-50 mt-1 w-full rounded-md border border-border/50 bg-popover shadow-md animate-in fade-in-0 zoom-in-95">
           <div className="max-h-60 overflow-auto p-1">
             {filteredOptions.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">
-                {emptyText}
+              <div className="py-2">
+                {onCreate && search.trim() ? (
+                  // Show create option with the search term when no results
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onCreate(search.trim())
+                      setOpen(false)
+                      setSearch('')
+                    }}
+                    className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    <span>Create "{search.trim()}"</span>
+                  </button>
+                ) : (
+                  <div className="py-4 text-center text-sm text-muted-foreground">
+                    {emptyText}
+                  </div>
+                )}
               </div>
             ) : (
-              filteredOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => handleSelect(option)}
-                  className={cn(
-                    'relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors',
-                    'hover:bg-accent hover:text-accent-foreground',
-                    value === option.value && 'bg-accent/50'
-                  )}
-                >
-                  <span className="flex-1 truncate text-left">
-                    {option.label}
-                    {option.sublabel && (
-                      <span className="text-muted-foreground ml-1">
-                        ({option.sublabel})
-                      </span>
-                    )}
-                  </span>
-                  <Check
+              <>
+                {filteredOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handleSelect(option)}
                     className={cn(
-                      'ml-2 h-4 w-4 shrink-0',
-                      value === option.value ? 'opacity-100' : 'opacity-0'
+                      'relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors',
+                      'hover:bg-accent hover:text-accent-foreground',
+                      value === option.value && 'bg-accent/50'
                     )}
-                  />
-                </button>
-              ))
+                  >
+                    <span className="flex-1 truncate text-left">
+                      {option.label}
+                      {option.sublabel && (
+                        <span className="text-muted-foreground ml-1">
+                          ({option.sublabel})
+                        </span>
+                      )}
+                    </span>
+                    <Check
+                      className={cn(
+                        'ml-2 h-4 w-4 shrink-0',
+                        value === option.value ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                  </button>
+                ))}
+                {/* Create new option at the bottom */}
+                {onCreate && (
+                  <>
+                    <div className="my-1 h-px bg-border/50" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCreate(search.trim())
+                        setOpen(false)
+                        setSearch('')
+                      }}
+                      className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      <span>{search.trim() ? `Create "${search.trim()}"` : createLabel}</span>
+                    </button>
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
