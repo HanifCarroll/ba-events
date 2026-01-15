@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { memo, useRef, useEffect, useMemo, useCallback, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { debounce } from '@/shared/lib/utils'
@@ -47,6 +48,7 @@ import {
 // EventTabCounts type is compatible with local TabCounts interface
 import { listVenues } from '@/features/venues'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
+import { queryKeys } from '@/shared/lib/query'
 import { useVenueEnrichment } from '@/features/venues'
 import { BulkActionBar } from './-components/BulkActionBar'
 import { buildEnrichmentsConfig } from './-components/enrichments-config'
@@ -330,16 +332,36 @@ function getStatusBadge(status: string) {
 }
 
 function EventListPage() {
-  const { venues, activeEvents, tabCounts: serverTabCounts } = Route.useLoaderData()
+  const { venues, activeEvents: initialActiveEvents, tabCounts: initialTabCounts } = Route.useLoaderData()
   const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
 
   // Client-side filtering and sorting (virtualization replaces pagination)
   const activeTab: EventTab = (searchParams.tab ?? 'all') as EventTab
 
-  // Lazy-loaded past events (null = not loaded yet)
-  const [pastEvents, setPastEvents] = useState<EventListItem[] | null>(null)
-  const [isPastLoading, setIsPastLoading] = useState(false)
+  // React Query for active events - initialData from loader for instant render
+  const { data: activeEvents = [] } = useQuery({
+    queryKey: queryKeys.events.adminList(),
+    queryFn: listActiveEventsAdmin,
+    initialData: initialActiveEvents,
+    staleTime: 30_000,
+  })
+
+  // React Query for tab counts - initialData from loader for instant render
+  const { data: serverTabCounts } = useQuery({
+    queryKey: queryKeys.events.tabCounts({}),
+    queryFn: () => getEventTabCountsAction({ data: {} }),
+    initialData: initialTabCounts,
+    staleTime: 30_000,
+  })
+
+  // Lazy-loaded past events via React Query (only fetched when Past tab is active)
+  const { data: pastEvents, isLoading: isPastLoading } = useQuery({
+    queryKey: queryKeys.events.adminPastList(),
+    queryFn: listPastEventsAdmin,
+    enabled: activeTab === 'past',
+    staleTime: 60_000,
+  })
 
   // Derive allEvents based on current tab
   // For non-past tabs, use activeEvents; for past tab, use pastEvents (or empty while loading)
@@ -350,12 +372,15 @@ function EventListPage() {
     return activeEvents
   }, [activeTab, activeEvents, pastEvents])
 
+  // Default serverTabCounts if undefined
+  const safeServerTabCounts = serverTabCounts ?? initialTabCounts
+
   // Use server-provided tab counts, but override past count if we've loaded past events
   const tabCounts = useMemo((): TabCounts => ({
-    ...serverTabCounts,
+    ...safeServerTabCounts,
     // If past events have been loaded, use actual count for accuracy
-    past: pastEvents !== null ? pastEvents.length : serverTabCounts.past,
-  }), [serverTabCounts, pastEvents])
+    past: pastEvents ? pastEvents.length : safeServerTabCounts.past,
+  }), [safeServerTabCounts, pastEvents])
 
   // Calculate filter counts for needs_attention tab (from active events only, excluding past/cancelled)
   const filterCounts = useMemo(() => {
@@ -616,23 +641,9 @@ function EventListPage() {
     }
   }, []) // Only run once on mount
 
-  const handleTabChange = async (value: string) => {
+  const handleTabChange = (value: string) => {
     const tab = value as EventTab
-
-    // Lazy load past events on first click of Past tab
-    if (tab === 'past' && pastEvents === null && !isPastLoading) {
-      setIsPastLoading(true)
-      try {
-        const past = await listPastEventsAdmin()
-        setPastEvents(past)
-      } catch (error) {
-        console.error('Failed to load past events:', error)
-        toast.error('Failed to load past events')
-      } finally {
-        setIsPastLoading(false)
-      }
-    }
-
+    // React Query handles lazy loading of past events automatically via enabled: activeTab === 'past'
     setTab(tab)
     setSearchInput('')
   }

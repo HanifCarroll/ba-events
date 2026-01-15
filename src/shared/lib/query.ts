@@ -23,6 +23,9 @@ export const queryKeys = {
     all: ['events'] as const,
     list: (filters?: { status?: string; venueId?: string }) =>
       [...queryKeys.events.all, 'list', filters] as const,
+    // Admin events list (lightweight, client-side filtered)
+    adminList: () => [...queryKeys.events.all, 'adminList'] as const,
+    adminPastList: () => [...queryKeys.events.all, 'adminPastList'] as const,
     // Paginated list with all filter params
     listPaginated: (params: EventListParams) =>
       [...queryKeys.events.all, 'listPaginated', params] as const,
