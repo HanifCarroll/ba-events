@@ -75,7 +75,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       displaySurvey: (id: string) => void
     } }).posthog
     posthog?.onSurveysLoaded(() => {
-      posthog.displaySurvey('019b8421-0e55-0000-10bc-3acd5494b9b2')
+      posthog.displaySurvey('019bc2ff-adb1-0000-362c-eed6326569f2')
     })
     track('feedback:opened')
     setMobileMenuOpen(false)
