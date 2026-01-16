@@ -1,6 +1,7 @@
 import { HeadContent, Outlet, Scripts, createRootRoute, useLocation } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/shared/providers/AuthProvider'
+import { ChatProvider } from '@/shared/providers/ChatProvider'
 import { useAuthContext, getSessionUser, type SessionUser } from '@/features/auth'
 import { TooltipProvider } from '@/shared/ui/tooltip'
 import { Toaster } from '@/shared/ui/sonner'
@@ -234,8 +235,10 @@ function RootLayout() {
 
   // All other pages get the sidebar layout
   return (
-    <MainLayout>
-      <Outlet />
-    </MainLayout>
+    <ChatProvider>
+      <MainLayout>
+        <Outlet />
+      </MainLayout>
+    </ChatProvider>
   )
 }

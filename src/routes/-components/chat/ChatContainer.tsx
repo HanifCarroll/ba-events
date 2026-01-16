@@ -9,6 +9,7 @@ import { getLocale } from '@/paraglide/runtime'
 import { track } from '@/lib/analytics'
 import { usePullToRefresh } from '@/shared/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/shared/ui/PullToRefreshIndicator'
+import { useChatContext } from '@/shared/providers/ChatProvider'
 
 export function ChatContainer() {
   // Track events, suggestions, and directions separately since they come as data parts
@@ -72,25 +73,18 @@ export function ChatContainer() {
 
   const isLoading = status === 'submitted' || status === 'streaming'
 
-  // Notify header about chat state changes
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('chat-state-change', {
-      detail: { hasMessages: messages.length > 0 }
-    }))
-  }, [messages.length])
+  // Register handler for starting a new chat (called from sidebar via ChatContext)
+  const { registerStartNewChatHandler } = useChatContext()
 
-  // Listen for new-chat event from header
   useEffect(() => {
-    const handleNewChat = () => {
+    registerStartNewChatHandler(() => {
       stop()
       setMessages([])
       setEvents([])
       setSuggestions([])
       setDirections(null)
-    }
-    window.addEventListener('new-chat', handleNewChat)
-    return () => window.removeEventListener('new-chat', handleNewChat)
-  }, [stop, setMessages])
+    })
+  }, [registerStartNewChatHandler, stop, setMessages])
 
   // Clear events, suggestions, and directions when starting a new message
   const handleSendMessage = useCallback(async (content: string) => {

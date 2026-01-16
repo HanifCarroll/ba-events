@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip'
 import { SkipLink } from '@/shared/ui/SkipLink'
 import { useAuthContext } from '@/features/auth'
 import { signOutAction } from '@/features/auth'
+import { useChatContext } from '@/shared/providers/ChatProvider'
 import { track } from '@/lib/analytics'
 import { LanguageSwitcher } from '@/routes/-components/LanguageSwitcher'
 import * as m from '@/paraglide/messages'
@@ -59,13 +60,16 @@ export function MainLayout({ children }: MainLayoutProps) {
   // Wrap signOutAction with useServerFn for server-side sign-out
   const signOut = useServerFn(signOutAction)
 
+  // Chat context for starting new chat
+  const { startNewChat } = useChatContext()
+
   // Persist collapsed state
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', String(collapsed))
   }, [collapsed])
 
   const handleNewChat = () => {
-    window.dispatchEvent(new CustomEvent('new-chat'))
+    startNewChat()
     setMobileMenuOpen(false)
   }
 
