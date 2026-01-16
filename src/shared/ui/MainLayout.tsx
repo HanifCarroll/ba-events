@@ -27,6 +27,7 @@ import { signOutAction } from '@/features/auth/api/server'
 import { useChatContext } from '@/shared/providers/ChatProvider'
 import { track } from '@/lib/analytics'
 import { LanguageSwitcher } from '@/routes/-components/LanguageSwitcher'
+import { FeedbackDialog } from '@/shared/ui/FeedbackDialog'
 import * as m from '@/paraglide/messages'
 
 interface MainLayoutProps {
@@ -56,6 +57,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
     return false
   })
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   // Wrap signOutAction with useServerFn for server-side sign-out
   const signOut = useServerFn(signOutAction)
@@ -74,14 +76,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   const handleFeedback = () => {
-    const posthog = (window as unknown as { posthog?: {
-      onSurveysLoaded: (cb: () => void) => void
-      displaySurvey: (id: string) => void
-    } }).posthog
-    posthog?.onSurveysLoaded(() => {
-      posthog.displaySurvey('019bc2ff-adb1-0000-362c-eed6326569f2')
-    })
-    track('feedback:opened')
+    setFeedbackOpen(true)
     setMobileMenuOpen(false)
   }
 
@@ -404,6 +399,9 @@ export function MainLayout({ children }: MainLayoutProps) {
           {children}
         </div>
       </main>
+
+      {/* Feedback Dialog */}
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </div>
   )
 }
