@@ -16,6 +16,12 @@ import { Textarea } from "@/shared/ui/textarea"
 const SURVEY_ID = "019bc2ff-adb1-0000-362c-eed6326569f2"
 const QUESTION_ID = "7ce5b831-dc71-4648-b6b0-b583d48a0c11"
 
+// Get the initialized PostHog instance from window
+function getPostHog() {
+  if (typeof window === "undefined") return null
+  return (window as unknown as { posthog?: { capture: (event: string, properties?: Record<string, unknown>) => void } }).posthog
+}
+
 interface FeedbackDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -29,10 +35,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   // Track survey shown event when dialog opens
   useEffect(() => {
     if (open && !submitted) {
-      import("posthog-js").then((module) => {
-        module.default.capture("survey shown", {
-          $survey_id: SURVEY_ID,
-        })
+      getPostHog()?.capture("survey shown", {
+        $survey_id: SURVEY_ID,
       })
     }
   }, [open, submitted])
@@ -52,14 +56,13 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     }
   }, [submitted, onOpenChange])
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     if (!feedback.trim() || isSubmitting) return
 
     setIsSubmitting(true)
 
     try {
-      const posthog = (await import("posthog-js")).default
-      posthog.capture("survey sent", {
+      getPostHog()?.capture("survey sent", {
         $survey_id: SURVEY_ID,
         [`$survey_response_${QUESTION_ID}`]: feedback,
         $survey_questions: [
@@ -81,10 +84,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     (newOpen: boolean) => {
       if (!newOpen && !submitted) {
         // Track dismissal
-        import("posthog-js").then((module) => {
-          module.default.capture("survey dismissed", {
-            $survey_id: SURVEY_ID,
-          })
+        getPostHog()?.capture("survey dismissed", {
+          $survey_id: SURVEY_ID,
         })
       }
       onOpenChange(newOpen)
