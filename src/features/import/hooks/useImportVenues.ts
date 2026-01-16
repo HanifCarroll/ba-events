@@ -7,7 +7,7 @@ import type {
   MeetupPreviewEvent,
   LumaPreviewEvent,
 } from '@/features/import'
-import { bulkCreateVenuesAction, listVenues } from '@/features/venues'
+import { bulkCreateVenuesAction, listVenues } from '@/features/venues/api/crud'
 import type { Neighborhood, Venue } from '@/shared/lib/types'
 import type { ImportSource } from './useImportSource'
 

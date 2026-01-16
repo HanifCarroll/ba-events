@@ -2,7 +2,7 @@ import { Trash2, MapPin } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { BulkActionBarBase } from '@/shared/ui/BulkActionBarBase'
 import * as m from '@/paraglide/messages'
-import type { VenueBulkActionType } from '@/features/venues'
+import type { VenueBulkActionType } from '@/features/venues/hooks/useVenueBulkActions'
 
 interface VenueBulkActionBarProps {
   selectedCount: number

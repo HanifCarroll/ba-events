@@ -8,8 +8,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/shared/ui/dropdown-menu'
-import { useAuthContext } from '@/features/auth'
-import { updateLocalePreference } from '@/features/auth'
+import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
+import { updateLocalePreference } from '@/features/auth/api/server'
 import type { Locale } from '@/shared/lib/types'
 
 const LOCALE_CONFIG: Record<string, { label: string }> = {

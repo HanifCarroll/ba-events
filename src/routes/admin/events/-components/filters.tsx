@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ColumnFiltersState, SortingState } from '@tanstack/react-table'
 import type { EventSearchParams } from '@/shared/lib/types/pagination'
-import type { EventListItem } from '@/features/events'
+import type { EventListItem } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
 // ============================================

@@ -41,17 +41,20 @@ import {
 import { SwipeableCard } from '@/shared/ui/SwipeableCard'
 import { MobileFilterSheet } from '@/shared/ui/MobileFilterSheet'
 import { useMobileSelectionMode } from '@/shared/hooks/useMobileSelectionMode'
-import { DataTable, getVenueColumns } from '@/shared/ui/data-table'
+import { DataTable } from '@/shared/ui/data-table/DataTable'
+import { getVenueColumns } from '@/shared/ui/data-table/columns/venue-columns'
 import { VenueDuplicatesPanel } from './-components/VenueDuplicatesPanel'
 import { VenueAddressNamesPanel } from './-components/VenueAddressNamesPanel'
 import { VenueBulkActionBar } from './-components/VenueBulkActionBar'
 import { MergeVenueDialog } from './-components/MergeVenueDialog'
 import { DismissedDuplicatesDialog } from './-components/DismissedDuplicatesDialog'
 import { EditVenueDialog } from './-components/EditVenueDialog'
-import { deleteVenueAction, useVenueReview, useVenueBulkActions, useVenueNominatimEnrichment } from '@/features/venues'
+import { deleteVenueAction } from '@/features/venues/api/crud'
+import { useVenueReview, type ReviewTab } from '@/features/venues/hooks/useVenueReview'
+import { useVenueBulkActions } from '@/features/venues/hooks/useVenueBulkActions'
+import { useVenueNominatimEnrichment } from '@/features/venues/hooks/useVenueNominatimEnrichment'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
 import type { Venue, Neighborhood } from '@/shared/lib/types'
-import type { ReviewTab } from '@/features/venues'
 
 export const Route = createLazyFileRoute('/admin/venues/')({
   component: VenueListPage,

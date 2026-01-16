@@ -7,7 +7,7 @@ import { Badge } from '@/shared/ui/badge'
 import { Checkbox } from '@/shared/ui/checkbox'
 import { SwipeableCard } from '@/shared/ui/SwipeableCard'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
-import type { EventListItem } from '@/features/events'
+import type { EventListItem } from '@/shared/lib/types'
 import { getStatusBadge } from './filters.tsx'
 
 interface MobileEventCardProps {

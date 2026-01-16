@@ -19,10 +19,8 @@ import {
   type LumaImportComplete,
   type WeekContext,
 } from '@/features/import'
-import {
-  bulkCreateEventsAction,
-  getRecentlyImportedPendingEventsAction,
-} from '@/features/events'
+import { bulkCreateEventsAction } from '@/features/events/api/crud'
+import { getRecentlyImportedPendingEventsAction } from '@/features/events/api/enrichment'
 import { getRecentlyCreatedPendingVenuesAction } from '@/features/venues/api/enrichment'
 import { useAutoEnrichment, type EventToEnrich, type VenueToEnrich } from './useAutoEnrichment'
 import type { ImportSource, ParsedCSVRow } from './useImportSource'

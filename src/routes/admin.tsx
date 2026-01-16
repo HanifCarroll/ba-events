@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
-import { requireAdmin } from '@/features/auth'
+import { requireAdmin } from '@/features/auth/api/session'
 
 export const Route = createFileRoute('/admin')({
   beforeLoad: async () => {

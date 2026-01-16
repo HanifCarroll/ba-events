@@ -14,7 +14,7 @@ import {
   getPasslineEventsNeedingDescriptionsAction,
   enrichPasslineDescriptionsAction,
   type PasslineDescriptionEnrichComplete,
-} from '@/features/events'
+} from '@/features/events/api/enrichment'
 import type { ImportSource } from './useImportSource'
 
 type EnrichmentResultType =

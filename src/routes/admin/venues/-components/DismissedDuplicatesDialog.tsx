@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/shared/ui/dialog'
 import { Button } from '@/shared/ui/button'
-import type { DismissedDuplicate } from '@/features/venues'
+import type { DismissedDuplicate } from '@/features/venues/api/review'
 import { formatShortDate } from '@/shared/lib/utils/formatting'
 import * as m from '@/paraglide/messages'
 

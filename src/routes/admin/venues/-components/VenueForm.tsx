@@ -16,7 +16,8 @@ import {
   FormLabel,
   FormMessage,
 } from '@/shared/ui/form'
-import { useCreateVenue, useUpdateVenue, getVenuesForSelect } from '@/features/venues'
+import { useCreateVenue, useUpdateVenue } from '@/features/venues/hooks/useVenueMutations'
+import { getVenuesForSelect } from '@/features/venues/api/crud'
 import { venueFormSchema, type VenueFormInput } from '@/shared/lib/schemas'
 import { NEIGHBORHOODS } from '@/shared/lib/types'
 import type { Venue, Neighborhood } from '@/shared/lib/types'

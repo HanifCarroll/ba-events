@@ -18,9 +18,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/shared/ui/collapsible'
-import { getVenueEventsAction, type VenueEventPreview } from '@/features/venues'
+import { getVenueEventsAction, type VenueEventPreview, type DuplicateGroup } from '@/features/venues/api/review'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
-import type { DuplicateGroup } from '@/features/venues'
 import type { Venue } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 

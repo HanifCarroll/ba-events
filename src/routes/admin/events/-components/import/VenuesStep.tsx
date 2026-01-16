@@ -3,7 +3,7 @@ import { Loader2, Plus, AlertCircle, Merge, Building2, Check, ChevronDown, Chevr
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import { Badge } from '@/shared/ui/badge'
-import { lookupNeighborhoodsAction } from '@/features/venues'
+import { lookupNeighborhoodsAction } from '@/features/venues/api/enrichment'
 import {
   Table,
   TableBody,

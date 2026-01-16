@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
-import { listVenues, listAllVenueEventCountsAction } from '@/features/venues'
+import { listVenues, listAllVenueEventCountsAction } from '@/features/venues/api/crud'
 
 // URL search params schema
 const venueSearchSchema = z.object({

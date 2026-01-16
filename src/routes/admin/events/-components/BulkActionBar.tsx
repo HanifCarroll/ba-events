@@ -1,7 +1,7 @@
 import { Clock, XCircle, Trash2, X, MapPinOff } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
-import type { BulkActionType } from '@/features/events'
+import type { BulkActionType } from '@/features/events/hooks/useBulkActions'
 import { EnrichmentButton, type EnrichmentConfig } from './EnrichmentButton'
 
 interface BulkActionBarProps {

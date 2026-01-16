@@ -13,7 +13,7 @@ import {
   createUIMessageStreamResponse,
 } from 'ai'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth'
+import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth/api/rate-limit'
 import { getUserToolContext } from '@/features/chat/api/user-tools'
 import { createTools } from '@/features/chat/api/tools-ai-sdk'
 import { getSystemPrompt } from '@/features/chat/api/prompts'

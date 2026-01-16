@@ -3,7 +3,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
-import { DataTableColumnHeader } from '@/shared/ui/data-table'
+import { DataTableColumnHeader } from '@/shared/ui/data-table/DataTableColumnHeader'
 import type { ImportBlocklistEntry, BlocklistTargetField, BlocklistSource } from '@/shared/lib/types'
 
 const TARGET_FIELD_LABELS: Record<BlocklistTargetField, string> = {

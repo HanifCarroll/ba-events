@@ -3,7 +3,13 @@ import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { User, Mail, Lock, Trash2, ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react'
-import { useAuthContext } from '@/features/auth'
+import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
+import {
+  useUpdateDisplayName,
+  useUpdatePassword,
+  useDeleteAccount,
+} from '@/features/auth/hooks/useProfileMutations'
+import { requireAuth } from '@/features/auth/api/session'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Label } from '@/shared/ui/label'
@@ -32,12 +38,6 @@ import {
   type DisplayNameInput,
   type ChangePasswordInput,
 } from '@/shared/lib/schemas'
-import {
-  useUpdateDisplayName,
-  useUpdatePassword,
-  useDeleteAccount,
-} from '@/features/auth'
-import { requireAuth } from '@/features/auth'
 
 export const Route = createFileRoute('/profile')({
   beforeLoad: async () => {

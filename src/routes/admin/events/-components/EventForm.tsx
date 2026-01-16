@@ -25,8 +25,8 @@ import {
   FormLabel,
   FormMessage,
 } from '@/shared/ui/form'
-import { getVenuesForSelect } from '@/features/venues'
-import { useCreateEvent, useUpdateEvent } from '@/features/events'
+import { getVenuesForSelect } from '@/features/venues/api/crud'
+import { useCreateEvent, useUpdateEvent } from '@/features/events/hooks/useEventMutations'
 import { eventFormSchema, type EventFormInput } from '@/shared/lib/schemas'
 import { CATEGORIES, EVENT_STATUSES } from '@/shared/lib/types'
 import type { Event, EventStatus, Category } from '@/shared/lib/types'

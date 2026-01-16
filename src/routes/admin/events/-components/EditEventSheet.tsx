@@ -32,8 +32,9 @@ import {
   FormLabel,
   FormMessage,
 } from '@/shared/ui/form'
-import { getVenuesForSelect } from '@/features/venues'
-import { useUpdateEvent, getEventWithVenueAction } from '@/features/events'
+import { getVenuesForSelect } from '@/features/venues/api/crud'
+import { useUpdateEvent } from '@/features/events/hooks/useEventMutations'
+import { getEventWithVenueAction } from '@/features/events/api/crud'
 import { CreateVenueDialog } from './CreateVenueDialog'
 import { eventFormSchema, type EventFormInput } from '@/shared/lib/schemas'
 import { queryKeys } from '@/shared/lib/query'

@@ -24,9 +24,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog'
-import type { AddressLikeVenue } from '@/features/venues'
-import type { VenueEventPreview } from '@/features/venues'
-import { useDeleteVenue } from '@/features/venues'
+import type { AddressLikeVenue } from '@/features/venues/hooks/useVenueReview'
+import type { VenueEventPreview } from '@/features/venues/api/review'
+import { useDeleteVenue } from '@/features/venues/hooks/useVenueMutations'
 import type { Venue } from '@/shared/lib/types'
 import { formatShortDate } from '@/shared/lib/utils/formatting'
 import { EditVenueDialog } from './EditVenueDialog'

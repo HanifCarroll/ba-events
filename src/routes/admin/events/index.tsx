@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
-import { listVenues } from '@/features/venues'
+import { listVenues } from '@/features/venues/api/crud'
 import {
   listActiveEventsAdmin,
   getEventTabCountsAction,
-} from '@/features/events'
+} from '@/features/events/api/crud'
 
 // Schema for URL search params - single source of truth for all filter state
 const eventSearchSchema = z.object({

@@ -1,6 +1,6 @@
 import { createContext, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getSessionUser, type SessionUser } from '@/features/auth'
+import { getSessionUser, type SessionUser } from '@/features/auth/api/session'
 import type { Session, User } from '@supabase/supabase-js'
 import type { Profile } from '@/shared/lib/types'
 

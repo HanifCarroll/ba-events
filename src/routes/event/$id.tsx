@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { Calendar, Clock, MapPin, Ticket, Share2, Check } from 'lucide-react'
-import { getEventWithVenueAction } from '@/features/events'
+import { getEventWithVenueAction } from '@/features/events/api/crud'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { formatEventTime, formatShortDate, formatTime } from '@/shared/lib/utils/formatting'

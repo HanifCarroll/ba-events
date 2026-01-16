@@ -30,7 +30,7 @@ import {
   rejectVenueReviewAction,
   mergeVenueReviewAction,
 } from '@/features/import'
-import { listVenues } from '@/features/venues'
+import { listVenues } from '@/features/venues/api/crud'
 import type { VenueReviewQueueWithDetails, Venue } from '@/shared/lib/types'
 
 export const Route = createFileRoute('/admin/scraping/venues-review')({

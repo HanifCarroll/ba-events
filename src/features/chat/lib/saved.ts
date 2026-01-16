@@ -1,4 +1,4 @@
-import { getSupabaseBrowserClient } from '@/features/auth'
+import { getSupabaseBrowserClient } from '@/features/auth/api/client'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 // Get all saved events for the current user

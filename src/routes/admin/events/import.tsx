@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Upload, Check } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
-import { getVenuesForSelect } from '@/features/venues'
+import { getVenuesForSelect } from '@/features/venues/api/crud'
 import { useImportWizard, type WizardStep, type ImportSource } from '@/features/import'
 import type { VenueLookupInput } from '@/shared/lib/streaming-types'
 import {

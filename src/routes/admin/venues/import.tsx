@@ -4,7 +4,7 @@ import { Upload, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/shared/ui/button'
 import { VenueCSVUploader } from './-components/VenueCSVUploader'
-import { bulkCreateVenuesAction } from '@/features/venues'
+import { bulkCreateVenuesAction } from '@/features/venues/api/crud'
 import type { VenueInsert } from '@/shared/lib/types'
 
 export const Route = createFileRoute('/admin/venues/import')({

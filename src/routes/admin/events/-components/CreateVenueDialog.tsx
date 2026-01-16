@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/shared/ui/select'
-import { useCreateVenue } from '@/features/venues'
+import { useCreateVenue } from '@/features/venues/hooks/useVenueMutations'
 import { NEIGHBORHOODS, type Neighborhood } from '@/shared/lib/types'
 
 const createVenueSchema = z.object({

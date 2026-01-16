@@ -24,22 +24,23 @@ import { ConfirmationDialog } from '@/shared/ui/confirmation-dialog'
 import { Combobox } from '@/shared/ui/combobox'
 import { MobileFilterSheet } from '@/shared/ui/MobileFilterSheet'
 import { useMobileSelectionMode } from '@/shared/hooks/useMobileSelectionMode'
-import { DataTable, getEventColumns } from '@/shared/ui/data-table'
+import { DataTable } from '@/shared/ui/data-table/DataTable'
+import { getEventColumns } from '@/shared/ui/data-table/columns/event-columns'
+import { useBackgroundEnrichment } from '@/features/events/hooks/useBackgroundEnrichment'
+import { useLumaDescriptionEnrichment } from '@/features/events/hooks/useLumaDescriptionEnrichment'
+import { usePasslineDescriptionEnrichment } from '@/features/events/hooks/usePasslineDescriptionEnrichment'
+import { useUnifiedDescriptionEnrichment } from '@/features/events/hooks/useUnifiedDescriptionEnrichment'
+import { useBulkActions, type BulkActionType } from '@/features/events/hooks/useBulkActions'
+import { useSingleEventActions } from '@/features/events/hooks/useSingleEventActions'
+import { useMarkPastEvents } from '@/features/events/hooks/useMarkPastEvents'
 import {
-  useBackgroundEnrichment,
-  useLumaDescriptionEnrichment,
-  usePasslineDescriptionEnrichment,
-  useUnifiedDescriptionEnrichment,
-  useBulkActions,
-  useSingleEventActions,
-  useMarkPastEvents,
   listActiveEventsAdmin,
   listPastEventsAdmin,
   getEventTabCountsAction,
-  type EventListItem,
-} from '@/features/events'
+} from '@/features/events/api/crud'
+import type { EventListItem } from '@/shared/lib/types'
 import { queryKeys } from '@/shared/lib/query'
-import { useVenueEnrichment } from '@/features/venues'
+import { useVenueEnrichment } from '@/features/venues/hooks/useVenueEnrichment'
 import { BulkActionBar } from './-components/BulkActionBar'
 import { buildEnrichmentsConfig } from './-components/enrichments-config'
 import { EditEventSheet } from './-components/EditEventSheet'

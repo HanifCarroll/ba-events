@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { EventForm } from './-components/EventForm'
-import { getEventAction } from '@/features/events'
+import { getEventAction } from '@/features/events/api/crud'
 
 export const Route = createFileRoute('/admin/events/$id')({
   loader: async ({ params }) => {

@@ -5,8 +5,22 @@ import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Switch } from '@/shared/ui/switch'
 import { Label } from '@/shared/ui/label'
-import { DataTable, getPasslineColumns, getEventbriteColumns, getCSVColumns, getBaTourismColumns, getMeetupColumns, getLumaColumns } from '@/shared/ui/data-table'
-import type { ParsedCSVRowWithId, PasslineEventWithId, EventbriteEventWithId, BaTourismEventWithId, MeetupEventWithId, LumaEventWithId, ImportTableMeta } from '@/shared/ui/data-table'
+import { DataTable } from '@/shared/ui/data-table/DataTable'
+import {
+  getPasslineColumns,
+  getEventbriteColumns,
+  getCSVColumns,
+  getBaTourismColumns,
+  getMeetupColumns,
+  getLumaColumns,
+  type ParsedCSVRowWithId,
+  type PasslineEventWithId,
+  type EventbriteEventWithId,
+  type BaTourismEventWithId,
+  type MeetupEventWithId,
+  type LumaEventWithId,
+  type ImportTableMeta,
+} from '@/shared/ui/data-table/columns/import-columns'
 import type { PasslinePreviewEvent, EventbritePreviewEvent, BATourismPreviewEvent, MeetupPreviewEvent, LumaPreviewEvent, DuplicateInfo } from '@/features/import'
 import type { ImportSource } from '@/features/import'
 import { DiffViewerDialog } from './DiffViewerDialog'

@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/shared/ui/dialog'
-import { DataTable } from '@/shared/ui/data-table'
+import { DataTable } from '@/shared/ui/data-table/DataTable'
 import { useBulkSelection } from '@/shared/hooks/useBulkSelection'
 import { listBlocklistEntriesAction, useDeleteBlocklistEntry, useBulkDeleteBlocklistEntries } from '@/features/import'
 import { getBlocklistColumns } from './-components/blocklist-columns'
