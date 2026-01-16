@@ -68,7 +68,7 @@ create type venue_type as enum (
 -- Event status
 create type event_status as enum (
   'scheduled',
-  'cancelled',
+  'canceled',
   'postponed',
   'past',
   'pending_review'

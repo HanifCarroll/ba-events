@@ -67,7 +67,7 @@ export function BulkActionBar({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onSetBulkAction('cancelled')}
+            onClick={() => onSetBulkAction('canceled')}
             className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
           >
             <XCircle className="h-4 w-4 mr-1.5" />
@@ -132,7 +132,7 @@ export function BulkActionBar({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => onSetBulkAction('cancelled')}
+          onClick={() => onSetBulkAction('canceled')}
           className="border-border/50"
         >
           <XCircle className="h-4 w-4 mr-1.5" />

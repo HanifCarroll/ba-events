@@ -16,6 +16,17 @@ Bun automatically loads `.env` files - don't use dotenv.
 
 **Important:** Never start the dev server yourself. The user will always have it running.
 
+## Supabase CLI
+
+Use `bunx supabase` for all Supabase CLI commands (no global install needed):
+
+```bash
+bunx supabase db push           # Apply migrations to remote database
+bunx supabase db push --dry-run # Preview migrations without applying
+bunx supabase migration new     # Create a new migration file
+bunx supabase gen types         # Generate TypeScript types from schema
+```
+
 ## Framework
 
 This is a **TanStack Start** project with:

@@ -1,9 +1,9 @@
--- Migration: Update needs_attention to include missing link and exclude cancelled
+-- Migration: Update needs_attention to include missing link and exclude canceled
 --
 -- Changes:
 -- 1. needs_attention now also includes events with link IS NULL
--- 2. needs_attention now excludes cancelled events (in addition to past)
--- 3. tab_active now excludes cancelled events for consistency
+-- 2. needs_attention now excludes canceled events (in addition to past)
+-- 3. tab_active now excludes canceled events for consistency
 
 -- Drop the old function
 DROP FUNCTION IF EXISTS get_event_tab_counts(text, uuid, text, boolean, boolean, boolean);
@@ -27,11 +27,11 @@ LANGUAGE sql
 STABLE
 AS $$
   SELECT
-    -- Active: exclude past and cancelled
-    COUNT(*) FILTER (WHERE status NOT IN ('past'::event_status, 'cancelled'::event_status)) as tab_active,
-    -- Needs attention: exclude past/cancelled, must have missing description (with link) OR missing venue OR missing link
+    -- Active: exclude past and canceled
+    COUNT(*) FILTER (WHERE status NOT IN ('past'::event_status, 'canceled'::event_status)) as tab_active,
+    -- Needs attention: exclude past/canceled, must have missing description (with link) OR missing venue OR missing link
     COUNT(*) FILTER (WHERE
-      status NOT IN ('past'::event_status, 'cancelled'::event_status)
+      status NOT IN ('past'::event_status, 'canceled'::event_status)
       AND (
         (description_es IS NULL AND link IS NOT NULL)  -- missing description (with link)
         OR venue_id IS NULL                             -- missing venue
@@ -58,7 +58,7 @@ $$;
 -- Update comment
 COMMENT ON FUNCTION get_event_tab_counts(text, uuid, text, boolean, boolean, boolean) IS
 'Returns counts for all event tabs (active, needs_attention, pending_review, past) in a single query.
-tab_active counts only non-past, non-cancelled events.
-tab_needs_attention excludes past/cancelled and includes events missing description (with link), missing venue, OR missing link.
+tab_active counts only non-past, non-canceled events.
+tab_needs_attention excludes past/canceled and includes events missing description (with link), missing venue, OR missing link.
 Accepts optional filter parameters to narrow down the base set of events.
 Used by the admin events page for efficient tab badge counts.';

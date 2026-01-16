@@ -48,7 +48,7 @@ export const enrichEventsJob = task({
         total: 0,
         enriched: 0,
         failed: 0,
-        cancelled: 0,
+        canceled: 0,
         currentEvent: null,
       })
       return {
@@ -56,7 +56,7 @@ export const enrichEventsJob = task({
         enriched: 0,
         skipped: 0,
         failed: 0,
-        cancelled: 0,
+        canceled: 0,
         errors: [],
       }
     }
@@ -69,7 +69,7 @@ export const enrichEventsJob = task({
       total: events.length,
       enriched: 0,
       failed: 0,
-      cancelled: 0,
+      canceled: 0,
       venuesMatched: 0,
       venuesCreated: 0,
       currentEvent: events[0]?.name ?? null,
@@ -78,7 +78,7 @@ export const enrichEventsJob = task({
     // Track stats for metadata updates
     let enrichedCount = 0
     let failedCount = 0
-    let cancelledCount = 0
+    let canceledCount = 0
     let venuesMatched = 0
     let venuesCreated = 0
 
@@ -87,8 +87,8 @@ export const enrichEventsJob = task({
       delayMs: 1000, // 1 second between requests
       onProgress: (current, total, result) => {
         // Update counts
-        if (result.cancelled) {
-          cancelledCount++
+        if (result.canceled) {
+          canceledCount++
         } else if (result.enriched) {
           enrichedCount++
         } else if (!result.success) {
@@ -113,7 +113,7 @@ export const enrichEventsJob = task({
           total,
           enriched: enrichedCount,
           failed: failedCount,
-          cancelled: cancelledCount,
+          canceled: canceledCount,
           venuesMatched,
           venuesCreated,
           currentEvent: currentEventName,
@@ -121,10 +121,10 @@ export const enrichEventsJob = task({
 
         // Console logging (every 10 or at completion)
         if (current % 10 === 0 || current === total) {
-          console.log(`[enrich-events] Progress: ${current}/${total} (venues: ${venuesMatched} matched, ${venuesCreated} created, ${cancelledCount} cancelled)`)
+          console.log(`[enrich-events] Progress: ${current}/${total} (venues: ${venuesMatched} matched, ${venuesCreated} created, ${canceledCount} canceled)`)
         }
-        if (result.cancelled) {
-          console.log(`[enrich-events] Event page gone, marked as cancelled: ${result.eventId}`)
+        if (result.canceled) {
+          console.log(`[enrich-events] Event page gone, marked as canceled: ${result.eventId}`)
         } else if (!result.success) {
           console.warn(`[enrich-events] Failed: ${result.eventId} - ${result.error}`)
         }

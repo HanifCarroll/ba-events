@@ -35,7 +35,7 @@ export interface EventbritePriceInfo {
 
 /**
  * Fetch an Eventbrite event page and extract price information.
- * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to detect cancelled events.
+ * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to detect canceled events.
  * Returns null only for network errors (no response received).
  */
 export async function fetchEventbritePrice(url: string): Promise<EventbritePriceInfo | null> {
@@ -50,7 +50,7 @@ export async function fetchEventbritePrice(url: string): Promise<EventbritePrice
     })
 
     if (!response.ok) {
-      // Throw HttpError so callers can detect 404s and mark events as cancelled
+      // Throw HttpError so callers can detect 404s and mark events as canceled
       throw new HttpError(response.status, response.statusText, url)
     }
 
@@ -283,7 +283,7 @@ export interface EventbriteVenueInfo {
 
 /**
  * Extract venue info from Eventbrite event page JSON-LD.
- * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to detect cancelled events.
+ * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to detect canceled events.
  * Returns null only for network errors or if no venue data found.
  */
 export async function extractEventbriteVenueInfo(
@@ -300,7 +300,7 @@ export async function extractEventbriteVenueInfo(
     })
 
     if (!response.ok) {
-      // Throw HttpError so callers can detect 404s and mark events as cancelled
+      // Throw HttpError so callers can detect 404s and mark events as canceled
       throw new HttpError(response.status, response.statusText, link)
     }
 

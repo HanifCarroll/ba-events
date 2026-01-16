@@ -1,6 +1,6 @@
 /**
  * HTTP Error class for distinguishing HTTP-specific errors.
- * Allows enrichment logic to detect 404s and mark events as cancelled.
+ * Allows enrichment logic to detect 404s and mark events as canceled.
  */
 export class HttpError extends Error {
   constructor(

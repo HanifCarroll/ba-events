@@ -3,7 +3,7 @@ import { useRouter } from '@tanstack/react-router'
 import { bulkUpdateEventStatusAction, bulkUpdateLocationTbaAction, bulkDeleteEventsAction } from '../api/crud'
 import { useBulkSelection } from '@/shared/hooks/useBulkSelection'
 
-export type BulkActionType = 'delete' | 'past' | 'cancelled' | 'location_tba' | null
+export type BulkActionType = 'delete' | 'past' | 'canceled' | 'location_tba' | null
 
 export function useBulkActions<T extends { id: string }>(filteredEvents: T[]) {
   const router = useRouter()
@@ -20,7 +20,7 @@ export function useBulkActions<T extends { id: string }>(filteredEvents: T[]) {
 
       if (bulkAction === 'delete') {
         await bulkDeleteEventsAction({ data: ids })
-      } else if (bulkAction === 'past' || bulkAction === 'cancelled') {
+      } else if (bulkAction === 'past' || bulkAction === 'canceled') {
         await bulkUpdateEventStatusAction({ data: { eventIds: ids, status: bulkAction } })
       } else if (bulkAction === 'location_tba') {
         await bulkUpdateLocationTbaAction({ data: { eventIds: ids, locationTba: true } })

@@ -96,7 +96,7 @@ export const enrichmentBatch = task({
         enriched: 0,
         skipped: 0,
         failed: 0,
-        cancelled: 0,
+        canceled: 0,
         errors: [],
         remainingCount: 0,
         chainedNextBatch: false,
@@ -112,21 +112,21 @@ export const enrichmentBatch = task({
       total: events.length,
       enriched: 0,
       failed: 0,
-      cancelled: 0,
+      canceled: 0,
       currentEvent: events[0]?.name ?? null,
     })
 
     // Track stats
     let enrichedCount = 0
     let failedCount = 0
-    let cancelledCount = 0
+    let canceledCount = 0
 
     // Process events
     const stats = await enrichEvents(client, events, {
       delayMs: 1000,
       onProgress: (current, total, result) => {
-        if (result.cancelled) {
-          cancelledCount++
+        if (result.canceled) {
+          canceledCount++
         } else if (result.enriched) {
           enrichedCount++
         } else if (!result.success) {
@@ -141,15 +141,15 @@ export const enrichmentBatch = task({
           total,
           enriched: enrichedCount,
           failed: failedCount,
-          cancelled: cancelledCount,
+          canceled: canceledCount,
           currentEvent: currentEventName,
         })
 
         if (current % 10 === 0 || current === total) {
-          console.log(`[enrichment-batch] Batch #${batchNumber} progress: ${current}/${total} (${cancelledCount} cancelled)`)
+          console.log(`[enrichment-batch] Batch #${batchNumber} progress: ${current}/${total} (${canceledCount} canceled)`)
         }
-        if (result.cancelled) {
-          console.log(`[enrichment-batch] Event page gone, marked as cancelled: ${result.eventId}`)
+        if (result.canceled) {
+          console.log(`[enrichment-batch] Event page gone, marked as canceled: ${result.eventId}`)
         } else if (!result.success) {
           console.warn(`[enrichment-batch] Failed: ${result.eventId} - ${result.error}`)
         }
@@ -159,7 +159,7 @@ export const enrichmentBatch = task({
     // Check remaining count
     const remainingCount = await getPendingCount(client)
 
-    console.log(`[enrichment-batch] Batch #${batchNumber} completed: ${stats.enriched} enriched, ${stats.failed} failed, ${stats.cancelled} cancelled, ${remainingCount} remaining`)
+    console.log(`[enrichment-batch] Batch #${batchNumber} completed: ${stats.enriched} enriched, ${stats.failed} failed, ${stats.canceled} canceled, ${remainingCount} remaining`)
 
     // Chain to next batch if there are more events and we haven't hit max batches
     let chainedNextBatch = false

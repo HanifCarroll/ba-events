@@ -21,7 +21,7 @@ const sourceLabelMap: Record<string, string> = {
 const statusLabelMap: Record<string, string> = {
   scheduled: 'Scheduled',
   pending_review: 'Pending',
-  cancelled: 'Cancelled',
+  canceled: 'Cancelled',
   postponed: 'Postponed',
   past: 'Past',
 }
@@ -78,7 +78,7 @@ function getStatusBadge(status: string) {
       className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
       label: 'Pending',
     },
-    cancelled: {
+    canceled: {
       className: 'bg-destructive/10 text-destructive border-destructive/30',
       label: 'Cancelled',
     },

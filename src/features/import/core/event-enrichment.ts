@@ -38,7 +38,7 @@ export interface EventEnrichmentResult {
   eventId: string
   success: boolean
   enriched: boolean
-  cancelled?: boolean // Event page returned 404 - event marked as cancelled
+  canceled?: boolean // Event page returned 404 - event marked as canceled
   error?: string
   venueSettlement?: VenueSettlementResult // Info about venue extraction/settlement
 }
@@ -48,7 +48,7 @@ export interface EnrichmentStats {
   enriched: number
   skipped: number
   failed: number
-  cancelled: number // Events whose pages returned 404 - marked as cancelled
+  canceled: number // Events whose pages returned 404 - marked as canceled
   errors: Array<{ eventId: string; eventName: string; error: string }>
 }
 
@@ -70,7 +70,7 @@ async function updateEventEnrichment(
     enrichment_status: 'pending' | 'completed' | 'failed'
     enrichment_error?: string | null
     enriched_at?: string | null
-    status?: 'scheduled' | 'cancelled' | 'postponed' | 'past' | 'pending_review'
+    status?: 'scheduled' | 'canceled' | 'postponed' | 'past' | 'pending_review'
   }
 ): Promise<void> {
   const { error } = await client
@@ -228,13 +228,13 @@ export async function enrichSingleEvent(
       venueSettlement,
     }
   } catch (error) {
-    // Handle 404/410 errors by marking event as cancelled (page no longer exists)
+    // Handle 404/410 errors by marking event as canceled (page no longer exists)
     if (error instanceof HttpError && error.isNotFound) {
       const errorMsg = `HTTP ${error.status} - Event page not found`
-      console.log(`[event-enrichment] Event page gone (${error.status}), marking as cancelled: ${name}`)
+      console.log(`[event-enrichment] Event page gone (${error.status}), marking as canceled: ${name}`)
 
       await updateEventEnrichment(client, id, {
-        status: 'cancelled',
+        status: 'canceled',
         enrichment_status: 'failed',
         enrichment_error: errorMsg,
       })
@@ -243,7 +243,7 @@ export async function enrichSingleEvent(
         eventId: id,
         success: false,
         enriched: false,
-        cancelled: true,
+        canceled: true,
         error: errorMsg,
       }
     }
@@ -297,7 +297,7 @@ async function processBatch(
     enriched: 0,
     skipped: 0,
     failed: 0,
-    cancelled: 0,
+    canceled: 0,
     errors: [],
   }
 
@@ -308,8 +308,8 @@ async function processBatch(
     const result = await handler(client, event)
 
     // Update stats
-    if (result.cancelled) {
-      stats.cancelled++
+    if (result.canceled) {
+      stats.canceled++
     } else if (result.enriched) {
       stats.enriched++
     } else if (result.success) {
@@ -334,7 +334,7 @@ async function processBatch(
   }
 
   console.log(
-    `[event-enrichment] ${logPrefix} completed: ${stats.enriched} enriched, ${stats.skipped} skipped, ${stats.failed} failed, ${stats.cancelled} cancelled`
+    `[event-enrichment] ${logPrefix} completed: ${stats.enriched} enriched, ${stats.skipped} skipped, ${stats.failed} failed, ${stats.canceled} canceled`
   )
 
   return stats
@@ -512,28 +512,28 @@ export async function enrichEventVenueOnly(
       venueSettlement,
     }
   } catch (error) {
-    // Handle 404/410 errors by marking event as cancelled (page no longer exists)
+    // Handle 404/410 errors by marking event as canceled (page no longer exists)
     if (error instanceof HttpError && error.isNotFound) {
       const errorMsg = `HTTP ${error.status} - Event page not found`
-      console.log(`[event-enrichment] Event page gone (${error.status}), marking as cancelled: ${name}`)
+      console.log(`[event-enrichment] Event page gone (${error.status}), marking as canceled: ${name}`)
 
       const { error: updateError } = await client
         .from('events')
         .update({
-          status: 'cancelled',
+          status: 'canceled',
           enrichment_error: errorMsg,
         })
         .eq('id', id)
 
       if (updateError) {
-        console.error(`[event-enrichment] Failed to mark event as cancelled:`, updateError)
+        console.error(`[event-enrichment] Failed to mark event as canceled:`, updateError)
       }
 
       return {
         eventId: id,
         success: false,
         enriched: false,
-        cancelled: true,
+        canceled: true,
         error: errorMsg,
       }
     }

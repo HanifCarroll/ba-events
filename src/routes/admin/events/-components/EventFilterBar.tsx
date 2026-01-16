@@ -89,7 +89,7 @@ export function EventFilterBar({
             <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="scheduled">Scheduled</SelectItem>
             <SelectItem value="pending_review">Pending Review</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="canceled">Cancelled</SelectItem>
             <SelectItem value="postponed">Postponed</SelectItem>
             <SelectItem value="past">Past</SelectItem>
           </SelectContent>

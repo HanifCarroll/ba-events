@@ -85,7 +85,7 @@ export function YourPlanCard({ event, onAddToCalendar, onShare, onGetDirections 
         })
         return
       } catch {
-        // User cancelled or share failed, fall through
+        // User canceled or share failed, fall through
       }
     }
 

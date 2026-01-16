@@ -50,7 +50,7 @@ interface EditEventSheetProps {
 
 const statusLabels: Record<EventStatus, string> = {
   scheduled: 'Scheduled',
-  cancelled: 'Cancelled',
+  canceled: 'Cancelled',
   postponed: 'Postponed',
   past: 'Past',
   pending_review: 'Pending Review',

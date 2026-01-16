@@ -180,7 +180,7 @@ export async function fetchWithJina(url: string): Promise<string | null> {
 
     if (!response.ok) {
       // Jina returns HTTP errors that reflect the original page status
-      // Throw HttpError so callers can detect 404s and mark events as cancelled
+      // Throw HttpError so callers can detect 404s and mark events as canceled
       throw new HttpError(response.status, response.statusText, url)
     }
 

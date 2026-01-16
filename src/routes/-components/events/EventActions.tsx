@@ -31,7 +31,7 @@ export function EventActions({ event, shareUrl }: EventActionsProps) {
           url: shareTarget,
         })
       } catch {
-        // User cancelled or share failed, fall back to copy
+        // User canceled or share failed, fall back to copy
         await copyToClipboard(shareTarget)
       }
     } else {

@@ -160,7 +160,7 @@ function filterEvents(events: EventListItem[], params: EventSearchParams): Event
     // Tab filtering
     switch (tab) {
       case 'needs_attention':
-        if (event.status === 'past' || event.status === 'cancelled') return false
+        if (event.status === 'past' || event.status === 'canceled') return false
         if (!eventNeedsAttention(event)) return false
         break
       case 'pending_review':
@@ -279,9 +279,9 @@ function getBulkActionConfig(action: string | null, count: number) {
       confirmingText: m.common_processing(),
       variant: 'default',
     },
-    cancelled: {
-      title: m.admin_mark_cancelled(),
-      description: m.admin_mark_cancelled_confirm({ count }),
+    canceled: {
+      title: m.admin_mark_canceled(),
+      description: m.admin_mark_canceled_confirm({ count }),
       confirmText: m.common_confirm(),
       confirmingText: m.common_processing(),
       variant: 'default',
@@ -301,7 +301,7 @@ function getStatusBadge(status: string) {
   const statusLabels: Record<string, () => string> = {
     scheduled: () => m.admin_status_scheduled(),
     pending_review: () => m.admin_status_pending(),
-    cancelled: () => m.admin_status_cancelled(),
+    canceled: () => m.admin_status_canceled(),
     postponed: () => m.admin_status_postponed(),
     past: () => m.admin_status_past(),
   }
@@ -312,7 +312,7 @@ function getStatusBadge(status: string) {
     pending_review: {
       className: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
     },
-    cancelled: {
+    canceled: {
       className: 'bg-destructive/10 text-destructive border-destructive/30',
     },
     postponed: {
@@ -382,10 +382,10 @@ function EventListPage() {
     past: pastEvents ? pastEvents.length : safeServerTabCounts.past,
   }), [safeServerTabCounts, pastEvents])
 
-  // Calculate filter counts for needs_attention tab (from active events only, excluding past/cancelled)
+  // Calculate filter counts for needs_attention tab (from active events only, excluding past/canceled)
   const filterCounts = useMemo(() => {
-    // Count from active events only (exclude past and cancelled)
-    const eventsToCount = activeEvents.filter(e => e.status !== 'past' && e.status !== 'cancelled')
+    // Count from active events only (exclude past and canceled)
+    const eventsToCount = activeEvents.filter(e => e.status !== 'past' && e.status !== 'canceled')
 
     return {
       missingDescription: eventsToCount.filter(e => !e.has_description_es && !!e.link).length,
