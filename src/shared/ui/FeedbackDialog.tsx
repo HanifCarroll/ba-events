@@ -14,7 +14,7 @@ import { Button } from "@/shared/ui/button"
 import { Textarea } from "@/shared/ui/textarea"
 
 const SURVEY_ID = "019bc2ff-adb1-0000-362c-eed6326569f2"
-const QUESTION_ID = "7ce5b831-dc71-4648-b6b0-b583d48a0c11"
+const QUESTION_ID = "c94107a7-5e8a-4ff3-aa34-f30b41268370"
 
 // Get the initialized PostHog instance from window
 function getPostHog() {
