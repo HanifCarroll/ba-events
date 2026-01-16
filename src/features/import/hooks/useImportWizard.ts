@@ -1,1836 +1,230 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
-import { useRouter } from '@tanstack/react-router'
+import { useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
-import Papa from 'papaparse'
-import { compareTwoStrings } from 'string-similarity'
-import { track } from '@/lib/analytics'
-import {
-  processPasslineEventsAction,
-  importPasslineEventsBatchAction,
-  fetchEventbriteEventsAction,
-  importEventbriteEventsBatchAction,
-  fetchBATourismEventsAction,
-  importBATourismEventsBatchAction,
-  fetchMeetupEventsAction,
-  importMeetupEventsBatchAction,
-  getMeetupEventsNeedingEnrichmentAction,
-  enrichMeetupVenuesAction,
-  fetchLumaEventsAction,
-  importLumaEventsBatchAction,
-  getLumaEventsNeedingDescriptionEnrichmentAction,
-  enrichLumaDescriptionsAction,
-  extractPasslineEventsBatchClient,
-  type PasslinePreviewEvent,
-  type EventbritePreviewEvent,
-  type BATourismPreviewEvent,
-  type MeetupPreviewEvent,
-  type LumaPreviewEvent,
-  type PasslineImportComplete,
-  type EventbriteImportComplete,
-  type BATourismImportComplete,
-  type MeetupImportComplete,
-  type LumaImportComplete,
-  type MeetupVenueEnrichComplete,
-  type LumaDescriptionEnrichComplete,
-  type WeekContext,
-} from '@/features/import'
-import {
-  passlineAdapter,
-  eventbriteAdapter,
-  baTourismAdapter,
-  meetupAdapter,
-  lumaAdapter,
-} from '../adapters'
-import {
-  getUnmatchedVenues as getUnmatchedVenuesHelper,
-  getAllEventIds,
-  getMatchedEventIds,
-} from './helpers'
-import {
-  fetchPasslineEventsClient,
-  filterCABAEventsClient,
-  filterByDateRangeClient,
-} from '@/features/import/scrapers/passline/client'
-import { listBlocklistEntriesAction } from '@/features/import/api/blocklist'
-import { bulkCreateVenuesAction, listVenues } from '@/features/venues'
-import {
-  bulkCreateEventsAction,
-  getRecentlyImportedPendingEventsAction,
-  getPasslineEventsNeedingDescriptionsAction,
-  enrichPasslineDescriptionsAction,
-  type PasslineDescriptionEnrichComplete,
-} from '@/features/events'
-import { getRecentlyCreatedPendingVenuesAction } from '@/features/venues/api/enrichment'
-import { useAutoEnrichment, type EventToEnrich, type VenueToEnrich } from './useAutoEnrichment'
 import { mapToNeighborhood } from '@/shared/lib/admin-utils'
-import { CATEGORIES, EVENT_STATUSES } from '@/shared/lib/types'
-import type { Neighborhood, Category, EventStatus, EventInsert } from '@/shared/lib/types'
+import { useImportSource, type ImportSource } from './useImportSource'
+import { useImportPreview } from './useImportPreview'
+import { useImportVenues, type VenueEdit } from './useImportVenues'
+import { useImportEnrichment } from './useImportEnrichment'
+import { useImportSubmit } from './useImportSubmit'
 
-export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'luma' | 'csv'
+export type { ImportSource } from './useImportSource'
 export type WizardStep = 'source' | 'configure' | 'venues' | 'select' | 'confirm' | 'enrich' | 'summary'
+export type { ImportResult } from './useImportSubmit'
+export type { ParsedCSVRow } from './useImportSource'
 
-export interface ImportResult {
-  inserted: number
-  updated: number
-  withVenue: number
-  withoutVenue: number
-  withDescription: number
-  withoutDescription: number
-  withCategories: number
-  withoutCategories: number
-}
-
-type VenueAction = 'create' | 'merge' | 'skip'
-
-interface VenueEdit {
-  name: string
-  neighborhood: Neighborhood | null
-  action: VenueAction
-  mergeInto?: string  // Only used when action === 'merge'
-}
-
-interface CSVRow {
-  name?: string
-  starts_at?: string
-  ends_at?: string
-  venue_name?: string
-  categories?: string
-  price?: string
-  is_free?: string
-  link?: string
-  ticket_url?: string
-  description_es?: string
-  description_en?: string
-  status?: string
-  is_all_day?: string
-}
-
-interface ParsedCSVRow {
-  rowNumber: number
-  data: CSVRow
-  errors: string[]
-  event?: EventInsert
-}
-
-interface UnmatchedVenue {
-  name: string
-  count: number
-  eventIds: string[]
-}
-
+/**
+ * Main import wizard hook that orchestrates smaller, focused hooks.
+ * Each sub-hook manages its own state and logic:
+ * - useImportSource: Source selection and fetching
+ * - useImportPreview: Event selection and filtering
+ * - useImportVenues: Venue matching and creation
+ * - useImportEnrichment: Post-import enrichment
+ * - useImportSubmit: Final submission
+ */
 export function useImportWizard(
   initialVenues: { id: string; name: string; neighborhood: string | null }[],
   initialSource?: ImportSource
 ) {
-  const router = useRouter()
-
-  // Core wizard state - if initialSource provided, start at configure step
+  // Core wizard step state
   const [step, setStep] = useState<WizardStep>(initialSource ? 'configure' : 'source')
-  const [source, setSource] = useState<ImportSource | null>(initialSource ?? null)
-
-  // Passline/Eventbrite-specific state (shared date range)
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [endDate, setEndDate] = useState(() => {
-    const date = new Date()
-    date.setDate(date.getDate() + 30)
-    return date.toISOString().split('T')[0]
-  })
-  const [passlineEvents, setPasslineEvents] = useState<PasslinePreviewEvent[]>([])
-  const [eventbriteEvents, setEventbriteEvents] = useState<EventbritePreviewEvent[]>([])
-  const [baTourismEvents, setBaTourismEvents] = useState<BATourismPreviewEvent[]>([])
-  const [baTourismWeekContext, setBaTourismWeekContext] = useState<WeekContext | null>(null)
-  const [meetupEvents, setMeetupEvents] = useState<MeetupPreviewEvent[]>([])
-  const [lumaEvents, setLumaEvents] = useState<LumaPreviewEvent[]>([])
-
-  // CSV-specific state
-  const [csvRows, setCsvRows] = useState<ParsedCSVRow[]>([])
-  const [csvFileName, setCsvFileName] = useState<string | null>(null)
-
-  // Shared state
-  const [venues, setVenues] = useState(initialVenues)
-  const [venueEdits, setVenueEdits] = useState<Map<string, VenueEdit>>(new Map())
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-
-  // Loading states
-  const [isFetching, setIsFetching] = useState(false)
-  const [meetupFetchProgress, setMeetupFetchProgress] = useState<{
-    currentBatch: number
-    totalBatches: number
-    eventsFound: number
-  } | null>(null)
-  const [isCreatingVenues, setIsCreatingVenues] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
-  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Enrichment state (for Meetup venue enrichment, Luma/Passline description enrichment)
-  const [isEnriching, setIsEnriching] = useState(false)
-  const [enrichmentProgress, setEnrichmentProgress] = useState<{ current: number; total: number } | null>(null)
-  const [enrichmentResult, setEnrichmentResult] = useState<Pick<MeetupVenueEnrichComplete, 'enriched' | 'venuesCreated' | 'errors'> | Pick<LumaDescriptionEnrichComplete, 'enriched' | 'errors'> | Pick<PasslineDescriptionEnrichComplete, 'enriched' | 'errors' | 'translated'> | null>(null)
-  const [eventsNeedingEnrichment, setEventsNeedingEnrichment] = useState<Array<{ id: string; link: string }>>([])
-  const [lumaEventsNeedingEnrichment, setLumaEventsNeedingEnrichment] = useState<Array<{ id: string; source_url: string; name: string }>>([])
-  const [passlineEventsNeedingEnrichment, setPasslineEventsNeedingEnrichment] = useState<Array<{ id: string; link: string; name: string }>>([])
-  const [isLoadingEnrichmentEvents, setIsLoadingEnrichmentEvents] = useState(false)
+  // Compose sub-hooks
+  const sourceHook = useImportSource(initialSource)
+  const previewHook = useImportPreview()
+  const venuesHook = useImportVenues(initialVenues)
+  const enrichmentHook = useImportEnrichment(setError)
+  const submitHook = useImportSubmit(setError)
 
-  // Import result state (for summary step)
-  const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  const [autoEnrich, setAutoEnrich] = useState(false)
+  // Compute unmatched venues as a memoized value
+  const unmatchedVenues = useMemo(() => {
+    return previewHook.computeUnmatchedVenues(
+      sourceHook.source,
+      sourceHook.passlineEvents,
+      sourceHook.eventbriteEvents,
+      sourceHook.baTourismEvents,
+      sourceHook.meetupEvents,
+      sourceHook.lumaEvents
+    )
+  }, [
+    sourceHook.source,
+    sourceHook.passlineEvents,
+    sourceHook.eventbriteEvents,
+    sourceHook.baTourismEvents,
+    sourceHook.meetupEvents,
+    sourceHook.lumaEvents,
+    previewHook.computeUnmatchedVenues,
+  ])
 
-  // Track when import started for auto-enrichment query
-  const importStartTimeRef = useRef<string | null>(null)
-
-  // Auto-enrichment hook for post-import enrichment
-  const autoEnrichment = useAutoEnrichment()
-
-  // Venue name to ID lookup
-  const venueNameToId = useMemo(() => {
-    const map = new Map<string, string>()
-    venues.forEach(v => map.set(v.name.toLowerCase(), v.id))
-    return map
-  }, [venues])
-
-  // Compute unmatched venues for all sources using adapters
-  const unmatchedVenues = useMemo<UnmatchedVenue[]>(() => {
-    if (!source || source === 'csv') return []
-
-    // Get the appropriate events and adapter for the source
-    let result: UnmatchedVenue[] = []
-
-    if (source === 'passline') {
-      result = getUnmatchedVenuesHelper(passlineEvents, passlineAdapter)
-    } else if (source === 'eventbrite') {
-      result = getUnmatchedVenuesHelper(eventbriteEvents, eventbriteAdapter)
-    } else if (source === 'ba-tourism') {
-      result = getUnmatchedVenuesHelper(baTourismEvents, baTourismAdapter)
-    } else if (source === 'meetup') {
-      result = getUnmatchedVenuesHelper(meetupEvents, meetupAdapter)
-    } else if (source === 'luma') {
-      result = getUnmatchedVenuesHelper(lumaEvents, lumaAdapter)
-    }
-
-    return result
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
-
-  // Find similar venue names using fuzzy string matching for merge suggestions
-  const similarVenues = useMemo(() => {
-    const similar = new Map<string, Array<{ name: string; similarity: number }>>()
-    const names = unmatchedVenues.map(v => v.name)
-    const SIMILARITY_THRESHOLD = 0.6
-
-    for (let i = 0; i < names.length; i++) {
-      const matches: Array<{ name: string; similarity: number }> = []
-
-      for (let j = i + 1; j < names.length; j++) {
-        const similarity = compareTwoStrings(
-          names[i].toLowerCase().trim(),
-          names[j].toLowerCase().trim()
-        )
-
-        if (similarity >= SIMILARITY_THRESHOLD) {
-          matches.push({ name: names[j], similarity })
-        }
-      }
-
-      if (matches.length > 0) {
-        // Sort by similarity descending
-        similar.set(names[i], matches.sort((a, b) => b.similarity - a.similarity))
-      }
-    }
-    return similar
-  }, [unmatchedVenues])
-
-  // CSV validation
-  const validateCSVRow = useCallback((row: CSVRow, rowNumber: number): ParsedCSVRow => {
-    const errors: string[] = []
-
-    if (!row.name?.trim()) errors.push('Name is required')
-    if (!row.starts_at?.trim()) {
-      errors.push('Start date is required')
-    } else {
-      const startDate = new Date(row.starts_at)
-      if (isNaN(startDate.getTime())) errors.push('Invalid start date format')
-    }
-
-    if (row.ends_at?.trim()) {
-      const endDate = new Date(row.ends_at)
-      if (isNaN(endDate.getTime())) {
-        errors.push('Invalid end date format')
-      } else if (row.starts_at) {
-        const startDate = new Date(row.starts_at)
-        if (!isNaN(startDate.getTime()) && endDate <= startDate) {
-          errors.push('End date must be after start date')
-        }
-      }
-    }
-
-    let venueId: string | null = null
-    if (row.venue_name?.trim()) {
-      const foundId = venueNameToId.get(row.venue_name.trim().toLowerCase())
-      if (!foundId) {
-        errors.push(`Venue "${row.venue_name}" not found`)
-      } else {
-        venueId = foundId
-      }
-    }
-
-    const categories: Category[] = []
-    if (row.categories?.trim()) {
-      const cats = row.categories.split(',').map(c => c.trim().toLowerCase())
-      for (const cat of cats) {
-        if (CATEGORIES.includes(cat as Category)) {
-          categories.push(cat as Category)
-        } else {
-          errors.push(`Invalid category: "${cat}"`)
-        }
-      }
-    }
-
-    let price: number | null = null
-    if (row.price?.trim()) {
-      const parsed = parseFloat(row.price)
-      if (isNaN(parsed) || parsed < 0) {
-        errors.push('Price must be a positive number')
-      } else {
-        price = parsed
-      }
-    }
-
-    let status: EventStatus = 'scheduled'
-    if (row.status?.trim()) {
-      const s = row.status.trim().toLowerCase()
-      if (EVENT_STATUSES.includes(s as EventStatus)) {
-        status = s as EventStatus
-      } else {
-        errors.push(`Invalid status: "${row.status}"`)
-      }
-    }
-
-    const isFree = row.is_free?.trim().toLowerCase() === 'true'
-    const isAllDay = row.is_all_day?.trim().toLowerCase() === 'true'
-
-    let event: EventInsert | undefined
-    if (errors.length === 0) {
-      event = {
-        name: row.name!.trim(),
-        starts_at: new Date(row.starts_at!).toISOString(),
-        ends_at: row.ends_at?.trim() ? new Date(row.ends_at).toISOString() : null,
-        venue_id: venueId,
-        categories,
-        price: isFree ? null : price,
-        is_free: isFree,
-        link: row.link?.trim() || null,
-        ticket_url: row.ticket_url?.trim() || null,
-        description_es: row.description_es?.trim() || null,
-        description_en: row.description_en?.trim() || null,
-        status,
-        is_all_day: isAllDay,
-        source: 'csv_import',
-      }
-    }
-
-    return { rowNumber, data: row, errors, event }
-  }, [venueNameToId])
-
-  // CSV stats
-  const csvValidCount = csvRows.filter(r => r.errors.length === 0).length
-  const csvErrorCount = csvRows.filter(r => r.errors.length > 0).length
-  const csvAllValid = csvRows.length > 0 && csvErrorCount === 0
-
-  // Actions
+  // Wrap source selection to also update step
   const selectSource = useCallback((newSource: ImportSource) => {
-    track('admin:import_started', { source: newSource })
-    setSource(newSource)
+    sourceHook.selectSource(newSource)
     setStep('configure')
     setError(null)
-  }, [])
+  }, [sourceHook])
 
-  const fetchPasslineEventsHandler = useCallback(async () => {
-    setIsFetching(true)
-    setError(null)
-
+  // Wrap fetch handlers to update step and selection
+  const fetchPasslineEvents = useCallback(async () => {
     try {
-      // Fetch blocklist entries for passline (includes 'all' source entries)
-      const blocklistEntries = await listBlocklistEntriesAction({ data: 'passline' })
-
-      const allEvents = await fetchPasslineEventsClient()
-      const cabaEvents = filterCABAEventsClient(allEvents, blocklistEntries)
-      const filteredEvents = filterByDateRangeClient(cabaEvents, { startDate, endDate })
-      const data = await processPasslineEventsAction({ data: { events: filteredEvents } })
-
-      setPasslineEvents(data)
-
-      // Initialize venue edits for unmatched venues (for optional use later)
-      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
-      if (hasUnmatched) {
-        const edits = new Map<string, VenueEdit>()
-        data
-          .filter(e => e.venueMatch.matchType === 'none')
-          .forEach(e => {
-            const name = e.passline.lugar
-            if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, action: 'create' })
-            }
-          })
-        setVenueEdits(edits)
-      }
-
-      // Select NEW events only (exclude already imported) and go directly to select step
-      const newEvents = data.filter(e => !e.alreadyImported)
-      setSelectedIds(new Set(newEvents.map(e => e.passline.id)))
+      const { venueEdits, selectedIds } = await sourceHook.fetchPasslineEvents()
+      venuesHook.setVenueEdits(venueEdits)
+      previewHook.setSelectedIds(selectedIds)
       setStep('select')
-
-      const alreadyImportedCount = data.length - newEvents.length
-      const message = alreadyImportedCount > 0
-        ? `Found ${data.length} events (${alreadyImportedCount} already imported)`
-        : `Found ${data.length} events`
-      toast.success(message)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch events')
-      toast.error('Failed to fetch events')
-    } finally {
-      setIsFetching(false)
+    } catch {
+      // Error already handled in sourceHook
     }
-  }, [startDate, endDate])
+  }, [sourceHook, venuesHook, previewHook])
 
-  const fetchEventbriteEventsHandler = useCallback(async () => {
-    setIsFetching(true)
-    setError(null)
-
+  const fetchEventbriteEvents = useCallback(async () => {
     try {
-      // Fetch, filter, and process events server-side (avoids CORS/bot protection)
-      const { events: data } = await fetchEventbriteEventsAction({ data: { startDate, endDate } })
-
-      setEventbriteEvents(data)
-
-      // Initialize venue edits for unmatched venues (for optional use later)
-      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
-      if (hasUnmatched) {
-        const edits = new Map<string, VenueEdit>()
-        data
-          .filter(e => e.venueMatch.matchType === 'none')
-          .forEach(e => {
-            const name = e.eventbrite.location?.name || 'Unknown Venue'
-            if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, action: 'create' })
-            }
-          })
-        setVenueEdits(edits)
-      }
-
-      // Select NEW events only (exclude already imported) and go directly to select step
-      const newEvents = data.filter(e => !e.alreadyImported)
-      setSelectedIds(new Set(newEvents.map(e => e.eventbrite.url)))
+      const { venueEdits, selectedIds } = await sourceHook.fetchEventbriteEvents()
+      venuesHook.setVenueEdits(venueEdits)
+      previewHook.setSelectedIds(selectedIds)
       setStep('select')
-
-      const alreadyImportedCount = data.length - newEvents.length
-      const message = alreadyImportedCount > 0
-        ? `Found ${data.length} events (${alreadyImportedCount} already imported)`
-        : `Found ${data.length} events`
-      toast.success(message)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch events')
-      toast.error('Failed to fetch events')
-    } finally {
-      setIsFetching(false)
+    } catch {
+      // Error already handled in sourceHook
     }
-  }, [startDate, endDate])
+  }, [sourceHook, venuesHook, previewHook])
 
-  const fetchBaTourismEventsHandler = useCallback(async () => {
-    setIsFetching(true)
-    setError(null)
-
+  const fetchBaTourismEvents = useCallback(async () => {
     try {
-      // Fetch events from BA Tourism website (server-side)
-      // Note: This gets limited events due to JS-rendered content
-      const { events: data, weekContext } = await fetchBATourismEventsAction({ data: {} })
-
-      setBaTourismEvents(data)
-      setBaTourismWeekContext(weekContext)
-
-      // Initialize venue edits for unmatched venues (for optional use later)
-      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
-      if (hasUnmatched) {
-        const edits = new Map<string, VenueEdit>()
-        data
-          .filter(e => e.venueMatch.matchType === 'none')
-          .forEach(e => {
-            const name = e.baTourism.venueName
-            if (!edits.has(name)) {
-              edits.set(name, {
-                name,
-                neighborhood: mapToNeighborhood(e.baTourism.neighborhood),
-                action: 'create',
-              })
-            }
-          })
-        setVenueEdits(edits)
-      }
-
-      // Select NEW events only (exclude already imported) and go directly to select step
-      const newEvents = data.filter(e => !e.alreadyImported)
-      setSelectedIds(new Set(newEvents.map(e => `ba-tourism-${e.baTourism.name}`)))
-      setStep('select')
-
-      // Calculate total events including multi-date expansion
-      const totalExpanded = data.reduce((sum, e) => sum + e.dateCount, 0)
-      const alreadyImportedCount = data.length - newEvents.length
-      const message = alreadyImportedCount > 0
-        ? `Found ${data.length} events (${totalExpanded} dates, ${alreadyImportedCount} already imported)`
-        : `Found ${data.length} events (${totalExpanded} dates)`
-      toast.success(message)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch events')
-      toast.error('Failed to fetch BA Tourism events')
-    } finally {
-      setIsFetching(false)
-    }
-  }, [])
-
-  // Helper: chunk a date range into batches of N days
-  const chunkDateRange = useCallback((start: string, end: string, daysPerChunk = 7): Array<{ start: string; end: string }> => {
-    const chunks: Array<{ start: string; end: string }> = []
-    const startDate = new Date(start)
-    const endDate = new Date(end)
-
-    let currentStart = new Date(startDate)
-    while (currentStart <= endDate) {
-      const currentEnd = new Date(currentStart)
-      currentEnd.setDate(currentEnd.getDate() + daysPerChunk - 1)
-
-      // Don't go past the overall end date
-      const actualEnd = currentEnd > endDate ? endDate : currentEnd
-
-      chunks.push({
-        start: currentStart.toISOString().split('T')[0],
-        end: actualEnd.toISOString().split('T')[0],
-      })
-
-      // Move to next chunk
-      currentStart = new Date(actualEnd)
-      currentStart.setDate(currentStart.getDate() + 1)
-    }
-
-    return chunks
-  }, [])
-
-  // Helper: dedupe events by meetup.id
-  const dedupeByMeetupId = useCallback((events: MeetupPreviewEvent[]): MeetupPreviewEvent[] => {
-    const seen = new Map<string, MeetupPreviewEvent>()
-    for (const event of events) {
-      // Keep the first occurrence (or update if we have a better venue match)
-      const existing = seen.get(event.meetup.id)
-      if (!existing || (event.venueMatch.venue && !existing.venueMatch.venue)) {
-        seen.set(event.meetup.id, event)
-      }
-    }
-    return Array.from(seen.values())
-  }, [])
-
-  const fetchMeetupEventsHandler = useCallback(async () => {
-    setIsFetching(true)
-    setError(null)
-    setMeetupFetchProgress(null)
-
-    try {
-      // Chunk the date range into 7-day batches to avoid HTTP timeout
-      const chunks = chunkDateRange(startDate, endDate, 7)
-      const allEvents: MeetupPreviewEvent[] = []
-
-      for (let i = 0; i < chunks.length; i++) {
-        // Update progress before each batch
-        setMeetupFetchProgress({
-          currentBatch: i + 1,
-          totalBatches: chunks.length,
-          eventsFound: allEvents.length,
-        })
-
-        try {
-          const { events } = await fetchMeetupEventsAction({
-            data: { startDate: chunks[i].start, endDate: chunks[i].end },
-          })
-          allEvents.push(...events)
-        } catch (batchErr) {
-          // If a batch fails, log it but continue with other batches
-          console.error(`Batch ${i + 1}/${chunks.length} failed:`, batchErr)
-          // If we have some events, continue; otherwise re-throw
-          if (allEvents.length === 0 && i === chunks.length - 1) {
-            throw batchErr
+      const result = await sourceHook.fetchBaTourismEvents()
+      // Update venue edits with neighborhood mapping
+      const edits = new Map<string, VenueEdit>()
+      sourceHook.baTourismEvents
+        .filter(e => e.venueMatch.matchType === 'none')
+        .forEach(e => {
+          const name = e.baTourism.venueName
+          if (!edits.has(name)) {
+            edits.set(name, {
+              name,
+              neighborhood: mapToNeighborhood(e.baTourism.neighborhood),
+              action: 'create',
+            })
           }
-        }
-      }
-
-      // Dedupe events that may appear in multiple batches
-      const data = dedupeByMeetupId(allEvents)
-      setMeetupEvents(data)
-
-      // Initialize venue edits for unmatched venues (for optional use later)
-      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
-      if (hasUnmatched) {
-        const edits = new Map<string, VenueEdit>()
-        data
-          .filter(e => e.venueMatch.matchType === 'none')
-          .forEach(e => {
-            const name = e.meetup.venue?.name || 'Unknown Venue'
-            if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, action: 'create' })
-            }
-          })
-        setVenueEdits(edits)
-      }
-
-      // Select NEW events only (exclude already imported) and go directly to select step
-      const newEvents = data.filter(e => !e.alreadyImported)
-      setSelectedIds(new Set(newEvents.map(e => e.meetup.id)))
+        })
+      venuesHook.setVenueEdits(result.venueEdits)
+      previewHook.setSelectedIds(result.selectedIds)
       setStep('select')
-
-      // Calculate total events including recurring event expansion
-      const totalExpanded = data.reduce((sum, e) => sum + e.dateCount, 0)
-      const alreadyImportedCount = data.length - newEvents.length
-      const message = alreadyImportedCount > 0
-        ? `Found ${data.length} events (${totalExpanded} occurrences, ${alreadyImportedCount} already imported)`
-        : `Found ${data.length} events (${totalExpanded} occurrences)`
-      toast.success(message)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch events')
-      toast.error('Failed to fetch Meetup events')
-    } finally {
-      setIsFetching(false)
-      setMeetupFetchProgress(null)
+    } catch {
+      // Error already handled in sourceHook
     }
-  }, [startDate, endDate, chunkDateRange, dedupeByMeetupId])
+  }, [sourceHook, venuesHook, previewHook])
 
-  const fetchLumaEventsHandler = useCallback(async () => {
-    setIsFetching(true)
-    setError(null)
-
+  const fetchMeetupEvents = useCallback(async () => {
     try {
-      // Fetch, filter, and process events server-side
-      const { events: data } = await fetchLumaEventsAction({ data: { startDate, endDate } })
-
-      setLumaEvents(data)
-
-      // Initialize venue edits for unmatched venues (for optional use later)
-      const hasUnmatched = data.some(e => e.venueMatch.matchType === 'none')
-      if (hasUnmatched) {
-        const edits = new Map<string, VenueEdit>()
-        data
-          .filter(e => e.venueMatch.matchType === 'none')
-          .forEach(e => {
-            const name = e.luma.venue?.name || 'Unknown Venue'
-            if (!edits.has(name)) {
-              edits.set(name, { name, neighborhood: null, action: 'create' })
-            }
-          })
-        setVenueEdits(edits)
-      }
-
-      // Select NEW events only (exclude already imported) and go directly to select step
-      const newEvents = data.filter(e => !e.alreadyImported)
-      setSelectedIds(new Set(newEvents.map(e => e.luma.api_id)))
+      const { venueEdits, selectedIds } = await sourceHook.fetchMeetupEvents()
+      venuesHook.setVenueEdits(venueEdits)
+      previewHook.setSelectedIds(selectedIds)
       setStep('select')
-
-      const alreadyImportedCount = data.length - newEvents.length
-      const message = alreadyImportedCount > 0
-        ? `Found ${data.length} events (${alreadyImportedCount} already imported)`
-        : `Found ${data.length} events`
-      toast.success(message)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch events')
-      toast.error('Failed to fetch Luma events')
-    } finally {
-      setIsFetching(false)
+    } catch {
+      // Error already handled in sourceHook
     }
-  }, [startDate, endDate])
+  }, [sourceHook, venuesHook, previewHook])
+
+  const fetchLumaEvents = useCallback(async () => {
+    try {
+      const { venueEdits, selectedIds } = await sourceHook.fetchLumaEvents()
+      venuesHook.setVenueEdits(venueEdits)
+      previewHook.setSelectedIds(selectedIds)
+      setStep('select')
+    } catch {
+      // Error already handled in sourceHook
+    }
+  }, [sourceHook, venuesHook, previewHook])
 
   const handleCSVFile = useCallback((file: File) => {
-    setCsvFileName(file.name)
-    setError(null)
+    sourceHook.handleCSVFile(file, venuesHook.venueNameToId)
+    // After parsing, select valid rows
+    const validIds = sourceHook.csvRows
+      .filter(r => r.errors.length === 0)
+      .map((_, i) => `csv-${i}`)
+    previewHook.setSelectedIds(new Set(validIds))
+    setStep('select')
+  }, [sourceHook, venuesHook.venueNameToId, previewHook])
 
-    Papa.parse<CSVRow>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const rows = results.data.map((row, index) => validateCSVRow(row, index + 2))
-        setCsvRows(rows)
-
-        // Auto-select all valid rows
-        const validIds = rows
-          .filter(r => r.errors.length === 0)
-          .map((_, i) => `csv-${i}`)
-        setSelectedIds(new Set(validIds))
-
-        setStep('select')
-        toast.success(`Parsed ${rows.length} rows from CSV`)
-      },
-      error: (error) => {
-        console.error('CSV parsing error:', error)
-        setError('Failed to parse CSV file')
-        toast.error('Failed to parse CSV file')
-      },
-    })
-  }, [validateCSVRow])
-
-  const updateVenueEdit = useCallback((name: string, updates: Partial<VenueEdit>) => {
-    setVenueEdits(prev => {
-      const next = new Map(prev)
-      const existing = next.get(name)
-      if (existing) {
-        next.set(name, { ...existing, ...updates })
-      }
-      return next
-    })
-  }, [])
-
-  const venuesToCreateCount = useMemo(() => {
-    let count = 0
-    venueEdits.forEach(edit => {
-      if (edit.action === 'create') count++
-    })
-    return count
-  }, [venueEdits])
-
+  // Wrap venue creation to update events and step
   const createVenuesAndProceed = useCallback(async () => {
-    setIsCreatingVenues(true)
     setError(null)
-
     try {
-      const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: 'other' }[] = []
+      const result = await venuesHook.createVenuesAndProceed(
+        sourceHook.source,
+        sourceHook.passlineEvents,
+        sourceHook.eventbriteEvents,
+        sourceHook.baTourismEvents,
+        sourceHook.meetupEvents,
+        sourceHook.lumaEvents
+      )
 
-      venueEdits.forEach((edit) => {
-        if (edit.action !== 'create') return // Only create venues with 'create' action
-        venuesToCreate.push({ name: edit.name, neighborhood: edit.neighborhood, type: 'other' })
-      })
-
-      if (venuesToCreate.length > 0) {
-        await bulkCreateVenuesAction({ data: venuesToCreate })
-        toast.success(`Created ${venuesToCreate.length} venues`)
-      }
-
-      const updatedVenues = await listVenues()
-      setVenues(updatedVenues.map(v => ({ id: v.id, name: v.name, neighborhood: v.neighborhood })))
-
-      if (source === 'passline') {
-        // Update Passline event venue matches
-        setPasslineEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const passlineName = event.passline.lugar
-            const edit = venueEdits.get(passlineName)
-            let targetName = passlineName
-            if (edit?.mergeInto) targetName = edit.mergeInto
-
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === targetName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: { ...event.transformed, venue_id: matchedVenue.id },
-              }
-            }
-            return event
-          })
-        )
-
-        // Auto-select Passline events with matched venues
-        setSelectedIds(new Set(
-          passlineEvents
-            .filter(e => e.venueMatch.matchType !== 'none' || venueEdits.get(e.passline.lugar)?.action !== 'skip')
-            .map(e => e.passline.id)
-        ))
-      } else if (source === 'eventbrite') {
-        // Update Eventbrite event venue matches
-        setEventbriteEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const eventbriteName = event.eventbrite.location?.name || ''
-            const edit = venueEdits.get(eventbriteName)
-            let targetName = eventbriteName
-            if (edit?.mergeInto) targetName = edit.mergeInto
-
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === targetName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: { ...event.transformed, venue_id: matchedVenue.id },
-              }
-            }
-            return event
-          })
-        )
-
-        // Auto-select Eventbrite events with matched venues
-        setSelectedIds(new Set(
-          eventbriteEvents
-            .filter(e => {
-              const name = e.eventbrite.location?.name || ''
-              return e.venueMatch.matchType !== 'none' || venueEdits.get(name)?.action !== 'skip'
-            })
-            .map(e => e.eventbrite.url)
-        ))
-      } else if (source === 'ba-tourism') {
-        // Update BA Tourism event venue matches
-        setBaTourismEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const baTourismName = event.baTourism.venueName
-            const edit = venueEdits.get(baTourismName)
-            let targetName = baTourismName
-            if (edit?.mergeInto) targetName = edit.mergeInto
-
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === targetName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: event.transformed.map(t => ({ ...t, venue_id: matchedVenue.id })),
-              }
-            }
-            return event
-          })
-        )
-
-        // Auto-select BA Tourism events with matched venues
-        setSelectedIds(new Set(
-          baTourismEvents
-            .filter(e => e.venueMatch.matchType !== 'none' || venueEdits.get(e.baTourism.venueName)?.action !== 'skip')
-            .map(e => `ba-tourism-${e.baTourism.name}`)
-        ))
-      } else if (source === 'meetup') {
-        // Update Meetup event venue matches
-        setMeetupEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const meetupName = event.meetup.venue?.name || ''
-            const edit = venueEdits.get(meetupName)
-            let targetName = meetupName
-            if (edit?.mergeInto) targetName = edit.mergeInto
-
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === targetName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: event.transformed.map(t => ({ ...t, venue_id: matchedVenue.id })),
-              }
-            }
-            return event
-          })
-        )
-
-        // Auto-select Meetup events with matched venues
-        setSelectedIds(new Set(
-          meetupEvents
-            .filter(e => {
-              const name = e.meetup.venue?.name || ''
-              return e.venueMatch.matchType !== 'none' || venueEdits.get(name)?.action !== 'skip'
-            })
-            .map(e => e.meetup.id)
-        ))
-      } else if (source === 'luma') {
-        // Update Luma event venue matches
-        setLumaEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const lumaName = event.luma.venue?.name || ''
-            const edit = venueEdits.get(lumaName)
-            let targetName = lumaName
-            if (edit?.mergeInto) targetName = edit.mergeInto
-
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === targetName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: { ...event.transformed, venue_id: matchedVenue.id },
-              }
-            }
-            return event
-          })
-        )
-
-        // Auto-select Luma events with matched venues
-        setSelectedIds(new Set(
-          lumaEvents
-            .filter(e => {
-              const name = e.luma.venue?.name || ''
-              return e.venueMatch.matchType !== 'none' || venueEdits.get(name)?.action !== 'skip'
-            })
-            .map(e => e.luma.api_id)
-        ))
-      }
+      // Update events with new venue matches
+      if (result.passlineEvents) sourceHook.setPasslineEvents(result.passlineEvents)
+      if (result.eventbriteEvents) sourceHook.setEventbriteEvents(result.eventbriteEvents)
+      if (result.baTourismEvents) sourceHook.setBaTourismEvents(result.baTourismEvents)
+      if (result.meetupEvents) sourceHook.setMeetupEvents(result.meetupEvents)
+      if (result.lumaEvents) sourceHook.setLumaEvents(result.lumaEvents)
+      previewHook.setSelectedIds(result.selectedIds)
 
       setStep('select')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create venues')
       toast.error('Failed to create venues')
-    } finally {
-      setIsCreatingVenues(false)
     }
-  }, [source, venueEdits, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
+  }, [sourceHook, venuesHook, previewHook])
 
-  // Create all unmatched venues and proceed directly to confirm step
   const createAllVenuesAndProceed = useCallback(async () => {
-    setIsCreatingVenues(true)
     setError(null)
-
     try {
-      // Create all unmatched venues (no skip, no merge)
-      const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: 'other' }[] = []
+      const result = await venuesHook.createAllVenuesAndProceed(
+        sourceHook.source,
+        unmatchedVenues,
+        sourceHook.passlineEvents,
+        sourceHook.eventbriteEvents,
+        sourceHook.baTourismEvents,
+        sourceHook.meetupEvents,
+        sourceHook.lumaEvents
+      )
 
-      for (const venue of unmatchedVenues) {
-        venuesToCreate.push({ name: venue.name, neighborhood: null, type: 'other' })
-      }
+      // Update events with new venue matches
+      if (result.passlineEvents) sourceHook.setPasslineEvents(result.passlineEvents)
+      if (result.eventbriteEvents) sourceHook.setEventbriteEvents(result.eventbriteEvents)
+      if (result.baTourismEvents) sourceHook.setBaTourismEvents(result.baTourismEvents)
+      if (result.meetupEvents) sourceHook.setMeetupEvents(result.meetupEvents)
+      if (result.lumaEvents) sourceHook.setLumaEvents(result.lumaEvents)
 
-      if (venuesToCreate.length > 0) {
-        await bulkCreateVenuesAction({ data: venuesToCreate })
-        toast.success(`Created ${venuesToCreate.length} venues`)
-      }
-
-      const updatedVenues = await listVenues()
-      setVenues(updatedVenues.map(v => ({ id: v.id, name: v.name, neighborhood: v.neighborhood })))
-
-      // Update event venue matches based on source
-      if (source === 'passline') {
-        setPasslineEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const passlineName = event.passline.lugar
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === passlineName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: { ...event.transformed, venue_id: matchedVenue.id },
-              }
-            }
-            return event
-          })
-        )
-      } else if (source === 'eventbrite') {
-        setEventbriteEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const eventbriteName = event.eventbrite.location?.name || ''
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === eventbriteName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: { ...event.transformed, venue_id: matchedVenue.id },
-              }
-            }
-            return event
-          })
-        )
-      } else if (source === 'ba-tourism') {
-        setBaTourismEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const baTourismName = event.baTourism.venueName
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === baTourismName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: event.transformed.map(t => ({ ...t, venue_id: matchedVenue.id })),
-              }
-            }
-            return event
-          })
-        )
-      } else if (source === 'meetup') {
-        setMeetupEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const meetupName = event.meetup.venue?.name || ''
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === meetupName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: event.transformed.map(t => ({ ...t, venue_id: matchedVenue.id })),
-              }
-            }
-            return event
-          })
-        )
-      } else if (source === 'luma') {
-        setLumaEvents(prev =>
-          prev.map(event => {
-            if (event.venueMatch.matchType !== 'none') return event
-
-            const lumaName = event.luma.venue?.name || ''
-            const matchedVenue = updatedVenues.find(
-              v => v.name.toLowerCase() === lumaName.toLowerCase()
-            )
-
-            if (matchedVenue) {
-              return {
-                ...event,
-                venueMatch: {
-                  venue: matchedVenue,
-                  matchType: 'exact' as const,
-                  confidence: 1,
-                  searchName: event.venueMatch.searchName,
-                },
-                transformed: { ...event.transformed, venue_id: matchedVenue.id },
-              }
-            }
-            return event
-          })
-        )
-      }
-
-      // Go directly to confirm step (skip the select step review)
       setStep('confirm')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create venues')
       toast.error('Failed to create venues')
-    } finally {
-      setIsCreatingVenues(false)
     }
-  }, [source, unmatchedVenues, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
+  }, [sourceHook, venuesHook, unmatchedVenues])
 
   const skipVenues = useCallback(() => {
-    // Auto-select only events with matched venues using adapters
-    if (source === 'passline') {
-      setSelectedIds(getMatchedEventIds(passlineEvents, passlineAdapter))
-    } else if (source === 'eventbrite') {
-      setSelectedIds(getMatchedEventIds(eventbriteEvents, eventbriteAdapter))
-    } else if (source === 'ba-tourism') {
-      setSelectedIds(getMatchedEventIds(baTourismEvents, baTourismAdapter))
-    } else if (source === 'meetup') {
-      setSelectedIds(getMatchedEventIds(meetupEvents, meetupAdapter))
-    } else if (source === 'luma') {
-      setSelectedIds(getMatchedEventIds(lumaEvents, lumaAdapter))
-    }
+    previewHook.selectMatchedOnly(
+      sourceHook.source,
+      sourceHook.passlineEvents,
+      sourceHook.eventbriteEvents,
+      sourceHook.baTourismEvents,
+      sourceHook.meetupEvents,
+      sourceHook.lumaEvents
+    )
     setStep('select')
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents])
-
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }, [])
+  }, [sourceHook, previewHook])
 
   const toggleSelectAll = useCallback(() => {
-    // Get all event IDs for the current source using adapters
-    let allIds: Set<string> | null = null
-    let eventCount = 0
-
-    if (source === 'passline') {
-      allIds = getAllEventIds(passlineEvents, passlineAdapter)
-      eventCount = passlineEvents.length
-    } else if (source === 'eventbrite') {
-      allIds = getAllEventIds(eventbriteEvents, eventbriteAdapter)
-      eventCount = eventbriteEvents.length
-    } else if (source === 'ba-tourism') {
-      allIds = getAllEventIds(baTourismEvents, baTourismAdapter)
-      eventCount = baTourismEvents.length
-    } else if (source === 'meetup') {
-      allIds = getAllEventIds(meetupEvents, meetupAdapter)
-      eventCount = meetupEvents.length
-    } else if (source === 'luma') {
-      allIds = getAllEventIds(lumaEvents, lumaAdapter)
-      eventCount = lumaEvents.length
-    } else if (source === 'csv') {
-      const validIds = csvRows.filter(r => r.errors.length === 0).map((_, i) => `csv-${i}`)
-      if (selectedIds.size === validIds.length) {
-        setSelectedIds(new Set())
-      } else {
-        setSelectedIds(new Set(validIds))
-      }
-      return
-    }
-
-    // Toggle selection for non-CSV sources
-    if (allIds) {
-      if (selectedIds.size === eventCount) {
-        setSelectedIds(new Set())
-      } else {
-        setSelectedIds(allIds)
-      }
-    }
-  }, [source, passlineEvents, eventbriteEvents, baTourismEvents, meetupEvents, lumaEvents, csvRows, selectedIds.size])
+    previewHook.toggleSelectAll(
+      sourceHook.source,
+      sourceHook.passlineEvents,
+      sourceHook.eventbriteEvents,
+      sourceHook.baTourismEvents,
+      sourceHook.meetupEvents,
+      sourceHook.lumaEvents,
+      sourceHook.csvRows
+    )
+  }, [sourceHook, previewHook])
 
   const proceedToConfirm = useCallback(() => {
     setStep('confirm')
   }, [])
-
-  const importEvents = useCallback(async () => {
-    if (selectedIds.size === 0) return
-
-    // Capture start time for auto-enrichment query
-    importStartTimeRef.current = new Date().toISOString()
-
-    setIsImporting(true)
-    setError(null)
-    setImportProgress({ current: 0, total: selectedIds.size })
-
-    try {
-      let totalInserted = 0
-      let totalUpdated = 0
-      let withVenue = 0
-      let withoutVenue = 0
-      let withDescription = 0
-      let withoutDescription = 0
-      let withCategories = 0
-      let withoutCategories = 0
-
-      if (source === 'passline') {
-        const selectedEvents = passlineEvents.filter(e => selectedIds.has(e.passline.id))
-        const eventsToImport = selectedEvents.map(e => ({
-          passlineEvent: e.passline,
-          venueId: e.venueMatch.venue?.id || null,
-        }))
-
-        // Calculate quality stats from selected events
-        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
-        withoutVenue = selectedEvents.length - withVenue
-        // Passline events lack descriptions - all need enrichment
-        withDescription = 0
-        withoutDescription = selectedEvents.length
-        // Passline events lack categories - all need enrichment
-        withCategories = 0
-        withoutCategories = selectedEvents.length
-
-        // Import all events in one call with streaming progress
-        const stream = await importPasslineEventsBatchAction({ data: { events: eventsToImport } })
-        let finalResult: PasslineImportComplete | null = null
-
-        for await (const update of stream) {
-          if (update.type === 'progress') {
-            setImportProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            finalResult = update
-          }
-        }
-
-        if (finalResult) {
-          totalInserted = finalResult.inserted
-          totalUpdated = finalResult.updated
-          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
-        }
-
-        // If we imported events without descriptions, go to enrich step for Passline
-        // Passline events always lack descriptions and need client-side extraction
-        if (withoutDescription > 0 && (totalInserted > 0 || totalUpdated > 0)) {
-          setImportResult({
-            inserted: totalInserted,
-            updated: totalUpdated,
-            withVenue,
-            withoutVenue,
-            withDescription,
-            withoutDescription,
-            withCategories,
-            withoutCategories,
-          })
-          setIsImporting(false)
-          setImportProgress(null)
-          setStep('enrich')
-          return
-        }
-      } else if (source === 'eventbrite') {
-        const selectedEvents = eventbriteEvents.filter(e => selectedIds.has(e.eventbrite.url))
-        const eventsToImport = selectedEvents.map(e => ({
-          eventbriteEvent: e.eventbrite,
-          venueId: e.venueMatch.venue?.id || null,
-        }))
-
-        // Calculate quality stats
-        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
-        withoutVenue = selectedEvents.length - withVenue
-        withDescription = selectedEvents.filter(e => e.eventbrite.description).length
-        withoutDescription = selectedEvents.length - withDescription
-        // Eventbrite lacks categories - need enrichment
-        withCategories = 0
-        withoutCategories = selectedEvents.length
-
-        // Import all events in one call with streaming progress
-        const stream = await importEventbriteEventsBatchAction({ data: { events: eventsToImport } })
-        let finalResult: EventbriteImportComplete | null = null
-
-        for await (const update of stream) {
-          if (update.type === 'progress') {
-            setImportProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            finalResult = update
-          }
-        }
-
-        if (finalResult) {
-          totalInserted = finalResult.inserted
-          totalUpdated = finalResult.updated
-          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
-        }
-      } else if (source === 'ba-tourism') {
-        if (!baTourismWeekContext) {
-          throw new Error('Week context is missing')
-        }
-
-        const selectedEvents = baTourismEvents.filter(e => selectedIds.has(`ba-tourism-${e.baTourism.name}`))
-        const eventsToImport = selectedEvents.map(e => ({
-          baTourismEvent: e.baTourism,
-          venueId: e.venueMatch.venue?.id || null,
-          weekContext: baTourismWeekContext,
-        }))
-
-        // Calculate quality stats
-        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
-        withoutVenue = selectedEvents.length - withVenue
-        withDescription = selectedEvents.filter(e => e.baTourism.description).length
-        withoutDescription = selectedEvents.length - withDescription
-        // BA Tourism has categories from the source
-        withCategories = selectedEvents.length
-        withoutCategories = 0
-
-        // Import all events in one call with streaming progress
-        const baTourismStream = await importBATourismEventsBatchAction({ data: { events: eventsToImport } })
-        let baTourismFinalResult: BATourismImportComplete | null = null
-
-        for await (const update of baTourismStream) {
-          if (update.type === 'progress') {
-            setImportProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            baTourismFinalResult = update
-          }
-        }
-
-        if (baTourismFinalResult) {
-          totalInserted = baTourismFinalResult.inserted
-          totalUpdated = baTourismFinalResult.updated
-          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
-        }
-      } else if (source === 'meetup') {
-        const selectedEvents = meetupEvents.filter(e => selectedIds.has(e.meetup.id))
-        const eventsToImport = selectedEvents.map(e => ({
-          meetupEvent: e.meetup,
-          venueId: e.venueMatch.venue?.id || null,
-        }))
-
-        // Calculate quality stats
-        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
-        withoutVenue = selectedEvents.length - withVenue
-        withDescription = selectedEvents.filter(e => e.meetup.description).length
-        withoutDescription = selectedEvents.length - withDescription
-        // Meetup lacks categories - need enrichment
-        withCategories = 0
-        withoutCategories = selectedEvents.length
-
-        // Import all events in one call with streaming progress
-        const meetupStream = await importMeetupEventsBatchAction({ data: { events: eventsToImport } })
-        let meetupFinalResult: MeetupImportComplete | null = null
-
-        for await (const update of meetupStream) {
-          if (update.type === 'progress') {
-            setImportProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            meetupFinalResult = update
-          }
-        }
-
-        if (meetupFinalResult) {
-          totalInserted = meetupFinalResult.inserted
-          totalUpdated = meetupFinalResult.updated
-          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
-        }
-
-        // If we imported events without venues, go to enrich step for Meetup
-        if (withoutVenue > 0 && totalInserted > 0) {
-          setImportResult({
-            inserted: totalInserted,
-            updated: totalUpdated,
-            withVenue,
-            withoutVenue,
-            withDescription,
-            withoutDescription,
-            withCategories,
-            withoutCategories,
-          })
-          setIsImporting(false)
-          setImportProgress(null)
-          setStep('enrich')
-          return
-        }
-      } else if (source === 'luma') {
-        const selectedEvents = lumaEvents.filter(e => selectedIds.has(e.luma.api_id))
-        const eventsToImport = selectedEvents.map(e => ({
-          lumaEvent: e.luma,
-          venueId: e.venueMatch.venue?.id || null,
-        }))
-
-        // Calculate quality stats
-        withVenue = selectedEvents.filter(e => e.venueMatch.venue?.id).length
-        withoutVenue = selectedEvents.length - withVenue
-        withDescription = selectedEvents.filter(e => e.luma.description).length
-        withoutDescription = selectedEvents.length - withDescription
-        // Luma lacks categories - need enrichment
-        withCategories = 0
-        withoutCategories = selectedEvents.length
-
-        // Import all events in one call with streaming progress
-        const lumaStream = await importLumaEventsBatchAction({ data: { events: eventsToImport } })
-        let lumaFinalResult: LumaImportComplete | null = null
-
-        for await (const update of lumaStream) {
-          if (update.type === 'progress') {
-            setImportProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            lumaFinalResult = update
-          }
-        }
-
-        if (lumaFinalResult) {
-          totalInserted = lumaFinalResult.inserted
-          totalUpdated = lumaFinalResult.updated
-          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
-        }
-
-        // If we imported events without descriptions, go to enrich step for Luma
-        if (withoutDescription > 0 && (totalInserted > 0 || totalUpdated > 0)) {
-          setImportResult({
-            inserted: totalInserted,
-            updated: totalUpdated,
-            withVenue,
-            withoutVenue,
-            withDescription,
-            withoutDescription,
-            withCategories,
-            withoutCategories,
-          })
-          setIsImporting(false)
-          setImportProgress(null)
-          setStep('enrich')
-          return
-        }
-      } else {
-        const events = csvRows
-          .filter((_, i) => selectedIds.has(`csv-${i}`))
-          .filter(r => r.event)
-          .map(r => r.event!)
-
-        // CSV quality stats
-        withVenue = events.filter(e => e.venue_id).length
-        withoutVenue = events.length - withVenue
-        withDescription = events.filter(e => e.description_es).length
-        withoutDescription = events.length - withDescription
-        withCategories = events.filter(e => e.categories && e.categories.length > 0).length
-        withoutCategories = events.length - withCategories
-
-        const result = await bulkCreateEventsAction({ data: events })
-        totalInserted = result.count
-        totalUpdated = 0
-        toast.success(`Imported ${result.count} events`)
-      }
-
-      // Set import result and go to summary step
-      setImportResult({
-        inserted: totalInserted,
-        updated: totalUpdated,
-        withVenue,
-        withoutVenue,
-        withDescription,
-        withoutDescription,
-        withCategories,
-        withoutCategories,
-      })
-      track('admin:import_completed', {
-        source,
-        inserted: totalInserted,
-        updated: totalUpdated,
-        with_venue: withVenue,
-        without_venue: withoutVenue,
-      })
-
-      // Start auto-enrichment for imported events and venues
-      // Query for events/venues that need enrichment from this import session
-      if (source && importStartTimeRef.current) {
-        try {
-          const [pendingEvents, pendingVenues] = await Promise.all([
-            getRecentlyImportedPendingEventsAction({
-              data: { source, importedAfter: importStartTimeRef.current },
-            }),
-            getRecentlyCreatedPendingVenuesAction({
-              data: { createdAfter: importStartTimeRef.current },
-            }),
-          ])
-
-          // Convert to the format expected by useAutoEnrichment
-          const eventsToEnrich: EventToEnrich[] = pendingEvents.map(
-            (e: { id: string; name: string; link: string; source: string }) => ({
-              id: e.id,
-              name: e.name,
-              link: e.link,
-              source: e.source,
-            })
-          )
-
-          const venuesToEnrich: VenueToEnrich[] = pendingVenues.map(
-            (v: { id: string; name: string }) => ({
-              venueId: v.id,
-              venueName: v.name,
-            })
-          )
-
-          // Start enrichment in background (non-blocking)
-          if (eventsToEnrich.length > 0 || venuesToEnrich.length > 0) {
-            // Don't await - let it run while user sees summary
-            autoEnrichment.startEnrichment(eventsToEnrich, venuesToEnrich)
-          }
-        } catch (enrichErr) {
-          // Don't fail the import if enrichment query fails
-          console.error('[import] Failed to start auto-enrichment:', enrichErr)
-        }
-      }
-
-      setStep('summary')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to import events')
-      toast.error('Import failed')
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-    }
-  }, [source, selectedIds, passlineEvents, eventbriteEvents, baTourismEvents, baTourismWeekContext, meetupEvents, lumaEvents, csvRows, autoEnrichment])
-
-  // Fetch Meetup events needing venue enrichment when entering enrich step
-  const fetchEventsNeedingEnrichment = useCallback(async () => {
-    setIsLoadingEnrichmentEvents(true)
-    try {
-      const result = await getMeetupEventsNeedingEnrichmentAction()
-      setEventsNeedingEnrichment(result.events)
-    } catch (err) {
-      console.error('Failed to fetch events needing enrichment:', err)
-      setEventsNeedingEnrichment([])
-    } finally {
-      setIsLoadingEnrichmentEvents(false)
-    }
-  }, [])
-
-  // Fetch Luma events needing description enrichment when entering enrich step
-  const fetchLumaEventsNeedingEnrichment = useCallback(async () => {
-    setIsLoadingEnrichmentEvents(true)
-    try {
-      const result = await getLumaEventsNeedingDescriptionEnrichmentAction()
-      setLumaEventsNeedingEnrichment(result.events)
-    } catch (err) {
-      console.error('Failed to fetch Luma events needing enrichment:', err)
-      setLumaEventsNeedingEnrichment([])
-    } finally {
-      setIsLoadingEnrichmentEvents(false)
-    }
-  }, [])
-
-  // Fetch Passline events needing description enrichment when entering enrich step
-  const fetchPasslineEventsNeedingEnrichment = useCallback(async () => {
-    setIsLoadingEnrichmentEvents(true)
-    try {
-      const result = await getPasslineEventsNeedingDescriptionsAction()
-      setPasslineEventsNeedingEnrichment(result)
-    } catch (err) {
-      console.error('Failed to fetch Passline events needing enrichment:', err)
-      setPasslineEventsNeedingEnrichment([])
-    } finally {
-      setIsLoadingEnrichmentEvents(false)
-    }
-  }, [])
-
-  const enrichVenues = useCallback(async () => {
-    if (eventsNeedingEnrichment.length === 0) return
-
-    setIsEnriching(true)
-    setEnrichmentProgress({ current: 0, total: eventsNeedingEnrichment.length })
-    setError(null)
-
-    try {
-      const events = eventsNeedingEnrichment.map(e => ({
-        eventId: e.id,
-        eventUrl: e.link,
-      }))
-
-      // Consume streaming response
-      const enrichStream = await enrichMeetupVenuesAction({ data: { events } })
-      let enrichFinalResult: MeetupVenueEnrichComplete | null = null
-
-      for await (const update of enrichStream) {
-        if (update.type === 'progress') {
-          setEnrichmentProgress({ current: update.current, total: update.total })
-        } else if (update.type === 'complete') {
-          enrichFinalResult = update
-        }
-      }
-
-      if (enrichFinalResult) {
-        setEnrichmentResult({
-          enriched: enrichFinalResult.enriched,
-          venuesCreated: enrichFinalResult.venuesCreated,
-          errors: enrichFinalResult.errors,
-        })
-
-        if (enrichFinalResult.enriched > 0) {
-          toast.success(`Enriched ${enrichFinalResult.enriched} events with venue data`)
-        }
-      }
-
-      // No auto-redirect - let user see results and decide what to do
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to enrich venues')
-      toast.error('Venue enrichment failed')
-    } finally {
-      setIsEnriching(false)
-      setEnrichmentProgress(null)
-    }
-  }, [eventsNeedingEnrichment, router])
-
-  // Enrich Luma events with descriptions from detail pages
-  const enrichDescriptions = useCallback(async () => {
-    if (lumaEventsNeedingEnrichment.length === 0) return
-
-    setIsEnriching(true)
-    setEnrichmentProgress({ current: 0, total: lumaEventsNeedingEnrichment.length })
-    setError(null)
-
-    try {
-      const events = lumaEventsNeedingEnrichment.map(e => ({
-        eventId: e.id,
-        source_url: e.source_url,
-        name: e.name,
-      }))
-
-      // Consume streaming response
-      const enrichStream = await enrichLumaDescriptionsAction({ data: { events } })
-      let enrichFinalResult: LumaDescriptionEnrichComplete | null = null
-
-      for await (const update of enrichStream) {
-        if (update.type === 'progress') {
-          setEnrichmentProgress({ current: update.current, total: update.total })
-        } else if (update.type === 'complete') {
-          enrichFinalResult = update
-        }
-      }
-
-      if (enrichFinalResult) {
-        setEnrichmentResult({
-          enriched: enrichFinalResult.enriched,
-          errors: enrichFinalResult.errors || [],
-        })
-
-        if (enrichFinalResult.enriched > 0) {
-          toast.success(`Enriched ${enrichFinalResult.enriched} events with descriptions`)
-        }
-      }
-
-      // No auto-redirect - let user see results and decide what to do
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to enrich descriptions')
-      toast.error('Description enrichment failed')
-    } finally {
-      setIsEnriching(false)
-      setEnrichmentProgress(null)
-    }
-  }, [lumaEventsNeedingEnrichment])
-
-  // Enrich Passline events with descriptions from detail pages (client-side extraction)
-  const enrichPasslineDescriptions = useCallback(async () => {
-    if (passlineEventsNeedingEnrichment.length === 0) return
-
-    setIsEnriching(true)
-    setEnrichmentProgress({ current: 0, total: passlineEventsNeedingEnrichment.length })
-    setError(null)
-
-    try {
-      // Phase 1: Client-side extraction from JSON-LD
-      const eventsForExtraction = passlineEventsNeedingEnrichment.map(e => ({
-        id: e.id,
-        url: e.link,
-      }))
-
-      const extractedResults = await extractPasslineEventsBatchClient(
-        eventsForExtraction,
-        (current, total) => {
-          setEnrichmentProgress({ current, total: total * 2 }) // First half is extraction
-        },
-        300 // 300ms delay between requests
-      )
-
-      // Filter to only events where we got descriptions
-      const eventsWithDescriptions = extractedResults
-        .filter(r => r.description && r.description.length > 0)
-        .map(r => {
-          const event = passlineEventsNeedingEnrichment.find(e => e.id === r.id)
-          return {
-            id: r.id,
-            name: event?.name || 'Unknown',
-            description_es: r.description!,
-          }
-        })
-
-      if (eventsWithDescriptions.length === 0) {
-        setEnrichmentResult({
-          enriched: 0,
-          translated: 0,
-          errors: [],
-        })
-        toast.error('No descriptions found in Passline event pages')
-        setIsEnriching(false)
-        setEnrichmentProgress(null)
-        return
-      }
-
-      // Phase 2: Server-side translation and saving
-      const enrichStream = await enrichPasslineDescriptionsAction({
-        data: { events: eventsWithDescriptions },
-      })
-      let enrichFinalResult: PasslineDescriptionEnrichComplete | null = null
-
-      for await (const update of enrichStream) {
-        if (update.type === 'progress') {
-          // Second half of progress is translation
-          setEnrichmentProgress({
-            current: passlineEventsNeedingEnrichment.length + update.current,
-            total: passlineEventsNeedingEnrichment.length + update.total,
-          })
-        } else if (update.type === 'complete') {
-          enrichFinalResult = update
-        }
-      }
-
-      if (enrichFinalResult) {
-        setEnrichmentResult({
-          enriched: enrichFinalResult.enriched,
-          translated: enrichFinalResult.translated,
-          errors: enrichFinalResult.errors || [],
-        })
-
-        if (enrichFinalResult.enriched > 0) {
-          toast.success(
-            `Enriched ${enrichFinalResult.enriched} Passline events (${enrichFinalResult.translated} translated)`
-          )
-        }
-      }
-
-      // No auto-redirect - let user see results and decide what to do
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to enrich Passline descriptions')
-      toast.error('Passline description enrichment failed')
-    } finally {
-      setIsEnriching(false)
-      setEnrichmentProgress(null)
-    }
-  }, [passlineEventsNeedingEnrichment])
-
-  const skipEnrichment = useCallback(() => {
-    router.navigate({ to: '/admin/events' })
-  }, [router])
-
-  const viewEvents = useCallback(() => {
-    router.navigate({ to: '/admin/events' })
-  }, [router])
-
-  const retryFailedEnrichment = useCallback(async () => {
-    if (!enrichmentResult || !enrichmentResult.errors || enrichmentResult.errors.length === 0) return
-
-    setIsEnriching(true)
-    setError(null)
-
-    // Get only the failed event IDs
-    const failedEventIds = new Set((enrichmentResult.errors ?? []).map((e: { id: string; error: string }) => e.id))
-
-    if (source === 'luma') {
-      // Retry Luma description enrichment
-      const eventsToRetry = lumaEventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
-
-      if (eventsToRetry.length === 0) {
-        toast.error('Could not find events for retry')
-        setIsEnriching(false)
-        return
-      }
-
-      setEnrichmentProgress({ current: 0, total: eventsToRetry.length })
-
-      try {
-        const events = eventsToRetry.map(e => ({
-          eventId: e.id,
-          source_url: e.source_url,
-          name: e.name,
-        }))
-
-        const retryStream = await enrichLumaDescriptionsAction({ data: { events } })
-        let retryFinalResult: LumaDescriptionEnrichComplete | null = null
-
-        for await (const update of retryStream) {
-          if (update.type === 'progress') {
-            setEnrichmentProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            retryFinalResult = update
-          }
-        }
-
-        if (retryFinalResult) {
-          const previousEnriched = enrichmentResult.enriched
-
-          setEnrichmentResult({
-            enriched: previousEnriched + retryFinalResult.enriched,
-            errors: retryFinalResult.errors || [],
-          })
-
-          if (retryFinalResult.enriched > 0) {
-            toast.success(`Retry successful: enriched ${retryFinalResult.enriched} more events`)
-          } else if (retryFinalResult.errors && retryFinalResult.errors.length > 0) {
-            toast.error(`Retry failed: ${retryFinalResult.errors.length} events still have errors`)
-          }
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to retry enrichment')
-        toast.error('Retry failed')
-      } finally {
-        setIsEnriching(false)
-        setEnrichmentProgress(null)
-      }
-    } else {
-      // Retry Meetup venue enrichment
-      const eventsToRetry = eventsNeedingEnrichment.filter(e => failedEventIds.has(e.id))
-
-      if (eventsToRetry.length === 0) {
-        toast.error('Could not find event links for failed events')
-        setIsEnriching(false)
-        return
-      }
-
-      setEnrichmentProgress({ current: 0, total: eventsToRetry.length })
-
-      try {
-        const events = eventsToRetry.map(e => ({
-          eventId: e.id,
-          eventUrl: e.link,
-        }))
-
-        // Consume streaming response
-        const retryStream = await enrichMeetupVenuesAction({ data: { events } })
-        let retryFinalResult: MeetupVenueEnrichComplete | null = null
-
-        for await (const update of retryStream) {
-          if (update.type === 'progress') {
-            setEnrichmentProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            retryFinalResult = update
-          }
-        }
-
-        if (retryFinalResult) {
-          // Combine previous success with new results
-          const previousEnriched = enrichmentResult.enriched
-          const previousVenuesCreated = 'venuesCreated' in enrichmentResult ? enrichmentResult.venuesCreated : 0
-
-          setEnrichmentResult({
-            enriched: previousEnriched + retryFinalResult.enriched,
-            venuesCreated: previousVenuesCreated + retryFinalResult.venuesCreated,
-            errors: retryFinalResult.errors, // Only keep the new errors
-          })
-
-          if (retryFinalResult.enriched > 0) {
-            toast.success(`Retry successful: enriched ${retryFinalResult.enriched} more events`)
-          } else if (retryFinalResult.errors.length > 0) {
-            toast.error(`Retry failed: ${retryFinalResult.errors.length} events still have errors`)
-          }
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to retry enrichment')
-        toast.error('Retry failed')
-      } finally {
-        setIsEnriching(false)
-        setEnrichmentProgress(null)
-      }
-    }
-  }, [source, enrichmentResult, eventsNeedingEnrichment, lumaEventsNeedingEnrichment])
 
   const goToVenues = useCallback(() => {
     if (unmatchedVenues.length > 0) {
@@ -1838,110 +232,118 @@ export function useImportWizard(
     }
   }, [unmatchedVenues.length])
 
+  // Wrap import to handle step transitions
+  const importEvents = useCallback(async () => {
+    const result = await submitHook.importEvents({
+      source: sourceHook.source,
+      selectedIds: previewHook.selectedIds,
+      passlineEvents: sourceHook.passlineEvents,
+      eventbriteEvents: sourceHook.eventbriteEvents,
+      baTourismEvents: sourceHook.baTourismEvents,
+      baTourismWeekContext: sourceHook.baTourismWeekContext,
+      meetupEvents: sourceHook.meetupEvents,
+      lumaEvents: sourceHook.lumaEvents,
+      csvRows: sourceHook.csvRows,
+    })
+
+    if (result) {
+      if (result.needsEnrichment) {
+        setStep('enrich')
+      } else {
+        setStep('summary')
+      }
+    }
+  }, [sourceHook, previewHook.selectedIds, submitHook])
+
+  // Wrap enrichment retry
+  const retryFailedEnrichment = useCallback(async () => {
+    await enrichmentHook.retryFailedEnrichment(sourceHook.source)
+  }, [enrichmentHook, sourceHook.source])
+
   const goBack = useCallback(() => {
     if (step === 'configure') {
       setStep('source')
-      setSource(null)
+      sourceHook.selectSource(null as unknown as ImportSource)
     } else if (step === 'venues') {
-      // Go back to select step (venues is now optional)
       setStep('select')
     } else if (step === 'select') {
-      // Always go back to configure from select
       setStep('configure')
     } else if (step === 'confirm') {
       setStep('select')
-    } else if (step === 'enrich') {
-      // Don't allow going back from enrich step - events are already imported
-      // User can skip or complete enrichment
     }
-  }, [step])
+    // Don't allow going back from enrich step
+  }, [step, sourceHook])
 
   const reset = useCallback(() => {
     setStep('source')
-    setSource(null)
-    setPasslineEvents([])
-    setEventbriteEvents([])
-    setBaTourismEvents([])
-    setBaTourismWeekContext(null)
-    setMeetupEvents([])
-    setLumaEvents([])
-    setCsvRows([])
-    setCsvFileName(null)
-    setVenueEdits(new Map())
-    setSelectedIds(new Set())
     setError(null)
-    // Reset enrichment state
-    setIsEnriching(false)
-    setEnrichmentProgress(null)
-    setEnrichmentResult(null)
-    setEventsNeedingEnrichment([])
-    setLumaEventsNeedingEnrichment([])
-    setPasslineEventsNeedingEnrichment([])
-    // Reset import result state
-    setImportResult(null)
-    setAutoEnrich(false)
-  }, [])
+    sourceHook.reset()
+    previewHook.reset()
+    venuesHook.reset()
+    enrichmentHook.reset()
+    submitHook.reset()
+  }, [sourceHook, previewHook, venuesHook, enrichmentHook, submitHook])
 
   return {
     // State
     step,
-    source,
-    startDate,
-    endDate,
-    passlineEvents,
-    eventbriteEvents,
-    baTourismEvents,
-    meetupEvents,
-    lumaEvents,
-    csvRows,
-    csvFileName,
-    venues,
-    venueEdits,
+    source: sourceHook.source,
+    startDate: sourceHook.startDate,
+    endDate: sourceHook.endDate,
+    passlineEvents: sourceHook.passlineEvents,
+    eventbriteEvents: sourceHook.eventbriteEvents,
+    baTourismEvents: sourceHook.baTourismEvents,
+    meetupEvents: sourceHook.meetupEvents,
+    lumaEvents: sourceHook.lumaEvents,
+    csvRows: sourceHook.csvRows,
+    csvFileName: sourceHook.csvFileName,
+    venues: venuesHook.venues,
+    venueEdits: venuesHook.venueEdits,
     unmatchedVenues,
-    similarVenues,
-    selectedIds,
-    venuesToCreateCount,
-    csvValidCount,
-    csvErrorCount,
-    csvAllValid,
-    isFetching,
-    meetupFetchProgress,
-    isCreatingVenues,
-    isImporting,
-    importProgress,
-    error,
+    similarVenues: previewHook.similarVenues,
+    selectedIds: previewHook.selectedIds,
+    venuesToCreateCount: venuesHook.venuesToCreateCount,
+    csvValidCount: sourceHook.csvValidCount,
+    csvErrorCount: sourceHook.csvErrorCount,
+    csvAllValid: sourceHook.csvAllValid,
+    isFetching: sourceHook.isFetching,
+    meetupFetchProgress: sourceHook.meetupFetchProgress,
+    isCreatingVenues: venuesHook.isCreatingVenues,
+    isImporting: submitHook.isImporting,
+    importProgress: submitHook.importProgress,
+    error: sourceHook.error || error,
 
     // Enrichment state
-    isEnriching,
-    enrichmentProgress,
-    enrichmentResult,
-    eventsNeedingEnrichment,
-    lumaEventsNeedingEnrichment,
-    passlineEventsNeedingEnrichment,
-    isLoadingEnrichmentEvents,
+    isEnriching: enrichmentHook.isEnriching,
+    enrichmentProgress: enrichmentHook.enrichmentProgress,
+    enrichmentResult: enrichmentHook.enrichmentResult,
+    eventsNeedingEnrichment: enrichmentHook.eventsNeedingEnrichment,
+    lumaEventsNeedingEnrichment: enrichmentHook.lumaEventsNeedingEnrichment,
+    passlineEventsNeedingEnrichment: enrichmentHook.passlineEventsNeedingEnrichment,
+    isLoadingEnrichmentEvents: enrichmentHook.isLoadingEnrichmentEvents,
 
     // Import result state (for summary step)
-    importResult,
-    autoEnrich,
+    importResult: submitHook.importResult,
+    autoEnrich: submitHook.autoEnrich,
 
     // Auto-enrichment state (for post-import enrichment)
-    autoEnrichment,
+    autoEnrichment: submitHook.autoEnrichment,
 
     // Actions
     selectSource,
-    setStartDate,
-    setEndDate,
-    fetchPasslineEvents: fetchPasslineEventsHandler,
-    fetchEventbriteEvents: fetchEventbriteEventsHandler,
-    fetchBaTourismEvents: fetchBaTourismEventsHandler,
-    fetchMeetupEvents: fetchMeetupEventsHandler,
-    fetchLumaEvents: fetchLumaEventsHandler,
+    setStartDate: sourceHook.setStartDate,
+    setEndDate: sourceHook.setEndDate,
+    fetchPasslineEvents,
+    fetchEventbriteEvents,
+    fetchBaTourismEvents,
+    fetchMeetupEvents,
+    fetchLumaEvents,
     handleCSVFile,
-    updateVenueEdit,
+    updateVenueEdit: venuesHook.updateVenueEdit,
     createVenuesAndProceed,
     createAllVenuesAndProceed,
     skipVenues,
-    toggleSelect,
+    toggleSelect: previewHook.toggleSelect,
     toggleSelectAll,
     proceedToConfirm,
     importEvents,
@@ -1950,18 +352,18 @@ export function useImportWizard(
     reset,
 
     // Enrichment actions
-    fetchEventsNeedingEnrichment,
-    fetchLumaEventsNeedingEnrichment,
-    fetchPasslineEventsNeedingEnrichment,
-    enrichVenues,
-    enrichDescriptions,
-    enrichPasslineDescriptions,
-    skipEnrichment,
+    fetchEventsNeedingEnrichment: enrichmentHook.fetchEventsNeedingEnrichment,
+    fetchLumaEventsNeedingEnrichment: enrichmentHook.fetchLumaEventsNeedingEnrichment,
+    fetchPasslineEventsNeedingEnrichment: enrichmentHook.fetchPasslineEventsNeedingEnrichment,
+    enrichVenues: enrichmentHook.enrichVenues,
+    enrichDescriptions: enrichmentHook.enrichDescriptions,
+    enrichPasslineDescriptions: enrichmentHook.enrichPasslineDescriptions,
+    skipEnrichment: enrichmentHook.skipEnrichment,
     retryFailedEnrichment,
-    viewEvents,
+    viewEvents: enrichmentHook.viewEvents,
 
     // Summary step actions
-    setAutoEnrich,
+    setAutoEnrich: submitHook.setAutoEnrich,
   }
 }
 

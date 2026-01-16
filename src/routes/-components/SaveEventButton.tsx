@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Heart } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -33,11 +33,6 @@ export function SaveEventButton({
   const { user, loading } = useAuthContext()
   const [isSaved, setIsSaved] = useState(initialSaved)
   const [isUpdating, setIsUpdating] = useState(false)
-
-  // Sync with prop changes
-  useEffect(() => {
-    setIsSaved(initialSaved)
-  }, [initialSaved])
 
   const handleToggle = async () => {
     if (!user) return

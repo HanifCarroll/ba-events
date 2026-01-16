@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import type { ChatMessage, EventWithVenue, RefinementSuggestion, DirectionsData } from '@/shared/lib/types'
@@ -112,36 +112,40 @@ export function ChatContainer() {
   }, [messages.length, sendMessage])
 
   // Convert AI SDK messages to our ChatMessage format for display
-  const chatMessages: ChatMessage[] = messages.map((m, index) => {
-    // Extract text content from parts
-    const textContent = m.parts
-      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-      .map(p => p.text)
-      .join('')
+  const chatMessages: ChatMessage[] = useMemo(() => {
+    return messages.map((m, index) => {
+      // Extract text content from parts
+      const textContent = m.parts
+        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+        .map(p => p.text)
+        .join('')
 
-    // For the last assistant message, include events and suggestions
-    const isLastAssistant = m.role === 'assistant' && index === messages.length - 1
+      // For the last assistant message, include events and suggestions
+      const isLastAssistant = m.role === 'assistant' && index === messages.length - 1
 
-    return {
-      id: m.id,
-      role: m.role as 'user' | 'assistant',
-      content: textContent,
-      timestamp: new Date(),
-      isStreaming: isLastAssistant && status === 'streaming',
-      events: isLastAssistant ? events : undefined,
-      suggestions: isLastAssistant ? suggestions : undefined,
-      directions: isLastAssistant && directions ? directions : undefined,
-    }
-  })
+      return {
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        content: textContent,
+        timestamp: new Date(),
+        isStreaming: isLastAssistant && status === 'streaming',
+        events: isLastAssistant ? events : undefined,
+        suggestions: isLastAssistant ? suggestions : undefined,
+        directions: isLastAssistant && directions ? directions : undefined,
+      }
+    })
+  }, [messages, events, suggestions, directions, status])
 
   // Filter out empty assistant messages that have completed (no content to show)
-  const displayMessages = chatMessages.filter(m => {
-    // Always show user messages
-    if (m.role === 'user') return true
-    // For assistant messages, show if has any content OR is still streaming
-    const hasVisibleContent = m.content.trim().length > 0 || (m.events && m.events.length > 0) || m.directions
-    return hasVisibleContent || m.isStreaming
-  })
+  const displayMessages = useMemo(() => {
+    return chatMessages.filter(m => {
+      // Always show user messages
+      if (m.role === 'user') return true
+      // For assistant messages, show if has any content OR is still streaming
+      const hasVisibleContent = m.content.trim().length > 0 || (m.events && m.events.length > 0) || m.directions
+      return hasVisibleContent || m.isStreaming
+    })
+  }, [chatMessages])
 
   const hasMessages = displayMessages.length > 0
 

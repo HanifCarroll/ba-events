@@ -93,7 +93,9 @@ const AdminVenuesIndexRoute = AdminVenuesIndexRouteImport.update({
   id: '/venues/',
   path: '/venues/',
   getParentRoute: () => AdminRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/admin/venues/index.lazy').then((d) => d.Route),
+)
 const AdminScrapingIndexRoute = AdminScrapingIndexRouteImport.update({
   id: '/scraping/',
   path: '/scraping/',
@@ -103,7 +105,9 @@ const AdminEventsIndexRoute = AdminEventsIndexRouteImport.update({
   id: '/events/',
   path: '/events/',
   getParentRoute: () => AdminRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/admin/events/index.lazy').then((d) => d.Route),
+)
 const AdminBlocklistIndexRoute = AdminBlocklistIndexRouteImport.update({
   id: '/blocklist/',
   path: '/blocklist/',
