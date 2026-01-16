@@ -69,6 +69,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
           {
             id: QUESTION_ID,
             question: "What feedback do you have for us?",
+            response: feedback,
           },
         ],
       })
