@@ -45,14 +45,20 @@ This project uses **Vertical Slice Architecture** - code is organized by feature
 1. **Features own their logic** - Each feature (`auth`, `chat`, `events`, `import`, `venues`) contains its own API functions, hooks, and types
 2. **Shared code is truly shared** - Only code used by multiple features goes in `shared/`
 3. **Routes are thin** - Route files handle routing logic only; UI components live in `-components/` folders
-4. **Feature exports via index.ts** - Each feature has an `index.ts` that exports its public API
+4. **Direct imports only** - Import from specific files, not barrel `index.ts` files (improves tree-shaking)
 
 ### Path Aliases
 
 ```typescript
-import { something } from '@/features/events'      // Feature modules
-import { Button } from '@/shared/ui/button'        // Shared UI
-import { supabase } from '@/shared/lib/db/client'  // Shared utilities
+// ✅ CORRECT - Direct file imports
+import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
+import { createEventAction } from '@/features/events/api/crud'
+import { DataTable } from '@/shared/ui/data-table/DataTable'
+import { Button } from '@/shared/ui/button'
+
+// ❌ WRONG - Barrel imports (hurts tree-shaking)
+import { useAuthContext, signOutAction } from '@/features/auth'
+import { DataTable, getEventColumns } from '@/shared/ui/data-table'
 ```
 
 ### Project Structure
@@ -367,7 +373,7 @@ const locale = getLocale() // 'en' or 'es'
 Uses Supabase Auth with the `AuthProvider` context.
 
 ```tsx
-import { useAuthContext } from '@/shared/providers/AuthProvider'
+import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 
 function Component() {
   const { user, isAdmin, signOut } = useAuthContext()
@@ -536,6 +542,7 @@ Tests use Vitest with React Testing Library. Test infrastructure is set up but t
 - Use React Hook Form + Zod for forms
 - **After each code change, run `bunx tsc --noEmit` to check for TypeScript errors and fix them immediately** - don't leave errors for later
 - **NEVER add backwards compatibility shims or legacy exports** - when changing APIs, update all callsites instead. Only add compatibility layers if explicitly requested.
+- **NEVER use barrel imports** - Import directly from source files (e.g., `@/features/auth/hooks/useAuthContext`) instead of barrel index files (e.g., `@/features/auth`). This improves tree-shaking and bundle size.
 
 ## Documentation
 
