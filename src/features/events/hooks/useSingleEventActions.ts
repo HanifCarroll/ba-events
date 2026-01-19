@@ -1,31 +1,26 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { deleteEventAction } from '../api/crud'
 import { approveEventAction, rejectEventAction } from '../api/moderation'
+import { useDeleteEvent } from './useEventMutations'
 import type { EventDeleteTarget } from '@/shared/lib/types'
 
 export function useSingleEventActions() {
   const router = useRouter()
+  const deleteEventMutation = useDeleteEvent()
   const [deleteTarget, setDeleteTarget] = useState<EventDeleteTarget | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
   const [isApproving, setIsApproving] = useState<string | null>(null)
   const [isRejecting, setIsRejecting] = useState<string | null>(null)
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
-    setIsDeleting(true)
 
     try {
-      await deleteEventAction({ data: deleteTarget.id })
-      // Invalidate router loader to refresh events data
-      await router.invalidate()
+      await deleteEventMutation.mutateAsync(deleteTarget.id)
       setDeleteTarget(null)
     } catch (err) {
       console.error('Delete failed:', err)
-    } finally {
-      setIsDeleting(false)
     }
-  }, [deleteTarget, router])
+  }, [deleteTarget, deleteEventMutation])
 
   const handleApprove = useCallback(async (eventId: string) => {
     setIsApproving(eventId)
@@ -56,7 +51,7 @@ export function useSingleEventActions() {
   return {
     deleteTarget,
     setDeleteTarget,
-    isDeleting,
+    isDeleting: deleteEventMutation.isPending,
     isApproving,
     isRejecting,
     handleDelete,
