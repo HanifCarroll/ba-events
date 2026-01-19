@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useMemo, useCallback } from 'react'
 import { Ban, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
@@ -26,7 +26,6 @@ export const Route = createFileRoute('/admin/blocklist/')({
 
 function BlocklistPage() {
   const entries = Route.useLoaderData()
-  const router = useRouter()
   const [search, setSearch] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ImportBlocklistEntry | null>(null)
 
@@ -61,7 +60,6 @@ function BlocklistPage() {
     if (!deleteTarget) return
     await deleteMutation.mutateAsync(deleteTarget.id)
     setDeleteTarget(null)
-    router.invalidate()
   }
 
   // Handle bulk delete
@@ -70,7 +68,6 @@ function BlocklistPage() {
     await bulkDeleteMutation.mutateAsync(ids)
     bulk.clearSelection()
     setShowBulkDeleteDialog(false)
-    router.invalidate()
   }
 
   // Column definitions with delete handler

@@ -1,15 +1,12 @@
 import { useState, useCallback } from 'react'
-import { useRouter } from '@tanstack/react-router'
-import { approveEventAction, rejectEventAction } from '../api/moderation'
-import { useDeleteEvent } from './useEventMutations'
+import { useDeleteEvent, useApproveEvent, useRejectEvent } from './useEventMutations'
 import type { EventDeleteTarget } from '@/shared/lib/types'
 
 export function useSingleEventActions() {
-  const router = useRouter()
   const deleteEventMutation = useDeleteEvent()
+  const approveEventMutation = useApproveEvent()
+  const rejectEventMutation = useRejectEvent()
   const [deleteTarget, setDeleteTarget] = useState<EventDeleteTarget | null>(null)
-  const [isApproving, setIsApproving] = useState<string | null>(null)
-  const [isRejecting, setIsRejecting] = useState<string | null>(null)
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
@@ -23,37 +20,27 @@ export function useSingleEventActions() {
   }, [deleteTarget, deleteEventMutation])
 
   const handleApprove = useCallback(async (eventId: string) => {
-    setIsApproving(eventId)
     try {
-      await approveEventAction({ data: { eventId } })
-      // Invalidate router loader to refresh events data
-      await router.invalidate()
+      await approveEventMutation.mutateAsync({ eventId })
     } catch (err) {
       console.error('Approve failed:', err)
-    } finally {
-      setIsApproving(null)
     }
-  }, [router])
+  }, [approveEventMutation])
 
   const handleReject = useCallback(async (eventId: string) => {
-    setIsRejecting(eventId)
     try {
-      await rejectEventAction({ data: { eventId } })
-      // Invalidate router loader to refresh events data
-      await router.invalidate()
+      await rejectEventMutation.mutateAsync(eventId)
     } catch (err) {
       console.error('Reject failed:', err)
-    } finally {
-      setIsRejecting(null)
     }
-  }, [router])
+  }, [rejectEventMutation])
 
   return {
     deleteTarget,
     setDeleteTarget,
     isDeleting: deleteEventMutation.isPending,
-    isApproving,
-    isRejecting,
+    isApproving: approveEventMutation.isPending ? 'pending' : null,
+    isRejecting: rejectEventMutation.isPending ? 'pending' : null,
     handleDelete,
     handleApprove,
     handleReject,

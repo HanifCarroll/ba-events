@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createEventAction, updateEventAction, deleteEventAction } from '../api/crud'
+import { approveEventAction, rejectEventAction } from '../api/moderation'
 import { queryKeys } from '@/shared/lib/query'
 import { track } from '@/lib/analytics'
 import { getErrorMessage } from '@/shared/lib/error-messages'
@@ -130,6 +131,60 @@ export function useDeleteEvent() {
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, { operation: 'delete', entity: 'event' }))
+    },
+  })
+}
+
+export function useApproveEvent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ eventId, venueId }: { eventId: string; venueId?: string }) =>
+      approveEventAction({ data: { eventId, venueId } }),
+    onSuccess: (_, variables) => {
+      track('admin:event_approved', { event_id: variables.eventId })
+
+      // Update event status in admin list cache
+      queryClient.setQueryData<EventListItem[]>(
+        queryKeys.events.adminList(),
+        (old) => old?.map(e => e.id === variables.eventId
+          ? { ...e, status: 'scheduled', venue_id: variables.venueId ?? e.venue_id }
+          : e
+        )
+      )
+
+      // Background refresh tab counts
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.tabCounts({}) })
+
+      toast.success('Event approved')
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'approve', entity: 'event' }))
+    },
+  })
+}
+
+export function useRejectEvent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (eventId: string) => rejectEventAction({ data: { eventId } }),
+    onSuccess: (_, eventId) => {
+      track('admin:event_rejected', { event_id: eventId })
+
+      // Remove from admin list cache (reject = delete)
+      queryClient.setQueryData<EventListItem[]>(
+        queryKeys.events.adminList(),
+        (old) => old?.filter(e => e.id !== eventId)
+      )
+
+      // Background refresh tab counts
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.tabCounts({}) })
+
+      toast.success('Event rejected')
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, { operation: 'reject', entity: 'event' }))
     },
   })
 }

@@ -1,4 +1,4 @@
-import { createLazyFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { createLazyFileRoute, Link } from '@tanstack/react-router'
 import { useState, useMemo, useCallback, useEffect } from 'react'
 
 // Simple debounce utility
@@ -49,7 +49,7 @@ import { VenueBulkActionBar } from './-components/VenueBulkActionBar'
 import { MergeVenueDialog } from './-components/MergeVenueDialog'
 import { DismissedDuplicatesDialog } from './-components/DismissedDuplicatesDialog'
 import { EditVenueDialog } from './-components/EditVenueDialog'
-import { deleteVenueAction } from '@/features/venues/api/crud'
+import { useDeleteVenue } from '@/features/venues/hooks/useVenueMutations'
 import { useVenueReview, type ReviewTab } from '@/features/venues/hooks/useVenueReview'
 import { useVenueBulkActions } from '@/features/venues/hooks/useVenueBulkActions'
 import { useVenueNominatimEnrichment } from '@/features/venues/hooks/useVenueNominatimEnrichment'
@@ -62,11 +62,10 @@ export const Route = createLazyFileRoute('/admin/venues/')({
 
 function VenueListPage() {
   const { venues, eventCounts } = Route.useLoaderData()
-  const router = useRouter()
   const searchParams = Route.useSearch()
   const navigate = Route.useNavigate()
+  const deleteVenueMutation = useDeleteVenue()
   const [deleteTarget, setDeleteTarget] = useState<Venue | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
 
   // URL-derived state
   const activeTab = (searchParams.tab || 'all') as ReviewTab
@@ -253,16 +252,12 @@ function VenueListPage() {
 
   async function handleDelete() {
     if (!deleteTarget) return
-    setIsDeleting(true)
 
     try {
-      await deleteVenueAction({ data: deleteTarget.id })
+      await deleteVenueMutation.mutateAsync({ id: deleteTarget.id })
       setDeleteTarget(null)
-      router.invalidate()
     } catch (err) {
       console.error('Delete failed:', err)
-    } finally {
-      setIsDeleting(false)
     }
   }
 
@@ -690,7 +685,7 @@ function VenueListPage() {
         confirmText={m.common_delete()}
         confirmingText={m.common_deleting()}
         onConfirm={handleDelete}
-        isConfirming={isDeleting}
+        isConfirming={deleteVenueMutation.isPending}
       />
 
       {/* Bulk delete confirmation dialog */}
