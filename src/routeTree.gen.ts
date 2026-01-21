@@ -24,6 +24,7 @@ import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/inde
 import { Route as AdminScrapingIndexRouteImport } from './routes/admin/scraping/index'
 import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/index'
 import { Route as AdminBlocklistIndexRouteImport } from './routes/admin/blocklist/index'
+import { Route as AdminAnalyticsIndexRouteImport } from './routes/admin/analytics/index'
 import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
 import { Route as AdminVenuesImportRouteImport } from './routes/admin/venues/import'
 import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
@@ -113,6 +114,13 @@ const AdminBlocklistIndexRoute = AdminBlocklistIndexRouteImport.update({
   path: '/blocklist/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAnalyticsIndexRoute = AdminAnalyticsIndexRouteImport.update({
+  id: '/analytics/',
+  path: '/analytics/',
+  getParentRoute: () => AdminRoute,
+} as any).lazy(() =>
+  import('./routes/admin/analytics/index.lazy').then((d) => d.Route),
+)
 const AdminVenuesNewRoute = AdminVenuesNewRouteImport.update({
   id: '/venues/new',
   path: '/venues/new',
@@ -181,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/admin/analytics': typeof AdminAnalyticsIndexRoute
   '/admin/blocklist': typeof AdminBlocklistIndexRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/scraping': typeof AdminScrapingIndexRoute
@@ -206,6 +215,7 @@ export interface FileRoutesByTo {
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/admin/analytics': typeof AdminAnalyticsIndexRoute
   '/admin/blocklist': typeof AdminBlocklistIndexRoute
   '/admin/events': typeof AdminEventsIndexRoute
   '/admin/scraping': typeof AdminScrapingIndexRoute
@@ -233,6 +243,7 @@ export interface FileRoutesById {
   '/admin/venues/$id': typeof AdminVenuesIdRoute
   '/admin/venues/import': typeof AdminVenuesImportRoute
   '/admin/venues/new': typeof AdminVenuesNewRoute
+  '/admin/analytics/': typeof AdminAnalyticsIndexRoute
   '/admin/blocklist/': typeof AdminBlocklistIndexRoute
   '/admin/events/': typeof AdminEventsIndexRoute
   '/admin/scraping/': typeof AdminScrapingIndexRoute
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/admin/analytics'
     | '/admin/blocklist'
     | '/admin/events'
     | '/admin/scraping'
@@ -286,6 +298,7 @@ export interface FileRouteTypes {
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/admin/analytics'
     | '/admin/blocklist'
     | '/admin/events'
     | '/admin/scraping'
@@ -312,6 +325,7 @@ export interface FileRouteTypes {
     | '/admin/venues/$id'
     | '/admin/venues/import'
     | '/admin/venues/new'
+    | '/admin/analytics/'
     | '/admin/blocklist/'
     | '/admin/events/'
     | '/admin/scraping/'
@@ -438,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminBlocklistIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/analytics/': {
+      id: '/admin/analytics/'
+      path: '/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/venues/new': {
       id: '/admin/venues/new'
       path: '/venues/new'
@@ -515,6 +536,7 @@ interface AdminRouteChildren {
   AdminVenuesIdRoute: typeof AdminVenuesIdRoute
   AdminVenuesImportRoute: typeof AdminVenuesImportRoute
   AdminVenuesNewRoute: typeof AdminVenuesNewRoute
+  AdminAnalyticsIndexRoute: typeof AdminAnalyticsIndexRoute
   AdminBlocklistIndexRoute: typeof AdminBlocklistIndexRoute
   AdminEventsIndexRoute: typeof AdminEventsIndexRoute
   AdminScrapingIndexRoute: typeof AdminScrapingIndexRoute
@@ -532,6 +554,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminVenuesIdRoute: AdminVenuesIdRoute,
   AdminVenuesImportRoute: AdminVenuesImportRoute,
   AdminVenuesNewRoute: AdminVenuesNewRoute,
+  AdminAnalyticsIndexRoute: AdminAnalyticsIndexRoute,
   AdminBlocklistIndexRoute: AdminBlocklistIndexRoute,
   AdminEventsIndexRoute: AdminEventsIndexRoute,
   AdminScrapingIndexRoute: AdminScrapingIndexRoute,

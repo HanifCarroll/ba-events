@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import type { EventListParams, EventFilterParams } from '@/shared/lib/types/pagination'
+import type { DateRange } from '@/features/analytics/types'
 
 // Create a singleton QueryClient instance
 export const queryClient = new QueryClient({
@@ -66,5 +67,15 @@ export const queryKeys = {
     all: ['blocklist'] as const,
     list: () => [...queryKeys.blocklist.all, 'list'] as const,
     detail: (id: string) => [...queryKeys.blocklist.all, 'detail', id] as const,
+  },
+
+  // Analytics
+  analytics: {
+    all: ['analytics'] as const,
+    activeUsers: (range: DateRange) => [...queryKeys.analytics.all, 'activeUsers', range] as const,
+    pageviews: (range: DateRange) => [...queryKeys.analytics.all, 'pageviews', range] as const,
+    topEvents: (range: DateRange) => [...queryKeys.analytics.all, 'topEvents', range] as const,
+    searchTerms: (range: DateRange) => [...queryKeys.analytics.all, 'searchTerms', range] as const,
+    engagement: (range: DateRange) => [...queryKeys.analytics.all, 'engagement', range] as const,
   },
 } as const
