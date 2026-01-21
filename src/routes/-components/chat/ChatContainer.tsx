@@ -97,6 +97,7 @@ export function ChatContainer() {
     startTimeRef.current = Date.now()
     eventsCountRef.current = 0
     track('chat:message_sent', {
+      query: content,
       message_length: content.length,
       has_history: messages.length > 0,
     })

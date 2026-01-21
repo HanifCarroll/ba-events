@@ -90,7 +90,7 @@ function HeroEventCard({ event, position, source, commentary, tips }: HeroEventC
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <SaveEventButton eventId={event.id} size="sm" source={source} />
+            <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
           </div>
         </div>
 
@@ -292,7 +292,15 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
 
     // Track when user expands an event card
     if (willOpen) {
+      // Track for chat analytics (existing)
       track('chat:event_clicked', {
+        event_id: event.id,
+        event_name: event.name,
+        position,
+        source,
+      })
+      // Track for top events analytics (event:viewed)
+      track('event:viewed', {
         event_id: event.id,
         event_name: event.name,
         position,
@@ -383,7 +391,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               </span>
 
               {/* Save button */}
-              <SaveEventButton eventId={event.id} size="sm" source={source} />
+              <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
 
               {/* Expand indicator - clickable */}
               <button

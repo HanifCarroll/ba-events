@@ -64,7 +64,7 @@ export function RecommendationCard({ recommendation, onRefinementSelect }: Recom
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <SaveEventButton eventId={event.id} size="sm" source="chat" />
+            <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source="chat" />
           </div>
         </div>
 

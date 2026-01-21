@@ -52,7 +52,7 @@ export function EventActions({ event, shareUrl }: EventActionsProps) {
 
   const handleTickets = () => {
     if (event.ticket_url) {
-      track('event:link_clicked', { event_id: event.id, link_type: 'ticket' })
+      track('event:link_clicked', { event_id: event.id, event_name: event.name, link_type: 'ticket' })
       window.open(event.ticket_url, '_blank', 'noopener,noreferrer')
     }
   }
@@ -60,7 +60,7 @@ export function EventActions({ event, shareUrl }: EventActionsProps) {
   const handleMap = () => {
     const address = event.venue_address || event.venue_name
     if (address) {
-      track('event:link_clicked', { event_id: event.id, link_type: 'map' })
+      track('event:link_clicked', { event_id: event.id, event_name: event.name, link_type: 'map' })
       const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address + ', Buenos Aires, Argentina')}`
       window.open(mapsUrl, '_blank', 'noopener,noreferrer')
     }

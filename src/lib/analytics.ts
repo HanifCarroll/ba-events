@@ -11,6 +11,7 @@ export type ChatEvent =
 
 // Event engagement tracking
 export type EventEngagementEvent =
+  | 'event:viewed'
   | 'event:saved'
   | 'event:unsaved'
   | 'event:link_clicked'
@@ -28,6 +29,8 @@ export type AdminEvent =
   | 'admin:event_created'
   | 'admin:event_updated'
   | 'admin:event_deleted'
+  | 'admin:event_approved'
+  | 'admin:event_rejected'
   | 'admin:venue_created'
   | 'admin:venue_updated'
   | 'admin:venue_deleted'

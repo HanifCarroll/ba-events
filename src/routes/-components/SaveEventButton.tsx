@@ -14,6 +14,8 @@ import {
 
 interface SaveEventButtonProps {
   eventId: string
+  /** Event name for analytics tracking */
+  eventName?: string
   initialSaved?: boolean
   onSaveChange?: (saved: boolean) => void
   size?: 'sm' | 'md'
@@ -24,6 +26,7 @@ interface SaveEventButtonProps {
 
 export function SaveEventButton({
   eventId,
+  eventName,
   initialSaved = false,
   onSaveChange,
   size = 'md',
@@ -47,10 +50,10 @@ export function SaveEventButton({
     try {
       if (newSavedState) {
         await saveEvent(eventId)
-        track('event:saved', { event_id: eventId, source })
+        track('event:saved', { event_id: eventId, event_name: eventName, source })
       } else {
         await unsaveEvent(eventId)
-        track('event:unsaved', { event_id: eventId, source })
+        track('event:unsaved', { event_id: eventId, event_name: eventName, source })
       }
       onSaveChange?.(newSavedState)
     } catch (error) {
