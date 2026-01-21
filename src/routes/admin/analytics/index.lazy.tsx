@@ -1,5 +1,5 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { BarChart3, Users, Bookmark, ExternalLink, TrendingUp, TrendingDown } from 'lucide-react'
+import { BarChart3, Users, Bookmark, ExternalLink, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card'
 import {
   Select,
@@ -41,7 +41,7 @@ function AnalyticsDashboard() {
   const { data: engagement, isLoading: loadingEngagement } = useEventEngagement(range)
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
+    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up p-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -66,7 +66,7 @@ function AnalyticsDashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Daily Active Users"
           value={activeUsers?.dau ?? 0}
@@ -75,6 +75,7 @@ function AnalyticsDashboard() {
           loading={loadingUsers}
           color="text-blue-400"
           bgColor="bg-blue-500/10"
+          delay={0}
         />
         <StatCard
           title="Weekly Active Users"
@@ -84,6 +85,7 @@ function AnalyticsDashboard() {
           loading={loadingUsers}
           color="text-primary"
           bgColor="bg-primary/10"
+          delay={1}
         />
         <StatCard
           title="Events Saved"
@@ -93,6 +95,7 @@ function AnalyticsDashboard() {
           loading={loadingEngagement}
           color="text-green-400"
           bgColor="bg-green-500/10"
+          delay={2}
         />
         <StatCard
           title="Link Clicks"
@@ -102,6 +105,7 @@ function AnalyticsDashboard() {
           loading={loadingEngagement}
           color="text-accent"
           bgColor="bg-accent/10"
+          delay={3}
         />
       </div>
 
@@ -147,11 +151,67 @@ interface StatCardProps {
   loading: boolean
   color: string
   bgColor: string
+  delay?: number
 }
 
-function StatCard({ title, value, trend, icon: Icon, loading, color, bgColor }: StatCardProps) {
+function StatCardSkeleton({ delay = 0 }: { delay?: number }) {
   return (
-    <Card className="bg-card/50 border-border/50 hover:border-primary/30 transition-colors">
+    <Card
+      className="bg-card/50 border-border/50"
+      style={{ animationDelay: `${delay * 100}ms` }}
+    >
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div className="h-4 w-24 bg-muted/40 rounded animate-pulse" />
+        <div className="p-2 rounded-lg bg-muted/40 animate-pulse">
+          <div className="h-4 w-4" />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="h-9 w-20 bg-muted/40 rounded animate-pulse mb-2" />
+        <div className="h-4 w-28 bg-muted/40 rounded animate-pulse" />
+      </CardContent>
+    </Card>
+  )
+}
+
+function StatCard({ title, value, trend, icon: Icon, loading, color, bgColor, delay = 0 }: StatCardProps) {
+  if (loading) {
+    return <StatCardSkeleton delay={delay} />
+  }
+
+  const getTrendInfo = (trend: number | undefined) => {
+    if (trend === undefined || trend === 0) {
+      return {
+        icon: Minus,
+        color: 'text-muted-foreground',
+        bgColor: 'bg-muted/30',
+        label: 'No change',
+      }
+    }
+    if (trend > 0) {
+      return {
+        icon: TrendingUp,
+        color: 'text-green-400',
+        bgColor: 'bg-green-500/10',
+        label: 'Increased',
+      }
+    }
+    return {
+      icon: TrendingDown,
+      color: 'text-red-400',
+      bgColor: 'bg-red-500/10',
+      label: 'Decreased',
+    }
+  }
+
+  const trendInfo = getTrendInfo(trend)
+  const TrendIcon = trendInfo.icon
+
+  return (
+    <Card
+      className="bg-card/50 border-border/50 hover:border-primary/30 transition-all duration-200 hover:shadow-[0_0_20px_oklch(0.78_0.14_75/0.05)]"
+      style={{ animationDelay: `${delay * 100}ms` }}
+    >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         <div className={`p-2 rounded-lg ${bgColor}`}>
@@ -159,24 +219,17 @@ function StatCard({ title, value, trend, icon: Icon, loading, color, bgColor }: 
         </div>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <div className="h-9 w-16 bg-muted/50 rounded animate-pulse" />
-        ) : (
-          <>
-            <div className="text-3xl font-display font-semibold text-foreground">
-              {value.toLocaleString()}
-            </div>
-            {trend !== undefined && (
-              <div className={`flex items-center gap-1 mt-1 text-xs ${trend >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {trend >= 0 ? (
-                  <TrendingUp className="h-3 w-3" />
-                ) : (
-                  <TrendingDown className="h-3 w-3" />
-                )}
-                <span>{trend >= 0 ? '+' : ''}{trend}% vs prev period</span>
-              </div>
-            )}
-          </>
+        <div className="text-3xl font-display font-semibold text-foreground tabular-nums">
+          {value.toLocaleString()}
+        </div>
+        {trend !== undefined && (
+          <div
+            className={`inline-flex items-center gap-1.5 mt-2 px-2 py-0.5 rounded-full text-xs font-medium ${trendInfo.bgColor} ${trendInfo.color}`}
+            aria-label={`${trendInfo.label} by ${Math.abs(trend)}%`}
+          >
+            <TrendIcon className="h-3 w-3" aria-hidden="true" />
+            <span>{trend > 0 ? '+' : ''}{trend}% vs prev period</span>
+          </div>
         )}
       </CardContent>
     </Card>

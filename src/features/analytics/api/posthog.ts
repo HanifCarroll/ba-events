@@ -88,6 +88,7 @@ async function executeHogQL<T>(query: string): Promise<T> {
 
 /**
  * Get active users (DAU/WAU/MAU) with trend percentages
+ * Uses $pageview events as the standard metric for user activity
  */
 export const getActiveUsers = createServerFn({ method: 'GET' })
   .inputValidator((range: DateRange) => range)
@@ -98,34 +99,69 @@ export const getActiveUsers = createServerFn({ method: 'GET' })
     const cached = getCached<ActiveUsersData>(cacheKey)
     if (cached) return cached
 
-    // Current period
-    const currentQuery = `
-      SELECT
-        uniqExact(distinct_id) FILTER (WHERE timestamp >= now() - INTERVAL 1 DAY) as dau,
-        uniqExact(distinct_id) FILTER (WHERE timestamp >= now() - INTERVAL 7 DAY) as wau,
-        uniqExact(distinct_id) FILTER (WHERE timestamp >= now() - INTERVAL 30 DAY) as mau
+    // Simple queries for each metric - using $pageview as the standard for active users
+    const dauQuery = `
+      SELECT uniqExact(distinct_id) as count
       FROM events
-      WHERE timestamp >= now() - INTERVAL ${rangeToInterval(range)}
+      WHERE event = '$pageview'
+        AND timestamp >= now() - INTERVAL 1 DAY
     `
 
-    // Previous period for trend calculation
-    const interval = rangeToInterval(range)
-    const previousQuery = `
-      SELECT
-        uniqExact(distinct_id) FILTER (WHERE timestamp >= now() - INTERVAL 2 DAY AND timestamp < now() - INTERVAL 1 DAY) as prev_dau,
-        uniqExact(distinct_id) FILTER (WHERE timestamp >= now() - INTERVAL 14 DAY AND timestamp < now() - INTERVAL 7 DAY) as prev_wau,
-        uniqExact(distinct_id) FILTER (WHERE timestamp >= now() - INTERVAL 60 DAY AND timestamp < now() - INTERVAL 30 DAY) as prev_mau
+    const wauQuery = `
+      SELECT uniqExact(distinct_id) as count
       FROM events
-      WHERE timestamp >= now() - INTERVAL ${interval}
+      WHERE event = '$pageview'
+        AND timestamp >= now() - INTERVAL 7 DAY
     `
 
-    const [currentResults, previousResults] = await Promise.all([
-      executeHogQL<number[][]>(currentQuery),
-      executeHogQL<number[][]>(previousQuery),
+    const mauQuery = `
+      SELECT uniqExact(distinct_id) as count
+      FROM events
+      WHERE event = '$pageview'
+        AND timestamp >= now() - INTERVAL 30 DAY
+    `
+
+    // Previous period queries for trends
+    const prevDauQuery = `
+      SELECT uniqExact(distinct_id) as count
+      FROM events
+      WHERE event = '$pageview'
+        AND timestamp >= now() - INTERVAL 2 DAY
+        AND timestamp < now() - INTERVAL 1 DAY
+    `
+
+    const prevWauQuery = `
+      SELECT uniqExact(distinct_id) as count
+      FROM events
+      WHERE event = '$pageview'
+        AND timestamp >= now() - INTERVAL 14 DAY
+        AND timestamp < now() - INTERVAL 7 DAY
+    `
+
+    const prevMauQuery = `
+      SELECT uniqExact(distinct_id) as count
+      FROM events
+      WHERE event = '$pageview'
+        AND timestamp >= now() - INTERVAL 60 DAY
+        AND timestamp < now() - INTERVAL 30 DAY
+    `
+
+    // Run all queries in parallel
+    const [dauRes, wauRes, mauRes, prevDauRes, prevWauRes, prevMauRes] = await Promise.all([
+      executeHogQL<number[][]>(dauQuery),
+      executeHogQL<number[][]>(wauQuery),
+      executeHogQL<number[][]>(mauQuery),
+      executeHogQL<number[][]>(prevDauQuery),
+      executeHogQL<number[][]>(prevWauQuery),
+      executeHogQL<number[][]>(prevMauQuery),
     ])
 
-    const [dau, wau, mau] = currentResults[0] || [0, 0, 0]
-    const [prevDau, prevWau, prevMau] = previousResults[0] || [0, 0, 0]
+    const dau = dauRes[0]?.[0] ?? 0
+    const wau = wauRes[0]?.[0] ?? 0
+    const mau = mauRes[0]?.[0] ?? 0
+    const prevDau = prevDauRes[0]?.[0] ?? 0
+    const prevWau = prevWauRes[0]?.[0] ?? 0
+    const prevMau = prevMauRes[0]?.[0] ?? 0
 
     // Calculate percentage trends
     const calcTrend = (current: number, previous: number): number => {
