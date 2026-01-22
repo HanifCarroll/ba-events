@@ -607,6 +607,7 @@ function ImportEventsPage() {
             selectedCount={wizard.selectedIds.size}
             isImporting={wizard.isImporting}
             importProgress={wizard.importProgress}
+            batchProgress={wizard.batchProgress}
             venueStats={venueStats}
             dataQuality={dataQuality}
             onImport={wizard.importEvents}

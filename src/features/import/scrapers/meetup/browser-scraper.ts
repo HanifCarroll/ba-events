@@ -16,6 +16,7 @@ import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import { sanitizeError } from '@/shared/lib/security'
 import { getBrowserlessEndpoint } from '@/shared/lib/browser'
+import { logger } from '@/shared/lib/logger'
 
 const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
 
@@ -459,14 +460,14 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
     let page = await browser.newPage()
 
     const dates = getDateRange(options.startDate, options.endDate)
-    console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
+    logger.info(`[Meetup] Scraping ${dates.length} days`, { startDate: options.startDate, endDate: options.endDate, daysCount: dates.length })
 
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i]
       const url = buildMeetupUrlForDate(date)
       const dateStr = date.toISOString().split('T')[0]
 
-      console.log(`[Meetup] Scraping day ${i + 1}/${dates.length}: ${dateStr}`)
+      logger.debug(`[Meetup] Scraping day ${i + 1}/${dates.length}`, { date: dateStr })
 
       // Retry logic with page recreation for frame detachment errors
       let success = false
@@ -485,12 +486,12 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
             page = await browser.newPage()
           } else {
             // Non-frame error or max retries reached - log and continue
-            console.error(`[Meetup] Error scraping ${dateStr}:`, sanitizeError(error))
+            logger.error(`[Meetup] Error scraping date`, { date: dateStr, error: sanitizeError(error) })
           }
         }
       }
 
-      console.log(`[Meetup] Total events so far: ${collectedEvents.length}`)
+      logger.debug(`[Meetup] Total events so far`, { count: collectedEvents.length })
 
       // Small delay between days to avoid rate limiting
       if (i < dates.length - 1) {
@@ -498,7 +499,7 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
       }
     }
 
-    console.log(`[Meetup] Finished scraping. Total events: ${collectedEvents.length}`)
+    logger.info(`[Meetup] Finished scraping`, { totalEvents: collectedEvents.length })
     return collectedEvents
   } finally {
     await browser.close()
@@ -615,7 +616,7 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
     })
   } catch (error) {
     // Sanitize error to prevent token leakage in logs
-    console.error('[Meetup] Failed to connect to Browserless:', sanitizeError(error))
+    logger.error('[Meetup] Failed to connect to Browserless', { error: sanitizeError(error) })
     throw new Error('Failed to connect to browser service')
   }
 
@@ -627,14 +628,14 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
     let failedDays: string[] = []
 
     const dates = getDateRange(options.startDate, options.endDate)
-    console.log(`[Meetup] Scraping ${dates.length} days from ${options.startDate} to ${options.endDate}`)
+    logger.info(`[Meetup] Scraping ${dates.length} days`, { startDate: options.startDate, endDate: options.endDate, daysCount: dates.length })
 
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i]
       const url = buildMeetupUrlForDate(date)
       const dateStr = date.toISOString().split('T')[0]
 
-      console.log(`[Meetup] Scraping day ${i + 1}/${dates.length}: ${dateStr}`)
+      logger.debug(`[Meetup] Scraping day ${i + 1}/${dates.length}`, { date: dateStr })
 
       // Retry logic with page recreation for frame detachment errors
       let success = false
@@ -653,7 +654,7 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
             page = await browser.newPage()
           } else {
             // Non-frame error or max retries reached - log and continue
-            console.error(`[Meetup] Error scraping ${dateStr}:`, sanitizeError(error))
+            logger.error(`[Meetup] Error scraping date`, { date: dateStr, error: sanitizeError(error) })
             if (isFrameDetachmentError(error)) {
               failedDays.push(dateStr)
             }
@@ -661,7 +662,7 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
         }
       }
 
-      console.log(`[Meetup] Total events so far: ${collectedEvents.length}`)
+      logger.debug(`[Meetup] Total events so far`, { count: collectedEvents.length })
 
       // Small delay between days
       if (i < dates.length - 1) {
@@ -674,11 +675,11 @@ async function scrapeWithBrowserless(token: string, options: ScraperOptions): Pr
       console.warn(`[Meetup] Failed to scrape ${failedDays.length} days due to frame detachment: ${failedDays.join(', ')}`)
     }
 
-    console.log(`[Meetup] Finished scraping. Total events: ${collectedEvents.length}`)
+    logger.info(`[Meetup] Finished scraping`, { totalEvents: collectedEvents.length })
     return collectedEvents
   } catch (error) {
     // Sanitize any error that might contain connection details
-    console.error('[Meetup] Error during scraping:', sanitizeError(error))
+    logger.error('[Meetup] Error during scraping', { error: sanitizeError(error) })
     throw new Error('Scraping failed')
   } finally {
     await browser.close()
@@ -697,11 +698,11 @@ export async function scrapeMeetupEvents(options: ScraperOptions): Promise<Meetu
   const browserlessToken = process.env.BROWSERLESS_TOKEN
 
   if (browserlessToken) {
-    console.log('[Meetup] Using Browserless for scraping')
+    logger.info('[Meetup] Using Browserless for scraping')
     return scrapeWithBrowserless(browserlessToken, options)
   }
 
-  console.log('[Meetup] Using local Playwright for scraping')
+  logger.info('[Meetup] Using local Playwright for scraping')
   return scrapeWithPlaywright(options)
 }
 

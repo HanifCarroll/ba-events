@@ -70,7 +70,7 @@ export {
 } from './api/luma'
 
 // Hooks
-export { useImportWizard, type ImportSource, type WizardStep } from './hooks/useImportWizard'
+export { useImportWizard, type ImportSource, type WizardStep, type BatchProgress } from './hooks/useImportWizard'
 export {
   useAutoEnrichment,
   type AutoEnrichmentState,

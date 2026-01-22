@@ -14,6 +14,7 @@ import type { BATourismEvent, WeekContext } from './types'
 import { parseWeekContext } from './date-parser'
 import { sanitizeError } from '@/shared/lib/security'
 import { getBrowserlessEndpoint } from '@/shared/lib/browser'
+import { logger } from '@/shared/lib/logger'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
 
@@ -194,7 +195,7 @@ async function scrapeWithPlaywright(): Promise<{
   try {
     const page = await browser.newPage()
 
-    console.log('[BA Tourism] Navigating to page...')
+    logger.info('[BA Tourism] Navigating to page')
     await page.goto(BA_TOURISM_URL, {
       waitUntil: 'networkidle',
       timeout: 90000,
@@ -202,17 +203,17 @@ async function scrapeWithPlaywright(): Promise<{
 
     // Wait for event cards with actual content (h2 inside card-landing)
     // This ensures the dynamic content has been rendered
-    console.log('[BA Tourism] Waiting for cards to load...')
+    logger.debug('[BA Tourism] Waiting for cards to load')
     await page.waitForSelector('.card-landing h2', { timeout: 60000, state: 'attached' })
 
     // Wait for multiple cards to appear (site loads ~28 events)
     // Poll until we have at least 10 cards or timeout after 30 seconds
-    console.log('[BA Tourism] Waiting for all cards to render...')
+    logger.debug('[BA Tourism] Waiting for all cards to render')
     await page.waitForFunction(
       () => document.querySelectorAll('.card-landing').length >= 10,
       { timeout: 30000 }
     ).catch(() => {
-      console.log('[BA Tourism] Timeout waiting for 10+ cards, proceeding with available cards')
+      logger.warn('[BA Tourism] Timeout waiting for 10+ cards, proceeding with available cards')
     })
 
     // Additional delay to ensure all content is rendered
@@ -220,12 +221,12 @@ async function scrapeWithPlaywright(): Promise<{
 
     // Debug: Count cards before extraction
     const cardCount = await page.evaluate(() => document.querySelectorAll('.card-landing').length)
-    console.log(`[BA Tourism] Found ${cardCount} cards on page`)
+    logger.info('[BA Tourism] Found cards on page', { cardCount })
 
     // Execute extraction script in browser context
-    console.log('[BA Tourism] Running extraction script...')
+    logger.debug('[BA Tourism] Running extraction script')
     const result = (await page.evaluate(extractionScript)) as ExtractionResult
-    console.log(`[BA Tourism] Extracted ${result.events.length} events`)
+    logger.info('[BA Tourism] Extracted events', { count: result.events.length })
 
     const weekContext = parseWeekContext(result.weekContextText)
 
@@ -254,7 +255,7 @@ async function scrapeWithBrowserless(token: string): Promise<{
     })
   } catch (error) {
     // Sanitize error to prevent token leakage in logs
-    console.error('[BA Tourism] Failed to connect to Browserless:', sanitizeError(error))
+    logger.error('[BA Tourism] Failed to connect to Browserless', { error: sanitizeError(error) })
     throw new Error('Failed to connect to browser service')
   }
 
@@ -280,7 +281,7 @@ async function scrapeWithBrowserless(token: string): Promise<{
     }
   } catch (error) {
     // Sanitize any error that might contain connection details
-    console.error('[BA Tourism] Error during scraping:', sanitizeError(error))
+    logger.error('[BA Tourism] Error during scraping', { error: sanitizeError(error) })
     throw new Error('Scraping failed')
   } finally {
     await browser.close()
@@ -300,10 +301,10 @@ export async function scrapeBATourismEventsWithBrowser(): Promise<{
   const browserlessToken = process.env.BROWSERLESS_TOKEN
 
   if (browserlessToken) {
-    console.log('[BA Tourism] Using Browserless for scraping')
+    logger.info('[BA Tourism] Using Browserless for scraping')
     return scrapeWithBrowserless(browserlessToken)
   }
 
-  console.log('[BA Tourism] Using local Playwright for scraping')
+  logger.info('[BA Tourism] Using local Playwright for scraping')
   return scrapeWithPlaywright()
 }

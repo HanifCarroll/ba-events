@@ -533,6 +533,53 @@ bun test --watch      # Watch mode
 
 Tests use Vitest with React Testing Library. Test infrastructure is set up but test coverage is minimal.
 
+## Debugging & Logging
+
+Server-side logs are written to both the terminal AND `logs/server.log`.
+
+### Watching Logs
+
+```bash
+# Watch logs in real-time
+tail -f logs/server.log
+
+# Filter for errors only
+tail -f logs/server.log | grep ERROR
+
+# Filter for a specific module
+tail -f logs/server.log | grep Meetup
+
+# View recent logs
+cat logs/server.log | tail -100
+```
+
+### Using the Logger
+
+```typescript
+import { logger } from '@/shared/lib/logger'
+
+// Log levels: debug, info, warn, error
+logger.info('Starting import', { source: 'meetup', count: 50 })
+logger.error('Failed to connect', { error: err.message })
+logger.debug('Processing event', { eventId: '123' })
+
+// For errors with stack traces
+logger.logError('Import failed', error, { source: 'passline' })
+```
+
+### Log Format
+
+```
+[2026-01-22T15:30:00.000Z] [INFO ] [Meetup] Starting scrape {"startDate":"2026-01-22","daysCount":30}
+[2026-01-22T15:30:10.000Z] [ERROR] [Meetup] Error scraping date {"date":"2026-01-27","error":"..."}
+```
+
+### Configuration
+
+- `LOG_LEVEL` env var controls minimum level (default: `debug`)
+- Logs are NOT written to file in test environment
+- Log directory (`logs/`) is gitignored
+
 ## Best Practices
 
 - Keep components small and focused

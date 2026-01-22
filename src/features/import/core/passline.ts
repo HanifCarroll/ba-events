@@ -20,6 +20,7 @@ import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
 import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
 import { delay } from './nominatim'
 import type { EventInsert } from '@/shared/lib/types'
+import { logger } from '@/shared/lib/logger'
 
 // ============================================================================
 // TYPES
@@ -82,7 +83,7 @@ export async function processPasslineImport(
   const startDate = options.startDate ?? format(new Date(), 'yyyy-MM-dd')
   const endDate = options.endDate ?? format(addDays(new Date(), daysAhead), 'yyyy-MM-dd')
 
-  console.log(`[passline] Starting import: ${startDate} to ${endDate}`)
+  logger.info('[passline] Starting import', { startDate, endDate })
 
   // Initialize result
   const result: PasslineImportResult = {
@@ -99,26 +100,26 @@ export async function processPasslineImport(
   }
 
   // Step 1: Fetch events
-  console.log('[passline] Fetching events from API...')
+  logger.info('[passline] Fetching events from API')
   const allEvents = await fetchPasslineEvents()
   result.eventsFetched = allEvents.length
-  console.log(`[passline] Fetched ${allEvents.length} events`)
+  logger.info('[passline] Fetched events', { count: allEvents.length })
 
   // Step 2: Filter events
-  console.log('[passline] Filtering events...')
+  logger.debug('[passline] Filtering events')
   const blocklistEntries = await getBlocklistEntries('passline')
   const cabaEvents = filterCABAEvents(allEvents, blocklistEntries)
   const filteredEvents = filterByDateRange(cabaEvents, { startDate, endDate })
   result.eventsFiltered = filteredEvents.length
-  console.log(`[passline] Filtered to ${filteredEvents.length} CABA events in date range`)
+  logger.info('[passline] Filtered to CABA events in date range', { count: filteredEvents.length })
 
   if (filteredEvents.length === 0) {
-    console.log('[passline] No events to import')
+    logger.info('[passline] No events to import')
     return result
   }
 
   // Step 3: Settle venues
-  console.log('[passline] Settling venues...')
+  logger.info('[passline] Settling venues')
   const venueInputs: VenueSettlementInput[] = filteredEvents
     .map((e) => e.lugar)
     .filter((lugar, index, self) => lugar && self.indexOf(lugar) === index) // Dedupe
@@ -141,7 +142,7 @@ export async function processPasslineImport(
     : await checkDuplicateEventsWithData(externalIds, 'passline', client)
 
   // Step 5: Transform events with venue IDs
-  console.log('[passline] Transforming events...')
+  logger.info('[passline] Transforming events')
   const eventsToProcess: Array<{ event: PasslineEvent; transformed: EventInsert; isUpdate: boolean }> = []
 
   for (const event of filteredEvents) {
@@ -165,7 +166,7 @@ export async function processPasslineImport(
   }
 
   // Step 6: Categorize events with AI
-  console.log('[passline] Categorizing events...')
+  logger.info('[passline] Categorizing events')
   const { categories, stats: catStats } = await categorizeEventsBatchWithStats(
     eventsToProcess.map((e) => ({
       name: e.transformed.name,
@@ -183,7 +184,7 @@ export async function processPasslineImport(
   }
 
   // Step 7: Generate embeddings and upsert
-  console.log('[passline] Generating embeddings and upserting events...')
+  logger.info('[passline] Generating embeddings and upserting events')
   for (const { transformed, isUpdate } of eventsToProcess) {
     try {
       // Generate embedding
@@ -219,7 +220,7 @@ export async function processPasslineImport(
           .eq('id', existing!.id)
 
         if (error) {
-          console.error(`[passline] Failed to update event: ${error.message}`)
+          logger.error('[passline] Failed to update event', { error: error.message })
           result.eventsSkipped++
         } else {
           result.eventsUpdated++
@@ -229,7 +230,7 @@ export async function processPasslineImport(
         const { error } = await client.from('events').insert(eventWithEmbedding)
 
         if (error) {
-          console.error(`[passline] Failed to insert event: ${error.message}`)
+          logger.error('[passline] Failed to insert event', { error: error.message })
           result.eventsSkipped++
         } else {
           result.eventsInserted++
@@ -239,14 +240,16 @@ export async function processPasslineImport(
       // Rate limiting for embedding API
       await delay(100)
     } catch (error) {
-      console.error(`[passline] Error processing event ${transformed.name}:`, error)
+      logger.logError(`[passline] Error processing event ${transformed.name}`, error)
       result.eventsSkipped++
     }
   }
 
-  console.log(
-    `[passline] Import complete: ${result.eventsInserted} inserted, ${result.eventsUpdated} updated, ${result.eventsSkipped} skipped`
-  )
+  logger.info('[passline] Import complete', {
+    inserted: result.eventsInserted,
+    updated: result.eventsUpdated,
+    skipped: result.eventsSkipped,
+  })
 
   return result
 }

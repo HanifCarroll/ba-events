@@ -9,7 +9,7 @@ import { useImportSubmit } from './useImportSubmit'
 
 export type { ImportSource } from './useImportSource'
 export type WizardStep = 'source' | 'configure' | 'venues' | 'select' | 'confirm' | 'enrich' | 'summary'
-export type { ImportResult } from './useImportSubmit'
+export type { ImportResult, BatchProgress } from './useImportSubmit'
 export type { ParsedCSVRow } from './useImportSource'
 
 /**
@@ -311,6 +311,7 @@ export function useImportWizard(
     isCreatingVenues: venuesHook.isCreatingVenues,
     isImporting: submitHook.isImporting,
     importProgress: submitHook.importProgress,
+    batchProgress: submitHook.batchProgress,
     error: sourceHook.error || error,
 
     // Enrichment state

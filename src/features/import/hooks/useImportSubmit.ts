@@ -36,10 +36,24 @@ export interface ImportResult {
   withoutCategories: number
 }
 
+// Batch size for imports to avoid server function timeouts
+const IMPORT_BATCH_SIZE = 15
+
+export interface BatchProgress {
+  currentBatch: number
+  totalBatches: number
+  batchCurrent: number
+  batchTotal: number
+  overallCurrent: number
+  overallTotal: number
+  phase?: string
+}
+
 export interface UseImportSubmitReturn {
   // State
   isImporting: boolean
   importProgress: { current: number; total: number } | null
+  batchProgress: BatchProgress | null
   importResult: ImportResult | null
   autoEnrich: boolean
   autoEnrichment: ReturnType<typeof useAutoEnrichment>
@@ -61,11 +75,21 @@ export interface UseImportSubmitReturn {
   reset: () => void
 }
 
+// Helper to chunk an array into batches
+function chunk<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size))
+  }
+  return chunks
+}
+
 export function useImportSubmit(
   setError: (error: string | null) => void
 ): UseImportSubmitReturn {
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null)
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [autoEnrich, setAutoEnrich] = useState(false)
 
@@ -132,22 +156,56 @@ export function useImportSubmit(
         withCategories = 0
         withoutCategories = selectedEvents.length
 
-        const stream = await importPasslineEventsBatchAction({ data: { events: eventsToImport } })
-        let finalResult: PasslineImportComplete | null = null
+        // Split into batches to avoid server function timeouts
+        const batches = chunk(eventsToImport, IMPORT_BATCH_SIZE)
+        const totalEvents = eventsToImport.length
+        let processedSoFar = 0
 
-        for await (const update of stream) {
-          if (update.type === 'progress') {
-            setImportProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            finalResult = update
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex]
+
+          setBatchProgress({
+            currentBatch: batchIndex + 1,
+            totalBatches: batches.length,
+            batchCurrent: 0,
+            batchTotal: batch.length,
+            overallCurrent: processedSoFar,
+            overallTotal: totalEvents,
+            phase: 'starting',
+          })
+
+          const stream = await importPasslineEventsBatchAction({ data: { events: batch } })
+          let batchResult: PasslineImportComplete | null = null
+
+          for await (const update of stream) {
+            if (update.type === 'progress') {
+              setBatchProgress({
+                currentBatch: batchIndex + 1,
+                totalBatches: batches.length,
+                batchCurrent: update.current,
+                batchTotal: update.total,
+                overallCurrent: processedSoFar + update.current,
+                overallTotal: totalEvents,
+                phase: update.phase,
+              })
+              setImportProgress({
+                current: processedSoFar + update.current,
+                total: totalEvents
+              })
+            } else if (update.type === 'complete') {
+              batchResult = update
+            }
+          }
+
+          if (batchResult) {
+            totalInserted += batchResult.inserted
+            totalUpdated += batchResult.updated
+            processedSoFar += batch.length
           }
         }
 
-        if (finalResult) {
-          totalInserted = finalResult.inserted
-          totalUpdated = finalResult.updated
-          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
-        }
+        setBatchProgress(null)
+        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
 
         if (withoutDescription > 0 && (totalInserted > 0 || totalUpdated > 0)) {
           needsEnrichment = true
@@ -231,22 +289,56 @@ export function useImportSubmit(
         withCategories = 0
         withoutCategories = selectedEvents.length
 
-        const meetupStream = await importMeetupEventsBatchAction({ data: { events: eventsToImport } })
-        let meetupFinalResult: MeetupImportComplete | null = null
+        // Split into batches to avoid server function timeouts
+        const batches = chunk(eventsToImport, IMPORT_BATCH_SIZE)
+        const totalEvents = eventsToImport.length
+        let processedSoFar = 0
 
-        for await (const update of meetupStream) {
-          if (update.type === 'progress') {
-            setImportProgress({ current: update.current, total: update.total })
-          } else if (update.type === 'complete') {
-            meetupFinalResult = update
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex]
+
+          setBatchProgress({
+            currentBatch: batchIndex + 1,
+            totalBatches: batches.length,
+            batchCurrent: 0,
+            batchTotal: batch.length,
+            overallCurrent: processedSoFar,
+            overallTotal: totalEvents,
+            phase: 'starting',
+          })
+
+          const meetupStream = await importMeetupEventsBatchAction({ data: { events: batch } })
+          let batchResult: MeetupImportComplete | null = null
+
+          for await (const update of meetupStream) {
+            if (update.type === 'progress') {
+              setBatchProgress({
+                currentBatch: batchIndex + 1,
+                totalBatches: batches.length,
+                batchCurrent: update.current,
+                batchTotal: update.total,
+                overallCurrent: processedSoFar + update.current,
+                overallTotal: totalEvents,
+                phase: update.phase,
+              })
+              setImportProgress({
+                current: processedSoFar + update.current,
+                total: totalEvents
+              })
+            } else if (update.type === 'complete') {
+              batchResult = update
+            }
+          }
+
+          if (batchResult) {
+            totalInserted += batchResult.inserted
+            totalUpdated += batchResult.updated
+            processedSoFar += batch.length
           }
         }
 
-        if (meetupFinalResult) {
-          totalInserted = meetupFinalResult.inserted
-          totalUpdated = meetupFinalResult.updated
-          toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
-        }
+        setBatchProgress(null)
+        toast.success(`Imported ${totalInserted} new, ${totalUpdated} updated`)
 
         if (withoutVenue > 0 && totalInserted > 0) {
           needsEnrichment = true
@@ -375,6 +467,7 @@ export function useImportSubmit(
   const reset = useCallback(() => {
     setIsImporting(false)
     setImportProgress(null)
+    setBatchProgress(null)
     setImportResult(null)
     setAutoEnrich(false)
   }, [])
@@ -383,6 +476,7 @@ export function useImportSubmit(
     // State
     isImporting,
     importProgress,
+    batchProgress,
     importResult,
     autoEnrich,
     autoEnrichment,

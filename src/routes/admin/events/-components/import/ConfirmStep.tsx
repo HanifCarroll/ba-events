@@ -1,7 +1,7 @@
 import { Loader2, Download, CheckCircle2, Zap, FileSpreadsheet, Ticket, Landmark, Users, Sparkles, AlertTriangle, MapPin, FileText } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
-import type { ImportSource } from '@/features/import'
+import type { ImportSource, BatchProgress } from '@/features/import'
 
 export interface VenueStats {
   matched: number
@@ -19,6 +19,7 @@ interface ConfirmStepProps {
   selectedCount: number
   isImporting: boolean
   importProgress: { current: number; total: number } | null
+  batchProgress: BatchProgress | null
   venueStats: VenueStats
   dataQuality: DataQuality
   onImport: () => void
@@ -80,6 +81,7 @@ export function ConfirmStep({
   selectedCount,
   isImporting,
   importProgress,
+  batchProgress,
   venueStats,
   dataQuality,
   onImport,
@@ -211,17 +213,35 @@ export function ConfirmStep({
         )}
 
         {/* Progress bar */}
-        {importProgress && (
+        {(importProgress || batchProgress) && (
           <div className="space-y-2">
             <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full bg-green-500 transition-all duration-300"
-                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                style={{
+                  width: `${batchProgress
+                    ? (batchProgress.overallCurrent / batchProgress.overallTotal) * 100
+                    : importProgress
+                      ? (importProgress.current / importProgress.total) * 100
+                      : 0}%`
+                }}
               />
             </div>
-            <p className="text-xs text-muted-foreground text-center">
-              {importProgress.current} of {importProgress.total} events imported
-            </p>
+            {batchProgress ? (
+              <div className="text-xs text-muted-foreground text-center space-y-0.5">
+                <p className="font-medium">
+                  Batch {batchProgress.currentBatch} of {batchProgress.totalBatches}
+                </p>
+                <p>
+                  {batchProgress.overallCurrent} of {batchProgress.overallTotal} events
+                  {batchProgress.phase && ` (${batchProgress.phase})`}
+                </p>
+              </div>
+            ) : importProgress && (
+              <p className="text-xs text-muted-foreground text-center">
+                {importProgress.current} of {importProgress.total} events imported
+              </p>
+            )}
           </div>
         )}
 
@@ -234,9 +254,11 @@ export function ConfirmStep({
           {isImporting ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              {importProgress
-                ? `Importing ${importProgress.current}/${importProgress.total}...`
-                : 'Importing...'}
+              {batchProgress
+                ? `Batch ${batchProgress.currentBatch}/${batchProgress.totalBatches} - ${batchProgress.batchCurrent}/${batchProgress.batchTotal}`
+                : importProgress
+                  ? `Importing ${importProgress.current}/${importProgress.total}...`
+                  : 'Importing...'}
             </>
           ) : (
             <>
