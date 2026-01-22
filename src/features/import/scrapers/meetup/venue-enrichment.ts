@@ -12,6 +12,7 @@ import {
   findJsonLdByType,
   fetchHtml,
 } from '@/shared/lib/html-parsing'
+import { logger } from '@/shared/lib/logger'
 
 export interface MeetupVenueInfo {
   name: string
@@ -85,7 +86,7 @@ export async function enrichMeetupEventsWithVenues(
 
   const results: EnrichmentResult[] = []
 
-  console.log(`[Meetup Enrichment] Starting enrichment for ${events.length} events...`)
+  logger.info('[Meetup Enrichment] Starting enrichment', { count: events.length })
 
   // Process in batches
   for (let i = 0; i < events.length; i += concurrency) {
@@ -97,14 +98,12 @@ export async function enrichMeetupEventsWithVenues(
         try {
           const venue = await fetchMeetupVenueFromUrl(event.eventUrl)
           if (venue) {
-            console.log(
-              `[Meetup Enrichment] Found venue for event ${event.id}: ${venue.name}`
-            )
+            logger.debug('[Meetup Enrichment] Found venue', { eventId: event.id, venue: venue.name })
           }
           return { eventId: event.id, venue }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-          console.log(`[Meetup Enrichment] Error for event ${event.id}: ${errorMsg}`)
+          logger.warn('[Meetup Enrichment] Error fetching venue', { eventId: event.id, error: errorMsg })
           return { eventId: event.id, venue: null, error: errorMsg }
         }
       })
@@ -117,13 +116,9 @@ export async function enrichMeetupEventsWithVenues(
       await new Promise((resolve) => setTimeout(resolve, delayMs))
     }
 
-    console.log(
-      `[Meetup Enrichment] Progress: ${Math.min(i + concurrency, events.length)}/${events.length}`
-    )
+    logger.debug('[Meetup Enrichment] Progress', { current: Math.min(i + concurrency, events.length), total: events.length })
   }
 
-  console.log(
-    `[Meetup Enrichment] Completed. Found venues for ${results.filter((r) => r.venue).length}/${events.length} events`
-  )
+  logger.info('[Meetup Enrichment] Completed', { found: results.filter((r) => r.venue).length, total: events.length })
   return results
 }

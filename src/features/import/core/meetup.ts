@@ -12,8 +12,10 @@ import {
   scrapeMeetupEvents,
   filterInPersonEvents,
   filterByDateRange,
+  enrichMeetupEventsWithVenues,
   type MeetupEvent,
 } from '../scrapers/meetup'
+import { logger } from '@/shared/lib/logger'
 import {
   transformMeetupEventWithExpansion,
   getUniqueVenueNames,
@@ -110,7 +112,7 @@ export async function processMeetupImport(
   const endDate = options.endDate ?? format(addDays(new Date(), daysAhead), 'yyyy-MM-dd')
   const expandRecurringWeeks = options.expandRecurringWeeks ?? 4
 
-  console.log(`[meetup] Starting import: ${startDate} to ${endDate}`)
+  logger.info('[meetup] Starting import', { startDate, endDate })
 
   // Initialize result
   const result: MeetupImportResult = {
@@ -128,27 +130,58 @@ export async function processMeetupImport(
   }
 
   // Step 1: Scrape events (day-by-day)
-  console.log('[meetup] Scraping events from Meetup (browser mode)...')
+  logger.info('[meetup] Scraping events from Meetup (browser mode)')
   const allEvents = await scrapeMeetupEvents({ startDate, endDate })
   result.eventsFetched = allEvents.length
-  console.log(`[meetup] Scraped ${allEvents.length} events`)
+  logger.info('[meetup] Scraped events', { count: allEvents.length })
+
+  // Step 1.5: Enrich events with venue data (fetches individual event pages)
+  // This is needed because venue data is not available in the list view
+  const eventsNeedingVenues = allEvents.filter((e) => !e.venue && !e.isOnline)
+  if (eventsNeedingVenues.length > 0) {
+    logger.info('[meetup] Enriching events with venue data', { count: eventsNeedingVenues.length })
+    const venueResults = await enrichMeetupEventsWithVenues(
+      eventsNeedingVenues.map((e) => ({ id: e.id, eventUrl: e.eventUrl })),
+      5, // concurrency
+      500 // delay between batches
+    )
+
+    // Apply venue data back to events
+    for (const venueResult of venueResults) {
+      if (venueResult.venue) {
+        const event = allEvents.find((e) => e.id === venueResult.eventId)
+        if (event) {
+          event.venue = {
+            name: venueResult.venue.name,
+            address: venueResult.venue.address,
+            city: 'Buenos Aires',
+            lat: null,
+            lng: null,
+          }
+        }
+      }
+    }
+
+    const enrichedCount = venueResults.filter((r) => r.venue).length
+    logger.info('[meetup] Venue enrichment complete', { enriched: enrichedCount, total: eventsNeedingVenues.length })
+  }
 
   // Step 2: Filter events
-  console.log('[meetup] Filtering events...')
+  logger.info('[meetup] Filtering events')
   const blocklistEntries = await getBlocklistEntries('meetup')
   const inPersonEvents = filterInPersonEvents(allEvents)
   const nonBlockedEvents = filterBlockedEvents(inPersonEvents, blocklistEntries)
   const filteredEvents = filterByDateRange(nonBlockedEvents, startDate, endDate)
   result.eventsFiltered = filteredEvents.length
-  console.log(`[meetup] Filtered to ${filteredEvents.length} in-person events in date range`)
+  logger.info('[meetup] Filtered to in-person events in date range', { count: filteredEvents.length })
 
   if (filteredEvents.length === 0) {
-    console.log('[meetup] No events to import')
+    logger.info('[meetup] No events to import')
     return result
   }
 
   // Step 3: Settle venues
-  console.log('[meetup] Settling venues...')
+  logger.info('[meetup] Settling venues')
   const uniqueVenueNames = getUniqueVenueNames(filteredEvents)
   const venueInputs: VenueSettlementInput[] = uniqueVenueNames
     .filter((name) => name)
@@ -175,7 +208,7 @@ export async function processMeetupImport(
   result.venuesQueuedReview = venueStats.queuedReview
 
   // Step 4: Transform events with venue IDs (handles recurring expansion)
-  console.log('[meetup] Transforming events...')
+  logger.info('[meetup] Transforming events')
   const transformedEvents: EventInsert[] = []
   const eventSourceMap: Map<EventInsert, MeetupEvent> = new Map()
 
@@ -196,7 +229,7 @@ export async function processMeetupImport(
     }
   }
   result.eventsExpanded = transformedEvents.length
-  console.log(`[meetup] Expanded to ${transformedEvents.length} event entries`)
+  logger.info('[meetup] Expanded event entries', { count: transformedEvents.length })
 
   // Step 5: Check duplicates
   const externalIds = transformedEvents
@@ -219,7 +252,7 @@ export async function processMeetupImport(
   }
 
   // Step 6: Categorize events with AI
-  console.log('[meetup] Categorizing events...')
+  logger.info('[meetup] Categorizing events')
   const { categories, stats: catStats } = await categorizeEventsBatchWithStats(
     eventsToProcess.map((e) => ({
       name: e.transformed.name,
@@ -237,7 +270,7 @@ export async function processMeetupImport(
   }
 
   // Step 7: Generate embeddings and upsert
-  console.log('[meetup] Generating embeddings and upserting events...')
+  logger.info('[meetup] Generating embeddings and upserting events')
   for (const { transformed, isUpdate } of eventsToProcess) {
     try {
       // Generate embedding
@@ -273,7 +306,7 @@ export async function processMeetupImport(
           .eq('id', existing!.id)
 
         if (error) {
-          console.error(`[meetup] Failed to update event: ${error.message}`)
+          logger.error('[meetup] Failed to update event', { error: error.message })
           result.eventsSkipped++
         } else {
           result.eventsUpdated++
@@ -283,7 +316,7 @@ export async function processMeetupImport(
         const { error } = await client.from('events').insert(eventWithEmbedding)
 
         if (error) {
-          console.error(`[meetup] Failed to insert event: ${error.message}`)
+          logger.error('[meetup] Failed to insert event', { error: error.message })
           result.eventsSkipped++
         } else {
           result.eventsInserted++
@@ -293,14 +326,16 @@ export async function processMeetupImport(
       // Rate limiting for embedding API
       await delay(100)
     } catch (error) {
-      console.error(`[meetup] Error processing event ${transformed.name}:`, error)
+      logger.logError(`[meetup] Error processing event ${transformed.name}`, error)
       result.eventsSkipped++
     }
   }
 
-  console.log(
-    `[meetup] Import complete: ${result.eventsInserted} inserted, ${result.eventsUpdated} updated, ${result.eventsSkipped} skipped`
-  )
+  logger.info('[meetup] Import complete', {
+    inserted: result.eventsInserted,
+    updated: result.eventsUpdated,
+    skipped: result.eventsSkipped,
+  })
 
   return result
 }
