@@ -1,20 +1,18 @@
 /**
- * Simple File Logger
+ * Simple Logger
  *
- * Lightweight logging utility that writes to both console and file.
- * No external dependencies - uses Node.js fs module directly.
+ * Lightweight logging utility that works in both browser and Node.js.
+ * In Node.js: writes to both console and file
+ * In browser: writes to console only
  *
  * Usage:
  *   import { logger } from '@/shared/lib/logger'
  *   logger.info('Server started')
  *   logger.error('Something failed', { userId: 123 })
  *
- * Logs are written to: logs/server.log
+ * Server logs are written to: logs/server.log
  * Read with: tail -f logs/server.log
  */
-
-import { appendFileSync, existsSync, mkdirSync } from 'fs'
-import { join } from 'path'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -25,16 +23,32 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   error: 3,
 }
 
+// Detect environment
+const isNode = typeof process !== 'undefined' && process.versions?.node
+
 // Configuration
-const LOG_DIR = join(process.cwd(), 'logs')
-const LOG_FILE = join(LOG_DIR, 'server.log')
-const MIN_LEVEL: LogLevel = (process.env.LOG_LEVEL as LogLevel) || 'debug'
-const WRITE_TO_FILE = process.env.NODE_ENV !== 'test'
+const MIN_LEVEL: LogLevel = (isNode ? (process.env.LOG_LEVEL as LogLevel) : null) || 'debug'
+const WRITE_TO_FILE = isNode && process.env.NODE_ENV !== 'test'
+
+// Lazy-loaded Node.js modules (only in Node environment)
+let fs: typeof import('fs') | null = null
+let path: typeof import('path') | null = null
+let LOG_DIR: string | null = null
+let LOG_FILE: string | null = null
+
+async function initNodeModules() {
+  if (!isNode || fs) return
+  fs = await import('fs')
+  path = await import('path')
+  LOG_DIR = path.join(process.cwd(), 'logs')
+  LOG_FILE = path.join(LOG_DIR, 'server.log')
+}
 
 // Ensure log directory exists
 function ensureLogDir() {
-  if (!existsSync(LOG_DIR)) {
-    mkdirSync(LOG_DIR, { recursive: true })
+  if (!fs || !LOG_DIR) return
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true })
   }
 }
 
@@ -47,14 +61,19 @@ function formatEntry(level: LogLevel, message: string, meta?: Record<string, unk
 
 // Write to file (sync for simplicity - async would be better for high volume)
 function writeToFile(entry: string) {
-  if (!WRITE_TO_FILE) return
+  if (!WRITE_TO_FILE || !fs || !LOG_FILE) return
 
   try {
     ensureLogDir()
-    appendFileSync(LOG_FILE, entry + '\n')
+    fs.appendFileSync(LOG_FILE, entry + '\n')
   } catch {
     // Silently fail file writes - don't crash the app
   }
+}
+
+// Initialize on first use in Node
+if (isNode) {
+  initNodeModules()
 }
 
 // Core log function
@@ -67,7 +86,7 @@ function log(level: LogLevel, message: string, meta?: Record<string, unknown>) {
   const consoleFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
   consoleFn(entry)
 
-  // Write to file
+  // Write to file (Node.js only)
   writeToFile(entry)
 }
 
@@ -90,6 +109,6 @@ export const logger = {
 }
 
 // Also export a function to get the log file path (useful for reading)
-export function getLogFilePath(): string {
+export function getLogFilePath(): string | null {
   return LOG_FILE
 }
