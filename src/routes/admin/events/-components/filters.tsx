@@ -55,7 +55,8 @@ export function sortingToParams(sorting: SortingState): Partial<EventSearchParam
 
 /** Check if event needs attention (missing description with link OR missing venue OR missing link) */
 export function eventNeedsAttention(event: EventListItem): boolean {
-  const missingDescriptionWithLink = !event.has_description_es && !!event.link
+  // Events marked as "description unavailable" don't need attention for missing description
+  const missingDescriptionWithLink = !event.has_description_es && !!event.link && !event.description_unavailable
   // Events marked as "venue TBA" are intentionally without venue, not missing one
   const missingVenue = !event.venue_id && !event.location_tba
   const missingLink = !event.link
@@ -89,7 +90,8 @@ export function filterEvents(events: EventListItem[], params: EventSearchParams)
 
     // Data gap filters (for needs_attention tab)
     if (params.missingDescription) {
-      if (event.has_description_es || !event.link) return false
+      // Exclude events that have description, have no link, or are marked as description unavailable
+      if (event.has_description_es || !event.link || event.description_unavailable) return false
     }
     if (params.missingVenue) {
       // Exclude events with venue OR marked as TBA (intentionally without venue)
@@ -195,6 +197,13 @@ export function getBulkActionConfig(action: string | null, count: number): BulkA
     location_tba: {
       title: m.admin_mark_venue_tba(),
       description: m.admin_mark_venue_tba_confirm({ count }),
+      confirmText: m.common_confirm(),
+      confirmingText: m.common_processing(),
+      variant: 'default',
+    },
+    description_unavailable: {
+      title: 'Mark No Description',
+      description: `Mark ${count} event${count === 1 ? '' : 's'} as having no description available on source?`,
       confirmText: m.common_confirm(),
       confirmingText: m.common_processing(),
       variant: 'default',

@@ -127,6 +127,7 @@ export interface Event {
   status: EventStatus
   location_hidden: boolean // True if address is hidden until registration (e.g., Luma)
   location_tba: boolean // True if venue is TBA or varies per event instance
+  description_unavailable: boolean // True if no description exists on source page
   embedding?: number[]
   enrichment_status: EnrichmentStatus
   enrichment_error: string | null
@@ -159,6 +160,7 @@ export interface EventListItem {
   created_at: string
   enrichment_status: EnrichmentStatus
   location_tba: boolean
+  description_unavailable: boolean
   // Boolean flags instead of full text
   has_description_es: boolean
   has_description_en: boolean
@@ -207,6 +209,7 @@ export interface EventInsert {
   status?: EventStatus
   location_hidden?: boolean
   location_tba?: boolean
+  description_unavailable?: boolean
   embedding?: number[]
   enrichment_status?: EnrichmentStatus
   enrichment_error?: string | null

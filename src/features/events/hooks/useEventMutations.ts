@@ -40,6 +40,7 @@ export function useCreateEvent() {
             has_description_es: !!result.description_es,
             has_description_en: !!result.description_en,
             location_tba: result.location_tba ?? false,
+            description_unavailable: result.description_unavailable ?? false,
             created_at: result.created_at,
           }
           return [newItem, ...old]
@@ -82,6 +83,7 @@ export function useUpdateEvent() {
               has_description_es: !!updatedEvent.description_es,
               has_description_en: !!updatedEvent.description_en,
               location_tba: updatedEvent.location_tba ?? e.location_tba,
+              description_unavailable: (updatedEvent as { description_unavailable?: boolean }).description_unavailable ?? e.description_unavailable,
             }
           : e
         )

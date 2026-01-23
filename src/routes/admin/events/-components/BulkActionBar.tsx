@@ -1,4 +1,4 @@
-import { Clock, XCircle, Trash2, X, MapPinOff } from 'lucide-react'
+import { Clock, XCircle, Trash2, X, MapPinOff, FileX } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import type { BulkActionType } from '@/features/events/hooks/useBulkActions'
@@ -54,6 +54,15 @@ export function BulkActionBar({
           >
             <MapPinOff className="h-4 w-4 mr-1.5" />
             Venue TBA
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSetBulkAction('description_unavailable')}
+            className="text-primary-foreground/90 hover:text-primary-foreground hover:bg-primary-foreground/10"
+          >
+            <FileX className="h-4 w-4 mr-1.5" />
+            No Description
           </Button>
           <Button
             variant="ghost"
@@ -119,6 +128,15 @@ export function BulkActionBar({
         >
           <MapPinOff className="h-4 w-4 mr-1.5" />
           Venue TBA
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onSetBulkAction('description_unavailable')}
+          className="border-border/50"
+        >
+          <FileX className="h-4 w-4 mr-1.5" />
+          No Description
         </Button>
         <Button
           variant="outline"

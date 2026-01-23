@@ -11,6 +11,7 @@ import {
   deleteEvent,
   bulkUpdateEventStatus,
   bulkUpdateLocationTba,
+  bulkUpdateDescriptionUnavailable,
   bulkDeleteEvents,
   markPastEvents,
   countPastEvents,
@@ -174,6 +175,17 @@ export const bulkUpdateLocationTbaAction = createServerFn({ method: 'POST' })
   .handler(async ({ data: { eventIds, locationTba } }) => {
     const client = await requireAdminAccess()
     const updated = await bulkUpdateLocationTba(eventIds, locationTba, client)
+    return {
+      success: true,
+      count: updated.length,
+    }
+  })
+
+export const bulkUpdateDescriptionUnavailableAction = createServerFn({ method: 'POST' })
+  .inputValidator((input: { eventIds: string[]; descriptionUnavailable: boolean }) => input)
+  .handler(async ({ data: { eventIds, descriptionUnavailable } }) => {
+    const client = await requireAdminAccess()
+    const updated = await bulkUpdateDescriptionUnavailable(eventIds, descriptionUnavailable, client)
     return {
       success: true,
       count: updated.length,
