@@ -8,6 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  LabelList,
 } from 'recharts'
 import type { PageviewDataPoint } from '@/features/analytics/types'
 
@@ -139,7 +140,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={formattedData}
-          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+          margin={{ top: 25, right: 10, left: 0, bottom: 0 }}
         >
           <defs>
             {/* Gradient for pageviews */}
@@ -168,6 +169,12 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
             tickLine={false}
             axisLine={{ stroke: 'hsl(var(--border))' }}
             tickCount={6}
+            label={{
+              value: 'Date',
+              position: 'insideBottom',
+              offset: -5,
+              style: { fill: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: 500 },
+            }}
           />
 
           <YAxis
@@ -176,7 +183,13 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
             tickLine={false}
             axisLine={false}
             tickFormatter={(value) => value.toLocaleString()}
-            width={40}
+            width={50}
+            label={{
+              value: 'Count',
+              angle: -90,
+              position: 'insideLeft',
+              style: { fill: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: 500, textAnchor: 'middle' },
+            }}
           />
 
           <Tooltip content={<CustomTooltip />} />
@@ -196,7 +209,14 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
             strokeWidth={2}
             fill={`url(#pageviews-${gradientId})`}
             fillOpacity={1}
-          />
+          >
+            <LabelList
+              dataKey="pageviews"
+              position="top"
+              offset={8}
+              style={{ fill: 'rgba(255, 255, 255, 0.85)', fontSize: 11, fontWeight: 500 }}
+            />
+          </Area>
 
           <Area
             type="monotone"
@@ -206,7 +226,14 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
             strokeWidth={2}
             fill={`url(#users-${gradientId})`}
             fillOpacity={1}
-          />
+          >
+            <LabelList
+              dataKey="uniqueUsers"
+              position="bottom"
+              offset={8}
+              style={{ fill: 'rgba(255, 255, 255, 0.85)', fontSize: 11, fontWeight: 500 }}
+            />
+          </Area>
         </AreaChart>
       </ResponsiveContainer>
     </div>

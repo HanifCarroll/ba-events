@@ -40,6 +40,11 @@ export interface EventEngagement {
   clicksTrend: number
 }
 
+export interface ActiveUserDataPoint {
+  date: string // ISO date string YYYY-MM-DD
+  activeUsers: number
+}
+
 // API response wrapper
 export interface AnalyticsResponse<T> {
   data: T

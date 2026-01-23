@@ -3,6 +3,7 @@ import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import type {
   DateRange,
   ActiveUsersData,
+  ActiveUserDataPoint,
   PageviewDataPoint,
   TopEvent,
   SearchTerm,
@@ -354,6 +355,88 @@ export const getEventEngagement = createServerFn({ method: 'GET' })
       savesTrend: calcTrend(saves, prevSaves),
       clicksTrend: calcTrend(clicks, prevClicks),
     }
+
+    setCache(cacheKey, data)
+    return data
+  })
+
+/**
+ * Get daily active users time series data
+ * Returns unique users per day for the selected date range
+ */
+export const getDauTimeSeries = createServerFn({ method: 'GET' })
+  .inputValidator((range: DateRange) => range)
+  .handler(async ({ data: range }): Promise<ActiveUserDataPoint[]> => {
+    await requireAdminAccess()
+
+    const cacheKey = `dau-timeseries-${range}`
+    const cached = getCached<ActiveUserDataPoint[]>(cacheKey)
+    if (cached) return cached
+
+    const query = `
+      SELECT
+        toDate(timestamp) as date,
+        uniqExact(distinct_id) as active_users
+      FROM events
+      WHERE event = '$pageview'
+        AND timestamp >= now() - INTERVAL ${rangeToInterval(range)}
+      GROUP BY date
+      ORDER BY date ASC
+    `
+
+    const results = await executeHogQL<(string | number)[][]>(query)
+
+    const data: ActiveUserDataPoint[] = results.map((row) => ({
+      date: String(row[0]),
+      activeUsers: Number(row[1]),
+    }))
+
+    setCache(cacheKey, data)
+    return data
+  })
+
+/**
+ * Get weekly active users time series data
+ * Returns rolling 7-day unique users for each day in the selected date range
+ */
+export const getWauTimeSeries = createServerFn({ method: 'GET' })
+  .inputValidator((range: DateRange) => range)
+  .handler(async ({ data: range }): Promise<ActiveUserDataPoint[]> => {
+    await requireAdminAccess()
+
+    const cacheKey = `wau-timeseries-${range}`
+    const cached = getCached<ActiveUserDataPoint[]>(cacheKey)
+    if (cached) return cached
+
+    // For each day, count unique users from the previous 7 days (rolling window)
+    const query = `
+      SELECT
+        date,
+        uniqExact(distinct_id) as active_users
+      FROM (
+        SELECT
+          toDate(timestamp) as event_date,
+          distinct_id,
+          d.date as date
+        FROM events
+        CROSS JOIN (
+          SELECT toDate(now() - INTERVAL number DAY) as date
+          FROM numbers(${rangeToDays(range)})
+        ) as d
+        WHERE event = '$pageview'
+          AND toDate(timestamp) >= d.date - INTERVAL 6 DAY
+          AND toDate(timestamp) <= d.date
+      )
+      GROUP BY date
+      ORDER BY date ASC
+    `
+
+    const results = await executeHogQL<(string | number)[][]>(query)
+
+    const data: ActiveUserDataPoint[] = results.map((row) => ({
+      date: String(row[0]),
+      activeUsers: Number(row[1]),
+    }))
 
     setCache(cacheKey, data)
     return data

@@ -73,6 +73,8 @@ export const queryKeys = {
   analytics: {
     all: ['analytics'] as const,
     activeUsers: (range: DateRange) => [...queryKeys.analytics.all, 'activeUsers', range] as const,
+    dauTimeSeries: (range: DateRange) => [...queryKeys.analytics.all, 'dauTimeSeries', range] as const,
+    wauTimeSeries: (range: DateRange) => [...queryKeys.analytics.all, 'wauTimeSeries', range] as const,
     pageviews: (range: DateRange) => [...queryKeys.analytics.all, 'pageviews', range] as const,
     topEvents: (range: DateRange) => [...queryKeys.analytics.all, 'topEvents', range] as const,
     searchTerms: (range: DateRange) => [...queryKeys.analytics.all, 'searchTerms', range] as const,

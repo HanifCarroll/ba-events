@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/shared/lib/query'
 import {
   getActiveUsers,
+  getDauTimeSeries,
+  getWauTimeSeries,
   getPageviews,
   getTopEvents,
   getSearchTerms,
@@ -19,6 +21,28 @@ export function useActiveUsers(range: DateRange) {
   return useQuery({
     queryKey: queryKeys.analytics.activeUsers(range),
     queryFn: () => getActiveUsers({ data: range }),
+    staleTime: STALE_TIME,
+  })
+}
+
+/**
+ * Hook for daily active users time series
+ */
+export function useDauTimeSeries(range: DateRange) {
+  return useQuery({
+    queryKey: queryKeys.analytics.dauTimeSeries(range),
+    queryFn: () => getDauTimeSeries({ data: range }),
+    staleTime: STALE_TIME,
+  })
+}
+
+/**
+ * Hook for weekly active users time series (rolling 7-day window)
+ */
+export function useWauTimeSeries(range: DateRange) {
+  return useQuery({
+    queryKey: queryKeys.analytics.wauTimeSeries(range),
+    queryFn: () => getWauTimeSeries({ data: range }),
     staleTime: STALE_TIME,
   })
 }

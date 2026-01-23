@@ -10,6 +10,8 @@ import {
 } from '@/shared/ui/select'
 import {
   useActiveUsers,
+  useDauTimeSeries,
+  useWauTimeSeries,
   usePageviews,
   useTopEvents,
   useSearchTerms,
@@ -17,6 +19,7 @@ import {
 } from '@/features/analytics/hooks/useAnalytics'
 import type { DateRange } from '@/features/analytics/types'
 import { PageviewsChart } from './-components/PageviewsChart'
+import { ActiveUsersChart } from './-components/ActiveUsersChart'
 import { TopEventsTable } from './-components/TopEventsTable'
 import { SearchTermsTable } from './-components/SearchTermsTable'
 
@@ -35,6 +38,8 @@ function AnalyticsDashboard() {
 
   // Fetch all analytics data
   const { data: activeUsers, isLoading: loadingUsers } = useActiveUsers(range)
+  const { data: dauTimeSeries, isLoading: loadingDau } = useDauTimeSeries(range)
+  const { data: wauTimeSeries, isLoading: loadingWau } = useWauTimeSeries(range)
   const { data: pageviews, isLoading: loadingPageviews } = usePageviews(range)
   const { data: topEvents, isLoading: loadingTopEvents } = useTopEvents(range)
   const { data: searchTerms, isLoading: loadingSearchTerms } = useSearchTerms(range)
@@ -107,6 +112,39 @@ function AnalyticsDashboard() {
           bgColor="bg-accent/10"
           delay={3}
         />
+      </div>
+
+      {/* Active Users Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Daily Active Users</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ActiveUsersChart
+              data={dauTimeSeries ?? []}
+              loading={loadingDau}
+              title="Daily Active Users"
+              color="oklch(0.7 0.15 200)"
+              yAxisLabel="Users"
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Weekly Active Users</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ActiveUsersChart
+              data={wauTimeSeries ?? []}
+              loading={loadingWau}
+              title="Weekly Active Users"
+              color="oklch(0.78 0.14 75)"
+              yAxisLabel="Users"
+            />
+          </CardContent>
+        </Card>
       </div>
 
       {/* Pageviews Chart */}
