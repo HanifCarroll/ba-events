@@ -54,6 +54,7 @@
   "chat_placeholder": "¿Qué estás buscando?",
   "chat_send": "Enviar mensaje",
   "chat_powered": "Impulsado por IA • Descubre qué pasa esta noche",
+  "chat_thinking": "Pensando",
   "chat_error": "Lo siento, encontré un error al procesar tu solicitud. Por favor, intenta de nuevo.",
   "prompt_tonight": "¿Qué pasa esta noche?",
   "prompt_free": "Eventos gratis este fin de semana",

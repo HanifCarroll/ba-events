@@ -12,10 +12,11 @@ import { PullToRefreshIndicator } from '@/shared/ui/PullToRefreshIndicator'
 import { useChatContext } from '@/shared/providers/ChatProvider'
 
 export function ChatContainer() {
-  // Track events, suggestions, and directions separately since they come as data parts
+  // Track events, suggestions, directions, and errors separately
   const [events, setEvents] = useState<EventWithVenue[]>([])
   const [suggestions, setSuggestions] = useState<RefinementSuggestion[]>([])
   const [directions, setDirections] = useState<DirectionsData | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const startTimeRef = useRef<number>(0)
   const eventsCountRef = useRef<number>(0)
 
@@ -47,6 +48,7 @@ export function ChatContainer() {
     },
     onError: (err) => {
       console.error('Chat error:', err)
+      setError(err.message || 'An error occurred. Please try again.')
       track('chat:error', {
         error_type: 'client_error',
         error_message: err.message,
@@ -86,12 +88,13 @@ export function ChatContainer() {
     })
   }, [registerStartNewChatHandler, stop, setMessages])
 
-  // Clear events, suggestions, and directions when starting a new message
+  // Clear events, suggestions, directions, and errors when starting a new message
   const handleSendMessage = useCallback(async (content: string) => {
     // Clear previous data
     setEvents([])
     setSuggestions([])
     setDirections(null)
+    setError(null)
 
     // Track message sent
     startTimeRef.current = Date.now()
@@ -103,7 +106,12 @@ export function ChatContainer() {
     })
 
     // Send the message using AI SDK
-    await sendMessage({ text: content })
+    try {
+      await sendMessage({ text: content })
+    } catch (err) {
+      console.error('Failed to send message:', err)
+      setError(err instanceof Error ? err.message : 'Failed to send message')
+    }
   }, [messages.length, sendMessage])
 
   // Convert AI SDK messages to our ChatMessage format for display
@@ -157,6 +165,20 @@ export function ChatContainer() {
 
   return (
     <div className="relative h-full min-h-0 flex flex-col">
+      {/* Error banner */}
+      {error && (
+        <div className="absolute top-4 left-4 right-4 z-50 max-w-3xl mx-auto p-3 bg-destructive/20 border border-destructive rounded-lg text-sm flex items-center justify-between animate-fade-in-up">
+          <span>{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-2 text-lg leading-none hover:opacity-70"
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Message area - scrollable */}
       <div
         ref={containerRef}

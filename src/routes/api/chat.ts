@@ -28,8 +28,8 @@ const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
-// Agent loop configuration
-const MAX_STEPS = 5
+// Agent loop configuration (reduced from 5 for faster responses)
+const MAX_STEPS = 3
 
 /**
  * Get client IP from request headers
@@ -47,7 +47,22 @@ function getClientIP(request: Request): string {
 }
 
 /**
- * Create rate limit error response
+ * Create a streaming error response (client expects streaming, not JSON)
+ */
+function createErrorStream(errorMessage: string): Response {
+  const stream = createUIMessageStream({
+    execute: async ({ writer }) => {
+      writer.write({
+        type: 'error',
+        errorText: errorMessage,
+      })
+    },
+  })
+  return createUIMessageStreamResponse({ stream })
+}
+
+/**
+ * Create rate limit error response (as streaming)
  */
 function createRateLimitResponse(resetTimestamp: number): Response {
   const resetDate = new Date(resetTimestamp)
@@ -57,13 +72,8 @@ function createRateLimitResponse(resetTimestamp: number): Response {
     minute: '2-digit',
   })
 
-  return Response.json(
-    {
-      error: 'rate_limited',
-      message: `You've reached the rate limit (${RATE_LIMIT_REQUESTS} requests per hour). Please try again after ${resetTimeStr}.`,
-      reset: resetTimestamp,
-    },
-    { status: 429 }
+  return createErrorStream(
+    `You've reached the rate limit (${RATE_LIMIT_REQUESTS} requests per hour). Please try again after ${resetTimeStr}.`
   )
 }
 
@@ -95,10 +105,7 @@ export const Route = createFileRoute('/api/chat' as any)({
             return { role: m.role, content: m.content ?? '' }
           })
         } catch {
-          return Response.json(
-            { error: 'Invalid request body' },
-            { status: 400 }
-          )
+          return createErrorStream('Invalid request body')
         }
 
         // Rate limiting

@@ -533,22 +533,37 @@ export async function getEventsHappeningNow() {
   return data as EventWithVenue[]
 }
 
-// Get tonight's events (6pm today to 6am tomorrow)
+// Get tonight's events (6pm today to 6am tomorrow in BA time)
 export async function getTonightsEvents() {
-  const now = new Date()
-  const tonight = new Date(now)
-  tonight.setHours(18, 0, 0, 0)
+  const { toZonedTime, fromZonedTime } = await import('date-fns-tz')
+  const { setHours, startOfDay, addDays, getHours } = await import('date-fns')
+  const { BA_TIMEZONE } = await import('../constants')
 
-  const tomorrowMorning = new Date(tonight)
-  tomorrowMorning.setDate(tomorrowMorning.getDate() + 1)
-  tomorrowMorning.setHours(6, 0, 0, 0)
+  const now = toZonedTime(new Date(), BA_TIMEZONE)
+  const currentHour = getHours(now)
+
+  let tonight: Date
+  let tomorrowMorning: Date
+
+  if (currentHour < 6) {
+    // Late night (midnight-6am) - show current night's events
+    tonight = now
+    tomorrowMorning = setHours(startOfDay(now), 6)
+  } else {
+    // Daytime - "tonight" starts at 6pm
+    tonight = setHours(startOfDay(now), 18)
+    tomorrowMorning = setHours(startOfDay(addDays(now, 1)), 6)
+  }
+
+  const tonightUTC = fromZonedTime(tonight, BA_TIMEZONE).toISOString()
+  const tomorrowMorningUTC = fromZonedTime(tomorrowMorning, BA_TIMEZONE).toISOString()
 
   const { data, error } = await supabase
     .from('events_with_venues')
     .select('*')
     .eq('status', 'scheduled')
-    .gte('starts_at', tonight.toISOString())
-    .lte('starts_at', tomorrowMorning.toISOString())
+    .gte('starts_at', tonightUTC)
+    .lte('starts_at', tomorrowMorningUTC)
     .order('starts_at', { ascending: true })
 
   if (error) throw error

@@ -4,6 +4,7 @@
  * Transforms Eventbrite JSON-LD events into our EventInsert format.
  */
 
+import { fromZonedTime } from 'date-fns-tz'
 import type { EventInsert } from '@/shared/lib/types'
 import type { EventbriteEvent } from './api'
 import {
@@ -12,15 +13,16 @@ import {
   normalizeUrl,
   normalizeImageUrl,
 } from '../shared/normalization'
+import { BA_TIMEZONE } from '@/shared/lib/constants'
 
 /**
  * Convert Eventbrite date (YYYY-MM-DD) to ISO datetime string
- * Assumes midnight start in Argentina timezone
+ * Eventbrite provides dates in local time - we convert BA midnight to UTC
  */
 function dateToIsoDatetime(dateStr: string): string {
-  // Eventbrite JSON-LD provides dates as YYYY-MM-DD
-  // Assume midnight in Argentina timezone (UTC-3)
-  return `${dateStr}T00:00:00.000Z`
+  // Eventbrite JSON-LD provides dates as YYYY-MM-DD in local time
+  const localMidnight = new Date(`${dateStr}T00:00:00`)
+  return fromZonedTime(localMidnight, BA_TIMEZONE).toISOString()
 }
 
 /**

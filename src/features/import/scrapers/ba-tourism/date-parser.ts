@@ -17,7 +17,9 @@ import {
   isBefore,
   addMonths,
 } from 'date-fns'
+import { fromZonedTime } from 'date-fns-tz'
 import type { ParsedDateTime, WeekContext } from './types'
+import { BA_TIMEZONE } from '@/shared/lib/constants'
 
 // Spanish day names (lowercase)
 const SPANISH_DAYS: Record<string, number> = {
@@ -289,6 +291,7 @@ export function parseSpanishDate(
 
 /**
  * Convert ParsedDateTime to ISO datetime string
+ * All BA Tourism dates are in Argentina timezone - we convert to UTC
  */
 export function toISODateTime(parsed: ParsedDateTime): string {
   let date = parsed.date
@@ -298,11 +301,13 @@ export function toISODateTime(parsed: ParsedDateTime): string {
     date = setHours(setMinutes(date, minutes), hours)
   }
 
-  return date.toISOString()
+  // Explicitly convert BA time to UTC
+  return fromZonedTime(date, BA_TIMEZONE).toISOString()
 }
 
 /**
  * Get end time as ISO string if available
+ * All BA Tourism dates are in Argentina timezone - we convert to UTC
  */
 export function getEndTimeISO(parsed: ParsedDateTime): string | null {
   if (!parsed.endTime) return null
@@ -311,5 +316,6 @@ export function getEndTimeISO(parsed: ParsedDateTime): string | null {
   const [hours, minutes] = parsed.endTime.split(':').map(Number)
   date = setHours(setMinutes(date, minutes), hours)
 
-  return date.toISOString()
+  // Explicitly convert BA time to UTC
+  return fromZonedTime(date, BA_TIMEZONE).toISOString()
 }

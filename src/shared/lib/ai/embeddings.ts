@@ -1,10 +1,25 @@
 import OpenAI from 'openai'
+import { createHash } from 'crypto'
+import { Redis } from '@upstash/redis'
 import { supabase } from '../db/client'
 import type { Event, EventWithVenue } from '../types'
 import { EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from './constants'
 
 // Lazy-initialize OpenAI client (only when needed, server-side only)
 let openai: OpenAI | null = null
+
+// Lazy-initialize Redis client
+let redis: Redis | null = null
+
+function getRedis(): Redis | null {
+  if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    })
+  }
+  return redis
+}
 
 function getOpenAI(): OpenAI {
   if (!openai) {
@@ -63,14 +78,47 @@ export function buildEmbeddingText(
   return parts.join('. ')
 }
 
-// Generate embedding using OpenAI
+// Generate embedding using OpenAI with caching
 export async function generateEmbedding(text: string): Promise<number[]> {
+  const redisClient = getRedis()
+
+  // Create cache key from text hash
+  const cacheKey = `embedding:${createHash('sha256').update(text).digest('hex')}`
+
+  // Check cache first
+  if (redisClient) {
+    try {
+      const cached = await redisClient.get<number[]>(cacheKey)
+      if (cached) {
+        console.log('[Embeddings] Cache hit')
+        return cached
+      }
+    } catch (err) {
+      console.warn('[Embeddings] Cache read error:', err)
+      // Continue without cache
+    }
+  }
+
+  // Generate embedding
   const response = await getOpenAI().embeddings.create({
     model: EMBEDDING_MODEL,
     input: text,
     dimensions: EMBEDDING_DIMENSIONS,
   })
-  return response.data[0].embedding
+  const embedding = response.data[0].embedding
+
+  // Cache for 1 hour
+  if (redisClient) {
+    try {
+      await redisClient.set(cacheKey, embedding, { ex: 3600 })
+      console.log('[Embeddings] Cached new embedding')
+    } catch (err) {
+      console.warn('[Embeddings] Cache write error:', err)
+      // Continue without caching
+    }
+  }
+
+  return embedding
 }
 
 // Generate embedding for an event (accepts full Event or minimal data)

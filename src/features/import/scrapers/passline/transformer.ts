@@ -5,6 +5,7 @@
  * Categories are assigned via AI during import.
  */
 
+import { fromZonedTime } from 'date-fns-tz'
 import type { EventInsert } from '@/shared/lib/types'
 import type { PasslineEvent } from './api'
 import {
@@ -13,26 +14,24 @@ import {
   normalizeUrl,
   normalizeImageUrl,
 } from '../shared/normalization'
+import { BA_TIMEZONE } from '@/shared/lib/constants'
 
 /**
  * Combine date and time strings into ISO datetime string
  * Passline provides dates in YYYY-MM-DD and times in HH:mm:ss
- * All times are in Argentina timezone (UTC-3)
+ * All times are in Argentina timezone - we explicitly convert to UTC
  */
 function combineDateTime(date: string, time: string): string {
-  // Create datetime string in local format
   const datetime = `${date}T${time}`
-
-  // Parse as local time (Argentina) and convert to UTC ISO string
-  // Note: This assumes the server is in Argentina timezone or we handle TZ properly
   const localDate = new Date(datetime)
 
-  // If invalid date, return as-is with midnight
+  // If invalid date, return midnight BA time converted to UTC
   if (isNaN(localDate.getTime())) {
-    return `${date}T00:00:00.000Z`
+    return fromZonedTime(new Date(`${date}T00:00:00`), BA_TIMEZONE).toISOString()
   }
 
-  return localDate.toISOString()
+  // Explicitly convert BA time to UTC
+  return fromZonedTime(localDate, BA_TIMEZONE).toISOString()
 }
 
 /**
