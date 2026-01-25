@@ -18,6 +18,7 @@ import { getUserToolContext } from '@/features/chat/api/user-tools'
 import { createTools } from '@/features/chat/api/tools-ai-sdk'
 import { getSystemPrompt } from '@/features/chat/api/prompts'
 import { generateSuggestions } from '@/features/chat/api/suggestions'
+import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
 import { trackServer } from '@/lib/analytics.server'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type { EventWithVenue, DirectionsData } from '@/shared/lib/types'
@@ -137,7 +138,7 @@ export const Route = createFileRoute('/api/chat' as any)({
           execute: async ({ writer }) => {
             try {
               const result = streamText({
-                model: anthropic('claude-sonnet-4-5-20250929'),
+                model: anthropic(CLAUDE_MODEL),
                 system: getSystemPrompt(locale),
                 messages: messages.map(m => ({
                   role: m.role as 'user' | 'assistant',
