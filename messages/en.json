@@ -291,7 +291,7 @@
   "context_prompt_group_friends": "going out with friends",
   "context_prompt_surprise": "Surprise me with something",
   "context_prompt_time_and_group": "What's happening {time}? I'm {group}.",
-  "context_prompt_time_only": "What's happening {time}?",
+  "context_prompt_time_only": "Pick something for me {time}",
   "context_prompt_group_only": "Find me something good - I'm {group}.",
   "concierge_top_pick": "Top Pick",
   "concierge_your_plan": "Your Plan",

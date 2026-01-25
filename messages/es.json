@@ -291,7 +291,7 @@
   "context_prompt_group_friends": "saliendo con amigos",
   "context_prompt_surprise": "Sorprendeme con algo",
   "context_prompt_time_and_group": "¿Qué hay {time}? Estoy {group}.",
-  "context_prompt_time_only": "¿Qué hay {time}?",
+  "context_prompt_time_only": "Elegí algo para mí {time}",
   "context_prompt_group_only": "Buscame algo bueno - estoy {group}.",
   "concierge_top_pick": "Recomendación",
   "concierge_your_plan": "Tu Plan",
