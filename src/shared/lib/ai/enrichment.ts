@@ -78,8 +78,13 @@ NO incluyas:
 - Información de contacto
 
 Ignora menús de navegación, pies de página, texto legal y otro contenido genérico.
-Escribe SOLO la descripción en español como texto plano, sin formato markdown ni encabezados.
-Mantén menos de 200 palabras. Enfócate en conceptos buscables.`
+
+CRÍTICO: Escribe SOLO el texto de la descripción. NO incluyas:
+- Ningún prefijo como "Descripción semántica:" o "Descripción:"
+- Ningún encabezado o etiqueta
+- Ningún formato markdown
+
+Solo el texto de la descripción. Mantén menos de 200 palabras.`
 
 /**
  * English extraction prompt - same focus as Spanish version
@@ -102,8 +107,13 @@ DO NOT include:
 - Contact information
 
 Ignore navigation menus, footers, legal text, and other generic content.
-Write ONLY the description in English as plain text, no markdown formatting or headers.
-Keep under 200 words. Focus on searchable concepts.`
+
+CRITICAL: Write ONLY the description text itself. Do NOT include:
+- Any prefix like "Semantic description:" or "Description:"
+- Any headers or labels
+- Any markdown formatting
+
+Just the raw description text. Keep under 200 words.`
 
 /**
  * Translation prompt - Spanish to English
