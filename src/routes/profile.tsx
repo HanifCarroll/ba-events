@@ -1,18 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { User, Mail, Lock, Trash2, ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react'
+import { User, Mail, Lock, Trash2, ArrowLeft, Check, AlertTriangle, Loader2, Sparkles, Music, Palette, Utensils, Users, Dumbbell, PartyPopper, MapPin } from 'lucide-react'
+import * as m from '@/paraglide/messages'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import {
   useUpdateDisplayName,
   useUpdatePassword,
   useDeleteAccount,
 } from '@/features/auth/hooks/useProfileMutations'
+import { usePreferences, useUpdatePreferences } from '@/features/auth/hooks/usePreferences'
 import { requireAuth } from '@/features/auth/api/session'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Label } from '@/shared/ui/label'
+import { Textarea } from '@/shared/ui/textarea'
 import {
   Form,
   FormControl,
@@ -38,6 +41,45 @@ import {
   type DisplayNameInput,
   type ChangePasswordInput,
 } from '@/shared/lib/schemas'
+import { CATEGORIES, type Category, type Neighborhood } from '@/shared/lib/types'
+import { cn } from '@/shared/lib/utils'
+
+// Popular neighborhoods for quick selection
+const POPULAR_NEIGHBORHOODS: Neighborhood[] = [
+  'Palermo',
+  'San Telmo',
+  'Recoleta',
+  'Villa Crespo',
+  'Belgrano',
+  'Almagro',
+  'Colegiales',
+  'Núñez',
+  'La Boca',
+  'Puerto Madero',
+]
+
+// Category icons - labels are handled via i18n
+const CATEGORY_ICONS: Record<Category, typeof Music> = {
+  music: Music,
+  arts: Palette,
+  food: Utensils,
+  social: Users,
+  sports: Dumbbell,
+  festival: PartyPopper,
+}
+
+// Get category label from i18n
+function getCategoryLabel(category: Category): string {
+  const labels: Record<Category, () => string> = {
+    music: m.category_music,
+    arts: m.category_arts,
+    food: m.category_food,
+    social: m.category_social,
+    sports: m.category_sports,
+    festival: m.category_festival,
+  }
+  return labels[category]()
+}
 
 export const Route = createFileRoute('/profile')({
   beforeLoad: async () => {
@@ -85,7 +127,7 @@ function ProfilePage() {
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to discover
+            {m.profile_back()}
           </Link>
 
           {/* Header */}
@@ -95,7 +137,7 @@ function ProfilePage() {
                 <User className="h-5 w-5 text-primary" />
               </div>
               <h1 className="font-display text-2xl font-semibold tracking-tight">
-                Account Settings
+                Profile
               </h1>
             </div>
             <p className="text-muted-foreground text-sm">
@@ -108,7 +150,7 @@ function ProfilePage() {
             <section className="bg-card/40 backdrop-blur-sm border border-border/50 rounded-xl p-6">
               <h2 className="font-display text-lg font-medium mb-4 flex items-center gap-2">
                 <User className="h-4 w-4 text-primary/60" />
-                Profile
+                Account
               </h2>
 
               {/* Email (read-only) */}
@@ -124,6 +166,19 @@ function ProfilePage() {
               <DisplayNameForm
                 defaultDisplayName={profile?.display_name || ''}
               />
+            </section>
+
+            {/* Personalization Section */}
+            <section className="bg-card/40 backdrop-blur-sm border border-border/50 rounded-xl p-6">
+              <h2 className="font-display text-lg font-medium mb-2 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary/60" />
+                {m.profile_personalization()}
+              </h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                {m.profile_personalization_desc()}
+              </p>
+
+              <PreferencesForm />
             </section>
 
             {/* Security Section */}
@@ -441,5 +496,187 @@ function DeleteAccountDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+// =============================================================================
+// Preferences Form
+// =============================================================================
+
+function PreferencesForm() {
+  const { data: preferences, isLoading } = usePreferences()
+  const mutation = useUpdatePreferences()
+  const [showSuccess, setShowSuccess] = useState(false)
+  
+  // Local state for form fields
+  const [aboutMe, setAboutMe] = useState('')
+  const [selectedCategories, setSelectedCategories] = useState<Category[]>([])
+  const [selectedNeighborhoods, setSelectedNeighborhoods] = useState<Neighborhood[]>([])
+  
+  // Track if there are unsaved changes
+  const [hasChanges, setHasChanges] = useState(false)
+
+  // Sync local state when preferences load
+  useEffect(() => {
+    if (preferences) {
+      setAboutMe(preferences.about_me || '')
+      setSelectedCategories(preferences.preferred_categories || [])
+      setSelectedNeighborhoods(preferences.preferred_neighborhoods || [])
+    }
+  }, [preferences])
+
+  // Debounced save function
+  const savePreferences = useCallback(async () => {
+    if (!hasChanges) return
+    
+    try {
+      await mutation.mutateAsync({
+        about_me: aboutMe || null,
+        preferred_categories: selectedCategories,
+        preferred_neighborhoods: selectedNeighborhoods,
+      })
+      setShowSuccess(true)
+      setHasChanges(false)
+      setTimeout(() => setShowSuccess(false), 2000)
+    } catch {
+      // Error handled by mutation state
+    }
+  }, [aboutMe, selectedCategories, selectedNeighborhoods, hasChanges, mutation])
+
+  // Toggle category selection
+  const toggleCategory = (category: Category) => {
+    setSelectedCategories(prev => {
+      const newCategories = prev.includes(category)
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+      setHasChanges(true)
+      return newCategories
+    })
+  }
+
+  // Toggle neighborhood selection
+  const toggleNeighborhood = (neighborhood: Neighborhood) => {
+    setSelectedNeighborhoods(prev => {
+      const newNeighborhoods = prev.includes(neighborhood)
+        ? prev.filter(n => n !== neighborhood)
+        : [...prev, neighborhood]
+      setHasChanges(true)
+      return newNeighborhoods
+    })
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* About Me */}
+      <div>
+        <Label htmlFor="aboutMe" className="text-sm text-muted-foreground">
+          {m.profile_about_you()}
+        </Label>
+        <Textarea
+          id="aboutMe"
+          value={aboutMe}
+          onChange={(e) => {
+            setAboutMe(e.target.value)
+            setHasChanges(true)
+          }}
+          placeholder={m.profile_about_placeholder()}
+          className="mt-1.5 min-h-[100px] bg-background/50 border-border/50 focus:border-primary/50"
+        />
+        <p className="text-xs text-muted-foreground mt-1.5">
+          {m.profile_about_help()}
+        </p>
+      </div>
+
+      {/* Event Categories */}
+      <div>
+        <Label className="text-sm text-muted-foreground">
+          {m.profile_event_interests()}
+        </Label>
+        <div className="flex flex-wrap gap-2 mt-2">
+          {CATEGORIES.map((category) => {
+            const Icon = CATEGORY_ICONS[category]
+            const isSelected = selectedCategories.includes(category)
+            
+            return (
+              <button
+                key={category}
+                type="button"
+                onClick={() => toggleCategory(category)}
+                className={cn(
+                  'inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all',
+                  isSelected
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-background/50 border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {getCategoryLabel(category)}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Neighborhoods */}
+      <div>
+        <Label className="text-sm text-muted-foreground flex items-center gap-2">
+          <MapPin className="h-3.5 w-3.5" />
+          {m.profile_preferred_neighborhoods()}
+        </Label>
+        <div className="flex flex-wrap gap-2 mt-2">
+          {POPULAR_NEIGHBORHOODS.map((neighborhood) => {
+            const isSelected = selectedNeighborhoods.includes(neighborhood)
+            
+            return (
+              <button
+                key={neighborhood}
+                type="button"
+                onClick={() => toggleNeighborhood(neighborhood)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg border text-sm transition-all',
+                  isSelected
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-background/50 border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
+                )}
+              >
+                {neighborhood}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="flex items-center gap-3">
+        <Button
+          onClick={savePreferences}
+          disabled={mutation.isPending || !hasChanges}
+        >
+          {mutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : showSuccess ? (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              {m.profile_saved()}
+            </>
+          ) : (
+            m.profile_save_preferences()
+          )}
+        </Button>
+        {mutation.isError && (
+          <p className="text-sm text-destructive">
+            {m.profile_save_failed()}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }

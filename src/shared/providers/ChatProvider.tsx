@@ -42,3 +42,11 @@ export function useChatContext() {
   }
   return context
 }
+
+/**
+ * Safe version of useChatContext that returns null when outside ChatProvider.
+ * Use this in components that may be rendered outside the chat context.
+ */
+export function useChatContextSafe() {
+  return useContext(ChatContext)
+}

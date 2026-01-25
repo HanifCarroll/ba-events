@@ -221,25 +221,22 @@ function RootLayout() {
   const location = useLocation()
   const isExcludedPage = EXCLUDED_ROUTES.some(route => location.pathname.startsWith(route))
 
-  // Auth and admin pages render without the main sidebar layout
-  if (isExcludedPage) {
-    return (
-      <>
-        {/* Atmospheric gradient overlay */}
-        <div className="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0" />
-        <div className="h-full">
-          <Outlet />
-        </div>
-      </>
-    )
-  }
-
-  // All other pages get the sidebar layout
+  // ChatProvider wraps everything to prevent context errors during route transitions
   return (
     <ChatProvider>
-      <MainLayout>
-        <Outlet />
-      </MainLayout>
+      {isExcludedPage ? (
+        <>
+          {/* Atmospheric gradient overlay */}
+          <div className="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0" />
+          <div className="h-full">
+            <Outlet />
+          </div>
+        </>
+      ) : (
+        <MainLayout>
+          <Outlet />
+        </MainLayout>
+      )}
     </ChatProvider>
   )
 }

@@ -500,6 +500,26 @@ export interface SavedEvent {
   created_at: string
 }
 
+// User preferences for personalization
+export interface UserPreferences {
+  id: string
+  user_id: string
+  about_me: string | null
+  preferred_categories: Category[]
+  preferred_neighborhoods: Neighborhood[]
+  created_at: string
+  updated_at: string
+}
+
+export interface UserPreferencesInsert {
+  user_id: string
+  about_me?: string | null
+  preferred_categories?: string[]
+  preferred_neighborhoods?: string[]
+}
+
+export type UserPreferencesUpdate = Partial<Omit<UserPreferencesInsert, 'user_id'>>
+
 // Import blocklist types
 export const BLOCKLIST_TARGET_FIELDS = ['event_name', 'venue_name'] as const
 export type BlocklistTargetField = (typeof BLOCKLIST_TARGET_FIELDS)[number]

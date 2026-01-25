@@ -56,6 +56,13 @@ export const queryKeys = {
     current: () => [...queryKeys.profile.all, 'current'] as const,
   },
 
+  // User preferences (personalization)
+  preferences: {
+    all: ['preferences'] as const,
+    current: () => [...queryKeys.preferences.all, 'current'] as const,
+    hasPreferences: () => [...queryKeys.preferences.all, 'hasPreferences'] as const,
+  },
+
   // Saved events
   saved: {
     all: ['saved'] as const,
