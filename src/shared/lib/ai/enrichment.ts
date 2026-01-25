@@ -78,13 +78,7 @@ NO incluyas:
 - Información de contacto
 
 Ignora menús de navegación, pies de página, texto legal y otro contenido genérico.
-
-CRÍTICO: Escribe SOLO el texto de la descripción. NO incluyas:
-- Ningún prefijo como "Descripción semántica:" o "Descripción:"
-- Ningún encabezado o etiqueta
-- Ningún formato markdown
-
-Solo el texto de la descripción. Mantén menos de 200 palabras.`
+Mantén menos de 200 palabras. Enfócate en conceptos buscables.`
 
 /**
  * English extraction prompt - same focus as Spanish version
@@ -107,13 +101,7 @@ DO NOT include:
 - Contact information
 
 Ignore navigation menus, footers, legal text, and other generic content.
-
-CRITICAL: Write ONLY the description text itself. Do NOT include:
-- Any prefix like "Semantic description:" or "Description:"
-- Any headers or labels
-- Any markdown formatting
-
-Just the raw description text. Keep under 200 words.`
+Keep under 200 words. Focus on searchable concepts.`
 
 /**
  * Translation prompt - Spanish to English
@@ -170,6 +158,22 @@ const VENUE_EXTRACTION_SCHEMA = {
     },
   },
   required: ['venue_name'],
+  additionalProperties: false,
+} as const
+
+/**
+ * JSON schema for description extraction response
+ * Using structured outputs guarantees clean description without prefixes
+ */
+const DESCRIPTION_EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    description: {
+      type: 'string',
+      description: 'The semantic event description as plain text, no prefixes or headers',
+    },
+  },
+  required: ['description'],
   additionalProperties: false,
 } as const
 
@@ -240,8 +244,16 @@ export async function detectLanguage(markdown: string): Promise<DetectedLanguage
 }
 
 /**
- * Extract a semantic event description from markdown using Haiku 4.5
- * Extracts in the specified language
+ * Response type for description extraction with structured outputs
+ */
+interface DescriptionExtractionResponse {
+  description: string
+}
+
+/**
+ * Extract a semantic event description from markdown using Haiku 4.5 with structured outputs.
+ * Uses constrained decoding to guarantee clean description without prefixes.
+ * Extracts in the specified language.
  */
 export async function extractDescription(
   markdown: string,
@@ -252,18 +264,32 @@ export async function extractDescription(
     const truncatedMarkdown = markdown.slice(0, 15000)
     const prompt = language === 'spanish' ? EXTRACTION_PROMPT_ES : EXTRACTION_PROMPT_EN
 
-    const message = await getAnthropicClient().messages.create({
+    // Use structured outputs beta API for guaranteed JSON response
+    const message = await getAnthropicClient().beta.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 400,
+      max_tokens: 500,
+      betas: [STRUCTURED_OUTPUTS_BETA],
       messages: [
         {
           role: 'user',
           content: `${prompt}\n\n---\n${truncatedMarkdown}\n---`,
         },
       ],
+      output_format: {
+        type: 'json_schema',
+        schema: DESCRIPTION_EXTRACTION_SCHEMA,
+      },
     })
 
-    return extractTextFromResponse(message)
+    // With structured outputs, response is guaranteed to be valid JSON
+    const textBlock = message.content.find((block) => block.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') {
+      console.error('[extractDescription] No text block in response')
+      return null
+    }
+
+    const result = JSON.parse(textBlock.text) as DescriptionExtractionResponse
+    return result.description || null
   } catch (error) {
     console.error(`Haiku extraction error:`, error)
     return null
