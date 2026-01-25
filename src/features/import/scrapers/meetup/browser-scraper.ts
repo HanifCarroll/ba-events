@@ -4,9 +4,8 @@
  * Uses Playwright to load the Meetup events page and intercept GraphQL responses.
  * This provides structured JSON data while handling client-side rendering.
  *
- * Supports two modes:
- * - Local: Uses Playwright with local Chromium (development)
- * - Browserless: Connects to Browserless.io (production/serverless)
+ * Runs in Trigger.dev with the Playwright build extension which installs Chromium
+ * in the container at deploy time.
  */
 
 import type { Page } from 'playwright'
@@ -15,7 +14,6 @@ import type { MeetupEvent, MeetupGraphQLEvent } from './types'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import { sanitizeError } from '@/shared/lib/security'
-import { getBrowserlessEndpoint } from '@/shared/lib/browser'
 import { logger } from '@/shared/lib/logger'
 
 const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
@@ -507,202 +505,15 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
 }
 
 /**
- * Scrape a single page using Puppeteer (Browserless)
- */
-async function scrapeBrowserlessPage(
-  page: Awaited<ReturnType<Awaited<typeof import('puppeteer-core')>['default']['connect']>>['newPage'] extends () => Promise<infer P> ? P : never,
-  url: string,
-  seenIds: Set<string>,
-  collectedEvents: MeetupEvent[]
-): Promise<void> {
-  const pageEvents: MeetupEvent[] = []
-
-  const responseHandler = async (response: { url: () => string; json: () => Promise<unknown> }) => {
-    const responseUrl = response.url()
-    if (responseUrl.includes('graphql') || responseUrl.includes('gql-')) {
-      try {
-        const json = await response.json()
-        const events = parseGraphQLResponse(json)
-        for (const event of events) {
-          if (!seenIds.has(event.id)) {
-            seenIds.add(event.id)
-            pageEvents.push(event)
-          }
-        }
-      } catch {
-        // Not JSON or parsing failed
-      }
-    }
-  }
-
-  page.on('response', responseHandler)
-
-  try {
-    await page.goto(url, {
-      waitUntil: 'networkidle0',
-      timeout: 60000,
-    })
-
-    // Wait and scroll
-    await new Promise((r) => setTimeout(r, 3000))
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => window.scrollBy(0, window.innerHeight))
-      await new Promise((r) => setTimeout(r, 1500))
-    }
-    await new Promise((r) => setTimeout(r, 2000))
-
-    // DOM fallback
-    if (pageEvents.length < 3) {
-      const domEvents = (await page.evaluate(domExtractionScript)) as DOMExtractionResult[]
-      for (const domEvent of domEvents) {
-        if (!seenIds.has(domEvent.id)) {
-          seenIds.add(domEvent.id)
-          pageEvents.push({
-            id: domEvent.id,
-            name: domEvent.name,
-            description: null,
-            dateTime: domEvent.dateTime,
-            endTime: null,
-            timezone: BA_TIMEZONE,
-            eventUrl: domEvent.eventUrl,
-            imageUrl: domEvent.imageUrl,
-            isOnline: domEvent.isOnline,
-            venue: domEvent.venueName
-              ? {
-                  name: domEvent.venueName,
-                  address: null,
-                  city: 'Buenos Aires',
-                  lat: null,
-                  lng: null,
-                }
-              : null,
-            group: {
-              name: domEvent.groupName,
-              urlname: '',
-              rating: domEvent.groupRating,
-            },
-            attendeeCount: domEvent.attendeeCount,
-            category: domEvent.category,
-            isRecurring: isRecurringEvent(domEvent.dateTime),
-            recurrencePattern: extractRecurrencePattern(domEvent.dateTime),
-            price: null,
-            currency: null,
-          })
-        }
-      }
-    }
-
-    collectedEvents.push(...pageEvents)
-  } finally {
-    page.off('response', responseHandler)
-  }
-}
-
-/**
- * Scrape events using Browserless (production/serverless mode) for a date range
+ * Main scraper function - uses Playwright with Chromium
  *
- * Includes retry logic with page recreation for frame detachment errors.
- * Note: Browser args like --disable-features=site-per-process cannot be passed
- * when connecting to Browserless.io (browser is already running). The retry
- * mechanism is our primary defense against frame detachment issues.
- */
-async function scrapeWithBrowserless(token: string, options: ScraperOptions): Promise<MeetupEvent[]> {
-  const puppeteer = await import('puppeteer-core')
-
-  let browser
-  try {
-    browser = await puppeteer.default.connect({
-      browserWSEndpoint: getBrowserlessEndpoint(token),
-    })
-  } catch (error) {
-    // Sanitize error to prevent token leakage in logs
-    logger.error('[Meetup] Failed to connect to Browserless', { error: sanitizeError(error) })
-    throw new Error('Failed to connect to browser service')
-  }
-
-  const collectedEvents: MeetupEvent[] = []
-  const seenIds = new Set<string>()
-
-  try {
-    let page = await browser.newPage()
-    let failedDays: string[] = []
-
-    const dates = getDateRange(options.startDate, options.endDate)
-    logger.info(`[Meetup] Scraping ${dates.length} days`, { startDate: options.startDate, endDate: options.endDate, daysCount: dates.length })
-
-    for (let i = 0; i < dates.length; i++) {
-      const date = dates[i]
-      const url = buildMeetupUrlForDate(date)
-      const dateStr = date.toISOString().split('T')[0]
-
-      logger.debug(`[Meetup] Scraping day ${i + 1}/${dates.length}`, { date: dateStr })
-
-      // Retry logic with page recreation for frame detachment errors
-      let success = false
-      for (let retry = 0; retry < MAX_PAGE_RETRIES && !success; retry++) {
-        try {
-          await scrapeBrowserlessPage(page, url, seenIds, collectedEvents)
-          success = true
-        } catch (error) {
-          if (isFrameDetachmentError(error) && retry < MAX_PAGE_RETRIES - 1) {
-            console.warn(
-              `[Meetup] Frame detached for ${dateStr}, recreating page (attempt ${retry + 2}/${MAX_PAGE_RETRIES})`
-            )
-            // Close old page and create fresh one
-            await page.close().catch(() => {})
-            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
-            page = await browser.newPage()
-          } else {
-            // Non-frame error or max retries reached - log and continue
-            logger.error(`[Meetup] Error scraping date`, { date: dateStr, error: sanitizeError(error) })
-            if (isFrameDetachmentError(error)) {
-              failedDays.push(dateStr)
-            }
-          }
-        }
-      }
-
-      logger.debug(`[Meetup] Total events so far`, { count: collectedEvents.length })
-
-      // Small delay between days
-      if (i < dates.length - 1) {
-        await new Promise((r) => setTimeout(r, 1000))
-      }
-    }
-
-    // Log summary of failed days
-    if (failedDays.length > 0) {
-      console.warn(`[Meetup] Failed to scrape ${failedDays.length} days due to frame detachment: ${failedDays.join(', ')}`)
-    }
-
-    logger.info(`[Meetup] Finished scraping`, { totalEvents: collectedEvents.length })
-    return collectedEvents
-  } catch (error) {
-    // Sanitize any error that might contain connection details
-    logger.error('[Meetup] Error during scraping', { error: sanitizeError(error) })
-    throw new Error('Scraping failed')
-  } finally {
-    await browser.close()
-  }
-}
-
-/**
- * Main scraper function - automatically chooses the right method
- *
- * Uses Browserless if BROWSERLESS_TOKEN env var is set,
- * otherwise falls back to local Playwright.
+ * In Trigger.dev production, uses the Playwright build extension which
+ * pre-installs Chromium in the container.
  *
  * @param options - Date range to scrape (startDate and endDate required)
  */
 export async function scrapeMeetupEvents(options: ScraperOptions): Promise<MeetupEvent[]> {
-  const browserlessToken = process.env.BROWSERLESS_TOKEN
-
-  if (browserlessToken) {
-    logger.info('[Meetup] Using Browserless for scraping')
-    return scrapeWithBrowserless(browserlessToken, options)
-  }
-
-  logger.info('[Meetup] Using local Playwright for scraping')
+  logger.info('[Meetup] Starting Playwright scraper')
   return scrapeWithPlaywright(options)
 }
 

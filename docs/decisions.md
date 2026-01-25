@@ -26,6 +26,64 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Meetup Scraper Migration to Trigger.dev Playwright
+
+**Date:** 2026-01-25
+
+**Decision:** Migrate the Meetup scraper from Browserless.io to Trigger.dev's native Playwright extension.
+
+**Problem:**
+Browserless.io connections were failing from Trigger.dev infrastructure:
+- Token was valid (verified)
+- Scraper worked locally with the same token
+- Trigger.dev logs showed connection failures to Browserless.io
+- Issue was infrastructure/network between Trigger.dev and Browserless.io
+
+**Solution:**
+Replaced Browserless.io/Puppeteer with Trigger.dev's `@trigger.dev/build` Playwright extension:
+- Removed ~180 lines of Browserless/Puppeteer connection code
+- Uses native Playwright with Chromium installed in container
+- Simpler code, fewer dependencies, no external service
+
+**Files Modified:**
+- `src/trigger/jobs/scrape-meetup.ts` - Replaced Browserless with Trigger.dev Playwright
+- `trigger.config.ts` - Added playwright build extension
+
+**Verification:**
+Deployed v20260125.1 - test scrape completed successfully (7 events fetched, 2 inserted).
+
+**Related Decision:** Trigger.dev Scraper Reliability Fixes (2026-01-15)
+
+---
+
+### Passline Trigger.dev Playwright Attempt (Failed)
+
+**Date:** 2026-01-25
+
+**Decision:** Keep Passline as local/client-side only. Trigger.dev Playwright does not bypass Cloudflare.
+
+**Problem:**
+After successfully migrating Meetup to Trigger.dev Playwright, attempted the same for Passline to enable automated scraping.
+
+**Investigation:**
+1. **Trigger.dev Playwright**: Cloudflare blocks headless browser requests from Trigger.dev infrastructure, same as Browserless.io
+2. **Website scraping alternative**:
+   - Individual event pages have JSON-LD data (descriptions work)
+   - But filtered event listings (needed to discover events) trigger Cloudflare
+   - Event pages lack region identifiers, so can't filter to CABA without the listings API
+
+**Conclusion:**
+Passline's Cloudflare protection blocks all server-side approaches, regardless of whether it's direct API, Browserless.io, or Trigger.dev Playwright. The blocking is IP/infrastructure-based, not just user-agent based.
+
+**Solution:**
+Continue using local Playwriter + client-side API approach:
+- Import via admin UI (user's real browser bypasses Cloudflare)
+- Enrichment via `/enrich-passline` skill (local Playwriter)
+
+**Related Decision:** Disable Scheduled Passline Scraper (2026-01-11)
+
+---
+
 ### React Query for Instant Admin Event List Updates
 
 **Date:** 2026-01-15

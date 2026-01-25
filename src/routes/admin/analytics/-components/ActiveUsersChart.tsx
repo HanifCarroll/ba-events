@@ -134,7 +134,7 @@ export function ActiveUsersChart({ data, loading, title, color, yAxisLabel }: Ac
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={formattedData}
-          margin={{ top: 25, right: 10, left: 0, bottom: 0 }}
+          margin={{ top: 25, right: 10, left: 0, bottom: 30 }}
         >
           <defs>
             <linearGradient id={`gradient-${gradientId}`} x1="0" y1="0" x2="0" y2="1">

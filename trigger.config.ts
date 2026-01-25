@@ -1,4 +1,5 @@
 import type { TriggerConfig } from '@trigger.dev/sdk/v3'
+import { playwright } from '@trigger.dev/build/extensions/playwright'
 
 export const config: TriggerConfig = {
   project: 'proj_lqttmibcdepaslelatth',
@@ -14,4 +15,11 @@ export const config: TriggerConfig = {
     },
   },
   dirs: ['./src/trigger/jobs'],
+  build: {
+    extensions: [
+      playwright({
+        browsers: ['chromium'], // Only need Chromium for Meetup scraping
+      }),
+    ],
+  },
 }
