@@ -78,7 +78,13 @@ NO incluyas:
 - Información de contacto
 
 Ignora menús de navegación, pies de página, texto legal y otro contenido genérico.
-Mantén menos de 200 palabras. Enfócate en conceptos buscables.`
+
+FORMATO: Escribe 2-3 párrafos cortos (2-3 oraciones cada uno) separados por líneas en blanco.
+- Primer párrafo: qué es el evento
+- Párrafos adicionales: ambiente, para quién es, qué incluye - SOLO si esta información existe en la fuente
+- Si la fuente tiene poca información, está bien escribir solo 1-2 párrafos
+
+Mantén menos de 200 palabras total.`
 
 /**
  * English extraction prompt - same focus as Spanish version
@@ -101,20 +107,28 @@ DO NOT include:
 - Contact information
 
 Ignore navigation menus, footers, legal text, and other generic content.
-Keep under 200 words. Focus on searchable concepts.`
+
+FORMAT: Write 2-3 short paragraphs (2-3 sentences each) separated by blank lines.
+- First paragraph: what the event is
+- Additional paragraphs: atmosphere, who it's for, what's included - ONLY if this info exists in the source
+- If the source has limited info, it's fine to write just 1-2 paragraphs
+
+Keep under 200 words total.`
 
 /**
  * Translation prompt - Spanish to English
  */
 const TRANSLATION_ES_TO_EN = `Translate this Spanish event description to English.
-Maintain the same tone, meaning, and style. Keep it concise.
+Maintain the same tone, meaning, style, and paragraph structure.
+Preserve blank lines between paragraphs exactly as in the source.
 Output ONLY the translated text, no explanations or additional commentary.`
 
 /**
  * Translation prompt - English to Spanish
  */
 const TRANSLATION_EN_TO_ES = `Translate this English event description to Spanish.
-Maintain the same tone, meaning, and style. Keep it concise.
+Maintain the same tone, meaning, style, and paragraph structure.
+Preserve blank lines between paragraphs exactly as in the source.
 Output ONLY the translated text, no explanations or additional commentary.`
 
 /**
