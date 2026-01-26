@@ -8,9 +8,9 @@
   }
 }
 
-/* Always dark mode for this aesthetic */
+/* Light mode - Buenos Aires Sunlight */
 html {
-  color-scheme: dark;
+  color-scheme: light;
   height: 100%;
 }
 
@@ -76,44 +76,46 @@ code {
 
 :root {
   --radius: 0.75rem;
-  /* Noche Porteña - Warm Noir Palette */
-  --background: oklch(0.12 0.01 60);
-  --foreground: oklch(0.93 0.01 85);
-  --card: oklch(0.16 0.015 55);
-  --card-foreground: oklch(0.93 0.01 85);
-  --popover: oklch(0.14 0.012 55);
-  --popover-foreground: oklch(0.93 0.01 85);
-  /* Amber gold as primary */
-  --primary: oklch(0.78 0.14 75);
-  --primary-foreground: oklch(0.12 0.01 60);
-  /* Warm charcoal secondary */
-  --secondary: oklch(0.22 0.02 50);
-  --secondary-foreground: oklch(0.88 0.02 80);
-  /* Muted warm tones */
-  --muted: oklch(0.20 0.015 55);
-  --muted-foreground: oklch(0.60 0.02 70);
-  /* Accent - deep amber */
-  --accent: oklch(0.65 0.16 55);
-  --accent-foreground: oklch(0.98 0.01 85);
+  /* Buenos Aires Sunlight - Warm Light Palette */
+  /* Backgrounds */
+  --background: oklch(0.985 0.005 85);
+  --foreground: oklch(0.18 0.02 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 60);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 60);
+  /* Primary - Coral (energetic, event-like) */
+  --primary: oklch(0.62 0.2 25);
+  --primary-foreground: oklch(0.99 0.005 85);
+  /* Secondary - Warm gray */
+  --secondary: oklch(0.93 0.01 85);
+  --secondary-foreground: oklch(0.25 0.02 60);
+  /* Muted - Subtle sections */
+  --muted: oklch(0.96 0.005 85);
+  --muted-foreground: oklch(0.45 0.015 60);
+  /* Accent - Teal (trust, secondary actions) */
+  --accent: oklch(0.60 0.13 175);
+  --accent-foreground: oklch(0.99 0.005 85);
   --destructive: oklch(0.55 0.22 25);
   /* Subtle warm borders */
-  --border: oklch(0.28 0.02 55);
-  --input: oklch(0.20 0.015 55);
-  --ring: oklch(0.78 0.14 75);
+  --border: oklch(0.88 0.01 85);
+  --input: oklch(0.88 0.01 85);
+  --ring: oklch(0.62 0.2 25);
   /* Chart colors - warm spectrum */
-  --chart-1: oklch(0.78 0.14 75);
-  --chart-2: oklch(0.65 0.18 40);
-  --chart-3: oklch(0.55 0.12 180);
-  --chart-4: oklch(0.70 0.15 340);
-  --chart-5: oklch(0.60 0.20 25);
-  --sidebar: oklch(0.14 0.012 55);
-  --sidebar-foreground: oklch(0.93 0.01 85);
-  --sidebar-primary: oklch(0.78 0.14 75);
-  --sidebar-primary-foreground: oklch(0.12 0.01 60);
-  --sidebar-accent: oklch(0.22 0.02 50);
-  --sidebar-accent-foreground: oklch(0.93 0.01 85);
-  --sidebar-border: oklch(0.28 0.02 55);
-  --sidebar-ring: oklch(0.78 0.14 75);
+  --chart-1: oklch(0.62 0.2 25);
+  --chart-2: oklch(0.60 0.13 175);
+  --chart-3: oklch(0.65 0.15 75);
+  --chart-4: oklch(0.60 0.18 300);
+  --chart-5: oklch(0.55 0.15 140);
+  /* Sidebar - slightly tinted */
+  --sidebar: oklch(0.97 0.005 85);
+  --sidebar-foreground: oklch(0.18 0.02 60);
+  --sidebar-primary: oklch(0.62 0.2 25);
+  --sidebar-primary-foreground: oklch(0.99 0.005 85);
+  --sidebar-accent: oklch(0.93 0.01 85);
+  --sidebar-accent-foreground: oklch(0.18 0.02 60);
+  --sidebar-border: oklch(0.88 0.01 85);
+  --sidebar-ring: oklch(0.62 0.2 25);
 }
 
 @layer base {
@@ -130,15 +132,15 @@ code {
   position: relative;
 }
 
-/* Golden glow effect */
+/* Coral glow effect */
 .glow-gold {
   box-shadow:
-    0 0 20px oklch(0.78 0.14 75 / 0.15),
-    0 0 40px oklch(0.78 0.14 75 / 0.08);
+    0 0 20px oklch(0.62 0.2 25 / 0.2),
+    0 0 40px oklch(0.62 0.2 25 / 0.1);
 }
 
 .glow-gold-subtle {
-  box-shadow: 0 0 30px oklch(0.78 0.14 75 / 0.1);
+  box-shadow: 0 0 30px oklch(0.62 0.2 25 / 0.15);
 }
 
 /* Art deco inspired decorative line */
@@ -147,9 +149,9 @@ code {
   background: linear-gradient(
     90deg,
     transparent,
-    oklch(0.78 0.14 75 / 0.5) 20%,
-    oklch(0.78 0.14 75) 50%,
-    oklch(0.78 0.14 75 / 0.5) 80%,
+    oklch(0.62 0.2 25 / 0.5) 20%,
+    oklch(0.62 0.2 25) 50%,
+    oklch(0.62 0.2 25 / 0.5) 80%,
     transparent
   );
 }
@@ -165,36 +167,36 @@ code {
 }
 
 ::-webkit-scrollbar-track {
-  background: oklch(0.14 0.012 55);
+  background: oklch(0.96 0.005 85);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.28 0.02 55);
+  background: oklch(0.82 0.01 85);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.35 0.02 55);
+  background: oklch(0.72 0.01 85);
 }
 
 /* Prose styling for markdown */
 .prose-warm {
-  --tw-prose-body: oklch(0.85 0.015 80);
-  --tw-prose-headings: oklch(0.95 0.01 85);
-  --tw-prose-lead: oklch(0.75 0.02 75);
-  --tw-prose-links: oklch(0.78 0.14 75);
-  --tw-prose-bold: oklch(0.95 0.01 85);
-  --tw-prose-counters: oklch(0.65 0.02 70);
-  --tw-prose-bullets: oklch(0.50 0.02 70);
-  --tw-prose-hr: oklch(0.28 0.02 55);
-  --tw-prose-quotes: oklch(0.85 0.015 80);
-  --tw-prose-quote-borders: oklch(0.78 0.14 75);
-  --tw-prose-captions: oklch(0.60 0.02 70);
-  --tw-prose-code: oklch(0.78 0.14 75);
-  --tw-prose-pre-code: oklch(0.85 0.015 80);
-  --tw-prose-pre-bg: oklch(0.14 0.012 55);
-  --tw-prose-th-borders: oklch(0.28 0.02 55);
-  --tw-prose-td-borders: oklch(0.22 0.02 50);
+  --tw-prose-body: oklch(0.25 0.02 60);
+  --tw-prose-headings: oklch(0.18 0.02 60);
+  --tw-prose-lead: oklch(0.35 0.015 60);
+  --tw-prose-links: oklch(0.62 0.2 25);
+  --tw-prose-bold: oklch(0.18 0.02 60);
+  --tw-prose-counters: oklch(0.45 0.015 60);
+  --tw-prose-bullets: oklch(0.55 0.01 60);
+  --tw-prose-hr: oklch(0.88 0.01 85);
+  --tw-prose-quotes: oklch(0.25 0.02 60);
+  --tw-prose-quote-borders: oklch(0.62 0.2 25);
+  --tw-prose-captions: oklch(0.45 0.015 60);
+  --tw-prose-code: oklch(0.55 0.18 25);
+  --tw-prose-pre-code: oklch(0.25 0.02 60);
+  --tw-prose-pre-bg: oklch(0.96 0.005 85);
+  --tw-prose-th-borders: oklch(0.88 0.01 85);
+  --tw-prose-td-borders: oklch(0.92 0.005 85);
 }
 
 /* Animated gradient background */
@@ -206,9 +208,9 @@ code {
 .bg-gradient-animated {
   background: linear-gradient(
     135deg,
-    oklch(0.12 0.01 60) 0%,
-    oklch(0.15 0.02 50) 50%,
-    oklch(0.12 0.01 60) 100%
+    oklch(0.985 0.005 85) 0%,
+    oklch(0.97 0.01 75) 50%,
+    oklch(0.985 0.005 85) 100%
   );
   background-size: 200% 200%;
   animation: gradient-shift 15s ease infinite;

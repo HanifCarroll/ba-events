@@ -143,15 +143,15 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
           margin={{ top: 25, right: 10, left: 0, bottom: 30 }}
         >
           <defs>
-            {/* Gradient for pageviews */}
+            {/* Gradient for pageviews - coral */}
             <linearGradient id={`pageviews-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="oklch(0.78 0.14 75)" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="oklch(0.78 0.14 75)" stopOpacity={0.05} />
+              <stop offset="5%" stopColor="oklch(0.62 0.2 25)" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="oklch(0.62 0.2 25)" stopOpacity={0.05} />
             </linearGradient>
-            {/* Gradient for unique users */}
+            {/* Gradient for unique users - teal */}
             <linearGradient id={`users-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="oklch(0.7 0.15 200)" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="oklch(0.7 0.15 200)" stopOpacity={0.05} />
+              <stop offset="5%" stopColor="oklch(0.60 0.13 175)" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="oklch(0.60 0.13 175)" stopOpacity={0.05} />
             </linearGradient>
           </defs>
 
@@ -173,7 +173,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
               value: 'Date',
               position: 'insideBottom',
               offset: -5,
-              style: { fill: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: 500 },
+              style: { fill: 'oklch(0.45 0.015 60)', fontSize: 12, fontWeight: 500 },
             }}
           />
 
@@ -188,7 +188,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
               value: 'Count',
               angle: -90,
               position: 'insideLeft',
-              style: { fill: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: 500, textAnchor: 'middle' },
+              style: { fill: 'oklch(0.45 0.015 60)', fontSize: 12, fontWeight: 500, textAnchor: 'middle' },
             }}
           />
 
@@ -205,7 +205,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
             type="monotone"
             dataKey="pageviews"
             name="Pageviews"
-            stroke="oklch(0.78 0.14 75)"
+            stroke="oklch(0.62 0.2 25)"
             strokeWidth={2}
             fill={`url(#pageviews-${gradientId})`}
             fillOpacity={1}
@@ -214,7 +214,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
               dataKey="pageviews"
               position="top"
               offset={8}
-              style={{ fill: 'rgba(255, 255, 255, 0.85)', fontSize: 11, fontWeight: 500 }}
+              style={{ fill: 'oklch(0.35 0.02 60)', fontSize: 11, fontWeight: 500 }}
             />
           </Area>
 
@@ -222,7 +222,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
             type="monotone"
             dataKey="uniqueUsers"
             name="Unique Users"
-            stroke="oklch(0.7 0.15 200)"
+            stroke="oklch(0.60 0.13 175)"
             strokeWidth={2}
             fill={`url(#users-${gradientId})`}
             fillOpacity={1}
@@ -231,7 +231,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
               dataKey="uniqueUsers"
               position="bottom"
               offset={8}
-              style={{ fill: 'rgba(255, 255, 255, 0.85)', fontSize: 11, fontWeight: 500 }}
+              style={{ fill: 'oklch(0.35 0.02 60)', fontSize: 11, fontWeight: 500 }}
             />
           </Area>
         </AreaChart>

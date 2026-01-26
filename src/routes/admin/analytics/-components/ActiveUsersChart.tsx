@@ -161,7 +161,7 @@ export function ActiveUsersChart({ data, loading, title, color, yAxisLabel }: Ac
               value: 'Date',
               position: 'insideBottom',
               offset: -5,
-              style: { fill: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: 500 },
+              style: { fill: 'oklch(0.45 0.015 60)', fontSize: 12, fontWeight: 500 },
             }}
           />
 
@@ -176,7 +176,7 @@ export function ActiveUsersChart({ data, loading, title, color, yAxisLabel }: Ac
               value: yAxisLabel,
               angle: -90,
               position: 'insideLeft',
-              style: { fill: 'rgba(255, 255, 255, 0.7)', fontSize: 12, fontWeight: 500, textAnchor: 'middle' },
+              style: { fill: 'oklch(0.45 0.015 60)', fontSize: 12, fontWeight: 500, textAnchor: 'middle' },
             }}
           />
 
@@ -195,7 +195,7 @@ export function ActiveUsersChart({ data, loading, title, color, yAxisLabel }: Ac
               dataKey="activeUsers"
               position="top"
               offset={8}
-              style={{ fill: 'rgba(255, 255, 255, 0.85)', fontSize: 11, fontWeight: 500 }}
+              style={{ fill: 'oklch(0.35 0.02 60)', fontSize: 11, fontWeight: 500 }}
             />
           </Area>
         </AreaChart>

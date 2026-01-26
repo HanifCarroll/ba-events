@@ -45,7 +45,7 @@ export const Route = createRootRoute({
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       { title: 'BA Eventos - Descubrí Buenos Aires' },
       { name: 'description', content: 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.' },
-      { name: 'theme-color', content: '#1a1612' },
+      { name: 'theme-color', content: '#fafaf8' },
 
       // Open Graph tags
       { property: 'og:type', content: 'website' },
@@ -160,7 +160,7 @@ function RootDocument() {
   const { session } = Route.useRouteContext()
 
   return (
-    <html lang={getLocale()} className="dark">
+    <html lang={getLocale()}>
       <head>
         <HeadContent />
       </head>

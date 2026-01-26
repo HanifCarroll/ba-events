@@ -140,7 +140,7 @@ function AnalyticsDashboard() {
               data={wauTimeSeries ?? []}
               loading={loadingWau}
               title="Weekly Active Users"
-              color="oklch(0.78 0.14 75)"
+              color="oklch(0.62 0.2 25)"
               yAxisLabel="Users"
             />
           </CardContent>
@@ -247,7 +247,7 @@ function StatCard({ title, value, trend, icon: Icon, loading, color, bgColor, de
 
   return (
     <Card
-      className="bg-card/50 border-border/50 hover:border-primary/30 transition-all duration-200 hover:shadow-[0_0_20px_oklch(0.78_0.14_75/0.05)]"
+      className="bg-card/50 border-border/50 hover:border-primary/30 transition-all duration-200 hover:shadow-[0_0_20px_oklch(0.62_0.2_25/0.1)]"
       style={{ animationDelay: `${delay * 100}ms` }}
     >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
