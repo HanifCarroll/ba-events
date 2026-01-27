@@ -46,6 +46,73 @@ export const getDuplicateVenueCandidatesAction = createServerFn({ method: 'GET' 
     return data ?? []
   })
 
+// Get venues that need address checking (status = 'pending')
+export const getVenuesForAddressCheckAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<Array<{ id: string; name: string }>> => {
+    const client = await requireAdminAccess()
+
+    const { data, error } = await client
+      .from('venues')
+      .select('id, name')
+      .eq('address_check_status', 'pending')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return data ?? []
+  }
+)
+
+// Update address check status for multiple venues
+export const updateAddressCheckStatusAction = createServerFn({ method: 'POST' })
+  .inputValidator((input: { updates: Array<{ id: string; status: 'flagged' | 'not_flagged' | 'confirmed_venue' }> }) => input)
+  .handler(async ({ data }): Promise<{ success: boolean; updated: number }> => {
+    const client = await requireAdminAccess()
+
+    // Group updates by status for batch processing
+    const byStatus = new Map<string, string[]>()
+    for (const update of data.updates) {
+      const ids = byStatus.get(update.status) ?? []
+      ids.push(update.id)
+      byStatus.set(update.status, ids)
+    }
+
+    let totalUpdated = 0
+
+    // Update each status group
+    for (const [status, ids] of byStatus) {
+      if (ids.length === 0) continue
+
+      const { error, count } = await client
+        .from('venues')
+        .update({ address_check_status: status })
+        .in('id', ids)
+
+      if (error) {
+        console.error(`[venue-review] Failed to update status to ${status}:`, error)
+        throw error
+      }
+
+      totalUpdated += count ?? ids.length
+    }
+
+    return { success: true, updated: totalUpdated }
+  })
+
+// Mark a single venue as confirmed (not an address)
+export const markVenueAsConfirmedAction = createServerFn({ method: 'POST' })
+  .inputValidator((venueId: string) => venueId)
+  .handler(async ({ data: venueId }): Promise<{ success: boolean }> => {
+    const client = await requireAdminAccess()
+
+    const { error } = await client
+      .from('venues')
+      .update({ address_check_status: 'confirmed_venue' })
+      .eq('id', venueId)
+
+    if (error) throw error
+    return { success: true }
+  })
+
 // Detect address-like venue names using Claude Haiku
 // Uses async generator to stream progress updates to the client
 export const detectAddressLikeNamesAction = createServerFn({ method: 'POST' })

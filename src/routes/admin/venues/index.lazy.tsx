@@ -652,6 +652,8 @@ function VenueListPage() {
             hasStarted={review.hasStartedAddressAnalysis}
             onRefresh={review.refetchAddressNames}
             onStart={review.startAddressAnalysis}
+            onConfirmVenue={review.handleConfirmVenue}
+            isConfirmingVenue={review.isConfirmingVenue}
           />
         </TabsContent>
       </Tabs>

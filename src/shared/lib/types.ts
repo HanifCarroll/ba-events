@@ -62,6 +62,11 @@ export const ENRICHMENT_STATUSES = ['pending', 'in_progress', 'completed', 'fail
 
 export type EnrichmentStatus = (typeof ENRICHMENT_STATUSES)[number]
 
+// Address check status (for AI venue name analysis)
+export const ADDRESS_CHECK_STATUSES = ['pending', 'flagged', 'confirmed_venue', 'not_flagged'] as const
+
+export type AddressCheckStatus = (typeof ADDRESS_CHECK_STATUSES)[number]
+
 // Simplified intent-based categories (reduced from 23 to 6)
 export const CATEGORIES = [
   'music',
@@ -86,6 +91,7 @@ export interface Venue {
   enrichment_status: EnrichmentStatus
   enrichment_error: string | null
   enriched_at: string | null
+  address_check_status: AddressCheckStatus
   created_at: string
   updated_at: string
 }

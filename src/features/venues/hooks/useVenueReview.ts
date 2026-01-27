@@ -10,6 +10,9 @@ import {
   dismissDuplicatePairAction,
   getDismissedDuplicatesAction,
   restoreDismissedPairAction,
+  getVenuesForAddressCheckAction,
+  updateAddressCheckStatusAction,
+  markVenueAsConfirmedAction,
   type VenueEventPreview,
   type AddressNameResult,
   type AddressDetectionComplete,
@@ -68,18 +71,29 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
   })
 
   // Function to start address analysis with streaming
+  // Only analyzes venues with address_check_status = 'pending'
   const startAddressAnalysis = useCallback(async () => {
-    if (venues.length === 0) return
-
     setAddressAnalysisEnabled(true)
     setIsLoadingAddresses(true)
-    setAddressProgress({ current: 0, total: venues.length })
 
-    toastIdRef.current = toast.loading(`Analyzing 0/${venues.length} venue names...`)
+    toastIdRef.current = toast.loading('Fetching venues to analyze...')
 
     try {
+      // Fetch only venues that haven't been checked yet
+      const pendingVenues = await getVenuesForAddressCheckAction()
+
+      if (pendingVenues.length === 0) {
+        toast.success('All venues have already been analyzed', { id: toastIdRef.current })
+        setAddressResults([])
+        setIsLoadingAddresses(false)
+        return
+      }
+
+      setAddressProgress({ current: 0, total: pendingVenues.length })
+      toast.loading(`Analyzing 0/${pendingVenues.length} venue names...`, { id: toastIdRef.current })
+
       const stream = await detectAddressLikeNamesAction({
-        data: venues.map((v) => ({ id: v.id, name: v.name })),
+        data: pendingVenues,
       })
 
       let finalResult: AddressDetectionComplete | null = null
@@ -97,12 +111,25 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
       }
 
       if (finalResult) {
+        // Persist results to database
+        const updates = finalResult.results.map((r) => ({
+          id: r.venue_id,
+          status: (r.is_address_like && r.confidence > 0.7 ? 'flagged' : 'not_flagged') as 'flagged' | 'not_flagged',
+        }))
+
+        if (updates.length > 0) {
+          await updateAddressCheckStatusAction({ data: { updates } })
+        }
+
         setAddressResults(finalResult.results)
         const addressLikeCount = finalResult.results.filter(r => r.is_address_like && r.confidence > 0.7).length
         toast.success(
-          `Found ${addressLikeCount} address-like venue names`,
+          `Found ${addressLikeCount} address-like venue names (results saved)`,
           { id: toastIdRef.current }
         )
+
+        // Invalidate venues query to refresh the list
+        queryClient.invalidateQueries({ queryKey: queryKeys.venues.all })
       }
     } catch (error) {
       console.error('Address analysis failed:', error)
@@ -115,7 +142,7 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
       setAddressProgress(null)
       toastIdRef.current = undefined
     }
-  }, [venues])
+  }, [queryClient])
 
   // Function to re-run address analysis
   const refetchAddresses = useCallback(() => {
@@ -225,19 +252,49 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
   }, [duplicatePairs, venues])
 
   // Filter venues with address-like names
+  // Shows venues that are flagged OR from current analysis results
   const addressLikeVenues = useMemo((): AddressLikeVenue[] => {
-    if (!addressResults) return []
+    // First, get venues already flagged in the database
+    const flaggedVenues = venues
+      .filter((v) => v.address_check_status === 'flagged')
+      .map((v) => {
+        // Try to find confidence from current results if available
+        const result = addressResults?.find((r) => r.venue_id === v.id)
+        return {
+          venue: v,
+          confidence: result?.confidence ?? 0.8, // Default confidence for already-flagged venues
+          suggestedName: result?.suggested_name,
+        }
+      })
 
-    const venueMap = new Map(venues.map((v) => [v.id, v]))
-    return addressResults
-      .filter((r) => r.is_address_like && r.confidence > 0.7)
-      .map((r) => ({
-        venue: venueMap.get(r.venue_id)!,
-        confidence: r.confidence,
-        suggestedName: r.suggested_name,
-      }))
-      .filter((r) => r.venue) // Filter out missing venues
-      .sort((a, b) => b.confidence - a.confidence)
+    // If we have fresh results, also include newly detected ones
+    if (addressResults) {
+      const venueMap = new Map(venues.map((v) => [v.id, v]))
+      const fromResults = addressResults
+        .filter((r) => r.is_address_like && r.confidence > 0.7)
+        .map((r) => ({
+          venue: venueMap.get(r.venue_id)!,
+          confidence: r.confidence,
+          suggestedName: r.suggested_name,
+        }))
+        .filter((r) => r.venue)
+
+      // Merge, preferring results with higher confidence
+      const merged = new Map<string, AddressLikeVenue>()
+      for (const v of flaggedVenues) {
+        merged.set(v.venue.id, v)
+      }
+      for (const v of fromResults) {
+        const existing = merged.get(v.venue.id)
+        if (!existing || v.confidence > existing.confidence) {
+          merged.set(v.venue.id, v)
+        }
+      }
+
+      return Array.from(merged.values()).sort((a, b) => b.confidence - a.confidence)
+    }
+
+    return flaggedVenues.sort((a, b) => b.confidence - a.confidence)
   }, [addressResults, venues])
 
   // Merge mutation
@@ -310,6 +367,26 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     },
   })
 
+  // Mark venue as confirmed (not an address) mutation
+  const confirmVenueMutation = useMutation({
+    mutationFn: (venueId: string) => markVenueAsConfirmedAction({ data: venueId }),
+    onMutate: async (venueId) => {
+      // Optimistically remove from address results
+      setAddressResults((prev) =>
+        prev ? prev.filter((r) => r.venue_id !== venueId) : prev
+      )
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.venues.all })
+      toast.success('Venue marked as confirmed')
+    },
+    onError: (error) => {
+      toast.error('Failed to confirm venue', {
+        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
+      })
+    },
+  })
+
   // Dialog helpers
   const openMergeDialog = useCallback((group: DuplicateGroup) => {
     setSelectedDuplicateGroup(group)
@@ -354,6 +431,13 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
       restoreMutation.mutate(id)
     },
     [restoreMutation]
+  )
+
+  const handleConfirmVenue = useCallback(
+    (venueId: string) => {
+      confirmVenueMutation.mutate(venueId)
+    },
+    [confirmVenueMutation]
   )
 
   // Counts for badges
@@ -420,6 +504,10 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     handleRestore,
     isDismissing: dismissMutation.isPending,
     isRestoring: restoreMutation.isPending,
+
+    // Confirm venue (not an address)
+    handleConfirmVenue,
+    isConfirmingVenue: confirmVenueMutation.isPending,
   }
 }
 

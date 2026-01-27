@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Link2,
   Trash2,
+  Check,
 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@/shared/ui/button'
@@ -39,6 +40,8 @@ interface VenueAddressNamesPanelProps {
   hasStarted: boolean
   onRefresh: () => void
   onStart: () => void
+  onConfirmVenue: (venueId: string) => void
+  isConfirmingVenue: boolean
 }
 
 export function VenueAddressNamesPanel({
@@ -48,6 +51,8 @@ export function VenueAddressNamesPanel({
   hasStarted,
   onRefresh,
   onStart,
+  onConfirmVenue,
+  isConfirmingVenue,
 }: VenueAddressNamesPanelProps) {
   const [editingVenue, setEditingVenue] = useState<Venue | null>(null)
   const [editingSuggestedName, setEditingSuggestedName] = useState<string | undefined>()
@@ -146,10 +151,21 @@ export function VenueAddressNamesPanel({
                     )}
                   </p>
                 </div>
-                <div className="flex items-center gap-3 ml-4">
+                <div className="flex items-center gap-2 ml-4">
                   <Badge variant="secondary">
                     {m.admin_confidence({ percent: Math.round(confidence * 100) })}
                   </Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                    onClick={() => onConfirmVenue(venue.id)}
+                    disabled={isConfirmingVenue}
+                    title="Mark as valid venue name (not an address)"
+                  >
+                    <Check className="h-4 w-4 mr-1" />
+                    Not an Address
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
