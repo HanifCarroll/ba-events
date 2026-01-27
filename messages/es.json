@@ -329,7 +329,7 @@
   "personalization_prompt_setup": "Configurar Mis Preferencias",
   "personalization_prompt_later": "Quizás Después",
   "chats_title": "Chats",
-  "chats_new_chat": "+ Nuevo chat",
+  "chats_new_chat": "Nuevo chat",
   "chats_count": "{count} chats con BA Events",
   "chats_last_message": "Último mensaje {time}",
   "chats_empty_title": "Sin conversaciones aún",
