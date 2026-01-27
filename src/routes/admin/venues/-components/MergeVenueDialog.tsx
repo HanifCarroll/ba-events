@@ -18,7 +18,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/shared/ui/collapsible'
-import { getVenueEventsAction, type VenueEventPreview, type DuplicateGroup } from '@/features/venues/api/review'
+import { getVenueEventsAction, type VenueEventPreview } from '@/features/venues/api/review'
+import type { DuplicateGroup } from '@/features/venues/hooks/useVenueReview'
 import { formatDateTime } from '@/shared/lib/utils/formatting'
 import type { Venue } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
@@ -59,6 +60,7 @@ export function MergeVenueDialog({
   const [expandedVenueIds, setExpandedVenueIds] = useState<Set<string>>(new Set())
 
   // Reset selection when group changes - pre-select venue with most complete data
+  // Expand all venues by default to show event info
   useEffect(() => {
     if (group) {
       const allVenues = [group.primaryVenue, ...group.duplicates.map((d) => d.venue)]
@@ -69,7 +71,9 @@ export function MergeVenueDialog({
         return venueScore > bestScore ? venue : best
       }, allVenues[0])
       setSelectedTargetId(bestVenue.id)
-      setExpandedVenueIds(new Set())
+      // Expand all venues that have events by default
+      const venuesWithEvents = allVenues.filter(v => (eventCounts[v.id] ?? 0) > 0)
+      setExpandedVenueIds(new Set(venuesWithEvents.map(v => v.id)))
     }
   }, [group, eventCounts])
 
