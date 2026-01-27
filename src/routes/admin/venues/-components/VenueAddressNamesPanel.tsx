@@ -1,10 +1,8 @@
 import { useState } from 'react'
 import {
-  RefreshCw,
   CheckCircle2,
   Pencil,
   Loader2,
-  Play,
   Calendar,
   ExternalLink,
   Link2,
@@ -37,9 +35,6 @@ interface VenueAddressNamesPanelProps {
   venues: AddressLikeVenue[]
   venueEvents: Record<string, VenueEventPreview[]>
   isLoading: boolean
-  hasStarted: boolean
-  onRefresh: () => void
-  onStart: () => void
   onConfirmVenue: (venueId: string) => void
   isConfirmingVenue: boolean
 }
@@ -48,9 +43,6 @@ export function VenueAddressNamesPanel({
   venues,
   venueEvents,
   isLoading,
-  hasStarted,
-  onRefresh,
-  onStart,
   onConfirmVenue,
   isConfirmingVenue,
 }: VenueAddressNamesPanelProps) {
@@ -79,29 +71,11 @@ export function VenueAddressNamesPanel({
     }
   }
 
-  // Show start button if analysis hasn't been started yet
-  if (!hasStarted && !isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 bg-card/50 rounded-xl border border-border/50">
-        <h3 className="font-display text-lg font-medium text-foreground mb-2">
-          {m.admin_analyze_address_names()}
-        </h3>
-        <p className="text-muted-foreground mb-4 text-center max-w-md">
-          {m.admin_analyze_address_names_desc()}
-        </p>
-        <Button onClick={onStart}>
-          <Play className="h-4 w-4 mr-2" />
-          {m.admin_start_analysis()}
-        </Button>
-      </div>
-    )
-  }
-
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <Loader2 className="h-8 w-8 animate-spin mb-4" />
-        <p>{m.admin_analyzing_names()}</p>
+        <p>{m.common_loading()}</p>
       </div>
     )
   }
@@ -113,11 +87,9 @@ export function VenueAddressNamesPanel({
         <h3 className="font-display text-lg font-medium text-foreground mb-2">
           {m.admin_no_address_names()}
         </h3>
-        <p className="text-muted-foreground mb-4">{m.admin_no_address_names_desc()}</p>
-        <Button variant="outline" onClick={() => onRefresh()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          {m.admin_re_analyze()}
-        </Button>
+        <p className="text-muted-foreground text-center max-w-md">
+          {m.admin_no_address_names_desc()}
+        </p>
       </div>
     )
   }
@@ -128,10 +100,6 @@ export function VenueAddressNamesPanel({
         <p className="text-muted-foreground">
           {m.admin_address_names_found({ count: venues.length })}
         </p>
-        <Button variant="outline" size="sm" onClick={() => onRefresh()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          {m.admin_re_analyze()}
-        </Button>
       </div>
 
       <div className="space-y-3">

@@ -300,3 +300,115 @@ export async function lookupNeighborhoodTiered(input: {
 
   return { neighborhood: null, method: 'none' }
 }
+
+// ============================================================================
+// ADDRESS-LIKE VENUE DETECTION & RESOLUTION
+// ============================================================================
+
+/**
+ * Patterns that indicate a venue name is actually a street address.
+ * These are common Buenos Aires address formats.
+ */
+const ADDRESS_PATTERNS = [
+  /^Av\.?\s+/i,                              // Av. Corrientes, Av Santa Fe
+  /^Avenida\s+/i,                            // Avenida de Mayo
+  /^Calle\s+/i,                              // Calle Florida
+  /^Pasaje\s+/i,                             // Pasaje Something
+  /^Cnel\.?\s+/i,                            // Cnel. Niceto Vega
+  /^\d+\s+[A-Za-z]/,                         // 1234 Thames (number first)
+  /[A-Za-z]+\s+\d{2,5}$/,                    // Thames 1234 (street + number at end)
+  /[A-Za-z]+\s+\d{2,5}\s*,/,                 // Thames 1234, CABA
+  /\s+(y|&)\s+/i,                            // Corrientes y Callao (intersection)
+  /\s+esq\.?\s+/i,                           // Corrientes esq. Callao
+  /\s+entre\s+/i,                            // Maure 3955 entre Fraga y Guevara
+  /,\s*(piso|local|of|depto|dto)/i,          // ..., Piso 5
+  /^(Piso|Local|Oficina|Depto)\s+/i,         // Piso 5 (starts with floor/unit)
+]
+
+/**
+ * Check if a venue name looks like a street address rather than a business name.
+ */
+export function isAddressLikeVenueName(name: string): boolean {
+  if (!name) return false
+  const trimmed = name.trim()
+  return ADDRESS_PATTERNS.some(pattern => pattern.test(trimmed))
+}
+
+/**
+ * Look up a business/venue at a given address using Nominatim.
+ * Returns the business name if found, null otherwise.
+ *
+ * This searches for the address and checks if Nominatim returns a POI (point of interest)
+ * with a name different from just the address.
+ */
+export async function lookupBusinessAtAddress(
+  address: string
+): Promise<{ name: string | null; neighborhood: Neighborhood | null; fullAddress: string | null }> {
+  // Search Nominatim with the address
+  const result = await searchNominatim(address)
+
+  if (!result) {
+    return { name: null, neighborhood: null, fullAddress: null }
+  }
+
+  // Extract neighborhood
+  const neighborhood = mapNominatimNeighborhood(
+    result.address.neighbourhood,
+    result.address.suburb
+  )
+
+  // Build the full address
+  const fullAddress = buildAddress(result.address)
+
+  // Check if Nominatim found a named place (not just a street address)
+  // The display_name often contains the business name at the start
+  // Format is usually: "Business Name, Street, Neighborhood, City, ..."
+  const displayParts = result.display_name.split(',').map(p => p.trim())
+
+  // The first part might be a business name if it's different from the road
+  const firstPart = displayParts[0]
+  const road = result.address.road
+  const houseNumber = result.address.house_number
+
+  // If the first part is just the street address, there's no business name
+  const isJustAddress =
+    firstPart === road ||
+    firstPart === `${road} ${houseNumber}` ||
+    firstPart === `${houseNumber} ${road}` ||
+    firstPart === houseNumber ||
+    // Check if first part matches the search query (means no POI found)
+    firstPart.toLowerCase() === address.toLowerCase()
+
+  if (isJustAddress) {
+    return { name: null, neighborhood, fullAddress }
+  }
+
+  // Found a business name!
+  return { name: firstPart, neighborhood, fullAddress }
+}
+
+/**
+ * Try to find an existing venue by address (checking the address field).
+ */
+export async function findVenueByAddress(
+  client: unknown, // SupabaseClient - using unknown to avoid circular import
+  address: string
+): Promise<{ id: string; name: string } | null> {
+  // Normalize address for comparison
+  const normalizedAddress = address.trim().toLowerCase()
+
+  // Query venues where address contains this string
+  const supabase = client as { from: (table: string) => unknown }
+  const { data, error } = await (supabase.from('venues') as {
+    select: (cols: string) => { ilike: (col: string, val: string) => { limit: (n: number) => Promise<{ data: Array<{ id: string; name: string; address: string }> | null; error: unknown }> } }
+  })
+    .select('id, name, address')
+    .ilike('address', `%${normalizedAddress}%`)
+    .limit(1)
+
+  if (error || !data || data.length === 0) {
+    return null
+  }
+
+  return { id: data[0].id, name: data[0].name }
+}

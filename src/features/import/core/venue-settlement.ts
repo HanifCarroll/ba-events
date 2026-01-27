@@ -9,7 +9,12 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { matchVenue } from '../scrapers/venue-matcher'
-import { lookupNeighborhoodTiered, delay } from './nominatim'
+import {
+  lookupNeighborhoodTiered,
+  delay,
+  isAddressLikeVenueName,
+  lookupBusinessAtAddress,
+} from './nominatim'
 import type { Venue, Neighborhood, VenueInsert } from '@/shared/lib/types'
 
 // ============================================================================
@@ -137,7 +142,8 @@ export interface VenueSettlementStats {
  */
 async function createVenue(
   client: SupabaseClient,
-  venue: VenueInsert
+  venue: VenueInsert,
+  addressCheckStatus: 'pending' | 'flagged' | 'not_flagged' = 'pending'
 ): Promise<Venue> {
   const { data, error } = await client
     .from('venues')
@@ -146,6 +152,7 @@ async function createVenue(
       address: venue.address || null,
       neighborhood: venue.neighborhood || null,
       enrichment_status: 'pending',
+      address_check_status: addressCheckStatus,
     })
     .select()
     .single()
@@ -245,28 +252,58 @@ export async function settleVenue(
     }
   }
 
-  // Step 1: Try matching against existing venues
-  const match = await matchVenue(venueName, REVIEW_QUEUE_THRESHOLD)
+  // Check if venue name looks like a street address
+  const isAddressLike = isAddressLikeVenueName(venueName)
+  let resolvedVenueName = venueName
+  let addressLookupNeighborhood: Neighborhood | null = null
+
+  if (isAddressLike) {
+    console.log(`[venue-settlement] Detected address-like venue name: "${venueName}", looking up business...`)
+
+    // Rate limit: wait before Nominatim call
+    await delay(1000)
+
+    // Try to find the real business name at this address via Nominatim
+    const businessLookup = await lookupBusinessAtAddress(venueName)
+
+    if (businessLookup.name) {
+      console.log(`[venue-settlement] Found business "${businessLookup.name}" at address "${venueName}"`)
+      resolvedVenueName = businessLookup.name
+      addressLookupNeighborhood = businessLookup.neighborhood
+    } else {
+      console.log(`[venue-settlement] No business found at address "${venueName}", will use address as venue name`)
+      addressLookupNeighborhood = businessLookup.neighborhood
+    }
+  }
+
+  // Step 1: Try matching against existing venues (using resolved name if address was looked up)
+  const match = await matchVenue(resolvedVenueName, REVIEW_QUEUE_THRESHOLD)
 
   // Exact match - use it immediately
   if (match.matchType === 'exact') {
+    if (isAddressLike && resolvedVenueName !== venueName) {
+      console.log(`[venue-settlement] Address "${venueName}" resolved to existing venue "${match.venue!.name}"`)
+    }
     return {
       venueId: match.venue!.id,
       action: 'matched',
       confidence: 1,
       method: 'exact',
-      venueName,
+      venueName: match.venue!.name, // Use the matched venue's actual name
     }
   }
 
   // High-confidence fuzzy match - auto-use
   if (match.matchType === 'fuzzy' && match.confidence >= AUTO_USE_THRESHOLD) {
+    if (isAddressLike) {
+      console.log(`[venue-settlement] Address "${venueName}" fuzzy-matched to existing venue "${match.venue!.name}"`)
+    }
     return {
       venueId: match.venue!.id,
       action: 'matched',
       confidence: match.confidence,
       method: 'fuzzy',
-      venueName,
+      venueName: match.venue!.name, // Use the matched venue's actual name
     }
   }
 
@@ -274,7 +311,7 @@ export async function settleVenue(
   if (match.matchType === 'fuzzy') {
     await queueVenueForReview(client, options.scrapeRunId || null, {
       source: options.source,
-      source_venue_name: venueName,
+      source_venue_name: venueName, // Original name for review context
       source_address: input.address,
       source_coordinates: input.coordinates,
       best_match_venue_id: match.venue?.id,
@@ -288,35 +325,59 @@ export async function settleVenue(
       action: 'queued-review',
       confidence: match.confidence,
       method: 'fuzzy',
-      venueName,
+      venueName: match.venue!.name,
     }
   }
 
   // No match - auto-create with neighborhood lookup
-  console.log(`[venue-settlement] No match for "${venueName}", looking up neighborhood...`)
+  console.log(`[venue-settlement] No match for "${resolvedVenueName}", looking up neighborhood...`)
 
-  const { neighborhood, method } = await lookupNeighborhoodTiered({
-    venueName,
-    neighborhood: input.neighborhood,
-    coordinates: input.coordinates,
-    address: input.address,
-  })
+  // Use neighborhood from address lookup if available, otherwise do tiered lookup
+  let neighborhood: Neighborhood | null = addressLookupNeighborhood
+  let method: string = 'address-lookup'
 
-  // Create the venue
+  if (!neighborhood) {
+    const lookup = await lookupNeighborhoodTiered({
+      venueName: resolvedVenueName,
+      neighborhood: input.neighborhood,
+      coordinates: input.coordinates,
+      address: input.address,
+    })
+    neighborhood = lookup.neighborhood
+    method = lookup.method
+  }
+
+  // Determine the address to store
+  // If we resolved an address-like name to a business, use the original address
+  const addressToStore = isAddressLike ? venueName : (input.address || null)
+
+  // Determine address_check_status based on what happened:
+  // - Resolved address to business name → 'not_flagged' (proper name now)
+  // - Address-like but no business found → 'flagged' (needs admin review)
+  // - Not address-like → 'not_flagged' (already a proper name)
+  const addressCheckStatus = isAddressLike
+    ? (resolvedVenueName !== venueName ? 'not_flagged' : 'flagged')
+    : 'not_flagged'
+
+  // Create the venue with the resolved name
   const newVenue = await createVenue(client, {
-    name: venueName,
-    address: input.address || null,
+    name: resolvedVenueName,
+    address: addressToStore,
     neighborhood: neighborhood,
-  })
+  }, addressCheckStatus)
 
-  console.log(`[venue-settlement] Created venue "${venueName}" with neighborhood: ${neighborhood || 'unknown'}`)
+  if (isAddressLike && resolvedVenueName !== venueName) {
+    console.log(`[venue-settlement] Created venue "${resolvedVenueName}" (resolved from address "${venueName}") with neighborhood: ${neighborhood || 'unknown'}`)
+  } else {
+    console.log(`[venue-settlement] Created venue "${resolvedVenueName}" with neighborhood: ${neighborhood || 'unknown'}`)
+  }
 
   return {
     venueId: newVenue.id,
     action: 'auto-created',
     confidence: neighborhood ? 0.8 : 0.5, // Higher confidence if we found neighborhood
     method: method as VenueSettlementResult['method'],
-    venueName,
+    venueName: resolvedVenueName,
     neighborhood,
   }
 }

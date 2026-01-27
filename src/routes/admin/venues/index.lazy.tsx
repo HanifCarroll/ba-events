@@ -648,10 +648,7 @@ function VenueListPage() {
           <VenueAddressNamesPanel
             venues={review.addressLikeVenues}
             venueEvents={review.addressVenueEvents}
-            isLoading={review.isLoadingAddressNames}
-            hasStarted={review.hasStartedAddressAnalysis}
-            onRefresh={review.refetchAddressNames}
-            onStart={review.startAddressAnalysis}
+            isLoading={review.isLoading}
             onConfirmVenue={review.handleConfirmVenue}
             isConfirmingVenue={review.isConfirmingVenue}
           />

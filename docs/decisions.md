@@ -26,6 +26,123 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Real-Time Nominatim Address Resolution for Venue Imports
+
+**Date:** 2026-01-27
+
+**Decision:** Detect address-like venue names during import and attempt to resolve them to business names via Nominatim API before creating venues.
+
+**Problem:**
+Event sources sometimes provide street addresses as venue names (e.g., "Thames 1234", "Av. Corrientes 5678") instead of actual business names. This created:
+1. Duplicate venues (address-name alongside proper venue name)
+2. Poor data quality (addresses aren't searchable as venues)
+3. Manual cleanup burden via the Address Names admin tab
+
+**Solution:**
+Integrated address detection and resolution into the venue settlement pipeline:
+
+1. **Detection** (`nominatim.ts`): 13 regex patterns identify Buenos Aires address formats:
+   - Street prefixes: `Av.`, `Avenida`, `Calle`, `Pasaje`, `Cnel.`
+   - Street + number: `Thames 1234`, `1234 Thames`
+   - Intersections: `Corrientes y Callao`, `esq.`, `entre`
+   - Building descriptors: `Piso`, `Local`, `Oficina`, `Depto`
+
+2. **Resolution** (`nominatim.ts`): `lookupBusinessAtAddress()` queries Nominatim and extracts business name from `display_name` if different from just the street address.
+
+3. **Integration** (`venue-settlement.ts`): Before matching/creating venues:
+   - If address-like name detected → query Nominatim
+   - If business found → use business name, store original address in `address` field
+   - If no business → keep address as venue name, flag for admin review
+
+4. **Status tracking**: Set `address_check_status` at creation:
+   - Resolved address → business: `'not_flagged'`
+   - Address-like but no business: `'flagged'` (shows in Address Names tab)
+   - Not address-like: `'not_flagged'`
+
+**Flow Diagram:**
+```
+Venue Name: "Thames 1234"
+    │
+    ▼
+isAddressLikeVenueName() → true
+    │
+    ▼
+lookupBusinessAtAddress("Thames 1234")
+    │
+    ├── Business found: "La Catedral Club"
+    │   └── Create venue: name="La Catedral Club", address="Thames 1234", status='not_flagged'
+    │
+    └── No business found
+        └── Create venue: name="Thames 1234", status='flagged' (admin review)
+```
+
+**Alternatives Considered:**
+- **Batch AI detection only**: Reactive - bad venues already in DB before flagging
+- **Google Maps API**: Paid, requires API key management, more complex
+- **Scraper-level detection**: Scattered logic, hard to maintain consistency
+
+**Rationale:**
+1. **Prevention over cleanup**: Catch address-names at import time, not after
+2. **Free API**: Nominatim is free with 1 req/sec rate limit (already rate-limited in settlement)
+3. **Graceful fallback**: If Nominatim fails, venue still created with flag for manual review
+4. **Reduced admin burden**: Address Names tab now only shows truly unresolvable cases
+
+**Consequences:**
+- Imports with many new venues may be slower (1 second per address-like venue for Nominatim)
+- Venues not in OpenStreetMap won't be resolved (flagged for manual review)
+- Legacy address-names remain in DB (one-time cleanup may still be needed)
+
+**Files Modified:**
+- `src/features/import/core/nominatim.ts` - Added `isAddressLikeVenueName()`, `lookupBusinessAtAddress()`
+- `src/features/import/core/venue-settlement.ts` - Integrated address detection, added `address_check_status` to `createVenue()`
+
+---
+
+### Light Mode Color Scheme Redesign ("Buenos Aires Sunlight")
+
+**Date:** 2026-01-26
+
+**Decision:** Switch from dark mode "Noche Porteña" palette to a warm light mode "Buenos Aires Sunlight" palette.
+
+**Problem:**
+The app used a dark mode design (warm noir with amber gold accents), but industry research shows events apps almost universally use light mode because:
+- Better readability for glanceable info (event names, times, venues)
+- Events apps are often used outdoors where light mode maintains readability
+- Event photos/imagery pop better on light backgrounds
+- Light backgrounds convey openness, clarity, and approachability
+
+**Research:**
+Parallel research on 5 aspects:
+1. Eventbrite's color scheme (orange CTAs, purple text, white backgrounds)
+2. Meetup's color scheme (red brand, teal CTAs, white backgrounds)
+3. Events app UI trends 2024-2025 (60-30-10 rule, warm colors for energy)
+4. DICE/Resident Advisor schemes (nightlife exception: dark mode acceptable)
+5. Light mode best practices (off-white backgrounds, WCAG contrast, shadows)
+
+**Alternatives Considered:**
+- **Option B: "Festival Vibrante"** - Electric purple + coral pink. Rejected: too bold, less universal appeal.
+- **Option C: "Elegant Porteño"** - Keep amber gold in light mode. Rejected: coral is more energetic and event-appropriate.
+- **Light + dark mode toggle** - Rejected: adds maintenance burden, most events apps are light-only.
+
+**New Palette:**
+| Token | Color | Hex Approximation |
+|-------|-------|------------------|
+| Background | Warm off-white | `#FAFAF8` |
+| Foreground | Warm near-black | `#1F1B16` |
+| Primary (CTAs) | Coral | `#E85A4F` |
+| Accent | Teal | `#0D9488` |
+| Muted | Light warm gray | `#F5F4F2` |
+| Border | Subtle gray | `#E0DDD9` |
+
+**Files Modified:**
+- `src/styles.css` - Complete palette replacement, scrollbar, glows, prose styles
+- `src/routes/__root.tsx` - Theme-color meta tag, removed dark class
+- `src/routes/admin/analytics/*.tsx` - Chart colors updated for light mode
+
+**Commit:** `f739839`
+
+---
+
 ### Meetup Scraper Migration to Trigger.dev Playwright
 
 **Date:** 2026-01-25
