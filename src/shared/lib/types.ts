@@ -700,3 +700,91 @@ export interface ConciergeMessage extends ChatMessage {
   /** User has confirmed this recommendation */
   isDecision?: boolean
 }
+
+// =============================================================================
+// CONVERSATION HISTORY TYPES
+// =============================================================================
+
+/** Message role for conversation messages */
+export type MessageRole = 'user' | 'assistant' | 'system'
+
+/** Attached data stored with assistant messages */
+export interface MessageAttachedData {
+  events?: EventWithVenue[]
+  suggestions?: RefinementSuggestion[]
+  directions?: DirectionsData
+}
+
+/** Database record for a conversation */
+export interface Conversation {
+  id: string
+  user_id: string | null
+  title: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  metadata: Record<string, Json>
+}
+
+/** For inserting a new conversation */
+export interface ConversationInsert {
+  user_id?: string | null
+  title?: string
+  metadata?: Record<string, Json>
+}
+
+/** For updating a conversation */
+export type ConversationUpdate = Partial<Omit<ConversationInsert, 'user_id'>> & {
+  deleted_at?: string | null
+}
+
+/** Database record for a message */
+export interface Message {
+  id: string
+  conversation_id: string
+  parent_id: string | null
+  role: MessageRole
+  content: string
+  attached_data: MessageAttachedData
+  created_at: string
+  sequence_number: number
+}
+
+/** For inserting a new message */
+export interface MessageInsert {
+  conversation_id: string
+  parent_id?: string | null
+  role: MessageRole
+  content: string
+  attached_data?: MessageAttachedData
+  sequence_number?: number
+}
+
+/** Lightweight conversation for list views */
+export interface ConversationListItem {
+  id: string
+  title: string
+  updated_at: string
+  /** Preview of the last message (optional, for display) */
+  preview?: string
+}
+
+/** Conversation with its messages for display */
+export interface ConversationWithMessages extends Conversation {
+  messages: Message[]
+}
+
+/** For migrating anonymous conversations to authenticated */
+export interface MigrationConversation {
+  local_id: string
+  title: string
+  created_at: string
+  updated_at: string
+  messages: Array<{
+    role: MessageRole
+    content: string
+    attached_data?: MessageAttachedData
+    created_at: string
+    sequence_number: number
+  }>
+}

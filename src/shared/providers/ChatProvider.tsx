@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useCallback, useRef, useState, type ReactNode } from 'react'
 
 interface ChatContextValue {
   /**
@@ -10,6 +10,32 @@ interface ChatContextValue {
    * This should be called by ChatContainer to register its reset logic.
    */
   registerStartNewChatHandler: (handler: () => void) => void
+
+  // Conversation history state
+  /**
+   * ID of the currently active conversation (null = new conversation not yet created)
+   */
+  activeConversationId: string | null
+  /**
+   * Set the active conversation ID (used when loading a conversation or creating a new one)
+   */
+  setActiveConversationId: (id: string | null) => void
+  /**
+   * Whether the conversation sidebar is open
+   */
+  isSidebarOpen: boolean
+  /**
+   * Toggle the sidebar open/closed
+   */
+  toggleSidebar: () => void
+  /**
+   * Open the sidebar
+   */
+  openSidebar: () => void
+  /**
+   * Close the sidebar
+   */
+  closeSidebar: () => void
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -18,18 +44,54 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Store the handler in a ref so it can be updated without re-renders
   const startNewChatHandlerRef = useRef<(() => void) | null>(null)
 
+  // Conversation state
+  const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
   const registerStartNewChatHandler = useCallback((handler: () => void) => {
     startNewChatHandlerRef.current = handler
   }, [])
 
   const startNewChat = useCallback(() => {
+    // Clear active conversation
+    setActiveConversationIdState(null)
+    // Call the registered handler to clear messages
     if (startNewChatHandlerRef.current) {
       startNewChatHandlerRef.current()
     }
+    // Close sidebar on mobile after starting new chat
+    setIsSidebarOpen(false)
+  }, [])
+
+  const setActiveConversationId = useCallback((id: string | null) => {
+    setActiveConversationIdState(id)
+  }, [])
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarOpen((prev) => !prev)
+  }, [])
+
+  const openSidebar = useCallback(() => {
+    setIsSidebarOpen(true)
+  }, [])
+
+  const closeSidebar = useCallback(() => {
+    setIsSidebarOpen(false)
   }, [])
 
   return (
-    <ChatContext.Provider value={{ startNewChat, registerStartNewChatHandler }}>
+    <ChatContext.Provider
+      value={{
+        startNewChat,
+        registerStartNewChatHandler,
+        activeConversationId,
+        setActiveConversationId,
+        isSidebarOpen,
+        toggleSidebar,
+        openSidebar,
+        closeSidebar,
+      }}
+    >
       {children}
     </ChatContext.Provider>
   )
