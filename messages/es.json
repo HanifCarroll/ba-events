@@ -2,6 +2,7 @@
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "nav_home": "Inicio",
   "nav_new_chat": "Nuevo Chat",
+  "nav_chats": "Chats",
   "nav_saved": "Guardados",
   "nav_settings": "Perfil",
   "nav_admin": "Admin",
@@ -326,5 +327,12 @@
   "personalization_prompt_title": "Mejores Recomendaciones",
   "personalization_prompt_desc": "Contanos un poco sobre vos para que podamos recomendarte eventos que realmente te gusten. Solo toma un minuto.",
   "personalization_prompt_setup": "Configurar Mis Preferencias",
-  "personalization_prompt_later": "Quizás Después"
+  "personalization_prompt_later": "Quizás Después",
+  "chats_title": "Chats",
+  "chats_new_chat": "+ Nuevo chat",
+  "chats_count": "{count} chats con BA Events",
+  "chats_last_message": "Último mensaje {time}",
+  "chats_empty_title": "Sin conversaciones aún",
+  "chats_empty_desc": "Empezá a chatear para ver tu historial aquí.",
+  "chats_search_placeholder": "Buscar conversaciones..."
 }

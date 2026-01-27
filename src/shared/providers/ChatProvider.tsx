@@ -20,22 +20,6 @@ interface ChatContextValue {
    * Set the active conversation ID (used when loading a conversation or creating a new one)
    */
   setActiveConversationId: (id: string | null) => void
-  /**
-   * Whether the conversation sidebar is open
-   */
-  isSidebarOpen: boolean
-  /**
-   * Toggle the sidebar open/closed
-   */
-  toggleSidebar: () => void
-  /**
-   * Open the sidebar
-   */
-  openSidebar: () => void
-  /**
-   * Close the sidebar
-   */
-  closeSidebar: () => void
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -46,7 +30,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Conversation state
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const registerStartNewChatHandler = useCallback((handler: () => void) => {
     startNewChatHandlerRef.current = handler
@@ -59,24 +42,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (startNewChatHandlerRef.current) {
       startNewChatHandlerRef.current()
     }
-    // Close sidebar on mobile after starting new chat
-    setIsSidebarOpen(false)
   }, [])
 
   const setActiveConversationId = useCallback((id: string | null) => {
     setActiveConversationIdState(id)
-  }, [])
-
-  const toggleSidebar = useCallback(() => {
-    setIsSidebarOpen((prev) => !prev)
-  }, [])
-
-  const openSidebar = useCallback(() => {
-    setIsSidebarOpen(true)
-  }, [])
-
-  const closeSidebar = useCallback(() => {
-    setIsSidebarOpen(false)
   }, [])
 
   return (
@@ -86,10 +55,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         registerStartNewChatHandler,
         activeConversationId,
         setActiveConversationId,
-        isSidebarOpen,
-        toggleSidebar,
-        openSidebar,
-        closeSidebar,
       }}
     >
       {children}
