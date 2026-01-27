@@ -27,6 +27,7 @@ import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
 import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
 import { delay } from './nominatim'
+import { filterEventsByLocation } from './geo-validation'
 import type { EventInsert } from '@/shared/lib/types'
 
 // ============================================================================
@@ -154,7 +155,7 @@ export async function processMeetupImport(
           event.venue = {
             name: venueResult.venue.name,
             address: venueResult.venue.address,
-            city: 'Buenos Aires',
+            city: null, // Don't assume Buenos Aires - let validation catch bad data
             lat: null,
             lng: null,
           }
@@ -171,9 +172,16 @@ export async function processMeetupImport(
   const blocklistEntries = await getBlocklistEntries('meetup')
   const inPersonEvents = filterInPersonEvents(allEvents)
   const nonBlockedEvents = filterBlockedEvents(inPersonEvents, blocklistEntries)
-  const filteredEvents = filterByDateRange(nonBlockedEvents, startDate, endDate)
+  const dateFilteredEvents = filterByDateRange(nonBlockedEvents, startDate, endDate)
+
+  // Step 2.5: Filter by geographic location (reject events outside Buenos Aires)
+  const filteredEvents = filterEventsByLocation(dateFilteredEvents)
   result.eventsFiltered = filteredEvents.length
-  logger.info('[meetup] Filtered to in-person events in date range', { count: filteredEvents.length })
+  logger.info('[meetup] Filtered to in-person events in BA', {
+    afterDateFilter: dateFilteredEvents.length,
+    afterGeoFilter: filteredEvents.length,
+    rejectedByGeo: dateFilteredEvents.length - filteredEvents.length,
+  })
 
   if (filteredEvents.length === 0) {
     logger.info('[meetup] No events to import')

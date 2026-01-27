@@ -72,12 +72,18 @@ function buildMeetupUrlForDate(date: Date): string {
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}-03:00`
   }
 
+  // Buenos Aires center coordinates
+  const BA_LAT = '-34.6037'
+  const BA_LON = '-58.3816'
+
   const params = new URLSearchParams({
     customStartDate: formatWithOffset(startOfDay),
     customEndDate: formatWithOffset(endOfDay),
     source: 'EVENTS',
     eventType: 'inPerson',
     distance: 'tenMiles',
+    lat: BA_LAT,
+    lon: BA_LON,
   })
 
   return `${MEETUP_BASE_URL}?${params.toString()}`
@@ -166,7 +172,7 @@ function transformGraphQLEvent(gqlEvent: MeetupGraphQLEvent): MeetupEvent | null
     ? {
         name: gqlEvent.venue.name,
         address: gqlEvent.venue.address || null,
-        city: gqlEvent.venue.city || 'Buenos Aires',
+        city: gqlEvent.venue.city || null, // Don't assume Buenos Aires - let validation catch bad data
         lat: gqlEvent.venue.lat || null,
         lng: gqlEvent.venue.lng || null,
       }
@@ -411,7 +417,7 @@ async function scrapePageForEvents(
               ? {
                   name: domEvent.venueName,
                   address: null,
-                  city: 'Buenos Aires',
+                  city: null, // Don't assume Buenos Aires - let validation catch bad data
                   lat: null,
                   lng: null,
                 }
