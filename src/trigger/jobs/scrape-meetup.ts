@@ -17,13 +17,22 @@ export const scrapeMeetup = task({
   id: 'scrape-meetup',
   // Browser scraping can take a long time (day-by-day)
   maxDuration: 1800, // 30 minutes
+  // Start with medium machine for cost efficiency (1 vCPU, 2GB RAM)
+  machine: 'medium-1x',
+  retry: {
+    maxAttempts: 3,
+    // Escalate to larger machine only on OOM
+    outOfMemory: {
+      machine: 'large-1x', // 4 vCPU, 8GB RAM
+    },
+  },
   run: async (payload: MeetupJobPayload): Promise<MeetupImportResult> => {
     console.log('[scrape-meetup] Starting Meetup import job')
 
     const client = createServiceRoleClient()
 
     const result = await processMeetupImport(client, {
-      daysAhead: payload.daysAhead ?? 30,
+      daysAhead: payload.daysAhead ?? 14,
       scrapeRunId: payload.scrapeRunId,
     })
 

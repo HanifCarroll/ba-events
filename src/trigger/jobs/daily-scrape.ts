@@ -164,7 +164,7 @@ export const dailyScrape = schedules.task({
         scrapeRunId,
       }),
       tasks.trigger<typeof scrapeMeetup>('scrape-meetup', {
-        daysAhead: 30,
+        daysAhead: 14,
         scrapeRunId,
       }),
       tasks.trigger<typeof scrapeLuma>('scrape-luma', {
