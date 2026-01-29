@@ -461,7 +461,20 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
   const seenIds = new Set<string>()
 
   try {
-    let page = await browser.newPage()
+    // Create context with Buenos Aires geolocation to ensure Meetup returns BA events
+    // This is critical because Trigger.dev runs on US servers, and Meetup uses
+    // IP geolocation by default which would return US events instead
+    const context = await browser.newContext({
+      geolocation: {
+        latitude: -34.6037,
+        longitude: -58.3816,
+      },
+      permissions: ['geolocation'],
+      locale: 'es-AR',
+      timezoneId: 'America/Argentina/Buenos_Aires',
+    })
+
+    let page = await context.newPage()
 
     const dates = getDateRange(options.startDate, options.endDate)
     logger.info(`[Meetup] Scraping ${dates.length} days`, { startDate: options.startDate, endDate: options.endDate, daysCount: dates.length })
@@ -484,10 +497,10 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
             console.warn(
               `[Meetup] Frame detached for ${dateStr}, recreating page (attempt ${retry + 2}/${MAX_PAGE_RETRIES})`
             )
-            // Close old page and create fresh one
+            // Close old page and create fresh one from the same context
             await page.close().catch(() => {})
             await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
-            page = await browser.newPage()
+            page = await context.newPage()
           } else {
             // Non-frame error or max retries reached - log and continue
             logger.error(`[Meetup] Error scraping date`, { date: dateStr, error: sanitizeError(error) })
