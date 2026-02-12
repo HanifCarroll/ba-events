@@ -5,7 +5,12 @@
  * When they sign up/login, their conversations are migrated to PostgreSQL.
  */
 import Dexie, { type EntityTable } from 'dexie'
-import type { MessageAttachedData, MessageRole, MigrationConversation } from '@/shared/lib/types'
+import type {
+  MessageAttachedData,
+  MessageExecutionStep,
+  MessageRole,
+  MigrationConversation,
+} from '@/shared/lib/types'
 
 // Local conversation record
 interface LocalConversation {
@@ -21,6 +26,9 @@ interface LocalMessage {
   conversation_id: string
   role: MessageRole
   content: string
+  visible_content: string
+  execution_trace: MessageExecutionStep[]
+  response_contract_version: number
   attached_data: MessageAttachedData
   created_at: string
   sequence_number: number
@@ -45,6 +53,29 @@ class LocalConversationsDB extends Dexie {
       messages: 'id, conversation_id, [conversation_id+sequence_number]',
       session: 'key',
     })
+
+    this.version(2)
+      .stores({
+        conversations: 'id, updated_at',
+        messages: 'id, conversation_id, [conversation_id+sequence_number]',
+        session: 'key',
+      })
+      .upgrade((tx) => {
+        return tx
+          .table('messages')
+          .toCollection()
+          .modify((msg: Partial<LocalMessage> & { content?: string }) => {
+            if (typeof msg.visible_content !== 'string') {
+              msg.visible_content = typeof msg.content === 'string' ? msg.content : ''
+            }
+            if (!Array.isArray(msg.execution_trace)) {
+              msg.execution_trace = []
+            }
+            if (typeof msg.response_contract_version !== 'number') {
+              msg.response_contract_version = 1
+            }
+          })
+      })
   }
 }
 
@@ -173,6 +204,9 @@ export async function addLocalMessage(
   message: {
     role: MessageRole
     content: string
+    visible_content?: string
+    execution_trace?: MessageExecutionStep[]
+    response_contract_version?: number
     attached_data?: MessageAttachedData
   }
 ): Promise<LocalMessage> {
@@ -192,6 +226,9 @@ export async function addLocalMessage(
     conversation_id: conversationId,
     role: message.role,
     content: message.content,
+    visible_content: message.visible_content ?? message.content,
+    execution_trace: message.execution_trace ?? [],
+    response_contract_version: message.response_contract_version ?? 2,
     attached_data: message.attached_data ?? {},
     created_at: new Date().toISOString(),
     sequence_number: sequenceNumber,
@@ -224,7 +261,7 @@ export async function searchLocalConversations(query: string): Promise<LocalConv
 
   // Find all messages matching the query
   const matchingMessages = await db.messages
-    .filter((msg) => msg.content.toLowerCase().includes(lowerQuery))
+    .filter((msg) => (msg.visible_content ?? msg.content).toLowerCase().includes(lowerQuery))
     .toArray()
 
   // Get unique conversation IDs
@@ -263,6 +300,9 @@ export async function getConversationsForMigration(): Promise<MigrationConversat
       messages: messages.map((m) => ({
         role: m.role,
         content: m.content,
+        visible_content: m.visible_content,
+        execution_trace: m.execution_trace,
+        response_contract_version: m.response_contract_version,
         attached_data: m.attached_data,
         created_at: m.created_at,
         sequence_number: m.sequence_number,

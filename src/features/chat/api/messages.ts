@@ -5,7 +5,30 @@
  */
 
 import { createServerFn } from '@tanstack/react-start'
-import type { Message, MessageAttachedData } from '@/shared/lib/types'
+import type { Message, MessageAttachedData, MessageExecutionStep } from '@/shared/lib/types'
+
+type AddMessageInput = {
+  conversationId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  visibleContent?: string
+  executionTrace?: MessageExecutionStep[]
+  responseContractVersion?: number
+  attachedData?: MessageAttachedData
+}
+
+export function buildMessageInsertPayload(data: AddMessageInput, sequenceNumber: number) {
+  return {
+    conversation_id: data.conversationId,
+    role: data.role,
+    content: data.content,
+    visible_content: data.visibleContent ?? data.content,
+    execution_trace: data.executionTrace ?? [],
+    response_contract_version: data.responseContractVersion ?? 2,
+    attached_data: data.attachedData ?? {},
+    sequence_number: sequenceNumber,
+  }
+}
 
 /**
  * Add a message to a conversation.
@@ -13,12 +36,7 @@ import type { Message, MessageAttachedData } from '@/shared/lib/types'
  */
 export const addMessage = createServerFn({ method: 'POST' })
   .inputValidator(
-    (data: {
-      conversationId: string
-      role: 'user' | 'assistant' | 'system'
-      content: string
-      attachedData?: MessageAttachedData
-    }) => data
+    (data: AddMessageInput) => data
   )
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
@@ -58,13 +76,7 @@ export const addMessage = createServerFn({ method: 'POST' })
     // Insert the message
     const { data: message, error } = await supabase
       .from('messages')
-      .insert({
-        conversation_id: data.conversationId,
-        role: data.role,
-        content: data.content,
-        attached_data: data.attachedData ?? {},
-        sequence_number: sequenceNumber,
-      })
+      .insert(buildMessageInsertPayload(data, sequenceNumber))
       .select()
       .single()
 

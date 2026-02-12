@@ -7,6 +7,7 @@ import type {
   EventWithVenue,
   RefinementSuggestion,
   DirectionsData,
+  MessageExecutionStep,
   Message,
   MessageAttachedData,
 } from '@/shared/lib/types'
@@ -24,12 +25,34 @@ import {
   useAddMessage,
   useGenerateTitle,
 } from '@/features/chat/hooks/useConversations'
+import { extractVisibleTextFromUIMessageParts } from '@/features/chat/lib/extract-visible-text'
+
+type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
+
+export function assistantMessageHasVisibleContent(
+  message: AssistantVisibilityMessage | null | undefined
+): boolean {
+  if (!message) return false
+  return !!(
+    message.content.trim().length > 0 ||
+    (message.events && message.events.length > 0) ||
+    message.directions
+  )
+}
+
+export function shouldShowLoadingIndicator(
+  status: 'submitted' | 'streaming' | 'ready' | 'error',
+  lastAssistantMessage: AssistantVisibilityMessage | null | undefined
+): boolean {
+  return status === 'submitted' || (status === 'streaming' && !assistantMessageHasVisibleContent(lastAssistantMessage))
+}
 
 export function ChatContainer() {
   // Track events, suggestions, directions, and errors separately (for streaming message)
   const [events, setEvents] = useState<EventWithVenue[]>([])
   const [suggestions, setSuggestions] = useState<RefinementSuggestion[]>([])
   const [directions, setDirections] = useState<DirectionsData | null>(null)
+  const [executionTrace, setExecutionTrace] = useState<MessageExecutionStep[]>([])
   const [error, setError] = useState<string | null>(null)
   const startTimeRef = useRef<number>(0)
   const eventsCountRef = useRef<number>(0)
@@ -83,12 +106,10 @@ export function ChatContainer() {
 
       // Persist the assistant message with attached data
       if (activeConversationId) {
-        // Extract text content from the message (outside try so it's accessible in catch)
-        const textContent =
-          message.parts
-            ?.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-            .map((p) => p.text)
-            .join('') ?? ''
+        // Extract final-only visible text from step-aware parts
+        const textContent = extractVisibleTextFromUIMessageParts(
+          message.parts as Array<{ type?: string; text?: string }>
+        )
 
         const attachedData = {
           events: events.length > 0 ? events : undefined,
@@ -101,6 +122,9 @@ export function ChatContainer() {
             conversationId: activeConversationId,
             role: 'assistant',
             content: textContent,
+            visibleContent: textContent,
+            executionTrace,
+            responseContractVersion: 2,
             attachedData,
           })
 
@@ -124,6 +148,9 @@ export function ChatContainer() {
                   conversationId: activeConversationId,
                   role: 'assistant',
                   content: textContent,
+                  visibleContent: textContent,
+                  executionTrace,
+                  responseContractVersion: 2,
                   attachedData,
                 })
               },
@@ -158,6 +185,8 @@ export function ChatContainer() {
         setSuggestions(dataPart.data as RefinementSuggestion[])
       } else if (dataPart.type === 'data-directions') {
         setDirections(dataPart.data as DirectionsData)
+      } else if (dataPart.type === 'data-execution-trace') {
+        setExecutionTrace(dataPart.data as MessageExecutionStep[])
       }
     },
   })
@@ -173,7 +202,7 @@ export function ChatContainer() {
       const uiMessages: UIMessage[] = loadedConversation.messages.map((m: Message) => ({
         id: m.id,
         role: m.role as 'user' | 'assistant',
-        parts: [{ type: 'text' as const, text: m.content }],
+        parts: [{ type: 'text' as const, text: m.visible_content ?? m.content }],
         createdAt: new Date(m.created_at),
       }))
 
@@ -214,6 +243,7 @@ export function ChatContainer() {
       setEvents([])
       setSuggestions([])
       setDirections(null)
+      setExecutionTrace([])
       setMessageAttachedDataMap(new Map())
       isFirstExchangeRef.current = true
     })
@@ -226,6 +256,7 @@ export function ChatContainer() {
       setEvents([])
       setSuggestions([])
       setDirections(null)
+      setExecutionTrace([])
       setError(null)
 
       // Track message sent
@@ -254,6 +285,8 @@ export function ChatContainer() {
           conversationId: conversationId!,
           role: 'user',
           content,
+          visibleContent: content,
+          responseContractVersion: 2,
         })
 
         // Send the message using AI SDK
@@ -286,10 +319,9 @@ export function ChatContainer() {
   const chatMessages: ChatMessage[] = useMemo(() => {
     return messages.map((m, index) => {
       // Extract text content from parts
-      const textContent = m.parts
-        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-        .map((p) => p.text)
-        .join('')
+      const textContent = extractVisibleTextFromUIMessageParts(
+        m.parts as Array<{ type?: string; text?: string }>
+      )
 
       const isLastAssistant = m.role === 'assistant' && index === messages.length - 1
       const isStreaming = isLastAssistant && status === 'streaming'
@@ -348,13 +380,10 @@ export function ChatContainer() {
   // 1. Status is 'submitted' (waiting for response to start), OR
   // 2. Status is 'streaming' but no visible content yet (Claude is doing tool calls)
   const lastAssistantMessage = displayMessages.filter((m) => m.role === 'assistant').pop()
-  const hasVisibleAssistantContent =
-    lastAssistantMessage &&
-    (lastAssistantMessage.content.trim().length > 0 ||
-      (lastAssistantMessage.events && lastAssistantMessage.events.length > 0) ||
-      lastAssistantMessage.directions)
-  const showLoading =
-    status === 'submitted' || (status === 'streaming' && !hasVisibleAssistantContent)
+  const showLoading = shouldShowLoadingIndicator(
+    status as 'submitted' | 'streaming' | 'ready' | 'error',
+    lastAssistantMessage
+  )
 
   // Show loading state while fetching conversation
   const showConversationLoading = !!(activeConversationId && isLoadingConversation)

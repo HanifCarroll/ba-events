@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest'
+import {
+  buildExecutionTrace,
+  getFinalVisibleTextFromSteps,
+  getNonEmptyStepTextCount,
+  type StepResultLike,
+} from '@/routes/api/chat'
+
+describe('chat final-only contract helpers', () => {
+  it('derives final visible text from the last non-empty step', () => {
+    const steps: StepResultLike[] = [
+      { text: "I'll check what is happening." },
+      { text: 'Go to Club 69 in Palermo tonight.' },
+    ]
+
+    const finalText = getFinalVisibleTextFromSteps(steps, 'fallback text')
+    expect(finalText).toBe('Go to Club 69 in Palermo tonight.')
+  })
+
+  it('falls back to generated text when all step text is empty', () => {
+    const steps: StepResultLike[] = [{ text: '' }, { text: '   ' }]
+    const finalText = getFinalVisibleTextFromSteps(steps, 'Fallback final answer.')
+    expect(finalText).toBe('Fallback final answer.')
+  })
+
+  it('counts non-empty step text for contract-violation checks', () => {
+    const steps: StepResultLike[] = [{ text: '' }, { text: 'first' }, { text: ' second ' }]
+    expect(getNonEmptyStepTextCount(steps)).toBe(2)
+  })
+
+  it('builds execution traces with tool call/result metadata', () => {
+    const steps: StepResultLike[] = [
+      {
+        stepType: 'tool-result',
+        text: 'final',
+        finishReason: 'stop',
+        toolCalls: [
+          {
+            toolCallId: 'call_1',
+            toolName: 'search_events',
+            input: { query: 'palermo club' },
+          },
+        ],
+        toolResults: [
+          {
+            toolCallId: 'call_1',
+            toolName: 'search_events',
+            input: { query: 'palermo club' },
+            output: { success: false, reason: 'none found' },
+          },
+        ],
+      },
+    ]
+
+    const trace = buildExecutionTrace(steps)
+    expect(trace).toHaveLength(1)
+    expect(trace[0].toolCalls[0]).toMatchObject({
+      toolCallId: 'call_1',
+      toolName: 'search_events',
+    })
+    expect(trace[0].toolResults[0].success).toBe(false)
+  })
+})

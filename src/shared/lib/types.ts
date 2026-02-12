@@ -451,6 +451,7 @@ export type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'events'; data: EventWithVenue[] }
   | { type: 'suggestions'; data: RefinementSuggestion[] }
+  | { type: 'execution_trace'; data: MessageExecutionStep[] }
   | { type: 'history'; messages: APIMessage[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -708,6 +709,32 @@ export interface ConciergeMessage extends ChatMessage {
 /** Message role for conversation messages */
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+/** Tool call captured in an assistant execution trace step */
+export interface MessageExecutionToolCall {
+  toolCallId: string
+  toolName: string
+  input: Json | null
+}
+
+/** Tool result captured in an assistant execution trace step */
+export interface MessageExecutionToolResult {
+  toolCallId: string
+  toolName: string
+  input: Json | null
+  output: Json | null
+  success: boolean
+}
+
+/** Internal step-by-step trace for one assistant message */
+export interface MessageExecutionStep {
+  stepIndex: number
+  stepType: 'initial' | 'continue' | 'tool-result' | 'unknown'
+  text: string
+  finishReason: string
+  toolCalls: MessageExecutionToolCall[]
+  toolResults: MessageExecutionToolResult[]
+}
+
 /** Attached data stored with assistant messages */
 export interface MessageAttachedData {
   events?: EventWithVenue[]
@@ -744,7 +771,10 @@ export interface Message {
   conversation_id: string
   parent_id: string | null
   role: MessageRole
-  content: string
+  content: string // Legacy-visible mirror for rollback compatibility
+  visible_content: string
+  execution_trace: MessageExecutionStep[]
+  response_contract_version: number
   attached_data: MessageAttachedData
   created_at: string
   sequence_number: number
@@ -756,6 +786,9 @@ export interface MessageInsert {
   parent_id?: string | null
   role: MessageRole
   content: string
+  visible_content?: string
+  execution_trace?: MessageExecutionStep[]
+  response_contract_version?: number
   attached_data?: MessageAttachedData
   sequence_number?: number
 }
@@ -783,6 +816,9 @@ export interface MigrationConversation {
   messages: Array<{
     role: MessageRole
     content: string
+    visible_content?: string
+    execution_trace?: MessageExecutionStep[]
+    response_contract_version?: number
     attached_data?: MessageAttachedData
     created_at: string
     sequence_number: number

@@ -32,6 +32,7 @@ import type {
   ConversationListItem,
   ConversationWithMessages,
   MessageAttachedData,
+  MessageExecutionStep,
   MessageRole,
 } from '@/shared/lib/types'
 
@@ -137,6 +138,9 @@ export function useConversation(id: string | null) {
           parent_id: null,
           role: m.role,
           content: m.content,
+          visible_content: m.visible_content ?? m.content,
+          execution_trace: m.execution_trace ?? [],
+          response_contract_version: m.response_contract_version ?? 1,
           attached_data: m.attached_data,
           created_at: m.created_at,
           sequence_number: m.sequence_number,
@@ -232,21 +236,42 @@ export function useAddMessage() {
       conversationId,
       role,
       content,
+      visibleContent,
+      executionTrace,
+      responseContractVersion,
       attachedData,
     }: {
       conversationId: string
       role: MessageRole
       content: string
+      visibleContent?: string
+      executionTrace?: MessageExecutionStep[]
+      responseContractVersion?: number
       attachedData?: MessageAttachedData
     }) => {
       if (isAuthenticated) {
         return addMessage({
-          data: { conversationId, role, content, attachedData },
+          data: {
+            conversationId,
+            role,
+            content,
+            visibleContent,
+            executionTrace,
+            responseContractVersion,
+            attachedData,
+          },
         })
       }
 
       // Anonymous: add locally
-      return addLocalMessage(conversationId, { role, content, attached_data: attachedData })
+      return addLocalMessage(conversationId, {
+        role,
+        content,
+        visible_content: visibleContent,
+        execution_trace: executionTrace,
+        response_contract_version: responseContractVersion,
+        attached_data: attachedData,
+      })
     },
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) })

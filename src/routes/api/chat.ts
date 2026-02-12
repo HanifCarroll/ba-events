@@ -7,10 +7,13 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import {
+  convertToModelMessages,
+  generateId,
   streamText,
   stepCountIs,
   createUIMessageStream,
   createUIMessageStreamResponse,
+  type UIMessage,
 } from 'ai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth/api/rate-limit'
@@ -18,10 +21,19 @@ import { getUserToolContext } from '@/features/chat/api/user-tools'
 import { createTools } from '@/features/chat/api/tools-ai-sdk'
 import { getSystemPrompt } from '@/features/chat/api/prompts'
 import { generateSuggestions } from '@/features/chat/api/suggestions'
+import {
+  extractVisibleTextFromStepTexts,
+  extractVisibleTextFromUIMessageParts,
+} from '@/features/chat/lib/extract-visible-text'
 import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
 import { trackServer } from '@/lib/analytics.server'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
-import type { EventWithVenue, DirectionsData } from '@/shared/lib/types'
+import type {
+  EventWithVenue,
+  DirectionsData,
+  Json,
+  MessageExecutionStep,
+} from '@/shared/lib/types'
 import type { SearchEventsInput } from '@/features/chat/api/tools/search-events'
 
 // Initialize Anthropic provider
@@ -31,6 +43,112 @@ const anthropic = createAnthropic({
 
 // Agent loop configuration (reduced from 5 for faster responses)
 const MAX_STEPS = 3
+
+export type StepResultLike = {
+  stepType?: string
+  text?: string
+  finishReason?: string
+  toolCalls?: Array<{
+    toolCallId?: string
+    toolName?: string
+    input?: unknown
+  }>
+  toolResults?: Array<{
+    toolCallId?: string
+    toolName?: string
+    input?: unknown
+    output?: unknown
+  }>
+}
+
+function toJsonSafe(value: unknown): Json | null {
+  if (value === undefined) return null
+
+  try {
+    return JSON.parse(
+      JSON.stringify(value, (_, inner) => {
+        if (typeof inner === 'bigint') return Number(inner)
+        return inner
+      })
+    ) as Json
+  } catch {
+    return null
+  }
+}
+
+function inferToolResultSuccess(output: unknown): boolean {
+  if (output && typeof output === 'object' && 'success' in output) {
+    const success = (output as { success?: unknown }).success
+    if (typeof success === 'boolean') return success
+  }
+  return true
+}
+
+function normalizeStepType(stepType: unknown): MessageExecutionStep['stepType'] {
+  if (stepType === 'initial' || stepType === 'continue' || stepType === 'tool-result') {
+    return stepType
+  }
+  return 'unknown'
+}
+
+export function buildExecutionTrace(steps: StepResultLike[]): MessageExecutionStep[] {
+  return steps.map((step, index) => ({
+    stepIndex: index,
+    stepType: normalizeStepType(step.stepType),
+    text: step.text ?? '',
+    finishReason: step.finishReason ?? 'unknown',
+    toolCalls: (step.toolCalls ?? []).map((call) => ({
+      toolCallId: call.toolCallId ?? '',
+      toolName: call.toolName ?? 'unknown',
+      input: toJsonSafe(call.input),
+    })),
+    toolResults: (step.toolResults ?? []).map((result) => ({
+      toolCallId: result.toolCallId ?? '',
+      toolName: result.toolName ?? 'unknown',
+      input: toJsonSafe(result.input),
+      output: toJsonSafe(result.output),
+      success: inferToolResultSuccess(result.output),
+    })),
+  }))
+}
+
+function getLastUserQuery(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i] as {
+      role?: string
+      parts?: Array<{ type?: string; text?: string }>
+      content?: string
+    }
+
+    if (message.role !== 'user') continue
+
+    if (Array.isArray(message.parts)) {
+      const content = extractVisibleTextFromUIMessageParts(message.parts)
+      if (content.trim().length > 0) return content
+    }
+
+    if (typeof message.content === 'string' && message.content.trim().length > 0) {
+      return message.content
+    }
+  }
+
+  return ''
+}
+
+export function getFinalVisibleTextFromSteps(
+  steps: StepResultLike[],
+  generatedText: string
+): string {
+  const fromSteps = extractVisibleTextFromStepTexts(steps.map((step) => step.text ?? ''))
+  if (fromSteps.length > 0) return fromSteps
+  return extractVisibleTextFromStepTexts([generatedText])
+}
+
+export function getNonEmptyStepTextCount(steps: StepResultLike[]): number {
+  return steps.reduce((count, step) => {
+    return count + ((step.text ?? '').trim().length > 0 ? 1 : 0)
+  }, 0)
+}
 
 /**
  * Get client IP from request headers
@@ -56,6 +174,10 @@ function createErrorStream(errorMessage: string): Response {
       writer.write({
         type: 'error',
         errorText: errorMessage,
+      })
+      writer.write({
+        type: 'finish',
+        finishReason: 'error',
       })
     },
   })
@@ -84,27 +206,19 @@ export const Route = createFileRoute('/api/chat' as any)({
     handlers: {
       POST: async ({ request }) => {
         // Parse request body
-        let messages: Array<{ role: string; content: string }>
+        let uiMessages: UIMessage[]
+        let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
         let locale: 'en' | 'es'
 
         try {
-          const body = await request.json()
-          locale = body.locale ?? 'en'
+          const body = await request.json() as {
+            messages?: UIMessage[]
+            locale?: 'en' | 'es'
+          }
 
-          // Handle both AI SDK UIMessage format (with parts) and simple format (with content)
-          const rawMessages = body.messages ?? []
-          messages = rawMessages.map((m: { role: string; content?: string; parts?: Array<{ type: string; text?: string }> }) => {
-            // If message has parts array (AI SDK format), extract text from text parts
-            if (m.parts && Array.isArray(m.parts)) {
-              const textContent = m.parts
-                .filter((p: { type: string; text?: string }) => p.type === 'text' && p.text)
-                .map((p: { type: string; text?: string }) => p.text)
-                .join('')
-              return { role: m.role, content: textContent }
-            }
-            // Otherwise use content directly (simple format)
-            return { role: m.role, content: m.content ?? '' }
-          })
+          locale = body.locale ?? 'en'
+          uiMessages = Array.isArray(body.messages) ? body.messages : []
+          modelMessages = await convertToModelMessages(uiMessages)
         } catch {
           return createErrorStream('Invalid request body')
         }
@@ -128,22 +242,18 @@ export const Route = createFileRoute('/api/chat' as any)({
         let directionsData: DirectionsData | null = null
 
         // Get the last user message for suggestions
-        const lastUserMessage = messages.filter(m => m.role === 'user').pop()
-        if (lastUserMessage) {
-          lastOriginalQuery = lastUserMessage.content
-        }
+        lastOriginalQuery = getLastUserQuery(uiMessages)
 
         // Create the stream with custom data support
         const stream = createUIMessageStream({
           execute: async ({ writer }) => {
+            let wroteStart = false
+
             try {
               const result = streamText({
                 model: anthropic(CLAUDE_MODEL),
                 system: getSystemPrompt(locale),
-                messages: messages.map(m => ({
-                  role: m.role as 'user' | 'assistant',
-                  content: m.content,
-                })),
+                messages: modelMessages,
                 tools: createTools(userContext, locale),
                 stopWhen: stepCountIs(MAX_STEPS),
                 onStepFinish: ({ toolCalls, toolResults }) => {
@@ -190,11 +300,52 @@ export const Route = createFileRoute('/api/chat' as any)({
                 },
               })
 
-              // Merge the AI response stream
-              writer.merge(result.toUIMessageStream())
+              // Collect all steps first, then emit exactly one final assistant message.
+              const [steps, generatedText] = await Promise.all([result.steps, result.text])
+              const typedSteps = steps as StepResultLike[]
+              const executionTrace = buildExecutionTrace(typedSteps)
 
-              // Wait for the stream to complete
-              await result.text
+              const finalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
+              const nonEmptyStepTextCount = getNonEmptyStepTextCount(typedSteps)
+
+              if (nonEmptyStepTextCount > 1) {
+                trackServer('chat:response_contract_violation', userContext.userId ?? 'anonymous', {
+                  reason: 'multiple_non_empty_step_text',
+                  non_empty_step_text_count: nonEmptyStepTextCount,
+                })
+              }
+
+              const totalToolCalls = typedSteps.reduce(
+                (count, step) => count + (step.toolCalls?.length ?? 0),
+                0
+              )
+              const totalToolResults = typedSteps.reduce(
+                (count, step) => count + (step.toolResults?.length ?? 0),
+                0
+              )
+
+              trackServer('chat:final_only_response_emitted', userContext.userId ?? 'anonymous', {
+                step_count: typedSteps.length,
+                tool_call_count: totalToolCalls,
+                tool_result_count: totalToolResults,
+                final_text_length: finalText.length,
+                trace_size_bytes: JSON.stringify(executionTrace).length,
+              })
+
+              const messageId = generateId()
+              const textBlockId = generateId()
+
+              writer.write({ type: 'start', messageId })
+              wroteStart = true
+              writer.write({ type: 'text-start', id: textBlockId })
+              if (finalText.length > 0) {
+                writer.write({
+                  type: 'text-delta',
+                  id: textBlockId,
+                  delta: finalText,
+                })
+              }
+              writer.write({ type: 'text-end', id: textBlockId })
 
               // Send accumulated events as custom data
               const events = Array.from(allEvents.values())
@@ -231,12 +382,29 @@ export const Route = createFileRoute('/api/chat' as any)({
                 })
                 console.log(`[DEBUG] Sending directions for "${directionsData.venueName}"`)
               }
+
+              // Send execution trace for persistence/debugging (not rendered in bubble text).
+              writer.write({
+                type: 'data-execution-trace' as const,
+                data: executionTrace,
+              })
+
+              writer.write({
+                type: 'finish',
+                finishReason: 'stop',
+              })
             } catch (error) {
               console.error('[Chat API] Error:', error)
               writer.write({
                 type: 'error',
                 errorText: error instanceof Error ? error.message : 'An error occurred',
               })
+              if (wroteStart) {
+                writer.write({
+                  type: 'finish',
+                  finishReason: 'error',
+                })
+              }
             }
           },
           onError: (error) => {

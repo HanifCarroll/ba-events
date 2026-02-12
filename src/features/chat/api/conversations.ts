@@ -85,11 +85,12 @@ export const searchConversations = createServerFn({ method: 'GET' })
       .select(
         `
         conversation_id,
+        visible_content,
         content,
         conversations!inner(id, title, updated_at, user_id, deleted_at)
       `
       )
-      .textSearch('content', data.query, { type: 'websearch' })
+      .textSearch('visible_content', data.query, { type: 'websearch' })
       .eq('conversations.user_id', user.id)
       .is('conversations.deleted_at', null)
       .limit(limit * 2) // Get more to dedupe
@@ -115,7 +116,7 @@ export const searchConversations = createServerFn({ method: 'GET' })
           id: conv.id,
           title: conv.title,
           updated_at: conv.updated_at,
-          preview: msg.content.slice(0, 100),
+          preview: (msg.visible_content ?? msg.content).slice(0, 100),
         })
       }
     }
@@ -321,6 +322,9 @@ export const migrateConversations = createServerFn({ method: 'POST' })
           conversation_id: newConv.id,
           role: m.role,
           content: m.content,
+          visible_content: m.visible_content ?? m.content,
+          execution_trace: m.execution_trace ?? [],
+          response_contract_version: m.response_contract_version ?? 2,
           attached_data: m.attached_data ?? {},
           created_at: m.created_at,
           sequence_number: m.sequence_number,
