@@ -449,6 +449,14 @@ function VenueListPage() {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="missing_address" className="data-[state=active]:bg-background">
+            {m.admin_tab_missing_address()}
+            {review.missingAddressCount > 0 && (
+              <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs bg-amber-500/20 text-amber-400">
+                {review.missingAddressCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="duplicates" className="data-[state=active]:bg-background">
             {m.admin_duplicates()}
             {review.duplicateCount > 0 && (
@@ -611,6 +619,83 @@ function VenueListPage() {
                       columns={columns}
                       data={review.missingNeighborhoodVenues}
                       tableId="admin-venues-missing-neighborhood"
+                      enableRowSelection={true}
+                      selectedIds={bulk.selectedIds}
+                      onSelectionChange={handleSelectionChange}
+                      enableColumnResizing={true}
+                      enableColumnReordering={true}
+                      enableMultiSort={true}
+                      enableVirtualization={true}
+                      enablePagination={false}
+                      containerHeight="100%"
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        {/* Missing Address Tab */}
+        <TabsContent value="missing_address" className="mt-4 flex-1 min-h-0 flex flex-col">
+          {review.missingAddressVenues.length === 0 ? (
+            <div className="text-center py-12 bg-card/50 rounded-xl border border-border/50">
+              <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="font-display text-lg font-medium text-foreground mb-2">
+                {m.admin_no_missing_address()}
+              </h3>
+              <p className="text-muted-foreground">{m.admin_no_missing_address_desc()}</p>
+            </div>
+          ) : (
+            <>
+              {/* Mobile Card View */}
+              <div className="sm:hidden space-y-3">
+                {review.missingAddressVenues.map((venue) => (
+                  <MobileVenueCard
+                    key={venue.id}
+                    venue={venue}
+                    isSelected={bulk.selectedIds.has(venue.id)}
+                    onToggleSelect={() => bulk.handleSelectionChange(
+                      bulk.selectedIds.has(venue.id)
+                        ? new Set([...bulk.selectedIds].filter(id => id !== venue.id))
+                        : new Set([...bulk.selectedIds, venue.id])
+                    )}
+                    onEdit={() => handleEdit(venue)}
+                    onDelete={() => setDeleteTarget(venue)}
+                    selectionMode={mobileSelection.isSelectionMode}
+                    onEnterSelectionMode={mobileSelection.enterSelectionMode}
+                  />
+                ))}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden sm:flex flex-1 min-h-0 min-w-0">
+                <div className="relative flex-1 flex flex-col min-h-0 min-w-0">
+                  {/* Bulk action overlay */}
+                  <div className="absolute top-0 left-0 right-0 z-20">
+                    <VenueBulkActionBar
+                      selectedCount={bulk.selectedIds.size}
+                      isAllSelected={review.missingAddressVenues.length > 0 && bulk.selectedIds.size === review.missingAddressVenues.length}
+                      onToggleSelectAll={() => {
+                        if (bulk.selectedIds.size === review.missingAddressVenues.length) {
+                          bulk.clearSelection()
+                        } else {
+                          const allIds = new Set(review.missingAddressVenues.map(v => v.id))
+                          bulk.handleSelectionChange(allIds)
+                        }
+                      }}
+                      onSetBulkAction={bulk.setBulkAction}
+                      onClearSelection={bulk.clearSelection}
+                      overlay
+                      enrichableCount={enrichableVenues.length}
+                    />
+                  </div>
+
+                  <div className="flex-1 min-h-0">
+                    <DataTable
+                      columns={columns}
+                      data={review.missingAddressVenues}
+                      tableId="admin-venues-missing-address"
                       enableRowSelection={true}
                       selectedIds={bulk.selectedIds}
                       onSelectionChange={handleSelectionChange}

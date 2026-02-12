@@ -212,14 +212,6 @@ export function EnrichStep({
                 </>
               )}
             </Button>
-            <Button
-              variant="ghost"
-              onClick={onSkip}
-              disabled={isEnriching}
-              className="w-full text-muted-foreground"
-            >
-              Skip for now
-            </Button>
           </div>
         )}
 

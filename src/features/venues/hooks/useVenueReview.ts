@@ -16,7 +16,7 @@ import { updateVenueAction } from '../api/crud'
 import { queryKeys } from '@/shared/lib/query'
 import type { Venue } from '@/shared/lib/types'
 
-export type ReviewTab = 'all' | 'missing_neighborhood' | 'duplicates' | 'address_names'
+export type ReviewTab = 'all' | 'missing_neighborhood' | 'missing_address' | 'duplicates' | 'address_names'
 
 export interface DuplicateGroup {
   primaryVenue: Venue
@@ -314,6 +314,14 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     () => venues.filter((v) => !v.neighborhood),
     [venues]
   )
+  const missingAddressCount = useMemo(
+    () => venues.filter((v) => !v.address).length,
+    [venues]
+  )
+  const missingAddressVenues = useMemo(
+    () => venues.filter((v) => !v.address),
+    [venues]
+  )
 
   return {
     // State
@@ -326,6 +334,7 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     duplicateGroups,
     addressLikeVenues,
     missingNeighborhoodVenues,
+    missingAddressVenues,
     eventCounts: eventCounts ?? {},
     addressVenueEvents: addressVenueEvents ?? {} as Record<string, VenueEventPreview[]>,
 
@@ -334,6 +343,7 @@ export function useVenueReview({ venues, activeTab, setActiveTab }: UseVenueRevi
     addressNameCount,
     dismissedCount,
     missingNeighborhoodCount,
+    missingAddressCount,
 
     // Loading states
     isLoading: isLoadingDuplicates,

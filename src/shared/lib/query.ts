@@ -87,4 +87,13 @@ export const queryKeys = {
     searchTerms: (range: DateRange) => [...queryKeys.analytics.all, 'searchTerms', range] as const,
     engagement: (range: DateRange) => [...queryKeys.analytics.all, 'engagement', range] as const,
   },
+
+  // Conversations (chat history)
+  conversations: {
+    all: ['conversations'] as const,
+    list: (params?: { offset?: number; limit?: number }) =>
+      [...queryKeys.conversations.all, 'list', params] as const,
+    search: (query: string) => [...queryKeys.conversations.all, 'search', query] as const,
+    detail: (id: string) => [...queryKeys.conversations.all, 'detail', id] as const,
+  },
 } as const

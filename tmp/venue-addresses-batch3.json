@@ -1,0 +1,22 @@
+[
+  {
+    "id": "46446ced-b5fe-452f-93bd-95a5731f2ed4",
+    "name": "Sergio Souza Teatro",
+    "address": "Rivadavia 1180"
+  },
+  {
+    "id": "52c09232-56b9-4067-9a5b-23e9afab5d6b",
+    "name": "Casa de la Cultura",
+    "address": "Av. de Mayo 575"
+  },
+  {
+    "id": "f7f0680f-f5ff-4e27-bc1d-543fd795e9ff",
+    "name": "La Biblioteca Café",
+    "address": "Marcelo T. de Alvear 1155"
+  },
+  {
+    "id": "739f93e7-f6c6-4cf3-af76-4474e1045361",
+    "name": "Palermo Wine Club",
+    "address": "Gorriti 5646"
+  }
+]

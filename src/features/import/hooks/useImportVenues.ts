@@ -144,11 +144,11 @@ export function useImportVenues(
     setIsCreatingVenues(true)
 
     try {
-      const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: 'other' }[] = []
+      const venuesToCreate: { name: string; neighborhood: Neighborhood | null }[] = []
 
       venueEdits.forEach((edit) => {
         if (edit.action !== 'create') return
-        venuesToCreate.push({ name: edit.name, neighborhood: edit.neighborhood, type: 'other' })
+        venuesToCreate.push({ name: edit.name, neighborhood: edit.neighborhood })
       })
 
       if (venuesToCreate.length > 0) {
@@ -288,10 +288,10 @@ export function useImportVenues(
     setIsCreatingVenues(true)
 
     try {
-      const venuesToCreate: { name: string; neighborhood: Neighborhood | null; type: 'other' }[] = []
+      const venuesToCreate: { name: string; neighborhood: Neighborhood | null }[] = []
 
       for (const venue of unmatchedVenues) {
-        venuesToCreate.push({ name: venue.name, neighborhood: null, type: 'other' })
+        venuesToCreate.push({ name: venue.name, neighborhood: null })
       }
 
       if (venuesToCreate.length > 0) {

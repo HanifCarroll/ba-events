@@ -15,8 +15,9 @@ async function main() {
 
   const { data, error } = await supabase
     .from('venues')
-    .select('id, name, address, neighborhood')
+    .select('id, name, address, neighborhood, venue_enrichment_status')
     .or('address.is.null,neighborhood.is.null')
+    .neq('venue_enrichment_status', 'cannot_enrich')
     .order('created_at', { ascending: false })
     .limit(limit)
 

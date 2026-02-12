@@ -4,7 +4,7 @@ import { listVenues, listAllVenueEventCountsAction } from '@/features/venues/api
 
 // URL search params schema
 const venueSearchSchema = z.object({
-  tab: z.enum(['all', 'missing_neighborhood', 'duplicates', 'address_names']).optional().catch('all'),
+  tab: z.enum(['all', 'missing_neighborhood', 'missing_address', 'duplicates', 'address_names']).optional().catch('all'),
   search: z.string().optional(),
   neighborhood: z.string().optional(),
   importedToday: z.boolean().optional(),

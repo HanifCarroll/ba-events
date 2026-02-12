@@ -1,0 +1,52 @@
+[
+  {
+    "id": "f0043453-3e99-430e-b0e5-880edafe27fc",
+    "name": "Blue Velvet (Medio Crudo venue)",
+    "address": "Bolívar 624"
+  },
+  {
+    "id": "33869de4-71b4-43a4-98bb-f0a3c5618d10",
+    "name": "Teatro Colón",
+    "address": "Cerrito 628"
+  },
+  {
+    "id": "941b3e49-ba04-48ba-a881-dc3c65d50ffb",
+    "name": "Colón Fábrica",
+    "address": "Av. Don Pedro de Mendoza 2163"
+  },
+  {
+    "id": "dc4bf26c-59a0-4e59-9624-da4415b167ac",
+    "name": "Centro Cultural Recoleta",
+    "address": "Junín 1930"
+  },
+  {
+    "id": "55bac1d5-92b9-45a9-b601-559c83b2ef6d",
+    "name": "La Rural",
+    "address": "Av. Sarmiento 2704"
+  },
+  {
+    "id": "55fa9b70-8355-49c5-9aea-be8580691087",
+    "name": "Museo Moderno",
+    "address": "Av. San Juan 350"
+  },
+  {
+    "id": "3c54b02d-92cc-42f7-bc10-778ec6b71b99",
+    "name": "Teatro Metropolitan",
+    "address": "Av. Corrientes 1343"
+  },
+  {
+    "id": "4f872796-98e4-48f5-b4d4-5b2ed1ed4074",
+    "name": "Multiteatro Comafi",
+    "address": "Av. Corrientes 1283"
+  },
+  {
+    "id": "723598ac-d70a-4b5b-8191-d7bd904e5ea3",
+    "name": "Teatro Picadero",
+    "address": "Enrique Santos Discépolo 1857"
+  },
+  {
+    "id": "3432c1c0-bc91-4711-8258-ebd722315f9a",
+    "name": "CEC Centro de Convenciones de Buenos Aires",
+    "address": "Av. Pres. Figueroa Alcorta 2099"
+  }
+]
