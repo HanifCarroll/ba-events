@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute, notFound } from '@tanstack/react-router'
-import { Calendar, Clock, MapPin, Ticket, Share2, Check } from 'lucide-react'
+import { Calendar, Clock, MapPin, ExternalLink, Share2, Check } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { getEventWithVenueAction } from '@/features/events/api/crud'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
@@ -11,6 +12,11 @@ import {
   pickDescriptionSummary,
   pickDisplayDescription,
 } from '@/features/events/lib/description-presentation'
+import {
+  getExternalEventUrl,
+  getSourceCtaLabel,
+  getSourceLabel,
+} from '@/features/events/lib/source-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 export const Route = createFileRoute('/event/$id')({
@@ -73,7 +79,7 @@ function EventDetailPage() {
   const dateStr = formatShortDate(startDate)
   const timeStr = formatTime(startDate)
 
-  const ticketsUrl = event.ticket_url || event.link || null
+  const externalEventUrl = getExternalEventUrl(event)
 
   const mapUrl = useMemo(() => {
     if (event.location_hidden) return null
@@ -84,15 +90,9 @@ function EventDetailPage() {
 
   const shareUrl = getEventUrl(event.id)
   const displayDescription = pickDisplayDescription(event, locale)
-  const descriptionParagraphs = useMemo(() => {
-    if (!displayDescription) return []
-    return displayDescription
-      .split(/\n\s*\n/g)
-      .map((paragraph) => paragraph.trim())
-      .filter((paragraph) => paragraph.length > 0)
-  }, [displayDescription])
-  const hasDescription = descriptionParagraphs.length > 0
+  const hasDescription = Boolean(displayDescription?.trim())
   const sourceLabel = getSourceLabel(event.source)
+  const sourceCtaLabel = getSourceCtaLabel(event.source)
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -165,11 +165,11 @@ function EventDetailPage() {
               </Button>
               <Button
                 type="button"
-                disabled={!ticketsUrl}
-                onClick={() => ticketsUrl && window.open(ticketsUrl, '_blank', 'noopener,noreferrer')}
+                disabled={!externalEventUrl}
+                onClick={() => externalEventUrl && window.open(externalEventUrl, '_blank', 'noopener,noreferrer')}
               >
-                <Ticket className="h-4 w-4" />
-                Get Tickets
+                <ExternalLink className="h-4 w-4" />
+                {sourceCtaLabel}
               </Button>
             </div>
           </div>
@@ -228,11 +228,11 @@ function EventDetailPage() {
               </div>
             )}
 
-            {descriptionParagraphs.map((paragraph, index) => (
-              <p key={`${event.id}-description-${index}`} className="text-sm text-muted-foreground leading-relaxed">
-                {paragraph}
-              </p>
-            ))}
+            {hasDescription && (
+              <div className="text-sm prose prose-sm prose-warm max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-3 [&_ul]:my-3 [&_ol]:my-3 [&_strong]:text-foreground [&_strong]:font-semibold">
+                <ReactMarkdown>{displayDescription!}</ReactMarkdown>
+              </div>
+            )}
 
             {event.categories.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -260,22 +260,6 @@ function buildEventSummary(event: EventWithVenue, locale: 'en' | 'es' = 'en'): s
 
   if (base.length <= maxLength) return base
   return `${base.slice(0, maxLength - 3).trim()}...`
-}
-
-function getSourceLabel(source: string | null | undefined): string | null {
-  if (!source) return null
-  switch (source) {
-    case 'passline':
-      return 'Passline'
-    case 'eventbrite':
-      return 'Eventbrite'
-    case 'ba-tourism':
-      return 'BA Tourism'
-    case 'meetup':
-      return 'Meetup'
-    default:
-      return null
-  }
 }
 
 function buildEventJsonLd(event: EventWithVenue, eventUrl: string, imageUrl: string) {

@@ -3,7 +3,6 @@ import {
   Target,
   Sparkles,
   Lightbulb,
-  Ticket,
   ExternalLink,
   MapPin,
   Calendar,
@@ -16,6 +15,7 @@ import { formatPrice } from '@/features/chat'
 import { formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
 import { track } from '@/lib/analytics'
 import { getEventUrl } from '@/shared/lib/utils/url'
+import { getExternalEventUrl, getSourceCtaLabel } from '@/features/events/lib/source-presentation'
 import type { Recommendation, RefinementOption } from '@/shared/lib/types'
 
 interface RecommendationCardProps {
@@ -31,6 +31,8 @@ export function RecommendationCard({ recommendation, onRefinementSelect }: Recom
   const timeStr = formatTime(startDate)
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free
+  const externalEventUrl = getExternalEventUrl(event)
+  const sourceCtaLabel = getSourceCtaLabel(event.source)
 
   const handleRefinementClick = (refinement: RefinementOption) => {
     track('concierge:refinement_clicked', {
@@ -186,26 +188,15 @@ export function RecommendationCard({ recommendation, onRefinementSelect }: Recom
             >
               More Info
             </Link>
-            {event.ticket_url ? (
+            {externalEventUrl ? (
               <a
-                href={event.ticket_url}
+                href={externalEventUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group/btn flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 hover:-translate-y-0.5"
                 onClick={() => track('concierge:ticket_clicked', { event_id: event.id, event_name: event.name })}
               >
-                <Ticket className="h-4 w-4" />
-                Get Tickets
-                <ExternalLink className="h-3 w-3 opacity-70 group-hover/btn:translate-x-0.5 transition-transform" />
-              </a>
-            ) : event.link ? (
-              <a
-                href={event.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group/btn flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 hover:-translate-y-0.5"
-              >
-                View Event
+                {sourceCtaLabel}
                 <ExternalLink className="h-3 w-3 opacity-70 group-hover/btn:translate-x-0.5 transition-transform" />
               </a>
             ) : null}

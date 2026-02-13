@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Target, Lightbulb, Ticket, Sparkles } from 'lucide-react'
+import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Target, Lightbulb, Sparkles } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -14,6 +14,11 @@ import { getEventUrl } from '@/shared/lib/utils/url'
 import { Badge } from '@/shared/ui/badge'
 import { getLocale } from '@/paraglide/runtime'
 import { pickDescriptionSummary } from '@/features/events/lib/description-presentation'
+import {
+  getExternalEventUrl,
+  getSourceCtaLabel,
+  getSourceLabel,
+} from '@/features/events/lib/source-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 interface EventCardProps {
@@ -60,6 +65,8 @@ function HeroEventCard({ event, position, source, commentary, tips }: HeroEventC
   const isFree = event.is_free
   const summaryDescription = pickDescriptionSummary(event, locale)
   const hasDescription = Boolean(summaryDescription)
+  const externalEventUrl = getExternalEventUrl(event)
+  const sourceCtaLabel = getSourceCtaLabel(event.source)
 
   // Track hero card view
   useState(() => {
@@ -228,26 +235,15 @@ function HeroEventCard({ event, position, source, commentary, tips }: HeroEventC
             >
               More Info
             </Link>
-            {event.ticket_url ? (
+            {externalEventUrl ? (
               <a
-                href={event.ticket_url}
+                href={externalEventUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group/btn flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 hover:-translate-y-0.5"
                 onClick={() => track('concierge:ticket_clicked', { event_id: event.id, event_name: event.name })}
               >
-                <Ticket className="h-4 w-4" />
-                Get Tickets
-                <ExternalLink className="h-3 w-3 opacity-70 group-hover/btn:translate-x-0.5 transition-transform" />
-              </a>
-            ) : event.link ? (
-              <a
-                href={event.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group/btn flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 hover:-translate-y-0.5"
-              >
-                View Event
+                {sourceCtaLabel}
                 <ExternalLink className="h-3 w-3 opacity-70 group-hover/btn:translate-x-0.5 transition-transform" />
               </a>
             ) : null}
@@ -504,20 +500,4 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
       </div>
     </Collapsible>
   )
-}
-
-function getSourceLabel(source: string | null | undefined): string | null {
-  if (!source) return null
-  switch (source) {
-    case 'passline':
-      return 'Passline'
-    case 'eventbrite':
-      return 'Eventbrite'
-    case 'ba-tourism':
-      return 'BA Tourism'
-    case 'meetup':
-      return 'Meetup'
-    default:
-      return null
-  }
 }
