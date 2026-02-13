@@ -132,6 +132,27 @@ Preserve blank lines between paragraphs exactly as in the source.
 Output ONLY the translated text, no explanations or additional commentary.`
 
 /**
+ * Card summary prompts - concise and punchy, no structured details.
+ */
+const SUMMARY_PROMPT_ES = `Resume esta descripción de evento en UNA frase breve para una tarjeta.
+
+Reglas:
+- Máximo 180 caracteres
+- No incluir fecha, hora, dirección, precio o contacto
+- Mantener solo la experiencia principal y vibra
+- Texto plano (sin comillas, sin markdown)
+- Sin prefijos como \"Resumen:\"`
+
+const SUMMARY_PROMPT_EN = `Summarize this event description in ONE short sentence for a card.
+
+Rules:
+- Maximum 180 characters
+- Do not include date, time, address, price, or contact details
+- Keep only the core experience and vibe
+- Plain text only (no quotes, no markdown)
+- No prefixes like \"Summary:\"`
+
+/**
  * Venue extraction prompt - extracts just the venue/location name
  * Used with structured outputs for guaranteed JSON response
  */
@@ -188,6 +209,21 @@ const DESCRIPTION_EXTRACTION_SCHEMA = {
     },
   },
   required: ['description'],
+  additionalProperties: false,
+} as const
+
+/**
+ * JSON schema for summary generation response.
+ */
+const DESCRIPTION_SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: {
+      type: 'string',
+      description: 'Short card summary under 180 characters',
+    },
+  },
+  required: ['summary'],
   additionalProperties: false,
 } as const
 
@@ -264,6 +300,10 @@ interface DescriptionExtractionResponse {
   description: string
 }
 
+interface DescriptionSummaryResponse {
+  summary: string
+}
+
 /**
  * Extract a semantic event description from markdown using Haiku 4.5 with structured outputs.
  * Uses constrained decoding to guarantee clean description without prefixes.
@@ -306,6 +346,51 @@ export async function extractDescription(
     return result.description || null
   } catch (error) {
     console.error(`Haiku extraction error:`, error)
+    return null
+  }
+}
+
+/**
+ * Generate a short card summary from an existing description.
+ */
+export async function generateDescriptionSummary(
+  description: string,
+  language: DetectedLanguage
+): Promise<string | null> {
+  if (!description.trim()) return null
+
+  try {
+    const prompt = language === 'spanish' ? SUMMARY_PROMPT_ES : SUMMARY_PROMPT_EN
+    const text = description.slice(0, 2500)
+
+    const message = await getAnthropicClient().beta.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 120,
+      betas: [STRUCTURED_OUTPUTS_BETA],
+      messages: [
+        {
+          role: 'user',
+          content: `${prompt}\n\n---\n${text}\n---`,
+        },
+      ],
+      output_format: {
+        type: 'json_schema',
+        schema: DESCRIPTION_SUMMARY_SCHEMA,
+      },
+    })
+
+    const textBlock = message.content.find((block) => block.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') {
+      return null
+    }
+
+    const result = JSON.parse(textBlock.text) as DescriptionSummaryResponse
+    const summary = result.summary.trim()
+    if (!summary) return null
+
+    return summary.length <= 180 ? summary : `${summary.slice(0, 179).trim()}…`
+  } catch (error) {
+    console.error('Summary generation error:', error)
     return null
   }
 }
@@ -546,4 +631,3 @@ export async function extractVenueFromUrl(url: string): Promise<string | null> {
 
   return venueName
 }
-
