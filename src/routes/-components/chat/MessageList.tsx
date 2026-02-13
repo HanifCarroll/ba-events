@@ -4,13 +4,30 @@ import { ChatMessage } from './ChatMessage'
 import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
+type LoadingPhase =
+  | 'idle'
+  | 'preparing'
+  | 'thinking'
+  | 'running_tool'
+  | 'composing'
+  | 'persisting'
+  | 'error'
+
 interface MessageListProps {
   messages: ChatMessageType[]
   isLoading?: boolean
+  loadingPhase?: LoadingPhase
+  loadingLabel?: string
   onSuggestionSelect?: (prompt: string) => void
 }
 
-export function MessageList({ messages, isLoading = false, onSuggestionSelect }: MessageListProps) {
+export function MessageList({
+  messages,
+  isLoading = false,
+  loadingPhase = 'idle',
+  loadingLabel,
+  onSuggestionSelect,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const prevMessageCountRef = useRef(messages.length)
@@ -83,7 +100,9 @@ export function MessageList({ messages, isLoading = false, onSuggestionSelect }:
             <div className="bg-card border border-border/50 rounded-2xl rounded-bl-md px-4 py-3">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <Sparkles className="h-4 w-4 text-primary animate-pulse-warm" />
-                <span className="text-sm tracking-wide">{m.chat_thinking()}</span>
+                <span className="text-sm tracking-wide" data-phase={loadingPhase}>
+                  {loadingLabel ?? m.chat_thinking()}
+                </span>
                 <span className="flex gap-1">
                   <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />

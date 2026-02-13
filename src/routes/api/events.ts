@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { createEvent, getEventsWithVenues } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { checkApiRateLimit } from '@/features/auth/api/rate-limit'
 import { apiSuccess, apiList, apiError, CachePresets, withCache } from '@/shared/lib/api-response'
 import { CATEGORIES, EVENT_STATUSES } from '@/shared/lib/types'
@@ -19,6 +20,10 @@ const eventSubmissionSchema = z.object({
   // Optional fields
   description_es: z.string().nullable().optional(),
   description_en: z.string().nullable().optional(),
+  description_display_es: z.string().nullable().optional(),
+  description_display_en: z.string().nullable().optional(),
+  description_summary_es: z.string().nullable().optional(),
+  description_summary_en: z.string().nullable().optional(),
   ends_at: z.string().nullable().optional().refine(
     (val) => val === null || val === undefined || !isNaN(Date.parse(val)),
     'ends_at must be a valid ISO date string'
@@ -191,10 +196,15 @@ export const Route = createFileRoute('/api/events')({
 
           // Generate embedding from event data
           const embedding = await generateEventEmbedding(eventData)
+          const presentationFields = await buildDescriptionPresentationFields({
+            description_es: eventData.description_es,
+            description_en: eventData.description_en,
+          })
 
           // Create the event
           const event = await createEvent({
             ...eventData,
+            ...presentationFields,
             embedding,
           })
 

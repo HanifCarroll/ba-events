@@ -10,6 +10,7 @@ import {
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import { fetchPasslineDescription } from '@/features/import/scrapers/passline/description-enrichment'
 import { fetchMeetupDescriptionFromDetailPage } from '@/features/import/scrapers/meetup/description-enrichment'
+import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import type { EventWithVenue } from '@/shared/lib/types'
 import type {
   EmbeddingProgress,
@@ -104,11 +105,16 @@ async function enrichSingleEvent(
       description_es: bilingual.description_es,
       categories: existingEvent.categories,
     })
+    const presentationFields = await buildDescriptionPresentationFields({
+      description_es: bilingual.description_es,
+      description_en: bilingual.description_en,
+    })
 
     // Update event with both descriptions, new embedding, and enrichment status
     await updateEvent(id, {
       description_es: bilingual.description_es,
       description_en: bilingual.description_en,
+      ...presentationFields,
       embedding,
       enrichment_status: 'completed',
       enriched_at: new Date().toISOString(),
@@ -289,11 +295,16 @@ export const updateEventDescriptionsAction = createServerFn({ method: 'POST' })
           description_es,
           categories: existingEvent.categories,
         })
+        const presentationFields = await buildDescriptionPresentationFields({
+          description_es,
+          description_en,
+        })
 
         // Update event with both descriptions and new embedding
         await updateEvent(id, {
           description_es,
           description_en,
+          ...presentationFields,
           embedding,
         }, client)
 
@@ -584,6 +595,10 @@ export const enrichPasslineDescriptionsAction = createServerFn({ method: 'POST' 
           description_es,
           categories: existingEvent.categories,
         })
+        const presentationFields = await buildDescriptionPresentationFields({
+          description_es,
+          description_en,
+        })
 
         // Update event with descriptions, embedding, and enrichment status
         await updateEvent(
@@ -591,6 +606,7 @@ export const enrichPasslineDescriptionsAction = createServerFn({ method: 'POST' 
           {
             description_es,
             description_en,
+            ...presentationFields,
             embedding,
             enrichment_status: 'completed',
             enriched_at: new Date().toISOString(),
@@ -763,6 +779,10 @@ export const enrichPasslineDescriptionsWithPlaywrightAction = createServerFn({ m
           description_es,
           categories: existingEvent.categories,
         })
+        const presentationFields = await buildDescriptionPresentationFields({
+          description_es,
+          description_en,
+        })
 
         // Phase 5: Update event with descriptions, embedding, and enrichment status
         await updateEvent(
@@ -770,6 +790,7 @@ export const enrichPasslineDescriptionsWithPlaywrightAction = createServerFn({ m
           {
             description_es,
             description_en,
+            ...presentationFields,
             embedding,
             enrichment_status: 'completed',
             enriched_at: new Date().toISOString(),

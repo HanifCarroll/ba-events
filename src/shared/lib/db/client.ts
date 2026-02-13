@@ -159,7 +159,8 @@ export async function bulkDeleteVenues(ids: string[], client?: SupabaseClient) {
 // Columns for admin event lists (excludes embedding for performance)
 // The embedding column is ~6KB per event and not needed for admin display
 const EVENT_ADMIN_COLUMNS = `
-  id, name, description_es, description_en, starts_at, ends_at, is_all_day,
+  id, name, description_es, description_en, description_display_es, description_display_en,
+  description_summary_es, description_summary_en, starts_at, ends_at, is_all_day,
   venue_id, categories, price, is_free, image_url, link, ticket_url,
   source, external_id, status, location_hidden, enrichment_status, enrichment_error,
   enriched_at, created_at, updated_at,

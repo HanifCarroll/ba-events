@@ -12,6 +12,8 @@ import { formatShortDate, formatTime, formatEventTime } from '@/shared/lib/utils
 import { track } from '@/lib/analytics'
 import { getEventUrl } from '@/shared/lib/utils/url'
 import { Badge } from '@/shared/ui/badge'
+import { getLocale } from '@/paraglide/runtime'
+import { pickDescriptionSummary } from '@/features/events/lib/description-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 interface EventCardProps {
@@ -50,12 +52,14 @@ interface HeroEventCardProps {
 }
 
 function HeroEventCard({ event, position, source, commentary, tips }: HeroEventCardProps) {
+  const locale = getLocale() as 'en' | 'es'
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
   const timeStr = formatTime(startDate)
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free
-  const hasDescription = Boolean(event.description_en || event.description_es)
+  const summaryDescription = pickDescriptionSummary(event, locale)
+  const hasDescription = Boolean(summaryDescription)
 
   // Track hero card view
   useState(() => {
@@ -163,14 +167,9 @@ function HeroEventCard({ event, position, source, commentary, tips }: HeroEventC
       {/* Expanded details - always shown for hero */}
       <div className="p-5 pt-4 space-y-4">
         {/* Description */}
-        {event.description_en && (
+        {summaryDescription && (
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {event.description_en}
-          </p>
-        )}
-        {!event.description_en && event.description_es && (
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {event.description_es}
+            {summaryDescription}
           </p>
         )}
         {!hasDescription && (
@@ -276,6 +275,7 @@ interface DefaultEventCardProps {
 
 function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const locale = getLocale() as 'en' | 'es'
 
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
@@ -283,7 +283,8 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
 
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free
-  const hasDescription = Boolean(event.description_en || event.description_es)
+  const summaryDescription = pickDescriptionSummary(event, locale)
+  const hasDescription = Boolean(summaryDescription)
   const sourceLabel = getSourceLabel(event.source)
 
   const handleToggle = () => {
@@ -431,14 +432,9 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               </div>
 
               {/* Description */}
-              {event.description_en && (
+              {summaryDescription && (
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  {event.description_en}
-                </p>
-              )}
-              {!event.description_en && event.description_es && (
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {event.description_es}
+                  {summaryDescription}
                 </p>
               )}
 

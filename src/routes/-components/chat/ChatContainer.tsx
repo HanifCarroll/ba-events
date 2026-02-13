@@ -1,8 +1,10 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useChat, type UIMessage } from '@ai-sdk/react'
-import { DefaultChatTransport } from 'ai'
+import { DefaultChatTransport, generateId } from 'ai'
 import type {
+  ChatStreamStatusData,
+  ChatStreamStatusPhase,
   ChatMessage,
   EventWithVenue,
   RefinementSuggestion,
@@ -15,6 +17,7 @@ import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { SuggestedPrompts } from './SuggestedPrompts'
 import { getLocale } from '@/paraglide/runtime'
+import * as m from '@/paraglide/messages'
 import { track } from '@/lib/analytics'
 import { usePullToRefresh } from '@/shared/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/shared/ui/PullToRefreshIndicator'
@@ -26,6 +29,38 @@ import {
   useGenerateTitle,
 } from '@/features/chat/hooks/useConversations'
 import { extractVisibleTextFromUIMessageParts } from '@/features/chat/lib/extract-visible-text'
+import {
+  flushMessagePersistenceOutbox,
+  persistMessageWithOutbox,
+  type MessagePersistencePayload,
+} from '@/features/chat/lib/persistence-outbox'
+import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
+
+export type RequestPhase =
+  | 'idle'
+  | 'preparing'
+  | 'thinking'
+  | 'running_tool'
+  | 'composing'
+  | 'persisting'
+  | 'error'
+
+export function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): RequestPhase {
+  switch (phase) {
+    case 'thinking':
+      return 'thinking'
+    case 'calling_tool':
+      return 'running_tool'
+    case 'composing':
+      return 'composing'
+    case 'done':
+      return 'persisting'
+    case 'error':
+      return 'error'
+    default:
+      return 'thinking'
+  }
+}
 
 type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
 
@@ -42,8 +77,10 @@ export function assistantMessageHasVisibleContent(
 
 export function shouldShowLoadingIndicator(
   status: 'submitted' | 'streaming' | 'ready' | 'error',
-  lastAssistantMessage: AssistantVisibilityMessage | null | undefined
+  lastAssistantMessage: AssistantVisibilityMessage | null | undefined,
+  requestPhase: RequestPhase
 ): boolean {
+  if (requestPhase !== 'idle' && requestPhase !== 'error') return true
   return status === 'submitted' || (status === 'streaming' && !assistantMessageHasVisibleContent(lastAssistantMessage))
 }
 
@@ -65,6 +102,8 @@ export function ChatContainer() {
   // Conversation context
   const { activeConversationId, setActiveConversationId, registerStartNewChatHandler } =
     useChatContext()
+  const { user } = useAuthContext()
+  const isAuthenticated = !!user
 
   // Conversation hooks
   const { data: loadedConversation, isLoading: isLoadingConversation } =
@@ -72,16 +111,78 @@ export function ChatContainer() {
   const createConversation = useCreateConversation()
   const addMessage = useAddMessage()
   const generateTitle = useGenerateTitle()
+  const [requestPhase, setRequestPhase] = useState<RequestPhase>('idle')
+  const requestPhaseRef = useRef<RequestPhase>('idle')
+
+  const setRequestLifecyclePhase = useCallback((phase: RequestPhase) => {
+    requestPhaseRef.current = phase
+    setRequestPhase(phase)
+  }, [])
 
   // Track if we've persisted the current user message (to avoid duplicates)
   const pendingUserMessageRef = useRef<string | null>(null)
+  const pendingConversationIdRef = useRef<string | null>(null)
+  const pendingAssistantClientMessageIdRef = useRef<string | null>(null)
   // Track if this is the first exchange (for title generation)
   const isFirstExchangeRef = useRef(true)
+  const isFlushingOutboxRef = useRef(false)
 
   // Pull-to-refresh for mobile (uses direct DOM manipulation for 60fps)
   const { containerRef, indicatorRef } = usePullToRefresh({
     onRefresh: () => window.location.reload(),
   })
+
+  const persistMessageToConversation = useCallback(
+    async (payload: MessagePersistencePayload) => {
+      await addMessage.mutateAsync({
+        conversationId: payload.conversationId,
+        role: payload.role,
+        clientMessageId: payload.clientMessageId,
+        content: payload.content,
+        visibleContent: payload.visibleContent ?? payload.content,
+        executionTrace: payload.executionTrace,
+        responseContractVersion: payload.responseContractVersion ?? 2,
+        attachedData: payload.attachedData,
+      })
+    },
+    [addMessage]
+  )
+
+  const persistMessageResiliently = useCallback(
+    async (payload: MessagePersistencePayload): Promise<'persisted' | 'queued'> => {
+      if (!isAuthenticated) {
+        await persistMessageToConversation(payload)
+        return 'persisted'
+      }
+
+      return persistMessageWithOutbox(persistMessageToConversation, payload)
+    },
+    [isAuthenticated, persistMessageToConversation]
+  )
+
+  const flushOutboxNow = useCallback(async () => {
+    if (!isAuthenticated || isFlushingOutboxRef.current) return
+
+    isFlushingOutboxRef.current = true
+
+    try {
+      const result = await flushMessagePersistenceOutbox(persistMessageToConversation)
+
+      if (result.terminalFailures.length > 0) {
+        const count = result.terminalFailures.length
+        toast.warning('Unable to sync some chat messages', {
+          description:
+            count === 1
+              ? 'One message could not be saved after multiple retries.'
+              : `${count} messages could not be saved after multiple retries.`,
+        })
+      }
+    } catch (flushError) {
+      console.error('[chat] Failed to flush persistence outbox:', flushError)
+    } finally {
+      isFlushingOutboxRef.current = false
+    }
+  }, [isAuthenticated, persistMessageToConversation])
 
   const {
     messages,
@@ -104,8 +205,11 @@ export function ChatContainer() {
         events_returned: eventsCountRef.current,
       })
 
+      setRequestLifecyclePhase('persisting')
+
       // Persist the assistant message with attached data
-      if (activeConversationId) {
+      const conversationId = pendingConversationIdRef.current ?? activeConversationId
+      if (conversationId) {
         // Extract final-only visible text from step-aware parts
         const textContent = extractVisibleTextFromUIMessageParts(
           message.parts as Array<{ type?: string; text?: string }>
@@ -116,10 +220,13 @@ export function ChatContainer() {
           suggestions: suggestions.length > 0 ? suggestions : undefined,
           directions: directions ?? undefined,
         }
+        const assistantClientMessageId =
+          pendingAssistantClientMessageIdRef.current ?? generateId()
 
         try {
-          await addMessage.mutateAsync({
-            conversationId: activeConversationId,
+          await persistMessageResiliently({
+            conversationId,
+            clientMessageId: assistantClientMessageId,
             role: 'assistant',
             content: textContent,
             visibleContent: textContent,
@@ -132,43 +239,52 @@ export function ChatContainer() {
           if (isFirstExchangeRef.current && pendingUserMessageRef.current) {
             isFirstExchangeRef.current = false
             generateTitle.mutate({
-              conversationId: activeConversationId,
+              conversationId,
               firstMessage: pendingUserMessageRef.current,
             })
           }
         } catch (err) {
           console.error('Failed to persist assistant message:', err)
+          setRequestLifecyclePhase('error')
           toast.error('Failed to save response', {
             description: 'Your conversation may not be saved properly',
             action: {
               label: 'Retry',
-              onClick: () => {
-                // Re-attempt to save the message
-                addMessage.mutate({
-                  conversationId: activeConversationId,
+              onClick: () =>
+                persistMessageResiliently({
+                  conversationId,
+                  clientMessageId: assistantClientMessageId,
                   role: 'assistant',
                   content: textContent,
                   visibleContent: textContent,
                   executionTrace,
                   responseContractVersion: 2,
                   attachedData,
-                })
-              },
+                }),
             },
           })
         }
       }
 
       pendingUserMessageRef.current = null
+      pendingConversationIdRef.current = null
+      pendingAssistantClientMessageIdRef.current = null
+      if (requestPhaseRef.current !== 'error') {
+        setRequestLifecyclePhase('idle')
+      }
+      void flushOutboxNow()
     },
     onError: (err) => {
       console.error('Chat error:', err)
+      setRequestLifecyclePhase('error')
       setError(err.message || 'An error occurred. Please try again.')
       track('chat:error', {
         error_type: 'client_error',
         error_message: err.message,
       })
       pendingUserMessageRef.current = null
+      pendingConversationIdRef.current = null
+      pendingAssistantClientMessageIdRef.current = null
     },
     onData: (dataPart) => {
       // Handle custom data parts from the server
@@ -187,11 +303,17 @@ export function ChatContainer() {
         setDirections(dataPart.data as DirectionsData)
       } else if (dataPart.type === 'data-execution-trace') {
         setExecutionTrace(dataPart.data as MessageExecutionStep[])
+      } else if (dataPart.type === 'data-status') {
+        const statusData = dataPart.data as ChatStreamStatusData
+        setRequestLifecyclePhase(mapStatusPhaseToRequestPhase(statusData.phase))
       }
     },
   })
 
-  const isLoading = status === 'submitted' || status === 'streaming'
+  const isLoading =
+    status === 'submitted' ||
+    status === 'streaming' ||
+    (requestPhase !== 'idle' && requestPhase !== 'error')
 
   // Load conversation messages when activeConversationId changes
   useEffect(() => {
@@ -235,6 +357,25 @@ export function ChatContainer() {
     }
   }, [activeConversationId, loadedConversation, isLoadingConversation, setMessages])
 
+  // Flush any pending persistence retries on load.
+  useEffect(() => {
+    void flushOutboxNow()
+  }, [flushOutboxNow])
+
+  // Flush retries as soon as connectivity is restored.
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const handleOnline = () => {
+      void flushOutboxNow()
+    }
+
+    window.addEventListener('online', handleOnline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [isAuthenticated, flushOutboxNow])
+
   // Register handler for starting a new chat (called from sidebar via ChatContext)
   useEffect(() => {
     registerStartNewChatHandler(() => {
@@ -245,13 +386,19 @@ export function ChatContainer() {
       setDirections(null)
       setExecutionTrace([])
       setMessageAttachedDataMap(new Map())
+      setRequestLifecyclePhase('idle')
+      pendingUserMessageRef.current = null
+      pendingConversationIdRef.current = null
+      pendingAssistantClientMessageIdRef.current = null
       isFirstExchangeRef.current = true
     })
-  }, [registerStartNewChatHandler, stop, setMessages])
+  }, [registerStartNewChatHandler, stop, setMessages, setRequestLifecyclePhase])
 
   // Clear events, suggestions, directions, and errors when starting a new message
   const handleSendMessage = useCallback(
     async (content: string) => {
+      setRequestLifecyclePhase('preparing')
+
       // Clear previous data
       setEvents([])
       setSuggestions([])
@@ -270,6 +417,9 @@ export function ChatContainer() {
 
       // Store the user message for title generation
       pendingUserMessageRef.current = content
+      const userClientMessageId = generateId()
+      const assistantClientMessageId = generateId()
+      pendingAssistantClientMessageIdRef.current = assistantClientMessageId
 
       try {
         // Create conversation if this is the first message
@@ -279,21 +429,31 @@ export function ChatContainer() {
           conversationId = newConversation.id
           setActiveConversationId(conversationId)
         }
+        pendingConversationIdRef.current = conversationId
 
-        // Persist the user message
-        await addMessage.mutateAsync({
-          conversationId: conversationId!,
+        // Persist in the background so first-message UX is instant.
+        const userMessagePayload: MessagePersistencePayload = {
+          conversationId,
+          clientMessageId: userClientMessageId,
           role: 'user',
           content,
           visibleContent: content,
           responseContractVersion: 2,
+        }
+        const userPersistencePromise = persistMessageResiliently(userMessagePayload).catch((persistError) => {
+          console.error('Failed to persist user message:', persistError)
+          if (!isAuthenticated) {
+            toast.error('Failed to save your message locally')
+          }
         })
 
         // Send the message using AI SDK
         await sendMessage({ text: content })
+        await userPersistencePromise
       } catch (err) {
         console.error('Failed to send message:', err)
         const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
+        setRequestLifecyclePhase('error')
         setError(errorMessage)
         toast.error('Failed to send message', {
           description: errorMessage,
@@ -303,6 +463,8 @@ export function ChatContainer() {
           },
         })
         pendingUserMessageRef.current = null
+        pendingConversationIdRef.current = null
+        pendingAssistantClientMessageIdRef.current = null
       }
     },
     [
@@ -311,7 +473,9 @@ export function ChatContainer() {
       activeConversationId,
       setActiveConversationId,
       createConversation,
-      addMessage,
+      persistMessageResiliently,
+      isAuthenticated,
+      setRequestLifecyclePhase,
     ]
   )
 
@@ -382,11 +546,37 @@ export function ChatContainer() {
   const lastAssistantMessage = displayMessages.filter((m) => m.role === 'assistant').pop()
   const showLoading = shouldShowLoadingIndicator(
     status as 'submitted' | 'streaming' | 'ready' | 'error',
-    lastAssistantMessage
+    lastAssistantMessage,
+    requestPhase
   )
 
-  // Show loading state while fetching conversation
-  const showConversationLoading = !!(activeConversationId && isLoadingConversation)
+  const loadingLabel = useMemo(() => {
+    switch (requestPhase) {
+      case 'preparing':
+        return m.chat_status_preparing()
+      case 'thinking':
+        return m.chat_status_thinking()
+      case 'running_tool':
+        return m.chat_status_running_tool()
+      case 'composing':
+        return m.chat_status_composing()
+      case 'persisting':
+        return m.chat_status_persisting()
+      case 'error':
+        return m.chat_status_error()
+      case 'idle':
+      default:
+        return m.chat_thinking()
+    }
+  }, [requestPhase])
+
+  // Show loading state while fetching conversation, but never while an active request is in flight.
+  const showConversationLoading = !!(
+    activeConversationId &&
+    isLoadingConversation &&
+    requestPhase === 'idle' &&
+    !hasMessages
+  )
 
   return (
     <div className="relative h-full min-h-0 flex flex-col">
@@ -395,7 +585,12 @@ export function ChatContainer() {
         <div className="absolute top-4 left-4 right-4 z-50 max-w-3xl mx-auto p-3 bg-destructive/20 border border-destructive rounded-lg text-sm flex items-center justify-between animate-fade-in-up">
           <span>{error}</span>
           <button
-            onClick={() => setError(null)}
+            onClick={() => {
+              setError(null)
+              if (requestPhaseRef.current === 'error') {
+                setRequestLifecyclePhase('idle')
+              }
+            }}
             className="ml-2 text-lg leading-none hover:opacity-70"
             aria-label="Dismiss error"
           >
@@ -413,10 +608,12 @@ export function ChatContainer() {
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
-        ) : hasMessages ? (
+        ) : hasMessages || requestPhase !== 'idle' ? (
           <MessageList
             messages={displayMessages}
             isLoading={showLoading}
+            loadingPhase={requestPhase}
+            loadingLabel={loadingLabel}
             onSuggestionSelect={handleSendMessage}
           />
         ) : (

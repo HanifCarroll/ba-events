@@ -118,6 +118,10 @@ export interface Event {
   name: string
   description_es: string | null // Spanish description (primary, used for embedding)
   description_en: string | null // English description (for display)
+  description_display_es: string | null // Spanish display text (paragraph-preserving)
+  description_display_en: string | null // English display text (paragraph-preserving)
+  description_summary_es: string | null // Spanish short summary for cards
+  description_summary_en: string | null // English short summary for cards
   starts_at: string // ISO datetime string
   ends_at: string | null // ISO datetime string
   is_all_day: boolean
@@ -200,6 +204,10 @@ export interface EventInsert {
   name: string
   description_es?: string | null
   description_en?: string | null
+  description_display_es?: string | null
+  description_display_en?: string | null
+  description_summary_es?: string | null
+  description_summary_en?: string | null
   starts_at: string
   ends_at?: string | null
   is_all_day?: boolean
@@ -419,6 +427,21 @@ export interface DirectionsData {
   eventName?: string
 }
 
+export type ChatStreamStatusPhase =
+  | 'thinking'
+  | 'calling_tool'
+  | 'composing'
+  | 'done'
+  | 'error'
+
+export interface ChatStreamStatusData {
+  phase: ChatStreamStatusPhase
+  toolName?: string
+  stepIndex?: number
+  requestId: string
+  timestamp: string
+}
+
 // Chat message types (for UI display)
 export interface ChatMessage {
   id: string
@@ -451,6 +474,7 @@ export type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'events'; data: EventWithVenue[] }
   | { type: 'suggestions'; data: RefinementSuggestion[] }
+  | { type: 'status'; data: ChatStreamStatusData }
   | { type: 'execution_trace'; data: MessageExecutionStep[] }
   | { type: 'history'; messages: APIMessage[] }
   | { type: 'error'; message: string }
@@ -770,6 +794,7 @@ export interface Message {
   id: string
   conversation_id: string
   parent_id: string | null
+  client_message_id: string | null
   role: MessageRole
   content: string // Legacy-visible mirror for rollback compatibility
   visible_content: string
@@ -784,6 +809,7 @@ export interface Message {
 export interface MessageInsert {
   conversation_id: string
   parent_id?: string | null
+  client_message_id?: string | null
   role: MessageRole
   content: string
   visible_content?: string
@@ -814,6 +840,7 @@ export interface MigrationConversation {
   created_at: string
   updated_at: string
   messages: Array<{
+    client_message_id?: string | null
     role: MessageRole
     content: string
     visible_content?: string

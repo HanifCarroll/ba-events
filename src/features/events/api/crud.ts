@@ -18,6 +18,7 @@ import {
 } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
+import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { queryEventsPaginated, queryEventTabCounts } from './queries'
 import type { EventInsert, EventUpdate, EventWithVenue, EventListItem, EventStatus } from '@/shared/lib/types'
 import type { EventListParams, EventFilterParams, PaginatedResponse, EventTabCounts } from '@/shared/lib/types/pagination'
@@ -95,10 +96,15 @@ export const createEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert) => data)
   .handler(async ({ data }) => {
     const client = await requireAdminAccess()
+    const presentationFields = await buildDescriptionPresentationFields({
+      description_es: data.description_es,
+      description_en: data.description_en,
+    })
     const embedding = await generateEventEmbedding(data)
 
     return createEvent({
       ...data,
+      ...presentationFields,
       embedding,
     }, client)
   })
@@ -107,14 +113,27 @@ export const updateEventAction = createServerFn({ method: 'POST' })
   .inputValidator((input: { id: string; data: EventUpdate }) => input)
   .handler(async ({ data: { id, data } }) => {
     const client = await requireAdminAccess()
-    // If name, description_es, or categories changed, regenerate embedding
     const existingEvent = await getEventById(id)
+    // If name, description_es, or categories changed, regenerate embedding
     const needsNewEmbedding =
       data.name !== undefined ||
       data.description_es !== undefined ||
       data.categories !== undefined
 
+    const descriptionsChanged =
+      data.description_es !== undefined || data.description_en !== undefined
+
+    let presentationUpdates: Partial<EventUpdate> = {}
     let embedding: number[] | undefined
+
+    if (descriptionsChanged) {
+      presentationUpdates = await buildDescriptionPresentationFields({
+        description_es:
+          data.description_es !== undefined ? data.description_es : existingEvent.description_es,
+        description_en:
+          data.description_en !== undefined ? data.description_en : existingEvent.description_en,
+      })
+    }
 
     if (needsNewEmbedding) {
       embedding = await generateEventEmbedding({
@@ -126,6 +145,7 @@ export const updateEventAction = createServerFn({ method: 'POST' })
 
     return updateEvent(id, {
       ...data,
+      ...presentationUpdates,
       ...(embedding && { embedding }),
     }, client)
   })

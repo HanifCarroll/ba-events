@@ -31,6 +31,7 @@ import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type {
   EventWithVenue,
   DirectionsData,
+  ChatStreamStatusData,
   Json,
   MessageExecutionStep,
 } from '@/shared/lib/types'
@@ -248,8 +249,28 @@ export const Route = createFileRoute('/api/chat' as any)({
         const stream = createUIMessageStream({
           execute: async ({ writer }) => {
             let wroteStart = false
+            const requestId = generateId()
+            let stepIndex = -1
+
+            const writeStatus = (
+              phase: ChatStreamStatusData['phase'],
+              options?: Pick<ChatStreamStatusData, 'toolName' | 'stepIndex'>
+            ) => {
+              writer.write({
+                type: 'data-status' as const,
+                data: {
+                  phase,
+                  toolName: options?.toolName,
+                  stepIndex: options?.stepIndex,
+                  requestId,
+                  timestamp: new Date().toISOString(),
+                },
+              })
+            }
 
             try {
+              writeStatus('thinking')
+
               const result = streamText({
                 model: anthropic(CLAUDE_MODEL),
                 system: getSystemPrompt(locale),
@@ -257,6 +278,8 @@ export const Route = createFileRoute('/api/chat' as any)({
                 tools: createTools(userContext, locale),
                 stopWhen: stepCountIs(MAX_STEPS),
                 onStepFinish: ({ toolCalls, toolResults }) => {
+                  stepIndex += 1
+
                   // Accumulate events from each step
                   for (const result of toolResults) {
                     const toolOutput = result.output as {
@@ -292,6 +315,10 @@ export const Route = createFileRoute('/api/chat' as any)({
 
                   // Track tool usage
                   for (const call of toolCalls) {
+                    writeStatus('calling_tool', {
+                      toolName: call.toolName,
+                      stepIndex,
+                    })
                     trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
                       tool: call.toolName,
                       success: true,
@@ -323,6 +350,8 @@ export const Route = createFileRoute('/api/chat' as any)({
                 (count, step) => count + (step.toolResults?.length ?? 0),
                 0
               )
+              const finalStepIndex =
+                typedSteps.length > 0 ? typedSteps.length - 1 : undefined
 
               trackServer('chat:final_only_response_emitted', userContext.userId ?? 'anonymous', {
                 step_count: typedSteps.length,
@@ -334,6 +363,10 @@ export const Route = createFileRoute('/api/chat' as any)({
 
               const messageId = generateId()
               const textBlockId = generateId()
+
+              writeStatus('composing', {
+                stepIndex: finalStepIndex,
+              })
 
               writer.write({ type: 'start', messageId })
               wroteStart = true
@@ -389,12 +422,19 @@ export const Route = createFileRoute('/api/chat' as any)({
                 data: executionTrace,
               })
 
+              writeStatus('done', {
+                stepIndex: finalStepIndex,
+              })
+
               writer.write({
                 type: 'finish',
                 finishReason: 'stop',
               })
             } catch (error) {
               console.error('[Chat API] Error:', error)
+              writeStatus('error', {
+                stepIndex: stepIndex >= 0 ? stepIndex : undefined,
+              })
               writer.write({
                 type: 'error',
                 errorText: error instanceof Error ? error.message : 'An error occurred',

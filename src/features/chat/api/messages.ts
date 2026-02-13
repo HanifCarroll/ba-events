@@ -10,6 +10,7 @@ import type { Message, MessageAttachedData, MessageExecutionStep } from '@/share
 type AddMessageInput = {
   conversationId: string
   role: 'user' | 'assistant' | 'system'
+  clientMessageId?: string
   content: string
   visibleContent?: string
   executionTrace?: MessageExecutionStep[]
@@ -20,6 +21,7 @@ type AddMessageInput = {
 export function buildMessageInsertPayload(data: AddMessageInput, sequenceNumber: number) {
   return {
     conversation_id: data.conversationId,
+    client_message_id: data.clientMessageId ?? null,
     role: data.role,
     content: data.content,
     visible_content: data.visibleContent ?? data.content,
@@ -62,6 +64,26 @@ export const addMessage = createServerFn({ method: 'POST' })
       throw new Error('Conversation not found')
     }
 
+    // Idempotency for retry/outbox flows: if this client message already exists,
+    // return it instead of inserting a duplicate.
+    if (data.clientMessageId) {
+      const { data: existingMessage, error: existingError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', data.conversationId)
+        .eq('client_message_id', data.clientMessageId)
+        .maybeSingle()
+
+      if (existingError) {
+        console.error('[addMessage] Existing message lookup error:', existingError)
+        throw new Error('Failed to add message')
+      }
+
+      if (existingMessage) {
+        return existingMessage as Message
+      }
+    }
+
     // Get the next sequence number
     const { data: lastMsg } = await supabase
       .from('messages')
@@ -81,6 +103,20 @@ export const addMessage = createServerFn({ method: 'POST' })
       .single()
 
     if (error) {
+      // Handle race condition where a retry inserted the same client message_id concurrently.
+      if (error.code === '23505' && data.clientMessageId) {
+        const { data: existingMessage } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', data.conversationId)
+          .eq('client_message_id', data.clientMessageId)
+          .maybeSingle()
+
+        if (existingMessage) {
+          return existingMessage as Message
+        }
+      }
+
       console.error('[addMessage] Error:', error)
       throw new Error('Failed to add message')
     }

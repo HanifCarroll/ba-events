@@ -6,6 +6,11 @@ import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { formatEventTime, formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
 import { getEventUrl, resolveSiteUrl } from '@/shared/lib/utils/url'
+import { getLocale } from '@/paraglide/runtime'
+import {
+  pickDescriptionSummary,
+  pickDisplayDescription,
+} from '@/features/events/lib/description-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 export const Route = createFileRoute('/event/$id')({
@@ -62,6 +67,7 @@ export const Route = createFileRoute('/event/$id')({
 function EventDetailPage() {
   const event = Route.useLoaderData()
   const [copied, setCopied] = useState(false)
+  const locale = getLocale() as 'en' | 'es'
 
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
@@ -77,7 +83,15 @@ function EventDetailPage() {
   }, [event.location_hidden, event.venue_address, event.venue_name])
 
   const shareUrl = getEventUrl(event.id)
-  const hasDescription = Boolean(event.description_en || event.description_es)
+  const displayDescription = pickDisplayDescription(event, locale)
+  const descriptionParagraphs = useMemo(() => {
+    if (!displayDescription) return []
+    return displayDescription
+      .split(/\n\s*\n/g)
+      .map((paragraph) => paragraph.trim())
+      .filter((paragraph) => paragraph.length > 0)
+  }, [displayDescription])
+  const hasDescription = descriptionParagraphs.length > 0
   const sourceLabel = getSourceLabel(event.source)
 
   const handleShare = async () => {
@@ -85,7 +99,7 @@ function EventDetailPage() {
       try {
         await navigator.share({
           title: event.name,
-          text: buildEventSummary(event),
+          text: buildEventSummary(event, locale),
           url: shareUrl,
         })
         return
@@ -214,16 +228,11 @@ function EventDetailPage() {
               </div>
             )}
 
-            {event.description_en && (
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {event.description_en}
+            {descriptionParagraphs.map((paragraph, index) => (
+              <p key={`${event.id}-description-${index}`} className="text-sm text-muted-foreground leading-relaxed">
+                {paragraph}
               </p>
-            )}
-            {!event.description_en && event.description_es && (
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {event.description_es}
-              </p>
-            )}
+            ))}
 
             {event.categories.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -241,13 +250,12 @@ function EventDetailPage() {
   )
 }
 
-function buildEventSummary(event: EventWithVenue): string {
-  const raw = event.description_en || event.description_es || ''
-  const cleaned = raw.replace(/\s+/g, ' ').trim()
+function buildEventSummary(event: EventWithVenue, locale: 'en' | 'es' = 'en'): string {
+  const summary = pickDescriptionSummary(event, locale)
   const fallback = event.venue_neighborhood
     ? `Event in ${event.venue_neighborhood}`
     : 'Event in Buenos Aires'
-  const base = cleaned.length > 0 ? cleaned : fallback
+  const base = summary && summary.length > 0 ? summary : fallback
   const maxLength = 160
 
   if (base.length <= maxLength) return base

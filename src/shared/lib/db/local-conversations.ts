@@ -24,6 +24,7 @@ interface LocalConversation {
 interface LocalMessage {
   id: string
   conversation_id: string
+  client_message_id: string | null
   role: MessageRole
   content: string
   visible_content: string
@@ -40,11 +41,35 @@ interface LocalSession {
   value: string
 }
 
+export type LocalOutboxStatus = 'pending' | 'failed'
+
+/**
+ * Durable outbox item for retrying server persistence after transient failures.
+ */
+export interface LocalOutboxItem {
+  id: string
+  conversation_id: string
+  client_message_id: string
+  role: MessageRole
+  content: string
+  visible_content: string
+  execution_trace: MessageExecutionStep[]
+  response_contract_version: number
+  attached_data: MessageAttachedData
+  attempt_count: number
+  next_retry_at: string
+  status: LocalOutboxStatus
+  last_error: string | null
+  created_at: string
+  updated_at: string
+}
+
 // Dexie database schema
 class LocalConversationsDB extends Dexie {
   conversations!: EntityTable<LocalConversation, 'id'>
   messages!: EntityTable<LocalMessage, 'id'>
   session!: EntityTable<LocalSession, 'key'>
+  outbox!: EntityTable<LocalOutboxItem, 'id'>
 
   constructor() {
     super('ba-events-conversations')
@@ -65,6 +90,9 @@ class LocalConversationsDB extends Dexie {
           .table('messages')
           .toCollection()
           .modify((msg: Partial<LocalMessage> & { content?: string }) => {
+            if (!('client_message_id' in msg)) {
+              msg.client_message_id = null
+            }
             if (typeof msg.visible_content !== 'string') {
               msg.visible_content = typeof msg.content === 'string' ? msg.content : ''
             }
@@ -76,6 +104,31 @@ class LocalConversationsDB extends Dexie {
             }
           })
       })
+
+    this.version(3)
+      .stores({
+        conversations: 'id, updated_at',
+        messages: 'id, conversation_id, client_message_id, [conversation_id+sequence_number], [conversation_id+client_message_id]',
+        session: 'key',
+        outbox: 'id, conversation_id, client_message_id, [conversation_id+client_message_id], status, next_retry_at, updated_at',
+      })
+      .upgrade((tx) => {
+        return tx
+          .table('messages')
+          .toCollection()
+          .modify((msg: Partial<LocalMessage>) => {
+            if (!('client_message_id' in msg)) {
+              msg.client_message_id = null
+            }
+          })
+      })
+
+    this.version(4).stores({
+      conversations: 'id, updated_at',
+      messages: 'id, conversation_id, client_message_id, [conversation_id+sequence_number], [conversation_id+client_message_id]',
+      session: 'key',
+      outbox: 'id, conversation_id, client_message_id, [conversation_id+client_message_id], status, next_retry_at, updated_at',
+    })
   }
 }
 
@@ -203,6 +256,7 @@ export async function addLocalMessage(
   conversationId: string,
   message: {
     role: MessageRole
+    client_message_id?: string
     content: string
     visible_content?: string
     execution_trace?: MessageExecutionStep[]
@@ -224,6 +278,7 @@ export async function addLocalMessage(
   const newMessage: LocalMessage = {
     id: generateUUID(),
     conversation_id: conversationId,
+    client_message_id: message.client_message_id ?? null,
     role: message.role,
     content: message.content,
     visible_content: message.visible_content ?? message.content,
@@ -298,6 +353,7 @@ export async function getConversationsForMigration(): Promise<MigrationConversat
       created_at: conv.created_at,
       updated_at: conv.updated_at,
       messages: messages.map((m) => ({
+        client_message_id: m.client_message_id,
         role: m.role,
         content: m.content,
         visible_content: m.visible_content,
@@ -328,11 +384,90 @@ export async function hasLocalConversations(): Promise<boolean> {
  */
 export async function clearLocalConversations(): Promise<void> {
   const db = getLocalDB()
-  await db.transaction('rw', [db.conversations, db.messages, db.session], async () => {
+  await db.transaction('rw', [db.conversations, db.messages, db.session, db.outbox], async () => {
     await db.messages.clear()
     await db.conversations.clear()
+    await db.outbox.clear()
     await db.session.delete('anonymous_id')
   })
+}
+
+/**
+ * Add a durable outbox item for message persistence retry.
+ */
+export async function addOutboxItem(
+  item: Omit<LocalOutboxItem, 'id' | 'created_at' | 'updated_at' | 'status' | 'last_error'>
+): Promise<LocalOutboxItem> {
+  const db = getLocalDB()
+  const now = new Date().toISOString()
+
+  const outboxItem: LocalOutboxItem = {
+    id: generateUUID(),
+    status: 'pending',
+    last_error: null,
+    created_at: now,
+    updated_at: now,
+    ...item,
+  }
+
+  await db.outbox.add(outboxItem)
+  return outboxItem
+}
+
+/**
+ * List outbox items that are pending and due for retry.
+ */
+export async function listDueOutboxItems(nowIso: string = new Date().toISOString()): Promise<LocalOutboxItem[]> {
+  const db = getLocalDB()
+  return db.outbox
+    .where('next_retry_at')
+    .belowOrEqual(nowIso)
+    .filter((item) => item.status === 'pending')
+    .sortBy('updated_at')
+}
+
+/**
+ * Update an outbox item after a retry attempt.
+ */
+export async function updateOutboxItem(
+  id: string,
+  updates: Partial<Omit<LocalOutboxItem, 'id' | 'created_at'>>
+): Promise<void> {
+  const db = getLocalDB()
+  await db.outbox.update(id, {
+    ...updates,
+    updated_at: new Date().toISOString(),
+  })
+}
+
+/**
+ * Remove an outbox item after successful sync or terminal failure handling.
+ */
+export async function deleteOutboxItem(id: string): Promise<void> {
+  const db = getLocalDB()
+  await db.outbox.delete(id)
+}
+
+/**
+ * Look up an outbox item by idempotency key.
+ */
+export async function getOutboxItemByClientMessageId(
+  conversationId: string,
+  clientMessageId: string
+): Promise<LocalOutboxItem | undefined> {
+  const db = getLocalDB()
+  return db.outbox
+    .where('[conversation_id+client_message_id]')
+    .equals([conversationId, clientMessageId])
+    .first()
+}
+
+/**
+ * Read all outbox items (for debugging and diagnostics).
+ */
+export async function listOutboxItems(): Promise<LocalOutboxItem[]> {
+  const db = getLocalDB()
+  return db.outbox.orderBy('updated_at').reverse().toArray()
 }
 
 /**

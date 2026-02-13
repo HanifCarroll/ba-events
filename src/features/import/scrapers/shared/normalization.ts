@@ -24,8 +24,13 @@ export function normalizeTitle(title: string): string {
 export function normalizeDescription(desc: string | null): string | null {
   if (!desc) return null
 
-  // Strip HTML tags
-  const withoutHtml = desc.replace(/<[^>]*>/g, ' ')
+  // Strip HTML tags while preserving paragraph boundaries
+  const withoutHtml = desc
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|section|article|li|h[1-6])>/gi, '\n\n')
+    .replace(/<(?:p|div|section|article|ul|ol|h[1-6])[^>]*>/gi, '')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<[^>]*>/g, ' ')
 
   // Decode common HTML entities
   const decoded = withoutHtml
@@ -38,8 +43,26 @@ export function normalizeDescription(desc: string | null): string | null {
     .replace(/&#x27;/g, "'")
     .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
 
-  // Normalize whitespace: collapse multiple spaces/newlines to single space, trim
-  const normalized = decoded.replace(/\s+/g, ' ').trim()
+  // Normalize while preserving paragraph separation.
+  const normalized = decoded
+    .replace(/\r/g, '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .split(/\n\s*\n/g)
+    .map((paragraph) =>
+      paragraph
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+    )
+    .filter(Boolean)
+    .join('\n\n')
+    .trim()
 
   // Return null if result is empty
   return normalized.length > 0 ? normalized : null

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   assistantMessageHasVisibleContent,
+  mapStatusPhaseToRequestPhase,
   shouldShowLoadingIndicator,
 } from './ChatContainer'
 
@@ -22,14 +23,14 @@ describe('ChatContainer loading/visibility selectors', () => {
   })
 
   it('shows loading while submitted', () => {
-    expect(shouldShowLoadingIndicator('submitted', null)).toBe(true)
+    expect(shouldShowLoadingIndicator('submitted', null, 'idle')).toBe(true)
   })
 
   it('shows loading during streaming when assistant has no visible content', () => {
     expect(
       shouldShowLoadingIndicator('streaming', {
         content: '',
-      })
+      }, 'idle')
     ).toBe(true)
   })
 
@@ -37,7 +38,19 @@ describe('ChatContainer loading/visibility selectors', () => {
     expect(
       shouldShowLoadingIndicator('streaming', {
         content: 'Go to Club 69 tonight.',
-      })
+      }, 'idle')
     ).toBe(false)
+  })
+
+  it('shows loading immediately during preparing phase for first message UX', () => {
+    expect(shouldShowLoadingIndicator('ready', null, 'preparing')).toBe(true)
+  })
+
+  it('maps server status phases to request lifecycle phases', () => {
+    expect(mapStatusPhaseToRequestPhase('thinking')).toBe('thinking')
+    expect(mapStatusPhaseToRequestPhase('calling_tool')).toBe('running_tool')
+    expect(mapStatusPhaseToRequestPhase('composing')).toBe('composing')
+    expect(mapStatusPhaseToRequestPhase('done')).toBe('persisting')
+    expect(mapStatusPhaseToRequestPhase('error')).toBe('error')
   })
 })

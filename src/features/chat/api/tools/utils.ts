@@ -8,6 +8,10 @@
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { format } from 'date-fns'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
+import {
+  pickDescriptionSummary,
+  pickDisplayDescription,
+} from '@/features/events/lib/description-presentation'
 import type { EventWithVenue, Venue } from '@/shared/lib/types'
 
 // ============================================================================
@@ -47,11 +51,14 @@ export function formatInBA(utcDateStr: string): string {
  * Used by get_event_details, list_saved_events, etc.
  */
 export function formatEventForClaude(event: EventWithVenue) {
+  const summary = pickDescriptionSummary(event, 'en') ?? pickDescriptionSummary(event, 'es')
+  const display = pickDisplayDescription(event, 'en') ?? pickDisplayDescription(event, 'es')
+
   return {
     id: event.id,
     name: event.name,
-    description: event.description_en,
-    hasDetails: !!(event.description_en || event.description_es),
+    description: summary,
+    hasDetails: !!display,
     venue: event.venue_name,
     venueAddress: event.venue_address,
     neighborhood: event.venue_neighborhood,
@@ -79,10 +86,12 @@ export function formatEventsToolResult(events: EventWithVenue[]): string {
  * Used by get_event_details tool.
  */
 export function formatEventDetailsForClaude(event: EventWithVenue) {
+  const display = pickDisplayDescription(event, 'en') ?? pickDisplayDescription(event, 'es')
+
   return {
     id: event.id,
     name: event.name,
-    description: event.description_en || event.description_es,
+    description: display,
     venue: event.venue_name,
     venueAddress: event.venue_address,
     neighborhood: event.venue_neighborhood,
@@ -133,7 +142,7 @@ export function formatSavedEventsForClaude(events: EventWithVenue[]) {
   return events.map(e => ({
     id: e.id,
     name: e.name,
-    description: e.description_en,
+    description: pickDescriptionSummary(e, 'en') ?? pickDescriptionSummary(e, 'es'),
     venue: e.venue_name,
     neighborhood: e.venue_neighborhood,
     dateTime: formatInBA(e.starts_at),

@@ -14,6 +14,8 @@ import { EventActions } from '../events/EventActions'
 import { formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
 import { track } from '@/lib/analytics'
 import { getEventUrl } from '@/shared/lib/utils/url'
+import { getLocale } from '@/paraglide/runtime'
+import { pickDescriptionSummary } from '@/features/events/lib/description-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 interface YourPlanCardProps {
@@ -26,7 +28,7 @@ interface YourPlanCardProps {
 /**
  * Generate a Google Calendar URL for the event
  */
-function generateCalendarUrl(event: EventWithVenue): string {
+function generateCalendarUrl(event: EventWithVenue, locale: 'en' | 'es'): string {
   const startDate = new Date(event.starts_at)
   const endDate = event.ends_at ? new Date(event.ends_at) : new Date(startDate.getTime() + 2 * 60 * 60 * 1000) // Default 2 hours
 
@@ -39,7 +41,7 @@ function generateCalendarUrl(event: EventWithVenue): string {
     action: 'TEMPLATE',
     text: event.name,
     dates: `${formatForCalendar(startDate)}/${formatForCalendar(endDate)}`,
-    details: event.description_en || event.description_es || '',
+    details: pickDescriptionSummary(event, locale) || '',
     location: event.venue_address || event.venue_name || '',
   })
 
@@ -55,6 +57,7 @@ function generateDirectionsUrl(event: EventWithVenue): string {
 }
 
 export function YourPlanCard({ event, onAddToCalendar, onShare, onGetDirections }: YourPlanCardProps) {
+  const locale = getLocale() as 'en' | 'es'
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
   const timeStr = formatTime(startDate)
@@ -62,7 +65,7 @@ export function YourPlanCard({ event, onAddToCalendar, onShare, onGetDirections 
   const handleAddToCalendar = () => {
     track('concierge:add_to_calendar', { event_id: event.id, event_name: event.name })
     onAddToCalendar?.()
-    window.open(generateCalendarUrl(event), '_blank')
+    window.open(generateCalendarUrl(event, locale), '_blank')
   }
 
   const handleGetDirections = () => {

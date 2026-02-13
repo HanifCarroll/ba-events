@@ -18,6 +18,7 @@ import {
 } from '@/features/import/adapters/enrichment'
 import type { ImportSource } from '@/features/import/adapters/types'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { settleVenue, type VenueSettlementResult } from './venue-settlement'
 import { delay } from './nominatim'
 
@@ -65,6 +66,10 @@ async function updateEventEnrichment(
   data: {
     description_es?: string | null
     description_en?: string | null
+    description_display_es?: string | null
+    description_display_en?: string | null
+    description_summary_es?: string | null
+    description_summary_en?: string | null
     embedding?: number[] | null
     venue_id?: string | null
     enrichment_status: 'pending' | 'completed' | 'failed'
@@ -201,11 +206,16 @@ export async function enrichSingleEvent(
       description_es: enrichmentResult.description_es,
       categories: categories || null,
     })
+    const presentationFields = await buildDescriptionPresentationFields({
+      description_es: enrichmentResult.description_es,
+      description_en: enrichmentResult.description_en,
+    })
 
     // Step 4: Update event with all enrichment data
     const updateData: Parameters<typeof updateEventEnrichment>[2] = {
       description_es: enrichmentResult.description_es,
       description_en: enrichmentResult.description_en,
+      ...presentationFields,
       embedding,
       enrichment_status: 'completed',
       enrichment_error: null,

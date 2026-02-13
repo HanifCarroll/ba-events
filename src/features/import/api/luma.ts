@@ -11,6 +11,7 @@ import { isPlaceholderVenue } from '../core/venue-settlement'
 import { upsertEvents, createVenue, supabase, updateEvent } from '@/shared/lib/db/client'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
+import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import type { EventInsert } from '@/shared/lib/types'
 import type {
   ImportProgress,
@@ -313,16 +314,29 @@ export const enrichLumaDescriptionsAction = createServerFn({ method: 'POST' })
             const description = await fetchLumaDescriptionFromDetailPage(event.source_url)
 
             if (description) {
-              // Update event with description
-              await updateEvent(event.eventId, { description_es: description }, client)
-
-              // Regenerate embedding with new description
               const { data: eventData } = await supabase
                 .from('events')
-                .select('name, categories')
+                .select('name, categories, description_en')
                 .eq('id', event.eventId)
                 .single()
 
+              const presentationFields = await buildDescriptionPresentationFields({
+                description_es: description,
+                description_en: eventData?.description_en ?? null,
+              })
+
+              // Update event with description
+              await updateEvent(
+                event.eventId,
+                {
+                  description_es: description,
+                  description_en: eventData?.description_en ?? null,
+                  ...presentationFields,
+                },
+                client
+              )
+
+              // Regenerate embedding with new description
               if (eventData) {
                 const embedding = await generateEventEmbedding({
                   name: eventData.name,

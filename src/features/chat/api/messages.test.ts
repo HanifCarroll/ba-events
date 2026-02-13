@@ -7,6 +7,7 @@ describe('buildMessageInsertPayload', () => {
       {
         conversationId: 'conv_1',
         role: 'assistant',
+        clientMessageId: 'client-msg-1',
         content: 'Go to Palermo tonight.',
         visibleContent: 'Go to Palermo tonight.',
         executionTrace: [
@@ -25,6 +26,7 @@ describe('buildMessageInsertPayload', () => {
     )
 
     expect(payload.content).toBe('Go to Palermo tonight.')
+    expect(payload.client_message_id).toBe('client-msg-1')
     expect(payload.visible_content).toBe('Go to Palermo tonight.')
     expect(payload.execution_trace).toHaveLength(1)
     expect(payload.response_contract_version).toBe(2)
@@ -42,6 +44,7 @@ describe('buildMessageInsertPayload', () => {
     )
 
     expect(payload.visible_content).toBe('Legacy text')
+    expect(payload.client_message_id).toBeNull()
     expect(payload.execution_trace).toEqual([])
     expect(payload.response_contract_version).toBe(2)
   })

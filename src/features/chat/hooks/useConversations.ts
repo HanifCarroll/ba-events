@@ -136,6 +136,7 @@ export function useConversation(id: string | null) {
           id: m.id,
           conversation_id: m.conversation_id,
           parent_id: null,
+          client_message_id: m.client_message_id ?? null,
           role: m.role,
           content: m.content,
           visible_content: m.visible_content ?? m.content,
@@ -235,6 +236,7 @@ export function useAddMessage() {
     mutationFn: async ({
       conversationId,
       role,
+      clientMessageId,
       content,
       visibleContent,
       executionTrace,
@@ -243,6 +245,7 @@ export function useAddMessage() {
     }: {
       conversationId: string
       role: MessageRole
+      clientMessageId?: string
       content: string
       visibleContent?: string
       executionTrace?: MessageExecutionStep[]
@@ -254,6 +257,7 @@ export function useAddMessage() {
           data: {
             conversationId,
             role,
+            clientMessageId,
             content,
             visibleContent,
             executionTrace,
@@ -266,6 +270,7 @@ export function useAddMessage() {
       // Anonymous: add locally
       return addLocalMessage(conversationId, {
         role,
+        client_message_id: clientMessageId,
         content,
         visible_content: visibleContent,
         execution_trace: executionTrace,
