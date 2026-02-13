@@ -22,6 +22,7 @@ import {
 } from '../scrapers/meetup/transformer'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
@@ -190,6 +191,11 @@ async function processBatch(
   // Generate embeddings and upsert
   for (const { transformed, isUpdate } of eventsToProcess) {
     try {
+      const presentationFields = await buildDescriptionPresentationFields({
+        description_es: transformed.description_es,
+        description_en: transformed.description_en,
+      })
+
       // Generate embedding
       const embedding = await generateEventEmbedding({
         name: transformed.name,
@@ -199,6 +205,7 @@ async function processBatch(
 
       const eventWithEmbedding = {
         ...transformed,
+        ...presentationFields,
         embedding,
         enrichment_status: 'pending' as const,
       }
@@ -210,6 +217,12 @@ async function processBatch(
           .from('events')
           .update({
             name: eventWithEmbedding.name,
+            description_es: eventWithEmbedding.description_es,
+            description_en: eventWithEmbedding.description_en,
+            description_display_es: eventWithEmbedding.description_display_es,
+            description_display_en: eventWithEmbedding.description_display_en,
+            description_summary_es: eventWithEmbedding.description_summary_es,
+            description_summary_en: eventWithEmbedding.description_summary_en,
             starts_at: eventWithEmbedding.starts_at,
             ends_at: eventWithEmbedding.ends_at,
             venue_id: eventWithEmbedding.venue_id,
