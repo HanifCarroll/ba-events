@@ -32,10 +32,12 @@ import { queryKeys } from '@/shared/lib/query'
 import type {
   ConversationListItem,
   ConversationWithMessages,
+  Message,
   MessageAttachedData,
   MessageExecutionStep,
   MessageRole,
 } from '@/shared/lib/types'
+import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
 
 /**
  * List all conversations for the current user.
@@ -128,6 +130,22 @@ export function useConversation(id: string | null) {
       const result = await getLocalConversationWithMessages(id)
       if (!result) return null
 
+      const mappedMessages = result.messages.map((m) => ({
+        id: m.id,
+        conversation_id: m.conversation_id,
+        parent_id: m.parent_id,
+        client_message_id: m.client_message_id ?? null,
+        role: m.role,
+        content: m.content,
+        visible_content: m.visible_content ?? m.content,
+        execution_trace: m.execution_trace ?? [],
+        response_contract_version: m.response_contract_version ?? 1,
+        attached_data: m.attached_data,
+        created_at: m.created_at,
+        sequence_number: m.sequence_number,
+        turn_index: m.turn_index,
+      }))
+
       return {
         id: result.conversation.id,
         user_id: null,
@@ -136,20 +154,7 @@ export function useConversation(id: string | null) {
         updated_at: result.conversation.updated_at,
         deleted_at: null,
         metadata: {},
-        messages: result.messages.map((m) => ({
-          id: m.id,
-          conversation_id: m.conversation_id,
-          parent_id: null,
-          client_message_id: m.client_message_id ?? null,
-          role: m.role,
-          content: m.content,
-          visible_content: m.visible_content ?? m.content,
-          execution_trace: m.execution_trace ?? [],
-          response_contract_version: m.response_contract_version ?? 1,
-          attached_data: m.attached_data,
-          created_at: m.created_at,
-          sequence_number: m.sequence_number,
-        })),
+        messages: sortMessagesByTurnOrderAsc(mappedMessages),
       }
     },
     enabled: !!id,
@@ -239,6 +244,7 @@ export function useAddMessage() {
   return useMutation({
     mutationFn: async ({
       conversationId,
+      parentMessageId,
       role,
       clientMessageId,
       content,
@@ -248,6 +254,7 @@ export function useAddMessage() {
       attachedData,
     }: {
       conversationId: string
+      parentMessageId?: string | null
       role: MessageRole
       clientMessageId?: string
       content: string
@@ -260,6 +267,7 @@ export function useAddMessage() {
         return addMessage({
           data: {
             conversationId,
+            parentMessageId,
             role,
             clientMessageId,
             content,
@@ -274,6 +282,7 @@ export function useAddMessage() {
       // Anonymous: add locally
       return addLocalMessage(conversationId, {
         role,
+        parent_message_id: parentMessageId,
         client_message_id: clientMessageId,
         content,
         visible_content: visibleContent,
@@ -282,8 +291,42 @@ export function useAddMessage() {
         attached_data: attachedData,
       })
     },
-    onSuccess: (_, { conversationId }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) })
+    onSuccess: (savedMessage, { conversationId }) => {
+      queryClient.setQueryData(
+        queryKeys.conversations.detail(conversationId),
+        (existing: ConversationWithMessages | null | undefined) => {
+          if (!existing) return existing ?? null
+
+          const normalizedSavedMessage: Message = {
+            id: savedMessage.id,
+            conversation_id: savedMessage.conversation_id,
+            parent_id: savedMessage.parent_id ?? null,
+            client_message_id: savedMessage.client_message_id ?? null,
+            role: savedMessage.role,
+            content: savedMessage.content,
+            visible_content: savedMessage.visible_content ?? savedMessage.content,
+            execution_trace: savedMessage.execution_trace ?? [],
+            response_contract_version: savedMessage.response_contract_version ?? 2,
+            attached_data: savedMessage.attached_data ?? {},
+            created_at: savedMessage.created_at,
+            sequence_number: savedMessage.sequence_number,
+            turn_index:
+              typeof savedMessage.turn_index === 'number'
+                ? savedMessage.turn_index
+                : savedMessage.sequence_number,
+          }
+
+          const mergedById = new Map(existing.messages.map((message) => [message.id, message]))
+          mergedById.set(normalizedSavedMessage.id, normalizedSavedMessage)
+
+          return {
+            ...existing,
+            updated_at: new Date().toISOString(),
+            messages: sortMessagesByTurnOrderAsc(Array.from(mergedById.values())),
+          }
+        }
+      )
+
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.list() })
     },
   })

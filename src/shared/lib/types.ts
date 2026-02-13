@@ -439,7 +439,14 @@ export interface ChatStreamStatusData {
   toolName?: string
   stepIndex?: number
   requestId: string
+  assistantMessageId?: string
   timestamp: string
+}
+
+export interface ChatStreamDataEnvelope<T> {
+  requestId: string
+  assistantMessageId?: string
+  data: T
 }
 
 // Chat message types (for UI display)
@@ -472,10 +479,10 @@ export interface RefinementSuggestion {
 // Streaming event types
 export type StreamEvent =
   | { type: 'text'; content: string }
-  | { type: 'events'; data: EventWithVenue[] }
-  | { type: 'suggestions'; data: RefinementSuggestion[] }
+  | { type: 'events'; data: ChatStreamDataEnvelope<EventWithVenue[]> }
+  | { type: 'suggestions'; data: ChatStreamDataEnvelope<RefinementSuggestion[]> }
   | { type: 'status'; data: ChatStreamStatusData }
-  | { type: 'execution_trace'; data: MessageExecutionStep[] }
+  | { type: 'execution_trace'; data: ChatStreamDataEnvelope<MessageExecutionStep[]> }
   | { type: 'history'; messages: APIMessage[] }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -793,7 +800,7 @@ export type ConversationUpdate = Partial<Omit<ConversationInsert, 'user_id'>> & 
 export interface Message {
   id: string
   conversation_id: string
-  parent_id: string | null
+  parent_id: string | null // Assistant messages link to their triggering user message
   client_message_id: string | null
   role: MessageRole
   content: string // Legacy-visible mirror for rollback compatibility
@@ -803,6 +810,7 @@ export interface Message {
   attached_data: MessageAttachedData
   created_at: string
   sequence_number: number
+  turn_index: number
 }
 
 /** For inserting a new message */
@@ -817,6 +825,7 @@ export interface MessageInsert {
   response_contract_version?: number
   attached_data?: MessageAttachedData
   sequence_number?: number
+  turn_index?: number
 }
 
 /** Lightweight conversation for list views */
@@ -841,6 +850,7 @@ export interface MigrationConversation {
   updated_at: string
   messages: Array<{
     client_message_id?: string | null
+    parent_id?: string | null
     role: MessageRole
     content: string
     visible_content?: string
@@ -849,5 +859,6 @@ export interface MigrationConversation {
     attached_data?: MessageAttachedData
     created_at: string
     sequence_number: number
+    turn_index?: number
   }>
 }

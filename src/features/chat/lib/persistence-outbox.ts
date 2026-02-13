@@ -14,6 +14,7 @@ export const MAX_OUTBOX_ATTEMPTS = 6
 
 export interface MessagePersistencePayload {
   conversationId: string
+  parentMessageId?: string | null
   clientMessageId: string
   role: MessageRole
   content: string
@@ -23,7 +24,14 @@ export interface MessagePersistencePayload {
   attachedData?: MessageAttachedData
 }
 
-export type PersistMessageFn = (payload: MessagePersistencePayload) => Promise<void>
+export interface MessagePersistenceResult {
+  status: 'persisted' | 'queued'
+  messageId?: string
+}
+
+export type PersistMessageFn = (
+  payload: MessagePersistencePayload
+) => Promise<{ id?: string } | void>
 
 export interface FlushOutboxResult {
   processed: number
@@ -58,6 +66,7 @@ async function ensureOutboxItem(payload: MessagePersistencePayload): Promise<voi
   await addOutboxItem({
     conversation_id: payload.conversationId,
     client_message_id: payload.clientMessageId,
+    parent_message_id: payload.parentMessageId ?? null,
     role: payload.role,
     content: payload.content,
     visible_content: payload.visibleContent ?? payload.content,
@@ -72,9 +81,13 @@ async function ensureOutboxItem(payload: MessagePersistencePayload): Promise<voi
 export async function persistMessageWithOutbox(
   persistMessage: PersistMessageFn,
   payload: MessagePersistencePayload
-): Promise<'persisted' | 'queued'> {
+): Promise<MessagePersistenceResult> {
   try {
-    await persistMessage(payload)
+    const persisted = await persistMessage(payload)
+    const messageId =
+      persisted && typeof persisted === 'object' && typeof persisted.id === 'string'
+        ? persisted.id
+        : undefined
 
     const existing = await getOutboxItemByClientMessageId(
       payload.conversationId,
@@ -84,10 +97,10 @@ export async function persistMessageWithOutbox(
       await deleteOutboxItem(existing.id)
     }
 
-    return 'persisted'
+    return { status: 'persisted', messageId }
   } catch {
     await ensureOutboxItem(payload)
-    return 'queued'
+    return { status: 'queued' }
   }
 }
 
@@ -102,6 +115,7 @@ export async function flushMessagePersistenceOutbox(
   for (const item of due) {
     const payload: MessagePersistencePayload = {
       conversationId: item.conversation_id,
+      parentMessageId: item.parent_message_id,
       clientMessageId: item.client_message_id,
       role: item.role,
       content: item.content,

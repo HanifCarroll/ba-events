@@ -24,6 +24,7 @@ interface LocalConversation {
 interface LocalMessage {
   id: string
   conversation_id: string
+  parent_id: string | null
   client_message_id: string | null
   role: MessageRole
   content: string
@@ -33,6 +34,7 @@ interface LocalMessage {
   attached_data: MessageAttachedData
   created_at: string
   sequence_number: number
+  turn_index: number
 }
 
 // Session metadata (anonymous ID, etc.)
@@ -50,6 +52,7 @@ export interface LocalOutboxItem {
   id: string
   conversation_id: string
   client_message_id: string
+  parent_message_id: string | null
   role: MessageRole
   content: string
   visible_content: string
@@ -129,6 +132,37 @@ class LocalConversationsDB extends Dexie {
       session: 'key',
       outbox: 'id, conversation_id, client_message_id, [conversation_id+client_message_id], status, next_retry_at, updated_at',
     })
+
+    this.version(5)
+      .stores({
+        conversations: 'id, updated_at',
+        messages: 'id, conversation_id, parent_id, turn_index, client_message_id, [conversation_id+sequence_number], [conversation_id+client_message_id], [conversation_id+turn_index]',
+        session: 'key',
+        outbox: 'id, conversation_id, client_message_id, parent_message_id, [conversation_id+client_message_id], status, next_retry_at, updated_at',
+      })
+      .upgrade((tx) => {
+        return Promise.all([
+          tx
+            .table('messages')
+            .toCollection()
+            .modify((msg: Partial<LocalMessage>) => {
+              if (!('parent_id' in msg)) {
+                msg.parent_id = null
+              }
+              if (typeof msg.turn_index !== 'number') {
+                msg.turn_index = typeof msg.sequence_number === 'number' ? msg.sequence_number : 0
+              }
+            }),
+          tx
+            .table('outbox')
+            .toCollection()
+            .modify((item: Partial<LocalOutboxItem>) => {
+              if (!('parent_message_id' in item)) {
+                item.parent_message_id = null
+              }
+            }),
+        ])
+      })
   }
 }
 
@@ -256,6 +290,7 @@ export async function addLocalMessage(
   conversationId: string,
   message: {
     role: MessageRole
+    parent_message_id?: string | null
     client_message_id?: string
     content: string
     visible_content?: string
@@ -274,10 +309,41 @@ export async function addLocalMessage(
     .first()
 
   const sequenceNumber = lastMessage ? lastMessage.sequence_number + 1 : 0
+  let assignedTurn = lastMessage ? lastMessage.turn_index : 0
+  let parentMessageId: string | null = null
+
+  if (message.role === 'user') {
+    assignedTurn = lastMessage ? lastMessage.turn_index + 1 : 0
+  } else if (message.role === 'assistant') {
+    if (message.parent_message_id) {
+      const parent = await db.messages.get(message.parent_message_id)
+      if (parent?.conversation_id === conversationId && parent.role === 'user') {
+        parentMessageId = parent.id
+        assignedTurn = parent.turn_index
+      }
+    }
+
+    if (!parentMessageId) {
+      const userMessages = await db.messages
+        .where('conversation_id')
+        .equals(conversationId)
+        .filter((m) => m.role === 'user')
+        .sortBy('sequence_number')
+      const latestUserMessage = userMessages[userMessages.length - 1]
+
+      if (latestUserMessage) {
+        parentMessageId = latestUserMessage.id
+        assignedTurn = latestUserMessage.turn_index
+      } else {
+        assignedTurn = lastMessage ? lastMessage.turn_index + 1 : 0
+      }
+    }
+  }
 
   const newMessage: LocalMessage = {
     id: generateUUID(),
     conversation_id: conversationId,
+    parent_id: parentMessageId,
     client_message_id: message.client_message_id ?? null,
     role: message.role,
     content: message.content,
@@ -287,6 +353,7 @@ export async function addLocalMessage(
     attached_data: message.attached_data ?? {},
     created_at: new Date().toISOString(),
     sequence_number: sequenceNumber,
+    turn_index: assignedTurn,
   }
 
   await db.messages.add(newMessage)
@@ -354,6 +421,7 @@ export async function getConversationsForMigration(): Promise<MigrationConversat
       updated_at: conv.updated_at,
       messages: messages.map((m) => ({
         client_message_id: m.client_message_id,
+        parent_id: m.parent_id,
         role: m.role,
         content: m.content,
         visible_content: m.visible_content,
@@ -362,6 +430,7 @@ export async function getConversationsForMigration(): Promise<MigrationConversat
         attached_data: m.attached_data,
         created_at: m.created_at,
         sequence_number: m.sequence_number,
+        turn_index: m.turn_index,
       })),
     })
   }

@@ -32,6 +32,7 @@ import type {
   EventWithVenue,
   DirectionsData,
   ChatStreamStatusData,
+  ChatStreamDataEnvelope,
   Json,
   MessageExecutionStep,
 } from '@/shared/lib/types'
@@ -186,6 +187,36 @@ export function sanitizeFinalAssistantText(
   return trimmed
 }
 
+export function buildStructuredDataFallbackText(
+  locale: 'en' | 'es',
+  originalQuery: string
+): string {
+  const query = originalQuery.toLowerCase()
+  const asksForUpscale = /(upscale|exclusive|premium|vip|luxe|luxury|exclusiv|premium|más premium)/i.test(query)
+
+  if (locale === 'es') {
+    return asksForUpscale
+      ? 'Aquí tienes opciones más premium para esta noche.'
+      : 'Aquí tienes opciones para esta noche.'
+  }
+
+  return asksForUpscale
+    ? 'Here are better upscale options for tonight.'
+    : 'Here are options for tonight.'
+}
+
+function buildStreamEnvelope<T>(
+  requestId: string,
+  data: T,
+  assistantMessageId?: string
+): ChatStreamDataEnvelope<T> {
+  return {
+    requestId,
+    assistantMessageId,
+    data,
+  }
+}
+
 /**
  * Get client IP from request headers
  */
@@ -285,11 +316,12 @@ export const Route = createFileRoute('/api/chat' as any)({
           execute: async ({ writer }) => {
             let wroteStart = false
             const requestId = generateId()
+            let assistantMessageId: string | undefined
             let stepIndex = -1
 
             const writeStatus = (
               phase: ChatStreamStatusData['phase'],
-              options?: Pick<ChatStreamStatusData, 'toolName' | 'stepIndex'>
+              options?: Pick<ChatStreamStatusData, 'toolName' | 'stepIndex' | 'assistantMessageId'>
             ) => {
               writer.write({
                 type: 'data-status' as const,
@@ -298,6 +330,7 @@ export const Route = createFileRoute('/api/chat' as any)({
                   toolName: options?.toolName,
                   stepIndex: options?.stepIndex,
                   requestId,
+                  assistantMessageId: options?.assistantMessageId,
                   timestamp: new Date().toISOString(),
                 },
               })
@@ -370,9 +403,12 @@ export const Route = createFileRoute('/api/chat' as any)({
               const rawFinalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
               const nonEmptyStepTextCount = getNonEmptyStepTextCount(typedSteps)
               const events = Array.from(allEvents.values())
-              const finalText = sanitizeFinalAssistantText(rawFinalText, {
+              let finalText = sanitizeFinalAssistantText(rawFinalText, {
                 hasStructuredData: events.length > 0 || directionsData !== null,
               })
+              if (!finalText && (events.length > 0 || directionsData !== null)) {
+                finalText = buildStructuredDataFallbackText(locale, lastOriginalQuery)
+              }
 
               if (nonEmptyStepTextCount > 1) {
                 trackServer('chat:response_contract_violation', userContext.userId ?? 'anonymous', {
@@ -401,10 +437,12 @@ export const Route = createFileRoute('/api/chat' as any)({
               })
 
               const messageId = generateId()
+              assistantMessageId = messageId
               const textBlockId = generateId()
 
               writeStatus('composing', {
                 stepIndex: finalStepIndex,
+                assistantMessageId,
               })
 
               writer.write({ type: 'start', messageId })
@@ -423,7 +461,7 @@ export const Route = createFileRoute('/api/chat' as any)({
               if (events.length > 0) {
                 writer.write({
                   type: 'data-events' as const,
-                  data: events,
+                  data: buildStreamEnvelope(requestId, events, assistantMessageId),
                 })
                 console.log(`[DEBUG] Sending ${events.length} accumulated events`)
               }
@@ -439,7 +477,7 @@ export const Route = createFileRoute('/api/chat' as any)({
                 if (suggestions.length > 0) {
                   writer.write({
                     type: 'data-suggestions' as const,
-                    data: suggestions,
+                    data: buildStreamEnvelope(requestId, suggestions, assistantMessageId),
                   })
                   console.log(`[DEBUG] Generated ${suggestions.length} suggestions`)
                 }
@@ -449,7 +487,7 @@ export const Route = createFileRoute('/api/chat' as any)({
               if (directionsData) {
                 writer.write({
                   type: 'data-directions' as const,
-                  data: directionsData,
+                  data: buildStreamEnvelope(requestId, directionsData, assistantMessageId),
                 })
                 console.log(`[DEBUG] Sending directions for "${directionsData.venueName}"`)
               }
@@ -457,11 +495,12 @@ export const Route = createFileRoute('/api/chat' as any)({
               // Send execution trace for persistence/debugging (not rendered in bubble text).
               writer.write({
                 type: 'data-execution-trace' as const,
-                data: executionTrace,
+                data: buildStreamEnvelope(requestId, executionTrace, assistantMessageId),
               })
 
               writeStatus('done', {
                 stepIndex: finalStepIndex,
+                assistantMessageId,
               })
 
               writer.write({
@@ -472,6 +511,7 @@ export const Route = createFileRoute('/api/chat' as any)({
               console.error('[Chat API] Error:', error)
               writeStatus('error', {
                 stepIndex: stepIndex >= 0 ? stepIndex : undefined,
+                assistantMessageId,
               })
               writer.write({
                 type: 'error',

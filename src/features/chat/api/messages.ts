@@ -6,9 +6,11 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import type { Message, MessageAttachedData, MessageExecutionStep } from '@/shared/lib/types'
+import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
 
 type AddMessageInput = {
   conversationId: string
+  parentMessageId?: string | null
   role: 'user' | 'assistant' | 'system'
   clientMessageId?: string
   content: string
@@ -18,17 +20,17 @@ type AddMessageInput = {
   attachedData?: MessageAttachedData
 }
 
-export function buildMessageInsertPayload(data: AddMessageInput, sequenceNumber: number) {
+export function buildMessageRpcPayload(data: AddMessageInput) {
   return {
-    conversation_id: data.conversationId,
-    client_message_id: data.clientMessageId ?? null,
-    role: data.role,
-    content: data.content,
-    visible_content: data.visibleContent ?? data.content,
-    execution_trace: data.executionTrace ?? [],
-    response_contract_version: data.responseContractVersion ?? 2,
-    attached_data: data.attachedData ?? {},
-    sequence_number: sequenceNumber,
+    p_conversation_id: data.conversationId,
+    p_parent_id: data.parentMessageId ?? null,
+    p_client_message_id: data.clientMessageId ?? null,
+    p_role: data.role,
+    p_content: data.content,
+    p_visible_content: data.visibleContent ?? data.content,
+    p_execution_trace: data.executionTrace ?? [],
+    p_response_contract_version: data.responseContractVersion ?? 2,
+    p_attached_data: data.attachedData ?? {},
   }
 }
 
@@ -84,48 +86,18 @@ export const addMessage = createServerFn({ method: 'POST' })
       }
     }
 
-    // Get the next sequence number
-    const { data: lastMsg } = await supabase
-      .from('messages')
-      .select('sequence_number')
-      .eq('conversation_id', data.conversationId)
-      .order('sequence_number', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    // Insert via transactional RPC so turn assignment is deterministic.
+    const { data: rpcResult, error } = await supabase.rpc(
+      'insert_message_with_turn',
+      buildMessageRpcPayload(data)
+    )
 
-    const sequenceNumber = lastMsg ? lastMsg.sequence_number + 1 : 0
+    const message = (Array.isArray(rpcResult) ? rpcResult[0] : rpcResult) as Message | null
 
-    // Insert the message
-    const { data: message, error } = await supabase
-      .from('messages')
-      .insert(buildMessageInsertPayload(data, sequenceNumber))
-      .select()
-      .single()
-
-    if (error) {
-      // Handle race condition where a retry inserted the same client message_id concurrently.
-      if (error.code === '23505' && data.clientMessageId) {
-        const { data: existingMessage } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('conversation_id', data.conversationId)
-          .eq('client_message_id', data.clientMessageId)
-          .maybeSingle()
-
-        if (existingMessage) {
-          return existingMessage as Message
-        }
-      }
-
+    if (error || !message) {
       console.error('[addMessage] Error:', error)
       throw new Error('Failed to add message')
     }
-
-    // Update conversation's updated_at
-    await supabase
-      .from('conversations')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', data.conversationId)
 
     return message as Message
   })
@@ -159,18 +131,19 @@ export const getMessages = createServerFn({ method: 'GET' })
       return []
     }
 
-    const { data: messages, error } = await supabase
+    const { data: rows, error } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', data.conversationId)
-      .order('sequence_number', { ascending: true })
+      .order('turn_index', { ascending: true })
+      .order('id', { ascending: true })
 
     if (error) {
       console.error('[getMessages] Error:', error)
       throw new Error('Failed to get messages')
     }
 
-    return (messages ?? []) as Message[]
+    return sortMessagesByTurnOrderAsc((rows ?? []) as Message[])
   })
 
 /**

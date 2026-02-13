@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildStructuredDataFallbackText,
   buildExecutionTrace,
   getFinalVisibleTextFromSteps,
   getNonEmptyStepTextCount,
@@ -92,5 +93,14 @@ describe('chat final-only contract helpers', () => {
       { hasStructuredData: true }
     )
     expect(sanitized).toBe('Go to Trade Sky Bar tonight. It is your best upscale option with skyline views.')
+  })
+
+  it('builds deterministic fallback summary text for structured responses', () => {
+    expect(buildStructuredDataFallbackText('en', 'something more upscale or exclusive')).toBe(
+      'Here are better upscale options for tonight.'
+    )
+    expect(buildStructuredDataFallbackText('es', 'algo más exclusivo')).toBe(
+      'Aquí tienes opciones más premium para esta noche.'
+    )
   })
 })

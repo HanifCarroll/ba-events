@@ -33,6 +33,7 @@ function makeOutboxItem(overrides: Partial<LocalOutboxItem> = {}): LocalOutboxIt
     id: 'outbox-1',
     conversation_id: 'conv-1',
     client_message_id: 'client-1',
+    parent_message_id: null,
     role: 'assistant',
     content: 'Hello',
     visible_content: 'Hello',
@@ -65,7 +66,7 @@ describe('persistence outbox', () => {
       content: 'Hi',
     })
 
-    expect(result).toBe('persisted')
+    expect(result.status).toBe('persisted')
     expect(mockedAddOutboxItem).not.toHaveBeenCalled()
   })
 
@@ -80,7 +81,7 @@ describe('persistence outbox', () => {
       content: 'Hi',
     })
 
-    expect(result).toBe('queued')
+    expect(result.status).toBe('queued')
     expect(mockedAddOutboxItem).toHaveBeenCalledTimes(1)
   })
 

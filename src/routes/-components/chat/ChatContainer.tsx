@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import { DefaultChatTransport, generateId } from 'ai'
 import type {
+  ChatStreamDataEnvelope,
   ChatStreamStatusData,
   ChatStreamStatusPhase,
   ChatMessage,
@@ -33,8 +34,10 @@ import {
   flushMessagePersistenceOutbox,
   persistMessageWithOutbox,
   type MessagePersistencePayload,
+  type MessagePersistenceResult,
 } from '@/features/chat/lib/persistence-outbox'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
+import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
 
 export type RequestPhase =
   | 'idle'
@@ -87,20 +90,21 @@ export function shouldShowLoadingIndicator(
   return status === 'submitted' || status === 'streaming'
 }
 
-export function ChatContainer() {
-  // Track events, suggestions, directions, and errors separately (for streaming message)
-  const [events, setEvents] = useState<EventWithVenue[]>([])
-  const [suggestions, setSuggestions] = useState<RefinementSuggestion[]>([])
-  const [directions, setDirections] = useState<DirectionsData | null>(null)
-  const [executionTrace, setExecutionTrace] = useState<MessageExecutionStep[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const startTimeRef = useRef<number>(0)
-  const eventsCountRef = useRef<number>(0)
+function isDataEnvelope<T>(value: unknown): value is ChatStreamDataEnvelope<T> {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as { requestId?: unknown; data?: unknown }
+  return typeof candidate.requestId === 'string' && 'data' in candidate
+}
 
-  // Store attached data for all loaded messages (keyed by message ID)
+export function ChatContainer() {
+  const [error, setError] = useState<string | null>(null)
   const [messageAttachedDataMap, setMessageAttachedDataMap] = useState<
     Map<string, MessageAttachedData>
   >(new Map())
+  const messageAttachedDataMapRef = useRef<Map<string, MessageAttachedData>>(new Map())
+
+  const startTimeRef = useRef<number>(0)
+  const eventsCountRef = useRef<number>(0)
 
   // Conversation context
   const { activeConversationId, setActiveConversationId, registerStartNewChatHandler } =
@@ -117,18 +121,108 @@ export function ChatContainer() {
   const [requestPhase, setRequestPhase] = useState<RequestPhase>('idle')
   const requestPhaseRef = useRef<RequestPhase>('idle')
 
+  // Request correlation for message-scoped streamed attached data
+  const activeRequestIdRef = useRef<string | null>(null)
+  const requestToAssistantMessageIdRef = useRef<Map<string, string>>(new Map())
+  const pendingAttachedDataByRequestIdRef = useRef<Map<string, MessageAttachedData>>(new Map())
+  const pendingExecutionTraceByRequestIdRef = useRef<Map<string, MessageExecutionStep[]>>(new Map())
+  const executionTraceByAssistantIdRef = useRef<Map<string, MessageExecutionStep[]>>(new Map())
+
   const setRequestLifecyclePhase = useCallback((phase: RequestPhase) => {
     requestPhaseRef.current = phase
     setRequestPhase(phase)
   }, [])
 
-  // Track if we've persisted the current user message (to avoid duplicates)
+  // Track message persistence state
   const pendingUserMessageRef = useRef<string | null>(null)
   const pendingConversationIdRef = useRef<string | null>(null)
   const pendingAssistantClientMessageIdRef = useRef<string | null>(null)
+  const pendingUserPersistencePromiseRef = useRef<Promise<MessagePersistenceResult> | null>(null)
+  const pendingUserPersistedMessageIdRef = useRef<string | null>(null)
   // Track if this is the first exchange (for title generation)
   const isFirstExchangeRef = useRef(true)
   const isFlushingOutboxRef = useRef(false)
+
+  const setAttachedDataMap = useCallback((next: Map<string, MessageAttachedData>) => {
+    messageAttachedDataMapRef.current = next
+    setMessageAttachedDataMap(next)
+  }, [])
+
+  const upsertAttachedDataForAssistantMessage = useCallback(
+    (
+      assistantMessageId: string,
+      updater: (current: MessageAttachedData) => MessageAttachedData
+    ) => {
+      const next = new Map(messageAttachedDataMapRef.current)
+      const current = next.get(assistantMessageId) ?? {}
+      next.set(assistantMessageId, updater(current))
+      setAttachedDataMap(next)
+    },
+    [setAttachedDataMap]
+  )
+
+  const resetRequestCorrelations = useCallback(() => {
+    activeRequestIdRef.current = null
+    requestToAssistantMessageIdRef.current.clear()
+    pendingAttachedDataByRequestIdRef.current.clear()
+    pendingExecutionTraceByRequestIdRef.current.clear()
+  }, [])
+
+  const mergePendingDataIntoAssistantMessage = useCallback(
+    (requestId: string, assistantMessageId: string) => {
+      const pendingData = pendingAttachedDataByRequestIdRef.current.get(requestId)
+      if (pendingData) {
+        upsertAttachedDataForAssistantMessage(assistantMessageId, (current) => ({
+          ...current,
+          ...pendingData,
+        }))
+        pendingAttachedDataByRequestIdRef.current.delete(requestId)
+      }
+
+      const pendingTrace = pendingExecutionTraceByRequestIdRef.current.get(requestId)
+      if (pendingTrace) {
+        executionTraceByAssistantIdRef.current.set(assistantMessageId, pendingTrace)
+        pendingExecutionTraceByRequestIdRef.current.delete(requestId)
+      }
+    },
+    [upsertAttachedDataForAssistantMessage]
+  )
+
+  const applyAttachedDataFromEnvelope = useCallback(
+    <T,>(
+      envelope: ChatStreamDataEnvelope<T>,
+      update: (current: MessageAttachedData, value: T) => MessageAttachedData
+    ) => {
+      activeRequestIdRef.current = envelope.requestId
+
+      if (envelope.assistantMessageId) {
+        requestToAssistantMessageIdRef.current.set(
+          envelope.requestId,
+          envelope.assistantMessageId
+        )
+        mergePendingDataIntoAssistantMessage(envelope.requestId, envelope.assistantMessageId)
+      }
+
+      const resolvedAssistantMessageId =
+        envelope.assistantMessageId ??
+        requestToAssistantMessageIdRef.current.get(envelope.requestId) ??
+        null
+
+      if (resolvedAssistantMessageId) {
+        upsertAttachedDataForAssistantMessage(resolvedAssistantMessageId, (current) =>
+          update(current, envelope.data)
+        )
+        return
+      }
+
+      const pendingCurrent = pendingAttachedDataByRequestIdRef.current.get(envelope.requestId) ?? {}
+      pendingAttachedDataByRequestIdRef.current.set(
+        envelope.requestId,
+        update(pendingCurrent, envelope.data)
+      )
+    },
+    [mergePendingDataIntoAssistantMessage, upsertAttachedDataForAssistantMessage]
+  )
 
   // Pull-to-refresh for mobile (uses direct DOM manipulation for 60fps)
   const { containerRef, indicatorRef } = usePullToRefresh({
@@ -136,9 +230,10 @@ export function ChatContainer() {
   })
 
   const persistMessageToConversation = useCallback(
-    async (payload: MessagePersistencePayload) => {
-      await addMessage.mutateAsync({
+    async (payload: MessagePersistencePayload): Promise<{ id?: string } | void> => {
+      const savedMessage = await addMessage.mutateAsync({
         conversationId: payload.conversationId,
+        parentMessageId: payload.parentMessageId,
         role: payload.role,
         clientMessageId: payload.clientMessageId,
         content: payload.content,
@@ -147,15 +242,21 @@ export function ChatContainer() {
         responseContractVersion: payload.responseContractVersion ?? 2,
         attachedData: payload.attachedData,
       })
+
+      return typeof savedMessage?.id === 'string' ? { id: savedMessage.id } : undefined
     },
     [addMessage]
   )
 
   const persistMessageResiliently = useCallback(
-    async (payload: MessagePersistencePayload): Promise<'persisted' | 'queued'> => {
+    async (payload: MessagePersistencePayload): Promise<MessagePersistenceResult> => {
       if (!isAuthenticated) {
-        await persistMessageToConversation(payload)
-        return 'persisted'
+        const persisted = await persistMessageToConversation(payload)
+        return {
+          status: 'persisted',
+          messageId:
+            persisted && typeof persisted.id === 'string' ? persisted.id : undefined,
+        }
       }
 
       return persistMessageWithOutbox(persistMessageToConversation, payload)
@@ -202,7 +303,6 @@ export function ChatContainer() {
       }),
     }),
     onFinish: async ({ message }) => {
-      // Track response received with timing
       track('chat:response_received', {
         duration_ms: Date.now() - startTimeRef.current,
         events_returned: eventsCountRef.current,
@@ -210,25 +310,42 @@ export function ChatContainer() {
 
       setRequestLifecyclePhase('persisting')
 
-      // Persist the assistant message with attached data
+      const activeRequestId = activeRequestIdRef.current
+      if (activeRequestId) {
+        requestToAssistantMessageIdRef.current.set(activeRequestId, message.id)
+        mergePendingDataIntoAssistantMessage(activeRequestId, message.id)
+      }
+
       const conversationId = pendingConversationIdRef.current ?? activeConversationId
       if (conversationId) {
-        // Extract final-only visible text from step-aware parts
         const textContent = extractVisibleTextFromUIMessageParts(
           message.parts as Array<{ type?: string; text?: string }>
         )
 
-        const attachedData = {
-          events: events.length > 0 ? events : undefined,
-          suggestions: suggestions.length > 0 ? suggestions : undefined,
-          directions: directions ?? undefined,
+        if (pendingUserPersistencePromiseRef.current) {
+          try {
+            const userPersistResult = await pendingUserPersistencePromiseRef.current
+            if (userPersistResult.messageId) {
+              pendingUserPersistedMessageIdRef.current = userPersistResult.messageId
+            }
+          } catch (persistError) {
+            console.error('Failed awaiting user persistence before assistant save:', persistError)
+          }
         }
+
+        const attachedData = messageAttachedDataMapRef.current.get(message.id)
+        const executionTrace =
+          executionTraceByAssistantIdRef.current.get(message.id) ??
+          (activeRequestId
+            ? pendingExecutionTraceByRequestIdRef.current.get(activeRequestId) ?? []
+            : [])
         const assistantClientMessageId =
           pendingAssistantClientMessageIdRef.current ?? generateId()
 
         try {
           await persistMessageResiliently({
             conversationId,
+            parentMessageId: pendingUserPersistedMessageIdRef.current,
             clientMessageId: assistantClientMessageId,
             role: 'assistant',
             content: textContent,
@@ -238,7 +355,6 @@ export function ChatContainer() {
             attachedData,
           })
 
-          // Generate title after first exchange
           if (isFirstExchangeRef.current && pendingUserMessageRef.current) {
             isFirstExchangeRef.current = false
             generateTitle.mutate({
@@ -256,6 +372,7 @@ export function ChatContainer() {
               onClick: () =>
                 persistMessageResiliently({
                   conversationId,
+                  parentMessageId: pendingUserPersistedMessageIdRef.current,
                   clientMessageId: assistantClientMessageId,
                   role: 'assistant',
                   content: textContent,
@@ -269,9 +386,18 @@ export function ChatContainer() {
         }
       }
 
+      if (activeRequestId) {
+        pendingExecutionTraceByRequestIdRef.current.delete(activeRequestId)
+      }
+      executionTraceByAssistantIdRef.current.delete(message.id)
+
       pendingUserMessageRef.current = null
       pendingConversationIdRef.current = null
       pendingAssistantClientMessageIdRef.current = null
+      pendingUserPersistencePromiseRef.current = null
+      pendingUserPersistedMessageIdRef.current = null
+      resetRequestCorrelations()
+
       if (requestPhaseRef.current !== 'error') {
         setRequestLifecyclePhase('idle')
       }
@@ -288,27 +414,85 @@ export function ChatContainer() {
       pendingUserMessageRef.current = null
       pendingConversationIdRef.current = null
       pendingAssistantClientMessageIdRef.current = null
+      pendingUserPersistencePromiseRef.current = null
+      pendingUserPersistedMessageIdRef.current = null
+      resetRequestCorrelations()
     },
     onData: (dataPart) => {
-      // Handle custom data parts from the server
-      if (dataPart.type === 'data-events') {
-        const eventsData = dataPart.data as EventWithVenue[]
-        setEvents(eventsData)
-        eventsCountRef.current = eventsData.length
-
-        // Track no results for content gap analysis
-        if (eventsData.length === 0) {
-          track('chat:no_results', {})
-        }
-      } else if (dataPart.type === 'data-suggestions') {
-        setSuggestions(dataPart.data as RefinementSuggestion[])
-      } else if (dataPart.type === 'data-directions') {
-        setDirections(dataPart.data as DirectionsData)
-      } else if (dataPart.type === 'data-execution-trace') {
-        setExecutionTrace(dataPart.data as MessageExecutionStep[])
-      } else if (dataPart.type === 'data-status') {
+      if (dataPart.type === 'data-status') {
         const statusData = dataPart.data as ChatStreamStatusData
+        activeRequestIdRef.current = statusData.requestId
+
+        if (statusData.assistantMessageId) {
+          requestToAssistantMessageIdRef.current.set(
+            statusData.requestId,
+            statusData.assistantMessageId
+          )
+          mergePendingDataIntoAssistantMessage(
+            statusData.requestId,
+            statusData.assistantMessageId
+          )
+        }
+
         setRequestLifecyclePhase(mapStatusPhaseToRequestPhase(statusData.phase))
+        return
+      }
+
+      if (dataPart.type === 'data-events') {
+        if (isDataEnvelope<EventWithVenue[]>(dataPart.data)) {
+          applyAttachedDataFromEnvelope(dataPart.data, (current, eventsData) => {
+            eventsCountRef.current = eventsData.length
+            if (eventsData.length === 0) {
+              track('chat:no_results', {})
+            }
+
+            return {
+              ...current,
+              events: eventsData.length > 0 ? eventsData : undefined,
+            }
+          })
+        }
+        return
+      }
+
+      if (dataPart.type === 'data-suggestions') {
+        if (isDataEnvelope<RefinementSuggestion[]>(dataPart.data)) {
+          applyAttachedDataFromEnvelope(dataPart.data, (current, suggestionsData) => ({
+            ...current,
+            suggestions: suggestionsData.length > 0 ? suggestionsData : undefined,
+          }))
+        }
+        return
+      }
+
+      if (dataPart.type === 'data-directions') {
+        if (isDataEnvelope<DirectionsData>(dataPart.data)) {
+          applyAttachedDataFromEnvelope(dataPart.data, (current, directionsData) => ({
+            ...current,
+            directions: directionsData,
+          }))
+        }
+        return
+      }
+
+      if (dataPart.type === 'data-execution-trace') {
+        if (isDataEnvelope<MessageExecutionStep[]>(dataPart.data)) {
+          const envelope = dataPart.data
+          activeRequestIdRef.current = envelope.requestId
+
+          if (envelope.assistantMessageId) {
+            requestToAssistantMessageIdRef.current.set(
+              envelope.requestId,
+              envelope.assistantMessageId
+            )
+            executionTraceByAssistantIdRef.current.set(
+              envelope.assistantMessageId,
+              envelope.data
+            )
+          } else {
+            pendingExecutionTraceByRequestIdRef.current.set(envelope.requestId, envelope.data)
+          }
+        }
       }
     },
   })
@@ -318,47 +502,41 @@ export function ChatContainer() {
     status === 'streaming' ||
     (requestPhase !== 'idle' && requestPhase !== 'error')
 
-  // Load conversation messages when activeConversationId changes
+  // Load conversation messages when activeConversationId changes.
+  // Never overwrite the in-flight chat timeline while a request is active.
   useEffect(() => {
     if (!activeConversationId || isLoadingConversation) return
 
+    if (
+      requestPhaseRef.current !== 'idle' &&
+      requestPhaseRef.current !== 'error'
+    ) {
+      return
+    }
+
     if (loadedConversation?.messages) {
-      // Convert stored messages to UI format
-      const uiMessages: UIMessage[] = loadedConversation.messages.map((m: Message) => ({
-        id: m.id,
-        role: m.role as 'user' | 'assistant',
-        parts: [{ type: 'text' as const, text: m.visible_content ?? m.content }],
-        createdAt: new Date(m.created_at),
+      const sortedMessages = sortMessagesByTurnOrderAsc(loadedConversation.messages)
+
+      const uiMessages: UIMessage[] = sortedMessages.map((storedMessage: Message) => ({
+        id: storedMessage.id,
+        role: storedMessage.role as 'user' | 'assistant',
+        parts: [{ type: 'text' as const, text: storedMessage.visible_content ?? storedMessage.content }],
+        createdAt: new Date(storedMessage.created_at),
       }))
 
       setMessages(uiMessages)
 
-      // Build a map of all message attached data for historical display
       const attachedDataMap = new Map<string, MessageAttachedData>()
-      for (const m of loadedConversation.messages) {
-        if (m.role === 'assistant' && m.attached_data) {
-          attachedDataMap.set(m.id, m.attached_data)
+      for (const storedMessage of sortedMessages) {
+        if (storedMessage.role === 'assistant' && storedMessage.attached_data) {
+          attachedDataMap.set(storedMessage.id, storedMessage.attached_data)
         }
       }
-      setMessageAttachedDataMap(attachedDataMap)
+      setAttachedDataMap(attachedDataMap)
 
-      // For the last assistant message, also set the live state
-      // (so streaming new messages works correctly)
-      const lastAssistant = loadedConversation.messages
-        .filter((m: Message) => m.role === 'assistant')
-        .pop()
-
-      if (lastAssistant?.attached_data) {
-        const data = lastAssistant.attached_data
-        if (data.events) setEvents(data.events)
-        if (data.suggestions) setSuggestions(data.suggestions)
-        if (data.directions) setDirections(data.directions)
-      }
-
-      // Not the first exchange if loading existing conversation
-      isFirstExchangeRef.current = false
+      isFirstExchangeRef.current = sortedMessages.length > 0
     }
-  }, [activeConversationId, loadedConversation, isLoadingConversation, setMessages])
+  }, [activeConversationId, loadedConversation, isLoadingConversation, setMessages, setAttachedDataMap])
 
   // Flush any pending persistence retries on load.
   useEffect(() => {
@@ -384,48 +562,41 @@ export function ChatContainer() {
     registerStartNewChatHandler(() => {
       stop()
       setMessages([])
-      setEvents([])
-      setSuggestions([])
-      setDirections(null)
-      setExecutionTrace([])
-      setMessageAttachedDataMap(new Map())
+      setAttachedDataMap(new Map())
+      executionTraceByAssistantIdRef.current.clear()
       setRequestLifecyclePhase('idle')
+      setError(null)
       pendingUserMessageRef.current = null
       pendingConversationIdRef.current = null
       pendingAssistantClientMessageIdRef.current = null
+      pendingUserPersistencePromiseRef.current = null
+      pendingUserPersistedMessageIdRef.current = null
       isFirstExchangeRef.current = true
+      resetRequestCorrelations()
     })
-  }, [registerStartNewChatHandler, stop, setMessages, setRequestLifecyclePhase])
+  }, [registerStartNewChatHandler, stop, setMessages, setAttachedDataMap, setRequestLifecyclePhase, resetRequestCorrelations])
 
-  // Clear events, suggestions, directions, and errors when starting a new message
   const handleSendMessage = useCallback(
     async (content: string) => {
       setRequestLifecyclePhase('preparing')
-
-      // Clear previous data
-      setEvents([])
-      setSuggestions([])
-      setDirections(null)
-      setExecutionTrace([])
       setError(null)
-
-      // Track message sent
-      startTimeRef.current = Date.now()
+      resetRequestCorrelations()
       eventsCountRef.current = 0
+
+      startTimeRef.current = Date.now()
       track('chat:message_sent', {
         query: content,
         message_length: content.length,
         has_history: messages.length > 0,
       })
 
-      // Store the user message for title generation
       pendingUserMessageRef.current = content
+      pendingUserPersistedMessageIdRef.current = null
       const userClientMessageId = generateId()
       const assistantClientMessageId = generateId()
       pendingAssistantClientMessageIdRef.current = assistantClientMessageId
 
       try {
-        // Create conversation if this is the first message
         let conversationId = activeConversationId
         if (!conversationId) {
           const newConversation = await createConversation.mutateAsync(undefined)
@@ -434,23 +605,33 @@ export function ChatContainer() {
         }
         pendingConversationIdRef.current = conversationId
 
-        // Persist in the background so first-message UX is instant.
         const userMessagePayload: MessagePersistencePayload = {
           conversationId,
+          parentMessageId: null,
           clientMessageId: userClientMessageId,
           role: 'user',
           content,
           visibleContent: content,
           responseContractVersion: 2,
         }
-        const userPersistencePromise = persistMessageResiliently(userMessagePayload).catch((persistError) => {
-          console.error('Failed to persist user message:', persistError)
-          if (!isAuthenticated) {
-            toast.error('Failed to save your message locally')
-          }
-        })
 
-        // Send the message using AI SDK
+        const userPersistencePromise = persistMessageResiliently(userMessagePayload)
+          .then((result) => {
+            if (result.messageId) {
+              pendingUserPersistedMessageIdRef.current = result.messageId
+            }
+            return result
+          })
+          .catch((persistError) => {
+            console.error('Failed to persist user message:', persistError)
+            if (!isAuthenticated) {
+              toast.error('Failed to save your message locally')
+            }
+            return { status: 'queued' } as MessagePersistenceResult
+          })
+
+        pendingUserPersistencePromiseRef.current = userPersistencePromise
+
         await sendMessage({ text: content })
         await userPersistencePromise
       } catch (err) {
@@ -468,87 +649,65 @@ export function ChatContainer() {
         pendingUserMessageRef.current = null
         pendingConversationIdRef.current = null
         pendingAssistantClientMessageIdRef.current = null
+        pendingUserPersistencePromiseRef.current = null
+        pendingUserPersistedMessageIdRef.current = null
+        resetRequestCorrelations()
       }
     },
     [
-      messages.length,
-      sendMessage,
       activeConversationId,
-      setActiveConversationId,
       createConversation,
-      persistMessageResiliently,
       isAuthenticated,
+      messages.length,
+      persistMessageResiliently,
+      resetRequestCorrelations,
+      sendMessage,
+      setActiveConversationId,
       setRequestLifecyclePhase,
     ]
   )
 
-  // Convert AI SDK messages to our ChatMessage format for display
   const chatMessages: ChatMessage[] = useMemo(() => {
-    return messages.map((m, index) => {
-      // Extract text content from parts
+    return messages.map((message, index) => {
       const textContent = extractVisibleTextFromUIMessageParts(
-        m.parts as Array<{ type?: string; text?: string }>
+        message.parts as Array<{ type?: string; text?: string }>
       )
 
-      const isLastAssistant = m.role === 'assistant' && index === messages.length - 1
+      const isLastAssistant = message.role === 'assistant' && index === messages.length - 1
       const isStreaming = isLastAssistant && status === 'streaming'
 
-      // For the last assistant message, use live streaming data
-      // For historical messages, look up from the attached data map
-      let messageEvents: EventWithVenue[] | undefined
-      let messageSuggestions: RefinementSuggestion[] | undefined
-      let messageDirections: DirectionsData | undefined
-
-      if (m.role === 'assistant') {
-        if (isLastAssistant) {
-          // Use live streaming state for the current message
-          messageEvents = events.length > 0 ? events : undefined
-          messageSuggestions = suggestions.length > 0 ? suggestions : undefined
-          messageDirections = directions ?? undefined
-        } else {
-          // Look up historical attached data
-          const storedData = messageAttachedDataMap.get(m.id)
-          if (storedData) {
-            messageEvents = storedData.events
-            messageSuggestions = storedData.suggestions
-            messageDirections = storedData.directions
-          }
-        }
-      }
+      const storedData =
+        message.role === 'assistant'
+          ? messageAttachedDataMap.get(message.id)
+          : undefined
 
       return {
-        id: m.id,
-        role: m.role as 'user' | 'assistant',
+        id: message.id,
+        role: message.role as 'user' | 'assistant',
         content: textContent,
-        timestamp: new Date(),
+        timestamp: message.createdAt ? new Date(message.createdAt) : new Date(),
         isStreaming,
-        events: messageEvents,
-        suggestions: messageSuggestions,
-        directions: messageDirections,
+        events: storedData?.events,
+        suggestions: storedData?.suggestions,
+        directions: storedData?.directions,
       }
     })
-  }, [messages, events, suggestions, directions, status, messageAttachedDataMap])
+  }, [messages, messageAttachedDataMap, status])
 
-  // Filter out empty assistant messages that have completed (no content to show)
   const displayMessages = useMemo(() => {
-    return chatMessages.filter((m) => {
-      // Always show user messages
-      if (m.role === 'user') return true
-      // For assistant messages, show if has any content OR is still streaming
+    return chatMessages.filter((chatMessage) => {
+      if (chatMessage.role === 'user') return true
       const hasVisibleContent =
-        m.content.trim().length > 0 || (m.events && m.events.length > 0) || m.directions
-      return hasVisibleContent || m.isStreaming
+        chatMessage.content.trim().length > 0 ||
+        (chatMessage.events && chatMessage.events.length > 0) ||
+        chatMessage.directions
+      return hasVisibleContent || chatMessage.isStreaming
     })
   }, [chatMessages])
 
   const hasMessages = displayMessages.length > 0
 
-  // Show loading indicator when:
-  // 1. Status is 'submitted' (waiting for response to start), OR
-  // 2. Status is 'streaming' but no visible content yet (Claude is doing tool calls)
-  // Use the latest assistant message from raw chat state (not filtered display state).
-  // This keeps loader behavior tied to the in-flight assistant turn.
-  const lastAssistantMessage = [...chatMessages].reverse().find((m) => m.role === 'assistant')
+  const lastAssistantMessage = [...chatMessages].reverse().find((message) => message.role === 'assistant')
   const showLoading = shouldShowLoadingIndicator(
     status as 'submitted' | 'streaming' | 'ready' | 'error',
     lastAssistantMessage,
@@ -575,7 +734,6 @@ export function ChatContainer() {
     }
   }, [requestPhase])
 
-  // Show loading state while fetching conversation, but never while an active request is in flight.
   const showConversationLoading = !!(
     activeConversationId &&
     isLoadingConversation &&
@@ -585,7 +743,6 @@ export function ChatContainer() {
 
   return (
     <div className="relative h-full min-h-0 flex flex-col">
-      {/* Error banner */}
       {error && (
         <div className="absolute top-4 left-4 right-4 z-50 max-w-3xl mx-auto p-3 bg-destructive/20 border border-destructive rounded-lg text-sm flex items-center justify-between animate-fade-in-up">
           <span>{error}</span>
@@ -604,9 +761,7 @@ export function ChatContainer() {
         </div>
       )}
 
-      {/* Message area - scrollable */}
       <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto touch-pan-y">
-        {/* Pull-to-refresh indicator (controlled via DOM manipulation) */}
         <PullToRefreshIndicator ref={indicatorRef} />
 
         {showConversationLoading ? (
@@ -626,7 +781,6 @@ export function ChatContainer() {
         )}
       </div>
 
-      {/* Input - at bottom */}
       <div className="shrink-0 bg-background">
         <ChatInput onSend={handleSendMessage} disabled={isLoading || showConversationLoading} />
       </div>

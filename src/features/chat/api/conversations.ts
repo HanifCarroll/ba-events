@@ -13,7 +13,14 @@ import type {
   ConversationListItem,
   ConversationWithMessages,
   MigrationConversation,
+  Message,
+  MessageRole,
 } from '@/shared/lib/types'
+import {
+  compareMessagesByTurnOrderAsc,
+  pickLatestMessageByTurnOrder,
+  sortMessagesByTurnOrderAsc,
+} from '@/features/chat/lib/message-order'
 
 /**
  * List all conversations for the authenticated user.
@@ -60,18 +67,58 @@ export const listConversations = createServerFn({ method: 'GET' })
     if (conversationIds.length > 0) {
       const { data: messages, error: messagesError } = await supabase
         .from('messages')
-        .select('conversation_id, visible_content, content, sequence_number')
+        .select('conversation_id, visible_content, content, turn_index, sequence_number, role, id')
         .in('conversation_id', conversationIds)
-        .order('sequence_number', { ascending: false })
+        .order('turn_index', { ascending: false })
+        .order('id', { ascending: false })
 
       if (messagesError) {
         console.error('[listConversations] Failed to load previews:', messagesError)
       } else {
-        for (const message of messages ?? []) {
-          if (previewByConversationId.has(message.conversation_id)) continue
-          const preview = (message.visible_content ?? message.content ?? '').trim()
+        type PreviewRow = {
+          conversation_id: string
+          visible_content: string | null
+          content: string | null
+          turn_index: number | null
+          sequence_number: number | null
+          role: MessageRole
+          id: string
+        }
+
+        const rows = (messages ?? []) as PreviewRow[]
+        const latestByConversation = new Map<string, PreviewRow>()
+
+        for (const row of rows) {
+          const existing = latestByConversation.get(row.conversation_id)
+          if (!existing) {
+            latestByConversation.set(row.conversation_id, row)
+            continue
+          }
+
+          if (
+            compareMessagesByTurnOrderAsc(
+              {
+                id: existing.id,
+                role: existing.role,
+                turn_index: existing.turn_index,
+                sequence_number: existing.sequence_number,
+              },
+              {
+                id: row.id,
+                role: row.role,
+                turn_index: row.turn_index,
+                sequence_number: row.sequence_number,
+              }
+            ) < 0
+          ) {
+            latestByConversation.set(row.conversation_id, row)
+          }
+        }
+
+        for (const [conversationId, row] of latestByConversation) {
+          const preview = (row.visible_content ?? row.content ?? '').trim()
           if (!preview) continue
-          previewByConversationId.set(message.conversation_id, preview.slice(0, 140))
+          previewByConversationId.set(conversationId, preview.slice(0, 140))
         }
       }
     }
@@ -184,7 +231,8 @@ export const getConversation = createServerFn({ method: 'GET' })
       .from('messages')
       .select('*')
       .eq('conversation_id', data.id)
-      .order('sequence_number', { ascending: true })
+      .order('turn_index', { ascending: true })
+      .order('id', { ascending: true })
 
     if (msgError) {
       console.error('[getConversation] Messages error:', msgError)
@@ -193,7 +241,7 @@ export const getConversation = createServerFn({ method: 'GET' })
 
     return {
       ...conversation,
-      messages: messages ?? [],
+      messages: sortMessagesByTurnOrderAsc((messages ?? []) as Message[]),
     } as ConversationWithMessages
   })
 
@@ -343,23 +391,74 @@ export const migrateConversations = createServerFn({ method: 'POST' })
 
       // Insert all messages
       if (conv.messages.length > 0) {
-        const messagesWithConvId = conv.messages.map((m) => ({
-          conversation_id: newConv.id,
-          role: m.role,
-          content: m.content,
-          visible_content: m.visible_content ?? m.content,
-          execution_trace: m.execution_trace ?? [],
-          response_contract_version: m.response_contract_version ?? 2,
-          attached_data: m.attached_data ?? {},
-          created_at: m.created_at,
-          sequence_number: m.sequence_number,
+        const sortedMessages = [...conv.messages].sort((a, b) => a.sequence_number - b.sequence_number)
+        let currentTurn = -1
+        let currentUserId: string | null = null
+
+        const messagesWithConvId = sortedMessages.map((m) => {
+          if (m.role === 'user') {
+            currentTurn += 1
+            currentUserId = null
+          } else if (currentTurn < 0) {
+            currentTurn = 0
+          }
+
+          const mapped = {
+            id: crypto.randomUUID(),
+            conversation_id: newConv.id,
+            parent_id: m.role === 'assistant' ? (m.parent_id ?? currentUserId) : null,
+            client_message_id: m.client_message_id ?? null,
+            role: m.role,
+            content: m.content,
+            visible_content: m.visible_content ?? m.content,
+            execution_trace: m.execution_trace ?? [],
+            response_contract_version: m.response_contract_version ?? 2,
+            attached_data: m.attached_data ?? {},
+            created_at: m.created_at,
+            sequence_number: m.sequence_number,
+            turn_index: m.turn_index ?? currentTurn,
+          }
+
+          if (m.role === 'user') {
+            currentUserId = mapped.id
+          }
+
+          return mapped
+        })
+
+        const normalizedMessages = sortMessagesByTurnOrderAsc(messagesWithConvId).map((row, index) => ({
+          ...row,
+          sequence_number: index,
         }))
 
-        const { error: msgError } = await supabase.from('messages').insert(messagesWithConvId)
+        const repairedMessages = normalizedMessages.map((row) => {
+          if (row.role !== 'assistant') return row
+
+          const fallbackParent =
+            normalizedMessages.find(
+              (candidate) =>
+                candidate.role === 'user' &&
+                candidate.turn_index === row.turn_index
+            )?.id ?? null
+
+          return {
+            ...row,
+            parent_id: row.parent_id ?? fallbackParent,
+          }
+        })
+
+        const latestMessage = pickLatestMessageByTurnOrder(repairedMessages)
+
+        const { error: msgError } = await supabase.from('messages').insert(repairedMessages)
 
         if (msgError) {
           console.error('[migrateConversations] Failed to insert messages:', msgError)
           // Don't fail the whole migration for one conversation
+        } else if (latestMessage) {
+          await supabase
+            .from('conversations')
+            .update({ updated_at: latestMessage.created_at })
+            .eq('id', newConv.id)
         }
       }
 
