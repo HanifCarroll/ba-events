@@ -27,6 +27,7 @@ import {
   searchLocalConversations,
   getConversationPreview,
 } from '@/shared/lib/db/local-conversations'
+import { getFallbackConversationTitle } from '@/features/chat/lib/title'
 import { queryKeys } from '@/shared/lib/query'
 import type {
   ConversationListItem,
@@ -93,11 +94,14 @@ export function useSearchConversations(query: string) {
 
       // Anonymous: search local
       const conversations = await searchLocalConversations(query)
-      return conversations.map((c) => ({
-        id: c.id,
-        title: c.title,
-        updated_at: c.updated_at,
-      }))
+      return Promise.all(
+        conversations.map(async (c) => ({
+          id: c.id,
+          title: c.title,
+          updated_at: c.updated_at,
+          preview: (await getConversationPreview(c.id)) ?? undefined,
+        }))
+      )
     },
     enabled: query.trim().length > 0,
   })
@@ -306,10 +310,7 @@ export function useGenerateTitle() {
         return generateAndSaveTitle({ data: { conversationId, firstMessage } })
       }
 
-      // For anonymous users, generate a simple title locally
-      // (Could call Claude API directly but keeping it simple for anonymous)
-      const words = firstMessage.split(' ').slice(0, 5).join(' ')
-      const title = words.length > 30 ? words.slice(0, 27) + '...' : words
+      const title = getFallbackConversationTitle(firstMessage)
       await updateLocalConversation(conversationId, { title })
       return { title }
     },

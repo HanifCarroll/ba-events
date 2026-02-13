@@ -20,6 +20,7 @@ import {
 } from '@/shared/ui/alert-dialog'
 import { cn } from '@/shared/lib/utils'
 import type { ConversationListItem } from '@/shared/lib/types'
+import { isGenericConversationTitle } from '@/features/chat/lib/title'
 
 interface ConversationItemProps {
   conversation: ConversationListItem
@@ -43,6 +44,10 @@ export function ConversationItem({
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(conversation.title)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const hasPreview = !!conversation.preview?.trim()
+  const primaryLine = hasPreview ? conversation.preview!.trim() : conversation.title
+  const showSecondaryLine = hasPreview
+  const isGenericTitle = isGenericConversationTitle(conversation.title)
 
   const handleStartEdit = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -132,7 +137,14 @@ export function ConversationItem({
         </div>
       ) : (
         <>
-          <span className="flex-1 text-sm truncate">{conversation.title}</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm truncate">{primaryLine}</p>
+            {showSecondaryLine && (
+              <p className={cn('text-xs truncate text-muted-foreground', isGenericTitle && 'text-muted-foreground/60')}>
+                {conversation.title}
+              </p>
+            )}
+          </div>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

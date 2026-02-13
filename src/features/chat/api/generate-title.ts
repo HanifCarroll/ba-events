@@ -7,8 +7,14 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import Anthropic from '@anthropic-ai/sdk'
+import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
+import {
+  getFallbackConversationTitle,
+  normalizeConversationTitle,
+} from '@/features/chat/lib/title'
 
 const anthropic = new Anthropic()
+export const TITLE_MODEL = CLAUDE_MODEL
 
 /**
  * Generate a title for a conversation based on the first user message.
@@ -17,9 +23,11 @@ const anthropic = new Anthropic()
 export const generateTitle = createServerFn({ method: 'POST' })
   .inputValidator((data: { firstMessage: string; conversationId?: string }) => data)
   .handler(async ({ data }) => {
+    const fallbackTitle = getFallbackConversationTitle(data.firstMessage)
+
     try {
       const response = await anthropic.messages.create({
-        model: 'claude-haiku-4-20250514',
+        model: TITLE_MODEL,
         max_tokens: 50,
         messages: [
           {
@@ -34,30 +42,22 @@ Message: "${data.firstMessage}"`,
       // Extract the text from the response
       const textContent = response.content.find((c) => c.type === 'text')
       if (!textContent || textContent.type !== 'text') {
-        return { title: 'New conversation' }
+        return { title: fallbackTitle }
       }
 
       // Clean up the title
-      let title = textContent.text.trim()
-
-      // Remove quotes if present
-      title = title.replace(/^["']|["']$/g, '')
-
-      // Truncate if too long (max 60 chars)
-      if (title.length > 60) {
-        title = title.slice(0, 57) + '...'
-      }
+      const title = normalizeConversationTitle(textContent.text)
 
       // Fallback if empty
       if (!title) {
-        title = 'New conversation'
+        return { title: fallbackTitle }
       }
 
       return { title }
     } catch (error) {
       console.error('[generateTitle] Error:', error)
       // Don't throw - just return a default title
-      return { title: 'New conversation' }
+      return { title: fallbackTitle }
     }
   })
 

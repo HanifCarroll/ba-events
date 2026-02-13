@@ -22,6 +22,7 @@ import {
 import { cn } from '@/shared/lib/utils'
 import type { ConversationListItem } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
+import { isGenericConversationTitle } from '@/features/chat/lib/title'
 
 interface ChatsPageListProps {
   conversations: ConversationListItem[]
@@ -89,6 +90,16 @@ interface ChatsPageItemProps {
   onDelete: (id: string) => void
 }
 
+const TITLE_NAMING_WINDOW_MS = 2 * 60 * 1000
+
+export function isLikelyNamingPending(conversation: ConversationListItem, nowMs = Date.now()): boolean {
+  if (!isGenericConversationTitle(conversation.title)) return false
+  if (!conversation.preview?.trim()) return false
+  const updatedAtMs = new Date(conversation.updated_at).getTime()
+  if (Number.isNaN(updatedAtMs)) return false
+  return nowMs - updatedAtMs < TITLE_NAMING_WINDOW_MS
+}
+
 function ChatsPageItem({
   conversation,
   isActive,
@@ -101,6 +112,11 @@ function ChatsPageItem({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const timeAgo = formatDistanceToNow(new Date(conversation.updated_at), { addSuffix: true })
+  const hasPreview = !!conversation.preview?.trim()
+  const primaryLine = hasPreview ? conversation.preview!.trim() : conversation.title
+  const showNamingState = isLikelyNamingPending(conversation)
+  const showTitleMetadata = hasPreview && !showNamingState
+  const isGenericTitle = isGenericConversationTitle(conversation.title)
 
   const handleStartEdit = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -191,9 +207,20 @@ function ChatsPageItem({
       ) : (
         <>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{conversation.title}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {m.chats_last_message({ time: timeAgo })}
+            <p className="text-sm font-medium truncate">{primaryLine}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+              {showNamingState ? (
+                m.chats_naming()
+              ) : (
+                <>
+                  {showTitleMetadata && (
+                    <span className={cn('mr-2', isGenericTitle && 'text-muted-foreground/60')}>
+                      {conversation.title}
+                    </span>
+                  )}
+                  {m.chats_last_message({ time: timeAgo })}
+                </>
+              )}
             </p>
           </div>
 

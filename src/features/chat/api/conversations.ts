@@ -54,8 +54,33 @@ export const listConversations = createServerFn({ method: 'GET' })
       throw new Error('Failed to list conversations')
     }
 
+    const conversationIds = (conversations ?? []).map((conv) => conv.id)
+    const previewByConversationId = new Map<string, string>()
+
+    if (conversationIds.length > 0) {
+      const { data: messages, error: messagesError } = await supabase
+        .from('messages')
+        .select('conversation_id, visible_content, content, sequence_number')
+        .in('conversation_id', conversationIds)
+        .order('sequence_number', { ascending: false })
+
+      if (messagesError) {
+        console.error('[listConversations] Failed to load previews:', messagesError)
+      } else {
+        for (const message of messages ?? []) {
+          if (previewByConversationId.has(message.conversation_id)) continue
+          const preview = (message.visible_content ?? message.content ?? '').trim()
+          if (!preview) continue
+          previewByConversationId.set(message.conversation_id, preview.slice(0, 140))
+        }
+      }
+    }
+
     return {
-      conversations: (conversations ?? []) as ConversationListItem[],
+      conversations: (conversations ?? []).map((conversation) => ({
+        ...(conversation as ConversationListItem),
+        preview: previewByConversationId.get(conversation.id),
+      })),
       total: count ?? 0,
     }
   })

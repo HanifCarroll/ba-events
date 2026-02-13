@@ -341,6 +341,7 @@
   "chats_new_chat": "Nuevo chat",
   "chats_count": "{count} chats con BA Events",
   "chats_last_message": "Último mensaje {time}",
+  "chats_naming": "Nombrando…",
   "chats_empty_title": "Sin conversaciones aún",
   "chats_empty_desc": "Empezá a chatear para ver tu historial aquí.",
   "chats_search_placeholder": "Buscar conversaciones..."
