@@ -3,6 +3,7 @@ import {
   buildExecutionTrace,
   getFinalVisibleTextFromSteps,
   getNonEmptyStepTextCount,
+  sanitizeFinalAssistantText,
   type StepResultLike,
 } from '@/routes/api/chat'
 
@@ -75,5 +76,21 @@ describe('chat final-only contract helpers', () => {
       toolName: 'search_events',
     })
     expect(trace[0].toolResults[0].success).toBe(false)
+  })
+
+  it('removes short meta narration when structured data exists', () => {
+    const sanitized = sanitizeFinalAssistantText(
+      'Still getting bar crawls. Let me try a different angle for truly upscale:',
+      { hasStructuredData: true }
+    )
+    expect(sanitized).toBe('')
+  })
+
+  it('keeps normal recommendation text when structured data exists', () => {
+    const sanitized = sanitizeFinalAssistantText(
+      'Go to Trade Sky Bar tonight. It is your best upscale option with skyline views.',
+      { hasStructuredData: true }
+    )
+    expect(sanitized).toBe('Go to Trade Sky Bar tonight. It is your best upscale option with skyline views.')
   })
 })

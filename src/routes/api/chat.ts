@@ -160,6 +160,32 @@ export function getNonEmptyStepTextCount(steps: StepResultLike[]): number {
   }, 0)
 }
 
+const META_NARRATION_PATTERN =
+  /\b(let me|i(?:'m| am| ll|'ll)\s+(?:check|search|look|try)|still getting|different angle|search again|looking for)\b/i
+
+/**
+ * Remove tool/process narration from assistant text when structured results
+ * (event cards or directions) are already present.
+ */
+export function sanitizeFinalAssistantText(
+  text: string,
+  options: { hasStructuredData: boolean }
+): string {
+  const trimmed = text.trim()
+  if (!trimmed) return ''
+  if (!options.hasStructuredData) return trimmed
+
+  const endsWithColon = /:\s*$/.test(trimmed)
+  const shortText = trimmed.length <= 180
+  const hasMetaNarration = META_NARRATION_PATTERN.test(trimmed)
+
+  if (hasMetaNarration && (endsWithColon || shortText)) {
+    return ''
+  }
+
+  return trimmed
+}
+
 /**
  * Get client IP from request headers
  */
@@ -341,8 +367,12 @@ export const Route = createFileRoute('/api/chat' as any)({
               const typedSteps = steps as StepResultLike[]
               const executionTrace = buildExecutionTrace(typedSteps)
 
-              const finalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
+              const rawFinalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
               const nonEmptyStepTextCount = getNonEmptyStepTextCount(typedSteps)
+              const events = Array.from(allEvents.values())
+              const finalText = sanitizeFinalAssistantText(rawFinalText, {
+                hasStructuredData: events.length > 0 || directionsData !== null,
+              })
 
               if (nonEmptyStepTextCount > 1) {
                 trackServer('chat:response_contract_violation', userContext.userId ?? 'anonymous', {
@@ -390,7 +420,6 @@ export const Route = createFileRoute('/api/chat' as any)({
               writer.write({ type: 'text-end', id: textBlockId })
 
               // Send accumulated events as custom data
-              const events = Array.from(allEvents.values())
               if (events.length > 0) {
                 writer.write({
                   type: 'data-events' as const,
