@@ -140,8 +140,17 @@ export function getFinalVisibleTextFromSteps(
   steps: StepResultLike[],
   generatedText: string
 ): string {
-  const fromSteps = extractVisibleTextFromStepTexts(steps.map((step) => step.text ?? ''))
-  if (fromSteps.length > 0) return fromSteps
+  const finalStepText = (steps[steps.length - 1]?.text ?? '').trim()
+  if (finalStepText.length > 0) {
+    return extractVisibleTextFromStepTexts([finalStepText])
+  }
+
+  // If we used tools and ended without a final prose step, prefer no text over
+  // leaking intermediate planning/search narration.
+  if (steps.length > 1) {
+    return ''
+  }
+
   return extractVisibleTextFromStepTexts([generatedText])
 }
 

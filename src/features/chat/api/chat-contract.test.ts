@@ -7,7 +7,7 @@ import {
 } from '@/routes/api/chat'
 
 describe('chat final-only contract helpers', () => {
-  it('derives final visible text from the last non-empty step', () => {
+  it('derives final visible text from the final step text', () => {
     const steps: StepResultLike[] = [
       { text: "I'll check what is happening." },
       { text: 'Go to Club 69 in Palermo tonight.' },
@@ -17,8 +17,24 @@ describe('chat final-only contract helpers', () => {
     expect(finalText).toBe('Go to Club 69 in Palermo tonight.')
   })
 
+  it('returns empty when final tool step has no prose to avoid leaking intermediate narration', () => {
+    const steps: StepResultLike[] = [
+      { text: "That's not upscale. Let me search again." },
+      { text: '' },
+    ]
+
+    const finalText = getFinalVisibleTextFromSteps(steps, 'fallback text')
+    expect(finalText).toBe('')
+  })
+
   it('falls back to generated text when all step text is empty', () => {
     const steps: StepResultLike[] = [{ text: '' }, { text: '   ' }]
+    const finalText = getFinalVisibleTextFromSteps(steps, 'Fallback final answer.')
+    expect(finalText).toBe('')
+  })
+
+  it('falls back to generated text for single-step non-tool responses', () => {
+    const steps: StepResultLike[] = [{ text: '' }]
     const finalText = getFinalVisibleTextFromSteps(steps, 'Fallback final answer.')
     expect(finalText).toBe('Fallback final answer.')
   })

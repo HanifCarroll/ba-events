@@ -46,6 +46,14 @@ describe('ChatContainer loading/visibility selectors', () => {
     expect(shouldShowLoadingIndicator('ready', null, 'preparing')).toBe(true)
   })
 
+  it('hides loading when assistant content is already visible even if lifecycle is non-idle', () => {
+    expect(
+      shouldShowLoadingIndicator('streaming', {
+        content: 'Go to Club 69 tonight.',
+      }, 'running_tool')
+    ).toBe(false)
+  })
+
   it('maps server status phases to request lifecycle phases', () => {
     expect(mapStatusPhaseToRequestPhase('thinking')).toBe('thinking')
     expect(mapStatusPhaseToRequestPhase('calling_tool')).toBe('running_tool')

@@ -80,8 +80,11 @@ export function shouldShowLoadingIndicator(
   lastAssistantMessage: AssistantVisibilityMessage | null | undefined,
   requestPhase: RequestPhase
 ): boolean {
-  if (requestPhase !== 'idle' && requestPhase !== 'error') return true
-  return status === 'submitted' || (status === 'streaming' && !assistantMessageHasVisibleContent(lastAssistantMessage))
+  const hasVisibleAssistantContent = assistantMessageHasVisibleContent(lastAssistantMessage)
+  if (hasVisibleAssistantContent) return false
+  if (requestPhase === 'error') return false
+  if (requestPhase !== 'idle') return true
+  return status === 'submitted' || status === 'streaming'
 }
 
 export function ChatContainer() {
@@ -543,7 +546,9 @@ export function ChatContainer() {
   // Show loading indicator when:
   // 1. Status is 'submitted' (waiting for response to start), OR
   // 2. Status is 'streaming' but no visible content yet (Claude is doing tool calls)
-  const lastAssistantMessage = displayMessages.filter((m) => m.role === 'assistant').pop()
+  // Use the latest assistant message from raw chat state (not filtered display state).
+  // This keeps loader behavior tied to the in-flight assistant turn.
+  const lastAssistantMessage = [...chatMessages].reverse().find((m) => m.role === 'assistant')
   const showLoading = shouldShowLoadingIndicator(
     status as 'submitted' | 'streaming' | 'ready' | 'error',
     lastAssistantMessage,
