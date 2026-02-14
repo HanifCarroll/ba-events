@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Sparkles } from 'lucide-react'
 import { ChatMessage } from './ChatMessage'
 import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
@@ -31,7 +31,21 @@ export function MessageList({
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const prevMessageCountRef = useRef(messages.length)
+  const prevIsLoadingRef = useRef(false)
   const isUserScrollingRef = useRef(false)
+
+  const scrollToBottom = useCallback((force = false) => {
+    if (!bottomRef.current) return
+    if (!force && isUserScrollingRef.current) return
+
+    // Use 'instant' on mobile to avoid smooth scroll fighting with touch gestures
+    // Detect touch device by checking for touch points or coarse pointer
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+    bottomRef.current.scrollIntoView({
+      behavior: isTouchDevice ? 'instant' : 'smooth',
+      block: 'end',
+    })
+  }, [])
 
   // Track when user is manually scrolling to avoid fighting with auto-scroll
   useEffect(() => {
@@ -63,19 +77,22 @@ export function MessageList({
     const messageCount = messages.length
     const prevCount = prevMessageCountRef.current
 
-    // Only scroll if message count increased and user isn't manually scrolling
-    if (messageCount > prevCount && bottomRef.current && !isUserScrollingRef.current) {
-      // Use 'instant' on mobile to avoid smooth scroll fighting with touch gestures
-      // Detect touch device by checking for touch points or coarse pointer
-      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-      bottomRef.current.scrollIntoView({
-        behavior: isTouchDevice ? 'instant' : 'smooth',
-        block: 'end',
-      })
+    // Only scroll if message count increased.
+    if (messageCount > prevCount) {
+      scrollToBottom()
     }
 
     prevMessageCountRef.current = messageCount
-  }, [messages.length])
+  }, [messages.length, scrollToBottom])
+
+  // Auto-scroll when loading indicator first appears so "Thinking..." stays visible.
+  useEffect(() => {
+    if (isLoading && !prevIsLoadingRef.current) {
+      scrollToBottom(true)
+    }
+
+    prevIsLoadingRef.current = isLoading
+  }, [isLoading, scrollToBottom])
 
   return (
     <div ref={containerRef} className="p-4 sm:p-6">

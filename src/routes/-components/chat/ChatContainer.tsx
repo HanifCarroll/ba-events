@@ -139,6 +139,8 @@ export function ChatContainer() {
   const pendingAssistantClientMessageIdRef = useRef<string | null>(null)
   const pendingUserPersistencePromiseRef = useRef<Promise<MessagePersistenceResult> | null>(null)
   const pendingUserPersistedMessageIdRef = useRef<string | null>(null)
+  // Keep useChat instance stable while conversation ids change (first-send race).
+  const chatSessionIdRef = useRef('ba-events-chat')
   // Track if this is the first exchange (for title generation)
   const isFirstExchangeRef = useRef(true)
   const isFlushingOutboxRef = useRef(false)
@@ -295,7 +297,7 @@ export function ChatContainer() {
     setMessages,
     stop,
   } = useChat({
-    id: activeConversationId ?? 'ba-events-chat-new',
+    id: chatSessionIdRef.current,
     transport: new DefaultChatTransport({
       api: '/api/chat',
       body: () => ({
