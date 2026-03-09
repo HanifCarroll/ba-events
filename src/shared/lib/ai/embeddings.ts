@@ -1,6 +1,5 @@
 import OpenAI from 'openai'
 import { createHash } from 'crypto'
-import { Redis } from '@upstash/redis'
 import { supabase } from '../db/client'
 import type { Event, EventWithVenue } from '../types'
 import { EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from './constants'
@@ -8,17 +7,27 @@ import { EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from './constants'
 // Lazy-initialize OpenAI client (only when needed, server-side only)
 let openai: OpenAI | null = null
 
-// Lazy-initialize Redis client
-let redis: Redis | null = null
+type CachedEmbedding = {
+  embedding: number[]
+  expiresAt: number
+}
 
-function getRedis(): Redis | null {
-  if (!redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    })
+const embeddingCache = new Map<string, CachedEmbedding>()
+const EMBEDDING_CACHE_TTL_MS = 60 * 60 * 1000
+const MAX_EMBEDDING_CACHE_ENTRIES = 500
+
+function pruneEmbeddingCache(now: number) {
+  for (const [key, entry] of embeddingCache.entries()) {
+    if (entry.expiresAt <= now) {
+      embeddingCache.delete(key)
+    }
   }
-  return redis
+
+  while (embeddingCache.size >= MAX_EMBEDDING_CACHE_ENTRIES) {
+    const oldestKey = embeddingCache.keys().next().value
+    if (!oldestKey) break
+    embeddingCache.delete(oldestKey)
+  }
 }
 
 function getOpenAI(): OpenAI {
@@ -80,23 +89,18 @@ export function buildEmbeddingText(
 
 // Generate embedding using OpenAI with caching
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const redisClient = getRedis()
-
   // Create cache key from text hash
   const cacheKey = `embedding:${createHash('sha256').update(text).digest('hex')}`
+  const now = Date.now()
+  const cached = embeddingCache.get(cacheKey)
 
-  // Check cache first
-  if (redisClient) {
-    try {
-      const cached = await redisClient.get<number[]>(cacheKey)
-      if (cached) {
-        console.log('[Embeddings] Cache hit')
-        return cached
-      }
-    } catch (err) {
-      console.warn('[Embeddings] Cache read error:', err)
-      // Continue without cache
-    }
+  if (cached && cached.expiresAt > now) {
+    console.log('[Embeddings] Cache hit')
+    return cached.embedding
+  }
+
+  if (cached && cached.expiresAt <= now) {
+    embeddingCache.delete(cacheKey)
   }
 
   // Generate embedding
@@ -107,16 +111,12 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   })
   const embedding = response.data[0].embedding
 
-  // Cache for 1 hour
-  if (redisClient) {
-    try {
-      await redisClient.set(cacheKey, embedding, { ex: 3600 })
-      console.log('[Embeddings] Cached new embedding')
-    } catch (err) {
-      console.warn('[Embeddings] Cache write error:', err)
-      // Continue without caching
-    }
-  }
+  pruneEmbeddingCache(now)
+  embeddingCache.set(cacheKey, {
+    embedding,
+    expiresAt: now + EMBEDDING_CACHE_TTL_MS,
+  })
+  console.log('[Embeddings] Cached new embedding')
 
   return embedding
 }
@@ -149,4 +149,3 @@ export async function updateEventEmbedding(eventId: string): Promise<void> {
 
   if (updateError) throw updateError
 }
-

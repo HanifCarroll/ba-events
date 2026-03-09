@@ -74,6 +74,7 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
    # Supabase (server-side)
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_ANON_KEY=your-anon-key
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
    # Supabase (browser-side - VITE_ prefix required)
    VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -82,10 +83,6 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
    # AI APIs
    OPENAI_API_KEY=sk-your-openai-key
    ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
-
-   # Rate Limiting (optional for local dev)
-   UPSTASH_REDIS_REST_URL=your-upstash-url
-   UPSTASH_REDIS_REST_TOKEN=your-upstash-token
 
    # Admin API (optional for local dev)
    ADMIN_API_KEY=your-admin-api-key

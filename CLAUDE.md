@@ -505,6 +505,7 @@ The `useInvalidateCache` hook abstracts away the different invalidation mechanis
 # Supabase (server-side)
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 
 # Supabase (browser-side - VITE_ prefix required for client access)
 VITE_SUPABASE_URL=
@@ -513,10 +514,6 @@ VITE_SUPABASE_ANON_KEY=
 # AI APIs
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
-
-# Rate Limiting (optional for local dev)
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
 
 # Admin API (optional for local dev)
 ADMIN_API_KEY=

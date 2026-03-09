@@ -1,69 +1,101 @@
-import { Ratelimit } from '@upstash/ratelimit'
-import { Redis } from '@upstash/redis'
-
-// Only initialize if env vars are present (allows local dev without rate limiting)
-const redis =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      })
-    : null
+import { createHash } from 'crypto'
+import { getSupabaseServiceRoleClient } from '@/shared/lib/db/service'
 
 // Rate limit configuration for chat/general use
 export const RATE_LIMIT_REQUESTS = 30
-export const RATE_LIMIT_WINDOW = '1 h'
+export const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
 
 // Rate limit configuration for external API
 export const API_RATE_LIMIT_REQUESTS = 10
-export const API_RATE_LIMIT_WINDOW = '1 m'
+export const API_RATE_LIMIT_WINDOW_MS = 60 * 1000
 
-// Create rate limiter: 30 requests per hour per IP (for chat)
-const rateLimiter = redis
-  ? new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW),
-      analytics: true,
-      prefix: 'ba-events',
-    })
-  : null
+type RateLimitRpcResult = {
+  success: boolean
+  remaining: number
+  reset: number
+  request_count: number
+}
 
-// Create stricter rate limiter: 10 requests per minute per IP (for external API)
-const apiRateLimiter = redis
-  ? new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(API_RATE_LIMIT_REQUESTS, API_RATE_LIMIT_WINDOW),
-      analytics: true,
-      prefix: 'ba-events-api',
-    })
-  : null
+const warnedMessages = new Set<string>()
 
-// Check rate limit - returns success:true if no rate limiting configured
+function warnRateLimitOnce(message: string, error: unknown) {
+  if (warnedMessages.has(message)) return
+  warnedMessages.add(message)
+  console.warn(message, error)
+}
+
+function hashIdentifier(scope: string, identifier: string): string {
+  return createHash('sha256')
+    .update(`${scope}:${identifier}`)
+    .digest('hex')
+}
+
+async function checkScopedRateLimit(
+  scope: string,
+  identifier: string,
+  maxRequests: number,
+  windowMs: number
+): Promise<{
+  success: boolean
+  remaining: number
+  reset: number
+}> {
+  try {
+    const client = getSupabaseServiceRoleClient()
+    const windowSeconds = Math.max(1, Math.ceil(windowMs / 1000))
+    const { data, error } = await client
+      .rpc('check_rate_limit', {
+        p_scope: scope,
+        p_identifier_hash: hashIdentifier(scope, identifier),
+        p_max_requests: maxRequests,
+        p_window_seconds: windowSeconds,
+      })
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    const result = data as RateLimitRpcResult | null
+    if (!result) {
+      throw new Error('Rate limit RPC returned no data')
+    }
+
+    return {
+      success: result.success,
+      remaining: result.remaining,
+      reset: result.reset,
+    }
+  } catch (error) {
+    warnRateLimitOnce(
+      `[rate-limit] Supabase rate limit unavailable for scope "${scope}". Allowing requests.`,
+      error
+    )
+    return {
+      success: true,
+      remaining: maxRequests,
+      reset: Date.now() + windowMs,
+    }
+  }
+}
+
 export async function checkRateLimit(ip: string): Promise<{
   success: boolean
   remaining: number
   reset: number
 }> {
-  // Skip rate limiting if not configured (local dev)
-  if (!rateLimiter) {
-    return { success: true, remaining: 999, reset: 0 }
-  }
-
-  const { success, remaining, reset } = await rateLimiter.limit(ip)
-  return { success, remaining, reset }
+  return checkScopedRateLimit('chat', ip || 'unknown-ip', RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_MS)
 }
 
-// Check rate limit for external API (stricter: 10 req/min)
 export async function checkApiRateLimit(ip: string): Promise<{
   success: boolean
   remaining: number
   reset: number
 }> {
-  // Skip rate limiting if not configured (local dev)
-  if (!apiRateLimiter) {
-    return { success: true, remaining: 999, reset: 0 }
-  }
-
-  const { success, remaining, reset } = await apiRateLimiter.limit(ip)
-  return { success, remaining, reset }
+  return checkScopedRateLimit(
+    'public_api',
+    ip || 'unknown-ip',
+    API_RATE_LIMIT_REQUESTS,
+    API_RATE_LIMIT_WINDOW_MS
+  )
 }
