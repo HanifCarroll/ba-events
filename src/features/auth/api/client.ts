@@ -1,4 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createBrowserClient as createSupabaseBrowserClient } from '@supabase/ssr'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { useState, useEffect, useCallback } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import type { Profile } from '@/shared/lib/types'
@@ -12,11 +13,11 @@ type BrowserClient = SupabaseClient
 
 let browserClient: BrowserClient | null = null
 
-function createBrowserClient(): BrowserClient {
+function createBrowserAuthClient(): BrowserClient {
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
   }
-  const client = createClient(supabaseUrl, supabaseAnonKey)
+  const client = createSupabaseBrowserClient(supabaseUrl, supabaseAnonKey)
 
   // Expose on window for debugging in development
   if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -33,7 +34,7 @@ export function getSupabaseBrowserClient(): BrowserClient {
   }
 
   if (!browserClient) {
-    browserClient = createBrowserClient()
+    browserClient = createBrowserAuthClient()
   }
 
   return browserClient
