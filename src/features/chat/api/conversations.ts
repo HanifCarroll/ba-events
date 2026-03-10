@@ -12,13 +12,11 @@ import type {
   ConversationUpdate,
   ConversationListItem,
   ConversationWithMessages,
-  MigrationConversation,
   Message,
   MessageRole,
 } from '@/shared/lib/types'
 import {
   compareMessagesByTurnOrderAsc,
-  pickLatestMessageByTurnOrder,
   sortMessagesByTurnOrderAsc,
 } from '@/features/chat/lib/message-order'
 
@@ -348,122 +346,4 @@ export const deleteConversation = createServerFn({ method: 'POST' })
     }
 
     return { success: true }
-  })
-
-/**
- * Migrate anonymous conversations to the authenticated user.
- * Called after signup/login if local conversations exist.
- */
-export const migrateConversations = createServerFn({ method: 'POST' })
-  .inputValidator((data: { conversations: MigrationConversation[] }) => data)
-  .handler(async ({ data }) => {
-    const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
-    const supabase = createSupabaseServerClient()
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
-
-    let imported = 0
-
-    for (const conv of data.conversations) {
-      // Create the conversation
-      const { data: newConv, error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          user_id: user.id,
-          title: conv.title,
-          created_at: conv.created_at,
-          updated_at: conv.updated_at,
-          metadata: { migrated_from_local: conv.local_id },
-        })
-        .select()
-        .single()
-
-      if (convError || !newConv) {
-        console.error('[migrateConversations] Failed to create conversation:', convError)
-        continue
-      }
-
-      // Insert all messages
-      if (conv.messages.length > 0) {
-        const sortedMessages = [...conv.messages].sort((a, b) => a.sequence_number - b.sequence_number)
-        let currentTurn = -1
-        let currentUserId: string | null = null
-
-        const messagesWithConvId = sortedMessages.map((m) => {
-          if (m.role === 'user') {
-            currentTurn += 1
-            currentUserId = null
-          } else if (currentTurn < 0) {
-            currentTurn = 0
-          }
-
-          const mapped = {
-            id: crypto.randomUUID(),
-            conversation_id: newConv.id,
-            parent_id: m.role === 'assistant' ? (m.parent_id ?? currentUserId) : null,
-            client_message_id: m.client_message_id ?? null,
-            role: m.role,
-            content: m.content,
-            visible_content: m.visible_content ?? m.content,
-            execution_trace: m.execution_trace ?? [],
-            response_contract_version: m.response_contract_version ?? 2,
-            attached_data: m.attached_data ?? {},
-            created_at: m.created_at,
-            sequence_number: m.sequence_number,
-            turn_index: m.turn_index ?? currentTurn,
-          }
-
-          if (m.role === 'user') {
-            currentUserId = mapped.id
-          }
-
-          return mapped
-        })
-
-        const normalizedMessages = sortMessagesByTurnOrderAsc(messagesWithConvId).map((row, index) => ({
-          ...row,
-          sequence_number: index,
-        }))
-
-        const repairedMessages = normalizedMessages.map((row) => {
-          if (row.role !== 'assistant') return row
-
-          const fallbackParent =
-            normalizedMessages.find(
-              (candidate) =>
-                candidate.role === 'user' &&
-                candidate.turn_index === row.turn_index
-            )?.id ?? null
-
-          return {
-            ...row,
-            parent_id: row.parent_id ?? fallbackParent,
-          }
-        })
-
-        const latestMessage = pickLatestMessageByTurnOrder(repairedMessages)
-
-        const { error: msgError } = await supabase.from('messages').insert(repairedMessages)
-
-        if (msgError) {
-          console.error('[migrateConversations] Failed to insert messages:', msgError)
-          // Don't fail the whole migration for one conversation
-        } else if (latestMessage) {
-          await supabase
-            .from('conversations')
-            .update({ updated_at: latestMessage.created_at })
-            .eq('id', newConv.id)
-        }
-      }
-
-      imported++
-    }
-
-    return { imported, total: data.conversations.length }
   })

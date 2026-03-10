@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { exchangeCodeAction } from '@/features/auth/api/server'
+import { track } from '@/lib/analytics'
 
 export const Route = createFileRoute('/auth/callback')({
   component: AuthCallbackPage,
@@ -50,6 +51,7 @@ function AuthCallbackPage() {
           },
         })
 
+        track('auth:login_completed', { method: 'magic_link' })
         // Invalidate session cache so sidebar updates
         await queryClient.invalidateQueries({ queryKey: ['session'] })
         // Navigate based on user role
@@ -57,7 +59,9 @@ function AuthCallbackPage() {
         navigate({ to: result.isAdmin ? '/admin' : '/' })
       } catch (err) {
         console.error('Auth callback error:', err)
-        setError(err instanceof Error ? err.message : 'Authentication failed')
+        const errorMessage = err instanceof Error ? err.message : 'Authentication failed'
+        track('auth:login_failed', { method: 'magic_link', error: errorMessage })
+        setError(errorMessage)
       }
     }
 

@@ -28,6 +28,7 @@ import {
   useCreateConversation,
   useAddMessage,
   useGenerateTitle,
+  useUpdateMessageAttachedData,
 } from '@/features/chat/hooks/useConversations'
 import { extractVisibleTextFromUIMessageParts } from '@/features/chat/lib/extract-visible-text'
 import {
@@ -38,6 +39,7 @@ import {
 } from '@/features/chat/lib/persistence-outbox'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
+import { confirmPlan } from '@/features/chat'
 
 export type RequestPhase =
   | 'idle'
@@ -65,7 +67,7 @@ export function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): Requ
   }
 }
 
-type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
+type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions' | 'plan'>
 
 export function assistantMessageHasVisibleContent(
   message: AssistantVisibilityMessage | null | undefined
@@ -74,7 +76,8 @@ export function assistantMessageHasVisibleContent(
   return !!(
     message.content.trim().length > 0 ||
     (message.events && message.events.length > 0) ||
-    message.directions
+    message.directions ||
+    message.plan
   )
 }
 
@@ -118,8 +121,10 @@ export function ChatContainer() {
   const createConversation = useCreateConversation()
   const addMessage = useAddMessage()
   const generateTitle = useGenerateTitle()
+  const updateAttachedData = useUpdateMessageAttachedData()
   const [requestPhase, setRequestPhase] = useState<RequestPhase>('idle')
   const requestPhaseRef = useRef<RequestPhase>('idle')
+  const [planningAssistantMessageId, setPlanningAssistantMessageId] = useState<string | null>(null)
 
   // Request correlation for message-scoped streamed attached data
   const activeRequestIdRef = useRef<string | null>(null)
@@ -139,6 +144,7 @@ export function ChatContainer() {
   const pendingAssistantClientMessageIdRef = useRef<string | null>(null)
   const pendingUserPersistencePromiseRef = useRef<Promise<MessagePersistenceResult> | null>(null)
   const pendingUserPersistedMessageIdRef = useRef<string | null>(null)
+  const persistedAssistantMessageIdsRef = useRef<Map<string, string>>(new Map())
   // Keep useChat instance stable while conversation ids change (first-send race).
   const chatSessionIdRef = useRef('ba-events-chat')
   // Track if this is the first exchange (for title generation)
@@ -253,12 +259,7 @@ export function ChatContainer() {
   const persistMessageResiliently = useCallback(
     async (payload: MessagePersistencePayload): Promise<MessagePersistenceResult> => {
       if (!isAuthenticated) {
-        const persisted = await persistMessageToConversation(payload)
-        return {
-          status: 'persisted',
-          messageId:
-            persisted && typeof persisted.id === 'string' ? persisted.id : undefined,
-        }
+        return { status: 'persisted' }
       }
 
       return persistMessageWithOutbox(persistMessageToConversation, payload)
@@ -345,7 +346,7 @@ export function ChatContainer() {
           pendingAssistantClientMessageIdRef.current ?? generateId()
 
         try {
-          await persistMessageResiliently({
+          const assistantPersistResult = await persistMessageResiliently({
             conversationId,
             parentMessageId: pendingUserPersistedMessageIdRef.current,
             clientMessageId: assistantClientMessageId,
@@ -356,6 +357,9 @@ export function ChatContainer() {
             responseContractVersion: 2,
             attachedData,
           })
+          if (assistantPersistResult.messageId) {
+            persistedAssistantMessageIdsRef.current.set(message.id, assistantPersistResult.messageId)
+          }
 
           if (isFirstExchangeRef.current && pendingUserMessageRef.current) {
             isFirstExchangeRef.current = false
@@ -516,8 +520,8 @@ export function ChatContainer() {
       return
     }
 
-    if (loadedConversation?.messages) {
-      const sortedMessages = sortMessagesByTurnOrderAsc(loadedConversation.messages)
+      if (loadedConversation?.messages) {
+        const sortedMessages = sortMessagesByTurnOrderAsc(loadedConversation.messages)
 
       const uiMessages: UIMessage[] = sortedMessages.map((storedMessage: Message) => ({
         id: storedMessage.id,
@@ -529,12 +533,17 @@ export function ChatContainer() {
       setMessages(uiMessages)
 
       const attachedDataMap = new Map<string, MessageAttachedData>()
+      const persistedAssistantIds = new Map<string, string>()
       for (const storedMessage of sortedMessages) {
         if (storedMessage.role === 'assistant' && storedMessage.attached_data) {
           attachedDataMap.set(storedMessage.id, storedMessage.attached_data)
         }
+        if (storedMessage.role === 'assistant') {
+          persistedAssistantIds.set(storedMessage.id, storedMessage.id)
+        }
       }
       setAttachedDataMap(attachedDataMap)
+      persistedAssistantMessageIdsRef.current = persistedAssistantIds
 
       isFirstExchangeRef.current = sortedMessages.length > 0
     }
@@ -573,10 +582,73 @@ export function ChatContainer() {
       pendingAssistantClientMessageIdRef.current = null
       pendingUserPersistencePromiseRef.current = null
       pendingUserPersistedMessageIdRef.current = null
+      persistedAssistantMessageIdsRef.current.clear()
+      setPlanningAssistantMessageId(null)
       isFirstExchangeRef.current = true
       resetRequestCorrelations()
     })
   }, [registerStartNewChatHandler, stop, setMessages, setAttachedDataMap, setRequestLifecyclePhase, resetRequestCorrelations])
+
+  const handleConfirmPlan = useCallback(
+    async (assistantMessageId: string, event: EventWithVenue) => {
+      if (planningAssistantMessageId) return
+
+      setPlanningAssistantMessageId(assistantMessageId)
+
+      try {
+        const result = await confirmPlan(event.id)
+        const plan = {
+          event,
+          plannedAt: result.plannedAt,
+          persisted: result.persisted,
+          requiresLogin: result.requiresLogin,
+        }
+
+        let nextAttachedData: MessageAttachedData | null = null
+        upsertAttachedDataForAssistantMessage(assistantMessageId, (current) => {
+          nextAttachedData = {
+            ...current,
+            plan,
+          }
+          return nextAttachedData
+        })
+
+        if (result.persisted && nextAttachedData) {
+          const persistedMessageId =
+            persistedAssistantMessageIdsRef.current.get(assistantMessageId) ?? assistantMessageId
+
+          try {
+            await updateAttachedData.mutateAsync({
+              messageId: persistedMessageId,
+              attachedData: nextAttachedData,
+            })
+          } catch (updateError) {
+            console.error('Failed to persist plan attached data:', updateError)
+            toast.warning('Plan saved, but chat history may need a refresh', {
+              description: 'The event is saved in your plans, but this chat card may not sync until reload.',
+            })
+          }
+
+          toast.success('Plan saved', {
+            description: 'You can revisit it from Saved.',
+          })
+          return
+        }
+
+        toast.message('Plan ready for this session', {
+          description: 'Sign in to save it permanently in your Saved plans.',
+        })
+      } catch (planError) {
+        console.error('Failed to confirm plan:', planError)
+        toast.error('Failed to confirm plan', {
+          description: 'Try again in a moment.',
+        })
+      } finally {
+        setPlanningAssistantMessageId(null)
+      }
+    },
+    [planningAssistantMessageId, updateAttachedData, upsertAttachedDataForAssistantMessage]
+  )
 
   const handleSendMessage = useCallback(
     async (content: string) => {
@@ -599,43 +671,47 @@ export function ChatContainer() {
       pendingAssistantClientMessageIdRef.current = assistantClientMessageId
 
       try {
-        let conversationId = activeConversationId
-        if (!conversationId) {
-          const newConversation = await createConversation.mutateAsync(undefined)
-          conversationId = newConversation.id
-          setActiveConversationId(conversationId)
+        if (isAuthenticated) {
+          let conversationId = activeConversationId
+          if (!conversationId) {
+            const newConversation = await createConversation.mutateAsync(undefined)
+            conversationId = newConversation.id
+            setActiveConversationId(conversationId)
+          }
+          pendingConversationIdRef.current = conversationId
+
+          const userMessagePayload: MessagePersistencePayload = {
+            conversationId,
+            parentMessageId: null,
+            clientMessageId: userClientMessageId,
+            role: 'user',
+            content,
+            visibleContent: content,
+            responseContractVersion: 2,
+          }
+
+          const userPersistencePromise = persistMessageResiliently(userMessagePayload)
+            .then((result) => {
+              if (result.messageId) {
+                pendingUserPersistedMessageIdRef.current = result.messageId
+              }
+              return result
+            })
+            .catch((persistError) => {
+              console.error('Failed to persist user message:', persistError)
+              return { status: 'queued' } as MessagePersistenceResult
+            })
+
+          pendingUserPersistencePromiseRef.current = userPersistencePromise
+
+          await sendMessage({ text: content })
+          await userPersistencePromise
+          return
         }
-        pendingConversationIdRef.current = conversationId
 
-        const userMessagePayload: MessagePersistencePayload = {
-          conversationId,
-          parentMessageId: null,
-          clientMessageId: userClientMessageId,
-          role: 'user',
-          content,
-          visibleContent: content,
-          responseContractVersion: 2,
-        }
-
-        const userPersistencePromise = persistMessageResiliently(userMessagePayload)
-          .then((result) => {
-            if (result.messageId) {
-              pendingUserPersistedMessageIdRef.current = result.messageId
-            }
-            return result
-          })
-          .catch((persistError) => {
-            console.error('Failed to persist user message:', persistError)
-            if (!isAuthenticated) {
-              toast.error('Failed to save your message locally')
-            }
-            return { status: 'queued' } as MessagePersistenceResult
-          })
-
-        pendingUserPersistencePromiseRef.current = userPersistencePromise
-
+        pendingConversationIdRef.current = null
+        pendingUserPersistencePromiseRef.current = null
         await sendMessage({ text: content })
-        await userPersistencePromise
       } catch (err) {
         console.error('Failed to send message:', err)
         const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
@@ -653,6 +729,7 @@ export function ChatContainer() {
         pendingAssistantClientMessageIdRef.current = null
         pendingUserPersistencePromiseRef.current = null
         pendingUserPersistedMessageIdRef.current = null
+        persistedAssistantMessageIdsRef.current.clear()
         resetRequestCorrelations()
       }
     },
@@ -692,6 +769,7 @@ export function ChatContainer() {
         events: storedData?.events,
         suggestions: storedData?.suggestions,
         directions: storedData?.directions,
+        plan: storedData?.plan,
       }
     })
   }, [messages, messageAttachedDataMap, status])
@@ -702,7 +780,8 @@ export function ChatContainer() {
       const hasVisibleContent =
         chatMessage.content.trim().length > 0 ||
         (chatMessage.events && chatMessage.events.length > 0) ||
-        chatMessage.directions
+        chatMessage.directions ||
+        chatMessage.plan
       return hasVisibleContent || chatMessage.isStreaming
     })
   }, [chatMessages])
@@ -777,6 +856,8 @@ export function ChatContainer() {
             loadingPhase={requestPhase}
             loadingLabel={loadingLabel}
             onSuggestionSelect={handleSendMessage}
+            onConfirmPlan={handleConfirmPlan}
+            planningAssistantMessageId={planningAssistantMessageId}
           />
         ) : (
           <SuggestedPrompts onSelectPrompt={handleSendMessage} />

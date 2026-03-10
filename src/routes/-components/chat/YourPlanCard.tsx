@@ -20,6 +20,8 @@ import type { EventWithVenue } from '@/shared/lib/types'
 
 interface YourPlanCardProps {
   event: EventWithVenue
+  persisted?: boolean
+  requiresLogin?: boolean
   onAddToCalendar?: () => void
   onShare?: () => void
   onGetDirections?: () => void
@@ -56,7 +58,14 @@ function generateDirectionsUrl(event: EventWithVenue): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
 }
 
-export function YourPlanCard({ event, onAddToCalendar, onShare, onGetDirections }: YourPlanCardProps) {
+export function YourPlanCard({
+  event,
+  persisted = true,
+  requiresLogin = false,
+  onAddToCalendar,
+  onShare,
+  onGetDirections,
+}: YourPlanCardProps) {
   const locale = getLocale() as 'en' | 'es'
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
@@ -142,7 +151,9 @@ export function YourPlanCard({ event, onAddToCalendar, onShare, onGetDirections 
 
           {/* Confirmed badge */}
           <div className="px-3 py-1.5 rounded-full bg-primary/20 border border-primary/40">
-            <span className="text-xs font-semibold text-primary uppercase tracking-wider">Confirmed</span>
+            <span className="text-xs font-semibold text-primary uppercase tracking-wider">
+              {persisted ? 'Confirmed' : 'Session only'}
+            </span>
           </div>
         </div>
       </div>
@@ -206,6 +217,18 @@ export function YourPlanCard({ event, onAddToCalendar, onShare, onGetDirections 
         <p className="text-xs text-muted-foreground/70 uppercase tracking-wider font-medium mb-4">
           Make it happen
         </p>
+
+        {requiresLogin && (
+          <div className="rounded-xl border border-primary/25 bg-primary/10 px-4 py-3 text-sm text-foreground/85">
+            This plan is only saved for this session.
+            {' '}
+            <Link to="/login" className="font-medium text-primary hover:text-primary/80">
+              Sign in
+            </Link>
+            {' '}
+            to keep it in Saved.
+          </div>
+        )}
 
         {/* Primary action - Add to Calendar */}
         <button

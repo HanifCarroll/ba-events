@@ -1,8 +1,7 @@
 /**
  * React Query hooks for chat conversations.
  *
- * Provides unified interface for both authenticated (PostgreSQL) and
- * anonymous (IndexedDB) users. Automatically switches storage based on auth state.
+ * Provides authenticated conversation persistence for the plan-making chat flow.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -15,18 +14,8 @@ import {
   updateConversation,
   deleteConversation,
 } from '../api/conversations'
-import { addMessage } from '../api/messages'
+import { addMessage, updateMessageAttachedData } from '../api/messages'
 import { generateAndSaveTitle } from '../api/generate-title'
-import {
-  listLocalConversations,
-  getLocalConversationWithMessages,
-  createLocalConversation,
-  updateLocalConversation,
-  deleteLocalConversation,
-  addLocalMessage,
-  searchLocalConversations,
-  getConversationPreview,
-} from '@/shared/lib/db/local-conversations'
 import { getFallbackConversationTitle } from '@/features/chat/lib/title'
 import { queryKeys } from '@/shared/lib/query'
 import type {
@@ -41,7 +30,7 @@ import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
 
 /**
  * List all conversations for the current user.
- * Uses server storage for authenticated users, IndexedDB for anonymous.
+ * Only authenticated users get a durable conversation list.
  */
 export function useConversations(options?: { limit?: number; offset?: number }) {
   const { user } = useAuthContext()
@@ -50,31 +39,12 @@ export function useConversations(options?: { limit?: number; offset?: number }) 
   return useQuery({
     queryKey: queryKeys.conversations.list(options),
     queryFn: async (): Promise<{ conversations: ConversationListItem[]; total: number }> => {
-      if (isAuthenticated) {
-        return listConversations({ data: options ?? {} })
+      if (!isAuthenticated) {
+        return { conversations: [], total: 0 }
       }
-
-      // Anonymous: use IndexedDB
-      const conversations = await listLocalConversations()
-
-      // Convert to ConversationListItem format with preview
-      const items: ConversationListItem[] = await Promise.all(
-        conversations.map(async (c) => ({
-          id: c.id,
-          title: c.title,
-          updated_at: c.updated_at,
-          preview: (await getConversationPreview(c.id)) ?? undefined,
-        }))
-      )
-
-      // Apply limit/offset for anonymous too
-      const start = options?.offset ?? 0
-      const end = start + (options?.limit ?? 50)
-      return {
-        conversations: items.slice(start, end),
-        total: conversations.length,
-      }
+      return listConversations({ data: options ?? {} })
     },
+    enabled: isAuthenticated,
   })
 }
 
@@ -89,23 +59,12 @@ export function useSearchConversations(query: string) {
     queryKey: queryKeys.conversations.search(query),
     queryFn: async (): Promise<ConversationListItem[]> => {
       if (!query.trim()) return []
-
-      if (isAuthenticated) {
-        return searchConversations({ data: { query } })
+      if (!isAuthenticated) {
+        return []
       }
-
-      // Anonymous: search local
-      const conversations = await searchLocalConversations(query)
-      return Promise.all(
-        conversations.map(async (c) => ({
-          id: c.id,
-          title: c.title,
-          updated_at: c.updated_at,
-          preview: (await getConversationPreview(c.id)) ?? undefined,
-        }))
-      )
+      return searchConversations({ data: { query } })
     },
-    enabled: query.trim().length > 0,
+    enabled: isAuthenticated && query.trim().length > 0,
   })
 }
 
@@ -119,45 +78,50 @@ export function useConversation(id: string | null) {
   return useQuery({
     queryKey: queryKeys.conversations.detail(id ?? 'none'),
     queryFn: async (): Promise<ConversationWithMessages | null> => {
-      if (!id) return null
+      if (!id || !isAuthenticated) return null
 
-      if (isAuthenticated) {
-        const result = await getConversation({ data: { id } })
-        return result as ConversationWithMessages | null
-      }
-
-      // Anonymous: get from local
-      const result = await getLocalConversationWithMessages(id)
-      if (!result) return null
-
-      const mappedMessages = result.messages.map((m) => ({
-        id: m.id,
-        conversation_id: m.conversation_id,
-        parent_id: m.parent_id,
-        client_message_id: m.client_message_id ?? null,
-        role: m.role,
-        content: m.content,
-        visible_content: m.visible_content ?? m.content,
-        execution_trace: m.execution_trace ?? [],
-        response_contract_version: m.response_contract_version ?? 1,
-        attached_data: m.attached_data,
-        created_at: m.created_at,
-        sequence_number: m.sequence_number,
-        turn_index: m.turn_index,
-      }))
-
-      return {
-        id: result.conversation.id,
-        user_id: null,
-        title: result.conversation.title,
-        created_at: result.conversation.created_at,
-        updated_at: result.conversation.updated_at,
-        deleted_at: null,
-        metadata: {},
-        messages: sortMessagesByTurnOrderAsc(mappedMessages),
-      }
+      const result = await getConversation({ data: { id } })
+      return result as ConversationWithMessages | null
     },
-    enabled: !!id,
+    enabled: !!id && isAuthenticated,
+  })
+}
+
+export function useUpdateMessageAttachedData() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      messageId,
+      attachedData,
+    }: {
+      messageId: string
+      attachedData: MessageAttachedData
+    }) => {
+      return updateMessageAttachedData({ data: { messageId, attachedData } })
+    },
+    onSuccess: (updatedMessage) => {
+      queryClient.setQueryData(
+        queryKeys.conversations.detail(updatedMessage.conversation_id),
+        (existing: ConversationWithMessages | null | undefined) => {
+          if (!existing) return existing ?? null
+
+          const nextMessages = existing.messages.map((message) =>
+            message.id === updatedMessage.id
+              ? {
+                  ...message,
+                  attached_data: updatedMessage.attached_data ?? {},
+                }
+              : message
+          )
+
+          return {
+            ...existing,
+            messages: sortMessagesByTurnOrderAsc(nextMessages),
+          }
+        }
+      )
+    },
   })
 }
 
@@ -171,12 +135,10 @@ export function useCreateConversation() {
 
   return useMutation({
     mutationFn: async (title?: string) => {
-      if (isAuthenticated) {
-        return createConversation({ data: { title } })
+      if (!isAuthenticated) {
+        throw new Error('Not authenticated')
       }
-
-      // Anonymous: create locally
-      return createLocalConversation(title)
+      return createConversation({ data: { title } })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all })
@@ -194,13 +156,10 @@ export function useUpdateConversation() {
 
   return useMutation({
     mutationFn: async ({ id, title }: { id: string; title: string }) => {
-      if (isAuthenticated) {
-        return updateConversation({ data: { id, updates: { title } } })
+      if (!isAuthenticated) {
+        throw new Error('Not authenticated')
       }
-
-      // Anonymous: update locally
-      await updateLocalConversation(id, { title })
-      return { id, title }
+      return updateConversation({ data: { id, updates: { title } } })
     },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all })
@@ -219,13 +178,10 @@ export function useDeleteConversation() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      if (isAuthenticated) {
-        return deleteConversation({ data: { id } })
+      if (!isAuthenticated) {
+        throw new Error('Not authenticated')
       }
-
-      // Anonymous: delete locally
-      await deleteLocalConversation(id)
-      return { success: true }
+      return deleteConversation({ data: { id } })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all })
@@ -263,32 +219,21 @@ export function useAddMessage() {
       responseContractVersion?: number
       attachedData?: MessageAttachedData
     }) => {
-      if (isAuthenticated) {
-        return addMessage({
-          data: {
-            conversationId,
-            parentMessageId,
-            role,
-            clientMessageId,
-            content,
-            visibleContent,
-            executionTrace,
-            responseContractVersion,
-            attachedData,
-          },
-        })
+      if (!isAuthenticated) {
+        throw new Error('Not authenticated')
       }
-
-      // Anonymous: add locally
-      return addLocalMessage(conversationId, {
-        role,
-        parent_message_id: parentMessageId,
-        client_message_id: clientMessageId,
-        content,
-        visible_content: visibleContent,
-        execution_trace: executionTrace,
-        response_contract_version: responseContractVersion,
-        attached_data: attachedData,
+      return addMessage({
+        data: {
+          conversationId,
+          parentMessageId,
+          role,
+          clientMessageId,
+          content,
+          visibleContent,
+          executionTrace,
+          responseContractVersion,
+          attachedData,
+        },
       })
     },
     onSuccess: (savedMessage, { conversationId }) => {
@@ -334,7 +279,7 @@ export function useAddMessage() {
 
 /**
  * Generate a title for a conversation based on the first message.
- * Only works for authenticated users (anonymous conversations get local title generation).
+ * Anonymous chat is ephemeral, so only authenticated conversations persist titles.
  */
 export function useGenerateTitle() {
   const { user } = useAuthContext()
@@ -349,13 +294,10 @@ export function useGenerateTitle() {
       conversationId: string
       firstMessage: string
     }) => {
-      if (isAuthenticated) {
-        return generateAndSaveTitle({ data: { conversationId, firstMessage } })
+      if (!isAuthenticated) {
+        return { title: getFallbackConversationTitle(firstMessage) }
       }
-
-      const title = getFallbackConversationTitle(firstMessage)
-      await updateLocalConversation(conversationId, { title })
-      return { title }
+      return generateAndSaveTitle({ data: { conversationId, firstMessage } })
     },
     onSuccess: (_, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(conversationId) })

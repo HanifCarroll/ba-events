@@ -6,7 +6,6 @@ import {
   Menu,
   X,
   MessageSquarePlus,
-  History,
   Bookmark,
   Settings,
   LogOut,
@@ -106,7 +105,6 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   const mainNavItems: NavItem[] = [
     { to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat, exact: true },
-    { to: '/chats', label: m.nav_chats(), icon: History },
     { to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
     { to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
     { label: 'Feedback', icon: MessageCircle, action: handleFeedback },

@@ -228,7 +228,7 @@ The Claude agent has access to:
 
 ### Public
 - `/` - Home/chat page
-- `/login`, `/register` - Authentication
+- `/login`, `/auth/callback` - Magic-link authentication
 - `/saved` - Saved events (authenticated)
 - `/profile` - User profile
 

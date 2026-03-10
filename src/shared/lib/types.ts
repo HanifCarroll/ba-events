@@ -254,7 +254,7 @@ export interface EventFilters {
 // Content block types for Claude API messages
 export type TextBlock = { type: 'text'; text: string }
 
-// Tool input types for the agent - corresponds to the tool definitions in agent.ts
+// Tool input types for the concierge chat tools exposed through /api/chat
 export interface SearchEventsToolInput {
   /** Natural language search query for semantic matching */
   query?: string
@@ -457,6 +457,7 @@ export interface ChatMessage {
   events?: EventWithVenue[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
+  plan?: ConfirmedPlanData
   timestamp: Date
   isStreaming?: boolean
 }
@@ -536,6 +537,12 @@ export interface SavedEvent {
   user_id: string
   event_id: string
   created_at: string
+  planned_at: string | null
+}
+
+export interface SavedEventWithDetails extends EventWithVenue {
+  saved_at: string
+  planned_at: string | null
 }
 
 // User preferences for personalization
@@ -720,6 +727,13 @@ export interface ConversationContext {
   selectedEvent?: EventWithVenue
 }
 
+export interface ConfirmedPlanData {
+  event: EventWithVenue
+  plannedAt: string | null
+  persisted: boolean
+  requiresLogin: boolean
+}
+
 /**
  * Extended ChatMessage for concierge UX.
  * Adds support for recommendations and decision state.
@@ -771,6 +785,7 @@ export interface MessageAttachedData {
   events?: EventWithVenue[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
+  plan?: ConfirmedPlanData
 }
 
 /** Database record for a conversation */
@@ -840,25 +855,4 @@ export interface ConversationListItem {
 /** Conversation with its messages for display */
 export interface ConversationWithMessages extends Conversation {
   messages: Message[]
-}
-
-/** For migrating anonymous conversations to authenticated */
-export interface MigrationConversation {
-  local_id: string
-  title: string
-  created_at: string
-  updated_at: string
-  messages: Array<{
-    client_message_id?: string | null
-    parent_id?: string | null
-    role: MessageRole
-    content: string
-    visible_content?: string
-    execution_trace?: MessageExecutionStep[]
-    response_contract_version?: number
-    attached_data?: MessageAttachedData
-    created_at: string
-    sequence_number: number
-    turn_index?: number
-  }>
 }

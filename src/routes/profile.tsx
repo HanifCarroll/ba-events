@@ -2,12 +2,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { User, Mail, Lock, Trash2, ArrowLeft, Check, AlertTriangle, Loader2, Sparkles, Music, Palette, Utensils, Users, Dumbbell, PartyPopper, MapPin } from 'lucide-react'
+import { User, Mail, Trash2, ArrowLeft, Check, AlertTriangle, Loader2, Sparkles, Music, Palette, Utensils, Users, Dumbbell, PartyPopper, MapPin } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import {
   useUpdateDisplayName,
-  useUpdatePassword,
   useDeleteAccount,
 } from '@/features/auth/hooks/useProfileMutations'
 import { usePreferences, useUpdatePreferences } from '@/features/auth/hooks/usePreferences'
@@ -37,9 +36,7 @@ import {
 } from '@/shared/ui/alert-dialog'
 import {
   displayNameSchema,
-  changePasswordSchema,
   type DisplayNameInput,
-  type ChangePasswordInput,
 } from '@/shared/lib/schemas'
 import { CATEGORIES, type Category, type Neighborhood } from '@/shared/lib/types'
 import { cn } from '@/shared/lib/utils'
@@ -180,17 +177,6 @@ function ProfilePage() {
 
               <PreferencesForm />
             </section>
-
-            {/* Security Section */}
-            <section className="bg-card/40 backdrop-blur-sm border border-border/50 rounded-xl p-6">
-              <h2 className="font-display text-lg font-medium mb-4 flex items-center gap-2">
-                <Lock className="h-4 w-4 text-primary/60" />
-                Security
-              </h2>
-
-              <PasswordForm />
-            </section>
-
             {/* Danger Zone */}
             <section className="bg-destructive/5 border border-destructive/20 rounded-xl p-6">
               <h2 className="font-display text-lg font-medium mb-2 flex items-center gap-2 text-destructive">
@@ -303,106 +289,6 @@ function DisplayNameForm({ defaultDisplayName }: { defaultDisplayName: string })
             </FormItem>
           )}
         />
-      </form>
-    </Form>
-  )
-}
-
-// =============================================================================
-// Password Form
-// =============================================================================
-
-function PasswordForm() {
-  const [showSuccess, setShowSuccess] = useState(false)
-  const mutation = useUpdatePassword()
-
-  const form = useForm<ChangePasswordInput>({
-    resolver: zodResolver(changePasswordSchema),
-    defaultValues: {
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    },
-  })
-
-  const onSubmit = async (data: ChangePasswordInput) => {
-    try {
-      await mutation.mutateAsync(data.newPassword)
-      setShowSuccess(true)
-      form.reset()
-      setTimeout(() => setShowSuccess(false), 3000)
-    } catch {
-      // Error is handled by mutation state
-    }
-  }
-
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="newPassword"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-sm text-muted-foreground">
-                New Password
-              </FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  type="password"
-                  placeholder="Enter new password"
-                  className="bg-background/50 border-border/50 focus:border-primary/50"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="confirmPassword"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-sm text-muted-foreground">
-                Confirm New Password
-              </FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  type="password"
-                  placeholder="Confirm new password"
-                  className="bg-background/50 border-border/50 focus:border-primary/50"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {mutation.isError && (
-          <p className="text-sm text-destructive">
-            {mutation.error instanceof Error
-              ? mutation.error.message
-              : 'Failed to update password'}
-          </p>
-        )}
-        {showSuccess && (
-          <p className="text-sm text-primary">Password updated!</p>
-        )}
-
-        <Button
-          type="submit"
-          disabled={mutation.isPending}
-          variant="outline"
-        >
-          {mutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            'Update Password'
-          )}
-        </Button>
       </form>
     </Form>
   )

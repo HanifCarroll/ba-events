@@ -4,8 +4,8 @@ import {
   getOutboxItemByClientMessageId,
   listDueOutboxItems,
   updateOutboxItem,
-  type LocalOutboxItem,
-} from '@/shared/lib/db/local-conversations'
+} from '@/shared/lib/db/local-outbox'
+import type { LocalOutboxItem } from '@/shared/lib/db/local-outbox'
 import type { MessageAttachedData, MessageExecutionStep, MessageRole } from '@/shared/lib/types'
 
 const BASE_RETRY_DELAY_MS = 2_000

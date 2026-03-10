@@ -7,9 +7,17 @@ interface EventListProps {
   commentary?: string
   /** Tips for hero card (single recommendation mode) */
   tips?: string[]
+  onConfirmPlan?: (event: EventWithVenue) => void
+  isConfirmingPlan?: boolean
 }
 
-export function EventList({ events, commentary, tips }: EventListProps) {
+export function EventList({
+  events,
+  commentary,
+  tips,
+  onConfirmPlan,
+  isConfirmingPlan = false,
+}: EventListProps) {
   const isSingleRecommendation = events.length === 1
 
   // Single recommendation = hero card with commentary/tips
@@ -22,6 +30,8 @@ export function EventList({ events, commentary, tips }: EventListProps) {
         variant="hero"
         commentary={commentary}
         tips={tips}
+        onConfirmPlan={onConfirmPlan}
+        isConfirmingPlan={isConfirmingPlan}
       />
     )
   }

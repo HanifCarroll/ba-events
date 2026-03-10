@@ -33,12 +33,33 @@ interface EventCardProps {
   commentary?: string
   /** Practical tips like "get there around 10pm" (hero variant) */
   tips?: string[]
+  onConfirmPlan?: (event: EventWithVenue) => void
+  isConfirmingPlan?: boolean
 }
 
-export function EventCard({ event, position, source = 'chat', variant = 'default', commentary, tips }: EventCardProps) {
+export function EventCard({
+  event,
+  position,
+  source = 'chat',
+  variant = 'default',
+  commentary,
+  tips,
+  onConfirmPlan,
+  isConfirmingPlan = false,
+}: EventCardProps) {
   // Hero variant renders a completely different layout
   if (variant === 'hero') {
-    return <HeroEventCard event={event} position={position} source={source} commentary={commentary} tips={tips} />
+    return (
+      <HeroEventCard
+        event={event}
+        position={position}
+        source={source}
+        commentary={commentary}
+        tips={tips}
+        onConfirmPlan={onConfirmPlan}
+        isConfirmingPlan={isConfirmingPlan}
+      />
+    )
   }
 
   return <DefaultEventCard event={event} position={position} source={source} />
@@ -54,9 +75,19 @@ interface HeroEventCardProps {
   source: 'chat' | 'saved_page'
   commentary?: string
   tips?: string[]
+  onConfirmPlan?: (event: EventWithVenue) => void
+  isConfirmingPlan: boolean
 }
 
-function HeroEventCard({ event, position, source, commentary, tips }: HeroEventCardProps) {
+function HeroEventCard({
+  event,
+  position,
+  source,
+  commentary,
+  tips,
+  onConfirmPlan,
+  isConfirmingPlan,
+}: HeroEventCardProps) {
   const locale = getLocale() as 'en' | 'es'
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
@@ -227,7 +258,17 @@ function HeroEventCard({ event, position, source, commentary, tips }: HeroEventC
           </div>
 
           {/* CTA buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {onConfirmPlan ? (
+              <button
+                type="button"
+                onClick={() => onConfirmPlan(event)}
+                disabled={isConfirmingPlan}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isConfirmingPlan ? 'Saving plan...' : 'Make this my plan'}
+              </button>
+            ) : null}
             <Link
               to="/event/$id"
               params={{ id: event.id }}
@@ -240,7 +281,7 @@ function HeroEventCard({ event, position, source, commentary, tips }: HeroEventC
                 href={externalEventUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group/btn flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/25 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 hover:-translate-y-0.5"
+                className="group/btn flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold border border-border/50 bg-background/60 text-foreground hover:border-primary/30 transition-all duration-300 hover:-translate-y-0.5"
                 onClick={() => track('concierge:ticket_clicked', { event_id: event.id, event_name: event.name })}
               >
                 {sourceCtaLabel}

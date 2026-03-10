@@ -16,17 +16,14 @@ export {
   generateResponse,
   formatPrice,
   formatEventTime,
-  getFavorites,
-  addFavorite,
-  removeFavorite,
-  isFavorite,
-  toggleFavorite,
 } from './lib/messages'
 
 // Saved events
 export {
   getSavedEvents,
   getSavedEventIds,
+  getSavedEventState,
+  confirmPlan,
   saveEvent,
   unsaveEvent,
   isEventSaved,

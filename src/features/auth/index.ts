@@ -6,8 +6,6 @@
 export {
   getSupabaseBrowserClient,
   resetSupabaseBrowserClient,
-  signUp,
-  signIn,
   signInWithMagicLink,
   signOut,
   getSession,
@@ -15,7 +13,6 @@ export {
   exchangeCodeForSession,
   useAuth,
   updateDisplayName,
-  updatePassword,
 } from './api/client'
 
 // Rate limiting
@@ -30,8 +27,6 @@ export {
 
 // Server-side auth actions
 export {
-  signInAction,
-  signUpAction,
   signOutAction,
   exchangeCodeAction,
   deleteAccountAction,
@@ -48,4 +43,4 @@ export {
 
 // Hooks
 export { useAuthContext } from './hooks/useAuthContext'
-export { useUpdateDisplayName, useUpdatePassword, useDeleteAccount } from './hooks/useProfileMutations'
+export { useUpdateDisplayName, useDeleteAccount } from './hooks/useProfileMutations'

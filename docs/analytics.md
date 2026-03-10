@@ -242,13 +242,9 @@ const sendMessage = async (query: string) => {
 
 | Event | Properties | Description |
 |-------|------------|-------------|
-| `auth:signup_started` | `method` (password/magic_link) | Signup form opened |
-| `auth:signup_completed` | `method` | Account created |
-| `auth:login_started` | `method` | Login form opened |
-| `auth:login_completed` | `method` | Successfully logged in |
-| `auth:login_failed` | `method`, `error_type` | Login failed |
+| `auth:login_completed` | `method` (`magic_link`) | Magic-link callback completed and session established |
+| `auth:login_failed` | `method`, `error` | Magic-link request or callback failed |
 | `auth:logout` | - | User logged out |
-| `auth:password_reset_requested` | - | Password reset initiated |
 
 ### Admin Events
 

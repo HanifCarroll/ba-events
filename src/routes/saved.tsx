@@ -6,8 +6,9 @@ import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import { requireAuth } from '@/features/auth/api/session'
 import { getSavedEvents } from '@/features/chat'
 import { EventCard } from '@/routes/-components/events/EventCard'
+import { YourPlanCard } from '@/routes/-components/chat/YourPlanCard'
 import { Button } from '@/shared/ui/button'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { SavedEventWithDetails } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/saved')({
@@ -19,7 +20,7 @@ export const Route = createFileRoute('/saved')({
 
 function SavedEventsPage() {
   const { user } = useAuthContext()
-  const [events, setEvents] = useState<EventWithVenue[]>([])
+  const [events, setEvents] = useState<SavedEventWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'upcoming' | 'past'>('upcoming')
 
@@ -49,18 +50,34 @@ function SavedEventsPage() {
   }, [user])
 
   const now = new Date()
-  const filteredEvents = useMemo(() => {
-    return events.filter((event) => {
-      const eventDate = new Date(event.starts_at)
-      if (filter === 'upcoming') {
-        return eventDate >= now
-      }
-      return eventDate < now
-    })
-  }, [events, filter, now])
+  const upcomingEvents = useMemo(
+    () => events.filter((event) => new Date(event.starts_at) >= now),
+    [events, now]
+  )
+  const pastEvents = useMemo(
+    () => events.filter((event) => new Date(event.starts_at) < now),
+    [events, now]
+  )
+  const plannedUpcoming = useMemo(
+    () => upcomingEvents.filter((event) => !!event.planned_at),
+    [upcomingEvents]
+  )
+  const savedUpcoming = useMemo(
+    () => upcomingEvents.filter((event) => !event.planned_at),
+    [upcomingEvents]
+  )
+  const plannedPast = useMemo(
+    () => pastEvents.filter((event) => !!event.planned_at),
+    [pastEvents]
+  )
+  const savedPast = useMemo(
+    () => pastEvents.filter((event) => !event.planned_at),
+    [pastEvents]
+  )
 
-  const upcomingCount = events.filter((e) => new Date(e.starts_at) >= now).length
-  const pastCount = events.filter((e) => new Date(e.starts_at) < now).length
+  const filteredCount = filter === 'upcoming' ? upcomingEvents.length : pastEvents.length
+  const upcomingCount = upcomingEvents.length
+  const pastCount = pastEvents.length
 
   // Guard against edge case where context hasn't synced yet
   if (!user) {
@@ -170,7 +187,7 @@ function SavedEventsPage() {
             </div>
           ) : events.length === 0 ? (
             <EmptyState />
-          ) : filteredEvents.length === 0 ? (
+          ) : filteredCount === 0 ? (
             <div className="text-center py-16">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted/30 mb-4">
                 {filter === 'upcoming' ? (
@@ -196,10 +213,76 @@ function SavedEventsPage() {
               )}
             </div>
           ) : (
-            <div className="space-y-3 animate-fade-in-up">
-              {filteredEvents.map((event, index) => (
-                <EventCard key={event.id} event={event} position={index} source="saved_page" />
-              ))}
+            <div className="space-y-8 animate-fade-in-up">
+              {filter === 'upcoming' ? (
+                <>
+                  {plannedUpcoming.length > 0 && (
+                    <section className="space-y-4">
+                      <div>
+                        <h2 className="font-display text-xl font-semibold tracking-tight">Your plans</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Confirmed events ready for calendar, directions, and sharing.
+                        </p>
+                      </div>
+                      <div className="space-y-4">
+                        {plannedUpcoming.map((event) => (
+                          <YourPlanCard key={event.id} event={event} />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {savedUpcoming.length > 0 && (
+                    <section className="space-y-4">
+                      <div>
+                        <h2 className="font-display text-xl font-semibold tracking-tight">Saved for later</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Events you bookmarked but have not committed to yet.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        {savedUpcoming.map((event, index) => (
+                          <EventCard key={event.id} event={event} position={index} source="saved_page" />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
+              ) : (
+                <>
+                  {plannedPast.length > 0 && (
+                    <section className="space-y-4">
+                      <div>
+                        <h2 className="font-display text-xl font-semibold tracking-tight">Past plans</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Previously confirmed plans from your saved history.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        {plannedPast.map((event, index) => (
+                          <EventCard key={event.id} event={event} position={index} source="saved_page" />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {savedPast.length > 0 && (
+                    <section className="space-y-4">
+                      <div>
+                        <h2 className="font-display text-xl font-semibold tracking-tight">Past saved events</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Older bookmarks that were not confirmed as plans.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        {savedPast.map((event, index) => (
+                          <EventCard key={event.id} event={event} position={index} source="saved_page" />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

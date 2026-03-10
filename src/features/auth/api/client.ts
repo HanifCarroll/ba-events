@@ -76,38 +76,6 @@ async function withConnectionRetry<T>(
   return attempt()
 }
 
-// Sign up with email and password
-export async function signUp(email: string, password: string) {
-  return withConnectionRetry(async (client) => {
-    const { data, error } = await client.auth.signUp({
-      email,
-      password,
-    })
-
-    if (error) {
-      throw error
-    }
-
-    return data
-  })
-}
-
-// Sign in with email and password
-export async function signIn(email: string, password: string) {
-  return withConnectionRetry(async (client) => {
-    const { data, error } = await client.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (error) {
-      throw error
-    }
-
-    return data
-  })
-}
-
 // Sign in with magic link (sends email)
 export async function signInWithMagicLink(email: string) {
   const client = getSupabaseBrowserClient()
@@ -277,19 +245,6 @@ export async function updateDisplayName(name: string): Promise<void> {
   const { error } = await (client.from('profiles') as any)
     .update({ display_name: name, updated_at: new Date().toISOString() })
     .eq('id', user.id)
-
-  if (error) {
-    throw error
-  }
-}
-
-// Update password (requires current password verification via re-auth)
-export async function updatePassword(newPassword: string): Promise<void> {
-  const client = getSupabaseBrowserClient()
-
-  const { error } = await client.auth.updateUser({
-    password: newPassword,
-  })
 
   if (error) {
     throw error

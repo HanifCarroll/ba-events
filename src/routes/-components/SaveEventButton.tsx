@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Heart } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
-import { saveEvent, unsaveEvent } from '@/features/chat'
+import { getSavedEventState, saveEvent, unsaveEvent } from '@/features/chat'
 import { track } from '@/lib/analytics'
 import { Button } from '@/shared/ui/button'
 import {
@@ -21,7 +21,7 @@ interface SaveEventButtonProps {
   size?: 'sm' | 'md'
   className?: string
   /** Source context for analytics */
-  source?: 'chat' | 'saved_page'
+  source?: 'chat' | 'saved_page' | 'event_detail'
 }
 
 export function SaveEventButton({
@@ -36,6 +36,29 @@ export function SaveEventButton({
   const { user, loading } = useAuthContext()
   const [isSaved, setIsSaved] = useState(initialSaved)
   const [isUpdating, setIsUpdating] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!user) {
+      setIsSaved(false)
+      return
+    }
+
+    void getSavedEventState(eventId)
+      .then((state) => {
+        if (!cancelled) {
+          setIsSaved(state.isSaved)
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load saved state:', error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [eventId, user])
 
   const handleToggle = async () => {
     if (!user) return

@@ -213,39 +213,3 @@ export function formatEventTime(startsAt: string, endsAt: string | null): string
 
   return result
 }
-
-// Local storage helpers for favorites
-const FAVORITES_KEY = 'ba-events-favorites'
-
-export function getFavorites(): string[] {
-  if (typeof window === 'undefined') return []
-  const stored = localStorage.getItem(FAVORITES_KEY)
-  return stored ? JSON.parse(stored) : []
-}
-
-export function addFavorite(eventId: string): void {
-  const favorites = getFavorites()
-  if (!favorites.includes(eventId)) {
-    favorites.push(eventId)
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites))
-  }
-}
-
-export function removeFavorite(eventId: string): void {
-  const favorites = getFavorites().filter(id => id !== eventId)
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites))
-}
-
-export function isFavorite(eventId: string): boolean {
-  return getFavorites().includes(eventId)
-}
-
-export function toggleFavorite(eventId: string): boolean {
-  if (isFavorite(eventId)) {
-    removeFavorite(eventId)
-    return false
-  } else {
-    addFavorite(eventId)
-    return true
-  }
-}

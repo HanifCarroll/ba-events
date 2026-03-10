@@ -7,65 +7,6 @@ import type { Locale } from '@/shared/lib/types'
 // ============================================
 
 /**
- * Sign in with email and password (server-side).
- * Sets session cookies and returns user info for redirect decision.
- */
-export const signInAction = createServerFn({ method: 'POST' })
-  .inputValidator((data: { email: string; password: string }) => data)
-  .handler(async ({ data }) => {
-    const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
-    const supabase = createSupabaseServerClient()
-
-    const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    })
-
-    if (error) {
-      throw error
-    }
-
-    // Fetch profile to determine redirect destination
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', authData.user.id)
-      .single()
-
-    return {
-      user: authData.user,
-      isAdmin: profile?.role === 'admin',
-    }
-  })
-
-/**
- * Sign up with email and password (server-side).
- * Sets session cookies if email confirmation is disabled.
- */
-export const signUpAction = createServerFn({ method: 'POST' })
-  .inputValidator((data: { email: string; password: string }) => data)
-  .handler(async ({ data }) => {
-    const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
-    const supabase = createSupabaseServerClient()
-
-    const { data: authData, error } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
-    })
-
-    if (error) {
-      throw error
-    }
-
-    return {
-      user: authData.user,
-      session: authData.session,
-      // If session is null, email confirmation is required
-      needsEmailConfirmation: !authData.session,
-    }
-  })
-
-/**
  * Sign out (server-side).
  * Clears session cookies and redirects to home.
  */

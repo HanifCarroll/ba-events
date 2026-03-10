@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { Share2, Heart, Ticket, MapPin, Check } from 'lucide-react'
+import { Share2, Ticket, MapPin, Check } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/shared/ui/tooltip'
-import { toggleFavorite, isFavorite } from '@/features/chat'
 import { track } from '@/lib/analytics'
 import type { EventWithVenue } from '@/shared/lib/types'
 
@@ -16,7 +15,6 @@ interface EventActionsProps {
 }
 
 export function EventActions({ event, shareUrl }: EventActionsProps) {
-  const [saved, setSaved] = useState(() => isFavorite(event.id))
   const [copied, setCopied] = useState(false)
 
   const handleShare = async () => {
@@ -43,11 +41,6 @@ export function EventActions({ event, shareUrl }: EventActionsProps) {
     await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }
-
-  const handleSave = () => {
-    const nowSaved = toggleFavorite(event.id)
-    setSaved(nowSaved)
   }
 
   const handleTickets = () => {
@@ -91,25 +84,6 @@ export function EventActions({ event, shareUrl }: EventActionsProps) {
           </TooltipTrigger>
           <TooltipContent className="bg-card border border-border/50 text-foreground">
             <p className="text-xs">{copied ? 'Copied!' : 'Share'}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              className={actionButtonClass}
-              onClick={handleSave}
-            >
-              <Heart
-                className={`h-4 w-4 transition-colors duration-200 ${
-                  saved ? 'fill-accent text-accent' : ''
-                }`}
-              />
-              <span className="sr-only">Save</span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="bg-card border border-border/50 text-foreground">
-            <p className="text-xs">{saved ? 'Saved!' : 'Save'}</p>
           </TooltipContent>
         </Tooltip>
 

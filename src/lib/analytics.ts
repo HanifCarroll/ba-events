@@ -22,8 +22,6 @@ export type EventEngagementEvent =
 export type AuthEvent =
   | 'auth:login_completed'
   | 'auth:login_failed'
-  | 'auth:signup_completed'
-  | 'auth:signup_failed'
   | 'auth:logout'
 
 // Admin events

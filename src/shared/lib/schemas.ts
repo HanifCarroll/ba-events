@@ -25,30 +25,6 @@ const urlSchema = z
   .or(z.literal(''))
   .transform((val) => (val === '' ? null : val))
 
-// =============================================================================
-// Auth schemas
-// =============================================================================
-
-export const loginSchema = z.object({
-  email: z.string().min(1, 'Email is required').email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
-})
-
-export type LoginInput = z.infer<typeof loginSchema>
-
-export const registerSchema = z
-  .object({
-    email: z.string().min(1, 'Email is required').email('Invalid email address'),
-    password: z.string().min(6, 'Password must be at least 6 characters'),
-    confirmPassword: z.string().min(1, 'Please confirm your password'),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ['confirmPassword'],
-  })
-
-export type RegisterInput = z.infer<typeof registerSchema>
-
 export const forgotPasswordSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Invalid email address'),
 })
@@ -82,19 +58,6 @@ export const changeEmailSchema = z.object({
 })
 
 export type ChangeEmailInput = z.infer<typeof changeEmailSchema>
-
-export const changePasswordSchema = z
-  .object({
-    currentPassword: z.string().min(1, 'Current password is required'),
-    newPassword: z.string().min(6, 'Password must be at least 6 characters'),
-    confirmPassword: z.string().min(1, 'Please confirm your password'),
-  })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ['confirmPassword'],
-  })
-
-export type ChangePasswordInput = z.infer<typeof changePasswordSchema>
 
 // =============================================================================
 // Event schemas

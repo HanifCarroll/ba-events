@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { LocalOutboxItem } from '@/shared/lib/db/local-conversations'
+import type { LocalOutboxItem } from '@/shared/lib/db/local-outbox'
 import {
   calculateRetryDelayMs,
   flushMessagePersistenceOutbox,
@@ -12,9 +12,9 @@ import {
   getOutboxItemByClientMessageId,
   listDueOutboxItems,
   updateOutboxItem,
-} from '@/shared/lib/db/local-conversations'
+} from '@/shared/lib/db/local-outbox'
 
-vi.mock('@/shared/lib/db/local-conversations', () => ({
+vi.mock('@/shared/lib/db/local-outbox', () => ({
   addOutboxItem: vi.fn(),
   deleteOutboxItem: vi.fn(),
   getOutboxItemByClientMessageId: vi.fn(),

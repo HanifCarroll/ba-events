@@ -1,27 +1,37 @@
 import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { cn } from '@/shared/lib/utils'
-import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
+import type { ChatMessage as ChatMessageType, EventWithVenue } from '@/shared/lib/types'
 import { EventList } from './../events/EventList'
 import { RefinementSuggestions } from './RefinementSuggestions'
 import { DirectionsCard } from './DirectionsCard'
+import { YourPlanCard } from './YourPlanCard'
 
 interface ChatMessageProps {
   message: ChatMessageType
   onSuggestionSelect?: (prompt: string) => void
   suggestionsDisabled?: boolean
+  onConfirmPlan?: (assistantMessageId: string, event: EventWithVenue) => void
+  isConfirmingPlan?: boolean
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, onSuggestionSelect, suggestionsDisabled }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({
+  message,
+  onSuggestionSelect,
+  suggestionsDisabled,
+  onConfirmPlan,
+  isConfirmingPlan = false,
+}: ChatMessageProps) {
   const isUser = message.role === 'user'
   const hasContent = message.content.trim().length > 0
   const hasEvents = message.events && message.events.length > 0
   const hasSuggestions = message.suggestions && message.suggestions.length > 0
   const hasDirections = !!message.directions
+  const hasPlan = !!message.plan
 
   // Don't render empty assistant messages that are still streaming (waiting for tool results)
   // The loading indicator in MessageList handles this state
-  if (!isUser && !hasContent && !hasEvents && !hasDirections && message.isStreaming) {
+  if (!isUser && !hasContent && !hasEvents && !hasDirections && !hasPlan && message.isStreaming) {
     return null
   }
 
@@ -59,9 +69,27 @@ export const ChatMessage = memo(function ChatMessage({ message, onSuggestionSele
         )}
 
         {/* Event results for assistant messages */}
-        {!isUser && hasEvents && (
+        {!isUser && hasPlan && (
           <div className={hasContent ? 'mt-4' : ''}>
-            <EventList events={message.events!} />
+            <YourPlanCard
+              event={message.plan!.event}
+              persisted={message.plan!.persisted}
+              requiresLogin={message.plan!.requiresLogin}
+            />
+          </div>
+        )}
+
+        {!isUser && hasEvents && !hasPlan && (
+          <div className={hasContent ? 'mt-4' : ''}>
+            <EventList
+              events={message.events!}
+              onConfirmPlan={
+                onConfirmPlan
+                  ? (event) => onConfirmPlan(message.id, event)
+                  : undefined
+              }
+              isConfirmingPlan={isConfirmingPlan}
+            />
           </div>
         )}
 
@@ -82,7 +110,7 @@ export const ChatMessage = memo(function ChatMessage({ message, onSuggestionSele
         )}
 
         {/* Timestamp - only show when there's content or message is complete */}
-        {(hasContent || hasEvents || hasDirections || !message.isStreaming) && (
+        {(hasContent || hasEvents || hasDirections || hasPlan || !message.isStreaming) && (
           <p
             className={cn(
               'text-[10px] text-muted-foreground/60 mt-1.5 tracking-wide',
