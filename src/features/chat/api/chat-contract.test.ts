@@ -7,6 +7,7 @@ import {
   sanitizeFinalAssistantText,
   type StepResultLike,
 } from '@/routes/api/chat'
+import { serializeEventForChatPayload } from './tools/utils'
 
 describe('chat final-only contract helpers', () => {
   it('derives final visible text from the final step text', () => {
@@ -77,6 +78,47 @@ describe('chat final-only contract helpers', () => {
       toolName: 'search_events',
     })
     expect(trace[0].toolResults[0].success).toBe(false)
+  })
+
+  it('strips embeddings from execution trace tool outputs', () => {
+    const steps: StepResultLike[] = [
+      {
+        toolResults: [
+          {
+            toolName: 'search_events',
+            output: {
+              success: true,
+              events: [
+                {
+                  id: 'event_1',
+                  name: 'Club night',
+                  embedding: [0.1, 0.2, 0.3],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]
+
+    const trace = buildExecutionTrace(steps)
+    expect(JSON.stringify(trace)).not.toContain('embedding')
+    expect(trace[0].toolResults[0].output).toMatchObject({
+      success: true,
+      events: [{ id: 'event_1', name: 'Club night' }],
+    })
+  })
+
+  it('strips embeddings from chat event payloads', () => {
+    const event = {
+      id: 'event_1',
+      name: 'Club night',
+      embedding: [0.1, 0.2, 0.3],
+    }
+
+    const payload = serializeEventForChatPayload(event as never)
+    expect('embedding' in payload).toBe(false)
+    expect(payload).toMatchObject({ id: 'event_1', name: 'Club night' })
   })
 
   it('removes short meta narration when structured data exists', () => {

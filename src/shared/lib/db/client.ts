@@ -9,6 +9,7 @@ import type {
   EventUpdate,
   EventSearchResult,
   EventWithVenue,
+  ChatEventPayload,
   EventListItem,
   EventFilters,
   EventStatus,
@@ -164,6 +165,17 @@ const EVENT_ADMIN_COLUMNS = `
   venue_id, categories, price, is_free, image_url, link, ticket_url,
   source, external_id, status, location_hidden, enrichment_status, enrichment_error,
   enriched_at, created_at, updated_at,
+  venue_name, venue_neighborhood, venue_address
+`
+
+// Columns needed by chat tools and event cards. Excludes embedding so vectors do
+// not leave the database for chat display or message attachment paths.
+const CHAT_EVENT_COLUMNS = `
+  id, name, description_es, description_en, description_display_es, description_display_en,
+  description_summary_es, description_summary_en, starts_at, ends_at, is_all_day,
+  venue_id, categories, price, is_free, image_url, link, ticket_url,
+  source, external_id, status, location_hidden, location_tba, description_unavailable,
+  enrichment_status, enrichment_error, enriched_at, created_at, updated_at,
   venue_name, venue_neighborhood, venue_address
 `
 
@@ -483,8 +495,8 @@ export async function searchEventsBySimilarity(
 }
 
 // Filter-based search (for structured queries)
-export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50) {
-  let query = supabase.from('events_with_venues').select('*')
+export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50): Promise<ChatEventPayload[]> {
+  let query = supabase.from('events_with_venues').select(CHAT_EVENT_COLUMNS)
 
   // Default to scheduled events
   query = query.eq('status', filters.status || 'scheduled')
@@ -515,27 +527,27 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
 
   const { data, error } = await query
   if (error) throw error
-  return data as EventWithVenue[]
+  return data as ChatEventPayload[]
 }
 
 // Get events happening now or starting soon
-export async function getEventsHappeningNow() {
+export async function getEventsHappeningNow(): Promise<ChatEventPayload[]> {
   const now = new Date().toISOString()
 
   const { data, error } = await supabase
     .from('events_with_venues')
-    .select('*')
+    .select(CHAT_EVENT_COLUMNS)
     .eq('status', 'scheduled')
     .lte('starts_at', now)
     .or(`ends_at.is.null,ends_at.gte.${now}`)
     .order('starts_at', { ascending: true })
 
   if (error) throw error
-  return data as EventWithVenue[]
+  return data as ChatEventPayload[]
 }
 
 // Get tonight's events (6pm today to 6am tomorrow in BA time)
-export async function getTonightsEvents() {
+export async function getTonightsEvents(): Promise<ChatEventPayload[]> {
   const { toZonedTime, fromZonedTime } = await import('date-fns-tz')
   const { setHours, startOfDay, addDays, getHours } = await import('date-fns')
   const { BA_TIMEZONE } = await import('../constants')
@@ -561,14 +573,14 @@ export async function getTonightsEvents() {
 
   const { data, error } = await supabase
     .from('events_with_venues')
-    .select('*')
+    .select(CHAT_EVENT_COLUMNS)
     .eq('status', 'scheduled')
     .gte('starts_at', tonightUTC)
     .lte('starts_at', tomorrowMorningUTC)
     .order('starts_at', { ascending: true })
 
   if (error) throw error
-  return data as EventWithVenue[]
+  return data as ChatEventPayload[]
 }
 
 // Hybrid semantic + filter search (filtering done in PostgreSQL for performance)
@@ -576,7 +588,7 @@ export async function hybridEventSearch(
   query: string,
   filters: EventFilters,
   matchCount = 10
-): Promise<EventWithVenue[]> {
+): Promise<ChatEventPayload[]> {
   // Generate embedding for the search query
   const queryEmbedding = await generateEmbedding(query)
 
@@ -597,7 +609,7 @@ export async function hybridEventSearch(
   )
 
   if (error) throw error
-  return (data as EventWithVenue[]) || []
+  return (data as ChatEventPayload[]) || []
 }
 
 // ============================================================================

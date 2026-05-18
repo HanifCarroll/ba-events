@@ -26,6 +26,48 @@ const SOURCE_JOBS = [
   { id: 'scrape-luma', name: 'Luma' },
 ] as const
 
+function getUnknownMessage(value: unknown): string | null {
+  if (!value) return null
+  if (typeof value === 'string') return value
+  if (value instanceof Error) return value.message
+  if (typeof value !== 'object') return String(value)
+
+  const record = value as Record<string, unknown>
+  if (typeof record.message === 'string') return record.message
+  if (typeof record.error === 'string') return record.error
+  if (typeof record.reason === 'string') return record.reason
+
+  if (record.error && typeof record.error === 'object') {
+    const nestedMessage = getUnknownMessage(record.error)
+    if (nestedMessage) return nestedMessage
+  }
+
+  return null
+}
+
+function describeFailedRunResult(
+  runResult: PromiseSettledResult<{ status?: string; error?: unknown; reason?: unknown }>
+): string {
+  if (runResult.status === 'rejected') {
+    return getUnknownMessage(runResult.reason) ?? 'Rejected without error details'
+  }
+
+  const value = runResult.value
+  const status = value.status ?? 'UNKNOWN'
+  const detail = getUnknownMessage(value.error) ?? getUnknownMessage(value.reason)
+
+  return detail ? `${status}: ${detail}` : status
+}
+
+function buildScrapeRunErrorMessage(results: DailyScrapeResult['results']): string | null {
+  const failed = results.filter((result) => !result.success)
+  if (failed.length === 0) return null
+
+  return failed
+    .map((result) => `${result.source}: ${result.error ?? 'Unknown failure'}`)
+    .join('; ')
+}
+
 /**
  * Clean up existing events that match blocklist patterns.
  * This handles events imported before blocklist entries were added.
@@ -214,10 +256,7 @@ export const dailyScrape = schedules.task({
         totalVenuesCreated += output.venuesAutoCreated ?? 0
       } else {
         hasErrors = true
-        const error =
-          runResult.status === 'rejected'
-            ? runResult.reason?.message ?? 'Unknown error'
-            : runResult.value.status
+        const error = describeFailedRunResult(runResult)
 
         results.push({
           source: source.name,
@@ -263,11 +302,13 @@ export const dailyScrape = schedules.task({
 
     // Update scrape run with final stats
     const completedAt = new Date().toISOString()
+    const errorMessage = buildScrapeRunErrorMessage(results)
     const { error: updateError } = await client
       .from('scrape_runs')
       .update({
         status: hasErrors ? 'partial' : 'completed',
         completed_at: completedAt,
+        error_message: errorMessage,
         events_fetched: totalInserted + totalUpdated + totalSkipped,
         events_inserted: totalInserted,
         events_updated: totalUpdated,

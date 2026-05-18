@@ -12,7 +12,7 @@ import {
   pickDescriptionSummary,
   pickDisplayDescription,
 } from '@/features/events/lib/description-presentation'
-import type { EventWithVenue, Venue } from '@/shared/lib/types'
+import type { ChatEventPayload, EventWithVenue, Venue } from '@/shared/lib/types'
 
 // ============================================================================
 // DATE/TIME UTILITIES
@@ -79,6 +79,15 @@ export function formatEventsToolResult(events: EventWithVenue[]): string {
     count: events.length,
     events: events.slice(0, 10).map(formatEventForClaude),
   })
+}
+
+export function serializeEventForChatPayload(event: EventWithVenue): ChatEventPayload {
+  const { embedding: _embedding, ...payload } = event
+  return payload
+}
+
+export function serializeEventsForChatPayload(events: EventWithVenue[]): ChatEventPayload[] {
+  return events.map(serializeEventForChatPayload)
 }
 
 /**

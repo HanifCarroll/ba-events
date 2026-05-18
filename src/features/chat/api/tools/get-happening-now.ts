@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { defineTool } from './types'
 import { getEventsHappeningNow } from '@/shared/lib/db/client'
-import { formatEventsToolResult } from './utils'
+import { formatEventsToolResult, serializeEventsForChatPayload } from './utils'
 
 // ============================================================================
 // INPUT SCHEMA
@@ -53,7 +53,7 @@ export const getHappeningNowTool = defineTool({
 
       return {
         success: true,
-        events: limitedEvents,
+        events: serializeEventsForChatPayload(limitedEvents),
         formatted: formatEventsToolResult(limitedEvents),
         metadata: {
           resultCount: limitedEvents.length,

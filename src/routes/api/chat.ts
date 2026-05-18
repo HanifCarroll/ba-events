@@ -29,7 +29,7 @@ import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
 import { trackServer } from '@/lib/analytics.server'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type {
-  EventWithVenue,
+  ChatEventPayload,
   DirectionsData,
   ChatStreamStatusData,
   ChatStreamDataEnvelope,
@@ -68,7 +68,8 @@ function toJsonSafe(value: unknown): Json | null {
 
   try {
     return JSON.parse(
-      JSON.stringify(value, (_, inner) => {
+      JSON.stringify(value, (key, inner) => {
+        if (key === 'embedding') return undefined
         if (typeof inner === 'bigint') return Number(inner)
         return inner
       })
@@ -303,7 +304,7 @@ export const Route = createFileRoute('/api/chat' as any)({
         console.log(`[DEBUG] User context: authenticated=${userContext.isAuthenticated}, userId=${userContext.userId?.slice(0, 8) ?? 'none'}`)
 
         // Accumulate events across all tool calls
-        const allEvents = new Map<string, EventWithVenue>()
+        const allEvents = new Map<string, ChatEventPayload>()
         let lastSearchInput: SearchEventsInput | null = null
         let lastOriginalQuery = ''
         let directionsData: DirectionsData | null = null
@@ -351,7 +352,7 @@ export const Route = createFileRoute('/api/chat' as any)({
                   // Accumulate events from each step
                   for (const result of toolResults) {
                     const toolOutput = result.output as {
-                      events?: EventWithVenue[]
+                      events?: ChatEventPayload[]
                       metadata?: { toolInput?: SearchEventsInput }
                       // For get_directions tool
                       success?: boolean

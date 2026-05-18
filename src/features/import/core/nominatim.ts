@@ -167,6 +167,10 @@ export async function searchNominatim(
     })
 
     if (!response.ok) {
+      if (response.status === 429) {
+        console.warn(`[Nominatim] Rate limited for "${query}", skipping lookup`)
+        return null
+      }
       throw new Error(`Nominatim API error: ${response.status} ${response.statusText}`)
     }
 
@@ -187,6 +191,10 @@ export async function searchNominatim(
       console.warn(`[Nominatim] Timeout for "${query}", retrying... (${retries} retries left)`)
       await delay(2000)
       return searchNominatim(query, retries - 1)
+    }
+    if (errorMsg.includes('timeout') || errorMsg.includes('aborted')) {
+      console.warn(`[Nominatim] Timeout for "${query}", skipping lookup`)
+      return null
     }
     throw error
   }

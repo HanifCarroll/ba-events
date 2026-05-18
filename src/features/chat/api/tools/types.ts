@@ -7,7 +7,7 @@
 
 import { z } from 'zod'
 import type { UserToolContext } from '../user-tools'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { ChatEventPayload } from '@/shared/lib/types'
 
 // ============================================================================
 // CONTEXT TYPES
@@ -36,7 +36,7 @@ export interface ToolResult {
   /** Whether the tool execution succeeded */
   success: boolean
   /** Events to display in the UI (optional) */
-  events?: EventWithVenue[]
+  events?: ChatEventPayload[]
   /** JSON string sent to Claude as tool result */
   formatted: string
   /** Error message if success is false */

@@ -153,6 +153,10 @@ export interface EventWithVenue extends Event {
   venue_address: string | null
 }
 
+// Event payload safe to send to chat clients and persist in chat attachments.
+// Embeddings are internal search infrastructure and must not cross this boundary.
+export type ChatEventPayload = Omit<EventWithVenue, 'embedding'>
+
 /**
  * Lightweight event type for admin list views.
  * Uses boolean flags instead of full description text for better performance.
@@ -454,7 +458,7 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string // Display text
-  events?: EventWithVenue[]
+  events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
   plan?: ConfirmedPlanData
@@ -480,7 +484,7 @@ export interface RefinementSuggestion {
 // Streaming event types
 export type StreamEvent =
   | { type: 'text'; content: string }
-  | { type: 'events'; data: ChatStreamDataEnvelope<EventWithVenue[]> }
+  | { type: 'events'; data: ChatStreamDataEnvelope<ChatEventPayload[]> }
   | { type: 'suggestions'; data: ChatStreamDataEnvelope<RefinementSuggestion[]> }
   | { type: 'status'; data: ChatStreamStatusData }
   | { type: 'execution_trace'; data: ChatStreamDataEnvelope<MessageExecutionStep[]> }
@@ -782,7 +786,7 @@ export interface MessageExecutionStep {
 
 /** Attached data stored with assistant messages */
 export interface MessageAttachedData {
-  events?: EventWithVenue[]
+  events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
   plan?: ConfirmedPlanData
