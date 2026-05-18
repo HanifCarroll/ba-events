@@ -12,7 +12,7 @@ import { defineTool } from './types'
 import { searchEventsWithFilters, hybridEventSearch } from '@/shared/lib/db/client'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
 import type { EventFilters, Neighborhood } from '@/shared/lib/types'
-import { getNowInBA, baToUTC, formatEventsToolResult, serializeEventsForChatPayload } from './utils'
+import { getNowInBA, baToUTC, ensureChatEventPayloads, formatEventsToolResult } from './utils'
 import { logger } from '@/shared/lib/logger'
 
 // ============================================================================
@@ -279,7 +279,7 @@ Use other parameters for specific requirements. Combine both for best results.`,
 
       return {
         success: true,
-        events: serializeEventsForChatPayload(results),
+        events: ensureChatEventPayloads(results),
         formatted: formatEventsToolResult(results),
         metadata: {
           resultCount: results.length,

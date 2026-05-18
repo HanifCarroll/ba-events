@@ -81,13 +81,13 @@ export function formatEventsToolResult(events: EventWithVenue[]): string {
   })
 }
 
-export function serializeEventForChatPayload(event: EventWithVenue): ChatEventPayload {
+export function ensureChatEventPayload(event: EventWithVenue): ChatEventPayload {
   const { embedding: _embedding, ...payload } = event
   return payload
 }
 
-export function serializeEventsForChatPayload(events: EventWithVenue[]): ChatEventPayload[] {
-  return events.map(serializeEventForChatPayload)
+export function ensureChatEventPayloads(events: EventWithVenue[]): ChatEventPayload[] {
+  return events.map(ensureChatEventPayload)
 }
 
 /**

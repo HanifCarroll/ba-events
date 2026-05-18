@@ -7,7 +7,7 @@ import {
   sanitizeFinalAssistantText,
   type StepResultLike,
 } from '@/routes/api/chat'
-import { serializeEventForChatPayload } from './tools/utils'
+import { ensureChatEventPayload } from './tools/utils'
 
 describe('chat final-only contract helpers', () => {
   it('derives final visible text from the final step text', () => {
@@ -116,7 +116,7 @@ describe('chat final-only contract helpers', () => {
       embedding: [0.1, 0.2, 0.3],
     }
 
-    const payload = serializeEventForChatPayload(event as never)
+    const payload = ensureChatEventPayload(event as never)
     expect('embedding' in payload).toBe(false)
     expect(payload).toMatchObject({ id: 'event_1', name: 'Club night' })
   })
