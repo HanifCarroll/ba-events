@@ -9,5 +9,5 @@ Disallow: /login
 Disallow: /register
 Disallow: /auth/
 
-# Sitemap (future implementation)
+# Sitemap
 Sitemap: https://baeventos.com/sitemap.xml
