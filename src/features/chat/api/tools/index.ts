@@ -3,12 +3,10 @@
  *
  * Central registry for all agent tools. Provides:
  * - Typed tool definitions
- * - Anthropic API format conversion
  * - Tool execution by name
  * - Auto-discovery of all registered tools
  */
 
-import type Anthropic from '@anthropic-ai/sdk'
 import type { ToolDefinition, ToolExecutionContext, ToolResult, ToolName } from './types'
 
 // Import all tools
@@ -65,22 +63,6 @@ export const tools = {
  * Array of all tool names for iteration.
  */
 export const toolNames = Object.keys(tools) as ToolName[]
-
-// ============================================================================
-// ANTHROPIC API FORMAT
-// ============================================================================
-
-/**
- * Get all tools in Anthropic's expected format.
- * Used when making API calls to Claude.
- */
-export function getAnthropicTools(): Anthropic.Tool[] {
-  return Object.values(tools).map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.anthropicSchema as Anthropic.Tool.InputSchema,
-  }))
-}
 
 // ============================================================================
 // TOOL LOOKUP & EXECUTION

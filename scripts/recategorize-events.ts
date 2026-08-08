@@ -8,9 +8,9 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
-import OpenAI from 'openai'
-import { CLAUDE_MODEL } from '../src/shared/lib/ai/constants'
+import { generateObject, embed } from 'ai'
+import { z } from 'zod'
+import { NO_THINKING, textModel, embeddingModel } from '../src/shared/lib/ai/providers'
 
 // Initialize clients
 const supabase = createClient(
@@ -18,12 +18,10 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY!
 )
 
-const anthropic = new Anthropic()
-const openai = new OpenAI()
-
 // The 6 simplified categories
-type Category = 'music' | 'arts' | 'food' | 'social' | 'sports' | 'festival'
-const VALID_CATEGORIES: Category[] = ['music', 'arts', 'food', 'social', 'sports', 'festival']
+const CATEGORY_SCHEMA = z.object({
+  category: z.enum(['music', 'arts', 'food', 'social', 'sports', 'festival']),
+})
 
 const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categories:
 - music: concerts, DJ sets, live performances, music festivals
@@ -38,34 +36,21 @@ If unclear, use "social" as the default.
 
 Respond with ONLY the category name (lowercase), nothing else.`
 
-async function categorizeEvent(name: string, description: string | null): Promise<Category> {
+async function categorizeEvent(
+  name: string,
+  description: string | null
+): Promise<z.infer<typeof CATEGORY_SCHEMA>['category']> {
   try {
     const eventContext = `Event: ${name}${description ? `\nDescription: ${description}` : ''}`
 
-    const message = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 20,
-      messages: [
-        {
-          role: 'user',
-          content: `${CATEGORIZATION_PROMPT}\n\n${eventContext}`,
-        },
-      ],
+    const { object } = await generateObject({
+      model: textModel,
+      schema: CATEGORY_SCHEMA,
+      prompt: `${CATEGORIZATION_PROMPT}\n\n${eventContext}`,
+      ...NO_THINKING,
     })
 
-    const textBlock = message.content.find((block) => block.type === 'text')
-    if (!textBlock?.text) {
-      return 'social'
-    }
-
-    const category = textBlock.text.trim().toLowerCase() as Category
-
-    if (VALID_CATEGORIES.includes(category)) {
-      return category
-    }
-
-    console.warn(`Invalid category returned: "${textBlock.text}", defaulting to social`)
-    return 'social'
+    return object.category
   } catch (error) {
     console.error('Error categorizing event:', error)
     return 'social'
@@ -73,12 +58,11 @@ async function categorizeEvent(name: string, description: string | null): Promis
 }
 
 async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text,
-    dimensions: 1536,
+  const { embedding } = await embed({
+    model: embeddingModel,
+    value: text,
   })
-  return response.data[0].embedding
+  return embedding
 }
 
 async function main() {

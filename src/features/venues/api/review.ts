@@ -1,13 +1,26 @@
+import { generateObject } from 'ai'
+import { z } from 'zod'
 import { createServerFn } from '@tanstack/react-start'
-import Anthropic from '@anthropic-ai/sdk'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
-import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
+import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
 import type {
   AddressNameResult,
   AddressDetectionProgress,
   AddressDetectionComplete,
   AddressDetectionUpdate,
 } from '@/shared/lib/streaming-types'
+
+// Schema for venue address-detection output
+const ADDRESS_SCHEMA = z.object({
+  results: z.array(
+    z.object({
+      index: z.number(),
+      is_address: z.boolean(),
+      confidence: z.number(),
+      suggested_name: z.string().optional(),
+    })
+  ),
+})
 
 // Types
 export interface VenueDuplicatePair {
@@ -125,7 +138,6 @@ export const detectAddressLikeNamesAction = createServerFn({ method: 'POST' })
       return
     }
 
-    const anthropic = new Anthropic()
     const results: AddressNameResult[] = []
 
     // Process in batches to manage token limits
@@ -140,13 +152,12 @@ export const detectAddressLikeNamesAction = createServerFn({ method: 'POST' })
       const batchResults: AddressNameResult[] = []
 
       try {
-        const message = await anthropic.messages.create({
-          model: CLAUDE_MODEL,
-          max_tokens: 1000,
-          messages: [
-            {
-              role: 'user',
-              content: `Analyze these venue names from Buenos Aires and identify which ones look like street addresses rather than proper venue/business names.
+        // generateObject schema-validates the response, so `object.results` is
+        // guaranteed well-formed; invalid output triggers a repair/retry.
+        const { object } = await generateObject({
+          model: textModel,
+          schema: ADDRESS_SCHEMA,
+          prompt: `Analyze these venue names from Buenos Aires and identify which ones look like street addresses rather than proper venue/business names.
 
 Address-like patterns include:
 - Street names with numbers (e.g., "Av. Corrientes 1234", "Thames 2100")
@@ -159,75 +170,32 @@ Proper venue names include:
 - Cultural venues (e.g., "Centro Cultural Recoleta", "Museo de Arte Moderno")
 - Generic descriptive names are OK (e.g., "Multiespacio para Eventos")
 
-For each venue, respond with a JSON array. Each item should have:
+For each venue in the list, report whether it looks like an address, with:
 - "index": the number from the list (1-based)
 - "is_address": true if it looks like an address, false if it's a proper venue name
 - "confidence": 0.0 to 1.0 indicating how confident you are
 - "suggested_name": (optional) if is_address=true and you can suggest a better name based on context
 
 Venues to analyze:
-${venueList}
-
-Respond ONLY with the JSON array, no other text.`,
-            },
-          ],
+${venueList}`,
+          ...NO_THINKING,
         })
 
-        const textBlock = message.content.find((block) => block.type === 'text')
-        if (textBlock?.text) {
-          try {
-            // Strip markdown code fences if present
-            let jsonText = textBlock.text.trim()
-            if (jsonText.startsWith('```')) {
-              jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+        for (const result of object.results) {
+          const venue = batch[result.index - 1]
+          if (venue) {
+            const addressResult: AddressNameResult = {
+              venue_id: venue.id,
+              is_address_like: result.is_address,
+              confidence: result.confidence,
+              suggested_name: result.suggested_name,
             }
-
-            // Try to fix common JSON issues from LLM output
-            // 1. Remove trailing commas before ] or }
-            jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1')
-            // 2. Try to extract just the array if there's extra text
-            const arrayMatch = jsonText.match(/\[[\s\S]*\]/)
-            if (arrayMatch) {
-              jsonText = arrayMatch[0]
-            }
-
-            const parsed = JSON.parse(jsonText) as Array<{
-              index: number
-              is_address: boolean
-              confidence: number
-              suggested_name?: string
-            }>
-
-            for (const result of parsed) {
-              const venue = batch[result.index - 1]
-              if (venue) {
-                const addressResult: AddressNameResult = {
-                  venue_id: venue.id,
-                  is_address_like: result.is_address,
-                  confidence: result.confidence,
-                  suggested_name: result.suggested_name,
-                }
-                batchResults.push(addressResult)
-                results.push(addressResult)
-              }
-            }
-          } catch (parseError) {
-            console.error('[venue-review] Failed to parse Haiku response:', parseError)
-            console.error('[venue-review] Raw response:', textBlock.text.substring(0, 500))
-            // Add all venues in batch as not address-like if parsing fails
-            for (const venue of batch) {
-              const addressResult: AddressNameResult = {
-                venue_id: venue.id,
-                is_address_like: false,
-                confidence: 0,
-              }
-              batchResults.push(addressResult)
-              results.push(addressResult)
-            }
+            batchResults.push(addressResult)
+            results.push(addressResult)
           }
         }
       } catch (apiError) {
-        console.error('[venue-review] Haiku API error:', apiError)
+        console.error('[venue-review] AI error:', apiError)
         // Add all venues in batch as not address-like if API fails
         for (const venue of batch) {
           const addressResult: AddressNameResult = {

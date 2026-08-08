@@ -30,7 +30,7 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
 |----------|------------|
 | Runtime | Bun |
 | Framework | TanStack Start (React 19 + Vite + Nitro) |
-| AI | Claude (Anthropic SDK) |
+| AI | DeepSeek V4 Flash via Vercel AI SDK (@ai-sdk/deepseek) |
 | Database | Supabase (PostgreSQL + pgvector) |
 | Embeddings | OpenAI |
 | Styling | Tailwind CSS v4 |
@@ -81,8 +81,8 @@ An AI-powered event discovery app for Buenos Aires. Ask natural language questio
    VITE_SUPABASE_ANON_KEY=your-anon-key
 
    # AI APIs
-   OPENAI_API_KEY=sk-your-openai-key
-   ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
+   OPENAI_API_KEY=sk-your-openai-key      # embeddings (text-embedding-3-small)
+   DEEPSEEK_API_KEY=sk-your-deepseek-key  # text generation (deepseek-v4-flash)
 
    # Admin API (optional for local dev)
    ADMIN_API_KEY=your-admin-api-key

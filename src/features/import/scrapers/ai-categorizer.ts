@@ -1,18 +1,20 @@
 /**
  * AI-powered Event Categorization
  *
- * Uses Claude Haiku to categorize events into 6 intent-based categories.
+ * Uses the configured text model (DeepSeek V4 Flash by default) to categorize
+ * events into 6 intent-based categories.
  * This module is used during import for all event sources.
  */
 
-import Anthropic from '@anthropic-ai/sdk'
+import { generateObject } from 'ai'
+import { z } from 'zod'
 import type { Category } from '@/shared/lib/types'
-import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
-
-const anthropic = new Anthropic()
+import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
 
 // The 6 simplified categories
-const VALID_CATEGORIES: Category[] = ['music', 'arts', 'food', 'social', 'sports', 'festival']
+const CATEGORY_SCHEMA = z.object({
+  category: z.enum(['music', 'arts', 'food', 'social', 'sports', 'festival']),
+})
 
 // Rate limiting constants
 // Anthropic limit is 50 requests/minute, so we use 1500ms (40 req/min) to stay safely under
@@ -24,7 +26,14 @@ const INITIAL_BACKOFF_MS = 2000
  * Check if an error is a rate limit error (429)
  */
 function isRateLimitError(error: unknown): boolean {
-  if (error instanceof Anthropic.RateLimitError) return true
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    error.status === 429
+  ) {
+    return true
+  }
   if (error instanceof Error) {
     return error.message.includes('429') || error.message.includes('rate_limit')
   }
@@ -87,37 +96,16 @@ export async function categorizeEventWithResult(
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const message = await anthropic.messages.create({
-        model: CLAUDE_MODEL,
-        max_tokens: 20,
-        messages: [
-          {
-            role: 'user',
-            content: `${CATEGORIZATION_PROMPT}\n\n${eventContext}`,
-          },
-        ],
+      // generateObject schema-validates the response, so `category` is
+      // guaranteed to be one of the 6 valid categories.
+      const { object } = await generateObject({
+        model: textModel,
+        schema: CATEGORY_SCHEMA,
+        prompt: `${CATEGORIZATION_PROMPT}\n\n${eventContext}`,
+        ...NO_THINKING,
       })
 
-      const textBlock = message.content.find((block) => block.type === 'text')
-      if (!textBlock?.text) {
-        return {
-          category: 'social',
-          success: false,
-          fallback: true,
-          error: 'Empty AI response',
-        }
-      }
-
-      const category = textBlock.text.trim().toLowerCase() as Category
-
-      // Validate the response is a valid category
-      if (VALID_CATEGORIES.includes(category)) {
-        return { category, success: true, fallback: false }
-      }
-
-      const error = `Invalid category returned: "${textBlock.text}"`
-      console.warn(`[ai-categorizer] ${error}, defaulting to social`)
-      return { category: 'social', success: false, fallback: true, error }
+      return { category: object.category, success: true, fallback: false }
     } catch (err) {
       // Check if this is a rate limit error and we have retries left
       if (isRateLimitError(err) && attempt < MAX_RETRIES - 1) {

@@ -1742,3 +1742,37 @@ src/
 
 ---
 
+
+---
+
+### Switch to DeepSeek V4 Flash for text generation
+
+**Date:** 2026-08-08
+
+**Decision:** Replace Claude Haiku 4.5 with DeepSeek V4 Flash (`deepseek-v4-flash`) for all text-generation
+work (chat agent, categorization, enrichment, titles, venue review), using the **Vercel AI SDK**
+everywhere. Text runs on `@ai-sdk/deepseek` (DeepSeek's OpenAI-compatible endpoint,
+`https://api.deepseek.com`); embeddings run on `@ai-sdk/openai` (`text-embedding-3-small`).
+
+**Alternatives Considered:**
+- Keep the Anthropic SDK + `@ai-sdk/anthropic` and point `baseURL` at DeepSeek's Anthropic-compatible
+  endpoint (`https://api.deepseek.com/anthropic`): smallest diff, but DeepSeek ignores the
+  `anthropic-beta` structured-outputs header (prompts must request JSON manually and parsing must be
+  hand-rolled), and the AI SDK cannot cleanly toggle DeepSeek's thinking mode on the chat path.
+- DeepSeek's OpenAI-format endpoint with the raw `openai` SDK: requires converting every Anthropic-shaped
+  call site and hand-rolling structured-output parsing; chat still needs the AI SDK.
+- Keep Claude: ~10x more expensive per token.
+
+**Rationale:** The Vercel AI SDK consolidates all text generation into one abstraction
+(`generateText`/`generateObject`/`streamText`), replaces the lost Anthropic structured outputs with
+schema-validated `generateObject` (auto-repair on invalid output), and lets `providerOptions` cleanly
+disable DeepSeek's default thinking mode (`thinking: { type: 'disabled' }`) everywhere, including chat.
+It removes three dependencies (`@anthropic-ai/sdk`, `@ai-sdk/anthropic`, `openai`) in favor of two
+(`@ai-sdk/deepseek`, `@ai-sdk/openai`), both pinned to the spec-v3 major that matches `ai@6`. The API
+key resolves `AI_API_KEY` > `DEEPSEEK_API_KEY` > `ANTHROPIC_API_KEY`. Embeddings stay on OpenAI —
+DeepSeek has no embeddings API.
+
+**Related Decision:** DeepSeek's announced API price increase (2026-08-06) is expected to narrow but
+not eliminate the cost advantage; founder guidance puts the increase in the 2x-10x range.
+
+Related Decision: none (this supersedes the implicit "Claude for AI" choice from the original stack).

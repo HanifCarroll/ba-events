@@ -1,27 +1,28 @@
 /**
- * Event description enrichment using Jina Reader + Claude Haiku 4.5
+ * Event description enrichment using Jina Reader + the configured text model
+ * (DeepSeek V4 Flash by default, via its Anthropic-compatible endpoint).
  *
  * Bilingual Pipeline:
  * 1. Jina Reader fetches page and converts to clean markdown
- * 2. Haiku 4.5 extracts semantic description in Spanish (source language)
- * 3. Haiku 4.5 translates to English for display
+ * 2. The model extracts semantic description in Spanish (source language)
+ * 3. The model translates to English for display
  *
  * The Spanish description is used for embeddings (cross-lingual model handles it)
  */
 
-import Anthropic from '@anthropic-ai/sdk'
-import { CLAUDE_MODEL } from './constants'
+import { generateObject, generateText } from 'ai'
+import { z } from 'zod'
+import { textModel, NO_THINKING } from './providers'
 import { HttpError } from '../errors'
 
-// Lazy initialization to avoid instantiating in browser bundle
-let anthropicClient: Anthropic | null = null
+// ============================================================================
+// SCHEMAS
+// ============================================================================
 
-function getAnthropicClient(): Anthropic {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic()
-  }
-  return anthropicClient
-}
+const LANGUAGE_SCHEMA = z.object({ language: z.enum(['spanish', 'english']) })
+const DESCRIPTION_SCHEMA = z.object({ description: z.string() })
+const SUMMARY_SCHEMA = z.object({ summary: z.string() })
+const VENUE_SCHEMA = z.object({ venue_name: z.string().nullable() })
 
 // ============================================================================
 // SHARED UTILITIES
@@ -39,14 +40,6 @@ export function getKnownLanguageForSource(source: string): 'spanish' | 'english'
     default:
       return undefined // Auto-detect
   }
-}
-
-/**
- * Extract text content from Claude's response
- */
-function extractTextFromResponse(message: Anthropic.Message): string | null {
-  const textBlock = message.content.find((block) => block.type === 'text')
-  return textBlock?.text ?? null
 }
 
 /**
@@ -181,53 +174,6 @@ Examples that should return null:
 - "Needs a location"`
 
 /**
- * JSON schema for venue extraction response
- * Using structured outputs guarantees this exact format
- */
-const VENUE_EXTRACTION_SCHEMA = {
-  type: 'object',
-  properties: {
-    venue_name: {
-      type: ['string', 'null'],
-      description: 'The venue name, or null if no physical venue is specified',
-    },
-  },
-  required: ['venue_name'],
-  additionalProperties: false,
-} as const
-
-/**
- * JSON schema for description extraction response
- * Using structured outputs guarantees clean description without prefixes
- */
-const DESCRIPTION_EXTRACTION_SCHEMA = {
-  type: 'object',
-  properties: {
-    description: {
-      type: 'string',
-      description: 'The semantic event description as plain text, no prefixes or headers',
-    },
-  },
-  required: ['description'],
-  additionalProperties: false,
-} as const
-
-/**
- * JSON schema for summary generation response.
- */
-const DESCRIPTION_SUMMARY_SCHEMA = {
-  type: 'object',
-  properties: {
-    summary: {
-      type: 'string',
-      description: 'Short card summary under 180 characters',
-    },
-  },
-  required: ['summary'],
-  additionalProperties: false,
-} as const
-
-/**
  * Fetch a URL's content as markdown using Jina Reader.
  * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to distinguish error types.
  * Returns null only for network errors (no response received).
@@ -271,21 +217,14 @@ export async function detectLanguage(markdown: string): Promise<DetectedLanguage
     // Use a smaller sample for language detection (first 3k chars)
     const sample = markdown.slice(0, 3000)
 
-    const message = await getAnthropicClient().messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 10,
-      messages: [
-        {
-          role: 'user',
-          content: `${LANGUAGE_DETECTION_PROMPT}\n\n---\n${sample}\n---`,
-        },
-      ],
+    const { object } = await generateObject({
+      model: textModel,
+      schema: LANGUAGE_SCHEMA,
+      prompt: `${LANGUAGE_DETECTION_PROMPT}\n\n---\n${sample}\n---`,
+      ...NO_THINKING,
     })
 
-    const response = extractTextFromResponse(message)?.toLowerCase().trim() ?? ''
-
-    // Default to Spanish for Buenos Aires events if unclear
-    return response.includes('english') ? 'english' : 'spanish'
+    return object.language
   } catch (error) {
     console.error(`Language detection error:`, error)
     // Default to Spanish for Buenos Aires context
@@ -294,19 +233,7 @@ export async function detectLanguage(markdown: string): Promise<DetectedLanguage
 }
 
 /**
- * Response type for description extraction with structured outputs
- */
-interface DescriptionExtractionResponse {
-  description: string
-}
-
-interface DescriptionSummaryResponse {
-  summary: string
-}
-
-/**
- * Extract a semantic event description from markdown using Haiku 4.5 with structured outputs.
- * Uses constrained decoding to guarantee clean description without prefixes.
+ * Extract a semantic event description from markdown.
  * Extracts in the specified language.
  */
 export async function extractDescription(
@@ -318,34 +245,16 @@ export async function extractDescription(
     const truncatedMarkdown = markdown.slice(0, 15000)
     const prompt = language === 'spanish' ? EXTRACTION_PROMPT_ES : EXTRACTION_PROMPT_EN
 
-    // Use structured outputs beta API for guaranteed JSON response
-    const message = await getAnthropicClient().beta.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 500,
-      betas: [STRUCTURED_OUTPUTS_BETA],
-      messages: [
-        {
-          role: 'user',
-          content: `${prompt}\n\n---\n${truncatedMarkdown}\n---`,
-        },
-      ],
-      output_format: {
-        type: 'json_schema',
-        schema: DESCRIPTION_EXTRACTION_SCHEMA,
-      },
+    const { object } = await generateObject({
+      model: textModel,
+      schema: DESCRIPTION_SCHEMA,
+      prompt: `${prompt}\n\n---\n${truncatedMarkdown}\n---`,
+      ...NO_THINKING,
     })
 
-    // With structured outputs, response is guaranteed to be valid JSON
-    const textBlock = message.content.find((block) => block.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') {
-      console.error('[extractDescription] No text block in response')
-      return null
-    }
-
-    const result = JSON.parse(textBlock.text) as DescriptionExtractionResponse
-    return result.description || null
+    return object.description || null
   } catch (error) {
-    console.error(`Haiku extraction error:`, error)
+    console.error(`Description extraction error:`, error)
     return null
   }
 }
@@ -363,29 +272,14 @@ export async function generateDescriptionSummary(
     const prompt = language === 'spanish' ? SUMMARY_PROMPT_ES : SUMMARY_PROMPT_EN
     const text = description.slice(0, 2500)
 
-    const message = await getAnthropicClient().beta.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 120,
-      betas: [STRUCTURED_OUTPUTS_BETA],
-      messages: [
-        {
-          role: 'user',
-          content: `${prompt}\n\n---\n${text}\n---`,
-        },
-      ],
-      output_format: {
-        type: 'json_schema',
-        schema: DESCRIPTION_SUMMARY_SCHEMA,
-      },
+    const { object } = await generateObject({
+      model: textModel,
+      schema: SUMMARY_SCHEMA,
+      prompt: `${prompt}\n\n---\n${text}\n---`,
+      ...NO_THINKING,
     })
 
-    const textBlock = message.content.find((block) => block.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') {
-      return null
-    }
-
-    const result = JSON.parse(textBlock.text) as DescriptionSummaryResponse
-    const summary = result.summary.trim()
+    const summary = object.summary.trim()
     if (!summary) return null
 
     return summary.length <= 180 ? summary : `${summary.slice(0, 179).trim()}…`
@@ -396,7 +290,7 @@ export async function generateDescriptionSummary(
 }
 
 /**
- * Translate text between Spanish and English using Haiku 4.5
+ * Translate text between Spanish and English.
  */
 export async function translateText(
   text: string,
@@ -405,39 +299,21 @@ export async function translateText(
   try {
     const prompt = direction === 'es-to-en' ? TRANSLATION_ES_TO_EN : TRANSLATION_EN_TO_ES
 
-    const message = await getAnthropicClient().messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 400,
-      messages: [
-        {
-          role: 'user',
-          content: `${prompt}\n\n---\n${text}\n---`,
-        },
-      ],
+    const { text: translated } = await generateText({
+      model: textModel,
+      prompt: `${prompt}\n\n---\n${text}\n---`,
+      ...NO_THINKING,
     })
 
-    return extractTextFromResponse(message)
+    return translated || null
   } catch (error) {
-    console.error(`Haiku translation error:`, error)
+    console.error(`Translation error:`, error)
     return null
   }
 }
 
 /**
- * Response type for venue extraction with structured outputs
- */
-interface VenueExtractionResponse {
-  venue_name: string | null
-}
-
-/**
- * Structured outputs beta header
- */
-const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
-
-/**
- * Extract venue name from markdown content using Haiku 4.5 with structured outputs.
- * Uses constrained decoding to guarantee valid JSON response format.
+ * Extract venue name from markdown content.
  * Returns the venue name or null if no physical venue found.
  */
 export async function extractVenueName(markdown: string): Promise<string | null> {
@@ -445,37 +321,17 @@ export async function extractVenueName(markdown: string): Promise<string | null>
     // Use a moderate sample for venue extraction (first 10k chars)
     const truncatedMarkdown = markdown.slice(0, 10000)
 
-    // Use structured outputs beta API for guaranteed JSON response
-    const message = await getAnthropicClient().beta.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 100,
-      betas: [STRUCTURED_OUTPUTS_BETA],
-      messages: [
-        {
-          role: 'user',
-          content: `${VENUE_EXTRACTION_PROMPT}\n\n---\n${truncatedMarkdown}\n---`,
-        },
-      ],
-      output_format: {
-        type: 'json_schema',
-        schema: VENUE_EXTRACTION_SCHEMA,
-      },
+    const { object } = await generateObject({
+      model: textModel,
+      schema: VENUE_SCHEMA,
+      prompt: `${VENUE_EXTRACTION_PROMPT}\n\n---\n${truncatedMarkdown}\n---`,
+      ...NO_THINKING,
     })
 
-    // With structured outputs, response is guaranteed to be valid JSON
-    const textBlock = message.content.find((block) => block.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') {
-      console.error('[extractVenueName] No text block in response')
-      return null
-    }
-
-    const result = JSON.parse(textBlock.text) as VenueExtractionResponse
-
-    // Return the venue_name directly - it's either a string or null
-    // No need for pattern matching since structured outputs guarantee the format
-    return result.venue_name
+    // venue_name is either a string or null
+    return object.venue_name
   } catch (error) {
-    console.error(`Haiku venue extraction error:`, error)
+    console.error(`Venue extraction error:`, error)
     return null
   }
 }

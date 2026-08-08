@@ -1,11 +1,8 @@
-import OpenAI from 'openai'
+import { embed } from 'ai'
 import { createHash } from 'crypto'
 import { supabase } from '../db/client'
 import type { Event, EventWithVenue } from '../types'
-import { EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from './constants'
-
-// Lazy-initialize OpenAI client (only when needed, server-side only)
-let openai: OpenAI | null = null
+import { embeddingModel } from './providers'
 
 type CachedEmbedding = {
   embedding: number[]
@@ -28,18 +25,6 @@ function pruneEmbeddingCache(now: number) {
     if (!oldestKey) break
     embeddingCache.delete(oldestKey)
   }
-}
-
-function getOpenAI(): OpenAI {
-  if (!openai) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is required')
-    }
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
-  }
-  return openai
 }
 
 // Minimal data needed for embedding text generation (for import scenarios)
@@ -104,12 +89,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   }
 
   // Generate embedding
-  const response = await getOpenAI().embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: text,
-    dimensions: EMBEDDING_DIMENSIONS,
+  const { embedding } = await embed({
+    model: embeddingModel,
+    value: text,
   })
-  const embedding = response.data[0].embedding
 
   pruneEmbeddingCache(now)
   embeddingCache.set(cacheKey, {

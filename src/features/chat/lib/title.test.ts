@@ -4,8 +4,6 @@ import {
   isGenericConversationTitle,
   normalizeConversationTitle,
 } from './title'
-import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
-import { TITLE_MODEL } from '@/features/chat/api/generate-title'
 
 describe('conversation title utilities', () => {
   it('normalizes quotes and repeated whitespace', () => {
@@ -30,10 +28,6 @@ describe('conversation title utilities', () => {
   it('matches generic title regardless of case', () => {
     expect(isGenericConversationTitle('new conversation')).toBe(true)
     expect(isGenericConversationTitle('Weekend plan')).toBe(false)
-  })
-
-  it('uses shared model constant for title generation', () => {
-    expect(TITLE_MODEL).toBe(CLAUDE_MODEL)
   })
 })
 

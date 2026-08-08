@@ -8,21 +8,11 @@
  * This runs as Phase 2, after the fast JSON-LD import.
  */
 
-import Anthropic from '@anthropic-ai/sdk'
+import { generateObject } from 'ai'
+import { z } from 'zod'
 import type { Category } from '@/shared/lib/types'
-import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
+import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
 import { HttpError } from '@/shared/lib/errors'
-
-// Lazy initialization to avoid instantiating in browser bundle
-// (Anthropic SDK throws when instantiated client-side)
-let anthropicClient: Anthropic | null = null
-
-function getAnthropicClient(): Anthropic {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic()
-  }
-  return anthropicClient
-}
 
 // ---------------------------------------------------------------------------
 // Price Extraction
@@ -121,10 +111,12 @@ function extractPriceFromHtml(html: string): EventbritePriceInfo {
 // ---------------------------------------------------------------------------
 
 // The 6 simplified categories
-const VALID_CATEGORIES: Category[] = ['music', 'arts', 'food', 'social', 'sports', 'festival']
+const CATEGORY_SCHEMA = z.object({
+  category: z.enum(['music', 'arts', 'food', 'social', 'sports', 'festival']),
+})
 
 /**
- * Prompt for Haiku to categorize events
+ * Prompt for categorizing events
  */
 const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categories:
 - music: concerts, DJ sets, live performances, music festivals
@@ -135,16 +127,11 @@ const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categorie
 - festival: multi-day festivals, large celebrations, fairs, carnivals
 
 Based on the event name and description, choose the SINGLE most appropriate category.
-If unclear, use "social" as the default.
-
-Respond with ONLY the category name (lowercase), nothing else.`
-
-export interface CategoryInference {
-  category: Category
-}
+If unclear, use "social" as the default.`
 
 /**
- * Infer category from event name and description using AI
+ * Infer category from event name and description using AI.
+ * generateObject schema-validates the output, so it always returns a valid category.
  */
 export async function inferCategory(
   name: string,
@@ -153,31 +140,14 @@ export async function inferCategory(
   try {
     const eventContext = `Event: ${name}${description ? `\nDescription: ${description}` : ''}`
 
-    const message = await getAnthropicClient().messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 20,
-      messages: [
-        {
-          role: 'user',
-          content: `${CATEGORIZATION_PROMPT}\n\n${eventContext}`,
-        },
-      ],
+    const { object } = await generateObject({
+      model: textModel,
+      schema: CATEGORY_SCHEMA,
+      prompt: `${CATEGORIZATION_PROMPT}\n\n${eventContext}`,
+      ...NO_THINKING,
     })
 
-    const textBlock = message.content.find((block) => block.type === 'text')
-    if (!textBlock?.text) {
-      return 'social'
-    }
-
-    const category = textBlock.text.trim().toLowerCase() as Category
-
-    // Validate the response is a valid category
-    if (VALID_CATEGORIES.includes(category)) {
-      return category
-    }
-
-    console.warn(`[eventbrite] Invalid category returned: "${textBlock.text}", defaulting to social`)
-    return 'social'
+    return object.category
   } catch (error) {
     console.error('[eventbrite] AI inference error:', error)
     return 'social'

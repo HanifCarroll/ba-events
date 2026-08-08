@@ -6,6 +6,7 @@
  */
 
 import { conciergePromptV1 } from './concierge-v1'
+import { conciergePromptV2 } from './concierge-v2'
 
 // ============================================================================
 // PROMPT VERSIONS
@@ -13,6 +14,7 @@ import { conciergePromptV1 } from './concierge-v1'
 
 export const PROMPT_VERSIONS = {
   'concierge-v1': conciergePromptV1,
+  'concierge-v2': conciergePromptV2,
 } as const
 
 export type PromptVersion = keyof typeof PROMPT_VERSIONS
@@ -25,7 +27,7 @@ export type PromptVersion = keyof typeof PROMPT_VERSIONS
  * The currently active prompt version.
  * Change this to switch between prompt versions.
  */
-export const ACTIVE_PROMPT_VERSION: PromptVersion = 'concierge-v1'
+export const ACTIVE_PROMPT_VERSION: PromptVersion = 'concierge-v2'
 
 // ============================================================================
 // PROMPT GETTER

@@ -1,20 +1,17 @@
 /**
  * Generate Title API
  *
- * Uses Claude Haiku to generate a concise title for a conversation
- * based on the first user message.
+ * Uses the configured text model (DeepSeek V4 Flash by default) to generate
+ * a concise title for a conversation based on the first user message.
  */
 
+import { generateText } from 'ai'
 import { createServerFn } from '@tanstack/react-start'
-import Anthropic from '@anthropic-ai/sdk'
-import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
+import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
 import {
   getFallbackConversationTitle,
   normalizeConversationTitle,
 } from '@/features/chat/lib/title'
-
-const anthropic = new Anthropic()
-export const TITLE_MODEL = CLAUDE_MODEL
 
 /**
  * Generate a title for a conversation based on the first user message.
@@ -26,27 +23,16 @@ export const generateTitle = createServerFn({ method: 'POST' })
     const fallbackTitle = getFallbackConversationTitle(data.firstMessage)
 
     try {
-      const response = await anthropic.messages.create({
-        model: TITLE_MODEL,
-        max_tokens: 50,
-        messages: [
-          {
-            role: 'user',
-            content: `Generate a short, descriptive title (3-6 words) for a conversation that starts with this message. Return only the title, no quotes or punctuation.
+      const { text } = await generateText({
+        model: textModel,
+        prompt: `Generate a short, descriptive title (3-6 words) for a conversation that starts with this message. Return only the title, no quotes or punctuation.
 
 Message: "${data.firstMessage}"`,
-          },
-        ],
+        ...NO_THINKING,
       })
 
-      // Extract the text from the response
-      const textContent = response.content.find((c) => c.type === 'text')
-      if (!textContent || textContent.type !== 'text') {
-        return { title: fallbackTitle }
-      }
-
       // Clean up the title
-      const title = normalizeConversationTitle(textContent.text)
+      const title = normalizeConversationTitle(text)
 
       // Fallback if empty
       if (!title) {

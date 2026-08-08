@@ -15,7 +15,6 @@ import {
   createUIMessageStreamResponse,
   type UIMessage,
 } from 'ai'
-import { createAnthropic } from '@ai-sdk/anthropic'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth/api/rate-limit'
 import { getUserToolContext } from '@/features/chat/api/user-tools'
 import { createTools } from '@/features/chat/api/tools-ai-sdk'
@@ -25,7 +24,7 @@ import {
   extractVisibleTextFromStepTexts,
   extractVisibleTextFromUIMessageParts,
 } from '@/features/chat/lib/extract-visible-text'
-import { CLAUDE_MODEL } from '@/shared/lib/ai/constants'
+import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
 import { trackServer } from '@/lib/analytics.server'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type {
@@ -37,11 +36,6 @@ import type {
   MessageExecutionStep,
 } from '@/shared/lib/types'
 import type { SearchEventsInput } from '@/features/chat/api/tools/search-events'
-
-// Initialize Anthropic provider
-const anthropic = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
 
 // Agent loop configuration (reduced from 5 for faster responses)
 const MAX_STEPS = 3
@@ -341,10 +335,11 @@ export const Route = createFileRoute('/api/chat' as any)({
               writeStatus('thinking')
 
               const result = streamText({
-                model: anthropic(CLAUDE_MODEL),
+                model: textModel,
                 system: getSystemPrompt(locale),
                 messages: modelMessages,
                 tools: createTools(userContext, locale),
+                ...NO_THINKING,
                 stopWhen: stepCountIs(MAX_STEPS),
                 onStepFinish: ({ toolCalls, toolResults }) => {
                   stepIndex += 1

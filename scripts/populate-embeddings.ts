@@ -5,24 +5,18 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import OpenAI from 'openai'
+import { embed } from 'ai'
+import { embeddingModel } from '../src/shared/lib/ai/providers'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY
-const openaiKey = process.env.OPENAI_API_KEY
 
 if (!supabaseUrl || !supabaseKey) {
   console.error('Missing SUPABASE_URL or SUPABASE_ANON_KEY')
   process.exit(1)
 }
 
-if (!openaiKey) {
-  console.error('Missing OPENAI_API_KEY')
-  process.exit(1)
-}
-
 const supabase = createClient(supabaseUrl, supabaseKey)
-const openai = new OpenAI({ apiKey: openaiKey })
 
 interface EventWithVenue {
   id: string
@@ -75,12 +69,11 @@ function buildEmbeddingText(event: EventWithVenue): string {
 }
 
 async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text,
-    dimensions: 1536,
+  const { embedding } = await embed({
+    model: embeddingModel,
+    value: text,
   })
-  return response.data[0].embedding
+  return embedding
 }
 
 async function main() {

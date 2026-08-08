@@ -8,15 +8,14 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import OpenAI from 'openai'
+import { embed } from 'ai'
+import { embeddingModel } from '../src/shared/lib/ai/providers'
 
 // Initialize clients
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!
 )
-
-const openai = new OpenAI()
 
 // The prefix patterns to remove
 const PREFIX_PATTERNS = [
@@ -26,10 +25,6 @@ const PREFIX_PATTERNS = [
   /^Descripción semántica para indexación:\s*/i,
   /^Descripción semántica:\s*/i,
 ]
-
-// Embedding configuration (matching src/shared/lib/ai/constants.ts)
-const EMBEDDING_MODEL = 'text-embedding-3-small'
-const EMBEDDING_DIMENSIONS = 1536
 
 function cleanDescription(description: string): string {
   let cleaned = description
@@ -58,12 +53,11 @@ function buildEmbeddingText(event: {
 }
 
 async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: text,
-    dimensions: EMBEDDING_DIMENSIONS,
+  const { embedding } = await embed({
+    model: embeddingModel,
+    value: text,
   })
-  return response.data[0].embedding
+  return embedding
 }
 
 async function main() {

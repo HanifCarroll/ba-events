@@ -2,14 +2,25 @@
 // One-time audit: run AI analysis on ALL venues to check for address-like names
 // Does NOT update the database - just outputs results for review
 
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { config } from 'dotenv'
+import { generateObject } from 'ai'
+import { z } from 'zod'
+import { NO_THINKING, textModel } from '../src/shared/lib/ai/providers'
 
 config({ path: '.env' })
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-const anthropic = new Anthropic()
+
+const ADDRESS_SCHEMA = z.object({
+  results: z.array(
+    z.object({
+      index: z.number(),
+      is_address: z.boolean(),
+      confidence: z.number(),
+    })
+  ),
+})
 
 async function main() {
   // Get ALL venues
@@ -36,12 +47,11 @@ async function main() {
 
     console.log(`Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(venues.length / BATCH_SIZE)}...`)
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-latest',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: `Analyze these venue names from Buenos Aires and identify which ones look like street addresses rather than proper venue/business names.
+    try {
+      const { object } = await generateObject({
+        model: textModel,
+        schema: ADDRESS_SCHEMA,
+        prompt: `Analyze these venue names from Buenos Aires and identify which ones look like street addresses rather than proper venue/business names.
 
 Address-like patterns include:
 - Street names with numbers (e.g., "Av. Corrientes 1234", "Thames 2100")
@@ -56,24 +66,17 @@ Proper venue names include:
 - Parks and landmarks (e.g., "Parque Las Heras", "Obelisco")
 - Named plazas (e.g., "Plaza de Mayo", "Plaza Italia")
 
-For each venue, respond with a JSON array. Each item should have:
+For each venue in the list, report:
 - "index": the number from the list (1-based)
 - "is_address": true if it looks like an address/generic location, false if it's a proper venue name
 - "confidence": 0.0 to 1.0
 
 Venues to analyze:
-${venueList}
+${venueList}`,
+        ...NO_THINKING,
+      })
 
-Respond ONLY with the JSON array, no other text.`
-      }]
-    })
-
-    const text = message.content[0].type === 'text' ? message.content[0].text : ''
-    try {
-      let json = text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')
-      const parsed = JSON.parse(json) as Array<{ index: number; is_address: boolean; confidence: number }>
-
-      for (const r of parsed) {
+      for (const r of object.results) {
         const venue = batch[r.index - 1]
         if (venue) {
           results.push({
@@ -86,7 +89,7 @@ Respond ONLY with the JSON array, no other text.`
         }
       }
     } catch (e) {
-      console.error('Failed to parse response for batch, skipping...')
+      console.error('Failed to analyze batch, skipping...', e)
       for (const v of batch) {
         results.push({
           id: v.id,
