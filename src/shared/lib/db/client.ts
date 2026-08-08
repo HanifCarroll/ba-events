@@ -192,9 +192,11 @@ export async function getEvents(limit = 50) {
 }
 
 export async function getEventsWithVenues(limit = 50) {
+  // Explicit columns, no embedding — the 1536-dim vectors bloat responses
+  // (1000 events ≈ 24MB) and no caller reads them from this fetch.
   const { data, error } = await supabase
     .from('events_with_venues')
-    .select('*')
+    .select(EVENT_ADMIN_COLUMNS)
     .order('starts_at', { ascending: true })
     .limit(limit)
 
