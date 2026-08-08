@@ -75,47 +75,39 @@ code {
 }
 
 :root {
-  --radius: 0.75rem;
-  /* Buenos Aires Sunlight - Warm Light Palette */
-  /* Backgrounds */
-  --background: oklch(0.985 0.005 85);
-  --foreground: oklch(0.18 0.02 60);
+  --radius: 0.625rem;
+  --background: oklch(0.995 0.002 260);
+  --foreground: oklch(0.22 0.025 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 60);
+  --card-foreground: oklch(0.22 0.025 265);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.18 0.02 60);
-  /* Primary - Coral (energetic, event-like) */
-  --primary: oklch(0.62 0.2 25);
-  --primary-foreground: oklch(0.99 0.005 85);
-  /* Secondary - Warm gray */
-  --secondary: oklch(0.93 0.01 85);
-  --secondary-foreground: oklch(0.25 0.02 60);
-  /* Muted - Subtle sections */
-  --muted: oklch(0.96 0.005 85);
-  --muted-foreground: oklch(0.45 0.015 60);
-  /* Accent - Teal (trust, secondary actions) */
-  --accent: oklch(0.60 0.13 175);
+  --primary: oklch(0.48 0.16 275);
+  --primary-foreground: oklch(0.99 0.002 260);
+  --secondary: oklch(0.965 0.008 265);
+  --secondary-foreground: oklch(0.3 0.03 265);
+  --muted: oklch(0.975 0.008 265);
+  --muted-foreground: oklch(0.5 0.025 265);
+  --accent: oklch(0.63 0.22 30);
   --accent-foreground: oklch(0.99 0.005 85);
   --destructive: oklch(0.55 0.22 25);
-  /* Subtle warm borders */
-  --border: oklch(0.88 0.01 85);
-  --input: oklch(0.88 0.01 85);
-  --ring: oklch(0.62 0.2 25);
+  --border: oklch(0.91 0.012 265);
+  --input: oklch(0.89 0.015 265);
+  --ring: oklch(0.48 0.16 275);
   /* Chart colors - warm spectrum */
   --chart-1: oklch(0.62 0.2 25);
   --chart-2: oklch(0.60 0.13 175);
   --chart-3: oklch(0.65 0.15 75);
   --chart-4: oklch(0.60 0.18 300);
   --chart-5: oklch(0.55 0.15 140);
-  /* Sidebar - slightly tinted */
-  --sidebar: oklch(0.97 0.005 85);
-  --sidebar-foreground: oklch(0.18 0.02 60);
-  --sidebar-primary: oklch(0.62 0.2 25);
-  --sidebar-primary-foreground: oklch(0.99 0.005 85);
-  --sidebar-accent: oklch(0.93 0.01 85);
-  --sidebar-accent-foreground: oklch(0.18 0.02 60);
-  --sidebar-border: oklch(0.88 0.01 85);
-  --sidebar-ring: oklch(0.62 0.2 25);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.22 0.025 265);
+  --sidebar-primary: oklch(0.48 0.16 275);
+  --sidebar-primary-foreground: oklch(0.99 0.002 260);
+  --sidebar-accent: oklch(0.965 0.018 275);
+  --sidebar-accent-foreground: oklch(0.42 0.15 275);
+  --sidebar-border: oklch(0.91 0.012 265);
+  --sidebar-ring: oklch(0.48 0.16 275);
 }
 
 @layer base {
@@ -132,15 +124,13 @@ code {
   position: relative;
 }
 
-/* Coral glow effect */
+/* Legacy utility names retained for call sites; the quiet system uses focus depth, not glow. */
 .glow-gold {
-  box-shadow:
-    0 0 20px oklch(0.62 0.2 25 / 0.2),
-    0 0 40px oklch(0.62 0.2 25 / 0.1);
+  box-shadow: none;
 }
 
 .glow-gold-subtle {
-  box-shadow: 0 0 30px oklch(0.62 0.2 25 / 0.15);
+  box-shadow: 0 0 0 3px oklch(0.48 0.16 275 / 0.1);
 }
 
 /* Art deco inspired decorative line */

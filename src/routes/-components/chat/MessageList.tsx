@@ -99,9 +99,9 @@ export function MessageList({
   }, [isLoading, scrollToBottom])
 
   return (
-    <div ref={containerRef} className="p-4 sm:p-6">
+    <div ref={containerRef} className="px-4 py-8 sm:px-8 sm:py-12 lg:py-16">
       <div
-        className="max-w-3xl mx-auto"
+        className="max-w-[860px] mx-auto"
         role="log"
         aria-live="polite"
         aria-label="Chat messages"
@@ -119,17 +119,17 @@ export function MessageList({
 
         {/* Loading indicator */}
         {isLoading && (
-          <div className="flex justify-start mb-4 animate-fade-in-up">
-            <div className="bg-card border border-border/50 rounded-2xl rounded-bl-md px-4 py-3">
+          <div className="flex justify-start mb-6 animate-fade-in-up pl-0 sm:pl-10">
+            <div className="px-3 py-2">
               <div className="flex items-center gap-3 text-muted-foreground">
-                <Sparkles className="h-4 w-4 text-primary animate-pulse-warm" />
+                <Sparkles className="h-4 w-4 text-accent animate-pulse-warm" />
                 <span className="text-sm tracking-wide" data-phase={loadingPhase}>
                   {loadingLabel ?? m.chat_thinking()}
                 </span>
                 <span className="flex gap-1">
-                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1 h-1 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
                 </span>
               </div>
             </div>

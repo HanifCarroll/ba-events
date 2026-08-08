@@ -20,6 +20,7 @@ import { getUserToolContext } from '@/features/chat/api/user-tools'
 import { createTools } from '@/features/chat/api/tools-ai-sdk'
 import { getSystemPrompt } from '@/features/chat/api/prompts'
 import { generateSuggestions } from '@/features/chat/api/suggestions'
+import { guardForOffTopic } from '@/features/chat/api/topic-guard'
 import {
   extractVisibleTextFromStepTexts,
   extractVisibleTextFromUIMessageParts,
@@ -404,6 +405,13 @@ export const Route = createFileRoute('/api/chat' as any)({
               })
               if (!finalText && (events.length > 0 || directionsData !== null)) {
                 finalText = buildStructuredDataFallbackText(locale, lastOriginalQuery)
+              }
+
+              // Topical guardrail: replace off-topic replies (code, general
+              // knowledge, etc.) with a canned refusal. Fails open on error.
+              if (finalText) {
+                const guarded = await guardForOffTopic(finalText, locale)
+                if (guarded) finalText = guarded
               }
 
               if (nonEmptyStepTextCount > 1) {

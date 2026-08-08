@@ -61,22 +61,19 @@ export function ChatInput({
 
   return (
     <div className="relative">
-      {/* Top border with gradient */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-
       {/* No <form> wrapper - prevents Chrome autofill bar on mobile */}
-      <div className="relative px-4 py-4 sm:px-6 sm:py-5 bg-background">
-        <div className="max-w-3xl mx-auto">
+      <div className="relative px-4 pb-4 pt-2 sm:px-8 sm:pb-5 bg-background">
+        <div className="max-w-[860px] mx-auto">
           <div
             className={`
               relative flex items-end gap-3 rounded-2xl border bg-card
-              transition-all duration-300
+              transition-[border-color,box-shadow] duration-200
               ${isFocused ? 'border-primary/40 glow-gold-subtle' : 'border-border/50'}
               ${disabled ? 'opacity-60' : ''}
             `}
           >
             {/* Decorative sparkle - aligned to center vertically for single line */}
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-primary/30 pointer-events-none">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none">
               <Sparkles className="h-4 w-4" />
             </div>
 
@@ -135,11 +132,11 @@ export function ChatInput({
               onClick={handleSubmit}
               disabled={!canSubmit}
               className={`
-                mr-2 mb-2 p-2.5 rounded-xl shrink-0
-                transition-all duration-300
+                mr-2 mb-2 p-2.5 rounded-full shrink-0
+                transition-colors duration-200
                 ${
                   canSubmit
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 glow-gold'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                     : 'bg-muted text-muted-foreground cursor-not-allowed'
                 }
               `}

@@ -35,87 +35,60 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full px-4 sm:px-6 py-8 sm:py-12">
-      {/* Hero section */}
-      <div className="text-center mb-8 sm:mb-12 animate-fade-in-up">
-        {/* Decorative element */}
-        <div className="hidden sm:flex items-center justify-center gap-3 mb-4">
-          <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/50" />
-          <Sparkles className="h-5 w-5 text-primary animate-pulse-warm" />
-          <div className="h-px w-12 bg-gradient-to-l from-transparent to-primary/50" />
+    <div className="flex h-full flex-col items-center justify-center px-4 py-10 sm:px-8 sm:py-14">
+      <div className="w-full max-w-[620px] animate-fade-in-up">
+        <div className="mb-8 flex items-start gap-3 sm:mb-10">
+          <Sparkles className="mt-1 h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
+          <div>
+            <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground sm:text-3xl">
+              {m.home_title()}
+            </h1>
+            <p className="mt-2 max-w-[52ch] text-sm leading-relaxed text-muted-foreground sm:text-base">
+              {m.home_subtitle()}
+            </p>
+          </div>
         </div>
 
-        <h1 className="font-display text-2xl sm:text-4xl md:text-5xl font-semibold mb-3 sm:mb-4 tracking-tight">
-          <span className="bg-gradient-to-r from-foreground via-foreground to-primary bg-clip-text text-transparent">
-            {m.home_title()}
-          </span>
-        </h1>
-
-        <p className="text-muted-foreground text-sm sm:text-lg max-w-md mx-auto leading-relaxed">
-          {m.home_subtitle()}
-        </p>
-      </div>
-
-      {/* Main interaction area */}
-      <div className="w-full max-w-md animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-        {/* Time context chips - horizontal, centered */}
-        <div className="flex justify-center gap-3 mb-6">
-          {timeOptions.map((option) => {
-            const Icon = option.icon
-            const isSelected = timeContext === option.id
-            return (
-              <button
-                key={option.id}
-                onClick={() => setTimeContext(isSelected ? null : option.id)}
-                className={`
-                  group flex items-center gap-2 px-5 py-3 rounded-full text-sm font-medium transition-all duration-200
-                  ${isSelected
-                    ? 'bg-primary/20 border-2 border-primary/50 text-primary shadow-md shadow-primary/10'
-                    : 'bg-muted/30 border border-border/40 text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                  }
-                `}
-              >
-                <Icon className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-primary/70'}`} />
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Primary CTA - always visible */}
-        <div className="flex justify-center mb-8">
-          <button
-            onClick={handleSurpriseMe}
-            className="group flex items-center gap-3 px-8 py-4 rounded-2xl text-base font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/35 transition-all duration-300 hover:-translate-y-0.5"
-          >
-            <Sparkles className="h-5 w-5" />
-            {m.context_surprise_me()}
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div className="flex items-center gap-4 mb-6">
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent to-border/50" />
-          <span className="text-xs text-muted-foreground/60 uppercase tracking-wider whitespace-nowrap">
-            {m.context_or_tell_me()}
-          </span>
-          <div className="flex-1 h-px bg-gradient-to-l from-transparent to-border/50" />
-        </div>
-
-        {/* Input hint - examples of what to type */}
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground/70 italic">
+        <div className="border-y border-border py-5">
+          <p className="mb-3 text-sm font-medium text-foreground">{m.context_or_tell_me()}</p>
+          <div className="flex flex-wrap gap-2">
+            {timeOptions.map((option) => {
+              const Icon = option.icon
+              const isSelected = timeContext === option.id
+              return (
+                <button
+                  key={option.id}
+                  onClick={() => setTimeContext(isSelected ? null : option.id)}
+                  className={`flex min-h-11 items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    isSelected
+                      ? 'border-primary/30 bg-primary/[0.07] text-primary'
+                      : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  {option.label}
+                </button>
+              )
+            })}
+            <button
+              onClick={handleSurpriseMe}
+              className="flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              {m.context_surprise_me()}
+            </button>
+          </div>
+          <p className="mt-4 text-sm text-muted-foreground">
             {m.context_input_examples()}
           </p>
         </div>
-      </div>
 
-      {/* SEO Info Section - hidden on mobile */}
-      <section className="hidden md:block mt-12 max-w-xl text-center animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
-        <p className="text-xs text-muted-foreground/50 leading-relaxed">
-          {m.home_about_text()}
-        </p>
-      </section>
+        <section className="mt-7 hidden max-w-[62ch] md:block">
+          <p className="text-xs leading-relaxed text-muted-foreground/80">
+            {m.home_about_text()}
+          </p>
+        </section>
+      </div>
     </div>
   )
 }

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-08T00:00:00.000Z",
+  "title": "Design System: BA Eventos",
+  "extensions": {
+    "colorMeta": {
+      "canvas": { "role": "neutral", "displayName": "Quiet Canvas", "canonical": "oklch(0.995 0.002 260)" },
+      "action-indigo": { "role": "primary", "displayName": "Action Indigo", "canonical": "oklch(0.48 0.16 275)" },
+      "assistant-coral": { "role": "secondary", "displayName": "Assistant Coral", "canonical": "oklch(0.63 0.22 30)" }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "ease-quiet", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Navigation, focus, and message state transitions." }
+    ],
+    "breakpoints": [
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "The Quiet Concierge",
+    "overview": "A calm, conversation-first interface that makes one practical Buenos Aires plan easy to understand and act on.",
+    "keyCharacteristics": ["narrow reading rail", "quiet navigation", "compact event imagery", "flat surfaces"],
+    "rules": [
+      { "name": "Two-Accent Rule", "body": "Indigo is interactive; coral is conversational.", "section": "colors" },
+      { "name": "Flat-by-Default Rule", "body": "Use spacing, tone, and rules before elevation.", "section": "elevation" }
+    ],
+    "dos": ["Keep event facts visible within one scan.", "Use modest real event imagery."],
+    "donts": ["Do not use gradients or glow.", "Do not turn metadata into badge clutter."]
+  }
+}

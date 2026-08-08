@@ -19,6 +19,7 @@ import {
   Bot,
   MessageCircle,
   BarChart3,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -135,21 +136,18 @@ export function MainLayout({ children }: MainLayoutProps) {
     const content = (
       <div
         className={`
-          group flex items-center gap-3 rounded-xl
-          transition-all duration-200 cursor-pointer
-          ${showLabel ? 'px-4 py-3' : 'p-3 justify-center'}
+          group flex items-center gap-3 rounded-lg
+          transition-colors duration-200 cursor-pointer min-h-11
+          ${showLabel ? 'px-3.5 py-2.5' : 'p-3 justify-center'}
           ${
             active
-              ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_20px_oklch(0.78_0.14_75/0.08)]'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              ? 'bg-primary/[0.07] text-primary'
+              : 'text-foreground/75 hover:text-foreground hover:bg-muted'
           }
         `}
       >
         <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-primary' : ''}`} />
         {showLabel && <span className="font-medium truncate">{item.label}</span>}
-        {showLabel && active && (
-          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-        )}
       </div>
     )
 
@@ -179,23 +177,20 @@ export function MainLayout({ children }: MainLayoutProps) {
       <SkipLink />
 
       {/* Mobile header */}
-      <header className="lg:hidden h-16 border-b border-border/50 bg-card/80 backdrop-blur-sm flex items-center gap-3 px-4 shrink-0 z-30">
+      <header className="lg:hidden h-16 border-b bg-card flex items-center gap-3 px-4 shrink-0 z-30">
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={mobileMenuOpen}
           className="text-muted-foreground hover:text-foreground shrink-0"
         >
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
         <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent blur-sm" />
-            <div className="relative flex items-center gap-2">
-              <div className="w-1 h-6 bg-gradient-to-b from-[#f06b5d] to-[#d64a3a] rounded-full" />
-              <span className="font-display text-lg font-semibold">BA Eventos</span>
-            </div>
-          </div>
+          <Sparkles className="h-5 w-5 text-accent" aria-hidden="true" />
+          <span className="text-base font-semibold tracking-tight">BA Eventos</span>
         </Link>
       </header>
 
@@ -211,25 +206,22 @@ export function MainLayout({ children }: MainLayoutProps) {
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-50
-          border-r border-border/50 bg-card/95 backdrop-blur-sm
+          border-r bg-card
           transform transition-all duration-300 ease-in-out
           ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          ${collapsed ? 'lg:w-16' : 'lg:w-64'}
+          ${collapsed ? 'lg:w-[72px]' : 'lg:w-[238px]'}
           w-64 flex flex-col shrink-0 h-full
         `}
       >
         {/* Sidebar header */}
-        <div className="h-16 border-b border-border/50 flex items-center justify-between px-4 shrink-0">
+        <div className="h-20 flex items-center justify-between px-5 shrink-0">
           <Link
             to="/"
             className={`flex items-center gap-3 hover:opacity-80 transition-opacity overflow-hidden ${collapsed ? 'lg:justify-center lg:w-full' : ''}`}
           >
-            <div className="relative shrink-0">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent blur-sm" />
-              <div className="relative w-1 h-6 bg-gradient-to-b from-[#f06b5d] to-[#d64a3a] rounded-full" />
-            </div>
+            <Sparkles className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
             <div className={`overflow-hidden transition-all duration-300 ${collapsed ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'}`}>
-              <span className="font-display text-lg font-semibold text-foreground whitespace-nowrap">
+              <span className="text-base font-semibold tracking-tight text-foreground whitespace-nowrap">
                 BA Eventos
               </span>
             </div>
@@ -248,7 +240,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 overflow-y-auto flex flex-col">
+        <nav className="flex-1 px-5 py-4 overflow-y-auto flex flex-col">
           {/* Main navigation */}
           <div className="space-y-1">
             {filteredMainNavItems.map((item) => {
@@ -312,15 +304,14 @@ export function MainLayout({ children }: MainLayoutProps) {
         </nav>
 
         {/* Language switcher */}
-        <div className="px-3 pb-2">
+        <div className="px-5 pb-3">
           <LanguageSwitcher collapsed={collapsed && !mobileMenuOpen} />
         </div>
 
-        {/* Decorative line */}
-        <div className={`mx-3 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent ${collapsed && !mobileMenuOpen ? 'mx-2' : ''}`} />
+        <div className={`mx-5 h-px bg-border ${collapsed && !mobileMenuOpen ? 'mx-3' : ''}`} />
 
         {/* User section */}
-        <div className="p-3">
+        <div className="p-5 pt-3">
           {user ? (
             <div className="space-y-2">
               {/* User info - only show when expanded */}
@@ -367,7 +358,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   <Link to="/login" className="block">
                     <Button
                       variant="outline"
-                      className="w-full p-3 justify-center border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
+                      className="w-full p-3 justify-center border-border text-foreground hover:bg-muted"
                     >
                       <User className="h-5 w-5" />
                     </Button>
@@ -381,7 +372,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                 <Button
                   variant="outline"
-                  className="w-full justify-start gap-3 px-4 border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
+                  className="w-full justify-start gap-3 px-3 border-border text-foreground hover:bg-muted"
                 >
                   <User className="h-5 w-5" />
                   <span>{m.auth_sign_in()}</span>
@@ -394,9 +385,6 @@ export function MainLayout({ children }: MainLayoutProps) {
 
       {/* Main content */}
       <main id="main-content" className="flex-1 min-h-0 relative flex flex-col">
-        {/* Background gradient */}
-        <div className="fixed inset-0 bg-gradient-to-br from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none" />
-
         <div className="relative flex-1 min-h-0">
           {children}
         </div>

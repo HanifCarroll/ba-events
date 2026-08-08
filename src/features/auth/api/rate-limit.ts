@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { getSupabaseServiceRoleClient } from '@/shared/lib/db/service'
 
 // Rate limit configuration for chat/general use
-export const RATE_LIMIT_REQUESTS = 30
+export const RATE_LIMIT_REQUESTS = 50
 export const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
 
 // Rate limit configuration for external API
