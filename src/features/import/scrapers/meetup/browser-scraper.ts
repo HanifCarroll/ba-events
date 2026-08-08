@@ -8,10 +8,11 @@
  * in the container at deploy time.
  */
 
-import type { Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { parseISO, eachDayOfInterval } from 'date-fns'
 import type { MeetupEvent, MeetupGraphQLEvent } from './types'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
+import { isBrowserbaseAvailable, createBrowserbaseSession } from '@/shared/lib/browser'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import { sanitizeError } from '@/shared/lib/security'
 import { logger } from '@/shared/lib/logger'
@@ -446,8 +447,78 @@ async function scrapePageForEvents(
 }
 
 /**
+ * Scrape a date range against an already-connected browser instance.
+ * Includes retry logic with page recreation for frame detachment errors.
+ * Shared by the local Playwright and Browserbase paths.
+ */
+async function scrapeWithBrowserInstance(
+  browser: Browser,
+  options: ScraperOptions
+): Promise<MeetupEvent[]> {
+  const collectedEvents: MeetupEvent[] = []
+  const seenIds = new Set<string>()
+
+  // Create context with Buenos Aires geolocation to ensure Meetup returns BA events
+  // This is critical because the browser may run on US servers, and Meetup uses
+  // IP geolocation by default which would return US events instead
+  const context = await browser.newContext({
+    geolocation: {
+      latitude: -34.6037,
+      longitude: -58.3816,
+    },
+    permissions: ['geolocation'],
+    locale: 'es-AR',
+    timezoneId: 'America/Argentina/Buenos_Aires',
+  })
+
+  let page = await context.newPage()
+
+  const dates = getDateRange(options.startDate, options.endDate)
+  logger.info(`[Meetup] Scraping ${dates.length} days`, { startDate: options.startDate, endDate: options.endDate, daysCount: dates.length })
+
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i]
+    const url = buildMeetupUrlForDate(date)
+    const dateStr = date.toISOString().split('T')[0]
+
+    logger.debug(`[Meetup] Scraping day ${i + 1}/${dates.length}`, { date: dateStr })
+
+    // Retry logic with page recreation for frame detachment errors
+    let success = false
+    for (let retry = 0; retry < MAX_PAGE_RETRIES && !success; retry++) {
+      try {
+        await scrapePageForEvents(page, url, seenIds, collectedEvents)
+        success = true
+      } catch (error) {
+        if (isFrameDetachmentError(error) && retry < MAX_PAGE_RETRIES - 1) {
+          console.warn(
+            `[Meetup] Frame detached for ${dateStr}, recreating page (attempt ${retry + 2}/${MAX_PAGE_RETRIES})`
+          )
+          // Close old page and create fresh one from the same context
+          await page.close().catch(() => {})
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+          page = await context.newPage()
+        } else {
+          // Non-frame error or max retries reached - log and continue
+          logger.error(`[Meetup] Error scraping date`, { date: dateStr, error: sanitizeError(error) })
+        }
+      }
+    }
+
+    logger.debug(`[Meetup] Total events so far`, { count: collectedEvents.length })
+
+    // Small delay between days to avoid rate limiting
+    if (i < dates.length - 1) {
+      await page.waitForTimeout(1000)
+    }
+  }
+
+  logger.info(`[Meetup] Finished scraping`, { totalEvents: collectedEvents.length })
+  return collectedEvents
+}
+
+/**
  * Scrape events using local Playwright for a date range
- * Includes retry logic with page recreation for frame detachment errors
  */
 async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEvent[]> {
   const { chromium } = await import('playwright')
@@ -457,82 +528,46 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
     args: BROWSER_ARGS,
   })
 
-  const collectedEvents: MeetupEvent[] = []
-  const seenIds = new Set<string>()
-
   try {
-    // Create context with Buenos Aires geolocation to ensure Meetup returns BA events
-    // This is critical because Trigger.dev runs on US servers, and Meetup uses
-    // IP geolocation by default which would return US events instead
-    const context = await browser.newContext({
-      geolocation: {
-        latitude: -34.6037,
-        longitude: -58.3816,
-      },
-      permissions: ['geolocation'],
-      locale: 'es-AR',
-      timezoneId: 'America/Argentina/Buenos_Aires',
-    })
-
-    let page = await context.newPage()
-
-    const dates = getDateRange(options.startDate, options.endDate)
-    logger.info(`[Meetup] Scraping ${dates.length} days`, { startDate: options.startDate, endDate: options.endDate, daysCount: dates.length })
-
-    for (let i = 0; i < dates.length; i++) {
-      const date = dates[i]
-      const url = buildMeetupUrlForDate(date)
-      const dateStr = date.toISOString().split('T')[0]
-
-      logger.debug(`[Meetup] Scraping day ${i + 1}/${dates.length}`, { date: dateStr })
-
-      // Retry logic with page recreation for frame detachment errors
-      let success = false
-      for (let retry = 0; retry < MAX_PAGE_RETRIES && !success; retry++) {
-        try {
-          await scrapePageForEvents(page, url, seenIds, collectedEvents)
-          success = true
-        } catch (error) {
-          if (isFrameDetachmentError(error) && retry < MAX_PAGE_RETRIES - 1) {
-            console.warn(
-              `[Meetup] Frame detached for ${dateStr}, recreating page (attempt ${retry + 2}/${MAX_PAGE_RETRIES})`
-            )
-            // Close old page and create fresh one from the same context
-            await page.close().catch(() => {})
-            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
-            page = await context.newPage()
-          } else {
-            // Non-frame error or max retries reached - log and continue
-            logger.error(`[Meetup] Error scraping date`, { date: dateStr, error: sanitizeError(error) })
-          }
-        }
-      }
-
-      logger.debug(`[Meetup] Total events so far`, { count: collectedEvents.length })
-
-      // Small delay between days to avoid rate limiting
-      if (i < dates.length - 1) {
-        await page.waitForTimeout(1000)
-      }
-    }
-
-    logger.info(`[Meetup] Finished scraping`, { totalEvents: collectedEvents.length })
-    return collectedEvents
+    return await scrapeWithBrowserInstance(browser, options)
   } finally {
     await browser.close()
   }
 }
 
 /**
- * Main scraper function - uses Playwright with Chromium
+ * Scrape events using a Browserbase cloud browser for a date range
+ */
+async function scrapeWithBrowserbase(options: ScraperOptions): Promise<MeetupEvent[]> {
+  const { chromium } = await import('playwright')
+
+  const { sessionId, connectUrl } = await createBrowserbaseSession()
+  logger.info('[Meetup] Browserbase session created', { sessionId })
+
+  const browser = await chromium.connectOverCDP(connectUrl)
+
+  try {
+    return await scrapeWithBrowserInstance(browser, options)
+  } finally {
+    await browser.close()
+  }
+}
+
+/**
+ * Main scraper function.
  *
- * In Trigger.dev production, uses the Playwright build extension which
- * pre-installs Chromium in the container.
+ * Uses Browserbase (cloud browser) when BROWSERBASE_API_KEY is set,
+ * otherwise falls back to local Playwright (development).
  *
  * @param options - Date range to scrape (startDate and endDate required)
  */
 export async function scrapeMeetupEvents(options: ScraperOptions): Promise<MeetupEvent[]> {
-  logger.info('[Meetup] Starting Playwright scraper')
+  if (isBrowserbaseAvailable()) {
+    logger.info('[Meetup] Using Browserbase for scraping')
+    return scrapeWithBrowserbase(options)
+  }
+
+  logger.info('[Meetup] Using local Playwright for scraping')
   return scrapeWithPlaywright(options)
 }
 

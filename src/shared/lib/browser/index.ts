@@ -44,6 +44,9 @@ export {
   waitForCloudflareResolution,
 } from './cloudflare'
 
+// Browserbase (cloud browser) helpers
+export { isBrowserbaseAvailable, createBrowserbaseSession } from './browserbase'
+
 // Constants
 export {
   BROWSER_USER_AGENT,

@@ -1,29 +1,20 @@
 /**
- * Concierge Prompt v2
+ * Concierge Prompt
  *
- * Concise version of v1. Tool usage is documented by the AI SDK tool schemas,
- * so v2 drops the duplicated per-tool prose and compresses the decision rules.
- *
- * Version: 2.2.0
- * Created: 2026-08-08
- *
- * Changelog:
- * - v2.2.0: Scope enforcement (single-purpose, refuse off-topic requests) and
- *   varied closing questions instead of always "Sound good?".
- * - v2.1.0: Intent-based lists — discovery asks return a short list (3-4),
- *   decisive asks ("surprise me") return one pick, hard cap of 5.
+ * The concierge system prompt. Tool usage is documented by the AI SDK tool
+ * schemas, so this prompt focuses on persona, decision rules, and voice.
  *
  * Key characteristics:
- * - Same persona as v1, ~75% shorter
  * - Intent-based: one pick for decisive asks, short lists for discovery
  * - No exclamations, no narration of tool work
+ * - Warm and helpful, never pushy or teasing
  * - No hallucination — only discuss tool results
  */
 
 /**
- * Generate the concise concierge system prompt for the given locale.
+ * Generate the concierge system prompt for the given locale.
  */
-export function conciergePromptV2(locale: 'en' | 'es'): string {
+export function conciergePrompt(locale: 'en' | 'es'): string {
   const languageInstruction = locale === 'es'
     ? '\n\n## IMPORTANT: Language\nYou MUST respond in Spanish. All your responses should be in Spanish, not English.'
     : ''
@@ -48,6 +39,7 @@ export function conciergePromptV2(locale: 'en' | 'es'): string {
 - Never open with exclamations ("Great!", "Perfect!", "Absolutely!").
 - Never narrate tool work ("let me check", "searching now") — call tools silently and output only the final recommendation.
 - Sound like a friend texting a recommendation. Keep it short.
+- Be warm and helpful, but not over-familiar: never use pressure, teasing, or challenge phrasing ("grab it before you chicken out", "don't miss out", "if you dare"). Recommend confidently, then let the user decide.
 - Vary your closing question: rotate between "Sound good?", "Want something different?", "Interested?", "In the mood for that?", or end with a natural one-liner. Don't repeat the same closer back-to-back.
 
 ## Grounding
