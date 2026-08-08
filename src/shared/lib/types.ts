@@ -461,7 +461,6 @@ export interface ChatMessage {
   events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
-  plan?: ConfirmedPlanData
   timestamp: Date
   isStreaming?: boolean
 }
@@ -546,28 +545,7 @@ export interface SavedEvent {
 
 export interface SavedEventWithDetails extends EventWithVenue {
   saved_at: string
-  planned_at: string | null
 }
-
-// User preferences for personalization
-export interface UserPreferences {
-  id: string
-  user_id: string
-  about_me: string | null
-  preferred_categories: Category[]
-  preferred_neighborhoods: Neighborhood[]
-  created_at: string
-  updated_at: string
-}
-
-export interface UserPreferencesInsert {
-  user_id: string
-  about_me?: string | null
-  preferred_categories?: string[]
-  preferred_neighborhoods?: string[]
-}
-
-export type UserPreferencesUpdate = Partial<Omit<UserPreferencesInsert, 'user_id'>>
 
 // Import blocklist types
 export const BLOCKLIST_TARGET_FIELDS = ['event_name', 'venue_name'] as const
@@ -711,34 +689,6 @@ export interface RefinementOption {
 }
 
 /**
- * Session-level context for smarter recommendations.
- * Tracks what the user has mentioned, rejected, and decided.
- */
-export interface ConversationContext {
-  /** Neighborhoods mentioned in conversation */
-  mentionedNeighborhoods: string[]
-  /** Neighborhoods user has rejected or shown disinterest in */
-  rejectedNeighborhoods: string[]
-  /** Vibe preferences expressed */
-  vibePreferences: string[]
-  /** Price sensitivity signals */
-  priceSignals: 'budget' | 'moderate' | 'splurge' | null
-  /** Who they're going with */
-  groupType: 'solo' | 'date' | 'friends' | 'group' | null
-  /** Has the user confirmed a choice? */
-  decisionMade: boolean
-  /** The event they selected (for YourPlanCard) */
-  selectedEvent?: EventWithVenue
-}
-
-export interface ConfirmedPlanData {
-  event: EventWithVenue
-  plannedAt: string | null
-  persisted: boolean
-  requiresLogin: boolean
-}
-
-/**
  * Extended ChatMessage for concierge UX.
  * Adds support for recommendations and decision state.
  */
@@ -789,7 +739,6 @@ export interface MessageAttachedData {
   events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
-  plan?: ConfirmedPlanData
 }
 
 /** Database record for a conversation */

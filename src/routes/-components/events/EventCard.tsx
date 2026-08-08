@@ -30,8 +30,6 @@ interface EventCardProps {
   commentary?: string
   /** Practical tips like "get there around 10pm" (hero variant) */
   tips?: string[]
-  onConfirmPlan?: (event: EventWithVenue) => void
-  isConfirmingPlan?: boolean
 }
 
 export function EventCard({
@@ -41,8 +39,6 @@ export function EventCard({
   variant = 'default',
   commentary,
   tips,
-  onConfirmPlan,
-  isConfirmingPlan = false,
 }: EventCardProps) {
   // Hero variant renders a completely different layout
   if (variant === 'hero') {
@@ -53,8 +49,6 @@ export function EventCard({
         source={source}
         commentary={commentary}
         tips={tips}
-        onConfirmPlan={onConfirmPlan}
-        isConfirmingPlan={isConfirmingPlan}
       />
     )
   }
@@ -72,8 +66,6 @@ interface HeroEventCardProps {
   source: 'chat' | 'saved_page'
   commentary?: string
   tips?: string[]
-  onConfirmPlan?: (event: EventWithVenue) => void
-  isConfirmingPlan: boolean
 }
 
 function HeroEventCard({
@@ -82,8 +74,6 @@ function HeroEventCard({
   source,
   commentary,
   tips,
-  onConfirmPlan,
-  isConfirmingPlan,
 }: HeroEventCardProps) {
   const locale = getLocale() as 'en' | 'es'
   const startDate = new Date(event.starts_at)
@@ -171,16 +161,7 @@ function HeroEventCard({
           )}
 
           <div className="mt-6 flex flex-wrap items-center gap-2">
-            {onConfirmPlan && (
-              <button
-                type="button"
-                onClick={() => onConfirmPlan(event)}
-                disabled={isConfirmingPlan}
-                className="min-h-11 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isConfirmingPlan ? m.concierge_saving_plan() : m.concierge_make_it_happen()}
-              </button>
-            )}
+            <SaveEventButton eventId={event.id} eventName={event.name} size="md" source={source} />
             <Link
               to="/event/$id"
               params={{ id: event.id }}

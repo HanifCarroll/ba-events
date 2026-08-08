@@ -6,16 +6,6 @@ function dispatchSavedEventsChanged() {
   window.dispatchEvent(new CustomEvent('event-save-changed'))
 }
 
-export interface SavedEventState {
-  isSaved: boolean
-  plannedAt: string | null
-}
-
-export interface ConfirmPlanResult extends SavedEventState {
-  persisted: boolean
-  requiresLogin: boolean
-}
-
 function mapSavedEventRow(item: any): SavedEventWithDetails | null {
   if (!item.events) return null
   const event = item.events
@@ -25,7 +15,6 @@ function mapSavedEventRow(item: any): SavedEventWithDetails | null {
     venue_address: event.venues?.address || null,
     venue_neighborhood: event.venues?.neighborhood || null,
     saved_at: item.created_at,
-    planned_at: item.planned_at ?? null,
   }
 }
 
@@ -45,7 +34,6 @@ export async function getSavedEvents(): Promise<SavedEventWithDetails[]> {
       id,
       event_id,
       created_at,
-      planned_at,
       events (
         *,
         venues (*)
@@ -117,81 +105,6 @@ export async function saveEvent(eventId: string): Promise<boolean> {
   return true
 }
 
-export async function getSavedEventState(eventId: string): Promise<SavedEventState> {
-  const client = getSupabaseBrowserClient()
-
-  const { data: { user } } = await client.auth.getUser()
-  if (!user) {
-    return {
-      isSaved: false,
-      plannedAt: null,
-    }
-  }
-
-  const { data, error } = await (client
-    .from('saved_events')
-    .select('planned_at')
-    .eq('user_id', user.id)
-    .eq('event_id', eventId)
-    .maybeSingle() as any)
-
-  if (error) {
-    console.error('Error checking saved event state:', error)
-    return {
-      isSaved: false,
-      plannedAt: null,
-    }
-  }
-
-  return {
-    isSaved: data !== null,
-    plannedAt: data?.planned_at ?? null,
-  }
-}
-
-export async function confirmPlan(eventId: string): Promise<ConfirmPlanResult> {
-  const client = getSupabaseBrowserClient()
-  const plannedAt = new Date().toISOString()
-
-  const { data: { user } } = await client.auth.getUser()
-  if (!user) {
-    return {
-      isSaved: false,
-      plannedAt,
-      persisted: false,
-      requiresLogin: true,
-    }
-  }
-
-  const { data, error } = await (client
-    .from('saved_events')
-    .upsert(
-      {
-        user_id: user.id,
-        event_id: eventId,
-        planned_at: plannedAt,
-      },
-      {
-        onConflict: 'user_id,event_id',
-      }
-    )
-    .select('planned_at')
-    .single() as any)
-
-  if (error) {
-    console.error('Error confirming plan:', error)
-    throw error
-  }
-
-  dispatchSavedEventsChanged()
-  return {
-    isSaved: true,
-    plannedAt: data?.planned_at ?? plannedAt,
-    persisted: true,
-    requiresLogin: false,
-  }
-}
-
 // Unsave an event
 export async function unsaveEvent(eventId: string): Promise<boolean> {
   const client = getSupabaseBrowserClient()
@@ -218,6 +131,24 @@ export async function unsaveEvent(eventId: string): Promise<boolean> {
 
 // Check if a specific event is saved
 export async function isEventSaved(eventId: string): Promise<boolean> {
-  const state = await getSavedEventState(eventId)
-  return state.isSaved
+  const client = getSupabaseBrowserClient()
+
+  const { data: { user } } = await client.auth.getUser()
+  if (!user) {
+    return false
+  }
+
+  const { data, error } = await (client
+    .from('saved_events')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('event_id', eventId)
+    .maybeSingle() as any)
+
+  if (error) {
+    console.error('Error checking saved event:', error)
+    return false
+  }
+
+  return data !== null
 }

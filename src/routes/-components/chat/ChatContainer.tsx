@@ -28,7 +28,6 @@ import {
   useCreateConversation,
   useAddMessage,
   useGenerateTitle,
-  useUpdateMessageAttachedData,
 } from '@/features/chat/hooks/useConversations'
 import { extractVisibleTextFromUIMessageParts } from '@/features/chat/lib/extract-visible-text'
 import {
@@ -39,7 +38,6 @@ import {
 } from '@/features/chat/lib/persistence-outbox'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
-import { confirmPlan } from '@/features/chat'
 
 export type RequestPhase =
   | 'idle'
@@ -67,7 +65,7 @@ export function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): Requ
   }
 }
 
-type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions' | 'plan'>
+type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
 
 export function assistantMessageHasVisibleContent(
   message: AssistantVisibilityMessage | null | undefined
@@ -76,8 +74,7 @@ export function assistantMessageHasVisibleContent(
   return !!(
     message.content.trim().length > 0 ||
     (message.events && message.events.length > 0) ||
-    message.directions ||
-    message.plan
+    message.directions
   )
 }
 
@@ -121,10 +118,8 @@ export function ChatContainer() {
   const createConversation = useCreateConversation()
   const addMessage = useAddMessage()
   const generateTitle = useGenerateTitle()
-  const updateAttachedData = useUpdateMessageAttachedData()
   const [requestPhase, setRequestPhase] = useState<RequestPhase>('idle')
   const requestPhaseRef = useRef<RequestPhase>('idle')
-  const [planningAssistantMessageId, setPlanningAssistantMessageId] = useState<string | null>(null)
 
   // Request correlation for message-scoped streamed attached data
   const activeRequestIdRef = useRef<string | null>(null)
@@ -583,72 +578,10 @@ export function ChatContainer() {
       pendingUserPersistencePromiseRef.current = null
       pendingUserPersistedMessageIdRef.current = null
       persistedAssistantMessageIdsRef.current.clear()
-      setPlanningAssistantMessageId(null)
       isFirstExchangeRef.current = true
       resetRequestCorrelations()
     })
   }, [registerStartNewChatHandler, stop, setMessages, setAttachedDataMap, setRequestLifecyclePhase, resetRequestCorrelations])
-
-  const handleConfirmPlan = useCallback(
-    async (assistantMessageId: string, event: EventWithVenue) => {
-      if (planningAssistantMessageId) return
-
-      setPlanningAssistantMessageId(assistantMessageId)
-
-      try {
-        const result = await confirmPlan(event.id)
-        const plan = {
-          event,
-          plannedAt: result.plannedAt,
-          persisted: result.persisted,
-          requiresLogin: result.requiresLogin,
-        }
-
-        let nextAttachedData: MessageAttachedData | null = null
-        upsertAttachedDataForAssistantMessage(assistantMessageId, (current) => {
-          nextAttachedData = {
-            ...current,
-            plan,
-          }
-          return nextAttachedData
-        })
-
-        if (result.persisted && nextAttachedData) {
-          const persistedMessageId =
-            persistedAssistantMessageIdsRef.current.get(assistantMessageId) ?? assistantMessageId
-
-          try {
-            await updateAttachedData.mutateAsync({
-              messageId: persistedMessageId,
-              attachedData: nextAttachedData,
-            })
-          } catch (updateError) {
-            console.error('Failed to persist plan attached data:', updateError)
-            toast.warning('Plan saved, but chat history may need a refresh', {
-              description: 'The event is saved in your plans, but this chat card may not sync until reload.',
-            })
-          }
-
-          toast.success('Plan saved', {
-            description: 'You can revisit it from Saved.',
-          })
-          return
-        }
-
-        toast.message('Plan ready for this session', {
-          description: 'Sign in to save it permanently in your Saved plans.',
-        })
-      } catch (planError) {
-        console.error('Failed to confirm plan:', planError)
-        toast.error('Failed to confirm plan', {
-          description: 'Try again in a moment.',
-        })
-      } finally {
-        setPlanningAssistantMessageId(null)
-      }
-    },
-    [planningAssistantMessageId, updateAttachedData, upsertAttachedDataForAssistantMessage]
-  )
 
   const handleSendMessage = useCallback(
     async (content: string) => {
@@ -770,7 +703,6 @@ export function ChatContainer() {
         events: storedData?.events,
         suggestions: storedData?.suggestions,
         directions: storedData?.directions,
-        plan: storedData?.plan,
       }
     })
   }, [messages, messageAttachedDataMap, status])
@@ -781,8 +713,7 @@ export function ChatContainer() {
       const hasVisibleContent =
         chatMessage.content.trim().length > 0 ||
         (chatMessage.events && chatMessage.events.length > 0) ||
-        chatMessage.directions ||
-        chatMessage.plan
+        chatMessage.directions
       return hasVisibleContent || chatMessage.isStreaming
     })
   }, [chatMessages])
@@ -857,8 +788,6 @@ export function ChatContainer() {
             loadingPhase={requestPhase}
             loadingLabel={loadingLabel}
             onSuggestionSelect={handleSendMessage}
-            onConfirmPlan={handleConfirmPlan}
-            planningAssistantMessageId={planningAssistantMessageId}
           />
         ) : (
           <SuggestedPrompts onSelectPrompt={handleSendMessage} />

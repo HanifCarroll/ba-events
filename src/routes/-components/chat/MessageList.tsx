@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { Sparkles } from 'lucide-react'
 import { ChatMessage } from './ChatMessage'
-import type { ChatMessage as ChatMessageType, EventWithVenue } from '@/shared/lib/types'
+import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
 type LoadingPhase =
@@ -19,8 +19,6 @@ interface MessageListProps {
   loadingPhase?: LoadingPhase
   loadingLabel?: string
   onSuggestionSelect?: (prompt: string) => void
-  onConfirmPlan?: (assistantMessageId: string, event: EventWithVenue) => void
-  planningAssistantMessageId?: string | null
 }
 
 export function MessageList({
@@ -29,8 +27,6 @@ export function MessageList({
   loadingPhase = 'idle',
   loadingLabel,
   onSuggestionSelect,
-  onConfirmPlan,
-  planningAssistantMessageId,
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -112,8 +108,6 @@ export function MessageList({
             message={message}
             onSuggestionSelect={onSuggestionSelect}
             suggestionsDisabled={isLoading}
-            onConfirmPlan={onConfirmPlan}
-            isConfirmingPlan={planningAssistantMessageId === message.id}
           />
         ))}
 

@@ -1,6 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
 import type { EventListParams, EventFilterParams } from '@/shared/lib/types/pagination'
-import type { DateRange } from '@/features/analytics/types'
 
 // Create a singleton QueryClient instance
 export const queryClient = new QueryClient({
@@ -56,13 +55,6 @@ export const queryKeys = {
     current: () => [...queryKeys.profile.all, 'current'] as const,
   },
 
-  // User preferences (personalization)
-  preferences: {
-    all: ['preferences'] as const,
-    current: () => [...queryKeys.preferences.all, 'current'] as const,
-    hasPreferences: () => [...queryKeys.preferences.all, 'hasPreferences'] as const,
-  },
-
   // Saved events
   saved: {
     all: ['saved'] as const,
@@ -74,18 +66,6 @@ export const queryKeys = {
     all: ['blocklist'] as const,
     list: () => [...queryKeys.blocklist.all, 'list'] as const,
     detail: (id: string) => [...queryKeys.blocklist.all, 'detail', id] as const,
-  },
-
-  // Analytics
-  analytics: {
-    all: ['analytics'] as const,
-    activeUsers: (range: DateRange) => [...queryKeys.analytics.all, 'activeUsers', range] as const,
-    dauTimeSeries: (range: DateRange) => [...queryKeys.analytics.all, 'dauTimeSeries', range] as const,
-    wauTimeSeries: (range: DateRange) => [...queryKeys.analytics.all, 'wauTimeSeries', range] as const,
-    pageviews: (range: DateRange) => [...queryKeys.analytics.all, 'pageviews', range] as const,
-    topEvents: (range: DateRange) => [...queryKeys.analytics.all, 'topEvents', range] as const,
-    searchTerms: (range: DateRange) => [...queryKeys.analytics.all, 'searchTerms', range] as const,
-    engagement: (range: DateRange) => [...queryKeys.analytics.all, 'engagement', range] as const,
   },
 
   // Conversations (chat history)

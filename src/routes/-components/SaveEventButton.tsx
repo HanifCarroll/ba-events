@@ -3,7 +3,7 @@ import { Heart } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
-import { getSavedEventState, saveEvent, unsaveEvent } from '@/features/chat'
+import { isEventSaved, saveEvent, unsaveEvent } from '@/features/chat'
 import { track } from '@/lib/analytics'
 import { Button } from '@/shared/ui/button'
 import {
@@ -45,10 +45,10 @@ export function SaveEventButton({
       return
     }
 
-    void getSavedEventState(eventId)
-      .then((state) => {
+    void isEventSaved(eventId)
+      .then((saved) => {
         if (!cancelled) {
-          setIsSaved(state.isSaved)
+          setIsSaved(saved)
         }
       })
       .catch((error) => {

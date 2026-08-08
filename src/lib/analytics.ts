@@ -44,9 +44,6 @@ export type ConciergeEvent =
   | 'concierge:refinement_clicked'
   | 'concierge:context_prompt'
   | 'concierge:surprise_me'
-  | 'concierge:add_to_calendar'
-  | 'concierge:get_directions'
-  | 'concierge:share_plan'
 
 // Agent tool usage events (server-side tracking)
 export type AgentToolEvent =

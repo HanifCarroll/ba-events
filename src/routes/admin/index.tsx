@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Calendar, MapPin, Plus, Clock, CheckCircle, BarChart3 } from 'lucide-react'
+import { Calendar, MapPin, Plus, Clock, CheckCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card'
 import { Button } from '@/shared/ui/button'
 import { getAdminStats } from '@/features/events/api/stats'
@@ -146,12 +146,6 @@ function AdminDashboard() {
         </Button>
         <Button asChild variant="ghost" className="text-muted-foreground hover:text-foreground">
           <Link to="/admin/venues">{m.admin_view_all_venues()}</Link>
-        </Button>
-        <Button asChild variant="ghost" className="text-muted-foreground hover:text-foreground">
-          <Link to="/admin/analytics" className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            Analytics
-          </Link>
         </Button>
         <Button asChild variant="ghost" className="text-muted-foreground hover:text-foreground">
           <Link to="/">{m.admin_go_to_site()}</Link>

@@ -3,7 +3,6 @@
  *
  * The main event search tool with semantic and filter-based search.
  * Supports natural language queries, time filters, categories, neighborhoods, and price filters.
- * Automatically applies user preferences as defaults when no explicit filters are provided.
  */
 
 import { z } from 'zod'
@@ -11,45 +10,9 @@ import { addDays, setHours, startOfDay, getDay, getHours } from 'date-fns'
 import { defineTool } from './types'
 import { searchEventsWithFilters, hybridEventSearch } from '@/shared/lib/db/client'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
-import type { EventFilters, Neighborhood } from '@/shared/lib/types'
+import type { EventFilters } from '@/shared/lib/types'
 import { getNowInBA, baToUTC, ensureChatEventPayloads, formatEventsToolResult } from './utils'
 import { logger } from '@/shared/lib/logger'
-
-// ============================================================================
-// HELPER: Get user preferences for search defaults
-// ============================================================================
-
-interface UserPreferencesForSearch {
-  preferredCategories: string[]
-  preferredNeighborhoods: string[]
-}
-
-async function getUserPreferencesForSearch(userId: string | null): Promise<UserPreferencesForSearch | null> {
-  if (!userId) return null
-
-  try {
-    const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
-    const client = createSupabaseServerClient()
-
-    const { data, error } = await client
-      .from('user_preferences')
-      .select('preferred_categories, preferred_neighborhoods')
-      .eq('user_id', userId)
-      .maybeSingle()
-
-    if (error || !data) {
-      return null
-    }
-
-    return {
-      preferredCategories: data.preferred_categories || [],
-      preferredNeighborhoods: data.preferred_neighborhoods || [],
-    }
-  } catch (err) {
-    logger.error('[search_events] Error fetching user preferences', { error: String(err) })
-    return null
-  }
-}
 
 // ============================================================================
 // INPUT SCHEMA
@@ -209,52 +172,15 @@ Use other parameters for specific requirements. Combine both for best results.`,
 
   requiresAuth: false,
 
-  execute: async (input, context) => {
+  execute: async (input) => {
     try {
       const filters = toolInputToFilters(input)
       const limit = input.limit ?? 1 // Default to 1 - concierge mode makes single recommendations
-
-      // Apply user preferences as defaults when no explicit filters provided
-      let appliedPreferences = false
-      if (context.userContext.isAuthenticated && context.userContext.userId) {
-        const preferences = await getUserPreferencesForSearch(context.userContext.userId)
-
-        if (preferences) {
-          // Apply preferred categories if user didn't specify any
-          if (!input.categories?.length && preferences.preferredCategories.length > 0) {
-            filters.categories = preferences.preferredCategories
-            appliedPreferences = true
-            logger.info('[search_events] Applied user preferred categories', {
-              categories: preferences.preferredCategories,
-              userId: context.userContext.userId,
-            })
-          }
-
-          // Apply first preferred neighborhood if user didn't specify one
-          // Only apply if no semantic query (to avoid over-constraining vibe searches)
-          if (!input.neighborhood && !input.query && preferences.preferredNeighborhoods.length > 0) {
-            const preferredNeighborhood = preferences.preferredNeighborhoods[0]
-            const match = NEIGHBORHOODS.find(
-              n => n.toLowerCase() === preferredNeighborhood.toLowerCase()
-            ) as Neighborhood | undefined
-
-            if (match) {
-              filters.neighborhood = match
-              appliedPreferences = true
-              logger.info('[search_events] Applied user preferred neighborhood', {
-                neighborhood: match,
-                userId: context.userContext.userId,
-              })
-            }
-          }
-        }
-      }
 
       logger.debug('[search_events] Search parameters', {
         input,
         filters,
         limit,
-        appliedPreferences,
         currentTime: new Date().toISOString(),
         baTime: getNowInBA().toISOString(),
       })
@@ -273,7 +199,6 @@ Use other parameters for specific requirements. Combine both for best results.`,
 
       logger.info('[search_events] Search completed', {
         resultCount: results.length,
-        appliedPreferences,
         hasQuery: !!input.query,
       })
 
@@ -285,7 +210,6 @@ Use other parameters for specific requirements. Combine both for best results.`,
           resultCount: results.length,
           hasQuery: !!input.query,
           hasFilters: !!(input.categories || input.neighborhood || input.timeFilter),
-          appliedPreferences,
           // Include input for refinement suggestion generation
           toolInput: input,
         },

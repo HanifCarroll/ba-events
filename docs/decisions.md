@@ -26,6 +26,25 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Pre-Marketing Simplification: Remove Analytics Dashboard, Personalization, and "Planned"
+
+**Date:** 2026-08-08
+
+**Decision:** Removed three subsystems to shrink the codebase to the core loop (chat → recommendation → save):
+1. **In-app admin analytics dashboard** — deleted the `/admin/analytics` route, chart components, PostHog query layer, and the `recharts` dependency. PostHog's own UI already answers every question this page did.
+2. **Preferences/personalization subsystem** — deleted the profile preferences form, `user_preferences` API/hooks, the personalization prompt, and the chat agent's preference wiring (context tool, search defaults, prompt sections). Users can express preferences directly in chat.
+3. **"Planned" layer on top of "Saved"** — removed `planned_at` handling, `confirmPlan`, `getSavedEventState`, `YourPlanCard`, and the "Make it happen" flow. There is now a single save concept; the hero recommendation card and event page use `SaveEventButton`.
+
+**Alternatives Considered:**
+- Keeping personalization behind a feature flag: Rejected — dead code paths still cost maintenance and the feature wasn't validated.
+- Migrating the DB to drop `planned_at` / `user_preferences`: Rejected — destructive with no benefit pre-traction; the columns simply became unused.
+
+**Rationale:** Pre-marketing stage; shrink the maintenance surface (screens, i18n strings, agent prompt complexity) so iteration stays cheap during the marketing push. Reinstate any piece only when usage data justifies it.
+
+**Convention note:** Admin ops UI (scraping, blocklist, venue review) is **frozen** — operate via SQL/scripts. No new admin screens without explicit approval.
+
+---
+
 ### Real-Time Nominatim Address Resolution for Venue Imports
 
 **Date:** 2026-01-27

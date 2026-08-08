@@ -1,7 +1,7 @@
 /**
  * React Query hooks for chat conversations.
  *
- * Provides authenticated conversation persistence for the plan-making chat flow.
+ * Provides authenticated conversation persistence for the chat flow.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'

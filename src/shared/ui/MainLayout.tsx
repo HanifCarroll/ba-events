@@ -18,7 +18,6 @@ import {
   Ban,
   Bot,
   MessageCircle,
-  BarChart3,
   Sparkles,
 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
@@ -115,7 +114,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     { to: '/admin', label: m.nav_dashboard(), icon: LayoutDashboard, adminOnly: true, exact: true },
     { to: '/admin/events', label: m.nav_events(), icon: Calendar, adminOnly: true },
     { to: '/admin/venues', label: m.nav_venues(), icon: MapPin, adminOnly: true },
-    { to: '/admin/analytics', label: m.nav_analytics(), icon: BarChart3, adminOnly: true },
     { to: '/admin/blocklist', label: m.nav_blocklist(), icon: Ban, adminOnly: true },
     { to: '/admin/scraping', label: m.nav_scraping(), icon: Bot, adminOnly: true },
   ]

@@ -22,8 +22,6 @@ export {
 export {
   getSavedEvents,
   getSavedEventIds,
-  getSavedEventState,
-  confirmPlan,
   saveEvent,
   unsaveEvent,
   isEventSaved,

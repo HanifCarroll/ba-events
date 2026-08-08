@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute, notFound } from '@tanstack/react-router'
-import { Calendar, Clock, MapPin, ExternalLink, Share2, Check, Loader2 } from 'lucide-react'
+import { Calendar, Clock, MapPin, ExternalLink, Share2, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { getEventWithVenueAction } from '@/features/events/api/crud'
-import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
-import { confirmPlan, getSavedEventState } from '@/features/chat'
 import { SaveEventButton } from '@/routes/-components/SaveEventButton'
-import { YourPlanCard } from '@/routes/-components/chat/YourPlanCard'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { formatEventTime, formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
@@ -21,8 +18,7 @@ import {
   getSourceCtaLabel,
   getSourceLabel,
 } from '@/features/events/lib/source-presentation'
-import type { ConfirmedPlanData, EventWithVenue } from '@/shared/lib/types'
-import { toast } from 'sonner'
+import type { EventWithVenue } from '@/shared/lib/types'
 
 export const Route = createFileRoute('/event/$id')({
   loader: async ({ params }) => {
@@ -77,10 +73,7 @@ export const Route = createFileRoute('/event/$id')({
 
 function EventDetailPage() {
   const event = Route.useLoaderData()
-  const { user } = useAuthContext()
   const [copied, setCopied] = useState(false)
-  const [plan, setPlan] = useState<ConfirmedPlanData | null>(null)
-  const [isPlanning, setIsPlanning] = useState(false)
   const locale = getLocale() as 'en' | 'es'
 
   const startDate = new Date(event.starts_at)
@@ -102,39 +95,6 @@ function EventDetailPage() {
   const sourceLabel = getSourceLabel(event.source)
   const sourceCtaLabel = getSourceCtaLabel(event.source)
 
-  useEffect(() => {
-    let cancelled = false
-
-    if (!user) {
-      setPlan((current) => (current?.requiresLogin ? current : null))
-      return
-    }
-
-    void getSavedEventState(event.id)
-      .then((state) => {
-        if (cancelled) return
-
-        if (state.plannedAt) {
-          setPlan({
-            event,
-            plannedAt: state.plannedAt,
-            persisted: true,
-            requiresLogin: false,
-          })
-          return
-        }
-
-        setPlan((current) => (current?.requiresLogin ? current : null))
-      })
-      .catch((error) => {
-        console.error('Failed to load saved event state:', error)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [event, user])
-
   const handleShare = async () => {
     if (navigator.share) {
       try {
@@ -152,34 +112,6 @@ function EventDetailPage() {
     await navigator.clipboard.writeText(shareUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }
-
-  const handleConfirmPlan = async () => {
-    if (isPlanning || plan?.persisted) return
-
-    setIsPlanning(true)
-
-    try {
-      const result = await confirmPlan(event.id)
-      const nextPlan: ConfirmedPlanData = {
-        event,
-        plannedAt: result.plannedAt,
-        persisted: result.persisted,
-        requiresLogin: result.requiresLogin,
-      }
-
-      setPlan(nextPlan)
-      toast.success(result.persisted ? 'Plan saved' : 'Plan ready for this session', {
-        description: result.persisted
-          ? 'You can revisit it from Saved.'
-          : 'Sign in to save it permanently.',
-      })
-    } catch (error) {
-      console.error('Failed to confirm event plan:', error)
-      toast.error('Failed to confirm plan')
-    } finally {
-      setIsPlanning(false)
-    }
   }
 
   return (
@@ -215,18 +147,6 @@ function EventDetailPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                onClick={handleConfirmPlan}
-                disabled={isPlanning || !!plan?.persisted}
-              >
-                {isPlanning ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Calendar className="h-4 w-4" />
-                )}
-                {plan?.persisted ? 'Planned' : 'Make this my plan'}
-              </Button>
               <SaveEventButton
                 eventId={event.id}
                 eventName={event.name}
@@ -273,14 +193,6 @@ function EventDetailPage() {
                 loading="lazy"
               />
             </div>
-          )}
-
-          {plan && (
-            <YourPlanCard
-              event={plan.event}
-              persisted={plan.persisted}
-              requiresLogin={plan.requiresLogin}
-            />
           )}
 
           <div className="rounded-2xl border border-border/30 bg-card p-6 space-y-4">
