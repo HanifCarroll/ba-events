@@ -73,6 +73,16 @@ function handleEvent(evt: Record<string, unknown>) {
     console.log(`  [tool] ${evt.toolName} args=${JSON.stringify(evt.args ?? {})}`)
   } else if (type === 'finish') {
     finishReason = String(evt.finishReason ?? 'unknown')
+  } else if (type === 'data-execution-trace') {
+    // This route reports tool calls inside the execution-trace envelope.
+    const envelope = evt.data as { data?: Array<{ toolCalls?: unknown[] }> } | undefined
+    for (const step of envelope?.data ?? []) {
+      for (const call of step.toolCalls ?? []) {
+        const c = call as { toolName?: string; input?: unknown }
+        toolCalls++
+        console.log(`  [tool] ${c.toolName ?? '?'} args=${JSON.stringify(c.input ?? {})}`)
+      }
+    }
   } else if (type === 'data-status') {
     const phase = (evt.data as { phase?: string } | undefined)?.phase
     if (phase && phase !== lastStatus) {
