@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const generateObjectMock = vi.hoisted(() => vi.fn())
+import type { Mock } from 'vitest'
 
 vi.mock('ai', () => ({
-  generateObject: generateObjectMock,
+  generateObject: vi.fn(),
   generateText: vi.fn(),
 }))
 
+import { generateObject } from 'ai'
 import { generateDescriptionSummary } from './enrichment'
+
+// The mocked module export IS the mock fn; cast only for typing
+// (bun test does not provide vi.mocked).
+const generateObjectMock = generateObject as unknown as Mock
 
 describe('generateDescriptionSummary', () => {
   beforeEach(() => {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import type { LocalOutboxItem } from '@/shared/lib/db/local-outbox'
 import {
   calculateRetryDelayMs,
@@ -22,11 +23,13 @@ vi.mock('@/shared/lib/db/local-outbox', () => ({
   updateOutboxItem: vi.fn(),
 }))
 
-const mockedAddOutboxItem = vi.mocked(addOutboxItem)
-const mockedDeleteOutboxItem = vi.mocked(deleteOutboxItem)
-const mockedGetOutboxItemByClientMessageId = vi.mocked(getOutboxItemByClientMessageId)
-const mockedListDueOutboxItems = vi.mocked(listDueOutboxItems)
-const mockedUpdateOutboxItem = vi.mocked(updateOutboxItem)
+// The mocked module exports ARE the mock fns; cast only for typing
+// (bun test does not provide vi.mocked).
+const mockedAddOutboxItem = addOutboxItem as unknown as Mock
+const mockedDeleteOutboxItem = deleteOutboxItem as unknown as Mock
+const mockedGetOutboxItemByClientMessageId = getOutboxItemByClientMessageId as unknown as Mock
+const mockedListDueOutboxItems = listDueOutboxItems as unknown as Mock
+const mockedUpdateOutboxItem = updateOutboxItem as unknown as Mock
 
 function makeOutboxItem(overrides: Partial<LocalOutboxItem> = {}): LocalOutboxItem {
   return {
