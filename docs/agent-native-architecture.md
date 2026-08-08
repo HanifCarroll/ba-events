@@ -23,10 +23,10 @@ Agent-native applications get better through accumulated context and prompt refi
 
 ## Current Agent State
 
-The AI agent (the "concierge") now has **15 tools** (updated 2025-01-13):
+The AI agent (the "concierge") now has **8 tools** (consolidated 2026-08-08):
 
 ### Core Tools
-1. `search_events` - Semantic + filtered event search
+1. `search_events` - Semantic + filtered event search. The single retrieval surface: "tonight" and "right now" asks map to `timeFilter: "tonight"` / `timeFilter: "now"` (previously dedicated tools, removed to eliminate tool-choice drift)
 2. `get_venue_details` - Venue information lookup
 3. `get_event_details` - Full event details by ID
 
@@ -36,19 +36,15 @@ The AI agent (the "concierge") now has **15 tools** (updated 2025-01-13):
 6. `list_saved_events` - Show user's saved events (upcoming/past/all)
 7. `check_event_saved` - Check if event is already saved
 
-### Context Tools
-8. `get_happening_now` - Events in progress right now
-9. `get_tonights_events` - Tonight's events (6pm-6am)
-10. `get_user_context` - User auth status and saved counts
+### Directions Tools
+8. `get_directions` - Generate Google Maps directions to venue
 
-### Discovery Tools
-11. `get_event_stats` - Overview statistics (counts by category, neighborhood)
-12. `list_neighborhoods_with_events` - Neighborhoods with event counts
-13. `list_categories_with_events` - Categories with event counts
-
-### Sharing & Directions Tools
-14. `share_event` - Generate shareable link for an event
-15. `get_directions` - Generate Google Maps directions to venue
+Removed in the 2026-08-08 consolidation: `get_tonights_events`, `get_happening_now`
+(folded into `search_events` timeFilter), `get_event_stats`,
+`list_neighborhoods_with_events`, `list_categories_with_events` (analytics, not
+recommendations), `share_event` (UI share button owns this; the tool generated
+broken links), and `get_user_context` (auth state is now injected into the
+system prompt by the chat route).
 
 It uses a **single-search model** (max 2 Claude calls), not a true agent loop.
 
@@ -66,10 +62,10 @@ The article's #1 principle: **"Whatever the user can do through the UI, the agen
 | Unsave event | ✅ | `unsave_event` |
 | View saved events | ✅ | `list_saved_events` |
 | Get full event details | ✅ | `get_event_details` |
-| See what's happening now | ✅ | `get_happening_now` |
-| Explore neighborhoods | ✅ | `list_neighborhoods_with_events` |
-| Explore categories | ✅ | `list_categories_with_events` |
-| Share event | ✅ | `share_event` |
+| See what's happening now | ✅ | `search_events` (timeFilter: "now") |
+| Explore neighborhoods | ✅ | `search_events` (neighborhood filter) |
+| Explore categories | ✅ | `search_events` (categories filter) |
+| Share event | ✅ | UI share button on event cards (no tool) |
 | Get directions | ✅ | `get_directions` |
 | Get tickets | Partial | (returns URL in event) |
 
@@ -78,7 +74,7 @@ The article's #1 principle: **"Whatever the user can do through the UI, the agen
 | Entity | Create | Read | Update | Delete |
 |--------|--------|------|--------|--------|
 | Saved Events | ✅ `save_event` | ✅ `list_saved_events` | N/A | ✅ `unsave_event` |
-| User Preferences | ❌ | ✅ `get_user_context` | ❌ | ❌ |
+| User Preferences | ❌ | ✅ (system prompt injection) | ❌ | ❌ |
 
 ---
 

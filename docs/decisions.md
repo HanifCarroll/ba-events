@@ -26,6 +26,28 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Single Retrieval Surface: Consolidate Chat Agent Tools from 15 to 8
+
+**Date:** 2026-08-08
+
+**Decision:** Collapsed all event discovery into `search_events` and deleted six tools:
+1. **`get_tonights_events` / `get_happening_now`** — folded into `search_events` via `timeFilter: "tonight"` and a new `timeFilter: "now"` (the "now" path queries started-not-ended events and applies remaining filters in memory).
+2. **`get_event_stats` / `list_neighborhoods_with_events` / `list_categories_with_events`** — deleted. Aggregate enumeration is analytics, not concierge recommendations; the stats tool was observed hijacking vague asks ("no sé qué hacer hoy") and returning zero events.
+3. **`share_event`** — deleted. Every event card already renders a share button (`EventActions` + `getEventUrl`), and the tool hand-built broken URLs (`/events/` plural path that 404s, wrong default domain).
+4. **`get_user_context`** — deleted as a tool. The chat route now injects auth state + saved-events count into the system prompt, saving one model step per conversation.
+
+Also: the concierge prompt's decision rules now state the limit mechanism imperatively ("call search_events with limit 1 — or omit, default is 1"), and the dead Anthropic-era tool registry (`tools/index.ts`, `ToolName`, `*ToolUseBlock` types for removed tools) was removed.
+
+**Alternatives Considered:**
+- Keeping the convenience tools with sharper descriptions: Rejected — overlapping tools with fuzzy selection rules have no consistently right answer; evals showed DeepSeek Flash choosing differently run to run (tool-choice drift).
+- Server-side limit caps per detected intent: Rejected — intent classification is the model's job; the eval suite is the enforcement mechanism.
+
+**Rationale:** Concierge evals (added the same week) showed two recurring failure classes — decisive asks leaking lists via the tonight tool's default limit of 10, and neighborhood/vibe queries routed to convenience tools with narrower semantics. One retrieval tool with a default limit of 1 removes the wrong choice by construction. Verified post-change with `evals/concierge` runs.
+
+**Verification:** `bun run eval:concierge` gates future prompt/model changes; golden search eval unaffected (retrieval path unchanged).
+
+---
+
 ### Pre-Marketing Simplification: Remove Analytics Dashboard, Personalization, and "Planned"
 
 **Date:** 2026-08-08

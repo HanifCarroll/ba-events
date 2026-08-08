@@ -16,7 +16,7 @@ import {
   type UIMessage,
 } from 'ai'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '@/features/auth/api/rate-limit'
-import { getUserToolContext } from '@/features/chat/api/user-tools'
+import { getUserToolContext, listSavedEventsForUser } from '@/features/chat/api/user-tools'
 import { createTools } from '@/features/chat/api/tools-ai-sdk'
 import { getSystemPrompt } from '@/features/chat/api/prompts'
 import { generateSuggestions } from '@/features/chat/api/suggestions'
@@ -298,6 +298,16 @@ export const Route = createFileRoute('/api/chat' as any)({
         const userContext = await getUserToolContext()
         console.log(`[DEBUG] User context: authenticated=${userContext.isAuthenticated}, userId=${userContext.userId?.slice(0, 8) ?? 'none'}`)
 
+        // Inject auth state into the system prompt (replaces the old
+        // get_user_context tool - static info, not worth a model step)
+        const savedEventsCount = userContext.isAuthenticated
+          ? ((await listSavedEventsForUser('all', userContext)).count ?? 0)
+          : 0
+        const systemPrompt = getSystemPrompt(locale, {
+          isAuthenticated: userContext.isAuthenticated,
+          savedEventsCount,
+        })
+
         // Accumulate events across all tool calls
         const allEvents = new Map<string, ChatEventPayload>()
         let lastSearchInput: SearchEventsInput | null = null
@@ -337,7 +347,7 @@ export const Route = createFileRoute('/api/chat' as any)({
 
               const result = streamText({
                 model: textModel,
-                system: getSystemPrompt(locale),
+                system: systemPrompt,
                 messages: modelMessages,
                 tools: createTools(userContext, locale),
                 ...NO_THINKING,

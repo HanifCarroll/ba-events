@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { addDays, setHours, startOfDay, getDay, getHours } from 'date-fns'
 import { defineTool } from './types'
-import { searchEventsWithFilters, hybridEventSearch } from '@/shared/lib/db/client'
+import { searchEventsWithFilters, hybridEventSearch, getEventsHappeningNow } from '@/shared/lib/db/client'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
 import type { EventFilters } from '@/shared/lib/types'
 import { getNowInBA, baToUTC, ensureChatEventPayloads, formatEventsToolResult } from './utils'
@@ -29,9 +29,11 @@ export const searchEventsInputSchema = z.object({
   isFree: z.boolean().optional().describe('Set to true to only show free events'),
   maxPrice: z.number().optional().describe('Maximum price in ARS'),
   timeFilter: z
-    .enum(['tonight', 'tomorrow', 'weekend', 'week'])
+    .enum(['now', 'tonight', 'tomorrow', 'weekend', 'week'])
     .optional()
-    .describe('Time period filter. tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days'),
+    .describe(
+      'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days'
+    ),
   limit: z.number().optional().describe(
     'Maximum number of events to return and display (1-10). Use this to match the user\'s request - e.g., if they ask for "top 3 events", set limit to 3.'
   ),
@@ -130,7 +132,8 @@ export const searchEventsTool = defineTool({
   description: `Search for events in Buenos Aires using semantic search and/or filters.
 Use the 'query' parameter for natural language searches describing the desired experience
 (e.g., "romantic jazz night", "underground techno party", "chill outdoor activities").
-Use other parameters for specific requirements. Combine both for best results.`,
+Use other parameters for specific requirements. Combine both for best results.
+For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening right now?" use timeFilter "now".`,
 
   inputSchema: searchEventsInputSchema,
 
@@ -160,8 +163,9 @@ Use other parameters for specific requirements. Combine both for best results.`,
       },
       timeFilter: {
         type: 'string',
-        enum: ['tonight', 'tomorrow', 'weekend', 'week'],
-        description: 'Time period filter. tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days',
+        enum: ['now', 'tonight', 'tomorrow', 'weekend', 'week'],
+        description:
+          'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days',
       },
       limit: {
         type: 'number',
@@ -187,8 +191,27 @@ Use other parameters for specific requirements. Combine both for best results.`,
 
       let results
 
-      // If semantic query provided, use hybrid search
-      if (input.query && input.query.trim()) {
+      if (input.timeFilter === 'now') {
+        // "Now" can't be expressed as a starts_at range - it means events that
+        // already started and haven't ended. Fetch those, then apply the
+        // remaining filters in memory (semantic query is ignored here).
+        let nowEvents = await getEventsHappeningNow()
+        if (input.categories?.length) {
+          nowEvents = nowEvents.filter((e) =>
+            input.categories!.some((c) => e.categories.includes(c))
+          )
+        }
+        if (filters.neighborhood) {
+          nowEvents = nowEvents.filter((e) => e.venue_neighborhood === filters.neighborhood)
+        }
+        if (input.isFree) {
+          nowEvents = nowEvents.filter((e) => e.is_free)
+        }
+        if (input.maxPrice !== undefined) {
+          nowEvents = nowEvents.filter((e) => (e.price ?? 0) <= input.maxPrice!)
+        }
+        results = nowEvents.slice(0, limit)
+      } else if (input.query && input.query.trim()) {
         logger.debug('[search_events] Using hybrid search', { query: input.query })
         results = await hybridEventSearch(input.query, filters, limit)
       } else {

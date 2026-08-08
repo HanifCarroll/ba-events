@@ -107,22 +107,3 @@ export function defineTool<TInput extends z.ZodTypeAny>(
 ): ToolDefinition<TInput> {
   return definition
 }
-
-// ============================================================================
-// TOOL NAME TYPE (populated by registry)
-// ============================================================================
-
-/**
- * Union type of all tool names.
- * This is re-exported from the registry after all tools are registered.
- */
-export type ToolName =
-  | 'search_events'
-  | 'get_venue_details'
-  | 'save_event'
-  | 'unsave_event'
-  | 'list_saved_events'
-  | 'get_event_details'
-  | 'check_event_saved'
-  | 'get_happening_now'
-  | 'get_tonights_events'
