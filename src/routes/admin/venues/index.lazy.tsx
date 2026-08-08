@@ -254,7 +254,7 @@ function VenueListPage() {
     if (!deleteTarget) return
 
     try {
-      await deleteVenueMutation.mutateAsync({ id: deleteTarget.id })
+      await deleteVenueMutation.mutateAsync(deleteTarget.id)
       setDeleteTarget(null)
     } catch (err) {
       console.error('Delete failed:', err)

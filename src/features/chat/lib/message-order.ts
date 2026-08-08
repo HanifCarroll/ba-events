@@ -47,7 +47,7 @@ export function pickLatestMessageByTurnOrder<T extends OrderedMessageLike>(
 ): T | null {
   if (messages.length === 0) return null
 
-  return messages.reduce<T>((latest, current) => {
+  return messages.reduce((latest, current) => {
     return compareMessagesByTurnOrderAsc(current, latest) > 0 ? current : latest
   })
 }

@@ -764,7 +764,8 @@ export function ChatContainer() {
         id: message.id,
         role: message.role as 'user' | 'assistant',
         content: textContent,
-        timestamp: message.createdAt ? new Date(message.createdAt) : new Date(),
+        // UIMessage has no createdAt; timestamps are display-only here.
+        timestamp: new Date(),
         isStreaming,
         events: storedData?.events,
         suggestions: storedData?.suggestions,

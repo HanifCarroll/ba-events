@@ -17,22 +17,6 @@ config({ path: '.env' })
 
 const DRY_RUN = process.env.DRY_RUN !== 'false'
 
-// CABA bounding box
-const CABA_BOUNDS = {
-  minLat: -34.705,
-  maxLat: -34.527,
-  minLng: -58.531,
-  maxLng: -58.335,
-}
-
-// Greater BA bounds (more lenient)
-const GREATER_BA_BOUNDS = {
-  minLat: -34.85,
-  maxLat: -34.35,
-  minLng: -58.70,
-  maxLng: -58.20,
-}
-
 // Known non-BA location patterns
 // Note: "florida" is excluded because it's a famous street/neighborhood in Buenos Aires!
 const NON_BA_PATTERNS = [

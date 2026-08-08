@@ -43,6 +43,7 @@ export type ConciergeEvent =
   | 'concierge:ticket_clicked'
   | 'concierge:refinement_clicked'
   | 'concierge:context_prompt'
+  | 'concierge:surprise_me'
   | 'concierge:add_to_calendar'
   | 'concierge:get_directions'
   | 'concierge:share_plan'

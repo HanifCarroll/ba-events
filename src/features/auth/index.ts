@@ -18,9 +18,9 @@ export {
 // Rate limiting
 export {
   RATE_LIMIT_REQUESTS,
-  RATE_LIMIT_WINDOW,
+  RATE_LIMIT_WINDOW_MS,
   API_RATE_LIMIT_REQUESTS,
-  API_RATE_LIMIT_WINDOW,
+  API_RATE_LIMIT_WINDOW_MS,
   checkRateLimit,
   checkApiRateLimit,
 } from './api/rate-limit'

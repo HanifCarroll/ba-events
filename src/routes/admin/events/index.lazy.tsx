@@ -30,7 +30,7 @@ import { useBackgroundEnrichment } from '@/features/events/hooks/useBackgroundEn
 import { useLumaDescriptionEnrichment } from '@/features/events/hooks/useLumaDescriptionEnrichment'
 import { usePasslineDescriptionEnrichment } from '@/features/events/hooks/usePasslineDescriptionEnrichment'
 import { useUnifiedDescriptionEnrichment } from '@/features/events/hooks/useUnifiedDescriptionEnrichment'
-import { useBulkActions, type BulkActionType } from '@/features/events/hooks/useBulkActions'
+import { useBulkActions } from '@/features/events/hooks/useBulkActions'
 import { useSingleEventActions } from '@/features/events/hooks/useSingleEventActions'
 import { useMarkPastEvents } from '@/features/events/hooks/useMarkPastEvents'
 import {

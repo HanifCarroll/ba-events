@@ -74,7 +74,6 @@ export function EnrichStep({
   enrichmentProgress,
   enrichmentResult,
   onEnrich,
-  onSkip,
   onRetryFailed,
   onViewEvents,
 }: EnrichStepProps) {
