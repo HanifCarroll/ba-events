@@ -355,8 +355,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                 <TooltipTrigger asChild>
                   <Link to="/login" className="block">
                     <Button
-                      variant="outline"
-                      className="w-full p-3 justify-center border-border text-foreground hover:bg-muted hover:text-foreground"
+                      variant="ghost"
+                      className="w-full p-3 justify-center text-foreground hover:bg-muted hover:text-foreground"
                     >
                       <User className="h-5 w-5" />
                     </Button>
@@ -369,8 +369,8 @@ export function MainLayout({ children }: MainLayoutProps) {
             ) : (
               <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                 <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 px-3 border-border text-foreground hover:bg-muted hover:text-foreground"
+                  variant="ghost"
+                  className="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
                 >
                   <User className="h-5 w-5" />
                   <span>{m.auth_sign_in()}</span>
