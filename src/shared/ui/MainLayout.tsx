@@ -240,7 +240,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Navigation */}
         <nav className="flex-1 px-5 py-4 overflow-y-auto flex flex-col">
           {/* Main navigation */}
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             {filteredMainNavItems.map((item) => {
               const showLabel = !collapsed || mobileMenuOpen
 
@@ -270,7 +270,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
           {/* Admin section */}
           {filteredAdminNavItems.length > 0 && (
-            <div className="space-y-1 pt-3 mt-3 border-t border-border/50">
+            <div className="flex flex-col gap-1 pt-3 mt-3 border-t border-border/50">
               {/* Admin section label */}
               <div className={`px-3 py-1 transition-all duration-300 ${collapsed && !mobileMenuOpen ? 'opacity-0 h-0' : 'opacity-100'}`}>
                 <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{m.nav_admin()}</span>
@@ -356,7 +356,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   <Link to="/login" className="block">
                     <Button
                       variant="outline"
-                      className="w-full p-3 justify-center border-border text-foreground hover:bg-muted"
+                      className="w-full p-3 justify-center border-border text-foreground hover:bg-muted hover:text-foreground"
                     >
                       <User className="h-5 w-5" />
                     </Button>
@@ -370,7 +370,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                 <Button
                   variant="outline"
-                  className="w-full justify-start gap-3 px-3 border-border text-foreground hover:bg-muted"
+                  className="w-full justify-start gap-3 px-3 border-border text-foreground hover:bg-muted hover:text-foreground"
                 >
                   <User className="h-5 w-5" />
                   <span>{m.auth_sign_in()}</span>
