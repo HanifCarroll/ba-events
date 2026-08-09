@@ -85,6 +85,7 @@
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.2.0",
     "@trigger.dev/build": "4.5.10",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22.10.2",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.0",

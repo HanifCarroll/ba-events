@@ -32,6 +32,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   return (
     <div
+      data-message-id={message.id}
       className={cn(
         'flex w-full mb-8 animate-fade-in-up',
         isUser ? 'justify-end' : 'justify-start'
