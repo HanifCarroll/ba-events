@@ -96,7 +96,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   const mainNavItems: NavItem[] = [
-    { to: '/chat', label: m.nav_new_chat(), icon: MessageSquarePlus, exact: true },
+    { to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, exact: true },
     { to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
     { to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
     { label: 'Feedback', icon: MessageCircle, action: handleFeedback },
@@ -178,7 +178,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         >
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
-        <Link to="/chat" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+        <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <Sparkles className="h-5 w-5 text-accent" aria-hidden="true" />
           <span className="text-base font-semibold tracking-tight">BA Eventos</span>
         </Link>
@@ -206,7 +206,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Sidebar header */}
         <div className="h-20 flex items-center justify-between px-5 shrink-0">
           <Link
-            to="/chat"
+            to="/"
             className={`flex items-center gap-3 hover:opacity-80 transition-opacity overflow-hidden ${collapsed ? 'lg:justify-center lg:w-full' : ''}`}
           >
             <Sparkles className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />

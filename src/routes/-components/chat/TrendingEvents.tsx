@@ -11,6 +11,8 @@ import type { ChatEventPayload } from '@/shared/lib/types'
 interface TrendingEventsProps {
   /** @param options.eventId exact event tapped — sent server-side, hidden from chat text */
   onSelectPrompt: (prompt: string, options?: { eventId?: string }) => void
+  /** Prefetched events from the route loader, used as the query's initial data. */
+  initialEvents?: ChatEventPayload[]
 }
 
 /**
@@ -18,11 +20,16 @@ interface TrendingEventsProps {
  * Each card is a starter prompt: tapping it asks the concierge about that event.
  * Hidden entirely when there are no events to show.
  */
-export function TrendingEvents({ onSelectPrompt }: TrendingEventsProps) {
+export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEventsProps) {
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.events.trending(),
     queryFn: () => getTrendingEventsAction(),
     staleTime: 5 * 60 * 1000,
+    // Route loaders prefetch trending events (serialized across SSR→client),
+    // so seed the query with them — the grid renders on first paint without a
+    // skeleton flash, while useQuery still owns staleness/refetch.
+    initialData: initialEvents,
+    initialDataUpdatedAt: initialEvents ? Date.now() : undefined,
   })
 
   const events = data ?? []
@@ -47,7 +54,7 @@ export function TrendingEvents({ onSelectPrompt }: TrendingEventsProps) {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 stagger-children">
           {events.map((event) => (
             <TrendingEventCard key={event.id} event={event} onSelectPrompt={onSelectPrompt} />
           ))}

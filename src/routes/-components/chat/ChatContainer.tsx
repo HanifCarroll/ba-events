@@ -14,6 +14,7 @@ import type {
   MessageExecutionStep,
   Message,
   MessageAttachedData,
+  ChatEventPayload,
 } from '@/shared/lib/types'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
@@ -107,11 +108,14 @@ export interface ChatContainerProps {
   conversationId?: string | null
   /** Called when a new conversation is created so the caller can update the URL. */
   onConversationChange?: (id: string) => void
+  /** Prefetched trending events (route loader), passed to the home grid. */
+  trendingEvents?: ChatEventPayload[]
 }
 
 export function ChatContainer({
   conversationId,
   onConversationChange,
+  trendingEvents,
 }: ChatContainerProps = {}) {
   const [error, setError] = useState<string | null>(null)
   const [messageAttachedDataMap, setMessageAttachedDataMap] = useState<
@@ -909,7 +913,7 @@ export function ChatContainer({
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
             <p className="text-muted-foreground">{m.chat_conversation_not_found()}</p>
             <Link
-              to="/chat"
+              to="/"
               className="text-sm font-medium text-primary hover:underline"
               onClick={() => setActiveConversationId(null)}
             >
@@ -925,7 +929,7 @@ export function ChatContainer({
             onSuggestionSelect={handleSendMessage}
           />
         ) : (
-          <SuggestedPrompts onSelectPrompt={handleSendMessage} />
+          <SuggestedPrompts onSelectPrompt={handleSendMessage} trendingEvents={trendingEvents} />
         )}
       </div>
 

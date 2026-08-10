@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import { Sparkles, Moon, CalendarDays } from 'lucide-react'
 import * as m from '@/paraglide/messages'
+import type { ChatEventPayload } from '@/shared/lib/types'
 import { track } from '@/lib/analytics'
 import { TrendingEvents } from './TrendingEvents'
 
 interface SuggestedPromptsProps {
   /** @param options.eventId exact event tapped (from trending cards) — hidden from chat text */
   onSelectPrompt: (prompt: string, options?: { eventId?: string }) => void
+  /** Prefetched trending events from the route loader. */
+  trendingEvents?: ChatEventPayload[]
 }
 
 type TimeContext = 'tonight' | 'weekend' | null
 
-export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
+export function SuggestedPrompts({ onSelectPrompt, trendingEvents }: SuggestedPromptsProps) {
   // Default to "tonight" - the 80% use case
   const [timeContext, setTimeContext] = useState<TimeContext>('tonight')
 
@@ -79,7 +82,7 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
           </p>
         </div>
 
-        <TrendingEvents onSelectPrompt={onSelectPrompt} />
+        <TrendingEvents onSelectPrompt={onSelectPrompt} initialEvents={trendingEvents} />
       </div>
     </div>
   )
