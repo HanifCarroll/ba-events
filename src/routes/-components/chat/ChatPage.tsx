@@ -13,10 +13,12 @@ export function ChatPage() {
   const { conversationId } = useParams({ strict: false })
   // The home route prefetches trending events in its loader so the grid
   // renders on first paint. strict:false resolves the nearest matching route
-  // (ChatPage renders under / and /chat/$conversationId).
-  const { trending } = useLoaderData({ strict: false }) as {
-    trending?: ChatEventPayload[]
-  }
+  // (ChatPage renders under / and /chat/$conversationId); the conversation
+  // route has no loader, so guard against undefined.
+  const loaderData = useLoaderData({ strict: false }) as
+    | { trending?: ChatEventPayload[] }
+    | undefined
+  const trending = loaderData?.trending
 
   const handleConversationChange = useCallback(
     (id: string) => {
