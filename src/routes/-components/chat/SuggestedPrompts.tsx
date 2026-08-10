@@ -43,7 +43,6 @@ export function SuggestedPrompts({ onSelectPrompt, trendingEvents }: SuggestedPr
     <div className="flex h-full flex-col items-center justify-center px-4 py-10 sm:px-8 sm:py-14">
       <div className="w-full max-w-[620px] animate-fade-in-up">
         <div className="mb-8 flex flex-col items-center text-center sm:mb-9">
-          <Sparkles className="mb-3 h-6 w-6 text-accent" aria-hidden="true" />
           <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground sm:text-3xl">
             {m.home_title()}
           </h1>

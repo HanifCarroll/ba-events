@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Sparkles } from 'lucide-react'
+import { Send } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 
 interface ChatInputProps {
@@ -72,11 +72,6 @@ export function ChatInput({
               ${disabled ? 'opacity-60' : ''}
             `}
           >
-            {/* Decorative sparkle - aligned to center vertically for single line */}
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none">
-              <Sparkles className="h-4 w-4" />
-            </div>
-
             {/* Auto-growing textarea wrapper using CSS grid trick */}
             <div
               ref={wrapperRef}

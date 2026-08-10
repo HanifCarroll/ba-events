@@ -18,7 +18,6 @@ import {
   Ban,
   Bot,
   MessageCircle,
-  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -179,7 +178,6 @@ export function MainLayout({ children }: MainLayoutProps) {
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
         <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <Sparkles className="h-5 w-5 text-accent" aria-hidden="true" />
           <span className="text-base font-semibold tracking-tight">BA Eventos</span>
         </Link>
       </header>
@@ -209,7 +207,6 @@ export function MainLayout({ children }: MainLayoutProps) {
             to="/"
             className={`flex items-center gap-3 hover:opacity-80 transition-opacity overflow-hidden ${collapsed ? 'lg:justify-center lg:w-full' : ''}`}
           >
-            <Sparkles className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
             <div className={`overflow-hidden transition-all duration-300 ${collapsed ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'}`}>
               <span className="text-base font-semibold tracking-tight text-foreground whitespace-nowrap">
                 BA Eventos
