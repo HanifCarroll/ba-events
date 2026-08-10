@@ -207,6 +207,11 @@ export async function getEventsWithVenues(limit = 50) {
 /**
  * Fetch the next upcoming events for the chat home "Happening soon" grid.
  * Chat columns only (no embedding), soonest first, capped at `limit`.
+ *
+ * Only events with complete, actionable info make the grid: a real start
+ * time (date + time) and an actual location (venue name, neighborhood, or
+ * address — not TBA). Events lacking venue/location are excluded so every
+ * card shows where the event happens.
  */
 export async function getTrendingEvents(limit = 8): Promise<ChatEventPayload[]> {
   const now = new Date().toISOString()
@@ -215,6 +220,8 @@ export async function getTrendingEvents(limit = 8): Promise<ChatEventPayload[]> 
     .select(CHAT_EVENT_COLUMNS)
     .neq('status', 'past')
     .gte('starts_at', now)
+    .eq('location_tba', false)
+    .or('venue_name.not.is.null,venue_neighborhood.not.is.null,venue_address.not.is.null')
     .order('starts_at', { ascending: true })
     .limit(limit)
 
