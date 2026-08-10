@@ -1,5 +1,19 @@
 import { createContext, useContext, useCallback, useRef, useState, type ReactNode } from 'react'
 
+/**
+ * A first message handed from one ChatContainer instance to the next.
+ *
+ * When a message is submitted from the home screen there is no conversation
+ * yet, and creating one navigates to /chat/{id} — which remounts
+ * ChatContainer. Sending from the old instance would stream the assistant
+ * response into an unmounted component, so the message is parked here (the
+ * provider survives the remount) and the new instance sends it instead.
+ */
+export interface PendingFirstMessage {
+  content: string
+  eventId?: string
+}
+
 interface ChatContextValue {
   /**
    * Start a new chat session - clears messages and resets state
@@ -20,6 +34,16 @@ interface ChatContextValue {
    * Set the active conversation ID (used when loading a conversation or creating a new one)
    */
   setActiveConversationId: (id: string | null) => void
+
+  /**
+   * Park a first message for the next ChatContainer instance (remount handoff).
+   */
+  setPendingFirstMessage: (message: PendingFirstMessage) => void
+  /**
+   * Read and clear the parked first message. One-shot — the second call
+   * returns null, so repeated mount effects can't double-send.
+   */
+  takePendingFirstMessage: () => PendingFirstMessage | null
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -27,6 +51,10 @@ const ChatContext = createContext<ChatContextValue | null>(null)
 export function ChatProvider({ children }: { children: ReactNode }) {
   // Store the handler in a ref so it can be updated without re-renders
   const startNewChatHandlerRef = useRef<(() => void) | null>(null)
+
+  // One-shot first-message handoff between ChatContainer instances (see
+  // PendingFirstMessage above). Ref-based: survives the remount, no renders.
+  const pendingFirstMessageRef = useRef<PendingFirstMessage | null>(null)
 
   // Conversation state
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null)
@@ -48,6 +76,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setActiveConversationIdState(id)
   }, [])
 
+  const setPendingFirstMessage = useCallback((message: PendingFirstMessage) => {
+    pendingFirstMessageRef.current = message
+  }, [])
+
+  const takePendingFirstMessage = useCallback(() => {
+    const message = pendingFirstMessageRef.current
+    pendingFirstMessageRef.current = null
+    return message
+  }, [])
+
   return (
     <ChatContext.Provider
       value={{
@@ -55,6 +93,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         registerStartNewChatHandler,
         activeConversationId,
         setActiveConversationId,
+        setPendingFirstMessage,
+        takePendingFirstMessage,
       }}
     >
       {children}

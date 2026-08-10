@@ -9,8 +9,8 @@ import { Toaster } from '@/shared/ui/sonner'
 import { ErrorBoundary } from '@/shared/ui/ErrorBoundary'
 import { queryClient } from '@/shared/lib/query'
 import { MainLayout } from '@/shared/ui/MainLayout'
-import { getLocale, setLocale } from '@/paraglide/runtime'
-import React, { useEffect, useState, type ReactNode } from 'react'
+import { getLocale, serverAsyncLocalStorage } from '@/paraglide/runtime'
+import { useEffect } from 'react'
 import { getSiteUrl } from '@/shared/lib/utils/url'
 
 import appCss from '../styles.css?url'
@@ -27,10 +27,40 @@ function getPostHog() {
   return posthogInstance
 }
 
+// PostHogIdentify can't rely on being re-run by a remount (PostHogInit is a
+// non-wrapping sibling), so it registers itself here and PostHogInit notifies
+// it once the client instance is ready.
+const posthogReadyCallbacks = new Set<() => void>()
+
+function notifyPosthogReady() {
+  posthogReadyCallbacks.forEach((callback) => callback())
+}
+
 export const Route = createRootRoute({
   // Fetch auth state server-side so it's available during SSR
   beforeLoad: async (): Promise<RootRouteContext> => {
     const session = await getSessionUser()
+
+    // Server-side: render in the user's saved locale and persist it to the
+    // paraglide cookie so the client resolves the same locale. Previously this
+    // happened client-side in PostHogIdentify via setLocale(..., { reload: true })
+    // — a full page reload on load whenever the saved locale differed from the
+    // browser language (the reload flash).
+    const savedLocale = session?.profile?.locale
+    if (import.meta.env.SSR && savedLocale) {
+      const store = serverAsyncLocalStorage?.getStore()
+      if (store) {
+        store.locale = savedLocale
+      }
+      // Server-only module: static import would pull h3/node APIs into the
+      // client bundle. Same pattern as getSessionUser's db/server import.
+      const { setCookie } = await import('@tanstack/react-start/server')
+      setCookie('PARAGLIDE_LOCALE', savedLocale, {
+        path: '/',
+        maxAge: 34560000, // matches paraglide's cookieMaxAge (1 year)
+      })
+    }
+
     return { session }
   },
 
@@ -104,16 +134,19 @@ export const Route = createRootRoute({
   component: RootDocument,
 })
 
-// Client-only PostHog provider that loads dynamically
-function ClientPostHogProvider({ children }: { children: ReactNode }) {
-  const [Provider, setProvider] = useState<React.ComponentType<{ client: typeof import('posthog-js').default; children: ReactNode }> | null>(null)
-
+// Initializes PostHog on the client. Renders nothing on purpose: it must NOT
+// wrap children. Conditionally swapping the app root between a fragment and a
+// <Provider> (as a wrapping provider would) makes React unmount and remount the
+// entire tree when the async import resolves — that remount replays every
+// entrance animation and is the visible "UI flashes" on load. Nothing in the
+// app consumes the PostHog React context (tracking goes through the module
+// instance via getPostHog), so the wrapper has no purpose here.
+function PostHogInit() {
   useEffect(() => {
+    let cancelled = false
     // Dynamically import posthog-js only on client
-    Promise.all([
-      import('posthog-js'),
-      import('posthog-js/react'),
-    ]).then(([posthogModule, reactModule]) => {
+    import('posthog-js').then((posthogModule) => {
+      if (cancelled) return
       const posthog = posthogModule.default
       const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY
       const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST
@@ -142,17 +175,15 @@ function ClientPostHogProvider({ children }: { children: ReactNode }) {
           },
         })
         posthogInstance = posthog
+        notifyPosthogReady()
       }
-
-      setProvider(() => reactModule.PostHogProvider)
     })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  if (!Provider || !posthogInstance) {
-    return <>{children}</>
-  }
-
-  return <Provider client={posthogInstance}>{children}</Provider>
+  return null
 }
 
 function RootDocument() {
@@ -166,16 +197,15 @@ function RootDocument() {
       </head>
       <body className="bg-background text-foreground antialiased bg-grain">
         <ErrorBoundary>
-          <ClientPostHogProvider>
-            <QueryClientProvider client={queryClient}>
-              <AuthProvider initialSession={session}>
-                <TooltipProvider>
-                  <PostHogIdentify />
-                  <RootLayout />
-                </TooltipProvider>
-              </AuthProvider>
-            </QueryClientProvider>
-          </ClientPostHogProvider>
+          <PostHogInit />
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider initialSession={session}>
+              <TooltipProvider>
+                <PostHogIdentify />
+                <RootLayout />
+              </TooltipProvider>
+            </AuthProvider>
+          </QueryClientProvider>
         </ErrorBoundary>
         <Toaster position="bottom-right" richColors />
         <Scripts />
@@ -184,32 +214,36 @@ function RootDocument() {
   )
 }
 
-// Identify users when auth state changes and sync locale preference
+// Identify users when auth state changes. The saved locale preference is now
+// applied server-side in beforeLoad (rendered + persisted to the cookie), so
+// the client always hydrates in the same locale — no reload needed here.
 function PostHogIdentify() {
-  const { user, profile, isAdmin } = useAuthContext()
+  const { user, isAdmin } = useAuthContext()
 
   useEffect(() => {
-    const posthogClient = getPostHog()
-    if (!posthogClient) return
+    const identify = () => {
+      const posthogClient = getPostHog()
+      if (!posthogClient) return
 
-    if (user) {
-      // Identify user with their ID (never use email as distinct_id)
-      posthogClient.identify(user.id, {
-        email: user.email,
-        locale: getLocale(),
-        is_admin: isAdmin,
-      })
-
-      // Sync saved locale preference from database
-      // If user has a saved locale preference that differs from current, apply it
-      if (profile?.locale && profile.locale !== getLocale()) {
-        setLocale(profile.locale, { reload: true })
+      if (user) {
+        // Identify user with their ID (never use email as distinct_id)
+        posthogClient.identify(user.id, {
+          email: user.email,
+          locale: getLocale(),
+          is_admin: isAdmin,
+        })
+      } else {
+        // Reset on logout to unlink future anonymous events
+        posthogClient.reset()
       }
-    } else {
-      // Reset on logout to unlink future anonymous events
-      posthogClient.reset()
     }
-  }, [user, profile?.locale, isAdmin])
+
+    identify()
+    posthogReadyCallbacks.add(identify)
+    return () => {
+      posthogReadyCallbacks.delete(identify)
+    }
+  }, [user, isAdmin])
 
   return null
 }

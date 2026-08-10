@@ -123,7 +123,12 @@ export function ChatContainer({
   const eventsCountRef = useRef<number>(0)
 
   // Conversation context (the active id is kept in sync with the URL below)
-  const { setActiveConversationId, registerStartNewChatHandler } = useChatContext()
+  const {
+    setActiveConversationId,
+    registerStartNewChatHandler,
+    setPendingFirstMessage,
+    takePendingFirstMessage,
+  } = useChatContext()
   const { user } = useAuthContext()
   const isAuthenticated = !!user
 
@@ -702,7 +707,14 @@ export function ChatContainer({
             currentConversationId = generateId()
             await createGuestConversation(currentConversationId)
           }
+          // First message of a new conversation: navigating to /chat/{id}
+          // remounts this component, so sending here would stream the response
+          // into an unmounted instance and it would never render. Park the
+          // message in the ChatProvider (which survives the remount) and let
+          // the instance that mounts at /chat/{id} send it.
+          setPendingFirstMessage({ content, eventId: options?.eventId })
           onConversationChange?.(currentConversationId)
+          return
         }
         pendingConversationIdRef.current = currentConversationId
 
@@ -765,6 +777,23 @@ export function ChatContainer({
       setRequestLifecyclePhase,
     ]
   )
+
+  // Consume a first-message handoff from the home screen: the previous
+  // ChatContainer instance created the conversation, navigated here, and
+  // parked the message for THIS (mounted) instance to send — sending from
+  // the old instance would stream the response into an unmounted component.
+  // One-shot: takePendingFirstMessage clears on read, so re-runs are no-ops.
+  useEffect(() => {
+    // Only consume the handoff once a conversation id is present. During the
+    // route transition the previous instance may re-render without a
+    // conversationId — taking the pending there would drop it before the
+    // mounted /chat/{id} instance can send it.
+    if (!conversationId) return
+    const pending = takePendingFirstMessage()
+    if (pending) {
+      handleSendMessage(pending.content, { eventId: pending.eventId })
+    }
+  }, [conversationId, handleSendMessage, takePendingFirstMessage])
 
   const chatMessages: ChatMessage[] = useMemo(() => {
     return messages.map((message, index) => {
