@@ -77,5 +77,7 @@ export const queryKeys = {
       [...queryKeys.conversations.all, 'list', params] as const,
     search: (query: string) => [...queryKeys.conversations.all, 'search', query] as const,
     detail: (id: string) => [...queryKeys.conversations.all, 'detail', id] as const,
+    guestDetail: (id: string) =>
+      [...queryKeys.conversations.all, 'guest-detail', id] as const,
   },
 } as const

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useQueryClient } from '@tanstack/react-query'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import { DefaultChatTransport, generateId } from 'ai'
 import type {
@@ -21,6 +22,7 @@ import { ChatInput } from './ChatInput'
 import { SuggestedPrompts } from './SuggestedPrompts'
 import { getLocale } from '@/paraglide/runtime'
 import * as m from '@/paraglide/messages'
+import { queryKeys } from '@/shared/lib/query'
 import { track } from '@/lib/analytics'
 import { usePullToRefresh } from '@/shared/hooks/usePullToRefresh'
 import { PullToRefreshIndicator } from '@/shared/ui/PullToRefreshIndicator'
@@ -135,6 +137,7 @@ export function ChatContainer({
   } = useChatContext()
   const { user } = useAuthContext()
   const isAuthenticated = !!user
+  const queryClient = useQueryClient()
 
   // Normalized id for hooks and loaders (the URL param is undefined on /chat).
   const activeConversationId = conversationId ?? null
@@ -305,12 +308,20 @@ export function ChatContainer({
           executionTrace: payload.executionTrace,
           attachedData: payload.attachedData,
         })
+        // Guests write to IndexedDB outside React Query, so the cached
+        // guest-detail snapshot goes stale (it was fetched before this
+        // message existed). Invalidate it so a remount — e.g. navigating to
+        // an event detail page and back — refetches the full conversation
+        // instead of showing only the earlier messages.
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.conversations.guestDetail(payload.conversationId),
+        })
         return { status: 'persisted', messageId: payload.clientMessageId }
       }
 
       return persistMessageWithOutbox(persistMessageToConversation, payload)
     },
-    [isAuthenticated, persistMessageToConversation]
+    [isAuthenticated, persistMessageToConversation, queryClient]
   )
 
   const flushOutboxNow = useCallback(async () => {

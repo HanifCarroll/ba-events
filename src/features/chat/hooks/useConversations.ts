@@ -95,7 +95,7 @@ export function useConversation(id: string | null) {
  */
 export function useGuestConversation(id: string | null) {
   return useQuery({
-    queryKey: [...queryKeys.conversations.all, 'guest-detail', id ?? 'none'] as const,
+    queryKey: queryKeys.conversations.guestDetail(id ?? 'none'),
     queryFn: async (): Promise<GuestConversationWithMessages | null> => {
       if (!id) return null
       return getGuestConversationWithMessages(id)
