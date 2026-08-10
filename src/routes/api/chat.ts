@@ -185,6 +185,55 @@ export function sanitizeFinalAssistantText(
   return trimmed
 }
 
+/**
+ * Normalize a string for event-name matching in assistant text: lowercase,
+ * collapse whitespace, strip emoji and the "|" separator used in titles.
+ */
+function normalizeForNameMatch(value: string): string {
+  return value
+    .toLowerCase()
+    // Strip emoji (event titles often carry decorative glyphs)
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, ' ')
+    // The " | " separator splits a title from its subtitle ("Name | Brand")
+    .replace(/[|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Filter accumulated events down to the ones the final assistant text actually
+ * mentions by name. The model may search with a broad limit but only write
+ * about one pick — emitting every searched event as a card makes the UI show
+ * more cards than the answer references.
+ *
+ * Falls back to all events when nothing matches (generic "here are options"
+ * replies that present a list without naming each event).
+ */
+export function filterEventsMentionedInText(
+  events: ChatEventPayload[],
+  finalText: string
+): ChatEventPayload[] {
+  if (events.length === 0 || !finalText) return events
+
+  const normalizedText = normalizeForNameMatch(finalText)
+  const mentioned = events.filter((event) => {
+    const name = normalizeForNameMatch(event.name)
+    if (!name) return false
+    // Match the full title, or any significant segment (before "|", or the
+    // first 3+ words) so "Make Friends: Deep talks & Coffee" matches the card
+    // even when the model drops the subtitle.
+    if (normalizedText.includes(name)) return true
+    const segments = name.split(' ')
+    if (segments.length >= 3) {
+      const core = segments.slice(0, 3).join(' ')
+      if (normalizedText.includes(core)) return true
+    }
+    return false
+  })
+
+  return mentioned.length > 0 ? mentioned : events
+}
+
 function buildStructuredDataFallbackText(
   locale: 'en' | 'es',
   originalQuery: string
@@ -440,13 +489,18 @@ export const Route = createFileRoute('/api/chat' as any)({
 
               const rawFinalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
               const nonEmptyStepTextCount = getNonEmptyStepTextCount(typedSteps)
-              const events = Array.from(allEvents.values())
+              const accumulatedEvents = Array.from(allEvents.values())
               let finalText = sanitizeFinalAssistantText(rawFinalText, {
-                hasStructuredData: events.length > 0 || directionsData !== null,
+                hasStructuredData: accumulatedEvents.length > 0 || directionsData !== null,
               })
-              if (!finalText && (events.length > 0 || directionsData !== null)) {
+              if (!finalText && (accumulatedEvents.length > 0 || directionsData !== null)) {
                 finalText = buildStructuredDataFallbackText(locale, lastOriginalQuery)
               }
+
+              // Only attach cards for events the final answer actually names —
+              // the model may search a broad set but recommend a single pick,
+              // and showing every searched event contradicts the prose.
+              const events = filterEventsMentionedInText(accumulatedEvents, finalText)
 
               // Topical guardrail: replace off-topic replies (code, general
               // knowledge, etc.) with a canned refusal. Fails open on error.

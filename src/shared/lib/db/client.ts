@@ -209,9 +209,9 @@ export async function getEventsWithVenues(limit = 50) {
  * Chat columns only (no embedding), soonest first, capped at `limit`.
  *
  * Only events with complete, actionable info make the grid: a real start
- * time (date + time) and an actual location (venue name, neighborhood, or
- * address — not TBA). Events lacking venue/location are excluded so every
- * card shows where the event happens.
+ * time (date + time), an actual location (venue name, neighborhood, or
+ * address — not TBA), and a description. Events lacking any of these are
+ * excluded so every card shows where the event happens and what it is.
  */
 export async function getTrendingEvents(limit = 8): Promise<ChatEventPayload[]> {
   const now = new Date().toISOString()
@@ -221,7 +221,15 @@ export async function getTrendingEvents(limit = 8): Promise<ChatEventPayload[]> 
     .neq('status', 'past')
     .gte('starts_at', now)
     .eq('location_tba', false)
+    .eq('description_unavailable', false)
+    // Must have BOTH a location (any of name/neighborhood/address) AND a
+    // description (any locale/summary/display). Two .or() groups keep the
+    // clauses ANDed — a single .or() would accept venue-only or desc-only.
     .or('venue_name.not.is.null,venue_neighborhood.not.is.null,venue_address.not.is.null')
+    .or(
+      'description_summary_es.not.is.null,description_summary_en.not.is.null,' +
+        'description_display_es.not.is.null,description_display_en.not.is.null'
+    )
     .order('starts_at', { ascending: true })
     .limit(limit)
 

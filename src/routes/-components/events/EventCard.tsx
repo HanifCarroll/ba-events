@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Ticket, RefreshCw } from 'lucide-react'
+import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Ticket, RefreshCw, Info } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -93,7 +93,7 @@ function HeroEventCard({
   })
 
   return (
-    <div className="mt-6 border-b border-border pb-7">
+    <div className="mt-6 pb-7">
       <div className="grid gap-5 sm:grid-cols-[148px_minmax(0,1fr)] sm:gap-6">
         {event.image_url ? (
           <img
@@ -164,6 +164,7 @@ function HeroEventCard({
               params={{ id: event.id }}
               className="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
+              <Info className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {m.concierge_event_details()}
             </Link>
           </div>
@@ -222,10 +223,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="group relative overflow-hidden rounded-xl border border-border/50 bg-card transition-all duration-300 hover:border-primary/30 hover:bg-card/90">
-        {/* Subtle top accent line */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
+      <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
         {/* Header - clickable area for expand/collapse */}
         <div className="p-4">
           <div className="flex items-start justify-between gap-4">
@@ -263,26 +261,6 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
                   <Clock className="h-3 w-3 text-primary/60" />
                   {timeStr}
                 </span>
-                <Link
-                  to="/event/$id"
-                  params={{ id: event.id }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200 ml-1"
-                >
-                  <span>Details</span>
-                </Link>
-                {event.link && (
-                  <a
-                    href={event.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors duration-200"
-                  >
-                    <span>View</span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
               </div>
             </div>
 
@@ -300,9 +278,6 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               >
                 {priceDisplay}
               </span>
-
-              {/* Save button */}
-              <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
 
               {/* Expand indicator - clickable */}
               <button
@@ -324,7 +299,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
         <CollapsibleContent>
           <div id={`event-details-${event.id}`} className="px-4 pb-4">
             {/* Separator */}
-            <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-4" />
+            <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent mb-4" />
 
             {/* Expanded view */}
             <div className="space-y-4">
@@ -411,6 +386,32 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
             </div>
           </div>
         </CollapsibleContent>
+
+        {/* Footer actions - save and event details grouped together */}
+        <div className="flex items-center gap-2 border-t border-border/40 px-4 py-3">
+          <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
+          <Link
+            to="/event/$id"
+            params={{ id: event.id }}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
+          >
+            <Info className="h-3.5 w-3.5" />
+            <span>Details</span>
+          </Link>
+          {event.link && (
+            <a
+              href={event.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
+            >
+              <span>View</span>
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
       </div>
     </Collapsible>
   )

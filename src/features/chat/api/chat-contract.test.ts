@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildExecutionTrace,
+  filterEventsMentionedInText,
   getFinalVisibleTextFromSteps,
   sanitizeFinalAssistantText,
   type StepResultLike,
 } from '@/routes/api/chat'
 import { ensureChatEventPayload } from './tools/utils'
+import type { ChatEventPayload } from '@/shared/lib/types'
+
+function event(id: string, name: string): ChatEventPayload {
+  return { id, name } as ChatEventPayload
+}
 
 describe('chat final-only contract helpers', () => {
   it('derives final visible text from the final step text', () => {
@@ -128,5 +134,47 @@ describe('chat final-only contract helpers', () => {
       { hasStructuredData: true }
     )
     expect(sanitized).toBe('Go to Trade Sky Bar tonight. It is your best upscale option with skyline views.')
+  })
+
+  it('filters cards to events mentioned in the answer text', () => {
+    const events = [
+      event('e1', 'Make Friends: Deep talks & Coffee | 🌍 Culture Shock Therapy'),
+      event('e2', 'Explorar | Ecstatic Dance'),
+      event('e3', '💃🕺 BA Digital Nomads - After Office @ Behind Bar'),
+    ]
+    const text =
+      "Here's a calmer pick for you: **Make Friends: Deep talks & Coffee** — just chatting over coffee."
+
+    const filtered = filterEventsMentionedInText(events, text)
+    expect(filtered.map((e) => e.id)).toEqual(['e1'])
+  })
+
+  it('matches an event mentioned by its first words when subtitle is dropped', () => {
+    const events = [
+      event('e1', 'Make Friends: Deep talks & Coffee | Culture Shock Therapy'),
+      event('e2', 'BA Digital Nomads - After Office @ Behind Bar'),
+    ]
+    const text = 'I would go with BA Digital Nomads for the drinks and no agenda.'
+
+    const filtered = filterEventsMentionedInText(events, text)
+    expect(filtered.map((e) => e.id)).toEqual(['e2'])
+  })
+
+  it('keeps all events when the text is a generic list with no specific names', () => {
+    const events = [
+      event('e1', 'Make Friends: Deep talks & Coffee'),
+      event('e2', 'BA Digital Nomads'),
+    ]
+    const text = 'Here are some good options for a relaxed night out.'
+
+    const filtered = filterEventsMentionedInText(events, text)
+    expect(filtered.map((e) => e.id)).toEqual(['e1', 'e2'])
+  })
+
+  it('returns empty for no events or empty text', () => {
+    expect(filterEventsMentionedInText([], 'anything')).toEqual([])
+    expect(filterEventsMentionedInText([event('e1', 'Club night')], '')).toEqual([
+      event('e1', 'Club night'),
+    ])
   })
 })
