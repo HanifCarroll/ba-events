@@ -18,6 +18,7 @@ import { addMessage, updateMessageAttachedData } from '../api/messages'
 import { generateAndSaveTitle } from '../api/generate-title'
 import { getFallbackConversationTitle } from '@/features/chat/lib/title'
 import { queryKeys } from '@/shared/lib/query'
+import { getGuestConversationWithMessages } from '@/shared/lib/db/guest-conversations'
 import type {
   ConversationListItem,
   ConversationWithMessages,
@@ -26,6 +27,7 @@ import type {
   MessageExecutionStep,
   MessageRole,
 } from '@/shared/lib/types'
+import type { GuestConversationWithMessages } from '@/shared/lib/db/guest-conversations'
 import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
 
 /**
@@ -84,6 +86,21 @@ export function useConversation(id: string | null) {
       return result as ConversationWithMessages | null
     },
     enabled: !!id && isAuthenticated,
+  })
+}
+
+/**
+ * Get a guest conversation (with messages) from the local IndexedDB store.
+ * Only used when not authenticated.
+ */
+export function useGuestConversation(id: string | null) {
+  return useQuery({
+    queryKey: [...queryKeys.conversations.all, 'guest-detail', id ?? 'none'] as const,
+    queryFn: async (): Promise<GuestConversationWithMessages | null> => {
+      if (!id) return null
+      return getGuestConversationWithMessages(id)
+    },
+    enabled: !!id,
   })
 }
 

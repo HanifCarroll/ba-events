@@ -13,10 +13,12 @@ import { Route as SavedRouteImport } from './routes/saved'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ChatRouteImport } from './routes/chat'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as EventIdRouteImport } from './routes/event/$id'
+import { Route as ChatConversationIdRouteImport } from './routes/chat.$conversationId'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as ApiEventsRouteImport } from './routes/api/events'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
@@ -54,6 +56,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -73,6 +80,11 @@ const EventIdRoute = EventIdRouteImport.update({
   id: '/event/$id',
   path: '/event/$id',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ChatConversationIdRoute = ChatConversationIdRouteImport.update({
+  id: '/$conversationId',
+  path: '/$conversationId',
+  getParentRoute: () => ChatRoute,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
@@ -163,6 +175,7 @@ const AdminBlocklistIdRoute = AdminBlocklistIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/chat': typeof ChatRouteWithChildren
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
@@ -170,6 +183,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/chat/$conversationId': typeof ChatConversationIdRoute
   '/event/$id': typeof EventIdRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
@@ -188,6 +202,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/chat': typeof ChatRouteWithChildren
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
@@ -195,6 +210,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/chat/$conversationId': typeof ChatConversationIdRoute
   '/event/$id': typeof EventIdRoute
   '/admin': typeof AdminIndexRoute
   '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
@@ -215,6 +231,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/chat': typeof ChatRouteWithChildren
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
@@ -222,6 +239,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/chat/$conversationId': typeof ChatConversationIdRoute
   '/event/$id': typeof EventIdRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
@@ -243,6 +261,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/chat'
     | '/login'
     | '/profile'
     | '/register'
@@ -250,6 +269,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/events'
     | '/auth/callback'
+    | '/chat/$conversationId'
     | '/event/$id'
     | '/admin/'
     | '/admin/blocklist/$id'
@@ -268,6 +288,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/chat'
     | '/login'
     | '/profile'
     | '/register'
@@ -275,6 +296,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/events'
     | '/auth/callback'
+    | '/chat/$conversationId'
     | '/event/$id'
     | '/admin'
     | '/admin/blocklist/$id'
@@ -294,6 +316,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/chat'
     | '/login'
     | '/profile'
     | '/register'
@@ -301,6 +324,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/events'
     | '/auth/callback'
+    | '/chat/$conversationId'
     | '/event/$id'
     | '/admin/'
     | '/admin/blocklist/$id'
@@ -321,6 +345,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  ChatRoute: typeof ChatRouteWithChildren
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
   RegisterRoute: typeof RegisterRoute
@@ -361,6 +386,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -388,6 +420,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/event/$id'
       preLoaderRoute: typeof EventIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/chat/$conversationId': {
+      id: '/chat/$conversationId'
+      path: '/$conversationId'
+      fullPath: '/chat/$conversationId'
+      preLoaderRoute: typeof ChatConversationIdRouteImport
+      parentRoute: typeof ChatRoute
     }
     '/auth/callback': {
       id: '/auth/callback'
@@ -540,9 +579,20 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface ChatRouteChildren {
+  ChatConversationIdRoute: typeof ChatConversationIdRoute
+}
+
+const ChatRouteChildren: ChatRouteChildren = {
+  ChatConversationIdRoute: ChatConversationIdRoute,
+}
+
+const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  ChatRoute: ChatRouteWithChildren,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   RegisterRoute: RegisterRoute,

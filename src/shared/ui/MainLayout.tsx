@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip'
 import { SkipLink } from '@/shared/ui/SkipLink'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import { signOutAction } from '@/features/auth/api/server'
-import { useChatContext } from '@/shared/providers/ChatProvider'
+import { ConversationHistory } from '@/routes/-components/chat/ConversationHistory'
 import { track } from '@/lib/analytics'
 import { LanguageSwitcher } from '@/routes/-components/LanguageSwitcher'
 import { FeedbackDialog } from '@/shared/ui/FeedbackDialog'
@@ -63,18 +63,10 @@ export function MainLayout({ children }: MainLayoutProps) {
   // Wrap signOutAction with useServerFn for server-side sign-out
   const signOut = useServerFn(signOutAction)
 
-  // Chat context for starting new chat
-  const { startNewChat } = useChatContext()
-
   // Persist collapsed state
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', String(collapsed))
   }, [collapsed])
-
-  const handleNewChat = () => {
-    startNewChat()
-    setMobileMenuOpen(false)
-  }
 
   const handleFeedback = () => {
     setFeedbackOpen(true)
@@ -104,7 +96,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   const mainNavItems: NavItem[] = [
-    { to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat, exact: true },
+    { to: '/chat', label: m.nav_new_chat(), icon: MessageSquarePlus, exact: true },
     { to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
     { to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
     { label: 'Feedback', icon: MessageCircle, action: handleFeedback },
@@ -186,7 +178,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         >
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
-        <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+        <Link to="/chat" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <Sparkles className="h-5 w-5 text-accent" aria-hidden="true" />
           <span className="text-base font-semibold tracking-tight">BA Eventos</span>
         </Link>
@@ -214,7 +206,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Sidebar header */}
         <div className="h-20 flex items-center justify-between px-5 shrink-0">
           <Link
-            to="/"
+            to="/chat"
             className={`flex items-center gap-3 hover:opacity-80 transition-opacity overflow-hidden ${collapsed ? 'lg:justify-center lg:w-full' : ''}`}
           >
             <Sparkles className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
@@ -264,6 +256,9 @@ export function MainLayout({ children }: MainLayoutProps) {
               )
             })}
           </div>
+
+          {/* Conversation history (signed-in) */}
+          <ConversationHistory collapsed={collapsed && !mobileMenuOpen} />
 
           {/* Spacer */}
           <div className="flex-1" />

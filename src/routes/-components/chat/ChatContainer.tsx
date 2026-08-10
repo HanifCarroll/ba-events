@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useChat, type UIMessage } from '@ai-sdk/react'
 import { DefaultChatTransport, generateId } from 'ai'
@@ -25,6 +26,7 @@ import { PullToRefreshIndicator } from '@/shared/ui/PullToRefreshIndicator'
 import { useChatContext } from '@/shared/providers/ChatProvider'
 import {
   useConversation,
+  useGuestConversation,
   useCreateConversation,
   useAddMessage,
   useGenerateTitle,
@@ -36,6 +38,10 @@ import {
   type MessagePersistencePayload,
   type MessagePersistenceResult,
 } from '@/features/chat/lib/persistence-outbox'
+import {
+  addGuestMessage,
+  createGuestConversation,
+} from '@/shared/lib/db/guest-conversations'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
 
@@ -96,7 +102,17 @@ function isDataEnvelope<T>(value: unknown): value is ChatStreamDataEnvelope<T> {
   return typeof candidate.requestId === 'string' && 'data' in candidate
 }
 
-export function ChatContainer() {
+export interface ChatContainerProps {
+  /** Active conversation id, driven by the `/chat/:conversationId` URL. */
+  conversationId?: string | null
+  /** Called when a new conversation is created so the caller can update the URL. */
+  onConversationChange?: (id: string) => void
+}
+
+export function ChatContainer({
+  conversationId,
+  onConversationChange,
+}: ChatContainerProps = {}) {
   const [error, setError] = useState<string | null>(null)
   const [messageAttachedDataMap, setMessageAttachedDataMap] = useState<
     Map<string, MessageAttachedData>
@@ -106,15 +122,24 @@ export function ChatContainer() {
   const startTimeRef = useRef<number>(0)
   const eventsCountRef = useRef<number>(0)
 
-  // Conversation context
-  const { activeConversationId, setActiveConversationId, registerStartNewChatHandler } =
-    useChatContext()
+  // Conversation context (the active id is kept in sync with the URL below)
+  const { setActiveConversationId, registerStartNewChatHandler } = useChatContext()
   const { user } = useAuthContext()
   const isAuthenticated = !!user
 
-  // Conversation hooks
+  // Normalized id for hooks and loaders (the URL param is undefined on /chat).
+  const activeConversationId = conversationId ?? null
+
+  // The conversation id comes from the `/chat/:conversationId` URL. Keep it
+  // in sync with the context so sidebar highlighting and helpers stay correct.
+  useEffect(() => {
+    setActiveConversationId(activeConversationId)
+  }, [activeConversationId, setActiveConversationId])
+
   const { data: loadedConversation, isLoading: isLoadingConversation } =
     useConversation(activeConversationId)
+  const { data: guestConversation, isLoading: isLoadingGuestConversation } =
+    useGuestConversation(isAuthenticated ? null : activeConversationId)
   const createConversation = useCreateConversation()
   const addMessage = useAddMessage()
   const generateTitle = useGenerateTitle()
@@ -127,6 +152,7 @@ export function ChatContainer() {
   const pendingAttachedDataByRequestIdRef = useRef<Map<string, MessageAttachedData>>(new Map())
   const pendingExecutionTraceByRequestIdRef = useRef<Map<string, MessageExecutionStep[]>>(new Map())
   const executionTraceByAssistantIdRef = useRef<Map<string, MessageExecutionStep[]>>(new Map())
+  const prevConversationIdRef = useRef<string | null | undefined>(conversationId)
 
   const setRequestLifecyclePhase = useCallback((phase: RequestPhase) => {
     requestPhaseRef.current = phase
@@ -254,7 +280,19 @@ export function ChatContainer() {
   const persistMessageResiliently = useCallback(
     async (payload: MessagePersistencePayload): Promise<MessagePersistenceResult> => {
       if (!isAuthenticated) {
-        return { status: 'persisted' }
+        // Guests have no server record; persist to the local IndexedDB store so
+        // the conversation survives reload on the same browser.
+        await addGuestMessage(payload.conversationId, {
+          id: payload.clientMessageId,
+          clientMessageId: payload.clientMessageId,
+          parentMessageId: payload.parentMessageId,
+          role: payload.role,
+          content: payload.content,
+          visibleContent: payload.visibleContent ?? payload.content,
+          executionTrace: payload.executionTrace,
+          attachedData: payload.attachedData,
+        })
+        return { status: 'persisted', messageId: payload.clientMessageId }
       }
 
       return persistMessageWithOutbox(persistMessageToConversation, payload)
@@ -314,8 +352,9 @@ export function ChatContainer() {
         mergePendingDataIntoAssistantMessage(activeRequestId, message.id)
       }
 
-      const conversationId = pendingConversationIdRef.current ?? activeConversationId
-      if (conversationId) {
+      const resolvedConversationId =
+        pendingConversationIdRef.current ?? conversationId ?? null
+      if (resolvedConversationId) {
         const textContent = extractVisibleTextFromUIMessageParts(
           message.parts as Array<{ type?: string; text?: string }>
         )
@@ -342,7 +381,7 @@ export function ChatContainer() {
 
         try {
           const assistantPersistResult = await persistMessageResiliently({
-            conversationId,
+            conversationId: resolvedConversationId,
             parentMessageId: pendingUserPersistedMessageIdRef.current,
             clientMessageId: assistantClientMessageId,
             role: 'assistant',
@@ -359,7 +398,7 @@ export function ChatContainer() {
           if (isFirstExchangeRef.current && pendingUserMessageRef.current) {
             isFirstExchangeRef.current = false
             generateTitle.mutate({
-              conversationId,
+              conversationId: resolvedConversationId,
               firstMessage: pendingUserMessageRef.current,
             })
           }
@@ -372,7 +411,7 @@ export function ChatContainer() {
               label: 'Retry',
               onClick: () =>
                 persistMessageResiliently({
-                  conversationId,
+                  conversationId: resolvedConversationId,
                   parentMessageId: pendingUserPersistedMessageIdRef.current,
                   clientMessageId: assistantClientMessageId,
                   role: 'assistant',
@@ -503,46 +542,83 @@ export function ChatContainer() {
     status === 'streaming' ||
     (requestPhase !== 'idle' && requestPhase !== 'error')
 
-  // Load conversation messages when activeConversationId changes.
-  // Never overwrite the in-flight chat timeline while a request is active.
+  // Load conversation messages when the URL conversation id changes. Guests
+  // resolve from IndexedDB, signed-in users from the server. Never overwrite
+  // the in-flight chat timeline while a request is active.
   useEffect(() => {
-    if (!activeConversationId || isLoadingConversation) return
+    const prev = prevConversationIdRef.current
+    prevConversationIdRef.current = conversationId
 
-    if (
-      requestPhaseRef.current !== 'idle' &&
-      requestPhaseRef.current !== 'error'
-    ) {
-      return
+    const idle =
+      requestPhaseRef.current === 'idle' || requestPhaseRef.current === 'error'
+    if (!idle) return
+
+    // No active conversation, or a deliberate navigation to a different one:
+    // start from a blank timeline.
+    if (!conversationId || conversationId !== prev) {
+      setMessages([])
+      setAttachedDataMap(new Map())
+      executionTraceByAssistantIdRef.current.clear()
+      persistedAssistantMessageIdsRef.current.clear()
+      isFirstExchangeRef.current = true
     }
 
-      if (loadedConversation?.messages) {
-        const sortedMessages = sortMessagesByTurnOrderAsc(loadedConversation.messages)
+    if (!conversationId) return
 
-      const uiMessages: UIMessage[] = sortedMessages.map((storedMessage: Message) => ({
-        id: storedMessage.id,
-        role: storedMessage.role as 'user' | 'assistant',
-        parts: [{ type: 'text' as const, text: storedMessage.visible_content ?? storedMessage.content }],
-        createdAt: new Date(storedMessage.created_at),
-      }))
+    const isLoadingTarget = isAuthenticated
+      ? isLoadingConversation
+      : isLoadingGuestConversation
+    if (isLoadingTarget) return
 
-      setMessages(uiMessages)
+    const sourceMessages = isAuthenticated
+      ? loadedConversation?.messages
+      : guestConversation?.messages
+    if (!sourceMessages || sourceMessages.length === 0) return
 
-      const attachedDataMap = new Map<string, MessageAttachedData>()
-      const persistedAssistantIds = new Map<string, string>()
-      for (const storedMessage of sortedMessages) {
-        if (storedMessage.role === 'assistant' && storedMessage.attached_data) {
-          attachedDataMap.set(storedMessage.id, storedMessage.attached_data)
-        }
-        if (storedMessage.role === 'assistant') {
-          persistedAssistantIds.set(storedMessage.id, storedMessage.id)
-        }
+    const sortedMessages = isAuthenticated
+      ? sortMessagesByTurnOrderAsc(sourceMessages as Message[])
+      : [...sourceMessages].sort((a, b) =>
+          (a.created_at ?? '').localeCompare(b.created_at ?? '')
+        )
+
+    const uiMessages: UIMessage[] = sortedMessages.map((storedMessage) => ({
+      id: storedMessage.id,
+      role: storedMessage.role as 'user' | 'assistant',
+      parts: [
+        {
+          type: 'text' as const,
+          text: storedMessage.visible_content ?? storedMessage.content,
+        },
+      ],
+      createdAt: new Date(storedMessage.created_at),
+    }))
+
+    setMessages(uiMessages)
+
+    const attachedDataMap = new Map<string, MessageAttachedData>()
+    const persistedAssistantIds = new Map<string, string>()
+    for (const storedMessage of sortedMessages) {
+      if (storedMessage.role === 'assistant' && storedMessage.attached_data) {
+        attachedDataMap.set(storedMessage.id, storedMessage.attached_data)
       }
-      setAttachedDataMap(attachedDataMap)
-      persistedAssistantMessageIdsRef.current = persistedAssistantIds
-
-      isFirstExchangeRef.current = sortedMessages.length > 0
+      if (storedMessage.role === 'assistant') {
+        persistedAssistantIds.set(storedMessage.id, storedMessage.id)
+      }
     }
-  }, [activeConversationId, loadedConversation, isLoadingConversation, setMessages, setAttachedDataMap])
+    setAttachedDataMap(attachedDataMap)
+    persistedAssistantMessageIdsRef.current = persistedAssistantIds
+
+    isFirstExchangeRef.current = sortedMessages.length > 0
+  }, [
+    conversationId,
+    isAuthenticated,
+    loadedConversation,
+    guestConversation,
+    isLoadingConversation,
+    isLoadingGuestConversation,
+    setMessages,
+    setAttachedDataMap,
+  ])
 
   // Flush any pending persistence retries on load.
   useEffect(() => {
@@ -604,47 +680,48 @@ export function ChatContainer() {
       pendingAssistantClientMessageIdRef.current = assistantClientMessageId
 
       try {
-        if (isAuthenticated) {
-          let conversationId = activeConversationId
-          if (!conversationId) {
+        // Resolve an active conversation: reuse the URL id, or create one.
+        // Signed-in users create a server conversation; guests create a local
+        // IndexedDB conversation keyed by a client-generated id in the URL.
+        let currentConversationId = conversationId
+        if (!currentConversationId) {
+          if (isAuthenticated) {
             const newConversation = await createConversation.mutateAsync(undefined)
-            conversationId = newConversation.id
-            setActiveConversationId(conversationId)
+            currentConversationId = newConversation.id
+          } else {
+            currentConversationId = generateId()
+            await createGuestConversation(currentConversationId)
           }
-          pendingConversationIdRef.current = conversationId
+          onConversationChange?.(currentConversationId)
+        }
+        pendingConversationIdRef.current = currentConversationId
 
-          const userMessagePayload: MessagePersistencePayload = {
-            conversationId,
-            parentMessageId: null,
-            clientMessageId: userClientMessageId,
-            role: 'user',
-            content,
-            visibleContent: content,
-            responseContractVersion: 2,
-          }
-
-          const userPersistencePromise = persistMessageResiliently(userMessagePayload)
-            .then((result) => {
-              if (result.messageId) {
-                pendingUserPersistedMessageIdRef.current = result.messageId
-              }
-              return result
-            })
-            .catch((persistError) => {
-              console.error('Failed to persist user message:', persistError)
-              return { status: 'queued' } as MessagePersistenceResult
-            })
-
-          pendingUserPersistencePromiseRef.current = userPersistencePromise
-
-          await sendMessage({ text: content })
-          await userPersistencePromise
-          return
+        const userMessagePayload: MessagePersistencePayload = {
+          conversationId: currentConversationId,
+          parentMessageId: null,
+          clientMessageId: userClientMessageId,
+          role: 'user',
+          content,
+          visibleContent: content,
+          responseContractVersion: 2,
         }
 
-        pendingConversationIdRef.current = null
-        pendingUserPersistencePromiseRef.current = null
+        const userPersistencePromise = persistMessageResiliently(userMessagePayload)
+          .then((result) => {
+            if (result.messageId) {
+              pendingUserPersistedMessageIdRef.current = result.messageId
+            }
+            return result
+          })
+          .catch((persistError) => {
+            console.error('Failed to persist user message:', persistError)
+            return { status: 'queued' } as MessagePersistenceResult
+          })
+
+        pendingUserPersistencePromiseRef.current = userPersistencePromise
+
         await sendMessage({ text: content })
+        await userPersistencePromise
       } catch (err) {
         console.error('Failed to send message:', err)
         const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
@@ -667,14 +744,14 @@ export function ChatContainer() {
       }
     },
     [
-      activeConversationId,
+      conversationId,
+      onConversationChange,
       createConversation,
       isAuthenticated,
       messages.length,
       persistMessageResiliently,
       resetRequestCorrelations,
       sendMessage,
-      setActiveConversationId,
       setRequestLifecyclePhase,
     ]
   )
@@ -748,8 +825,16 @@ export function ChatContainer() {
   }, [requestPhase])
 
   const showConversationLoading = !!(
-    activeConversationId &&
-    isLoadingConversation &&
+    conversationId &&
+    (isAuthenticated ? isLoadingConversation : isLoadingGuestConversation) &&
+    requestPhase === 'idle' &&
+    !hasMessages
+  )
+
+  const conversationMissing = !!(
+    conversationId &&
+    !(isAuthenticated ? isLoadingConversation : isLoadingGuestConversation) &&
+    !(isAuthenticated ? !!loadedConversation : !!guestConversation) &&
     requestPhase === 'idle' &&
     !hasMessages
   )
@@ -780,6 +865,17 @@ export function ChatContainer() {
         {showConversationLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          </div>
+        ) : conversationMissing ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
+            <p className="text-muted-foreground">{m.chat_conversation_not_found()}</p>
+            <Link
+              to="/chat"
+              className="text-sm font-medium text-primary hover:underline"
+              onClick={() => setActiveConversationId(null)}
+            >
+              {m.chat_start_new_chat()}
+            </Link>
           </div>
         ) : hasMessages || requestPhase !== 'idle' ? (
           <MessageList
