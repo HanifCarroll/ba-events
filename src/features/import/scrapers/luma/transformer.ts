@@ -4,8 +4,10 @@
  * Transforms Luma events into our EventInsert format.
  */
 
+import { toZonedTime } from 'date-fns-tz'
 import type { EventInsert } from '@/shared/lib/types'
 import type { LumaEvent, LumaVenueInfo } from './types'
+import { BA_TIMEZONE } from '@/shared/lib/constants'
 import {
   normalizeTitle,
   normalizeDescription,
@@ -50,12 +52,21 @@ export function transformLumaEvent(
   const startsAt = event.start_at
   const endsAt = event.end_at || null
 
-  // Check if it's an all-day event (no time component or spans multiple days)
+  // Check if it's an all-day event: genuinely spans multiple full days
+  // (>= 24h across two BA calendar days). Compare in Buenos Aires time, NOT
+  // UTC, and do NOT treat a single overnight/evening show as all-day — e.g.
+  // 22:30 -> 01:00 UTC (7:30 PM -> 10:00 PM BA) and 21:00 -> 07:00 BA (an
+  // overnight party) are both NOT all-day, while a 2-day conference IS.
+  // Luma provides real start/end times, so a midnight start is an actual
+  // midnight start (not a date-only placeholder), but a real all-day event
+  // still spans >= 24h.
   let isAllDay = false
   if (endsAt) {
-    const startDate = new Date(startsAt).toDateString()
-    const endDate = new Date(endsAt).toDateString()
-    isAllDay = startDate !== endDate
+    const start = toZonedTime(new Date(startsAt), BA_TIMEZONE)
+    const end = toZonedTime(new Date(endsAt), BA_TIMEZONE)
+    const spansDays = start.toDateString() !== end.toDateString()
+    const durationHours = (end.getTime() - start.getTime()) / 3600000
+    isAllDay = spansDays && durationHours >= 24
   }
 
   // Price handling - Luma stores price in cents if available

@@ -44,6 +44,7 @@ export function conciergePrompt(locale: 'en' | 'es'): string {
 
 ## Grounding
 - ONLY discuss events the tools returned. Never invent events.
+- Never describe an event as "all-day", "full-day", or "multi-day" unless the tool result's isAllDay field is true. A short evening event whose end time falls on the next calendar date is still ONE evening, not all-day (e.g. 7:30 PM -> 10:00 PM). Trust isAllDay, never infer day-length from the dateTime/endsAt strings.
 - Never claim nothing matches without calling search_events first.
 - If nothing matches, say so in one line and point them at exploration options.
 - Make sure your text matches the events shown (one event if limit=1, the returned list if limit=3-5).
