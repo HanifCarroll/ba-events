@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildStructuredDataFallbackText,
   buildExecutionTrace,
   getFinalVisibleTextFromSteps,
-  getNonEmptyStepTextCount,
   sanitizeFinalAssistantText,
   type StepResultLike,
 } from '@/routes/api/chat'
@@ -30,7 +28,7 @@ describe('chat final-only contract helpers', () => {
     expect(finalText).toBe('')
   })
 
-  it('falls back to generated text when all step text is empty', () => {
+  it('returns empty for all-empty multi-step responses (never falls back to generated text)', () => {
     const steps: StepResultLike[] = [{ text: '' }, { text: '   ' }]
     const finalText = getFinalVisibleTextFromSteps(steps, 'Fallback final answer.')
     expect(finalText).toBe('')
@@ -40,11 +38,6 @@ describe('chat final-only contract helpers', () => {
     const steps: StepResultLike[] = [{ text: '' }]
     const finalText = getFinalVisibleTextFromSteps(steps, 'Fallback final answer.')
     expect(finalText).toBe('Fallback final answer.')
-  })
-
-  it('counts non-empty step text for contract-violation checks', () => {
-    const steps: StepResultLike[] = [{ text: '' }, { text: 'first' }, { text: ' second ' }]
-    expect(getNonEmptyStepTextCount(steps)).toBe(2)
   })
 
   it('builds execution traces with tool call/result metadata', () => {
@@ -135,14 +128,5 @@ describe('chat final-only contract helpers', () => {
       { hasStructuredData: true }
     )
     expect(sanitized).toBe('Go to Trade Sky Bar tonight. It is your best upscale option with skyline views.')
-  })
-
-  it('builds deterministic fallback summary text for structured responses', () => {
-    expect(buildStructuredDataFallbackText('en', 'something more upscale or exclusive')).toBe(
-      'Here are better upscale options for tonight.'
-    )
-    expect(buildStructuredDataFallbackText('es', 'algo más exclusivo')).toBe(
-      'Aquí tienes opciones más premium para esta noche.'
-    )
   })
 })

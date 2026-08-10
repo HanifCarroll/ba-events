@@ -46,7 +46,7 @@ function toErrorMessage(error: unknown): string {
   return 'Unknown persistence error'
 }
 
-export function calculateRetryDelayMs(attemptCount: number): number {
+function calculateRetryDelayMs(attemptCount: number): number {
   const exponent = Math.max(0, attemptCount - 1)
   return Math.min(BASE_RETRY_DELAY_MS * 2 ** exponent, MAX_RETRY_DELAY_MS)
 }

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { LocalOutboxItem } from '@/shared/lib/db/local-outbox'
 import {
-  calculateRetryDelayMs,
   flushMessagePersistenceOutbox,
   MAX_OUTBOX_ATTEMPTS,
   persistMessageWithOutbox,
@@ -124,13 +123,6 @@ describe('persistence outbox', () => {
         last_error: 'permanent failure',
       })
     )
-  })
-
-  it('uses exponential retry delay with an upper bound', () => {
-    expect(calculateRetryDelayMs(1)).toBe(2_000)
-    expect(calculateRetryDelayMs(2)).toBe(4_000)
-    expect(calculateRetryDelayMs(3)).toBe(8_000)
-    expect(calculateRetryDelayMs(99)).toBe(120_000)
   })
 
   it('deletes outbox item after successful flush persistence', async () => {

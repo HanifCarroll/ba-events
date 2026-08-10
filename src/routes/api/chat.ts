@@ -153,7 +153,7 @@ export function getFinalVisibleTextFromSteps(
   return extractVisibleTextFromStepTexts([generatedText])
 }
 
-export function getNonEmptyStepTextCount(steps: StepResultLike[]): number {
+function getNonEmptyStepTextCount(steps: StepResultLike[]): number {
   return steps.reduce((count, step) => {
     return count + ((step.text ?? '').trim().length > 0 ? 1 : 0)
   }, 0)
@@ -185,7 +185,7 @@ export function sanitizeFinalAssistantText(
   return trimmed
 }
 
-export function buildStructuredDataFallbackText(
+function buildStructuredDataFallbackText(
   locale: 'en' | 'es',
   originalQuery: string
 ): string {

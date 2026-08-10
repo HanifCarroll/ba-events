@@ -46,7 +46,7 @@ import {
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
 
-export type RequestPhase =
+type RequestPhase =
   | 'idle'
   | 'preparing'
   | 'thinking'
@@ -55,7 +55,7 @@ export type RequestPhase =
   | 'persisting'
   | 'error'
 
-export function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): RequestPhase {
+function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): RequestPhase {
   switch (phase) {
     case 'thinking':
       return 'thinking'
@@ -74,7 +74,7 @@ export function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): Requ
 
 type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
 
-export function assistantMessageHasVisibleContent(
+function assistantMessageHasVisibleContent(
   message: AssistantVisibilityMessage | null | undefined
 ): boolean {
   if (!message) return false
@@ -85,7 +85,7 @@ export function assistantMessageHasVisibleContent(
   )
 }
 
-export function shouldShowLoadingIndicator(
+function shouldShowLoadingIndicator(
   status: 'submitted' | 'streaming' | 'ready' | 'error',
   lastAssistantMessage: AssistantVisibilityMessage | null | undefined,
   requestPhase: RequestPhase
@@ -680,7 +680,6 @@ export function ChatContainer({
   const handleSendMessage = useCallback(
     async (content: string, options?: { eventId?: string }) => {
       pendingTrendingEventIdRef.current = options?.eventId ?? null
-      setRequestLifecyclePhase('preparing')
       setError(null)
       resetRequestCorrelations()
       eventsCountRef.current = 0
@@ -720,6 +719,12 @@ export function ChatContainer({
           onConversationChange?.(currentConversationId)
           return
         }
+        // Only enter the loading phase once we're streaming from THIS mounted
+        // instance. For a first message the home screen parks the message and
+        // navigates — the remounted /chat/{id} instance sets 'preparing'
+        // itself, so the home hero stays visible until the switch (no flash
+        // of a bare loading row on the home screen).
+        setRequestLifecyclePhase('preparing')
         pendingConversationIdRef.current = currentConversationId
 
         const userMessagePayload: MessagePersistencePayload = {

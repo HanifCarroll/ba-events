@@ -25,9 +25,9 @@ interface MessageListProps {
  * How far below the top of the scroll viewport the start of a finished
  * assistant response should land.
  */
-export const ASSISTANT_RESPONSE_TOP_PADDING = 24
+const ASSISTANT_RESPONSE_TOP_PADDING = 24
 
-export interface ScrollGeometry {
+interface ScrollGeometry {
   getBoundingClientRect: () => Pick<DOMRect, 'top'>
   scrollTop: number
   scrollTo: (options: ScrollToOptions) => void
@@ -37,7 +37,7 @@ export interface ScrollGeometry {
  * Scrolls `container` so the top of `messageElement` sits
  * `ASSISTANT_RESPONSE_TOP_PADDING` px below the container's top edge.
  */
-export function scrollAssistantToTop(
+function scrollAssistantToTop(
   container: ScrollGeometry,
   messageElement: Pick<ScrollGeometry, 'getBoundingClientRect'>
 ): void {
@@ -55,7 +55,7 @@ export function scrollAssistantToTop(
   })
 }
 
-export interface AssistantTopScrollState {
+interface AssistantTopScrollState {
   /** Id of the assistant response to align once the in-flight request completes. */
   pendingScrollAssistantId: string | null
   /** Last assistant message id observed by the previous update. */
@@ -74,7 +74,7 @@ export interface AssistantTopScrollState {
  *   only if it is still the last assistant message. Conversation loads and
  *   failed requests (no assistant message) never trigger a scroll.
  */
-export function updateAssistantTopScroll(
+function updateAssistantTopScroll(
   state: AssistantTopScrollState,
   isLoading: boolean,
   lastAssistantId: string | null

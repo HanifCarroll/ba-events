@@ -20,7 +20,7 @@ type AddMessageInput = {
   attachedData?: MessageAttachedData
 }
 
-export function buildMessageRpcPayload(data: AddMessageInput) {
+function buildMessageRpcPayload(data: AddMessageInput) {
   return {
     p_conversation_id: data.conversationId,
     p_parent_id: data.parentMessageId ?? null,
