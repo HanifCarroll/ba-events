@@ -47,6 +47,7 @@ export function conciergePrompt(locale: 'en' | 'es'): string {
 - Never claim nothing matches without calling search_events first.
 - If nothing matches, say so in one line and point them at exploration options.
 - Make sure your text matches the events shown (one event if limit=1, the returned list if limit=3-5).
+- NEVER assert a coverage ceiling or that events don't exist past a date. The search_events result includes a coverage field with the window you searched (searchedFrom/searchedTo), how many matched (totalMatches), and the furthest event date on record (maxEventDate). If you only searched a bounded window, say the window you searched and offer to look further — never state there are no events beyond it. For "furthest into the future" / "next month" / "anything ahead" asks, use timeFilter "future" (unbounded) and answer from coverage.maxEventDate.
 
 ## Tools
 - search_events: ALL event discovery goes through this one tool — vibe asks (query: "underground techno", "romantic dinner"), "what's on tonight?" (timeFilter: "tonight"), "what's happening right now?" (timeFilter: "now"), plus filters (neighborhood, isFree, maxPrice, categories). Limit: 1 for decisive picks (default), 3-4 for discovery lists, never >5.

@@ -21,6 +21,7 @@ import { createTools } from '@/features/chat/api/tools-ai-sdk'
 import { getSystemPrompt } from '@/features/chat/api/prompts'
 import { generateSuggestions } from '@/features/chat/api/suggestions'
 import { guardForOffTopic } from '@/features/chat/api/topic-guard'
+import { guardCoverageClaims, type CoverageInfo } from '@/features/chat/api/tools/coverage-guard'
 import {
   extractVisibleTextFromStepTexts,
   extractVisibleTextFromUIMessageParts,
@@ -311,6 +312,7 @@ export const Route = createFileRoute('/api/chat' as any)({
         // Accumulate events across all tool calls
         const allEvents = new Map<string, ChatEventPayload>()
         let lastSearchInput: SearchEventsInput | null = null
+        let lastSearchCoverage: CoverageInfo | null = null
         let lastOriginalQuery = ''
         let directionsData: DirectionsData | null = null
 
@@ -359,7 +361,10 @@ export const Route = createFileRoute('/api/chat' as any)({
                   for (const result of toolResults) {
                     const toolOutput = result.output as {
                       events?: ChatEventPayload[]
-                      metadata?: { toolInput?: SearchEventsInput }
+                      metadata?: {
+                        toolInput?: SearchEventsInput
+                        coverage?: CoverageInfo
+                      }
                       // For get_directions tool
                       success?: boolean
                       venueName?: string
@@ -376,6 +381,9 @@ export const Route = createFileRoute('/api/chat' as any)({
                     // Track last search input for suggestions
                     if (result.toolName === 'search_events' && toolOutput?.metadata?.toolInput) {
                       lastSearchInput = toolOutput.metadata.toolInput
+                    }
+                    if (result.toolName === 'search_events' && toolOutput?.metadata?.coverage) {
+                      lastSearchCoverage = toolOutput.metadata.coverage
                     }
                     // Capture directions data
                     if (result.toolName === 'get_directions' && toolOutput?.success && toolOutput?.mapsUrl) {
@@ -422,6 +430,14 @@ export const Route = createFileRoute('/api/chat' as any)({
               if (finalText) {
                 const guarded = await guardForOffTopic(finalText, locale)
                 if (guarded) finalText = guarded
+              }
+
+              // Coverage guardrail: if the model asserted a coverage ceiling
+              // ("furthest is X", "no events past X") while only having
+              // searched a window short of the true horizon, append a grounded
+              // correction. Fails open (returns text unchanged).
+              if (finalText && lastSearchCoverage) {
+                finalText = guardCoverageClaims(finalText, locale, lastSearchCoverage)
               }
 
               if (nonEmptyStepTextCount > 1) {

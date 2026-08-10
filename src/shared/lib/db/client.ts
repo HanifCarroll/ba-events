@@ -532,6 +532,56 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
   return data as ChatEventPayload[]
 }
 
+// Count scheduled events matching the given filters (ignores `limit`). Used to
+// report search coverage so the model knows how much it searched vs. returned.
+// Mirrors the predicate in searchEventsWithFilters.
+export async function countEventsWithFilters(filters: EventFilters): Promise<number> {
+  let query = supabase
+    .from('events_with_venues')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', filters.status || 'scheduled')
+
+  if (filters.startsAfter) {
+    query = query.gte('starts_at', filters.startsAfter)
+  }
+  if (filters.startsBefore) {
+    query = query.lte('starts_at', filters.startsBefore)
+  }
+  if (filters.neighborhood) {
+    query = query.eq('venue_neighborhood', filters.neighborhood)
+  }
+  if (filters.venueId) {
+    query = query.eq('venue_id', filters.venueId)
+  }
+  if (filters.categories && filters.categories.length > 0) {
+    query = query.overlaps('categories', filters.categories)
+  }
+  if (filters.isFree) {
+    query = query.eq('is_free', true)
+  }
+  if (filters.maxPrice !== undefined) {
+    query = query.lte('price', filters.maxPrice)
+  }
+
+  const { count, error } = await query
+  if (error) throw error
+  return count ?? 0
+}
+
+// Furthest future start date of any scheduled event. The source of truth for
+// "what's the event furthest into the future" and for the coverage guard.
+export async function getFurthestEventDate(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('events')
+    .select('starts_at')
+    .eq('status', 'scheduled')
+    .order('starts_at', { ascending: false })
+    .limit(1)
+
+  if (error) throw error
+  return data?.[0]?.starts_at ?? null
+}
+
 // Get events happening now or starting soon
 export async function getEventsHappeningNow(): Promise<ChatEventPayload[]> {
   const now = new Date().toISOString()

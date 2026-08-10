@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { addDays, setHours, startOfDay, getDay, getHours } from 'date-fns'
 import { defineTool } from './types'
-import { searchEventsWithFilters, hybridEventSearch, getEventsHappeningNow } from '@/shared/lib/db/client'
+import { searchEventsWithFilters, countEventsWithFilters, getFurthestEventDate, hybridEventSearch, getEventsHappeningNow } from '@/shared/lib/db/client'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
 import type { EventFilters } from '@/shared/lib/types'
 import { getNowInBA, baToUTC, ensureChatEventPayloads, formatEventsToolResult } from './utils'
@@ -29,10 +29,10 @@ export const searchEventsInputSchema = z.object({
   isFree: z.boolean().optional().describe('Set to true to only show free events'),
   maxPrice: z.number().optional().describe('Maximum price in ARS'),
   timeFilter: z
-    .enum(['now', 'tonight', 'tomorrow', 'weekend', 'week'])
+    .enum(['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'])
     .optional()
     .describe(
-      'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days'
+      'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future").'
     ),
   limit: z.number().optional().describe(
     'Maximum number of events to return and display (1-10). Use this to match the user\'s request - e.g., if they ask for "top 3 events", set limit to 3.'
@@ -94,6 +94,10 @@ function toolInputToFilters(input: SearchEventsInput): EventFilters {
     const nextWeek = addDays(now, 7)
     filters.startsAfter = baToUTC(now)
     filters.startsBefore = baToUTC(nextWeek)
+  } else if (input.timeFilter === 'future') {
+    // Unbounded future: no upper limit. Use for "furthest event", "next
+    // month", "anything ahead" asks — never cap the horizon here.
+    filters.startsAfter = baToUTC(now)
   } else {
     // Default: upcoming events
     filters.startsAfter = baToUTC(now)
@@ -133,7 +137,9 @@ export const searchEventsTool = defineTool({
 Use the 'query' parameter for natural language searches describing the desired experience
 (e.g., "romantic jazz night", "underground techno party", "chill outdoor activities").
 Use other parameters for specific requirements. Combine both for best results.
-For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening right now?" use timeFilter "now".`,
+For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening right now?" use timeFilter "now".
+For asks about events further ahead — "furthest", "next month", "anything in the future" — use timeFilter "future" (unbounded).
+The result includes coverage metadata: the window you searched, total matches, and the furthest event date on record. Never claim there are no events past the window you actually searched.`,
 
   inputSchema: searchEventsInputSchema,
 
@@ -163,9 +169,9 @@ For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening ri
       },
       timeFilter: {
         type: 'string',
-        enum: ['now', 'tonight', 'tomorrow', 'weekend', 'week'],
+        enum: ['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'],
         description:
-          'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days',
+          'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future").',
       },
       limit: {
         type: 'number',
@@ -191,6 +197,11 @@ For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening ri
 
       let results
 
+      // Coverage bookkeeping: how many events actually match the window (vs.
+      // how many were returned), and how far the calendar truly reaches. This
+      // is returned to the model so it cannot assert a false coverage ceiling.
+      let totalMatches: number
+
       if (input.timeFilter === 'now') {
         // "Now" can't be expressed as a starts_at range - it means events that
         // already started and haven't ended. Fetch those, then apply the
@@ -210,19 +221,31 @@ For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening ri
         if (input.maxPrice !== undefined) {
           nowEvents = nowEvents.filter((e) => (e.price ?? 0) <= input.maxPrice!)
         }
+        totalMatches = nowEvents.length
         results = nowEvents.slice(0, limit)
-      } else if (input.query && input.query.trim()) {
-        logger.debug('[search_events] Using hybrid search', { query: input.query })
-        results = await hybridEventSearch(input.query, filters, limit)
       } else {
-        // Otherwise, use filter-only search
-        logger.debug('[search_events] Using filter-only search')
-        results = await searchEventsWithFilters(filters, limit)
+        // Coverage count reflects the full window (ignores semantic ranking and
+        // limit) so the model can see how much exists vs. how much it got back.
+        totalMatches = await countEventsWithFilters(filters)
+        if (input.query && input.query.trim()) {
+          logger.debug('[search_events] Using hybrid search', { query: input.query })
+          results = await hybridEventSearch(input.query, filters, limit)
+        } else {
+          // Otherwise, use filter-only search
+          logger.debug('[search_events] Using filter-only search')
+          results = await searchEventsWithFilters(filters, limit)
+        }
       }
+
+      // Furthest future event on record — the true coverage horizon the model
+      // must answer "furthest into the future" from.
+      const maxEventDate = await getFurthestEventDate()
 
       logger.info('[search_events] Search completed', {
         resultCount: results.length,
+        totalMatches,
         hasQuery: !!input.query,
+        maxEventDate,
       })
 
       return {
@@ -233,6 +256,18 @@ For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening ri
           resultCount: results.length,
           hasQuery: !!input.query,
           hasFilters: !!(input.categories || input.neighborhood || input.timeFilter),
+          // Coverage metadata: what window was searched, how many matched, and
+          // the true furthest event date. The model must never claim a ceiling
+          // beyond this — if it only searched a narrow window, coverage makes
+          // that explicit so it says "I only searched up to X" instead of
+          // "there are no events past X".
+          coverage: {
+            searchedFrom: filters.startsAfter ?? null,
+            searchedTo: filters.startsBefore ?? null,
+            totalMatches,
+            returned: results.length,
+            maxEventDate,
+          },
           // Include input for refinement suggestion generation
           toolInput: input,
         },
