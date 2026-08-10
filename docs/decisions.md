@@ -26,6 +26,29 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Passline Automated Scraping via Browserbase
+
+**Date:** 2026-08-10
+
+**Decision:** Re-enabled Passline as an automated scrape source by routing its API request through a Browserbase cloud browser session.
+
+**Problem:** Passline's Cloudflare protection blocks plain server-side HTTP fetches to `api.passline.com`, which had kept Passline out of the automated Trigger.dev pipeline (see "Passline Trigger.dev Playwright Attempt (Failed)", 2026-01-25).
+
+**Investigation:** The 2026-01-25 failure was IP/infrastructure-based — Browserless.io and Trigger.dev Playwright egressed from datacenter IPs that Cloudflare blocks. Browserbase sessions egress through a managed proxy network (residential IPs) with captcha solving, which is designed to defeat exactly this kind of IP-based blocking. A live CDP test that ran the `GetCountryByBillboardHome` POST inside a Browserbase session confirmed the API returns HTTP 200 with ~2,700 events — Browserbase bypasses Passline's Cloudflare.
+
+**Solution:**
+1. Added `scrapers/passline/browser-scraper.ts` — runs the Passline API POST inside a Browserbase session via `page.evaluate`, mirroring the Meetup scraper.
+2. `core/passline.ts` now uses the Browserbase path when `BROWSERBASE_API_KEY` is set, falling back to plain HTTP (dev).
+3. Added the `scrape-passline` Trigger.dev job and restored Passline to `daily-scrape.ts` (30 days ahead, matching Eventbrite).
+
+**Alternatives Considered:**
+- Local Playwright / Playwriter: Rejected for the automated job — needs a user's real browser; Browserbase is headless and server-side.
+- Continuing manual-only Passline import: Rejected — misses events between admin runs and breaks the single automated pipeline.
+
+**Related Decision:** Supersedes "Passline Trigger.dev Playwright Attempt (Failed)" (2026-01-25) and "Disable Scheduled Passline Scraper" (2026-01-11).
+
+---
+
 ### Single Retrieval Surface: Consolidate Chat Agent Tools from 15 to 8
 
 **Date:** 2026-08-08

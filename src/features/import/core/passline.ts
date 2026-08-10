@@ -12,6 +12,8 @@ import {
   filterByDateRange,
   type PasslineEvent,
 } from '../scrapers/passline/api'
+import { fetchPasslineEventsWithBrowserbase } from '../scrapers/passline/browser-scraper'
+import { isBrowserbaseAvailable } from '@/shared/lib/browser'
 import { transformPasslineEvent } from '../scrapers/passline/transformer'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
@@ -101,8 +103,12 @@ export async function processPasslineImport(
   }
 
   // Step 1: Fetch events
+  // Use Browserbase (cloud browser, residential proxy) when available to bypass
+  // Passline's Cloudflare protection; otherwise fall back to plain HTTP (dev).
   logger.info('[passline] Fetching events from API')
-  const allEvents = await fetchPasslineEvents()
+  const allEvents = isBrowserbaseAvailable()
+    ? await fetchPasslineEventsWithBrowserbase()
+    : await fetchPasslineEvents()
   result.eventsFetched = allEvents.length
   logger.info('[passline] Fetched events', { count: allEvents.length })
 

@@ -36,7 +36,7 @@ interface PasslineAPIResponse {
   BillboardByCountry: PasslineEvent[]
 }
 
-const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
+export const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
 
 /**
  * Fetch all events from Passline for Argentina
