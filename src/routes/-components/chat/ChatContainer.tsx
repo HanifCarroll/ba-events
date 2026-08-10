@@ -159,6 +159,10 @@ export function ChatContainer({
     setRequestPhase(phase)
   }, [])
 
+  // One-shot pin for a home-screen trending event tap: carried in the request
+  // body (not the message text), so the exact event id stays out of the chat UI.
+  const pendingTrendingEventIdRef = useRef<string | null>(null)
+
   // Track message persistence state
   const pendingUserMessageRef = useRef<string | null>(null)
   const pendingConversationIdRef = useRef<string | null>(null)
@@ -334,9 +338,14 @@ export function ChatContainer({
     id: chatSessionIdRef.current,
     transport: new DefaultChatTransport({
       api: '/api/chat',
-      body: () => ({
-        locale: getLocale() as 'en' | 'es',
-      }),
+      body: () => {
+        const trendingEventId = pendingTrendingEventIdRef.current
+        pendingTrendingEventIdRef.current = null
+        return {
+          locale: getLocale() as 'en' | 'es',
+          ...(trendingEventId ? { trendingEventId } : {}),
+        }
+      },
     }),
     onFinish: async ({ message }) => {
       track('chat:response_received', {
@@ -660,7 +669,8 @@ export function ChatContainer({
   }, [registerStartNewChatHandler, stop, setMessages, setAttachedDataMap, setRequestLifecyclePhase, resetRequestCorrelations])
 
   const handleSendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, options?: { eventId?: string }) => {
+      pendingTrendingEventIdRef.current = options?.eventId ?? null
       setRequestLifecyclePhase('preparing')
       setError(null)
       resetRequestCorrelations()

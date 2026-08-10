@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import {
   getEventsWithVenues,
+  getTrendingEvents,
   getActiveEventsForList,
   getPastEventsForList,
   getEventById,
@@ -20,12 +21,22 @@ import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { requireAdminAccess } from '@/shared/lib/admin-utils'
 import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { queryEventsPaginated, queryEventTabCounts } from './queries'
-import type { EventInsert, EventUpdate, EventWithVenue, EventListItem, EventStatus } from '@/shared/lib/types'
+import type { EventInsert, EventUpdate, EventWithVenue, EventListItem, EventStatus, ChatEventPayload } from '@/shared/lib/types'
 import type { EventListParams, EventFilterParams, PaginatedResponse, EventTabCounts } from '@/shared/lib/types/pagination'
 
 export const listEvents = createServerFn({ method: 'GET' }).handler(async (): Promise<EventWithVenue[]> => {
   return getEventsWithVenues(1000)
 })
+
+/**
+ * Next upcoming events for the chat home "Happening soon" grid.
+ * Public — no auth, lightweight chat columns only.
+ */
+export const getTrendingEventsAction = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<ChatEventPayload[]> => {
+    return getTrendingEvents(3)
+  }
+)
 
 /**
  * List all events for admin with no pagination (client-side filtering)

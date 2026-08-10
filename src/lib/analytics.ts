@@ -45,6 +45,10 @@ export type ConciergeEvent =
   | 'concierge:context_prompt'
   | 'concierge:surprise_me'
 
+// Home screen events
+export type HomeEvent =
+  | 'home:trending_clicked'
+
 // Agent tool usage events (server-side tracking)
 export type AgentToolEvent =
   | 'agent:tool_used'
@@ -55,6 +59,7 @@ export type AnalyticsEvent =
   | AuthEvent
   | AdminEvent
   | ConciergeEvent
+  | HomeEvent
   | AgentToolEvent
 
 // Lazy-loaded PostHog instance (client-side only)

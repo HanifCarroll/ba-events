@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { Sparkles, Moon, CalendarDays } from 'lucide-react'
 import * as m from '@/paraglide/messages'
 import { track } from '@/lib/analytics'
+import { TrendingEvents } from './TrendingEvents'
 
 interface SuggestedPromptsProps {
-  onSelectPrompt: (prompt: string) => void
+  /** @param options.eventId exact event tapped (from trending cards) — hidden from chat text */
+  onSelectPrompt: (prompt: string, options?: { eventId?: string }) => void
 }
 
 type TimeContext = 'tonight' | 'weekend' | null
@@ -37,21 +39,15 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-4 py-10 sm:px-8 sm:py-14">
       <div className="w-full max-w-[620px] animate-fade-in-up">
-        <div className="mb-8 flex items-start gap-3 sm:mb-10">
-          <Sparkles className="mt-1 h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground sm:text-3xl">
-              {m.home_title()}
-            </h1>
-            <p className="mt-2 max-w-[52ch] text-sm leading-relaxed text-muted-foreground sm:text-base">
-              {m.home_subtitle()}
-            </p>
-          </div>
+        <div className="mb-8 flex flex-col items-center text-center sm:mb-9">
+          <Sparkles className="mb-3 h-6 w-6 text-accent" aria-hidden="true" />
+          <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground sm:text-3xl">
+            {m.home_title()}
+          </h1>
         </div>
 
-        <div className="border-y border-border py-5">
-          <p className="mb-3 text-sm font-medium text-foreground">{m.context_or_tell_me()}</p>
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col items-center">
+          <div className="flex flex-wrap justify-center gap-2">
             {timeOptions.map((option) => {
               const Icon = option.icon
               const isSelected = timeContext === option.id
@@ -78,16 +74,12 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
               {m.context_surprise_me()}
             </button>
           </div>
-          <p className="mt-4 text-sm text-muted-foreground">
+          <p className="mt-3 text-sm text-muted-foreground">
             {m.context_input_examples()}
           </p>
         </div>
 
-        <section className="mt-7 hidden max-w-[62ch] md:block">
-          <p className="text-xs leading-relaxed text-muted-foreground/80">
-            {m.home_about_text()}
-          </p>
-        </section>
+        <TrendingEvents onSelectPrompt={onSelectPrompt} />
       </div>
     </div>
   )

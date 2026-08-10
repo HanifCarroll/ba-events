@@ -27,6 +27,7 @@ import {
   extractVisibleTextFromUIMessageParts,
 } from '@/features/chat/lib/extract-visible-text'
 import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
+import { getEventWithVenue } from '@/shared/lib/db/client'
 import { trackServer } from '@/lib/analytics.server'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type {
@@ -273,15 +274,18 @@ export const Route = createFileRoute('/api/chat' as any)({
         let uiMessages: UIMessage[]
         let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
         let locale: 'en' | 'es'
+        let trendingEventId: string | undefined
 
         try {
           const body = await request.json() as {
             messages?: UIMessage[]
             locale?: 'en' | 'es'
+            trendingEventId?: string
           }
 
           locale = body.locale ?? 'en'
           uiMessages = Array.isArray(body.messages) ? body.messages : []
+          trendingEventId = body.trendingEventId
           modelMessages = await convertToModelMessages(uiMessages)
         } catch {
           return createErrorStream('Invalid request body')
@@ -304,10 +308,29 @@ export const Route = createFileRoute('/api/chat' as any)({
         const savedEventsCount = userContext.isAuthenticated
           ? ((await listSavedEventsForUser('all', userContext)).count ?? 0)
           : 0
-        const systemPrompt = getSystemPrompt(locale, {
+        let systemPrompt = getSystemPrompt(locale, {
           isAuthenticated: userContext.isAuthenticated,
           savedEventsCount,
         })
+
+        // Pin a home-screen trending event tap to that exact event. The id is
+        // carried in the request body (never in the visible message text), so
+        // the chat UI and persisted history stay clean.
+        if (trendingEventId) {
+          try {
+            const pinnedEvent = await getEventWithVenue(trendingEventId)
+            if (pinnedEvent) {
+              systemPrompt =
+                `${systemPrompt}\n\n` +
+                `The user just tapped a specific event from the home screen: "${pinnedEvent.name}" ` +
+                `(id: ${pinnedEvent.id}). Answer about THIS exact event. ` +
+                `Call get_event_details with the exact id "${pinnedEvent.id}" and present that event. ` +
+                `Do not run a broad search or recommend a different set of events.`
+            }
+          } catch {
+            // Event missing or unreadable — fall back to the normal flow.
+          }
+        }
 
         // Accumulate events across all tool calls
         const allEvents = new Map<string, ChatEventPayload>()

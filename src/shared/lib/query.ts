@@ -32,6 +32,8 @@ export const queryKeys = {
     // Tab counts (needs_attention, pending_review, etc.)
     tabCounts: (filters: Omit<EventFilterParams, 'tab'>) =>
       [...queryKeys.events.all, 'tabCounts', filters] as const,
+    // Upcoming events for the chat home "Happening soon" row
+    trending: () => [...queryKeys.events.all, 'trending'] as const,
     detail: (id: string) => [...queryKeys.events.all, 'detail', id] as const,
   },
 

@@ -13,7 +13,7 @@
 
 import { getSessionUser } from '@/features/auth/api/session'
 import { getEventWithVenue } from '@/shared/lib/db/client'
-import type { EventWithVenue } from '@/shared/lib/types'
+import type { ChatEventPayload, EventWithVenue } from '@/shared/lib/types'
 
 // ============================================================================
 // TYPES
@@ -48,7 +48,7 @@ export interface ListSavedEventsResult {
 export interface GetEventDetailsResult {
   success: boolean
   error?: 'not_found' | 'unknown_error'
-  event?: EventWithVenue
+  event?: ChatEventPayload
 }
 
 export interface CheckEventSavedResult {
@@ -316,9 +316,13 @@ export async function getEventDetailsForUser(
       }
     }
 
+    // Embeddings are internal search infrastructure and must not cross to the
+    // client — strip the vector before returning the event to the chat.
+    const { embedding: _embedding, ...eventWithoutEmbedding } = event
+
     return {
       success: true,
-      event,
+      event: eventWithoutEmbedding,
     }
   } catch (error) {
     console.error('[getEventDetailsForUser] Error:', error)

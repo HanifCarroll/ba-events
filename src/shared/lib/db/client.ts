@@ -205,6 +205,24 @@ export async function getEventsWithVenues(limit = 50) {
 }
 
 /**
+ * Fetch the next upcoming events for the chat home "Happening soon" grid.
+ * Chat columns only (no embedding), soonest first, capped at `limit`.
+ */
+export async function getTrendingEvents(limit = 8): Promise<ChatEventPayload[]> {
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('events_with_venues')
+    .select(CHAT_EVENT_COLUMNS)
+    .neq('status', 'past')
+    .gte('starts_at', now)
+    .order('starts_at', { ascending: true })
+    .limit(limit)
+
+  if (error) throw error
+  return data as ChatEventPayload[]
+}
+
+/**
  * Fetch active (non-past) events for admin with explicit column selection.
  * Excludes the embedding column for better performance.
  */

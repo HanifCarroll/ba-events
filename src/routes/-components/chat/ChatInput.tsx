@@ -145,11 +145,6 @@ export function ChatInput({
               <span className="sr-only">{m.chat_send()}</span>
             </button>
           </div>
-
-          {/* Powered by hint */}
-          <p className="text-[10px] text-muted-foreground/50 text-center mt-2 tracking-wide">
-            {m.chat_powered()}
-          </p>
         </div>
       </div>
     </div>
