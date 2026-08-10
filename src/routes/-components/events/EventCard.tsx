@@ -111,18 +111,15 @@ function HeroEventCard({
         )}
 
         <div className="min-w-0">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-semibold tracking-[-0.02em] text-foreground sm:text-2xl">
-                {event.name}
-              </h3>
-              {(commentary || summaryDescription) && (
-                <p className="mt-1.5 max-w-[58ch] text-sm leading-relaxed text-muted-foreground">
-                  {commentary || summaryDescription}
-                </p>
-              )}
-            </div>
-            <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
+          <div>
+            <h3 className="text-xl font-semibold tracking-[-0.02em] text-foreground sm:text-2xl">
+              {event.name}
+            </h3>
+            {(commentary || summaryDescription) && (
+              <p className="mt-1.5 max-w-[58ch] text-sm leading-relaxed text-muted-foreground">
+                {commentary || summaryDescription}
+              </p>
+            )}
           </div>
 
           <dl className="mt-5 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
