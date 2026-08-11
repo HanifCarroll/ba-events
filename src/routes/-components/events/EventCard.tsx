@@ -169,7 +169,7 @@ function HeroEventCard({
           <div className="mt-6 flex flex-wrap items-center gap-2">
             <SaveEventButton eventId={event.id} eventName={event.name} size="md" source={source} />
             <Link
-              to="/event/$id"
+              to="/events/$id"
               params={{ id: event.id }}
               state={{ fromChat: source === 'chat' }}
               className="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -401,7 +401,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
         <div className="flex items-center gap-2 border-t border-border/40 px-4 py-3">
           <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
           <Link
-            to="/event/$id"
+            to="/events/$id"
             params={{ id: event.id }}
             state={{ fromChat: source === 'chat' }}
             onClick={(e) => e.stopPropagation()}

@@ -18,7 +18,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiEventsRouteImport } from './routes/api/events'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as ChatConversationIdRouteImport } from './routes/chat_.$conversationId'
-import { Route as EventIdRouteImport } from './routes/event/$id'
+import { Route as EventsIdRouteImport } from './routes/events/$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -65,9 +65,9 @@ const ChatConversationIdRoute = ChatConversationIdRouteImport.update({
   path: '/chat/$conversationId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EventIdRoute = EventIdRouteImport.update({
-  id: '/event/$id',
-  path: '/event/$id',
+const EventsIdRoute = EventsIdRouteImport.update({
+  id: '/events/$id',
+  path: '/events/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -81,7 +81,7 @@ export interface FileRoutesByFullPath {
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/chat/$conversationId': typeof ChatConversationIdRoute
-  '/event/$id': typeof EventIdRoute
+  '/events/$id': typeof EventsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -93,7 +93,7 @@ export interface FileRoutesByTo {
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/chat/$conversationId': typeof ChatConversationIdRoute
-  '/event/$id': typeof EventIdRoute
+  '/events/$id': typeof EventsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -106,7 +106,7 @@ export interface FileRoutesById {
   '/api/events': typeof ApiEventsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/chat_/$conversationId': typeof ChatConversationIdRoute
-  '/event/$id': typeof EventIdRoute
+  '/events/$id': typeof EventsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -120,7 +120,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/auth/callback'
     | '/chat/$conversationId'
-    | '/event/$id'
+    | '/events/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -132,7 +132,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/auth/callback'
     | '/chat/$conversationId'
-    | '/event/$id'
+    | '/events/$id'
   id:
     | '__root__'
     | '/'
@@ -144,7 +144,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/auth/callback'
     | '/chat_/$conversationId'
-    | '/event/$id'
+    | '/events/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -157,7 +157,7 @@ export interface RootRouteChildren {
   ApiEventsRoute: typeof ApiEventsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   ChatConversationIdRoute: typeof ChatConversationIdRoute
-  EventIdRoute: typeof EventIdRoute
+  EventsIdRoute: typeof EventsIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -225,11 +225,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatConversationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/event/$id': {
-      id: '/event/$id'
-      path: '/event/$id'
-      fullPath: '/event/$id'
-      preLoaderRoute: typeof EventIdRouteImport
+    '/events/$id': {
+      id: '/events/$id'
+      path: '/events/$id'
+      fullPath: '/events/$id'
+      preLoaderRoute: typeof EventsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -245,7 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiEventsRoute: ApiEventsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   ChatConversationIdRoute: ChatConversationIdRoute,
-  EventIdRoute: EventIdRoute,
+  EventsIdRoute: EventsIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

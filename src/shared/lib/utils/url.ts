@@ -29,5 +29,5 @@ export function resolveSiteUrl(path: string): string {
 }
 
 export function getEventUrl(id: string): string {
-  return `${getSiteUrl()}/event/${id}`
+  return `${getSiteUrl()}/events/${id}`
 }

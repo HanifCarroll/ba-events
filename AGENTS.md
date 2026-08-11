@@ -105,7 +105,7 @@ src/
 │   ├── chat_.$conversationId.tsx # Conversation view
 │   ├── saved.tsx / profile.tsx  # Signed-in pages
 │   ├── login.tsx / register.tsx # Auth (register redirects to login)
-│   ├── event/$id.tsx            # Public event detail
+│   ├── events/$id.tsx           # Public event detail
 │   ├── auth/callback.tsx        # OAuth callback
 │   └── api/
 │       ├── chat.ts              # Concierge streaming endpoint

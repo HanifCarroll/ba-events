@@ -27,7 +27,7 @@ import {
 import type { EventWithVenue } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
-export const Route = createFileRoute('/event/$id')({
+export const Route = createFileRoute('/events/$id')({
   loader: async ({ params }) => {
     try {
       return await getEventWithVenueAction({ data: params.id })
