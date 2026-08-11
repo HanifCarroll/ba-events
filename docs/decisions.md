@@ -2009,3 +2009,29 @@ DeepSeek has no embeddings API.
 not eliminate the cost advantage; founder guidance puts the increase in the 2x-10x range.
 
 Related Decision: none (this supersedes the implicit "Claude for AI" choice from the original stack).
+
+---
+
+## Eventbrite Import: Detail-Page Enrichment + min_age Restored
+
+**Date:** 2026-08-11
+
+**Decision:** The Eventbrite importer now fetches each event's detail page and extracts
+real start/end times, price, and minimum age before upserting. `min_age` is re-added to
+the `events` table (it was dropped in 20260112145500 on 2026-01-12 as "unused").
+
+**Context:** The Eventbrite listing JSON-LD is date-only (YYYY-MM-DD). The previous
+transformer (`dateToIsoDatetime`) therefore stored every event as midnight-to-midnight
+with `is_free=true`, `price=null` — a systemic data-quality bug affecting ~1,500 rows
+(repaired in the data via re-fetching source pages). The detail page is the only place
+times, price (AggregateOffer `lowPrice`), and age (`Highlights_ageRestriction`) exist.
+
+**Alternatives Considered:**
+- Single listing fetch with richer per-event JSON: the listing embeds no times/price/age — rejected (verified).
+- Detail-page fetch in a separate post-import enrichment phase: adds a second write pass; inline override before upsert is cleaner — chosen.
+- Text-regex age extraction (`mayores de X años`): false-positives from Eventbrite's embedded i18n dictionary and SVG path data — rejected; only the `Highlights_ageRestriction` span is used.
+
+**Rationale:** One detail fetch per event (batched, concurrent, retried) yields correct
+time/price/min_age at import time. Re-adding `min_age` restores the age field the app
+types (`EventFilters.minAge`) already reference. Note: the migration must be applied to
+the live DB (`bunx supabase db push` or SQL editor) — `min_age` does not exist yet.

@@ -83,7 +83,7 @@ export async function createVenue(venue: VenueInsert, client?: SupabaseClient) {
 const EVENT_ADMIN_COLUMNS = `
   id, name, description_es, description_en, description_display_es, description_display_en,
   description_summary_es, description_summary_en, starts_at, ends_at, is_all_day,
-  venue_id, categories, price, is_free, image_url, link, ticket_url,
+  venue_id, categories, price, is_free, min_age, image_url, link, ticket_url,
   source, external_id, status, location_hidden, enrichment_status, enrichment_error,
   enriched_at, created_at, updated_at,
   venue_name, venue_neighborhood, venue_address
@@ -94,7 +94,7 @@ const EVENT_ADMIN_COLUMNS = `
 const CHAT_EVENT_COLUMNS = `
   id, name, description_es, description_en, description_display_es, description_display_en,
   description_summary_es, description_summary_en, starts_at, ends_at, is_all_day,
-  venue_id, categories, price, is_free, image_url, link, ticket_url,
+  venue_id, categories, price, is_free, min_age, image_url, link, ticket_url,
   source, external_id, status, location_hidden, location_tba, description_unavailable,
   enrichment_status, enrichment_error, enriched_at, created_at, updated_at,
   venue_name, venue_neighborhood, venue_address
@@ -229,6 +229,10 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
   if (filters.maxPrice !== undefined) {
     query = query.lte('price', filters.maxPrice)
   }
+  if (filters.minAge !== undefined) {
+    // Events the attendee (aged filters.minAge) is allowed into
+    query = query.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
+  }
 
   query = query.order('starts_at', { ascending: true }).limit(limit)
 
@@ -266,6 +270,10 @@ export async function countEventsWithFilters(filters: EventFilters): Promise<num
   }
   if (filters.maxPrice !== undefined) {
     query = query.lte('price', filters.maxPrice)
+  }
+  if (filters.minAge !== undefined) {
+    // Mirrors the predicate in searchEventsWithFilters
+    query = query.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
   }
 
   const { count, error } = await query
@@ -325,6 +333,7 @@ export async function hybridEventSearch(
       filter_is_free: filters.isFree || null,
       filter_max_price: filters.maxPrice ?? null,
       filter_categories: filters.categories && filters.categories.length > 0 ? filters.categories : null,
+      filter_min_age: filters.minAge ?? null,
     }
   )
 

@@ -1,3 +1,6 @@
+-- Set search path to include extensions schema for the vector type
+SET LOCAL search_path TO public, extensions;
+
 DROP FUNCTION IF EXISTS match_events_with_venues_filtered(
   vector,
   float,

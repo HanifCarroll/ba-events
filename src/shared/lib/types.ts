@@ -126,6 +126,7 @@ export interface Event {
   categories: string[]
   price: number | null // in ARS
   is_free: boolean
+  min_age: number | null // Minimum age required, null means all ages
   image_url: string | null
   link: string | null
   ticket_url: string | null
@@ -170,6 +171,7 @@ export interface EventInsert {
   categories?: string[]
   price?: number | null
   is_free?: boolean
+  min_age?: number | null
   image_url?: string | null
   link?: string | null
   ticket_url?: string | null

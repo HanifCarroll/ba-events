@@ -28,6 +28,9 @@ export const searchEventsInputSchema = z.object({
   neighborhood: z.string().optional().describe('Buenos Aires neighborhood to filter by'),
   isFree: z.boolean().optional().describe('Set to true to only show free events'),
   maxPrice: z.number().optional().describe('Maximum price in ARS'),
+  minAge: z.number().optional().describe(
+    `The attendee's age (0-99). Filters out events with a higher minimum-age restriction — e.g. set to 18 to exclude events requiring guests over 18. Set this when the user gives an age or asks for events they can attend given their age.`
+  ),
   timeFilter: z
     .enum(['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'])
     .optional()
@@ -121,6 +124,9 @@ function toolInputToFilters(input: SearchEventsInput): EventFilters {
   }
   if (input.maxPrice !== undefined) {
     filters.maxPrice = input.maxPrice
+  }
+  if (input.minAge !== undefined) {
+    filters.minAge = input.minAge
   }
 
   return filters

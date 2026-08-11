@@ -89,6 +89,7 @@ export function transformEventbriteEvent(
     categories: [], // Enriched later via AI
     price: null, // Enriched later via page fetch
     is_free: true, // Default to free, updated during enrichment
+    min_age: null, // Enriched later via page fetch (age restriction)
     image_url: normalizeImageUrl(event.image ?? null),
     link: normalizeUrl(event.url),
     ticket_url: normalizeUrl(event.url), // Same as event URL for Eventbrite

@@ -17,6 +17,7 @@ import {
   transformEventbriteEvent,
   getAllVenueInfo,
 } from '../scrapers/eventbrite/transformer'
+import { fetchEventbriteDetailsBatch } from '../scrapers/eventbrite/detail'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
 import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
 import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
@@ -198,7 +199,38 @@ export async function processEventbriteImport(
     }
   }
 
-  // Step 6: Categorize events with AI
+  // Step 6: Enrich from detail pages (times, price, min_age)
+  // The listing JSON-LD is date-only; real times/price/age come from each event page.
+  console.log('[eventbrite] Enriching from detail pages (times, price, min_age)...')
+  const detailTargets = eventsToProcess
+    .map(({ event }) => {
+      const id = extractEventId(event.url)
+      return id ? { id, url: event.url } : null
+    })
+    .filter((t): t is { id: string; url: string } => t !== null)
+  const detailMap = await fetchEventbriteDetailsBatch(detailTargets)
+
+  for (const { event, transformed } of eventsToProcess) {
+    const extId = extractEventId(event.url)
+    const detail = extId ? detailMap.get(extId) : undefined
+    if (!detail) continue
+
+    if (detail.starts_at) {
+      transformed.starts_at = detail.starts_at
+      if (detail.ends_at) transformed.ends_at = detail.ends_at
+      // Real times mean it is a timed event, not all-day
+      transformed.is_all_day = false
+    }
+    if (detail.hasPrice) {
+      transformed.is_free = detail.is_free
+      transformed.price = detail.is_free ? 0 : detail.price
+    }
+    if (detail.min_age !== null) {
+      transformed.min_age = detail.min_age
+    }
+  }
+
+  // Step 7: Categorize events with AI
   console.log('[eventbrite] Categorizing events...')
   const { categories, stats: catStats } = await categorizeEventsBatchWithStats(
     eventsToProcess.map((e) => ({
@@ -216,7 +248,7 @@ export async function processEventbriteImport(
     eventsToProcess[i].transformed.categories = [categories[i]]
   }
 
-  // Step 7: Generate embeddings and upsert
+  // Step 8: Generate embeddings and upsert
   console.log('[eventbrite] Generating embeddings and upserting events...')
   for (const { transformed, isUpdate } of eventsToProcess) {
     try {
@@ -254,10 +286,12 @@ export async function processEventbriteImport(
             description_summary_en: eventWithEmbedding.description_summary_en,
             starts_at: eventWithEmbedding.starts_at,
             ends_at: eventWithEmbedding.ends_at,
+            is_all_day: eventWithEmbedding.is_all_day,
             venue_id: eventWithEmbedding.venue_id,
             categories: eventWithEmbedding.categories,
             price: eventWithEmbedding.price,
             is_free: eventWithEmbedding.is_free,
+            min_age: eventWithEmbedding.min_age ?? null,
             image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
             location_tba: eventWithEmbedding.location_tba ?? false,
