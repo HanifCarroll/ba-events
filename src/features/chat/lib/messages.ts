@@ -1,5 +1,6 @@
 import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category } from '@/shared/lib/types'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
+import { BA_TIMEZONE } from '@/shared/lib/constants'
 
 // Generate unique ID for messages
 export function generateId(): string {
@@ -201,13 +202,15 @@ export function formatEventTime(startsAt: string, endsAt: string | null): string
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    // Pin to BA time: server (UTC) and client render identical strings (SSR hydration)
+    timeZone: BA_TIMEZONE,
   }
 
   let result = start.toLocaleDateString('en-US', options)
 
   if (endsAt) {
     const end = new Date(endsAt)
-    const endTime = end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    const endTime = end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: BA_TIMEZONE })
     result += ` - ${endTime}`
   }
 

@@ -2,6 +2,7 @@ import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
 import { EventList } from './../events/EventList'
 import { RefinementSuggestions } from './RefinementSuggestions'
@@ -103,6 +104,7 @@ export const ChatMessage = memo(function ChatMessage({
             {message.timestamp.toLocaleTimeString('en-US', {
               hour: '2-digit',
               minute: '2-digit',
+              timeZone: BA_TIMEZONE,
             })}
           </p>
         )}
