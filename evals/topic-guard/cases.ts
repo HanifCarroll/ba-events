@@ -173,4 +173,27 @@ export const TOPIC_GUARD_CASES: TopicGuardCase[] = [
     locale: 'es',
     expectRefusal: false,
   },
+
+  // --- Near-boundary: technical-subject events must NOT be refused ---
+  // The classifier used to flag replies about AI/coding/business meetups as
+  // "general knowledge" — refusing a legit event answer (regression:
+  // home-card tap on "IA para PyMEs" got the canned refusal).
+  {
+    id: 'near-tech-event-ai-pymes',
+    reply: 'IA para PyMEs — charla gratuita el jueves a las 19 en Paseo Colón 1380. La inteligencia artificial aplicada a negocios chicos: herramientas, casos y networking.',
+    locale: 'es',
+    expectRefusal: false,
+  },
+  {
+    id: 'near-tech-event-coding-meetup',
+    reply: 'The JavaScript meetup at Urban Station Palermo covers modern React patterns — free, Thursday 7pm, bring a laptop.',
+    locale: 'en',
+    expectRefusal: false,
+  },
+  {
+    id: 'near-tech-event-ai-workshop',
+    reply: 'Crea tu página web con IA — workshop hands-on en Palermo Hollywood, gratis, para emprendedores sin conocimientos técnicos.',
+    locale: 'es',
+    expectRefusal: false,
+  },
 ]

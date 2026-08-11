@@ -503,13 +503,25 @@ export const Route = createFileRoute('/api/chat' as any)({
               // Only attach cards for events the final answer actually names —
               // the model may search a broad set but recommend a single pick,
               // and showing every searched event contradicts the prose.
-              const events = filterEventsMentionedInText(accumulatedEvents, finalText)
+              let events = filterEventsMentionedInText(accumulatedEvents, finalText)
 
               // Topical guardrail: replace off-topic replies (code, general
               // knowledge, etc.) with a canned refusal. Fails open on error.
-              if (finalText) {
-                const guarded = await guardForOffTopic(finalText, locale)
-                if (guarded) finalText = guarded
+              // Skipped entirely for pinned home-screen taps — the system
+              // prompt forced an answer about that exact event, and the
+              // classifier cannot see that context reliably.
+              if (finalText && !trendingEventId) {
+                const guarded = await guardForOffTopic(finalText, locale, {
+                  query: lastOriginalQuery,
+                  eventNames: events.map((e) => e.name),
+                })
+                if (guarded) {
+                  finalText = guarded
+                  // A refused reply must not ship event cards — refusal text
+                  // with a card below it is the confusing mismatch the guard
+                  // was meant to prevent in the first place.
+                  events = []
+                }
               }
 
               // Coverage guardrail: if the model asserted a coverage ceiling

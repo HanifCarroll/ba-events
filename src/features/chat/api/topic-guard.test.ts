@@ -56,4 +56,28 @@ describe('guardForOffTopic', () => {
     expect(result).toBeNull()
     expect(generateObjectMock).not.toHaveBeenCalled()
   })
+
+  it('feeds the user query and attached event names to the classifier', async () => {
+    generateObjectMock.mockResolvedValue({ object: { on_topic: true } })
+
+    const result = await guardForOffTopic(
+      'IA para PyMEs — charla gratuita el jueves en Paseo Colón 1380.',
+      'es',
+      { query: 'Contame sobre IA para PyMEs', eventNames: ['IA para PyMEs'] }
+    )
+
+    expect(result).toBeNull()
+    const classifierPrompt = generateObjectMock.mock.calls[0][0].prompt as string
+    expect(classifierPrompt).toContain('Contame sobre IA para PyMEs')
+    expect(classifierPrompt).toContain('IA para PyMEs')
+  })
+
+  it('omits the context block when no context is given', async () => {
+    generateObjectMock.mockResolvedValue({ object: { on_topic: true } })
+
+    await guardForOffTopic('Go to Smoked at La Rural tonight.', 'en')
+
+    const classifierPrompt = generateObjectMock.mock.calls[0][0].prompt as string
+    expect(classifierPrompt).not.toContain('Context:')
+  })
 })

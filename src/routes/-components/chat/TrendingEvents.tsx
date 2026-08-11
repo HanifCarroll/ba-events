@@ -37,7 +37,7 @@ export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEvents
   if (!isLoading && events.length === 0) return null
 
   return (
-    <section className="mt-9 border-t border-border/60 pt-6" aria-label={m.home_trending_title()}>
+    <section className="mt-6 border-t border-border/60 pt-4" aria-label={m.home_trending_title()}>
       <h2 className="mb-3 text-sm font-medium text-foreground">{m.home_trending_title()}</h2>
 
       {isLoading ? (
