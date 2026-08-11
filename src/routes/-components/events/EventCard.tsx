@@ -284,7 +284,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
                 onClick={handleToggle}
                 className={`
                   p-1 rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-ring
-                  ${isOpen ? 'bg-primary/10 text-primary rotate-180' : 'text-muted-foreground hover:text-foreground'}
+                  ${isOpen ? 'bg-primary/10 text-primary rotate-180' : 'text-muted-foreground hover:bg-primary/10 hover:text-primary'}
                 `}
                 aria-expanded={isOpen}
                 aria-controls={`event-details-${event.id}`}

@@ -160,7 +160,7 @@ function EventDetailPage() {
                   variant="ghost"
                   onClick={handleShare}
                   aria-label={copied ? 'Copied' : 'Share'}
-                  className="max-md:size-11 max-md:p-0"
+                  className="text-muted-foreground hover:bg-primary/10 hover:text-primary max-md:size-11 max-md:p-0"
                 >
                   {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
                   <span className="hidden md:inline">{copied ? 'Copied' : 'Share'}</span>
@@ -171,7 +171,7 @@ function EventDetailPage() {
                   disabled={!mapUrl}
                   onClick={() => mapUrl && window.open(mapUrl, '_blank', 'noopener,noreferrer')}
                   aria-label="Open in Maps"
-                  className="max-md:size-11 max-md:p-0"
+                  className="text-muted-foreground hover:bg-primary/10 hover:text-primary max-md:size-11 max-md:p-0"
                 >
                   <MapPin className="h-4 w-4" />
                   <span className="hidden md:inline">Open in Maps</span>

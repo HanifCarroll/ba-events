@@ -240,7 +240,7 @@ export function ChatInput({
                 ${
                   !isSupported
                     ? 'text-muted-foreground/40 cursor-not-allowed'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
                 }
                 ${isListening ? 'text-red-500 bg-red-500/15 hover:bg-red-500/25 animate-pulse' : ''}
               `}

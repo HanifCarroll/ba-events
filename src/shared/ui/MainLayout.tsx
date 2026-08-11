@@ -241,7 +241,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           </Link>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className={`hidden lg:flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-200 ${collapsed ? 'absolute right-2' : ''}`}
+            className={`hidden lg:flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200 ${collapsed ? 'absolute right-2' : ''}`}
             aria-label={collapsed ? m.sidebar_expand() : m.sidebar_collapse()}
           >
             {collapsed ? (
