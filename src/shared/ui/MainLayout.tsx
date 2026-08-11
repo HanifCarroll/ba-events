@@ -163,6 +163,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
         <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <img src="/favicon.svg" alt="" className="h-8 w-8" aria-hidden="true" />
           <span className="text-base font-semibold tracking-tight">BA Eventos</span>
         </Link>
       </header>
@@ -233,6 +234,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             to="/"
             className={`flex items-center gap-3 hover:opacity-80 transition-opacity overflow-hidden ${collapsed ? 'lg:justify-center lg:w-full' : ''}`}
           >
+            <img src="/favicon.svg" alt="" className="h-9 w-9 shrink-0" aria-hidden="true" />
             <div className={`overflow-hidden transition-all duration-300 ${collapsed ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'}`}>
               <span className="text-base font-semibold tracking-tight text-foreground whitespace-nowrap">
                 BA Eventos
