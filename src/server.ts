@@ -3,7 +3,7 @@ import type { RequestOptions } from '@tanstack/react-start/server'
 import type { Register } from '@tanstack/react-router'
 import { paraglideMiddleware } from './paraglide/server'
 
-const fetch = createStartHandler(defaultStreamHandler)
+const startHandler = createStartHandler(defaultStreamHandler)
 
 // Custom server entry: route every request through paraglide's locale
 // middleware so SSR resolves the same locale the client will resolve.
@@ -17,7 +17,7 @@ const fetch = createStartHandler(defaultStreamHandler)
 export default {
   async fetch(request: Request, opts?: RequestOptions<Register>): Promise<Response> {
     return paraglideMiddleware(request, async ({ request: newRequest }) => {
-      return fetch(newRequest, opts)
+      return startHandler(newRequest, opts)
     })
   },
 }
