@@ -147,38 +147,41 @@ function EventDetailPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <SaveEventButton
-                eventId={event.id}
-                eventName={event.name}
-                source="event_detail"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleShare}
-                aria-label={copied ? 'Copied' : 'Share'}
-                className="max-md:px-3"
-              >
-                {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-                <span className="hidden md:inline">{copied ? 'Copied' : 'Share'}</span>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!mapUrl}
-                onClick={() => mapUrl && window.open(mapUrl, '_blank', 'noopener,noreferrer')}
-                aria-label="Open in Maps"
-                className="max-md:px-3"
-              >
-                <MapPin className="h-4 w-4" />
-                <span className="hidden md:inline">Open in Maps</span>
-              </Button>
+            <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+              <div className="flex items-center justify-end gap-2 md:justify-start">
+                <SaveEventButton
+                  eventId={event.id}
+                  eventName={event.name}
+                  source="event_detail"
+                  className="max-md:size-11"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleShare}
+                  aria-label={copied ? 'Copied' : 'Share'}
+                  className="max-md:size-11 max-md:p-0"
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+                  <span className="hidden md:inline">{copied ? 'Copied' : 'Share'}</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!mapUrl}
+                  onClick={() => mapUrl && window.open(mapUrl, '_blank', 'noopener,noreferrer')}
+                  aria-label="Open in Maps"
+                  className="max-md:size-11 max-md:p-0"
+                >
+                  <MapPin className="h-4 w-4" />
+                  <span className="hidden md:inline">Open in Maps</span>
+                </Button>
+              </div>
               <Button
                 type="button"
                 disabled={!externalEventUrl}
                 onClick={() => externalEventUrl && window.open(externalEventUrl, '_blank', 'noopener,noreferrer')}
-                className="max-md:w-full"
+                className="w-full md:w-auto"
               >
                 <ExternalLink className="h-4 w-4" />
                 {sourceCtaLabel}

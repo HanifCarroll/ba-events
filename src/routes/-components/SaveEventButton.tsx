@@ -99,6 +99,7 @@ export function SaveEventButton({
         variant="ghost"
         size="icon"
         disabled
+        aria-label="Loading saved status"
         className={`${buttonSize} text-muted-foreground/50 ${className}`}
       >
         <Heart className={iconSize} />
@@ -115,6 +116,7 @@ export function SaveEventButton({
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Sign in to save event"
               className={`${buttonSize} text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors ${className}`}
             >
               <Heart className={iconSize} />
@@ -136,6 +138,8 @@ export function SaveEventButton({
           size="icon"
           onClick={handleToggle}
           disabled={isUpdating}
+          aria-label={isSaved ? 'Remove from saved' : 'Save event'}
+          aria-pressed={isSaved}
           className={`
             ${buttonSize}
             transition-all duration-200
