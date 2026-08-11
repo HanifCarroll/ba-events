@@ -94,8 +94,14 @@ function HeroEventCard({
 
   return (
     <div className="mt-6 pb-7">
-      <div className="grid gap-5 sm:grid-cols-[148px_minmax(0,1fr)] sm:gap-6">
-        {event.image_url ? (
+      <div
+        className={`grid gap-5 ${
+          event.image_url
+            ? 'sm:grid-cols-[148px_minmax(0,1fr)] sm:gap-6'
+            : 'max-w-2xl'
+        }`}
+      >
+        {event.image_url && (
           <img
             src={event.image_url}
             alt=""
@@ -104,22 +110,25 @@ function HeroEventCard({
             loading="lazy"
             className="aspect-square w-full max-w-[180px] rounded-xl object-cover sm:max-w-none"
           />
-        ) : (
-          <div className="flex aspect-square w-full max-w-[180px] items-center justify-center rounded-xl bg-muted text-muted-foreground sm:max-w-none">
-            <Calendar className="h-8 w-8" aria-hidden="true" />
-          </div>
         )}
 
         <div className="min-w-0">
-          <div>
-            <h3 className="text-xl font-semibold tracking-[-0.02em] text-foreground sm:text-2xl">
-              {event.name}
-            </h3>
-            {(commentary || summaryDescription) && (
-              <p className="mt-1.5 max-w-[58ch] text-sm leading-relaxed text-muted-foreground">
-                {commentary || summaryDescription}
-              </p>
+          <div className={event.image_url ? undefined : 'flex items-start gap-3'}>
+            {!event.image_url && (
+              <div className="mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Calendar className="h-5 w-5" aria-hidden="true" />
+              </div>
             )}
+            <div className="min-w-0">
+              <h3 className="text-xl font-semibold tracking-[-0.02em] text-foreground sm:text-2xl">
+                {event.name}
+              </h3>
+              {(commentary || summaryDescription) && (
+                <p className="mt-1.5 max-w-[58ch] text-sm leading-relaxed text-muted-foreground">
+                  {commentary || summaryDescription}
+                </p>
+              )}
+            </div>
           </div>
 
           <dl className="mt-5 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
