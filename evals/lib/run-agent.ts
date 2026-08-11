@@ -33,7 +33,7 @@ export interface AgentRun {
 export async function runConcierge(message: string, locale: 'en' | 'es'): Promise<AgentRun> {
   const result = await generateText({
     model: textModel,
-    system: getSystemPrompt(locale, { isAuthenticated: false, savedEventsCount: 0 }),
+    system: getSystemPrompt({ isAuthenticated: false, savedEventsCount: 0 }),
     messages: [{ role: 'user', content: message }],
     tools: createTools(ANON_CONTEXT, locale),
     ...NO_THINKING,

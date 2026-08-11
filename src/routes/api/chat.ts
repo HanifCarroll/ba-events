@@ -360,7 +360,7 @@ export const Route = createFileRoute('/api/chat' as any)({
         const savedEventsCount = userContext.isAuthenticated
           ? ((await listSavedEventsForUser('all', userContext)).count ?? 0)
           : 0
-        let systemPrompt = getSystemPrompt(locale, {
+        let systemPrompt = getSystemPrompt({
           isAuthenticated: userContext.isAuthenticated,
           savedEventsCount,
         })

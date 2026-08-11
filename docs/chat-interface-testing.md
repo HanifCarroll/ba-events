@@ -92,7 +92,9 @@ Tool execution error: {
 - ES: "¿Qué pasa esta noche?", "Encuentra eventos de techno underground"
 
 **AI response localization:**
-- AI responds in the user's selected language
+- AI responds in the language the user writes in — the system prompt tells the
+  concierge to mirror the user's language, so an English first message gets
+  English replies even when the UI is in Spanish, and vice versa
 - Spanish responses use appropriate **Argentine Spanish** (voseo: "tenés", "preferís")
 - This is culturally appropriate for Buenos Aires and excellent attention to detail
 

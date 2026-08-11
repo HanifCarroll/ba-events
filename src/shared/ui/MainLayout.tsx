@@ -158,7 +158,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           aria-expanded={mobileMenuOpen}
-          className="text-muted-foreground hover:text-foreground shrink-0"
+          className="text-muted-foreground hover:text-primary hover:bg-primary/10 shrink-0"
         >
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
@@ -167,23 +167,56 @@ export function MainLayout({ children }: MainLayoutProps) {
         </Link>
       </header>
 
-      {/* Mobile menu overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40 bg-background/80 backdrop-blur-sm"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
+      {/* Mobile menu — slides down from the header (not the sidebar overlay) */}
+      <div
+        className={`lg:hidden grid transition-[grid-template-rows] duration-300 ease-in-out ${
+          mobileMenuOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <nav className="border-b bg-card px-4 py-3 flex flex-col gap-1" aria-label="Mobile menu">
+            {filteredMainNavItems.map((item) => (
+              <NavItemComponent key={item.label} item={item} showLabel />
+            ))}
+            <div className="my-2 h-px bg-border" />
+            <LanguageSwitcher />
+            {user ? (
+              <div className="space-y-2">
+                <div className="px-3 py-2">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">{m.auth_signed_in_as()}</p>
+                  <p className="text-sm text-foreground truncate">{profile?.display_name || user.email?.split('@')[0]}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  className="w-full justify-start gap-3 px-4 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                >
+                  <LogOut className="h-5 w-5" />
+                  <span>{isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}</span>
+                </Button>
+              </div>
+            ) : (
+              <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <User className="h-5 w-5" />
+                  <span>{m.auth_sign_in()}</span>
+                </Button>
+              </Link>
+            )}
+          </nav>
+        </div>
+      </div>
 
-      {/* Sidebar */}
+      {/* Sidebar (desktop only) */}
       <aside
         className={`
-          fixed lg:static inset-y-0 left-0 z-50
+          hidden lg:flex flex-col shrink-0 h-full
           border-r bg-card
-          transform transition-all duration-300 ease-in-out
-          ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           ${collapsed ? 'lg:w-[72px]' : 'lg:w-[238px]'}
-          w-64 flex flex-col shrink-0 h-full
         `}
       >
         {/* Sidebar header */}
