@@ -63,6 +63,7 @@
   "context_prompt_surprise": "Sorprendeme con algo",
   "context_prompt_time_only": "Elegí algo para mí {time}",
   "concierge_event_details": "Detalles del evento",
+  "event_back_to_chat": "Volver al chat",
   "concierge_updated_recently": "Actualizado recientemente",
   "concierge_location_tba": "Lugar a confirmar",
   "profile_back": "Volver a descubrir"

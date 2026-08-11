@@ -171,6 +171,7 @@ function HeroEventCard({
             <Link
               to="/event/$id"
               params={{ id: event.id }}
+              state={{ fromChat: source === 'chat' }}
               className="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Info className="mr-1.5 h-4 w-4" aria-hidden="true" />
@@ -402,6 +403,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
           <Link
             to="/event/$id"
             params={{ id: event.id }}
+            state={{ fromChat: source === 'chat' }}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
           >

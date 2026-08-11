@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute, notFound } from '@tanstack/react-router'
-import { Calendar, Clock, MapPin, ExternalLink, Share2, Check } from 'lucide-react'
+import {
+  createFileRoute,
+  notFound,
+  useCanGoBack,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router'
+import { ArrowLeft, Calendar, Clock, MapPin, ExternalLink, Share2, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { getEventWithVenueAction } from '@/features/events/api/crud'
 import { SaveEventButton } from '@/routes/-components/SaveEventButton'
@@ -19,6 +25,7 @@ import {
   getSourceLabel,
 } from '@/features/events/lib/source-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
+import * as m from '@/paraglide/messages'
 
 export const Route = createFileRoute('/event/$id')({
   loader: async ({ params }) => {
@@ -75,6 +82,9 @@ function EventDetailPage() {
   const event = Route.useLoaderData()
   const [copied, setCopied] = useState(false)
   const locale = getLocale() as 'en' | 'es'
+  const canGoBack = useCanGoBack()
+  const router = useRouter()
+  const fromChat = useRouterState({ select: (state) => state.location.state.fromChat === true })
 
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
@@ -114,6 +124,15 @@ function EventDetailPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const handleBackToChat = () => {
+    if (canGoBack) {
+      router.history.back()
+      return
+    }
+
+    void router.navigate({ to: '/' })
+  }
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -125,6 +144,18 @@ function EventDetailPage() {
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex flex-col gap-4">
             <div className="min-w-0">
+              {fromChat && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleBackToChat}
+                  className="-ml-3 mb-3 min-h-11 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                >
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  {m.event_back_to_chat()}
+                </Button>
+              )}
               <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
                 {event.name}
               </h1>
