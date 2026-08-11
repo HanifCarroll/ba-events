@@ -49,8 +49,7 @@ Message: "${firstMessage}"`,
  * Generate a title for a conversation based on the first user message.
  * Returns a short (3-6 word) descriptive title.
  */
-export const generateTitle = createServerFn({ method: 'POST' })
-  .inputValidator((data: { firstMessage: string; conversationId?: string }) => data)
+export const generateTitle = createServerFn({ method: 'POST' }).validator((data: { firstMessage: string; conversationId?: string }) => data)
   .handler(async ({ data }) => {
     return { title: await generateConversationTitle(data.firstMessage) }
   })
@@ -59,8 +58,7 @@ export const generateTitle = createServerFn({ method: 'POST' })
  * Generate a title and update the conversation.
  * Combines title generation with database update in one call.
  */
-export const generateAndSaveTitle = createServerFn({ method: 'POST' })
-  .inputValidator((data: { conversationId: string; firstMessage: string }) => data)
+export const generateAndSaveTitle = createServerFn({ method: 'POST' }).validator((data: { conversationId: string; firstMessage: string }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()

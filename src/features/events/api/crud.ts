@@ -19,8 +19,7 @@ export const getTrendingEventsAction = createServerFn({ method: 'GET' }).handler
  * Get a single event with its venue for the public event detail page.
  * Public — no auth.
  */
-export const getEventWithVenueAction = createServerFn({ method: 'GET' })
-  .inputValidator((id: string) => id)
+export const getEventWithVenueAction = createServerFn({ method: 'GET' }).validator((id: string) => id)
   .handler(async ({ data: id }) => {
     return getEventWithVenue(id)
   })

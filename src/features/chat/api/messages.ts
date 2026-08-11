@@ -38,10 +38,7 @@ function buildMessageRpcPayload(data: AddMessageInput) {
  * Add a message to a conversation.
  * Automatically sets sequence_number and updates conversation.updated_at.
  */
-export const addMessage = createServerFn({ method: 'POST' })
-  .inputValidator(
-    (data: AddMessageInput) => data
-  )
+export const addMessage = createServerFn({ method: 'POST' }).validator((data: AddMessageInput) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -105,8 +102,7 @@ export const addMessage = createServerFn({ method: 'POST' })
 /**
  * Get all messages for a conversation.
  */
-export const getMessages = createServerFn({ method: 'GET' })
-  .inputValidator((data: { conversationId: string }) => data)
+export const getMessages = createServerFn({ method: 'GET' }).validator((data: { conversationId: string }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -150,8 +146,7 @@ export const getMessages = createServerFn({ method: 'GET' })
  * Update a message's attached data.
  * Used to add events, suggestions, directions after assistant response.
  */
-export const updateMessageAttachedData = createServerFn({ method: 'POST' })
-  .inputValidator((data: { messageId: string; attachedData: MessageAttachedData }) => data)
+export const updateMessageAttachedData = createServerFn({ method: 'POST' }).validator((data: { messageId: string; attachedData: MessageAttachedData }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()

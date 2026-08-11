@@ -23,10 +23,7 @@ export const signOutAction = createServerFn({ method: 'POST' }).handler(
  * Exchange auth code or token hash for session (server-side).
  * Used for magic link callback. Sets session cookies.
  */
-export const exchangeCodeAction = createServerFn({ method: 'POST' })
-  .inputValidator(
-    (data: { code?: string; tokenHash?: string; type?: string }) => data
-  )
+export const exchangeCodeAction = createServerFn({ method: 'POST' }).validator((data: { code?: string; tokenHash?: string; type?: string }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -85,8 +82,7 @@ export const exchangeCodeAction = createServerFn({ method: 'POST' })
   })
 
 // Delete user account - requires service role key (server-side only)
-export const deleteAccountAction = createServerFn({ method: 'POST' })
-  .inputValidator((data: { userId: string }) => data)
+export const deleteAccountAction = createServerFn({ method: 'POST' }).validator((data: { userId: string }) => data)
   .handler(async ({ data }) => {
     const { createClient } = await import('@supabase/supabase-js')
 
@@ -119,8 +115,7 @@ export const deleteAccountAction = createServerFn({ method: 'POST' })
  * Update locale preference in profiles table (server-side).
  * Persists user's language preference across devices.
  */
-export const updateLocalePreference = createServerFn({ method: 'POST' })
-  .inputValidator((locale: Locale) => locale)
+export const updateLocalePreference = createServerFn({ method: 'POST' }).validator((locale: Locale) => locale)
   .handler(async ({ data: locale }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()

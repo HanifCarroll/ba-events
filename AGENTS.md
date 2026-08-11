@@ -168,9 +168,9 @@ const getEvents = createServerFn({ method: 'GET' }).handler(async () => {
   return db.query('SELECT * FROM events')
 })
 
-// Server function with input validation (use inputValidator, NOT validator)
+// Server function with input validation (use validator)
 const createEvent = createServerFn({ method: 'POST' })
-  .inputValidator((data: { name: string }) => data)
+  .validator((data: { name: string }) => data)
   .handler(async ({ data }) => {
     return db.insert('events', data)
   })

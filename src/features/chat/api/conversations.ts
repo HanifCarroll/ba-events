@@ -24,10 +24,7 @@ import {
  * List all conversations for the authenticated user.
  * Returns lightweight list items ordered by most recent first.
  */
-export const listConversations = createServerFn({ method: 'GET' })
-  .inputValidator(
-    (data: { limit?: number; offset?: number; search?: string } | undefined) => data ?? {}
-  )
+export const listConversations = createServerFn({ method: 'GET' }).validator((data: { limit?: number; offset?: number; search?: string } | undefined) => data ?? {})
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -133,8 +130,7 @@ export const listConversations = createServerFn({ method: 'GET' })
 /**
  * Search conversations by message content using full-text search.
  */
-export const searchConversations = createServerFn({ method: 'GET' })
-  .inputValidator((data: { query: string; limit?: number }) => data)
+export const searchConversations = createServerFn({ method: 'GET' }).validator((data: { query: string; limit?: number }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -197,8 +193,7 @@ export const searchConversations = createServerFn({ method: 'GET' })
 /**
  * Get a single conversation with all its messages.
  */
-export const getConversation = createServerFn({ method: 'GET' })
-  .inputValidator((data: { id: string }) => data)
+export const getConversation = createServerFn({ method: 'GET' }).validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -246,8 +241,7 @@ export const getConversation = createServerFn({ method: 'GET' })
 /**
  * Create a new conversation.
  */
-export const createConversation = createServerFn({ method: 'POST' })
-  .inputValidator((data: ConversationInsert) => data)
+export const createConversation = createServerFn({ method: 'POST' }).validator((data: ConversationInsert) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -281,8 +275,7 @@ export const createConversation = createServerFn({ method: 'POST' })
 /**
  * Update a conversation (rename, soft delete, etc.).
  */
-export const updateConversation = createServerFn({ method: 'POST' })
-  .inputValidator((data: { id: string; updates: ConversationUpdate }) => data)
+export const updateConversation = createServerFn({ method: 'POST' }).validator((data: { id: string; updates: ConversationUpdate }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()
@@ -317,8 +310,7 @@ export const updateConversation = createServerFn({ method: 'POST' })
 /**
  * Soft delete a conversation.
  */
-export const deleteConversation = createServerFn({ method: 'POST' })
-  .inputValidator((data: { id: string }) => data)
+export const deleteConversation = createServerFn({ method: 'POST' }).validator((data: { id: string }) => data)
   .handler(async ({ data }) => {
     const { createSupabaseServerClient } = await import('@/shared/lib/db/server')
     const supabase = createSupabaseServerClient()

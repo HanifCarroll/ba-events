@@ -1,4 +1,4 @@
-import { getCookies, setCookie } from '@tanstack/react-start/server'
+import { getCookies, setCookie, setResponseHeader } from '@tanstack/react-start/server'
 import { createServerClient } from '@supabase/ssr'
 
 /**
@@ -21,13 +21,21 @@ export function createSupabaseServerClient() {
           value,
         }))
       },
-      setAll(cookies) {
+      setAll(cookies, headers) {
         cookies.forEach((cookie) => {
           setCookie(cookie.name, cookie.value, {
             ...cookie.options,
             secure: process.env.NODE_ENV === 'production',
           })
         })
+        // Since @supabase/ssr 0.12, responses that mutate auth cookies must not
+        // be cached by CDNs/proxies (one user's tokens could be served to
+        // another). Apply the Cache-Control headers the library passes here.
+        if (headers) {
+          Object.entries(headers).forEach(([name, value]) => {
+            setResponseHeader(name, value)
+          })
+        }
       },
     },
   })

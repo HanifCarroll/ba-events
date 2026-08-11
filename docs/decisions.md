@@ -26,6 +26,66 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Vite 8 Unblocked via Dev-Middleware Workaround
+
+**Date:** 2026-08-11
+
+**Decision:** Adopted Vite 8.2.1 + @vitejs/plugin-react 6.0.5 with `tanstackStart({ vite: { installDevServerMiddleware: true } })` in `vite.config.ts`. This forces the SSR dev middleware to install, bypassing the faulty `"dispatchFetch" in serverEnv` guard that silently skips it on Vite 8 (TanStack/router#7614, open). The secondary `instanceof RunnableDevEnvironment` guard passes on single-Vite installs like this repo.
+
+**Alternatives Considered:**
+- Pinning Vite 7 (the issue's recommended workaround): worked, but leaves us two majors behind and blocks plugin-react 6.
+- Patching `@tanstack/start-plugin-core` via `patchedDependencies`: durable but adds a node_modules patch that must be re-validated on every TanStack bump; the config flag achieves the same result with zero patch surface.
+
+**Rationale:** Config-only, removable when the upstream fix ships (the flag's own doc says it loses its value once the guard is fixed). Verified: dev SSR serves 200 on `/` and `/login`, 307 auth redirect on `/saved`, process stable; production build, tsc, and all 77 tests pass.
+
+Related Decision: [TanStack Family Upgrade; Vite Held at 7] (2026-08-11) — superseded by this entry.
+
+---
+
+### PWA via Custom Workbox Plugin (Not vite-plugin-pwa)
+
+**Date:** 2026-08-11
+
+**Decision:** Implemented PWA support with a custom Vite plugin (`pwaWorkbox` in `vite.config.ts`) that runs `workbox-build` `generateSW` against `dist/client` on the client environment's `closeBundle`, plus manual SW registration and manifest linking in `__root.tsx`. SW precaches hashed assets and runtime-caches HTML navigations (NetworkFirst) and Google Fonts. `public/manifest.json` gained `id`/`scope`/`lang`, a maskable icon, and theme colors aligned to the actual light UI.
+
+**Alternatives Considered:**
+- vite-plugin-pwa: build steps never execute under TanStack Start's multi-environment build (TanStack/router#4988, still open; fix PR unmerged). The documented workaround requires SPA mode, which would remove SSR.
+- Serwist (vite-plugin-pwa fork): same upstream bug.
+
+**Rationale:** workbox-build is the engine under vite-plugin-pwa anyway; a ~40-line plugin is deterministic and unaffected by the upstream issue. No static `index.html` exists (runtime SSR via Netlify function), so offline support is precache + runtime navigation caching rather than an app-shell fallback.
+
+### TanStack Family Upgrade; Vite Held at 7
+
+**Date:** 2026-08-11
+
+**Decision:** Upgraded `@tanstack/react-router` 1.144.0 → 1.170.25, `react-start` 1.144.0 → 1.168.42, `router-plugin` → 1.168.29, `react-router-ssr-query` → 1.167.1. Removed the `as any` cast from the `/api/chat` route id (plugin now requires a string literal) and migrated all 17 `inputValidator()` callsites to the renamed `validator()`.
+
+**Alternatives Considered:**
+- Vite 8.2.1 + @vitejs/plugin-react 6.0.5: production build succeeds, but the dev server crashes (H3Event constructed with an undefined URL in the streaming batch flush — TanStack/router#7614 class of bug). Rejected until upstream fixes dev-mode Vite 8 support.
+
+**Rationale:** latest TanStack declares `vite >=7`; keeping Vite 7.3.6 preserves a working dev loop. Revisit Vite 8 when TanStack ships the dev-server fix.
+
+### Netlify Node 24; TypeScript 6 (7 Blocked Upstream)
+
+**Date:** 2026-08-11
+
+**Decision:** `NODE_VERSION` 20 → 24 in `netlify.toml` (Node 20 reached EOL 2026-04-30; Netlify's default is now 24). `@types/node` 22 → 24 to match the runtime. TypeScript 5.9.3 → 6.0.3.
+
+**Alternatives Considered:**
+- TypeScript 7.0.2 (native Go compiler): `tsc --noEmit` passes, but `vite build` crashes — `@netlify/zip-it-and-ship-it` → `precinct` → `detective-typescript` → `@typescript-eslint/typescript-estree` reads `ts.Extension.Cjs` at module load, an enum TS 7 removed. The programmatic API returns in 7.1; Netlify's bundler hasn't migrated. Rejected until then.
+
+**Rationale:** TS 6 is the bridge release with the full compiler API intact; the upgrade from 5.9 required zero code changes.
+
+### Supabase SSR 0.12 (Auth Cookie Headers)
+
+**Date:** 2026-08-11
+
+**Decision:** Upgraded `@supabase/ssr` 0.8.0 → 0.12.4. No callsite changes needed (getAll/setAll shape already in use); extended the server client's `setAll` to apply the cache-control headers the library now passes, preventing CDNs from caching auth-cookie responses (one user's session served to another).
+
+**Rationale:** 0.12 changed `setAll(cookies, headers)` semantics; applying the headers is required for safe auth behind Netlify's edge CDN.
+
+---
+
 ### Remove All Admin UI (Agent-Only Operation)
 
 **Date:** 2026-08-10

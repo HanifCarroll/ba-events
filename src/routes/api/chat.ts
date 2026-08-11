@@ -299,8 +299,7 @@ function createRateLimitResponse(resetTimestamp: number): Response {
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = createFileRoute('/api/chat' as any)({
+export const Route = createFileRoute('/api/chat')({
   server: {
     handlers: {
       POST: async ({ request }) => {

@@ -201,7 +201,7 @@ Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or h
 - Added canonical URL link tag
 - Created 1200x630px OG image (`public/og-image.png`) with Buenos Aires nightlife theme
 - Updated `public/robots.txt` to block /admin/, /saved, /profile, /api/, /login, /register, /auth/
-- Updated `public/manifest.json` with BA Eventos branding and dark theme colors (#1a1612)
+- Updated `public/manifest.json` with BA Eventos branding; theme colors aligned to the light UI (#fafaf8, matching the `theme-color` meta)
 - Added SEO info section to `SuggestedPrompts.tsx` with H2 heading and descriptive text
 - Added i18n keys for EN/ES (home_about_title, home_about_text)
 

@@ -9,30 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SavedRouteImport } from './routes/saved'
-import { Route as RegisterRouteImport } from './routes/register'
-import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as EventIdRouteImport } from './routes/event/$id'
-import { Route as ChatConversationIdRouteImport } from './routes/chat_.$conversationId'
-import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
-import { Route as ApiEventsRouteImport } from './routes/api/events'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as SavedRouteImport } from './routes/saved'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiEventsRouteImport } from './routes/api/events'
+import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as ChatConversationIdRouteImport } from './routes/chat_.$conversationId'
+import { Route as EventIdRouteImport } from './routes/event/$id'
 
-const SavedRoute = SavedRouteImport.update({
-  id: '/saved',
-  path: '/saved',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RegisterRoute = RegisterRouteImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -40,24 +30,24 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EventIdRoute = EventIdRouteImport.update({
-  id: '/event/$id',
-  path: '/event/$id',
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ChatConversationIdRoute = ChatConversationIdRouteImport.update({
-  id: '/chat_/$conversationId',
-  path: '/chat/$conversationId',
+const SavedRoute = SavedRouteImport.update({
+  id: '/saved',
+  path: '/saved',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthCallbackRoute = AuthCallbackRouteImport.update({
-  id: '/auth/callback',
-  path: '/auth/callback',
+const ApiChatRoute = ApiChatRouteImport.update({
+  id: '/api/chat',
+  path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiEventsRoute = ApiEventsRouteImport.update({
@@ -65,9 +55,19 @@ const ApiEventsRoute = ApiEventsRouteImport.update({
   path: '/api/events',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiChatRoute = ApiChatRouteImport.update({
-  id: '/api/chat',
-  path: '/api/chat',
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatConversationIdRoute = ChatConversationIdRouteImport.update({
+  id: '/chat_/$conversationId',
+  path: '/chat/$conversationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EventIdRoute = EventIdRouteImport.update({
+  id: '/event/$id',
+  path: '/event/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -162,25 +162,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/saved': {
-      id: '/saved'
-      path: '/saved'
-      fullPath: '/saved'
-      preLoaderRoute: typeof SavedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/register': {
-      id: '/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof RegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -190,32 +176,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/event/$id': {
-      id: '/event/$id'
-      path: '/event/$id'
-      fullPath: '/event/$id'
-      preLoaderRoute: typeof EventIdRouteImport
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/chat_/$conversationId': {
-      id: '/chat_/$conversationId'
-      path: '/chat/$conversationId'
-      fullPath: '/chat/$conversationId'
-      preLoaderRoute: typeof ChatConversationIdRouteImport
+    '/saved': {
+      id: '/saved'
+      path: '/saved'
+      fullPath: '/saved'
+      preLoaderRoute: typeof SavedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth/callback': {
-      id: '/auth/callback'
-      path: '/auth/callback'
-      fullPath: '/auth/callback'
-      preLoaderRoute: typeof AuthCallbackRouteImport
+    '/api/chat': {
+      id: '/api/chat'
+      path: '/api/chat'
+      fullPath: '/api/chat'
+      preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/events': {
@@ -225,11 +211,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/chat': {
-      id: '/api/chat'
-      path: '/api/chat'
-      fullPath: '/api/chat'
-      preLoaderRoute: typeof ApiChatRouteImport
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chat_/$conversationId': {
+      id: '/chat_/$conversationId'
+      path: '/chat/$conversationId'
+      fullPath: '/chat/$conversationId'
+      preLoaderRoute: typeof ChatConversationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/event/$id': {
+      id: '/event/$id'
+      path: '/event/$id'
+      fullPath: '/event/$id'
+      preLoaderRoute: typeof EventIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

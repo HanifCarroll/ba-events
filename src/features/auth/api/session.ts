@@ -46,8 +46,7 @@ export const getSessionUser = createServerFn({ method: 'GET' }).handler(
  * Require authentication - throws redirect to /login if not authenticated.
  * Use this in beforeLoad handlers for protected routes.
  */
-export const requireAuth = createServerFn({ method: 'GET' })
-  .inputValidator((data: { redirectTo?: string }) => data)
+export const requireAuth = createServerFn({ method: 'GET' }).validator((data: { redirectTo?: string }) => data)
   .handler(async ({ data }): Promise<SessionUser> => {
     const session = await getSessionUser()
 
@@ -65,8 +64,7 @@ export const requireAuth = createServerFn({ method: 'GET' })
  * Require admin role - throws redirect if not authenticated or not admin.
  * Use this in beforeLoad handlers for admin routes.
  */
-export const requireAdmin = createServerFn({ method: 'GET' })
-  .inputValidator((data: { redirectTo?: string }) => data)
+export const requireAdmin = createServerFn({ method: 'GET' }).validator((data: { redirectTo?: string }) => data)
   .handler(async ({ data }): Promise<SessionUser> => {
     const session = await getSessionUser()
 
