@@ -64,7 +64,9 @@ export function transformVentiEvent(
 
   const category = mapVentiCategory(event.category)
   const isFree = availability?.allAvailableTicketsAreFree ?? false
-  const price = availability?.minTicketPrice ?? null
+  // Venti's minTicketPrice is in cents (hundredths of ARS), like Luma.
+  // e.g. 1500000 = $15.000 ARS.
+  const price = availability?.minTicketPrice != null ? availability.minTicketPrice / 100 : null
   const link = event.urlName ? `https://venti.live/evento/${event.urlName}` : null
 
   return {

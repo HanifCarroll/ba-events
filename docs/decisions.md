@@ -130,6 +130,7 @@ When adding a new decision, use this format:
 **Consequences:**
 - Field coverage verified across the 178 CABA events: 100% for name, dates, venue, categories, price flag, image, links, external_id, embedding; 93% price; **78% (138/178) have `description_es`** — the remaining 40 have no description in Venti's own API (a source data limitation, not a scrape gap).
 - Prices are raw ARS with no conversion.
+- Venti's `minTicketPrice` is in cents (hundredths of ARS, like Luma) — the transformer divides by 100 before storing (e.g. `1500000` → `15000` ARS).
 - The public consumer API could gain auth/bot protection later; Browserbase (Passline path) is the contingency.
 
 ### Generic Translate-Only Enrichment (es → en for native-description sources)
