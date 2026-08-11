@@ -29,7 +29,8 @@ import {
 import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
 import { getEventWithVenue } from '@/shared/lib/db/client'
 import { trackServer } from '@/lib/analytics.server'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import { formatTime } from '@/shared/lib/utils/formatting'
+import * as m from '@/paraglide/messages'
 import type {
   ChatEventPayload,
   DirectionsData,
@@ -288,14 +289,10 @@ function createErrorStream(errorMessage: string): Response {
  */
 function createRateLimitResponse(resetTimestamp: number): Response {
   const resetDate = new Date(resetTimestamp)
-  const resetTimeStr = resetDate.toLocaleTimeString('es-AR', {
-    timeZone: BA_TIMEZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const resetTimeStr = formatTime(resetDate)
 
   return createErrorStream(
-    `You've reached the rate limit (${RATE_LIMIT_REQUESTS} requests per hour). Please try again after ${resetTimeStr}.`
+    m.chat_rate_limit({ count: RATE_LIMIT_REQUESTS, time: resetTimeStr })
   )
 }
 

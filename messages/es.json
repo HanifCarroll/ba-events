@@ -29,6 +29,7 @@
   "chat_status_composing": "Escribiendo…",
   "chat_status_persisting": "Casi listo…",
   "chat_status_error": "Algo salió mal",
+  "chat_rate_limit": "Alcanzaste el límite de solicitudes ({count} por hora). Intentá de nuevo después de las {time}.",
   "chat_conversation_not_found": "No se pudo encontrar esta conversación.",
   "chat_start_new_chat": "Empezar un nuevo chat",
   "chat_history": "Historial",
