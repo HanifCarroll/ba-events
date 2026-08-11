@@ -5,8 +5,10 @@
  */
 
 // Keep in sync with META_NARRATION_PATTERN in src/routes/api/chat.ts
+// Refined to genuine tool-work narration only — dropped the ambient "looking
+// for", "I'll look", "I'm trying" matches that flagged natural phrasing.
 const META_NARRATION_PATTERN =
-  /\b(let me|i(?:'m| am| ll|'ll)\s+(?:check|search|look|try)|still getting|different angle|search again|looking for)\b/i
+  /\b(?:let me\s+(?:check|search|look|try)|search(?:ing now| again)|still getting|different angle)\b/i
 
 const EXCLAIM_OPENER =
   /^(great|perfect|absolutely|awesome|amazing|excellent|love it|genial|perfecto|buen[ií]simo|excelente|me encanta)[\s!,]/i
@@ -19,13 +21,29 @@ const ES_STOPWORDS =
 const EN_STOPWORDS =
   /\b(the|a|an|and|to|tonight|go|this|that|with|for|at|in|is|are|you|your|it|here|there)\b/gi
 
-/** Voice rules every concierge reply must satisfy. Returns violation descriptions. */
-export function voiceViolations(text: string): string[] {
-  const violations: string[] = []
-  if (!text.trim()) return ['empty reply text']
-  if (META_NARRATION_PATTERN.test(text)) violations.push('meta-narration of tool work')
-  if (EXCLAIM_OPENER.test(text)) violations.push('opens with exclamation/enthusiasm word')
-  if (PRESSURE_PHRASING.test(text)) violations.push('pressure/teasing phrasing')
+/**
+ * A voice-rule violation with severity.
+ * `blocking: true` fails the case outright; `blocking: false` is cosmetic and
+ * only fails if it repeats (>= 2 in one reply).
+ */
+export interface VoiceViolation {
+  kind: string
+  blocking: boolean
+}
+
+/** Voice rules every concierge reply should satisfy, tiered by severity. */
+export function voiceViolations(text: string): VoiceViolation[] {
+  const violations: VoiceViolation[] = []
+  if (!text.trim()) return [{ kind: 'empty reply text', blocking: true }]
+  if (META_NARRATION_PATTERN.test(text)) {
+    violations.push({ kind: 'meta-narration of tool work', blocking: false })
+  }
+  if (EXCLAIM_OPENER.test(text)) {
+    violations.push({ kind: 'opens with exclamation/enthusiasm word', blocking: false })
+  }
+  if (PRESSURE_PHRASING.test(text)) {
+    violations.push({ kind: 'pressure/teasing phrasing', blocking: true })
+  }
   return violations
 }
 

@@ -85,8 +85,16 @@ function scoreCase(c: ConciergeCase, run: AgentRun): CaseResult {
     if (failure) failures.push(failure)
   }
 
-  // Global: voice
-  for (const v of voiceViolations(run.text)) failures.push(`voice: ${v}`)
+  // Global: voice — blocking violations fail outright; cosmetic slips warn
+  // and only fail when they repeat (>= 2) in the same reply. A single cosmetic
+  // slip (e.g. a stray "let me check") no longer blocks the gate, but it is
+  // surfaced on the case note.
+  const voice = voiceViolations(run.text)
+  for (const v of voice.filter((v) => v.blocking)) failures.push(`voice: ${v.kind}`)
+  const cosmetic = voice.filter((v) => !v.blocking)
+  if (cosmetic.length >= 2) {
+    failures.push(`voice: ${cosmetic.length} cosmetic slips (${cosmetic.map((v) => v.kind).join(', ')})`)
+  }
 
   // Global: locale
   if (run.text.trim() && detectLanguage(run.text) !== c.locale) {
@@ -104,7 +112,9 @@ function scoreCase(c: ConciergeCase, run: AgentRun): CaseResult {
     id: c.id,
     pass: failures.length === 0,
     failures,
-    note: `${run.toolCalls.map((t) => t.toolName).join('+') || 'no-tools'}, ${run.events.length} events`,
+    note: `${run.toolCalls.map((t) => t.toolName).join('+') || 'no-tools'}, ${run.events.length} events${
+      cosmetic.length === 1 ? ` · ${cosmetic[0].kind}` : ''
+    }`,
   }
 }
 

@@ -159,8 +159,11 @@ function getNonEmptyStepTextCount(steps: StepResultLike[]): number {
   }, 0)
 }
 
+// Keep in sync with META_NARRATION_PATTERN in evals/lib/checks.ts
+// Refined to genuine tool-work narration only — dropped the ambient "looking
+// for", "I'll look", "I'm trying" matches that flagged natural phrasing.
 const META_NARRATION_PATTERN =
-  /\b(let me|i(?:'m| am| ll|'ll)\s+(?:check|search|look|try)|still getting|different angle|search again|looking for)\b/i
+  /\b(?:let me\s+(?:check|search|look|try)|search(?:ing now| again)|still getting|different angle)\b/i
 
 /**
  * Remove tool/process narration from assistant text when structured results

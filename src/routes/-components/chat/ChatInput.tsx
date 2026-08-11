@@ -1,6 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
-import { Send } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Mic, Send } from 'lucide-react'
 import * as m from '@/paraglide/messages'
+import { toast } from 'sonner'
+import { getLocale } from '@/paraglide/runtime'
+import {
+  createSpeechRecognition,
+  ensureOnDeviceLanguagePack,
+  getRecognitionMode,
+  type RecognitionMode,
+  type SpeechRecognitionLike,
+} from '@/features/chat/lib/speech-recognition'
 
 interface ChatInputProps {
   onSend: (message: string) => void
@@ -28,6 +37,103 @@ export function ChatInput({
   const [isFocused, setIsFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // Speech-to-text via the browser Web Speech API. Resolved after mount so SSR
+  // and client renders agree (avoids hydration mismatch); `mode` is a browser
+  // capability and never changes for the lifetime of the component.
+  const [isSupported, setIsSupported] = useState(false)
+  const modeRef = useRef<RecognitionMode>('cloud')
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const baseValueRef = useRef('')
+  const committedTranscriptRef = useRef('')
+
+  useEffect(() => {
+    const mode = getRecognitionMode()
+    modeRef.current = mode
+    setIsSupported(mode !== 'unsupported')
+  }, [])
+
+  // Language pack availability is a per-language concern, resolved at start time.
+  const getRecognitionLang = () => (getLocale() === 'es' ? 'es-AR' : 'en-US')
+
+  const startRecognition = useCallback(
+    (recognition: SpeechRecognitionLike, base: string) => {
+      recognitionRef.current = recognition
+      baseValueRef.current = base
+      committedTranscriptRef.current = ''
+
+      recognition.onresult = (event) => {
+        let interim = ''
+        let committed = committedTranscriptRef.current
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i]
+          if (result.isFinal) {
+            committed += result[0].transcript
+          } else {
+            interim += result[0].transcript
+          }
+        }
+        committedTranscriptRef.current = committed
+        setValue([baseValueRef.current, committed, interim].filter(Boolean).join(' '))
+      }
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          toast.error(m.chat_dictate_permission())
+        } else if (event.error === 'language-not-supported') {
+          // On-device pack missing at runtime — transparently retry via cloud.
+          recognition.abort()
+          const fallback = createSpeechRecognition(getRecognitionLang(), 'cloud')
+          if (fallback) startRecognition(fallback, baseValueRef.current)
+        }
+      }
+
+      recognition.onend = () => {
+        setIsListening(false)
+        if (recognitionRef.current === recognition) recognitionRef.current = null
+      }
+
+      recognition.start()
+      setIsListening(true)
+    },
+    [],
+  )
+
+  const handleMicClick = useCallback(async () => {
+    if (disabled || !isSupported) return
+    if (isListening) {
+      recognitionRef.current?.stop()
+      return
+    }
+
+    const lang = getRecognitionLang()
+    const mode = modeRef.current
+    let effectiveMode: RecognitionMode = mode
+
+    if (mode === 'on-device') {
+      const { ok, fallbackToCloud } = await ensureOnDeviceLanguagePack(lang)
+      if (!ok && !fallbackToCloud) {
+        toast.error(m.chat_dictate_install_error())
+        return
+      }
+      effectiveMode = ok ? 'on-device' : 'cloud'
+    }
+
+    const recognition = createSpeechRecognition(lang, effectiveMode)
+    if (recognition) startRecognition(recognition, value)
+  }, [disabled, isListening, isSupported, value, startRecognition])
+
+  // Stop recognition if the input is disabled mid-dictation, and abort on unmount.
+  useEffect(() => {
+    if (disabled && isListening) recognitionRef.current?.abort()
+  }, [disabled, isListening])
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort()
+    }
+  }, [])
 
   useEffect(() => {
     if (!disabled && textareaRef.current) {
@@ -121,6 +227,27 @@ export function ChatInput({
                 `}
               />
             </div>
+
+            <button
+              type="button"
+              onClick={handleMicClick}
+              disabled={disabled || !isSupported}
+              aria-label={isListening ? m.chat_stop_dictating() : m.chat_dictate()}
+              aria-pressed={isListening}
+              title={!isSupported ? m.chat_dictate_unsupported() : undefined}
+              className={`
+                mb-2 p-2.5 rounded-full shrink-0 transition-colors duration-200
+                ${
+                  !isSupported
+                    ? 'text-muted-foreground/40 cursor-not-allowed'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }
+                ${isListening ? 'text-red-500 bg-red-500/15 hover:bg-red-500/25 animate-pulse' : ''}
+              `}
+            >
+              <Mic className="h-4 w-4" />
+              <span className="sr-only">{isListening ? m.chat_stop_dictating() : m.chat_dictate()}</span>
+            </button>
 
             <button
               type="button"
