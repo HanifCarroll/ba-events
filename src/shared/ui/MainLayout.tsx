@@ -147,7 +147,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   return (
-    <div className="h-full flex flex-col lg:flex-row overflow-hidden">
+    <div className="relative h-full flex flex-col lg:flex-row overflow-hidden">
       <SkipLink />
 
       {/* Mobile header */}
@@ -167,13 +167,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         </Link>
       </header>
 
-      {/* Mobile menu — slides down from the header (not the sidebar overlay) */}
+      {/* Mobile menu — slides down OVER the content (does not push it) */}
       <div
-        className={`lg:hidden grid transition-[grid-template-rows] duration-300 ease-in-out ${
+        className={`lg:hidden absolute inset-x-0 top-16 z-40 grid transition-[grid-template-rows] duration-300 ease-in-out ${
           mobileMenuOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         }`}
       >
-        <div className="overflow-hidden">
+        <div className="overflow-hidden shadow-lg shadow-black/10">
           <nav className="border-b bg-card px-4 py-3 flex flex-col gap-1" aria-label="Mobile menu">
             {filteredMainNavItems.map((item) => (
               <NavItemComponent key={item.label} item={item} showLabel />
@@ -210,6 +210,14 @@ export function MainLayout({ children }: MainLayoutProps) {
           </nav>
         </div>
       </div>
+
+      {/* Mobile menu backdrop — dims content, closes on tap */}
+      {mobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-20 bg-black/40"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
 
       {/* Sidebar (desktop only) */}
       <aside

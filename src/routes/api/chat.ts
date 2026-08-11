@@ -237,24 +237,6 @@ export function filterEventsMentionedInText(
   return mentioned.length > 0 ? mentioned : events
 }
 
-function buildStructuredDataFallbackText(
-  locale: 'en' | 'es',
-  originalQuery: string
-): string {
-  const query = originalQuery.toLowerCase()
-  const asksForUpscale = /(upscale|exclusive|premium|vip|luxe|luxury|exclusiv|premium|más premium)/i.test(query)
-
-  if (locale === 'es') {
-    return asksForUpscale
-      ? 'Aquí tienes opciones más premium para esta noche.'
-      : 'Aquí tienes opciones para esta noche.'
-  }
-
-  return asksForUpscale
-    ? 'Here are better upscale options for tonight.'
-    : 'Here are options for tonight.'
-}
-
 function buildStreamEnvelope<T>(
   requestId: string,
   data: T,
@@ -496,9 +478,10 @@ export const Route = createFileRoute('/api/chat' as any)({
               let finalText = sanitizeFinalAssistantText(rawFinalText, {
                 hasStructuredData: accumulatedEvents.length > 0 || directionsData !== null,
               })
-              if (!finalText && (accumulatedEvents.length > 0 || directionsData !== null)) {
-                finalText = buildStructuredDataFallbackText(locale, lastOriginalQuery)
-              }
+              // No fallback prose when the model ends tool-only: cards (or the
+              // directions card) carry the content, and any injected intro
+              // would be in the app locale — wrong language for a user who
+              // wrote in another one.
 
               // Only attach cards for events the final answer actually names —
               // the model may search a broad set but recommend a single pick,
