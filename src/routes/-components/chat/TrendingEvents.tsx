@@ -41,9 +41,12 @@ export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEvents
       <h2 className="mb-3 text-sm font-medium text-foreground">{m.home_trending_title()}</h2>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:pb-0">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="w-full animate-pulse overflow-hidden rounded-xl border border-border/50 bg-card">
+            <div
+              key={i}
+              className="w-[72%] max-w-[300px] shrink-0 overflow-hidden rounded-xl border border-border/50 bg-card animate-pulse sm:w-auto sm:max-w-none"
+            >
               <div className="h-24 bg-muted" />
               <div className="space-y-2 p-3">
                 <div className="h-3.5 w-3/4 rounded bg-muted" />
@@ -54,7 +57,9 @@ export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEvents
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 stagger-children">
+        <div
+          className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:snap-none sm:pb-0 stagger-children"
+        >
           {events.map((event) => (
             <TrendingEventCard key={event.id} event={event} onSelectPrompt={onSelectPrompt} />
           ))}
@@ -88,7 +93,7 @@ function TrendingEventCard({
     <button
       type="button"
       onClick={handleClick}
-      className="group flex w-full flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group flex w-[72%] max-w-[300px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
     >
       {event.image_url ? (
         <img
