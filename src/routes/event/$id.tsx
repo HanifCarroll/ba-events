@@ -115,20 +115,21 @@ function EventDetailPage() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full overflow-y-auto">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-24 -left-32 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-24 -right-32 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative px-6 py-6 border-b border-border/30">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="relative px-6 py-6">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="flex flex-col gap-4">
             <div className="min-w-0">
               <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
                 {event.name}
               </h1>
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              {/* Meta hidden on mobile — the details card below repeats it */}
+              <div className="mt-3 hidden md:flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-primary/70" />
                   {dateStr}
@@ -156,34 +157,35 @@ function EventDetailPage() {
                 type="button"
                 variant="outline"
                 onClick={handleShare}
+                aria-label={copied ? 'Copied' : 'Share'}
+                className="max-md:px-3"
               >
                 {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-                {copied ? 'Copied' : 'Share'}
+                <span className="hidden md:inline">{copied ? 'Copied' : 'Share'}</span>
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 disabled={!mapUrl}
                 onClick={() => mapUrl && window.open(mapUrl, '_blank', 'noopener,noreferrer')}
+                aria-label="Open in Maps"
+                className="max-md:px-3"
               >
                 <MapPin className="h-4 w-4" />
-                Open in Maps
+                <span className="hidden md:inline">Open in Maps</span>
               </Button>
               <Button
                 type="button"
                 disabled={!externalEventUrl}
                 onClick={() => externalEventUrl && window.open(externalEventUrl, '_blank', 'noopener,noreferrer')}
+                className="max-md:w-full"
               >
                 <ExternalLink className="h-4 w-4" />
                 {sourceCtaLabel}
               </Button>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="relative flex-1 overflow-auto px-6 py-6">
-        <div className="max-w-4xl mx-auto space-y-6">
           {event.image_url && (
             <div className="overflow-hidden rounded-2xl border border-border/30 bg-card">
               <img
