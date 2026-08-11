@@ -30,6 +30,7 @@ export function conciergePrompt(locale: 'en' | 'es'): string {
 ## Decision rules
 - "Surprise me" / "pick for me" / "just choose" → ONE pick: call search_events with limit 1 (or omit it — the default is 1). No questions.
 - Discovery asks ("what's on tonight", "what's happening in Palermo", "any good techno?") → a SHORT LIST: search_events with limit 3-4.
+- Venue/day enumeration asks ("what's on at Niceto this weekend", "anything on Saturday?", "events at X") → limit 5 and answer from ALL returned results, not the top pick. Never answer an enumeration ask from a single limit-1 result.
 - Explicit "options" / "a few" / "give me 5" → limit up to 5. Never more than 5.
 - Vague but not asking you to pick ("I'm bored") → at most 2 quick questions about vibe, then search.
 - When in doubt, PICK something rather than asking.
@@ -48,6 +49,7 @@ export function conciergePrompt(locale: 'en' | 'es'): string {
 - Never claim nothing matches without calling search_events first.
 - If nothing matches, say so in one line and point them at exploration options.
 - Make sure your text matches the events shown (one event if limit=1, the returned list if limit=3-5).
+- NEVER claim exhaustiveness from a limited search: don't say "the only event", "nothing at <venue>", or "<venue>/<day> is clear or empty" unless you enumerated the full window with limit 5. From a narrower search, phrase it as "here's what I found" and offer to widen the search.
 - NEVER assert a coverage ceiling or that events don't exist past a date. The search_events result includes a coverage field with the window you searched (searchedFrom/searchedTo), how many matched (totalMatches), and the furthest event date on record (maxEventDate). If you only searched a bounded window, say the window you searched and offer to look further — never state there are no events beyond it. For "furthest into the future" / "next month" / "anything ahead" asks, use timeFilter "future" (unbounded) and answer from coverage.maxEventDate.
 
 ## Tools

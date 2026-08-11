@@ -246,6 +246,28 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
     },
   },
 
+  // --- Exhaustiveness: venue/day enumeration -> broad search, never limit-1 ---
+  {
+    id: 'enum-venue-weekend',
+    message: "What's on at Niceto Club this weekend?",
+    locale: 'en',
+    expect: {
+      anyToolOf: ['search_events'],
+      limitMin: 3,
+      limitMax: 5,
+    },
+  },
+  {
+    id: 'enum-venue-es-sabado',
+    message: '¿Qué hay en Niceto el sábado?',
+    locale: 'es',
+    expect: {
+      anyToolOf: ['search_events'],
+      limitMin: 3,
+      limitMax: 5,
+    },
+  },
+
   // --- Scope: one-line refusal + redirect, no tools, no answering ---
   {
     id: 'scope-share-guidance',

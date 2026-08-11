@@ -46,7 +46,7 @@
   "register_error_mismatch": "Las contraseñas no coinciden",
   "register_error_length": "La contraseña debe tener al menos 6 caracteres",
   "register_error_failed": "Error al crear la cuenta",
-  "home_title": "Descubre Buenos Aires",
+  "home_title": "Descubrí Buenos Aires",
   "home_trending_title": "Próximos eventos",
   "home_trending_prompt": "Contame sobre {name}",
   "home_hint": "Pregunta sobre eventos, lugares, barrios o ambientes específicos.",
