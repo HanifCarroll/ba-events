@@ -14,7 +14,7 @@ export const Route = createFileRoute('/login')({
     // Redirect to home if already logged in
     const session = await getSessionUser()
     if (session) {
-      throw redirect({ to: session.isAdmin ? '/admin' : '/' })
+      throw redirect({ to: '/' })
     }
   },
   component: LoginPage,

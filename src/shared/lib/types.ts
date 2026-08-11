@@ -527,6 +527,7 @@ export const BLOCKLIST_SOURCES = [
   'ba_tourism',
   'meetup',
   'luma',
+  'venti',
   'all',
 ] as const
 export type BlocklistSource = (typeof BLOCKLIST_SOURCES)[number]
@@ -561,6 +562,7 @@ export const SCRAPE_RUN_SOURCES = [
   'ba-tourism',
   'meetup',
   'luma',
+  'venti',
   'all',
 ] as const
 export type ScrapeRunSource = (typeof SCRAPE_RUN_SOURCES)[number]

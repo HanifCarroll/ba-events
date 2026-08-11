@@ -17,11 +17,10 @@ import type {
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
 } from '../enrichment-types'
-import type { MeetupPreviewEvent } from '@/features/import'
 import { fetchMeetupDescriptionFromDetailPage } from '../../scrapers/meetup/description-enrichment'
 import { fetchMeetupVenueFromUrl } from '../../scrapers/meetup/venue-enrichment'
 
-export const meetupEnrichmentAdapter: EnrichmentAdapter<MeetupPreviewEvent> = {
+export const meetupEnrichmentAdapter: EnrichmentAdapter = {
   source: 'meetup',
 
   capabilities: {
@@ -72,15 +71,5 @@ export const meetupEnrichmentAdapter: EnrichmentAdapter<MeetupPreviewEvent> = {
       console.error('[Meetup Enrichment] Error:', error)
       return null
     }
-  },
-
-  /**
-   * Get enrichment URL from a Meetup preview event
-   * Uses meetup.eventUrl which is the detail page URL
-   */
-  getEnrichmentUrl: (event) => {
-    // MeetupEvent has eventUrl, transformed has link
-    // Prefer meetup.eventUrl as it's the canonical source
-    return event.meetup.eventUrl ?? event.transformed[0]?.link ?? null
   },
 }

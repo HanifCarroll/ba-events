@@ -17,11 +17,10 @@ import type {
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
 } from '../enrichment-types'
-import type { LumaPreviewEvent } from '@/features/import'
 import { fetchLumaDescriptionFromDetailPage } from '../../scrapers/luma/description-enrichment'
 import { fetchLumaVenueFromUrl } from '../../scrapers/luma/venue-enrichment'
 
-export const lumaEnrichmentAdapter: EnrichmentAdapter<LumaPreviewEvent> = {
+export const lumaEnrichmentAdapter: EnrichmentAdapter = {
   source: 'luma',
 
   capabilities: {
@@ -72,22 +71,5 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter<LumaPreviewEvent> = {
       console.error('[Luma Enrichment] Error:', error)
       return null
     }
-  },
-
-  /**
-   * Get enrichment URL from a Luma preview event
-   * Uses luma.url which is the event page path (e.g., "/nk0ojnzi")
-   */
-  getEnrichmentUrl: (event) => {
-    // LumaEvent has url (path), transformed has link (full URL)
-    // Prefer the full link from transformed
-    if (event.transformed.link) {
-      return event.transformed.link
-    }
-    // Construct full URL from path if needed
-    if (event.luma.url) {
-      return `https://lu.ma${event.luma.url.startsWith('/') ? '' : '/'}${event.luma.url}`
-    }
-    return null
   },
 }

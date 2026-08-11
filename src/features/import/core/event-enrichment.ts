@@ -33,6 +33,8 @@ export interface EventEnrichmentInput {
   source: string
   categories?: string[] | null
   venue_id?: string | null // Existing venue ID (if any)
+  description_es?: string | null // Existing Spanish description (translate-only fast path)
+  description_en?: string | null // Existing English description (skip if already present)
 }
 
 export interface EventEnrichmentResult {
@@ -136,7 +138,19 @@ export async function enrichSingleEvent(
       venue_name: string | null
     } | null = null
 
-    if (adapter && hasServerEnrichment(adapter)) {
+    // Fast path: the event already has a Spanish description (sources that ship
+    // descriptions natively — BA Tourism, Eventbrite, Venti). Just translate
+    // es -> en instead of re-scraping the source page. Avoids redundant Jina
+    // fetches and works for SPA pages (e.g. Venti) that Jina cannot parse.
+    // Skips venue extraction (venues are settled at import for these sources).
+    if (input.description_es && !input.description_en) {
+      console.log(`[event-enrichment] Translating existing Spanish description for ${name}`)
+      enrichmentResult = {
+        description_es: input.description_es,
+        description_en: await translateText(input.description_es, 'es-to-en'),
+        venue_name: null,
+      }
+    } else if (adapter && hasServerEnrichment(adapter)) {
       console.log(`[event-enrichment] Using adapter for ${source}`)
       enrichmentResult = await adapter.serverEnrich(link, { extractVenue: needsVenue })
 
@@ -379,7 +393,7 @@ export async function getEventsNeedingEnrichment(
 ): Promise<EventEnrichmentInput[]> {
   let query = client
     .from('events')
-    .select('id, name, link, source, categories, venue_id')
+    .select('id, name, link, source, categories, venue_id, description_es, description_en')
     .eq('enrichment_status', 'pending')
     .not('link', 'is', null)
     .order('starts_at', { ascending: true })

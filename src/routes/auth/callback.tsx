@@ -43,7 +43,7 @@ function AuthCallbackPage() {
         setStatus('Verifying authentication...')
 
         // Call server function to exchange code/token for session (sets cookies)
-        const result = await exchangeCodeAction({
+        await exchangeCodeAction({
           data: {
             code: code || undefined,
             tokenHash: tokenHash || undefined,
@@ -54,9 +54,9 @@ function AuthCallbackPage() {
         track('auth:login_completed', { method: 'magic_link' })
         // Invalidate session cache so sidebar updates
         await queryClient.invalidateQueries({ queryKey: ['session'] })
-        // Navigate based on user role
+        // Navigate to home
         setStatus('Redirecting...')
-        navigate({ to: result.isAdmin ? '/admin' : '/' })
+        navigate({ to: '/' })
       } catch (err) {
         console.error('Auth callback error:', err)
         const errorMessage = err instanceof Error ? err.message : 'Authentication failed'

@@ -26,6 +26,57 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Remove All Admin UI (Agent-Only Operation)
+
+**Date:** 2026-08-10
+
+**Decision:** Removed the entire admin UI — events admin, venues admin, scraping dashboard, venue review queue, blocklist admin, and the `/admin` route shell — plus every admin-only server function and hook that backed them. The site is operated exclusively through agents (automated Trigger.dev pipeline + agent scripts), so the admin screens and their server actions are dead weight.
+
+**Problem:** After the import wizard removal (see below), the remaining admin surface (~55 files) served no operator: events/venues CRUD tables, bulk actions, enrichment buttons, scrape monitoring, venue review, and blocklist management all duplicated capabilities agents exercise directly against the database (service-role client), the shared core pipeline, and Trigger.dev jobs.
+
+**Removed:**
+- Routes: `/admin`, `/admin/events*`, `/admin/venues*`, `/admin/scraping*`, `/admin/blocklist*` (plus the admin nav in `MainLayout`; login/auth-callback redirect to `/` instead of `/admin`)
+- Hooks: events bulk/single-action/mark-past/mutations/paginated hooks, the 5 description-enrichment hooks + strategy map, venues review/enrichment/mutations/bulk hooks, `useTriggerEnrichment`, `useBlocklistMutations`
+- API: `events/api/crud.ts` admin actions (rewritten to the 2 public actions: `getTrendingEventsAction`, `getEventWithVenueAction`), `events/api/{enrichment,moderation,stats,queries,streaming-types}.ts`, `venues/api/{crud,review,enrichment}.ts` (whole venues feature — chat venue tools use `shared/lib/db/client` directly), `import/api/scrape-runs.ts`, `import/api/blocklist.ts`, the per-source enrichment actions in `import/api/{passline,eventbrite,ba-tourism,meetup,luma}.ts` (admin-button-only), `import/api/trigger-enrichment.ts`, the three feature barrels' dead exports (`features/import/index.ts` deleted entirely, `features/venues/index.ts` deleted, `features/events/index.ts` reduced to the 2 public actions), `shared/ui/data-table/` (admin-only), `shared/ui/EmptyState.tsx`, `shared/lib/admin-utils.ts`
+- Kept: `import/core/venue-review.ts` (NEW — approve/reject/merge logic moved from the deleted review UI so agents can still settle the queue), the entire automated pipeline (`core/*.ts`, `scrapers/*`, enrichment adapters, Trigger.dev jobs), `getBlocklistEntries` (pipeline), and all public routes/chat.
+
+**Rationale:** Agents are the only operator and already use the same data paths the admin UI wrapped (DB, core pipeline, trigger jobs). Removing the UI eliminates ~55 files and their server functions without losing any capability.
+
+**Verification:** `bunx tsc --noEmit` clean; route tree regenerated with zero admin routes; public site serves (`/` 200, `/login` 200, `/saved` auth-guarded, `/event/$id` works); the daily Trigger.dev pipeline is untouched.
+
+**Related Decision:** "Remove the Admin Import Wizard" (2026-08-10).
+
+---
+
+### Remove the Admin Import Wizard
+
+**Date:** 2026-08-10
+
+**Decision:** Removed the manual admin import wizard — the `/admin/events/import` 7-step UI (Source → Configure → Venues → Select → Confirm → Enrich → Summary), CSV import, and the per-source fetch/import/process server actions and SourceAdapters that backed it.
+
+**Problem:** The wizard was a parallel manual path to the automated Trigger.dev daily scrape. The site has a single operator who drives imports through agents (the daily jobs), so the wizard's ~15 UI/hook files and per-source server actions were dead weight — and they duplicated thinner versions of pipeline logic (venue matching, dedupe, embeddings, enrichment) that `core/*.ts` already owns.
+
+**Removed:**
+- `routes/admin/events/import.tsx` + `-components/import/*` (8 step components)
+- `hooks/useImport*.ts` (wizard + sub-hooks), `useAutoEnrichment.ts`, `hooks/helpers/`
+- `adapters/*-adapter.ts` (per-source SourceAdapters) + the SourceAdapter registry in `adapters/index.ts`
+- The `fetch*`/`import*`/`process*` server actions and `*PreviewEvent` types in `api/{passline,eventbrite,ba-tourism,meetup,luma}.ts`
+- `shared/ui/data-table/columns/import-columns.tsx` and `lib/source-metadata.ts`
+- The "Import" button link on the events admin page
+
+**Kept (shared with the live pipeline / admin buttons):**
+- `core/*.ts`, `scrapers/*`, and all Trigger.dev jobs (the daily scrape)
+- The enrichment adapters (`adapters/enrichment/*`), consumed by the daily enrichment job via `getEnrichmentAdapter`/`hasServerEnrichment` — their client-side `extractDescriptions`/`extractVenues`/`getEnrichmentUrl` (wizard-only) were removed
+- The `enrich*VenuesAction` (used by the venues admin `useVenueEnrichment`) and `enrichLumaDescriptionsAction` (events admin "Add Descriptions")
+
+**Rationale:** Agents are the only operator; the automated pipeline supersedes the manual wizard and reuses the same source data. Removing it eliminates a large surface of duplicated, aging logic without touching the pipeline or the still-used admin enrichment buttons.
+
+**Verification:** `bunx tsc --noEmit` clean; route tree regenerated (import route removed); dev server serves the admin pages normally.
+
+**Related Decision:** "Venti as a Sixth Automated Scrape Source" (2026-08-10), "Generic Translate-Only Enrichment" (2026-08-10).
+
+---
+
 ### Passline Automated Scraping via Browserbase
 
 **Date:** 2026-08-10
@@ -46,6 +97,63 @@ When adding a new decision, use this format:
 - Continuing manual-only Passline import: Rejected — misses events between admin runs and breaks the single automated pipeline.
 
 **Related Decision:** Supersedes "Passline Trigger.dev Playwright Attempt (Failed)" (2026-01-25) and "Disable Scheduled Passline Scraper" (2026-01-11).
+
+---
+
+### Venti as a Sixth Automated Scrape Source (Niche Bar/Club Events)
+
+**Date:** 2026-08-10
+
+**Decision:** Added Venti as an automated scrape source via its public API (`api.venti.live`), wired into the daily Trigger.dev orchestrator alongside the other 5 sources.
+
+**Problem:** The bar/club/fiesta nightlife scene — "Bresh", "Niceto Club", "BlackCream", electronic music parties — was under-represented. Existing sources (Passline, Eventbrite, Meetup, Luma, BA Tourism) skew toward structured ticketed, cultural, and community events. Venti is the dominant ticketing platform for this niche scene in Argentina, and had no importer.
+
+**Investigation:** Browser DevTools inspection of `venti.live` revealed the SPA calls `api.venti.live`. Verified via plain server-side GETs (no auth, no browser, datacenter IP):
+- `GET /api/event/search?limit=200&page=N` — full catalog with **Spanish descriptions**, `category`, `startDate`/`endDate`, and venue (name, address, lat/lng, Google Place ID). 314 events total, 179 in CABA (`venue.cityId === 1`). CORS is open (`access-control-allow-origin: *`); no bot protection observed.
+- `GET /api/event/urlName/<slug>/ticketType/availability` — `minTicketPrice` (ARS) + free flag, per event.
+- `GET /api/event/detail/urlName/<slug>` — Producer/org name (e.g. "Niceto"), artists.
+
+**Solution:**
+1. `scrapers/venti/` (types, api, transformer) — catalog fetch with pagination, CABA filter, availability batch fetch.
+2. `core/venti.ts` — full pipeline: fetch → CABA + blocklist → availability → venue settle → dedupe → transform → categorize → embed → upsert.
+3. `trigger/jobs/scrape-venti.ts` + registration in `daily-scrape.ts` (SOURCE_JOBS + trigger call).
+4. Native category mapping (`party→social`, `concert→music`, `festival→festival`, `gastronomy→food`) — the AI categorizer runs only for events with unknown categories (10 of 178 on first run).
+5. Enrichment strategy `none` — descriptions arrive natively in the catalog, so no Jina/LLM extraction phase is needed.
+
+**Alternatives Considered:**
+- quehacemos.com.ar as an aggregator source: Rejected as the primary — it aggregates Venti (its API even labels events `source: "venti"`) but adds a parsing layer and JS-hydrated pages; Venti direct is the source of truth.
+- Instagram scraping: Rejected — no public API for third-party orgs, auth walls, ToS risk.
+- Direct venue-site crawling: Rejected — BA bar/club sites rarely expose structured feeds (probed Niceto, Konex, Matienzo, La Tangente, Bresh — none publish iCal).
+
+**Rationale:** Venti is the direct source of the target niche, and it is the cheapest scrape in the pipeline: 2 requests cover the full catalog, descriptions and venue coordinates come free in the listing (best venue input of any source — coordinates + Google Place ID feed `venue-settlement.ts`), and it needs no browser, proxy, or per-event detail fetches.
+
+**Consequences:**
+- Field coverage verified across the 178 CABA events: 100% for name, dates, venue, categories, price flag, image, links, external_id, embedding; 93% price; **78% (138/178) have `description_es`** — the remaining 40 have no description in Venti's own API (a source data limitation, not a scrape gap).
+- Prices are raw ARS with no conversion.
+- The public consumer API could gain auth/bot protection later; Browserbase (Passline path) is the contingency.
+
+### Generic Translate-Only Enrichment (es → en for native-description sources)
+
+**Date:** 2026-08-10
+
+**Decision:** Added a generic translate-only fast path to the shared event enrichment pipeline (`src/features/import/core/event-enrichment.ts`): when an event already has `description_es` but no `description_en`, enrichment now translates `es → en` directly instead of re-scraping the source page via Jina Reader.
+
+**Problem:** Every source that ships descriptions natively (BA Tourism, Eventbrite, and now Venti) inserts `description_en: null` and relied on the post-import enrichment phase to produce English by re-fetching the source page (Jina Reader + LLM extraction). This is redundant for events that already have a Spanish description, and it fails on JavaScript-heavy SPAs (e.g. Venti) that Jina cannot parse. The result was that English descriptions for these sources depended on a fragile re-scrape.
+
+**Solution:**
+1. `getEventsNeedingEnrichment` now selects `description_es` / `description_en` alongside the other fields.
+2. `EventEnrichmentInput` gained `description_es` / `description_en`.
+3. `enrichSingleEvent` takes a fast path when `description_es` is present and `description_en` is not: it calls `translateText(es, 'es-to-en')` and skips the Jina fetch entirely (venue extraction is skipped too — venues are settled at import for these sources).
+
+**Rationale:** The "Spanish description without English" state is shared across all native-description sources, so the fix belongs in the shared enrichment pipeline, not at the source level. Translating an existing description is cheaper, faster, and more reliable than re-scraping the page, and it produces the same end state (bilingual descriptions + regenerated embedding + presentation fields, `enrichment_status: 'completed'`).
+
+**Verification:** Ran the enrichment over Venti events — 135/135 translated (0 failed), plus 3 in a smoke test; all 138 Venti events with `description_es` now have `description_en`. New events are handled by the daily `enrich-events` job.
+
+**Related Decision:** "Venti as a Sixth Automated Scrape Source (Niche Bar/Club Events)" (2026-08-10).
+
+**Verification:** Local run inserted 178 events (verified in DB). Deployed version `20260810.17` (10 tasks); a prod run triggered via the dashboard executed the full pipeline and updated 178/178 events (dedupe → update path) in the DB.
+
+**Related Decision:** none.
 
 ---
 

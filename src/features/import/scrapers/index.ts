@@ -25,5 +25,9 @@ export { meetup }
 import * as luma from './luma'
 export { luma }
 
+// Venti scraper - namespaced export
+import * as venti from './venti'
+export { venti }
+
 // Shared utilities
 export { matchVenue, matchVenues, type VenueMatchResult } from './venue-matcher'

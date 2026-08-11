@@ -12,11 +12,6 @@ import {
   User,
   ChevronLeft,
   ChevronRight,
-  LayoutDashboard,
-  Calendar,
-  MapPin,
-  Ban,
-  Bot,
   MessageCircle,
 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
@@ -48,7 +43,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { user, profile, isAdmin } = useAuthContext()
+  const { user, profile } = useAuthContext()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
@@ -101,22 +96,12 @@ export function MainLayout({ children }: MainLayoutProps) {
     { label: 'Feedback', icon: MessageCircle, action: handleFeedback },
   ]
 
-  const adminNavItems: NavItem[] = [
-    { to: '/admin', label: m.nav_dashboard(), icon: LayoutDashboard, adminOnly: true, exact: true },
-    { to: '/admin/events', label: m.nav_events(), icon: Calendar, adminOnly: true },
-    { to: '/admin/venues', label: m.nav_venues(), icon: MapPin, adminOnly: true },
-    { to: '/admin/blocklist', label: m.nav_blocklist(), icon: Ban, adminOnly: true },
-    { to: '/admin/scraping', label: m.nav_scraping(), icon: Bot, adminOnly: true },
-  ]
-
   const filterNavItems = (items: NavItem[]) => items.filter((item) => {
-    if (item.adminOnly && !isAdmin) return false
     if (item.requiresAuth && !user) return false
     return true
   })
 
   const filteredMainNavItems = filterNavItems(mainNavItems)
-  const filteredAdminNavItems = filterNavItems(adminNavItems)
 
   const NavItemComponent = ({ item, showLabel }: { item: NavItem; showLabel: boolean }) => {
     const Icon = item.icon
@@ -259,38 +244,6 @@ export function MainLayout({ children }: MainLayoutProps) {
 
           {/* Spacer */}
           <div className="flex-1" />
-
-          {/* Admin section */}
-          {filteredAdminNavItems.length > 0 && (
-            <div className="flex flex-col gap-1 pt-3 mt-3 border-t border-border/50">
-              {/* Admin section label */}
-              <div className={`px-3 py-1 transition-all duration-300 ${collapsed && !mobileMenuOpen ? 'opacity-0 h-0' : 'opacity-100'}`}>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{m.nav_admin()}</span>
-              </div>
-              {filteredAdminNavItems.map((item) => {
-                const showLabel = !collapsed || mobileMenuOpen
-
-                if (collapsed && !mobileMenuOpen) {
-                  return (
-                    <Tooltip key={item.label} delayDuration={0}>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <NavItemComponent item={item} showLabel={false} />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="font-medium">
-                        {item.label}
-                      </TooltipContent>
-                    </Tooltip>
-                  )
-                }
-
-                return (
-                  <NavItemComponent key={item.label} item={item} showLabel={showLabel} />
-                )
-              })}
-            </div>
-          )}
         </nav>
 
         {/* Language switcher */}

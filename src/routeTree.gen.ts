@@ -13,27 +13,12 @@ import { Route as SavedRouteImport } from './routes/saved'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as EventIdRouteImport } from './routes/event/$id'
 import { Route as ChatConversationIdRouteImport } from './routes/chat_.$conversationId'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as ApiEventsRouteImport } from './routes/api/events'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
-import { Route as AdminVenuesIndexRouteImport } from './routes/admin/venues/index'
-import { Route as AdminScrapingIndexRouteImport } from './routes/admin/scraping/index'
-import { Route as AdminEventsIndexRouteImport } from './routes/admin/events/index'
-import { Route as AdminBlocklistIndexRouteImport } from './routes/admin/blocklist/index'
-import { Route as AdminVenuesNewRouteImport } from './routes/admin/venues/new'
-import { Route as AdminVenuesImportRouteImport } from './routes/admin/venues/import'
-import { Route as AdminVenuesIdRouteImport } from './routes/admin/venues/$id'
-import { Route as AdminScrapingVenuesReviewRouteImport } from './routes/admin/scraping/venues-review'
-import { Route as AdminEventsNewRouteImport } from './routes/admin/events/new'
-import { Route as AdminEventsImportRouteImport } from './routes/admin/events/import'
-import { Route as AdminEventsIdRouteImport } from './routes/admin/events/$id'
-import { Route as AdminBlocklistNewRouteImport } from './routes/admin/blocklist/new'
-import { Route as AdminBlocklistIdRouteImport } from './routes/admin/blocklist/$id'
 
 const SavedRoute = SavedRouteImport.update({
   id: '/saved',
@@ -55,20 +40,10 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AdminRoute,
 } as any)
 const EventIdRoute = EventIdRouteImport.update({
   id: '/event/$id',
@@ -95,80 +70,9 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminVenuesIndexRoute = AdminVenuesIndexRouteImport.update({
-  id: '/venues/',
-  path: '/venues/',
-  getParentRoute: () => AdminRoute,
-} as any).lazy(() =>
-  import('./routes/admin/venues/index.lazy').then((d) => d.Route),
-)
-const AdminScrapingIndexRoute = AdminScrapingIndexRouteImport.update({
-  id: '/scraping/',
-  path: '/scraping/',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminEventsIndexRoute = AdminEventsIndexRouteImport.update({
-  id: '/events/',
-  path: '/events/',
-  getParentRoute: () => AdminRoute,
-} as any).lazy(() =>
-  import('./routes/admin/events/index.lazy').then((d) => d.Route),
-)
-const AdminBlocklistIndexRoute = AdminBlocklistIndexRouteImport.update({
-  id: '/blocklist/',
-  path: '/blocklist/',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminVenuesNewRoute = AdminVenuesNewRouteImport.update({
-  id: '/venues/new',
-  path: '/venues/new',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminVenuesImportRoute = AdminVenuesImportRouteImport.update({
-  id: '/venues/import',
-  path: '/venues/import',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminVenuesIdRoute = AdminVenuesIdRouteImport.update({
-  id: '/venues/$id',
-  path: '/venues/$id',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminScrapingVenuesReviewRoute =
-  AdminScrapingVenuesReviewRouteImport.update({
-    id: '/scraping/venues-review',
-    path: '/scraping/venues-review',
-    getParentRoute: () => AdminRoute,
-  } as any)
-const AdminEventsNewRoute = AdminEventsNewRouteImport.update({
-  id: '/events/new',
-  path: '/events/new',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminEventsImportRoute = AdminEventsImportRouteImport.update({
-  id: '/events/import',
-  path: '/events/import',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminEventsIdRoute = AdminEventsIdRouteImport.update({
-  id: '/events/$id',
-  path: '/events/$id',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminBlocklistNewRoute = AdminBlocklistNewRouteImport.update({
-  id: '/blocklist/new',
-  path: '/blocklist/new',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminBlocklistIdRoute = AdminBlocklistIdRouteImport.update({
-  id: '/blocklist/$id',
-  path: '/blocklist/$id',
-  getParentRoute: () => AdminRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
@@ -178,20 +82,6 @@ export interface FileRoutesByFullPath {
   '/auth/callback': typeof AuthCallbackRoute
   '/chat/$conversationId': typeof ChatConversationIdRoute
   '/event/$id': typeof EventIdRoute
-  '/admin/': typeof AdminIndexRoute
-  '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
-  '/admin/blocklist/new': typeof AdminBlocklistNewRoute
-  '/admin/events/$id': typeof AdminEventsIdRoute
-  '/admin/events/import': typeof AdminEventsImportRoute
-  '/admin/events/new': typeof AdminEventsNewRoute
-  '/admin/scraping/venues-review': typeof AdminScrapingVenuesReviewRoute
-  '/admin/venues/$id': typeof AdminVenuesIdRoute
-  '/admin/venues/import': typeof AdminVenuesImportRoute
-  '/admin/venues/new': typeof AdminVenuesNewRoute
-  '/admin/blocklist': typeof AdminBlocklistIndexRoute
-  '/admin/events': typeof AdminEventsIndexRoute
-  '/admin/scraping': typeof AdminScrapingIndexRoute
-  '/admin/venues': typeof AdminVenuesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -204,25 +94,10 @@ export interface FileRoutesByTo {
   '/auth/callback': typeof AuthCallbackRoute
   '/chat/$conversationId': typeof ChatConversationIdRoute
   '/event/$id': typeof EventIdRoute
-  '/admin': typeof AdminIndexRoute
-  '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
-  '/admin/blocklist/new': typeof AdminBlocklistNewRoute
-  '/admin/events/$id': typeof AdminEventsIdRoute
-  '/admin/events/import': typeof AdminEventsImportRoute
-  '/admin/events/new': typeof AdminEventsNewRoute
-  '/admin/scraping/venues-review': typeof AdminScrapingVenuesReviewRoute
-  '/admin/venues/$id': typeof AdminVenuesIdRoute
-  '/admin/venues/import': typeof AdminVenuesImportRoute
-  '/admin/venues/new': typeof AdminVenuesNewRoute
-  '/admin/blocklist': typeof AdminBlocklistIndexRoute
-  '/admin/events': typeof AdminEventsIndexRoute
-  '/admin/scraping': typeof AdminScrapingIndexRoute
-  '/admin/venues': typeof AdminVenuesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
@@ -232,26 +107,11 @@ export interface FileRoutesById {
   '/auth/callback': typeof AuthCallbackRoute
   '/chat_/$conversationId': typeof ChatConversationIdRoute
   '/event/$id': typeof EventIdRoute
-  '/admin/': typeof AdminIndexRoute
-  '/admin/blocklist/$id': typeof AdminBlocklistIdRoute
-  '/admin/blocklist/new': typeof AdminBlocklistNewRoute
-  '/admin/events/$id': typeof AdminEventsIdRoute
-  '/admin/events/import': typeof AdminEventsImportRoute
-  '/admin/events/new': typeof AdminEventsNewRoute
-  '/admin/scraping/venues-review': typeof AdminScrapingVenuesReviewRoute
-  '/admin/venues/$id': typeof AdminVenuesIdRoute
-  '/admin/venues/import': typeof AdminVenuesImportRoute
-  '/admin/venues/new': typeof AdminVenuesNewRoute
-  '/admin/blocklist/': typeof AdminBlocklistIndexRoute
-  '/admin/events/': typeof AdminEventsIndexRoute
-  '/admin/scraping/': typeof AdminScrapingIndexRoute
-  '/admin/venues/': typeof AdminVenuesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/admin'
     | '/login'
     | '/profile'
     | '/register'
@@ -261,20 +121,6 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/chat/$conversationId'
     | '/event/$id'
-    | '/admin/'
-    | '/admin/blocklist/$id'
-    | '/admin/blocklist/new'
-    | '/admin/events/$id'
-    | '/admin/events/import'
-    | '/admin/events/new'
-    | '/admin/scraping/venues-review'
-    | '/admin/venues/$id'
-    | '/admin/venues/import'
-    | '/admin/venues/new'
-    | '/admin/blocklist'
-    | '/admin/events'
-    | '/admin/scraping'
-    | '/admin/venues'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -287,24 +133,9 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/chat/$conversationId'
     | '/event/$id'
-    | '/admin'
-    | '/admin/blocklist/$id'
-    | '/admin/blocklist/new'
-    | '/admin/events/$id'
-    | '/admin/events/import'
-    | '/admin/events/new'
-    | '/admin/scraping/venues-review'
-    | '/admin/venues/$id'
-    | '/admin/venues/import'
-    | '/admin/venues/new'
-    | '/admin/blocklist'
-    | '/admin/events'
-    | '/admin/scraping'
-    | '/admin/venues'
   id:
     | '__root__'
     | '/'
-    | '/admin'
     | '/login'
     | '/profile'
     | '/register'
@@ -314,25 +145,10 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/chat_/$conversationId'
     | '/event/$id'
-    | '/admin/'
-    | '/admin/blocklist/$id'
-    | '/admin/blocklist/new'
-    | '/admin/events/$id'
-    | '/admin/events/import'
-    | '/admin/events/new'
-    | '/admin/scraping/venues-review'
-    | '/admin/venues/$id'
-    | '/admin/venues/import'
-    | '/admin/venues/new'
-    | '/admin/blocklist/'
-    | '/admin/events/'
-    | '/admin/scraping/'
-    | '/admin/venues/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
   RegisterRoute: typeof RegisterRoute
@@ -374,26 +190,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/admin/': {
-      id: '/admin/'
-      path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof AdminRoute
     }
     '/event/$id': {
       id: '/event/$id'
@@ -430,139 +232,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/venues/': {
-      id: '/admin/venues/'
-      path: '/venues'
-      fullPath: '/admin/venues'
-      preLoaderRoute: typeof AdminVenuesIndexRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/scraping/': {
-      id: '/admin/scraping/'
-      path: '/scraping'
-      fullPath: '/admin/scraping'
-      preLoaderRoute: typeof AdminScrapingIndexRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/events/': {
-      id: '/admin/events/'
-      path: '/events'
-      fullPath: '/admin/events'
-      preLoaderRoute: typeof AdminEventsIndexRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/blocklist/': {
-      id: '/admin/blocklist/'
-      path: '/blocklist'
-      fullPath: '/admin/blocklist'
-      preLoaderRoute: typeof AdminBlocklistIndexRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/venues/new': {
-      id: '/admin/venues/new'
-      path: '/venues/new'
-      fullPath: '/admin/venues/new'
-      preLoaderRoute: typeof AdminVenuesNewRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/venues/import': {
-      id: '/admin/venues/import'
-      path: '/venues/import'
-      fullPath: '/admin/venues/import'
-      preLoaderRoute: typeof AdminVenuesImportRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/venues/$id': {
-      id: '/admin/venues/$id'
-      path: '/venues/$id'
-      fullPath: '/admin/venues/$id'
-      preLoaderRoute: typeof AdminVenuesIdRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/scraping/venues-review': {
-      id: '/admin/scraping/venues-review'
-      path: '/scraping/venues-review'
-      fullPath: '/admin/scraping/venues-review'
-      preLoaderRoute: typeof AdminScrapingVenuesReviewRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/events/new': {
-      id: '/admin/events/new'
-      path: '/events/new'
-      fullPath: '/admin/events/new'
-      preLoaderRoute: typeof AdminEventsNewRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/events/import': {
-      id: '/admin/events/import'
-      path: '/events/import'
-      fullPath: '/admin/events/import'
-      preLoaderRoute: typeof AdminEventsImportRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/events/$id': {
-      id: '/admin/events/$id'
-      path: '/events/$id'
-      fullPath: '/admin/events/$id'
-      preLoaderRoute: typeof AdminEventsIdRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/blocklist/new': {
-      id: '/admin/blocklist/new'
-      path: '/blocklist/new'
-      fullPath: '/admin/blocklist/new'
-      preLoaderRoute: typeof AdminBlocklistNewRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/blocklist/$id': {
-      id: '/admin/blocklist/$id'
-      path: '/blocklist/$id'
-      fullPath: '/admin/blocklist/$id'
-      preLoaderRoute: typeof AdminBlocklistIdRouteImport
-      parentRoute: typeof AdminRoute
-    }
   }
 }
 
-interface AdminRouteChildren {
-  AdminIndexRoute: typeof AdminIndexRoute
-  AdminBlocklistIdRoute: typeof AdminBlocklistIdRoute
-  AdminBlocklistNewRoute: typeof AdminBlocklistNewRoute
-  AdminEventsIdRoute: typeof AdminEventsIdRoute
-  AdminEventsImportRoute: typeof AdminEventsImportRoute
-  AdminEventsNewRoute: typeof AdminEventsNewRoute
-  AdminScrapingVenuesReviewRoute: typeof AdminScrapingVenuesReviewRoute
-  AdminVenuesIdRoute: typeof AdminVenuesIdRoute
-  AdminVenuesImportRoute: typeof AdminVenuesImportRoute
-  AdminVenuesNewRoute: typeof AdminVenuesNewRoute
-  AdminBlocklistIndexRoute: typeof AdminBlocklistIndexRoute
-  AdminEventsIndexRoute: typeof AdminEventsIndexRoute
-  AdminScrapingIndexRoute: typeof AdminScrapingIndexRoute
-  AdminVenuesIndexRoute: typeof AdminVenuesIndexRoute
-}
-
-const AdminRouteChildren: AdminRouteChildren = {
-  AdminIndexRoute: AdminIndexRoute,
-  AdminBlocklistIdRoute: AdminBlocklistIdRoute,
-  AdminBlocklistNewRoute: AdminBlocklistNewRoute,
-  AdminEventsIdRoute: AdminEventsIdRoute,
-  AdminEventsImportRoute: AdminEventsImportRoute,
-  AdminEventsNewRoute: AdminEventsNewRoute,
-  AdminScrapingVenuesReviewRoute: AdminScrapingVenuesReviewRoute,
-  AdminVenuesIdRoute: AdminVenuesIdRoute,
-  AdminVenuesImportRoute: AdminVenuesImportRoute,
-  AdminVenuesNewRoute: AdminVenuesNewRoute,
-  AdminBlocklistIndexRoute: AdminBlocklistIndexRoute,
-  AdminEventsIndexRoute: AdminEventsIndexRoute,
-  AdminScrapingIndexRoute: AdminScrapingIndexRoute,
-  AdminVenuesIndexRoute: AdminVenuesIndexRoute,
-}
-
-const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   RegisterRoute: RegisterRoute,

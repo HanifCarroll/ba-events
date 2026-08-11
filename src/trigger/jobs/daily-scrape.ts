@@ -2,7 +2,7 @@
  * Daily Scrape Orchestrator
  *
  * Runs daily at 6 AM Buenos Aires time.
- * Coordinates scraping of all 5 event sources and triggers enrichment.
+ * Coordinates scraping of all 6 event sources and triggers enrichment.
  */
 import { schedules, tasks, runs } from '@trigger.dev/sdk/v3'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -14,6 +14,7 @@ import type { scrapeBATourism } from './scrape-ba-tourism'
 import type { scrapeMeetup } from './scrape-meetup'
 import type { scrapeLuma } from './scrape-luma'
 import type { scrapePassline } from './scrape-passline'
+import type { scrapeVenti } from './scrape-venti'
 import type { enrichEventsJob } from './enrich-events'
 
 // Source job IDs
@@ -23,6 +24,7 @@ const SOURCE_JOBS = [
   { id: 'scrape-meetup', name: 'Meetup' },
   { id: 'scrape-luma', name: 'Luma' },
   { id: 'scrape-passline', name: 'Passline' },
+  { id: 'scrape-venti', name: 'Venti' },
 ] as const
 
 function getUnknownMessage(value: unknown): string | null {
@@ -212,6 +214,9 @@ export const dailyScrape = schedules.task({
       }),
       tasks.trigger<typeof scrapePassline>('scrape-passline', {
         daysAhead: 30,
+        scrapeRunId,
+      }),
+      tasks.trigger<typeof scrapeVenti>('scrape-venti', {
         scrapeRunId,
       }),
     ])

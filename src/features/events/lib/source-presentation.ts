@@ -9,6 +9,7 @@ const SOURCE_LABELS: Record<string, string> = {
   'ba-tourism': 'BA Tourism',
   meetup: 'Meetup',
   luma: 'Luma',
+  venti: 'Venti',
 }
 
 export function getSourceLabel(source: string | null | undefined): string | null {

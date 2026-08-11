@@ -21,11 +21,10 @@ import type {
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
 } from '../enrichment-types'
-import type { EventbritePreviewEvent } from '@/features/import'
 import { enrichEventFull } from '@/shared/lib/ai/enrichment'
 import { extractEventbriteVenueInfo } from '../../scrapers/eventbrite/enrichment'
 
-export const eventbriteEnrichmentAdapter: EnrichmentAdapter<EventbritePreviewEvent> = {
+export const eventbriteEnrichmentAdapter: EnrichmentAdapter = {
   source: 'eventbrite',
 
   capabilities: {
@@ -81,14 +80,5 @@ export const eventbriteEnrichmentAdapter: EnrichmentAdapter<EventbritePreviewEve
       console.error('[Eventbrite Enrichment] Error:', error)
       return null
     }
-  },
-
-  /**
-   * Get enrichment URL from an Eventbrite preview event
-   * Uses eventbrite.url which is the event page URL
-   */
-  getEnrichmentUrl: (event) => {
-    // EventbriteEvent has url, transformed has link
-    return event.eventbrite.url ?? event.transformed.link ?? null
   },
 }

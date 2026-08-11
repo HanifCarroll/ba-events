@@ -12,13 +12,12 @@
  */
 
 import type { EnrichmentAdapter, DescriptionExtractionResult, VenueExtractionResult } from '../enrichment-types'
-import type { PasslinePreviewEvent } from '@/features/import'
 import {
   extractPasslineEventsBatchClient,
   type PasslineEnrichmentResult,
 } from '../../scrapers/passline/client-enrichment'
 
-export const passlineEnrichmentAdapter: EnrichmentAdapter<PasslinePreviewEvent> = {
+export const passlineEnrichmentAdapter: EnrichmentAdapter = {
   source: 'passline',
 
   capabilities: {
@@ -74,12 +73,5 @@ export const passlineEnrichmentAdapter: EnrichmentAdapter<PasslinePreviewEvent> 
         : null,
       error: r.error,
     }))
-  },
-
-  /**
-   * Get enrichment URL from a Passline preview event
-   */
-  getEnrichmentUrl: (event) => {
-    return event.transformed?.link ?? null
   },
 }

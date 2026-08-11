@@ -18,10 +18,9 @@ import type {
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
 } from '../enrichment-types'
-import type { BATourismPreviewEvent } from '@/features/import'
 import { enrichEventFull } from '@/shared/lib/ai/enrichment'
 
-export const baTourismEnrichmentAdapter: EnrichmentAdapter<BATourismPreviewEvent> = {
+export const baTourismEnrichmentAdapter: EnrichmentAdapter = {
   source: 'ba-tourism',
 
   capabilities: {
@@ -65,14 +64,5 @@ export const baTourismEnrichmentAdapter: EnrichmentAdapter<BATourismPreviewEvent
       console.error('[BA Tourism Enrichment] Error:', error)
       return null
     }
-  },
-
-  /**
-   * Get enrichment URL from a BA Tourism preview event
-   * Uses baTourism.moreInfoUrl which is the event detail page
-   */
-  getEnrichmentUrl: (event) => {
-    // BATourismEvent has moreInfoUrl, transformed has link
-    return event.baTourism.moreInfoUrl ?? event.transformed[0]?.link ?? null
   },
 }
