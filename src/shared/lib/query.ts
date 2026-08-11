@@ -1,5 +1,4 @@
 import { QueryClient } from '@tanstack/react-query'
-import type { EventListParams, EventFilterParams } from '@/shared/lib/types/pagination'
 
 // Create a singleton QueryClient instance
 export const queryClient = new QueryClient({
@@ -21,53 +20,13 @@ export const queryKeys = {
   // Events
   events: {
     all: ['events'] as const,
-    list: (filters?: { status?: string; venueId?: string }) =>
-      [...queryKeys.events.all, 'list', filters] as const,
-    // Admin events list (lightweight, client-side filtered)
-    adminList: () => [...queryKeys.events.all, 'adminList'] as const,
-    adminPastList: () => [...queryKeys.events.all, 'adminPastList'] as const,
-    // Paginated list with all filter params
-    listPaginated: (params: EventListParams) =>
-      [...queryKeys.events.all, 'listPaginated', params] as const,
-    // Tab counts (needs_attention, pending_review, etc.)
-    tabCounts: (filters: Omit<EventFilterParams, 'tab'>) =>
-      [...queryKeys.events.all, 'tabCounts', filters] as const,
     // Upcoming events for the chat home "Happening soon" row
     trending: () => [...queryKeys.events.all, 'trending'] as const,
-    detail: (id: string) => [...queryKeys.events.all, 'detail', id] as const,
-  },
-
-  // Venues
-  venues: {
-    all: ['venues'] as const,
-    list: () => [...queryKeys.venues.all, 'list'] as const,
-    select: () => [...queryKeys.venues.all, 'select'] as const,
-    detail: (id: string) => [...queryKeys.venues.all, 'detail', id] as const,
-  },
-
-  // Categories
-  categories: {
-    all: ['categories'] as const,
-    list: () => [...queryKeys.categories.all, 'list'] as const,
   },
 
   // Profile
   profile: {
     all: ['profile'] as const,
-    current: () => [...queryKeys.profile.all, 'current'] as const,
-  },
-
-  // Saved events
-  saved: {
-    all: ['saved'] as const,
-    list: () => [...queryKeys.saved.all, 'list'] as const,
-  },
-
-  // Import blocklist
-  blocklist: {
-    all: ['blocklist'] as const,
-    list: () => [...queryKeys.blocklist.all, 'list'] as const,
-    detail: (id: string) => [...queryKeys.blocklist.all, 'detail', id] as const,
   },
 
   // Conversations (chat history)

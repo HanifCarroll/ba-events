@@ -3,7 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { supabase } from './client'
+import { getSupabase } from './client'
 import type {
   ImportBlocklistEntry,
   ImportBlocklistEntryInsert,
@@ -16,7 +16,7 @@ import type {
  * When filtering by source, includes entries with source='all'
  */
 export async function getBlocklistEntries(source?: BlocklistSource) {
-  let query = supabase
+  let query = getSupabase()
     .from('import_blocklist')
     .select('*')
     .order('created_at', { ascending: false })
@@ -36,7 +36,7 @@ export async function getBlocklistEntries(source?: BlocklistSource) {
  * Get a single blocklist entry by ID
  */
 export async function getBlocklistEntryById(id: string) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('import_blocklist')
     .select('*')
     .eq('id', id)
@@ -53,7 +53,7 @@ export async function createBlocklistEntry(
   entry: ImportBlocklistEntryInsert,
   client?: SupabaseClient
 ) {
-  const db = client ?? supabase
+  const db = client ?? getSupabase()
   const { data, error } = await db
     .from('import_blocklist')
     .insert(entry)
@@ -72,7 +72,7 @@ export async function updateBlocklistEntry(
   updates: ImportBlocklistEntryUpdate,
   client?: SupabaseClient
 ) {
-  const db = client ?? supabase
+  const db = client ?? getSupabase()
   const { data, error } = await db
     .from('import_blocklist')
     .update(updates)
@@ -88,7 +88,7 @@ export async function updateBlocklistEntry(
  * Delete a blocklist entry
  */
 export async function deleteBlocklistEntry(id: string, client?: SupabaseClient) {
-  const db = client ?? supabase
+  const db = client ?? getSupabase()
   const { error } = await db.from('import_blocklist').delete().eq('id', id)
   if (error) throw error
 }
@@ -97,7 +97,7 @@ export async function deleteBlocklistEntry(id: string, client?: SupabaseClient) 
  * Bulk delete blocklist entries
  */
 export async function bulkDeleteBlocklistEntries(ids: string[], client?: SupabaseClient) {
-  const db = client ?? supabase
+  const db = client ?? getSupabase()
   const { error } = await db.from('import_blocklist').delete().in('id', ids)
   if (error) throw error
 }

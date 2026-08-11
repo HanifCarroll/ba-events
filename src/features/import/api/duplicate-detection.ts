@@ -9,7 +9,7 @@
  * to ensure visibility of all events (bypasses RLS).
  */
 
-import { supabase, type SupabaseClient } from '@/shared/lib/db/client'
+import { getSupabase, type SupabaseClient } from '@/shared/lib/db/client'
 import type { EventInsert } from '@/shared/lib/types'
 import type { ImportSource } from '../adapters/types'
 
@@ -68,7 +68,7 @@ export async function checkDuplicateEvents(
 ): Promise<Set<string>> {
   if (externalIds.length === 0) return new Set()
 
-  const db = client ?? supabase
+  const db = client ?? getSupabase()
   const { data: existingEvents } = await db
     .from('events')
     .select('external_id')
@@ -131,7 +131,7 @@ export async function checkDuplicateEventsWithData(
 ): Promise<Map<string, ExistingEventData>> {
   if (externalIds.length === 0) return new Map()
 
-  const db = client ?? supabase
+  const db = client ?? getSupabase()
   const { data: existingEvents } = await db
     .from('events')
     .select('id, external_id, name, starts_at, ends_at, venue_id, price, image_url, link')

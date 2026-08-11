@@ -1,6 +1,6 @@
 import { embed } from 'ai'
 import { createHash } from 'crypto'
-import { supabase } from '../db/client'
+import { getSupabase } from '../db/client'
 import type { Event, EventWithVenue } from '../types'
 import { embeddingModel } from './providers'
 
@@ -114,7 +114,7 @@ export async function generateEventEmbedding(
 
 // Update embedding for a single event
 export async function updateEventEmbedding(eventId: string): Promise<void> {
-  const { data: event, error } = await supabase
+  const { data: event, error } = await getSupabase()
     .from('events_with_venues')
     .select('*')
     .eq('id', eventId)
@@ -125,7 +125,7 @@ export async function updateEventEmbedding(eventId: string): Promise<void> {
   const text = buildEmbeddingText(event as EventWithVenue)
   const embedding = await generateEmbedding(text)
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await getSupabase()
     .from('events')
     .update({ embedding })
     .eq('id', eventId)

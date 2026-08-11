@@ -24,25 +24,11 @@ export type AuthEvent =
   | 'auth:login_failed'
   | 'auth:logout'
 
-// Admin events
-export type AdminEvent =
-  | 'admin:event_created'
-  | 'admin:event_updated'
-  | 'admin:event_deleted'
-  | 'admin:event_approved'
-  | 'admin:event_rejected'
-  | 'admin:venue_created'
-  | 'admin:venue_updated'
-  | 'admin:venue_deleted'
-  | 'admin:import_started'
-  | 'admin:import_completed'
-
 // Concierge/recommendation events
 export type ConciergeEvent =
   | 'concierge:recommendation_shown'
   | 'concierge:ticket_clicked'
   | 'concierge:refinement_clicked'
-  | 'concierge:context_prompt'
   | 'concierge:surprise_me'
 
 // Home screen events
@@ -57,7 +43,6 @@ export type AnalyticsEvent =
   | ChatEvent
   | EventEngagementEvent
   | AuthEvent
-  | AdminEvent
   | ConciergeEvent
   | HomeEvent
   | AgentToolEvent

@@ -42,7 +42,7 @@ This project uses **Vertical Slice Architecture** - code is organized by feature
 
 ### Key Principles
 
-1. **Features own their logic** - Each feature (`auth`, `chat`, `events`, `import`, `venues`) contains its own API functions, hooks, and types
+1. **Features own their logic** - Each feature (`auth`, `chat`, `events`, `import`) contains its own API functions, hooks, and types
 2. **Shared code is truly shared** - Only code used by multiple features goes in `shared/`
 3. **Routes are thin** - Route files handle routing logic only; UI components live in `-components/` folders
 4. **Direct imports only** - Import from specific files, not barrel `index.ts` files (improves tree-shaking)
@@ -52,13 +52,11 @@ This project uses **Vertical Slice Architecture** - code is organized by feature
 ```typescript
 // ✅ CORRECT - Direct file imports
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
-import { createEventAction } from '@/features/events/api/crud'
-import { DataTable } from '@/shared/ui/data-table/DataTable'
+import { getTrendingEventsAction } from '@/features/events/api/crud'
 import { Button } from '@/shared/ui/button'
 
 // ❌ WRONG - Barrel imports (hurts tree-shaking)
 import { useAuthContext, signOutAction } from '@/features/auth'
-import { DataTable, getEventColumns } from '@/shared/ui/data-table'
 ```
 
 ### Project Structure
@@ -73,36 +71,28 @@ src/
 │   │   │   └── rate-limit.ts    # Upstash Redis rate limiting
 │   │   └── hooks/               # React hooks
 │   ├── chat/                    # AI chat feature
-│   │   ├── api/                 # Claude agent, streaming
+│   │   ├── api/                 # Concierge agent, streaming, tools, prompts
 │   │   └── lib/                 # Message utilities
-│   ├── events/                  # Event management
-│   │   ├── api/                 # CRUD, enrichment, moderation, stats
-│   │   └── hooks/               # useEventAdmin, useEventFiltering, etc.
-│   ├── import/                  # Event import wizard
-│   │   ├── api/                 # Source handlers (passline, eventbrite, etc.)
-│   │   ├── hooks/               # useImportWizard state machine
-│   │   └── scrapers/            # Web scrapers
-│   └── venues/                  # Venue management
-│       ├── api/                 # CRUD, enrichment, review
-│       └── hooks/               # useVenueMutations, etc.
+│   ├── events/                  # Event data (public server functions, presentation)
+│   │   ├── api/                 # getTrendingEventsAction, getEventWithVenueAction
+│   │   └── lib/                 # Description/source presentation helpers
+│   └── import/                  # Event scrapers + duplicate detection
+│       ├── api/                 # Source handlers (passline, eventbrite, etc.)
+│       ├── core/                # Duplicate detection, venue settlement
+│       └── scrapers/            # Web scrapers (run via src/trigger jobs)
 │
 ├── shared/                      # Truly shared code
 │   ├── ui/                      # shadcn/ui + custom components
-│   │   └── data-table/          # Reusable data table
 │   ├── lib/                     # Utilities
 │   │   ├── ai/                  # Embeddings, enrichment helpers
-│   │   ├── db/                  # Supabase client
+│   │   ├── db/                  # Supabase client (getSupabase + queries)
 │   │   ├── utils/               # Helpers (cn, formatting)
-│   │   ├── admin-utils.ts       # Admin auth helpers
 │   │   ├── api-response.ts      # API response utilities
 │   │   ├── schemas.ts           # Zod validation
 │   │   ├── types.ts             # TypeScript types
 │   │   ├── query.ts             # React Query keys & setup
 │   │   └── analytics.ts         # PostHog tracking
 │   ├── hooks/                   # Shared hooks
-│   │   ├── useBulkSelection.ts  # Generic bulk selection
-│   │   ├── useInvalidateCache.ts # TanStack Query cache invalidation
-│   │   └── useStreamingProgress.ts # Streaming operation progress
 │   └── providers/               # Context providers
 │       └── AuthProvider.tsx     # Auth context
 │
@@ -111,27 +101,20 @@ src/
 │   ├── -components/             # Route-specific components
 │   │   ├── chat/                # Chat UI components
 │   │   └── events/              # Event display components
-│   ├── admin/
-│   │   ├── events/
-│   │   │   ├── -components/     # Event admin UI
-│   │   │   │   └── import/      # Import wizard step components
-│   │   │   ├── index.tsx        # Event list
-│   │   │   ├── $id.tsx          # Edit event
-│   │   │   ├── new.tsx          # Create event
-│   │   │   └── import.tsx       # Import wizard
-│   │   └── venues/
-│   │       ├── -components/     # Venue admin UI
-│   │       ├── index.tsx        # Venue list
-│   │       ├── $id.tsx          # Edit venue
-│   │       └── new.tsx          # Create venue
-│   ├── auth/
-│   │   └── callback.tsx         # OAuth callback
+│   ├── index.tsx                # Home (chat + trending grid)
+│   ├── chat_.$conversationId.tsx # Conversation view
+│   ├── saved.tsx / profile.tsx  # Signed-in pages
+│   ├── login.tsx / register.tsx # Auth (register redirects to login)
+│   ├── event/$id.tsx            # Public event detail
+│   ├── auth/callback.tsx        # OAuth callback
 │   └── api/
+│       ├── chat.ts              # Concierge streaming endpoint
 │       └── events.ts            # External API endpoint
 │
-├── paraglide/                   # i18n (auto-generated)
+├── trigger/                     # Trigger.dev background jobs (scraping, enrichment)
+├── paraglide/                   # i18n (auto-generated, gitignored)
 ├── styles.css                   # Global styles
-└── router.tsx                   # Router configuration
+…
 
 messages/                        # i18n translation files
 ├── en.json
@@ -193,27 +176,23 @@ const createEvent = createServerFn({ method: 'POST' })
   })
 ```
 
-### Admin Server Function Pattern
+### Server Function Pattern
 
-For admin operations, use the `requireAdminAccess()` helper:
+Public server functions are unauthenticated; any user-scoped operations run
+through `getSessionUser()` from `@/features/auth/api/session`:
 
 ```tsx
-import { requireAdminAccess } from '@/shared/lib/admin-utils'
+import { createServerFn } from '@tanstack/react-start'
+import { getSessionUser } from '@/features/auth/api/session'
 
 export const createEventAction = createServerFn({ method: 'POST' })
   .inputValidator((data: EventInsert) => data)
   .handler(async ({ data }) => {
-    const client = await requireAdminAccess() // Throws if not admin
-    const embedding = await generateEventEmbedding(data)
-    return createEvent({ ...data, embedding }, client)
+    const user = await getSessionUser()
+    // ...
+    return createEvent(data)
   })
 ```
-
-This pattern:
-1. Checks if user is authenticated
-2. Checks if user has admin role
-3. Returns a Supabase client scoped to that user for RLS
-4. Throws `Error('Unauthorized: Admin access required')` if not admin
 
 ## UI Components
 
@@ -221,7 +200,6 @@ This pattern:
 
 ```bash
 bunx shadcn@latest add button
-bunx shadcn@latest add card
 bunx shadcn@latest add input
 ```
 
@@ -283,8 +261,8 @@ Use centralized query keys from `@/shared/lib/query`:
 import { queryKeys } from '@/shared/lib/query'
 
 // In hooks
-queryClient.invalidateQueries({ queryKey: queryKeys.events.all })
-queryClient.setQueriesData({ queryKey: queryKeys.venues.all }, updater)
+queryClient.invalidateQueries({ queryKey: queryKeys.events.trending() })
+queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all })
 ```
 
 ### Supabase CLI
@@ -444,31 +422,6 @@ export function useCreateEvent() {
 }
 ```
 
-### Bulk Selection Hook
-
-Use `useBulkSelection` for multi-select operations:
-
-```tsx
-import { useBulkSelection } from '@/shared/hooks/useBulkSelection'
-
-const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } =
-  useBulkSelection(items)
-```
-
-### Streaming Progress Hook
-
-For long-running operations with progress:
-
-```tsx
-import { useStreamingProgress } from '@/shared/hooks/useStreamingProgress'
-
-const { state, processStream, stop } = useStreamingProgress({
-  onProgress: (update) => console.log(update.current, update.total),
-  getCurrentFromProgress: (p) => p.current,
-  getTotalFromProgress: (p) => p.total,
-})
-```
-
 ### API Response Utilities
 
 For the public API endpoint:
@@ -486,30 +439,17 @@ return apiError('Not found', 404)
 
 This project uses **two different data fetching patterns**:
 
-1. **Route Loaders** - Events are loaded via route `loader` functions, accessed via `Route.useLoaderData()`
-2. **TanStack Query** - Venues are fetched via `useQuery` hooks
+1. **Route Loaders** - Trending events are loaded via the route `loader` on `/`, accessed via `Route.useLoaderData()`
+2. **TanStack Query** - Conversations (and home-grid refetches) use `useQuery` hooks
 
-**Always use `useInvalidateCache` for cache invalidation:**
+Invalidate with the centralized query keys from `@/shared/lib/query`:
 
 ```tsx
-import { useInvalidateCache } from '@/shared/hooks/useInvalidateCache'
+import { queryKeys } from '@/shared/lib/query'
 
-const { invalidateEvents, invalidateVenues, invalidateAll } = useInvalidateCache()
-
-// After updating an event (uses router.invalidate() internally)
-await invalidateEvents()
-
-// After updating a venue (uses queryClient.invalidateQueries() internally)
-await invalidateVenues()
-
-// After updating both
-await invalidateAll()
+queryClient.invalidateQueries({ queryKey: queryKeys.conversations.list() })
+queryClient.invalidateQueries({ queryKey: queryKeys.events.trending() })
 ```
-
-The `useInvalidateCache` hook abstracts away the different invalidation mechanisms:
-- `invalidateEvents()` - Calls `router.invalidate()` to refresh route loader data
-- `invalidateVenues()` - Calls `queryClient.invalidateQueries()` to refresh React Query cache
-- `invalidateAll()` - Invalidates both events and venues
 
 ## Environment Variables
 
@@ -612,14 +552,10 @@ logger.logError('Import failed', error, { source: 'passline' })
 
 ## Event Import & Enrichment
 
-The app supports importing events from 4 sources via a 7-step wizard:
-
-1. **Source Selection** - Choose Passline, Eventbrite, BA Tourism, or Meetup
-2. **Configuration** - Set source-specific options
-3. **Venue Mapping** - Match to existing venues or create new ones
-4. **Event Selection** - Preview and filter events to import
-5. **Confirmation** - Review before import
-6. **Enrichment** - Optional AI description enhancement
-7. **Summary** - Import completion details
+Events are scraped from external sources (Passline, Eventbrite, BA Tourism,
+Meetup, Luma, Venti) by Trigger.dev background jobs in `src/trigger/jobs/`.
+Each source has a scraper under `src/features/import/scrapers/`; imported
+events pass through duplicate detection (`checkDuplicateEvents`) and venue
+matching (`matchVenue`), then get AI-enriched descriptions.
 
 See `docs/event-import-enrichment.md` for detailed information about each source and the enrichment process.

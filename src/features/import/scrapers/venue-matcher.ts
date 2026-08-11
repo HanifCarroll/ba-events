@@ -5,7 +5,9 @@
  * Uses a three-tier approach: exact match, fuzzy match, no match.
  */
 
-import { supabase } from '@/shared/lib/db/client'
+import { getSupabase } from '@/shared/lib/db/client'
+
+const supabase = getSupabase()
 import type { Venue } from '@/shared/lib/types'
 
 export interface VenueMatchResult {
