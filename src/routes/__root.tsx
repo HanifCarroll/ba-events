@@ -67,21 +67,36 @@ export const Route = createRootRoute({
   head: () => {
     const siteUrl = getSiteUrl()
     const ogImageUrl = `${siteUrl}/og-image.png`
+    const locale = getLocale() as 'en' | 'es'
+
+    // Locale-specific title & descriptions (voseo for es, plain for en)
+    const SEO = {
+      en: {
+        title: 'BA Events - Discover Buenos Aires',
+        description:
+          'Discover events in Buenos Aires with artificial intelligence. Find techno nights, jazz bars, tango milongas, and more.',
+      },
+      es: {
+        title: 'BA Eventos - Descubrí Buenos Aires',
+        description:
+          'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.',
+      },
+    }[locale]
 
     return {
       meta: [
       // Core meta tags
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'BA Eventos - Descubrí Buenos Aires' },
-      { name: 'description', content: 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.' },
+      { title: SEO.title },
+      { name: 'description', content: SEO.description },
       { name: 'theme-color', content: '#fafaf8' },
 
       // Open Graph tags
       { property: 'og:type', content: 'website' },
       { property: 'og:site_name', content: 'BA Eventos' },
-      { property: 'og:title', content: 'BA Eventos - Descubrí Buenos Aires' },
-      { property: 'og:description', content: 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.' },
+      { property: 'og:title', content: SEO.title },
+      { property: 'og:description', content: SEO.description },
       { property: 'og:image', content: ogImageUrl },
       { property: 'og:url', content: siteUrl },
       { property: 'og:locale', content: 'es_AR' },
@@ -89,8 +104,8 @@ export const Route = createRootRoute({
 
       // Twitter Card tags
       { name: 'twitter:card', content: 'summary_large_image' },
-      { name: 'twitter:title', content: 'BA Eventos - Descubrí Buenos Aires' },
-      { name: 'twitter:description', content: 'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.' },
+      { name: 'twitter:title', content: SEO.title },
+      { name: 'twitter:description', content: SEO.description },
       { name: 'twitter:image', content: ogImageUrl },
       ],
       links: [
