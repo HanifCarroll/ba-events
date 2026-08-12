@@ -188,7 +188,7 @@ export function ChatInput({
                 after:invisible
                 after:col-start-1 after:col-end-2
                 after:row-start-1 after:row-end-2
-                after:py-3 after:pl-11 after:pr-4
+                after:py-3 after:px-4
                 after:text-base after:sm:text-sm
                 after:leading-normal
                 after:font-[inherit]
@@ -219,7 +219,7 @@ export function ChatInput({
                   col-start-1 col-end-2 row-start-1 row-end-2
                   resize-none overflow-y-auto
                   max-h-40 min-h-[46px]
-                  bg-transparent py-3 pl-11 pr-4 text-base sm:text-sm text-foreground
+                  bg-transparent px-4 py-3 text-base sm:text-sm text-foreground
                   leading-normal
                   placeholder:text-muted-foreground/60
                   focus:outline-none
