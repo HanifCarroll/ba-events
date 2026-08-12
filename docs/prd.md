@@ -110,11 +110,11 @@ interface Event {
 |-----------|------------|
 | Runtime | Bun |
 | Language | TypeScript |
-| LLM | Claude (Anthropic SDK) |
+| LLM | DeepSeek V4 Flash (Vercel AI SDK) |
 | Database | Supabase (Postgres + pgvector) |
-| Web UI | Next.js or Vite + React |
-| Hosting | Vercel |
-| Scraping | Puppeteer, Cheerio |
+| Web UI | Vite + React (TanStack Start) |
+| Hosting | Trigger.dev (jobs) + Netlify (server functions) |
+| Scraping | Playwright, Browserbase, Cheerio |
 
 ---
 

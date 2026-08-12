@@ -464,8 +464,23 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 
 # AI APIs
+# DeepSeek for text generation (deepseek-v4-flash via Vercel AI SDK); falls back to ANTHROPIC_API_KEY
+DEEPSEEK_API_KEY=
+# Optional overrides (default: AI_MODEL=deepseek-v4-flash, AI_BASE_URL=https://api.deepseek.com)
+AI_MODEL=
+AI_BASE_URL=
+# OpenAI for embeddings (text-embedding-3-small)
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
+
+# Browserbase (cloud browser for Passline/Meetup scraping - bypasses datacenter-IP blocks)
+BROWSERBASE_API_KEY=
+
+# Trigger.dev (background jobs; SDK reads TRIGGER_SECRET_KEY)
+# Dev key (tr_dev_...) for local `trigger dev` runs; prod key (tr_prod_...) for
+# viewing/triggering production runs via configure({ secretKey: TRIGGER_SECRET_KEY_PROD })
+TRIGGER_SECRET_KEY=
+TRIGGER_SECRET_KEY_PROD=
 
 # Admin API (optional for local dev)
 ADMIN_API_KEY=

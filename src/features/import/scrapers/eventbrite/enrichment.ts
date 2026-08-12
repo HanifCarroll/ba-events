@@ -127,7 +127,9 @@ const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categorie
 - festival: multi-day festivals, large celebrations, fairs, carnivals
 
 Based on the event name and description, choose the SINGLE most appropriate category.
-If unclear, use "social" as the default.`
+If unclear, use "social" as the default.
+
+Respond with ONLY a JSON object with a single "category" field, e.g. {"category": "music"}. Nothing else.`
 
 /**
  * Infer category from event name and description using AI.

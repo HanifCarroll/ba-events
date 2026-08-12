@@ -6,7 +6,7 @@
  * This module is used during import for all event sources.
  */
 
-import { generateObject } from 'ai'
+import { generateObject, NoObjectGeneratedError } from 'ai'
 import { z } from 'zod'
 import type { Category } from '@/shared/lib/types'
 import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
@@ -81,7 +81,7 @@ const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categorie
 Based on the event name and description, choose the SINGLE most appropriate category.
 If unclear, use "social" as the default.
 
-Respond with ONLY the category name (lowercase), nothing else.`
+Respond with ONLY a JSON object with a single "category" field, e.g. {"category": "music"}. Nothing else.`
 
 /**
  * Categorize a single event using AI with detailed result
@@ -107,11 +107,15 @@ export async function categorizeEventWithResult(
 
       return { category: object.category, success: true, fallback: false }
     } catch (err) {
-      // Check if this is a rate limit error and we have retries left
-      if (isRateLimitError(err) && attempt < MAX_RETRIES - 1) {
+      // Retry on rate limits and on malformed-model-output parse failures
+      // (transient issues worth a backoff retry before falling back).
+      const isRetryable =
+        isRateLimitError(err) || NoObjectGeneratedError.isInstance(err)
+
+      if (isRetryable && attempt < MAX_RETRIES - 1) {
         const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt) // 2s, 4s, 8s
         console.warn(
-          `[ai-categorizer] Rate limited, waiting ${backoffMs}ms before retry ${attempt + 2}/${MAX_RETRIES}`
+          `[ai-categorizer] Retryable error (${err instanceof Error ? err.message : String(err)}), waiting ${backoffMs}ms before retry ${attempt + 2}/${MAX_RETRIES}`
         )
         await sleep(backoffMs)
         continue

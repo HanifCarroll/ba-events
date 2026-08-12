@@ -2,7 +2,7 @@
  * Meetup Scraper Job
  *
  * Imports events from Meetup.
- * Uses browser automation (Playwright/Browserless) to scrape day-by-day.
+ * Uses browser automation (Browserbase cloud browser) to scrape day-by-day.
  */
 import { task } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client'

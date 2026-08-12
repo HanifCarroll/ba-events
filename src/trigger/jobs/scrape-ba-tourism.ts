@@ -2,7 +2,7 @@
  * BA Tourism Scraper Job
  *
  * Imports events from BA Tourism website.
- * Uses browser automation (Playwright/Browserless).
+ * Uses browser automation (local Playwright).
  *
  * Note: BA Tourism only shows events for the current week.
  */

@@ -2035,3 +2035,40 @@ times, price (AggregateOffer `lowPrice`), and age (`Highlights_ageRestriction`) 
 time/price/min_age at import time. Re-adding `min_age` restores the age field the app
 types (`EventFilters.minAge`) already reference. Note: the migration must be applied to
 the live DB (`bunx supabase db push` or SQL editor) — `min_age` does not exist yet.
+
+## Remove Browserless.io/Puppeteer dead code + fix AI categorizer parse failures
+
+**Date:** 2026-08-12
+
+**Decision:** Remove all Browserless.io and Puppeteer code paths, and fix the AI
+categorizer's JSON-parse fallbacks.
+
+**Browserless/Puppeteer removal:** The `BROWSERLESS_TOKEN` env var was disabled in
+`.env` (renamed `DISABLED_BROWSERLESS_TOKEN`) and every scraper had migrated to
+either Browserbase cloud browsers (Passline, Meetup) or local Playwright (BA
+Tourism, Passline enrichment). The remaining Browserless branches were unreachable,
+and the shared factory (`createBrowserConnection`, `PageWrapper`,
+`waitForCloudflareResolution`) had zero callers. Deleted
+`src/shared/lib/browser/connection.ts` + `types.ts`, stripped the
+`scrapeWithBrowserless`/`fetchWithBrowserless` branches from the passline and
+ba-tourism scrapers, removed `puppeteer-core` from dependencies, and removed the
+dead env var.
+
+**Categorizer fix:** The `generateObject` call used a Zod schema requiring
+`{"category": "..."}`, but the prompt told the model to "respond with ONLY the
+category name". DeepSeek's OpenAI-compatible endpoint runs JSON-schema in
+compatibility mode (no grammar-constrained decoding), so ~1/3 of responses were a
+bare word that failed `safeParseJSON` → `NoObjectGeneratedError` → fallback to
+`social`. Fixed the prompt in all three copies (ai-categorizer.ts,
+eventbrite/enrichment.ts, recategorize-events.ts) to request a `{"category": ...}`
+JSON object, and added `NoObjectGeneratedError` to the retryable-error set.
+
+**Rationale:** Remove dead code that no longer executes (it hid the fact that BA
+Tourism actually runs fine on local Playwright in prod). The categorizer prompt fix
+removed a real ~33% fallback rate observed in production runs (21/64 events on
+2026-08-11), verified live: 6/6 events categorized with zero fallbacks after the fix.
+
+**Related:** env var `TRIGGER_API_KEY` was renamed to `TRIGGER_SECRET_KEY` (the name
+the SDK actually reads), and `TRIGGER_SECRET_KEY_PROD` added for production run
+visibility/triggering (dev key `tr_dev_` is scoped to the personal dev environment
+and cannot see or trigger prod runs).

@@ -3,9 +3,7 @@
  *
  * Fetches Passline event detail pages to extract venue addresses.
  *
- * Supports two modes:
- * - Browserless: Connects to Browserless.io (production/serverless) - bypasses Cloudflare
- * - Local: Uses Playwright with local Chromium (development fallback)
+ * Uses local Playwright with Chromium to fetch pages.
  *
  * The address is used for more accurate Nominatim neighborhood lookup.
  */
@@ -15,14 +13,12 @@ import type {
   PasslineAddressProgress,
   PasslineAddressComplete,
 } from '@/shared/lib/streaming-types'
-import { sanitizeError } from '@/shared/lib/security'
 import {
   isCloudflareChallenge,
   BROWSER_USER_AGENT,
   BROWSER_VIEWPORT,
   STEALTH_LAUNCH_ARGS,
   DEFAULT_LOCALE,
-  getBrowserlessEndpoint,
 } from '@/shared/lib/browser'
 
 export interface PasslineAddressResult {
@@ -276,159 +272,10 @@ export interface VenueAddressInput {
 }
 
 /**
- * Ensure Passline URL is properly formed
- */
-function getFullUrl(eventUrl: string): string {
-  if (eventUrl.startsWith('http')) {
-    return eventUrl
-  }
-  return `https://www.passline.com${eventUrl.startsWith('/') ? '' : '/'}${eventUrl}`
-}
-
-/**
- * Fetch address from a single Passline page using Browserless.io
- */
-async function fetchWithBrowserless(
-  token: string,
-  eventUrl: string,
-  venueName: string
-): Promise<PasslineAddressResult> {
-  const puppeteer = await import('puppeteer-core')
-
-  let browser
-  try {
-    // Use stealth mode and block ads to appear more like a real browser
-    browser = await puppeteer.default.connect({
-      browserWSEndpoint: getBrowserlessEndpoint(token),
-    })
-  } catch (error) {
-    console.error('[Passline Address] Failed to connect to Browserless:', sanitizeError(error))
-    throw new Error('Failed to connect to browser service')
-  }
-
-  try {
-    const page = await browser.newPage()
-    const fullUrl = getFullUrl(eventUrl)
-
-    console.log(`[Passline Address] Navigating to ${fullUrl}`)
-
-    await page.goto(fullUrl, {
-      waitUntil: 'networkidle0',
-      timeout: 45000,
-    })
-
-    // Wait for venue container, with retry for Cloudflare challenge
-    let attempts = 0
-    const maxAttempts = 3
-
-    while (attempts < maxAttempts) {
-      try {
-        await page.waitForSelector('#segundo_contenedor', { timeout: 15000 })
-        break // Success!
-      } catch {
-        attempts++
-        const html = await page.content()
-        const cloudflareDetected = isCloudflareChallenge(html)
-
-        if (cloudflareDetected && attempts < maxAttempts) {
-          console.log(`[Passline Address] Cloudflare challenge for "${venueName}", waiting (attempt ${attempts}/${maxAttempts})...`)
-          // Wait for Turnstile to potentially auto-resolve
-          await new Promise(resolve => setTimeout(resolve, 8000))
-          continue
-        }
-
-        // Final failure
-        const pageTitle = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || 'unknown'
-        console.log(`[Passline Address] Venue container not found for "${venueName}"`)
-        console.log(`[Passline Address] Page title: "${pageTitle}", Cloudflare: ${cloudflareDetected}, HTML length: ${html.length}`)
-
-        return {
-          venueName,
-          address: null,
-          location: null,
-          error: cloudflareDetected ? 'Cloudflare challenge' : 'Venue container not found',
-        }
-      }
-    }
-
-    const html = await page.content()
-    const result = extractAddressFromHtml(html, venueName)
-
-    if (result.address) {
-      console.log(`[Passline Address] Found address for "${venueName}": ${result.address}`)
-    } else {
-      console.log(`[Passline Address] No address found for "${venueName}"`)
-    }
-
-    return result
-  } catch (error) {
-    console.error('[Passline Address] Error during scraping:', sanitizeError(error))
-    return {
-      venueName,
-      address: null,
-      location: null,
-      error: 'Scraping failed',
-    }
-  } finally {
-    await browser.close()
-  }
-}
-
-/**
- * Batch fetch addresses using Browserless.io (production/serverless)
- */
-async function* fetchWithBrowserlessBatch(
-  token: string,
-  venues: VenueAddressInput[],
-  delayMs: number
-): AsyncGenerator<PasslineAddressProgress | PasslineAddressComplete> {
-  const results: PasslineAddressResult[] = []
-
-  console.log(`[Passline Address] Starting Browserless batch for ${venues.length} venues...`)
-
-  for (let i = 0; i < venues.length; i++) {
-    const venue = venues[i]
-
-    const result = await fetchWithBrowserless(token, venue.eventUrl, venue.venueName)
-    results.push(result)
-
-    yield {
-      type: 'progress',
-      current: i + 1,
-      total: venues.length,
-      venueName: result.venueName,
-      address: result.address,
-      location: result.location,
-      success: !!result.address,
-      error: result.error ?? null,
-    }
-
-    // Delay between requests (except after last one)
-    if (i < venues.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
-    }
-
-    console.log(`[Passline Address] Progress: ${i + 1}/${venues.length}`)
-  }
-
-  const successCount = results.filter((r) => r.address).length
-  console.log(
-    `[Passline Address] Completed. Found addresses for ${successCount}/${venues.length} venues`
-  )
-
-  yield {
-    type: 'complete',
-    results,
-  }
-}
-
-/**
- * Batch fetch addresses using local Playwright (development fallback)
+ * Batch fetch addresses using local Playwright
  *
  * Uses a single browser instance and processes events sequentially to avoid
  * triggering Cloudflare's bot detection.
- *
- * Note: This will likely fail due to Cloudflare. Use Browserless in production.
  */
 async function* fetchWithPlaywrightBatch(
   venues: VenueAddressInput[],
@@ -528,10 +375,6 @@ async function* fetchWithPlaywrightBatch(
 /**
  * Batch fetch addresses for multiple Passline venues with streaming progress
  *
- * Automatically chooses the right method:
- * - Browserless.io if BROWSERLESS_TOKEN env var is set (production)
- * - Local Playwright otherwise (development fallback)
- *
  * @param venues - Array of venues with name and event URL
  * @param concurrency - Number of pages to process in parallel (default: 1)
  * @param delayMs - Delay between requests in milliseconds (default: 2000)
@@ -549,14 +392,6 @@ export async function* fetchPasslineAddressesBatch(
     return
   }
 
-  const browserlessToken = process.env.BROWSERLESS_TOKEN
-
-  if (browserlessToken) {
-    console.log('[Passline Address] Using Browserless for address fetching')
-    yield* fetchWithBrowserlessBatch(browserlessToken, venues, delayMs)
-    return
-  }
-
-  console.log('[Passline Address] Using local Playwright for address fetching (may fail due to Cloudflare)')
+  console.log('[Passline Address] Using local Playwright for address fetching')
   yield* fetchWithPlaywrightBatch(venues, concurrency, delayMs)
 }

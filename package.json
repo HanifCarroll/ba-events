@@ -47,7 +47,6 @@
     "playwright": "^1.62.1",
     "posthog-js": "^1.415.4",
     "posthog-node": "^5.48.1",
-    "puppeteer-core": "^25.6.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.85.0",

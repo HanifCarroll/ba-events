@@ -2,7 +2,6 @@
  * Passline API Client
  *
  * Fetches events from Passline's public API.
- * Uses Browserless.io to bypass Cloudflare protection.
  * API discovered via browser network inspection - no official documentation.
  */
 

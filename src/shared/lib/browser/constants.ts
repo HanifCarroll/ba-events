@@ -41,16 +41,3 @@ export const STEALTH_LAUNCH_ARGS = [
  * Set to Spanish (Argentina) for Buenos Aires event sites.
  */
 export const DEFAULT_LOCALE = 'es-AR'
-
-/**
- * Browserless.io WebSocket endpoint template.
- * Uses stealth mode and ad blocking for better success rates.
- */
-export const BROWSERLESS_ENDPOINT = 'wss://chrome.browserless.io?token={token}&stealth&blockAds'
-
-/**
- * Get the Browserless WebSocket endpoint with the token.
- */
-export function getBrowserlessEndpoint(token: string): string {
-  return BROWSERLESS_ENDPOINT.replace('{token}', token)
-}

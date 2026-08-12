@@ -10,7 +10,7 @@
 const SENSITIVE_PATTERNS = [
   // API tokens in URLs (e.g., token=xxx, api_key=xxx)
   /([?&](?:token|api_key|apikey|key|secret|password|auth|bearer|access_token|refresh_token)=)[^&\s]+/gi,
-  // Browserless.io WebSocket URLs with tokens
+  // WebSocket URLs with tokens (e.g., Browserbase CDP connect URLs)
   /wss?:\/\/[^?]+\?token=[^&\s]+/gi,
   // Generic token patterns (32+ character hex/base64 strings)
   /\b[a-zA-Z0-9_-]{32,}\b/g,
@@ -23,7 +23,7 @@ const SENSITIVE_PATTERNS = [
  */
 const SANITIZE_REPLACEMENTS = {
   token: '$1[REDACTED]',
-  wsUrl: 'wss://[BROWSERLESS_URL_REDACTED]',
+  wsUrl: 'wss://[WS_URL_REDACTED]',
   longToken: '[TOKEN_REDACTED]',
   urlAuth: '://[AUTH_REDACTED]@',
 }
@@ -33,7 +33,7 @@ const SANITIZE_REPLACEMENTS = {
  *
  * Removes or redacts:
  * - API tokens and keys from URLs
- * - Browserless WebSocket URLs with tokens
+ * - WebSocket URLs with tokens
  * - Long tokens that look like credentials
  * - URL authentication credentials
  *

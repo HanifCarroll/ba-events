@@ -34,7 +34,7 @@ const CATEGORIZATION_PROMPT = `Categorize this event into ONE of these categorie
 Based on the event name and description, choose the SINGLE most appropriate category.
 If unclear, use "social" as the default.
 
-Respond with ONLY the category name (lowercase), nothing else.`
+Respond with ONLY a JSON object with a single "category" field, e.g. {"category": "music"}. Nothing else.`
 
 async function categorizeEvent(
   name: string,

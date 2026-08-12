@@ -102,7 +102,7 @@ The following table documents the enrichment strategy for each source, along wit
 
 ### Decision Factors
 
-1. **Cloudflare/Bot Protection** → Use Playwright/Browserless (server-side browser automation)
+1. **Cloudflare/Bot Protection** → Use server-side browser automation (Playwright, or Browserbase for datacenter-IP-blocked sites)
 2. **Jina Legal Restrictions (HTTP 451)** → Use direct fetch with browser headers
 3. **Structured Data Available (JSON-LD, `__NEXT_DATA__`)** → Use direct extraction (no AI)
 4. **Complex/Unstructured HTML** → Use AI extraction (Claude Haiku)
@@ -240,27 +240,19 @@ src/shared/lib/
 
 ## Browser Automation Architecture
 
-Several scrapers use browser automation (Playwright/Puppeteer) to fetch data from sites with bot protection (Cloudflare) or heavy JavaScript rendering.
+Several scrapers use browser automation (Playwright) to fetch data from sites with bot protection (Cloudflare) or heavy JavaScript rendering.
 
-### Browserbase (current production path)
+### Browserbase (cloud browser for IP-blocked sites)
 
 Sites that block datacenter IPs (Passline, Meetup) scrape through **Browserbase** cloud
 browser sessions (`src/shared/lib/browser/browserbase.ts`): sessions egress through a
 managed residential proxy with captcha solving. Used when `BROWSERBASE_API_KEY` is set.
 
-### Legacy Dual-Mode System
+### Local Playwright (default path)
 
-Superseded by Browserbase for production, but still present for local development:
-
-| Mode | Environment | Browser | When Used |
-|------|-------------|---------|-----------|
-| **Browserless** | Production (legacy) | Puppeteer + Browserless.io | `BROWSERLESS_TOKEN` env var is set |
-| **Local** | Development | Playwright + Chromium | Fallback when no token |
-
-**Browserless.io** is a hosted browser service that provides:
-- Stealth mode (`&stealth`) for bot detection bypass
-- Ad blocking (`&blockAds`) for cleaner pages
-- Better Cloudflare success rates (real browser fingerprints)
+Other scrapers (BA Tourism, Passline enrichment) launch **local Playwright + Chromium**
+directly. In Trigger.dev production jobs, Chromium is bundled by the `playwright` build
+extension in `trigger.config.ts`.
 
 ### Cloudflare Handling
 
@@ -281,36 +273,39 @@ Common browser automation code is centralized in `src/shared/lib/browser/`:
 ```
 src/shared/lib/browser/
 ├── index.ts          # Public API exports
-├── types.ts          # TypeScript interfaces
-├── connection.ts     # Browser connection factory
-├── cloudflare.ts     # Cloudflare detection & retry
+├── browserbase.ts    # Browserbase cloud browser session helpers
+├── cloudflare.ts     # Cloudflare challenge detection
 └── constants.ts      # User-agent, viewport, launch args
 ```
 
-**Usage:**
+**Usage:** scrapers launch Playwright directly (`chromium.launch()`) and use
+`isCloudflareChallenge` to detect challenge pages. Sites that block datacenter
+IPs (Passline, Meetup) connect to a Browserbase cloud browser instead:
+
 ```typescript
-import {
-  createBrowserConnection,
-  isCloudflareChallenge,
-  waitForCloudflareResolution,
-} from '@/shared/lib/browser'
+import { isCloudflareChallenge } from '@/shared/lib/browser'
 
-const browser = await createBrowserConnection()
-const page = await browser.newPage()
-await page.goto('https://example.com')
-
-const result = await waitForCloudflareResolution(page, {
-  successSelector: '#content',
-})
-
-if (result.success) {
-  const html = await page.content()
-  // Process page...
+const html = await page.content()
+if (isCloudflareChallenge(html)) {
+  // Retry after Turnstile auto-resolve, or treat as blocked
 }
-
-await page.close()
-await browser.close()
 ```
+
+For Browserbase sessions (Meetup, Passline):
+
+```typescript
+import { isBrowserbaseAvailable, createBrowserbaseSession } from '@/shared/lib/browser'
+
+if (isBrowserbaseAvailable()) {
+  const { sessionId, connectUrl } = await createBrowserbaseSession()
+  const browser = await chromium.connectOverCDP(connectUrl)
+  // ... scrape, then:
+  await browser.close()
+}
+```
+
+Playwright itself is a direct dependency of each scraper; the shared module
+does not wrap it.
 
 ### Browser Scrapers
 

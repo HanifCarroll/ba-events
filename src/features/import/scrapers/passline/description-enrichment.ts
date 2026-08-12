@@ -3,9 +3,7 @@
  *
  * Fetches Passline event detail pages to extract descriptions from JSON-LD.
  *
- * Supports two modes:
- * - Browserless: Connects to Browserless.io (production/serverless) - bypasses Cloudflare
- * - Local: Uses Playwright with local Chromium (development fallback)
+ * Uses local Playwright with Chromium to fetch pages.
  *
  * This replaces the client-side extraction approach which was blocked by CORS.
  */
@@ -15,14 +13,12 @@ import type {
   PasslineDescriptionEnrichProgress,
   PasslineDescriptionEnrichComplete,
 } from '@/shared/lib/streaming-types'
-import { sanitizeError } from '@/shared/lib/security'
 import {
   isCloudflareChallenge,
   BROWSER_USER_AGENT,
   BROWSER_VIEWPORT,
   STEALTH_LAUNCH_ARGS,
   DEFAULT_LOCALE,
-  getBrowserlessEndpoint,
 } from '@/shared/lib/browser'
 
 export interface PasslineDescriptionResult {
@@ -166,155 +162,7 @@ export interface EventDescriptionInput {
 }
 
 /**
- * Fetch description from a single Passline page using Browserless.io
- */
-async function fetchWithBrowserless(
-  token: string,
-  event: EventDescriptionInput
-): Promise<PasslineDescriptionResult> {
-  const puppeteer = await import('puppeteer-core')
-
-  let browser
-  try {
-    // Use stealth mode and block ads to appear more like a real browser
-    browser = await puppeteer.default.connect({
-      browserWSEndpoint: getBrowserlessEndpoint(token),
-    })
-  } catch (error) {
-    console.error('[Passline Description] Failed to connect to Browserless:', sanitizeError(error))
-    throw new Error('Failed to connect to browser service')
-  }
-
-  try {
-    const page = await browser.newPage()
-    const fullUrl = getFullUrl(event.link)
-
-    console.log(`[Passline Description] Navigating to ${fullUrl}`)
-
-    await page.goto(fullUrl, {
-      waitUntil: 'networkidle0',
-      timeout: 45000,
-    })
-
-    // Wait for JSON-LD script, with retry for Cloudflare challenge
-    let attempts = 0
-    const maxAttempts = 3
-
-    while (attempts < maxAttempts) {
-      try {
-        await page.waitForSelector('script[type="application/ld+json"]', { timeout: 15000 })
-        break // Success!
-      } catch {
-        attempts++
-        const html = await page.content()
-        const cloudflareDetected = isCloudflareChallenge(html)
-
-        if (cloudflareDetected && attempts < maxAttempts) {
-          console.log(`[Passline Description] Cloudflare challenge for "${event.name}", waiting (attempt ${attempts}/${maxAttempts})...`)
-          // Wait for Turnstile to potentially auto-resolve
-          await new Promise(resolve => setTimeout(resolve, 8000))
-          continue
-        }
-
-        // Continue to try extracting anyway - might have meta description
-        break
-      }
-    }
-
-    const html = await page.content()
-
-    // Check if we're still on Cloudflare
-    if (isCloudflareChallenge(html) && !html.includes('application/ld+json')) {
-      const pageTitle = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || 'unknown'
-      console.log(`[Passline Description] Cloudflare page for "${event.name}", title: "${pageTitle}"`)
-      return {
-        id: event.id,
-        eventName: event.name,
-        description: null,
-        error: 'Cloudflare challenge',
-      }
-    }
-
-    const description = extractDescriptionFromHtml(html)
-
-    if (description) {
-      console.log(`[Passline Description] Found description for "${event.name}": ${description.substring(0, 50)}...`)
-    } else {
-      console.log(`[Passline Description] No description found for "${event.name}"`)
-    }
-
-    return {
-      id: event.id,
-      eventName: event.name,
-      description,
-    }
-  } catch (error) {
-    console.error('[Passline Description] Error during scraping:', sanitizeError(error))
-    return {
-      id: event.id,
-      eventName: event.name,
-      description: null,
-      error: 'Scraping failed',
-    }
-  } finally {
-    await browser.close()
-  }
-}
-
-/**
- * Batch fetch descriptions using Browserless.io (production/serverless)
- */
-async function* fetchWithBrowserlessBatch(
-  token: string,
-  events: EventDescriptionInput[],
-  delayMs: number
-): AsyncGenerator<PasslineDescriptionEnrichProgress | PasslineDescriptionEnrichComplete> {
-  const results: PasslineDescriptionResult[] = []
-  let enriched = 0
-  let translated = 0 // Will be set by caller after translation
-
-  console.log(`[Passline Description] Starting Browserless batch for ${events.length} events...`)
-
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i]
-
-    const result = await fetchWithBrowserless(token, event)
-    results.push(result)
-
-    if (result.description) {
-      enriched++
-    }
-
-    yield {
-      type: 'progress',
-      current: i + 1,
-      total: events.length,
-      eventName: result.eventName,
-      success: !!result.description,
-    }
-
-    // Delay between requests (except after last one)
-    if (i < events.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
-    }
-
-    console.log(`[Passline Description] Progress: ${i + 1}/${events.length}`)
-  }
-
-  console.log(
-    `[Passline Description] Completed. Found descriptions for ${enriched}/${events.length} events`
-  )
-
-  yield {
-    type: 'complete',
-    enriched,
-    translated,
-    total: events.length,
-  }
-}
-
-/**
- * Batch fetch descriptions using local Playwright (development fallback)
+ * Batch fetch descriptions using local Playwright
  */
 async function* fetchWithPlaywrightBatch(
   events: EventDescriptionInput[],
@@ -408,10 +256,6 @@ async function* fetchWithPlaywrightBatch(
 /**
  * Batch fetch descriptions for multiple Passline events with streaming progress
  *
- * Automatically chooses the right method:
- * - Browserless.io if BROWSERLESS_TOKEN env var is set (production)
- * - Local Playwright otherwise (development fallback)
- *
  * @param events - Array of events with id, name, and link
  * @param delayMs - Delay between requests in milliseconds (default: 2000)
  */
@@ -429,15 +273,7 @@ export async function* fetchPasslineDescriptionsBatch(
     return
   }
 
-  const browserlessToken = process.env.BROWSERLESS_TOKEN
-
-  if (browserlessToken) {
-    console.log('[Passline Description] Using Browserless for description fetching')
-    yield* fetchWithBrowserlessBatch(browserlessToken, events, delayMs)
-    return
-  }
-
-  console.log('[Passline Description] Using local Playwright for description fetching (may fail due to Cloudflare)')
+  console.log('[Passline Description] Using local Playwright for description fetching')
   yield* fetchWithPlaywrightBatch(events, delayMs)
 }
 
@@ -448,13 +284,6 @@ export async function* fetchPasslineDescriptionsBatch(
 export async function fetchPasslineDescription(
   event: EventDescriptionInput
 ): Promise<PasslineDescriptionResult> {
-  const browserlessToken = process.env.BROWSERLESS_TOKEN
-
-  if (browserlessToken) {
-    return fetchWithBrowserless(browserlessToken, event)
-  }
-
-  // Local Playwright fallback
   const { chromium } = await import('playwright')
   const browser = await chromium.launch({
     headless: true,

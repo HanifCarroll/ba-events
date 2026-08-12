@@ -5,15 +5,12 @@
  * The website loads content dynamically via JavaScript, so we need
  * a real browser to execute the page scripts.
  *
- * Supports two modes:
- * - Local: Uses Playwright with local Chromium (development)
- * - Browserless: Connects to Browserless.io (production/serverless)
+ * Runs with local Playwright + Chromium (bundled by the Trigger.dev
+ * playwright build extension in production).
  */
 
 import type { BATourismEvent, WeekContext } from './types'
 import { parseWeekContext } from './date-parser'
-import { sanitizeError } from '@/shared/lib/security'
-import { getBrowserlessEndpoint } from '@/shared/lib/browser'
 import { logger } from '@/shared/lib/logger'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
@@ -240,71 +237,12 @@ async function scrapeWithPlaywright(): Promise<{
 }
 
 /**
- * Scrape events using Browserless (production/serverless mode)
- */
-async function scrapeWithBrowserless(token: string): Promise<{
-  events: BATourismEvent[]
-  weekContext: WeekContext
-}> {
-  const puppeteer = await import('puppeteer-core')
-
-  let browser
-  try {
-    browser = await puppeteer.default.connect({
-      browserWSEndpoint: getBrowserlessEndpoint(token),
-    })
-  } catch (error) {
-    // Sanitize error to prevent token leakage in logs
-    logger.error('[BA Tourism] Failed to connect to Browserless', { error: sanitizeError(error) })
-    throw new Error('Failed to connect to browser service')
-  }
-
-  try {
-    const page = await browser.newPage()
-
-    await page.goto(BA_TOURISM_URL, {
-      waitUntil: 'networkidle0',
-      timeout: 30000,
-    })
-
-    // Wait for event cards to load
-    await page.waitForSelector('.card-landing', { timeout: 10000 })
-
-    // Execute extraction script in browser context
-    const result = (await page.evaluate(extractionScript)) as ExtractionResult
-
-    const weekContext = parseWeekContext(result.weekContextText)
-
-    return {
-      events: result.events as BATourismEvent[],
-      weekContext,
-    }
-  } catch (error) {
-    // Sanitize any error that might contain connection details
-    logger.error('[BA Tourism] Error during scraping', { error: sanitizeError(error) })
-    throw new Error('Scraping failed')
-  } finally {
-    await browser.close()
-  }
-}
-
-/**
- * Main scraper function - automatically chooses the right method
- *
- * Uses Browserless if BROWSERLESS_TOKEN env var is set,
- * otherwise falls back to local Playwright.
+ * Main scraper function - uses local Playwright with Chromium.
  */
 export async function scrapeBATourismEventsWithBrowser(): Promise<{
   events: BATourismEvent[]
   weekContext: WeekContext
 }> {
-  const browserlessToken = process.env.BROWSERLESS_TOKEN
-
-  if (browserlessToken) {
-    logger.info('[BA Tourism] Using Browserless for scraping')
-    return scrapeWithBrowserless(browserlessToken)
-  }
-
   logger.info('[BA Tourism] Using local Playwright for scraping')
   return scrapeWithPlaywright()
 }
