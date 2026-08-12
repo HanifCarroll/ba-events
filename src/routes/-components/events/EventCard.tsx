@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Ticket, RefreshCw, Info } from 'lucide-react'
+import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -152,12 +152,6 @@ function HeroEventCard({
               <div className="flex items-center gap-2.5">
                 <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <dd>{event.venue_name}</dd>
-              </div>
-            )}
-            {event.enriched_at && (
-              <div className="flex items-center gap-2.5 text-muted-foreground">
-                <RefreshCw className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <dd>{m.concierge_updated_recently()}</dd>
               </div>
             )}
           </dl>
