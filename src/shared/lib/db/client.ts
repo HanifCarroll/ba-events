@@ -17,6 +17,7 @@ import type {
   VenueInsert,
 } from '../types'
 import { generateEmbedding } from '../ai/embeddings'
+import { nodeRealtimeOptions } from './node-realtime'
 
 // Lazy-initialize Supabase client (only when needed, server-side only)
 let supabaseInstance: SupabaseClient | null = null
@@ -30,7 +31,7 @@ export function getSupabase(): SupabaseClient {
       throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables')
     }
 
-    supabaseInstance = createClient(supabaseUrl, supabaseKey)
+    supabaseInstance = createClient(supabaseUrl, supabaseKey, nodeRealtimeOptions)
   }
   return supabaseInstance
 }

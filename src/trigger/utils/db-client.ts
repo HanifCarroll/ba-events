@@ -5,6 +5,7 @@
  * This bypasses Row Level Security (RLS) for admin operations.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { nodeRealtimeOptions } from '@/shared/lib/db/node-realtime'
 
 let serviceRoleClient: SupabaseClient | null = null
 
@@ -29,6 +30,7 @@ export function getServiceRoleClient(): SupabaseClient {
   }
 
   serviceRoleClient = createClient(supabaseUrl, serviceRoleKey, {
+    ...nodeRealtimeOptions,
     auth: {
       persistSession: false,
       autoRefreshToken: false,
@@ -55,6 +57,7 @@ export function createServiceRoleClient(): SupabaseClient {
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
+    ...nodeRealtimeOptions,
     auth: {
       persistSession: false,
       autoRefreshToken: false,
