@@ -105,6 +105,13 @@ export function usePullToRefresh({
   const handleTouchStart = useCallback((e: TouchEvent) => {
     if (!enabled || isRefreshing.current) return
 
+    // Horizontal carousels own their gestures. Letting pull-to-refresh track
+    // the same touch can cancel a slightly diagonal swipe on mobile.
+    if (e.target instanceof Element && e.target.closest('[data-horizontal-scroll]')) {
+      isAtTop.current = false
+      return
+    }
+
     const container = containerRef.current
     if (!container) return
 

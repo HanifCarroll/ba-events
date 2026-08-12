@@ -58,7 +58,8 @@ export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEvents
         </div>
       ) : (
         <div
-          className="flex touch-pan-x snap-x snap-mandatory gap-3 overflow-x-auto overscroll-contain pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:overscroll-auto sm:snap-none sm:pb-0 stagger-children"
+          data-horizontal-scroll
+          className="flex touch-pan-x gap-3 overflow-x-auto overscroll-contain pb-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:overscroll-auto sm:pb-0 stagger-children"
         >
           {events.map((event) => (
             <TrendingEventCard key={event.id} event={event} onSelectPrompt={onSelectPrompt} />
@@ -93,7 +94,7 @@ function TrendingEventCard({
     <button
       type="button"
       onClick={handleClick}
-      className="group flex w-[72%] max-w-[300px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
+      className="group flex w-[72%] max-w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
     >
       {event.image_url ? (
         <img
