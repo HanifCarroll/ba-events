@@ -11,7 +11,7 @@ import type { ChatEventPayload } from '@/shared/lib/types'
  */
 export const getTrendingEventsAction = createServerFn({ method: 'GET' }).handler(
   async (): Promise<ChatEventPayload[]> => {
-    return getTrendingEvents(3)
+    return getTrendingEvents(8)
   }
 )
 

@@ -16,7 +16,7 @@ interface TrendingEventsProps {
 }
 
 /**
- * "Happening soon" grid of three real upcoming events on the chat home screen.
+ * "Happening soon" grid of eight real upcoming events on the chat home screen.
  * Each card is a starter prompt: tapping it asks the concierge about that event.
  * Hidden entirely when there are no events to show.
  */
@@ -58,7 +58,7 @@ export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEvents
         </div>
       ) : (
         <div
-          className="flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:snap-none sm:pb-0 stagger-children"
+          className="flex touch-pan-x snap-x snap-mandatory gap-3 overflow-x-auto overscroll-contain pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:overscroll-auto sm:snap-none sm:pb-0 stagger-children"
         >
           {events.map((event) => (
             <TrendingEventCard key={event.id} event={event} onSelectPrompt={onSelectPrompt} />
