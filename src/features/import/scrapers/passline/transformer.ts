@@ -42,6 +42,7 @@ export function transformPasslineEvent(
   venueId: string | null
 ): EventInsert {
   const price = normalizePrice(event.precio_min)
+  const timeTba = event.hora_inicio === '00:00:00' && event.hora_termino === '00:00:00'
 
   return {
     name: normalizeTitle(event.nombre),
@@ -53,6 +54,7 @@ export function transformPasslineEvent(
         ? combineDateTime(event.fecha_termino, event.hora_termino)
         : null,
     is_all_day: false,
+    time_tba: timeTba,
     venue_id: venueId,
     categories: [], // Assigned via AI during import
     price: price,

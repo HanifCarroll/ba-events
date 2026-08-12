@@ -228,6 +228,7 @@ export async function processPasslineImport(
             description_summary_en: eventWithEmbedding.description_summary_en,
             starts_at: eventWithEmbedding.starts_at,
             ends_at: eventWithEmbedding.ends_at,
+            time_tba: eventWithEmbedding.time_tba ?? false,
             venue_id: eventWithEmbedding.venue_id,
             categories: eventWithEmbedding.categories,
             price: eventWithEmbedding.price,

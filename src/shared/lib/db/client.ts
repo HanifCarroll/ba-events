@@ -83,7 +83,7 @@ export async function createVenue(venue: VenueInsert, client?: SupabaseClient) {
 // The embedding column is ~6KB per event and not needed for admin display
 const EVENT_ADMIN_COLUMNS = `
   id, name, description_es, description_en, description_display_es, description_display_en,
-  description_summary_es, description_summary_en, starts_at, ends_at, is_all_day,
+  description_summary_es, description_summary_en, starts_at, ends_at, is_all_day, time_tba,
   venue_id, categories, price, is_free, min_age, image_url, link, ticket_url,
   source, external_id, status, location_hidden, enrichment_status, enrichment_error,
   enriched_at, created_at, updated_at,
@@ -94,7 +94,7 @@ const EVENT_ADMIN_COLUMNS = `
 // not leave the database for chat display or message attachment paths.
 const CHAT_EVENT_COLUMNS = `
   id, name, description_es, description_en, description_display_es, description_display_en,
-  description_summary_es, description_summary_en, starts_at, ends_at, is_all_day,
+  description_summary_es, description_summary_en, starts_at, ends_at, is_all_day, time_tba,
   venue_id, categories, price, is_free, min_age, image_url, link, ticket_url,
   source, external_id, status, location_hidden, location_tba, description_unavailable,
   enrichment_status, enrichment_error, enriched_at, created_at, updated_at,

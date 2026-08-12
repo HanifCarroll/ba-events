@@ -122,6 +122,7 @@ export interface Event {
   starts_at: string // ISO datetime string
   ends_at: string | null // ISO datetime string
   is_all_day: boolean
+  time_tba: boolean // True when the date is known but the source time could not be verified
   venue_id: string | null
   categories: string[]
   price: number | null // in ARS
@@ -167,6 +168,7 @@ export interface EventInsert {
   starts_at: string
   ends_at?: string | null
   is_all_day?: boolean
+  time_tba?: boolean
   venue_id?: string | null
   categories?: string[]
   price?: number | null

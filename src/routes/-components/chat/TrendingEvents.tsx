@@ -79,7 +79,7 @@ function TrendingEventCard({
 }) {
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
-  const timeStr = formatTime(startDate)
+  const timeStr = event.time_tba ? m.concierge_time_tba() : formatTime(startDate)
   const showPrice = event.is_free || event.price !== null
 
   const handleClick = () => {

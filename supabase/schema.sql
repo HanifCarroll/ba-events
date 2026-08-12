@@ -101,6 +101,7 @@ create table events (
   starts_at timestamptz not null,
   ends_at timestamptz,
   is_all_day boolean not null default false,
+  time_tba boolean not null default false,
   venue_id uuid references venues(id) on delete set null,
   categories text[] not null default '{}',
   price integer, -- in ARS, null means price not available

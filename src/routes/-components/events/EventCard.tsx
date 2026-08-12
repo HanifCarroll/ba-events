@@ -78,7 +78,7 @@ function HeroEventCard({
   const locale = getLocale() as 'en' | 'es'
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
-  const timeStr = formatTime(startDate)
+  const timeStr = event.time_tba ? m.concierge_time_tba() : formatTime(startDate)
   const priceDisplay = formatPrice(event.price, event.is_free)
   const summaryDescription = pickDescriptionSummary(event, locale)
 
@@ -105,10 +105,10 @@ function HeroEventCard({
           <img
             src={event.image_url}
             alt=""
-            width={296}
-            height={296}
+            width={640}
+            height={360}
             loading="lazy"
-            className="aspect-square w-full max-w-[180px] rounded-xl object-cover sm:max-w-none"
+            className="aspect-video w-full rounded-xl object-cover sm:aspect-square sm:max-w-none"
           />
         )}
 
@@ -194,7 +194,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
 
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
-  const timeStr = formatTime(startDate)
+  const timeStr = event.time_tba ? m.concierge_time_tba() : formatTime(startDate)
 
   const priceDisplay = formatPrice(event.price, event.is_free)
   const isFree = event.is_free
@@ -331,7 +331,11 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4 text-primary/60" />
-                  <span>{formatEventTime(event.starts_at, event.ends_at)}</span>
+                  <span>
+                    {event.time_tba
+                      ? `${dateStr} · ${m.concierge_time_tba()}`
+                      : formatEventTime(event.starts_at, event.ends_at)}
+                  </span>
                 </div>
                 {event.location_hidden ? (
                   <div className="flex items-start gap-2 text-sm text-muted-foreground col-span-2">

@@ -13,7 +13,7 @@ This document outlines the event import architecture: automated initial import (
 | Source | Missing from Initial Import | Auto-Enrich Default |
 |--------|----------------------------|---------------------|
 | Passline | Descriptions | Yes |
-| Eventbrite | Price, categories/vibes | No |
+| Eventbrite | Detail-page time/price/age verification | No |
 | BA Tourism | Very little (most complete) | No |
 | Meetup | Descriptions, venue details | Yes |
 | Luma | Descriptions, venue details | Yes |
@@ -31,6 +31,10 @@ This document outlines the event import architecture: automated initial import (
 - Artists, sold-out status
 - Categories/vibes (inferred from Passline's event metadata)
 
+Passline sometimes publishes `00:00` for both endpoints without a real time. Those
+records keep their known date but set `time_tba = true`; the UI shows "Time TBA"
+instead of presenting midnight as verified.
+
 **Missing (requires enrichment):**
 - Descriptions - must be scraped from individual event pages via Jina + Claude Haiku
 
@@ -39,12 +43,14 @@ This document outlines the event import architecture: automated initial import (
 **Initial import captures:**
 - Event name, description (from JSON-LD)
 - Venue name, full address, coordinates
-- Dates (start/end)
+- Dates (start/end) from listing JSON-LD
 - Image URL, event URL
 
-**Missing (requires enrichment):**
-- Price - must be scraped from individual event pages
-- Categories/vibes - inferred by AI from name + description
+The importer then fetches each detail page before upsert to verify start/end times,
+price, and minimum age. If a same-day listing has no verifiable detail-page start
+time, it sets `time_tba = true`; chat tools and event cards show "Time TBA". Eventbrite
+IDs are extracted from both `tickets-<id>` and `registration-<id>` URLs so registration
+events follow the normal update path instead of being inserted repeatedly.
 
 ### BA Tourism
 

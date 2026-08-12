@@ -25,6 +25,7 @@ import {
   getSourceLabel,
 } from '@/features/events/lib/source-presentation'
 import { getDistinctVenueAddress } from '@/features/events/lib/location-presentation'
+import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type { EventWithVenue } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
@@ -89,7 +90,7 @@ function EventDetailPage() {
 
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
-  const timeStr = formatTime(startDate)
+  const timeStr = event.time_tba ? m.concierge_time_tba() : formatTime(startDate)
 
   const externalEventUrl = getExternalEventUrl(event)
 
@@ -250,7 +251,11 @@ function EventDetailPage() {
             <div className="grid gap-3 md:grid-cols-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-primary/70" />
-                <span>{formatEventTime(event.starts_at, event.ends_at)}</span>
+                <span>
+                  {event.time_tba
+                    ? `${dateStr} · ${m.concierge_time_tba()}`
+                    : formatEventTime(event.starts_at, event.ends_at)}
+                </span>
               </div>
               {event.venue_name && (
                 <div className="flex items-center gap-2">
@@ -345,8 +350,10 @@ function buildEventJsonLd(event: EventWithVenue, eventUrl: string, imageUrl: str
     '@type': 'Event',
     name: event.name,
     description,
-    startDate: event.starts_at,
-    endDate: event.ends_at || undefined,
+    startDate: event.time_tba
+      ? new Date(event.starts_at).toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE })
+      : event.starts_at,
+    endDate: event.time_tba ? undefined : event.ends_at || undefined,
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     eventStatus: 'https://schema.org/EventScheduled',
     image: imageUrl,

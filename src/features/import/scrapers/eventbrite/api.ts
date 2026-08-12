@@ -185,6 +185,6 @@ export function getVenueAddress(event: EventbriteEvent): string | null {
  * Returns: "1234567890"
  */
 export function extractEventId(url: string): string | null {
-  const match = url.match(/tickets-(\d+)/)
+  const match = url.match(/(?:tickets|registration)-(\d+)/)
   return match ? match[1] : null
 }

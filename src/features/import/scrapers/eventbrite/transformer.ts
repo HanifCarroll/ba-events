@@ -6,7 +6,7 @@
 
 import { fromZonedTime } from 'date-fns-tz'
 import type { EventInsert } from '@/shared/lib/types'
-import type { EventbriteEvent } from './api'
+import { extractEventId, type EventbriteEvent } from './api'
 import {
   normalizeTitle,
   normalizeDescription,
@@ -50,15 +50,6 @@ function extractVenueAddress(event: EventbriteEvent): string | null {
 }
 
 /**
- * Extract event ID from Eventbrite URL
- * URL format: https://www.eventbrite.com.ar/e/event-name-tickets-1234567890
- */
-function extractExternalId(url: string): string | null {
-  const match = url.match(/tickets-(\d+)/)
-  return match ? match[1] : null
-}
-
-/**
  * Check if event spans multiple days
  */
 function isMultiDayEvent(startDate: string, endDate: string): boolean {
@@ -85,6 +76,7 @@ export function transformEventbriteEvent(
     starts_at: startsAt,
     ends_at: endsAt,
     is_all_day: isMultiDayEvent(event.startDate, event.endDate),
+    time_tba: !isMultiDayEvent(event.startDate, event.endDate),
     venue_id: venueId,
     categories: [], // Enriched later via AI
     price: null, // Enriched later via page fetch
@@ -94,7 +86,7 @@ export function transformEventbriteEvent(
     link: normalizeUrl(event.url),
     ticket_url: normalizeUrl(event.url), // Same as event URL for Eventbrite
     source: 'eventbrite',
-    external_id: extractExternalId(event.url),
+    external_id: extractEventId(event.url),
     status: 'scheduled',
   }
 }

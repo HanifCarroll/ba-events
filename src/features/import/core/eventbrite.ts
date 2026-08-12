@@ -220,6 +220,7 @@ export async function processEventbriteImport(
       if (detail.ends_at) transformed.ends_at = detail.ends_at
       // Real times mean it is a timed event, not all-day
       transformed.is_all_day = false
+      transformed.time_tba = false
     }
     if (detail.hasPrice) {
       transformed.is_free = detail.is_free
@@ -287,6 +288,7 @@ export async function processEventbriteImport(
             starts_at: eventWithEmbedding.starts_at,
             ends_at: eventWithEmbedding.ends_at,
             is_all_day: eventWithEmbedding.is_all_day,
+            time_tba: eventWithEmbedding.time_tba ?? false,
             venue_id: eventWithEmbedding.venue_id,
             categories: eventWithEmbedding.categories,
             price: eventWithEmbedding.price,
