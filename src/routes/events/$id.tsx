@@ -24,6 +24,7 @@ import {
   getSourceCtaLabel,
   getSourceLabel,
 } from '@/features/events/lib/source-presentation'
+import { getDistinctVenueAddress } from '@/features/events/lib/location-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
@@ -104,6 +105,7 @@ function EventDetailPage() {
   const hasDescription = Boolean(displayDescription?.trim())
   const sourceLabel = getSourceLabel(event.source)
   const sourceCtaLabel = getSourceCtaLabel(event.source)
+  const distinctVenueAddress = getDistinctVenueAddress(event.venue_name, event.venue_address)
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -256,10 +258,10 @@ function EventDetailPage() {
                   <span>{event.venue_name}</span>
                 </div>
               )}
-              {!event.location_hidden && event.venue_address && (
+              {!event.location_hidden && distinctVenueAddress && (
                 <div className="flex items-start gap-2 md:col-span-2">
                   <MapPin className="h-4 w-4 text-primary/70 mt-0.5" />
-                  <span>{event.venue_address}</span>
+                  <span>{distinctVenueAddress}</span>
                 </div>
               )}
             </div>
