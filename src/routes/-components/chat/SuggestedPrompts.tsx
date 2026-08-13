@@ -56,8 +56,8 @@ export function SuggestedPrompts({
         <div className="mt-auto pt-4">
           <div className="rounded-xl bg-muted/45 px-3 py-3 sm:px-4">
             <div className="mb-2.5">
-              <p className="text-sm font-medium text-foreground">{m.home_time_label()}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{m.home_time_hint()}</p>
+              <p className="text-sm font-medium text-foreground">{m.home_surprise_label()}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{m.home_surprise_hint()}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {timeOptions.map((option) => {

@@ -127,7 +127,7 @@ export function ChatContainer({
   trendingEvents,
 }: ChatContainerProps = {}) {
   const [error, setError] = useState<string | null>(null)
-  const [homeTimeContext, setHomeTimeContext] = useState<HomeTimeContext>('tonight')
+  const [homeTimeContext, setHomeTimeContext] = useState<HomeTimeContext>(null)
   const [messageAttachedDataMap, setMessageAttachedDataMap] = useState<
     Map<string, MessageAttachedData>
   >(new Map())
@@ -692,7 +692,7 @@ export function ChatContainer({
       executionTraceByAssistantIdRef.current.clear()
       setRequestLifecyclePhase('idle')
       setError(null)
-      setHomeTimeContext('tonight')
+      setHomeTimeContext(null)
       pendingUserMessageRef.current = null
       pendingConversationIdRef.current = null
       pendingAssistantClientMessageIdRef.current = null
@@ -916,18 +916,6 @@ export function ChatContainer({
 
   const hasMessages = displayMessages.length > 0
 
-  const handleComposerSend = useCallback((content: string) => {
-    if (hasMessages || !homeTimeContext) {
-      void handleSendMessage(content)
-      return
-    }
-
-    const time = homeTimeContext === 'tonight'
-      ? m.context_prompt_time_tonight()
-      : m.context_prompt_time_weekend()
-    void handleSendMessage(m.context_prompt_request_with_time({ request: content, time }))
-  }, [handleSendMessage, hasMessages, homeTimeContext])
-
   const lastAssistantMessage = [...chatMessages].reverse().find((message) => message.role === 'assistant')
   const showLoading = shouldShowLoadingIndicator(
     status as 'submitted' | 'streaming' | 'ready' | 'error',
@@ -1032,7 +1020,7 @@ export function ChatContainer({
 
       <div className="shrink-0 bg-background">
         <ChatInput
-          onSend={handleComposerSend}
+          onSend={handleSendMessage}
           disabled={isLoading || showConversationLoading}
           emphasized={!hasMessages && requestPhase === 'idle' && !conversationId}
         />
