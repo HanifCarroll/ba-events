@@ -1,6 +1,7 @@
 import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category } from '@/shared/lib/types'
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
 import { BA_TIMEZONE } from '@/shared/lib/constants'
+import * as m from '@/paraglide/messages'
 
 // Generate unique ID for messages
 export function generateId(): string {
@@ -188,8 +189,8 @@ export function generateResponse(intent: ParsedIntent, events: EventWithVenue[])
 
 // Format price for display
 export function formatPrice(price: number | null, isFree: boolean): string {
-  if (isFree) return 'Free'
-  if (price === null) return 'Price TBA'
+  if (isFree || price === 0) return m.event_free()
+  if (price === null) return m.event_price_tba()
   return `$${price.toLocaleString('es-AR')} ARS`
 }
 

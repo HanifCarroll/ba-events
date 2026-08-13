@@ -46,21 +46,25 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { user, profile } = useAuthContext()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sidebar-collapsed') === 'true'
-    }
-    return false
-  })
+  const [collapsed, setCollapsed] = useState(false)
+  const [collapsedPreferenceLoaded, setCollapsedPreferenceLoaded] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   // Wrap signOutAction with useServerFn for server-side sign-out
   const signOut = useServerFn(signOutAction)
 
-  // Persist collapsed state
+  // Resolve browser-only preferences after hydration so the server and first
+  // client render always agree.
   useEffect(() => {
+    setCollapsed(localStorage.getItem('sidebar-collapsed') === 'true')
+    setCollapsedPreferenceLoaded(true)
+  }, [])
+
+  // Persist collapsed state after the stored preference has been read.
+  useEffect(() => {
+    if (!collapsedPreferenceLoaded) return
     localStorage.setItem('sidebar-collapsed', String(collapsed))
-  }, [collapsed])
+  }, [collapsed, collapsedPreferenceLoaded])
 
   const handleFeedback = () => {
     setFeedbackOpen(true)
@@ -158,7 +162,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           aria-expanded={mobileMenuOpen}
-          className="text-muted-foreground hover:text-primary hover:bg-primary/10 shrink-0"
+          className="size-11 text-muted-foreground hover:text-primary hover:bg-primary/10 shrink-0"
         >
           {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>

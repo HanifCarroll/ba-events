@@ -31,19 +31,9 @@ const pwaWorkbox = (): Plugin => ({
       skipWaiting: true,
       clientsClaim: true,
       cleanupOutdatedCaches: true,
+      // Do not cache SSR navigation documents. Their language varies by locale
+      // cookie and Accept-Language; reusing one across locales breaks hydration.
       runtimeCaching: [
-        {
-          // Cache server-rendered HTML for offline revisits (network-first so
-          // fresh SSR output wins when online).
-          urlPattern: ({ request }) => request.mode === 'navigate',
-          handler: 'NetworkFirst',
-          options: {
-            cacheName: 'pages',
-            networkTimeoutSeconds: 3,
-            expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 30 },
-            cacheableResponse: { statuses: [200] },
-          },
-        },
         {
           // Google Fonts stylesheet + font files (cache-first is safe: URLs are
           // versioned by Google).

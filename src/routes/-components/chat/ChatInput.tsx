@@ -14,6 +14,7 @@ import {
 interface ChatInputProps {
   onSend: (message: string) => void
   disabled?: boolean
+  emphasized?: boolean
 }
 
 /**
@@ -32,6 +33,7 @@ interface ChatInputProps {
 export function ChatInput({
   onSend,
   disabled = false,
+  emphasized = false,
 }: ChatInputProps) {
   const [value, setValue] = useState('')
   const [isFocused, setIsFocused] = useState(false)
@@ -170,11 +172,16 @@ export function ChatInput({
       {/* No <form> wrapper - prevents Chrome autofill bar on mobile */}
       <div className="relative px-4 pb-4 pt-2 sm:px-8 sm:pb-5 bg-background">
         <div className="max-w-[860px] mx-auto">
+          {emphasized && (
+            <p className="mb-1.5 px-1 text-sm font-medium text-foreground">
+              {m.home_composer_label()}
+            </p>
+          )}
           <div
             className={`
               relative flex items-end gap-3 rounded-2xl border bg-card
               transition-[border-color,box-shadow] duration-200
-              ${isFocused ? 'border-primary/40 glow-gold-subtle' : 'border-border/50'}
+              ${isFocused ? 'border-primary/50 ring-2 ring-primary/10' : emphasized ? 'border-primary/30' : 'border-border/50'}
               ${disabled ? 'opacity-60' : ''}
             `}
           >
@@ -236,7 +243,7 @@ export function ChatInput({
               aria-pressed={isListening}
               title={!isSupported ? m.chat_dictate_unsupported() : undefined}
               className={`
-                mb-2 p-2.5 rounded-full shrink-0 transition-colors duration-200
+                mb-0.5 size-11 rounded-full shrink-0 transition-colors duration-200 flex items-center justify-center
                 ${
                   !isSupported
                     ? 'text-muted-foreground/40 cursor-not-allowed'
@@ -254,7 +261,7 @@ export function ChatInput({
               onClick={handleSubmit}
               disabled={!canSubmit}
               className={`
-                mr-2 mb-2 p-2.5 rounded-full shrink-0
+                mr-0.5 mb-0.5 size-11 rounded-full shrink-0 flex items-center justify-center
                 transition-colors duration-200
                 ${
                   canSubmit

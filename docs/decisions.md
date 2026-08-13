@@ -2072,3 +2072,23 @@ removed a real ~33% fallback rate observed in production runs (21/64 events on
 the SDK actually reads), and `TRIGGER_SECRET_KEY_PROD` added for production run
 visibility/triggering (dev key `tr_dev_` is scoped to the personal dev environment
 and cannot see or trigger prod runs).
+
+---
+
+## Do not cache locale-sensitive SSR documents in the service worker
+
+**Date:** 2026-08-13
+
+**Decision:** Keep static assets and Google Fonts cached, but do not runtime-cache
+server-rendered navigation documents in Workbox.
+
+**Alternatives Considered:**
+- Keep the existing `NetworkFirst` page cache: it can reuse Spanish HTML for an
+  English client, causing React hydration to fail before the network refresh wins.
+- Create separate page-cache keys for every locale: this duplicates Paraglide's
+  cookie and preferred-language resolution inside the service worker and can still
+  drift from the server.
+
+**Rationale:** The server is the source of truth for locale negotiation. Navigation
+documents are small and online event discovery already requires a live connection,
+so correct SSR and hydration are more valuable than stale offline page shells.

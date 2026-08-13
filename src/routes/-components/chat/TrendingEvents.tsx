@@ -16,7 +16,7 @@ interface TrendingEventsProps {
 }
 
 /**
- * "Happening soon" grid of eight real upcoming events on the chat home screen.
+ * A compact sample of real upcoming events on the chat home screen.
  * Each card is a starter prompt: tapping it asks the concierge about that event.
  * Hidden entirely when there are no events to show.
  */
@@ -33,22 +33,26 @@ export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEvents
   })
 
   const events = data ?? []
+  const displayedEvents = events.slice(0, 4)
 
   if (!isLoading && events.length === 0) return null
 
   return (
-    <section className="mt-6 border-t border-border/60 pt-4" aria-label={m.home_trending_title()}>
-      <h2 className="mb-3 text-sm font-medium text-foreground">{m.home_trending_title()}</h2>
+    <section className="border-t border-border/60 pt-3" aria-label={m.home_trending_title()}>
+      <div className="mb-2.5 flex items-baseline justify-between gap-3">
+        <h2 className="text-sm font-medium text-foreground">{m.home_trending_title()}</h2>
+        <p className="text-right text-xs text-muted-foreground">{m.home_trending_hint()}</p>
+      </div>
 
       {isLoading ? (
         <div className="flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:pb-0">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="w-[72%] max-w-[300px] shrink-0 overflow-hidden rounded-xl border border-border/50 bg-card animate-pulse sm:w-auto sm:max-w-none"
+              className="w-[58%] max-w-[220px] shrink-0 overflow-hidden rounded-xl border border-border/50 bg-card animate-pulse sm:w-auto sm:max-w-none"
             >
-              <div className="h-24 bg-muted" />
-              <div className="space-y-2 p-3">
+              <div className="h-16 bg-muted sm:h-20" />
+              <div className="space-y-2 p-2.5">
                 <div className="h-3.5 w-3/4 rounded bg-muted" />
                 <div className="h-3 w-1/2 rounded bg-muted" />
                 <div className="h-3 w-1/3 rounded bg-muted" />
@@ -59,9 +63,9 @@ export function TrendingEvents({ onSelectPrompt, initialEvents }: TrendingEvents
       ) : (
         <div
           data-horizontal-scroll
-          className="flex touch-pan-x gap-3 overflow-x-auto overscroll-contain pb-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:overscroll-auto sm:pb-0 stagger-children"
+          className="flex touch-pan-x gap-2.5 overflow-x-auto overscroll-contain pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-4 sm:gap-3 sm:overflow-visible sm:overscroll-auto sm:pb-0 stagger-children"
         >
-          {events.map((event) => (
+          {displayedEvents.map((event) => (
             <TrendingEventCard key={event.id} event={event} onSelectPrompt={onSelectPrompt} />
           ))}
         </div>
@@ -94,21 +98,22 @@ function TrendingEventCard({
     <button
       type="button"
       onClick={handleClick}
-      className="group flex w-[72%] max-w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
+      aria-label={m.home_trending_prompt({ name: event.name })}
+      className="group flex w-[58%] max-w-[220px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
     >
       {event.image_url ? (
         <img
           src={event.image_url}
           alt=""
           loading="lazy"
-          className="h-24 w-full object-cover"
+          className="h-16 w-full object-cover sm:h-20"
         />
       ) : (
-        <div className="flex h-24 items-center justify-center bg-muted text-muted-foreground/60">
+        <div className="flex h-16 items-center justify-center bg-muted text-muted-foreground/60 sm:h-20">
           <Calendar className="h-6 w-6" aria-hidden="true" />
         </div>
       )}
-      <div className="p-3">
+      <div className="p-2.5">
         <p className="line-clamp-1 text-sm font-medium text-foreground transition-colors group-hover:text-primary">
           {event.name}
         </p>
@@ -123,7 +128,7 @@ function TrendingEventCard({
           </span>
         </p>
         {showPrice && (
-          <p className="mt-1.5 text-xs font-medium text-primary">{formatPrice(event.price, event.is_free)}</p>
+          <p className="mt-1 text-xs font-medium text-primary">{formatPrice(event.price, event.is_free)}</p>
         )}
       </div>
     </button>

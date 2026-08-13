@@ -121,17 +121,20 @@ export function SaveEventButton({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Link to="/login">
-            <Button
-              variant="ghost"
-              size={showLabel ? 'default' : 'icon'}
+          <Button
+            asChild
+            variant="ghost"
+            size={showLabel ? 'default' : 'icon'}
+            className={`${buttonSize} text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors ${className}`}
+          >
+            <Link
+              to="/login"
               aria-label={m.event_sign_in_to_save()}
-              className={`${buttonSize} text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors ${className}`}
             >
               <Heart className={iconSize} />
               {showLabel && <span>{m.event_save()}</span>}
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </TooltipTrigger>
         <TooltipContent side="top">
           <p className="text-xs">{m.event_sign_in_to_save()}</p>

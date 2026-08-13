@@ -4,10 +4,11 @@ import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from
 import {
   Collapsible,
   CollapsibleContent,
+  CollapsibleTrigger,
 } from '@/shared/ui/collapsible'
 import { EventActions } from './EventActions'
 import { SaveEventButton } from '../SaveEventButton'
-import { formatPrice } from '@/features/chat'
+import { formatPrice } from '@/features/chat/lib/messages'
 import { formatShortDate, formatTime, formatEventTime } from '@/shared/lib/utils/formatting'
 import { track } from '@/lib/analytics'
 import { getEventUrl } from '@/shared/lib/utils/url'
@@ -197,7 +198,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
   const timeStr = event.time_tba ? m.concierge_time_tba() : formatTime(startDate)
 
   const priceDisplay = formatPrice(event.price, event.is_free)
-  const isFree = event.is_free
+  const isFree = event.is_free || event.price === 0
   const summaryDescription = pickDescriptionSummary(event, locale)
   const hasDescription = Boolean(summaryDescription)
   const sourceLabel = getSourceLabel(event.source)
@@ -228,80 +229,86 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
-        {/* Header - clickable area for expand/collapse */}
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-4">
-            {/* Main content - clickable to toggle */}
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={handleToggle}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle() }}}
-              className="flex-1 min-w-0 cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-ring rounded"
-              aria-expanded={isOpen}
-              aria-controls={`event-details-${event.id}`}
-              aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
-            >
-              <h3 className="font-display font-medium text-base text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-1">
-                {event.name}
-              </h3>
-              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2">
-                {event.location_hidden ? (
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MapPin className="h-3 w-3 text-primary/60" />
-                    <span className="truncate max-w-[140px] italic">Address after registration</span>
-                  </span>
-                ) : event.venue_name && (
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MapPin className="h-3 w-3 text-primary/60" />
-                    <span className="truncate max-w-[120px]">{event.venue_name}</span>
-                  </span>
-                )}
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Calendar className="h-3 w-3 text-primary/60" />
-                  {dateStr}
-                </span>
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3 text-primary/60" />
-                  {timeStr}
-                </span>
-              </div>
-            </div>
+        <div className="p-3 sm:p-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:gap-x-4">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isOpen) handleToggle()
+                }}
+                className="w-full min-w-0 cursor-pointer rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
+              >
+                <h3 className="line-clamp-1 font-display text-base font-medium text-foreground transition-colors duration-300 group-hover:text-primary">
+                  {event.name}
+                </h3>
+              </button>
+            </CollapsibleTrigger>
 
-            {/* Actions - not part of the toggle trigger */}
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Price badge */}
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               <span
-                className={`
-                  px-2.5 py-1 rounded-lg text-xs font-medium tracking-wide
-                  ${isFree
-                    ? 'bg-primary/15 text-primary border border-primary/20'
-                    : 'bg-muted text-muted-foreground border border-border/50'
-                  }
-                `}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium tracking-wide ${
+                  isFree
+                    ? 'border-primary/20 bg-primary/15 text-primary'
+                    : 'border-border/50 bg-muted text-muted-foreground'
+                }`}
               >
                 {priceDisplay}
               </span>
 
-              {/* Expand indicator - clickable */}
-              <button
-                onClick={handleToggle}
-                className={`
-                  p-1 rounded-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-ring
-                  ${isOpen ? 'bg-primary/10 text-primary rotate-180' : 'text-muted-foreground hover:bg-primary/10 hover:text-primary'}
-                `}
-                aria-expanded={isOpen}
-                aria-controls={`event-details-${event.id}`}
-                aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isOpen) handleToggle()
+                  }}
+                  className={`flex size-11 items-center justify-center rounded-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-8 ${
+                    isOpen
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-primary/10 hover:text-primary'
+                  }`}
+                  aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
+                >
+                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </CollapsibleTrigger>
             </div>
+
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 sm:col-auto sm:mt-2 sm:gap-x-3 sm:gap-y-1">
+              {event.location_hidden ? (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <MapPin className="h-3 w-3 text-primary/60" />
+                  <span className="truncate max-w-[140px] italic">Address after registration</span>
+                </span>
+              ) : event.venue_name && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <MapPin className="h-3 w-3 text-primary/60" />
+                  <span className="truncate max-w-[120px]">{event.venue_name}</span>
+                </span>
+              )}
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Calendar className="h-3 w-3 text-primary/60" />
+                {dateStr}
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3 text-primary/60" />
+                {timeStr}
+              </span>
+            </div>
+
+            <SaveEventButton
+              eventId={event.id}
+              eventName={event.name}
+              size="sm"
+              source={source}
+              className="size-11 justify-self-end sm:hidden"
+            />
           </div>
         </div>
 
         <CollapsibleContent>
-          <div id={`event-details-${event.id}`} className="px-4 pb-4">
+          <div id={`event-details-${event.id}`} className="px-3 pb-3 sm:px-4 sm:pb-4">
             {/* Separator */}
             <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent mb-4" />
 
@@ -391,12 +398,35 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               <div className="flex items-center justify-between pt-2">
                 <EventActions event={event} shareUrl={getEventUrl(event.id)} />
               </div>
+
+              <div className="flex items-center gap-1 border-t border-border/40 pt-2 sm:hidden">
+                <Link
+                  to="/events/$id"
+                  params={{ id: event.id }}
+                  state={{ fromChat: source === 'chat' }}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-primary/[0.06] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Info className="h-4 w-4" aria-hidden="true" />
+                  <span>{m.event_details_short()}</span>
+                </Link>
+                {event.link && (
+                  <a
+                    href={event.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-primary/[0.06] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span>{m.event_view()}</span>
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         </CollapsibleContent>
 
         {/* Footer actions - save and event details grouped together */}
-        <div className="flex items-center gap-2 border-t border-border/40 px-4 py-3">
+        <div className="hidden items-center gap-2 border-t border-border/40 px-4 py-3 sm:flex">
           <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
           <Link
             to="/events/$id"
@@ -406,7 +436,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
           >
             <Info className="h-3.5 w-3.5" />
-            <span>Details</span>
+            <span>{m.event_details_short()}</span>
           </Link>
           {event.link && (
             <a
@@ -416,7 +446,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               onClick={(e) => e.stopPropagation()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
             >
-              <span>View</span>
+              <span>{m.event_view()}</span>
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
