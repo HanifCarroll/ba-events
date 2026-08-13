@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from 'lucide-react'
+import { Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -338,21 +338,6 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
               >
                 {priceDisplay}
               </span>
-
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  onKeyDown={handleTriggerKeyDown}
-                  className={`flex size-8 items-center justify-center rounded-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    isOpen
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-primary/10 hover:text-primary'
-                  }`}
-                  aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
-                >
-                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-                </button>
-              </CollapsibleTrigger>
             </div>
 
             <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
