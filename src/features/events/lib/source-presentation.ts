@@ -17,11 +17,6 @@ export function getSourceLabel(source: string | null | undefined): string | null
   return SOURCE_LABELS[source] ?? null
 }
 
-export function getSourceCtaLabel(source: string | null | undefined): string {
-  const sourceLabel = getSourceLabel(source)
-  return sourceLabel ? `Open in ${sourceLabel}` : 'Open Event'
-}
-
 export function getExternalEventUrl(event: ExternalEventLike): string | null {
   return event.ticket_url || event.link || null
 }

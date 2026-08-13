@@ -3,9 +3,10 @@ import { Heart } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
-import { isEventSaved, saveEvent, unsaveEvent } from '@/features/chat'
+import { isEventSaved, saveEvent, unsaveEvent } from '@/features/chat/lib/saved'
 import { track } from '@/lib/analytics'
 import { Button } from '@/shared/ui/button'
+import * as m from '@/paraglide/messages'
 import {
   Tooltip,
   TooltipContent,
@@ -20,6 +21,8 @@ interface SaveEventButtonProps {
   onSaveChange?: (saved: boolean) => void
   size?: 'sm' | 'md'
   className?: string
+  /** Show a text label beside the icon. */
+  showLabel?: boolean
   /** Source context for analytics */
   source?: 'chat' | 'saved_page' | 'event_detail'
 }
@@ -31,6 +34,7 @@ export function SaveEventButton({
   onSaveChange,
   size = 'md',
   className = '',
+  showLabel = false,
   source = 'chat',
 }: SaveEventButtonProps) {
   const { user, loading } = useAuthContext()
@@ -90,19 +94,24 @@ export function SaveEventButton({
   }
 
   const iconSize = size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'
-  const buttonSize = size === 'sm' ? 'h-8 w-8' : 'h-10 w-10'
+  const buttonSize = showLabel
+    ? 'h-11 w-full px-3'
+    : size === 'sm'
+      ? 'h-8 w-8'
+      : 'h-10 w-10'
 
   // If loading, show disabled state
   if (loading) {
     return (
       <Button
         variant="ghost"
-        size="icon"
+        size={showLabel ? 'default' : 'icon'}
         disabled
-        aria-label="Loading saved status"
+        aria-label={m.event_loading_saved()}
         className={`${buttonSize} text-muted-foreground/50 ${className}`}
       >
         <Heart className={iconSize} />
+        {showLabel && <span>{m.event_save()}</span>}
       </Button>
     )
   }
@@ -115,16 +124,17 @@ export function SaveEventButton({
           <Link to="/login">
             <Button
               variant="ghost"
-              size="icon"
-              aria-label="Sign in to save event"
+              size={showLabel ? 'default' : 'icon'}
+              aria-label={m.event_sign_in_to_save()}
               className={`${buttonSize} text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors ${className}`}
             >
               <Heart className={iconSize} />
+              {showLabel && <span>{m.event_save()}</span>}
             </Button>
           </Link>
         </TooltipTrigger>
         <TooltipContent side="top">
-          <p className="text-xs">Sign in to save events</p>
+          <p className="text-xs">{m.event_sign_in_to_save()}</p>
         </TooltipContent>
       </Tooltip>
     )
@@ -135,10 +145,10 @@ export function SaveEventButton({
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
-          size="icon"
+          size={showLabel ? 'default' : 'icon'}
           onClick={handleToggle}
           disabled={isUpdating}
-          aria-label={isSaved ? 'Remove from saved' : 'Save event'}
+          aria-label={isSaved ? m.event_remove_from_saved() : m.event_save()}
           aria-pressed={isSaved}
           className={`
             ${buttonSize}
@@ -154,10 +164,11 @@ export function SaveEventButton({
           <Heart
             className={`${iconSize} transition-all duration-200 ${isSaved ? 'fill-current scale-110' : ''}`}
           />
+          {showLabel && <span>{isSaved ? m.event_saved() : m.event_save()}</span>}
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p className="text-xs">{isSaved ? 'Remove from saved' : 'Save event'}</p>
+        <p className="text-xs">{isSaved ? m.event_remove_from_saved() : m.event_save()}</p>
       </TooltipContent>
     </Tooltip>
   )

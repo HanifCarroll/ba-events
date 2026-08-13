@@ -6,7 +6,7 @@ import {
   useRouter,
   useRouterState,
 } from '@tanstack/react-router'
-import { ArrowLeft, Calendar, Clock, MapPin, ExternalLink, Share2, Check } from 'lucide-react'
+import { ArrowLeft, Calendar, MapPin, ExternalLink, Share2, Check, Ticket } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { getEventWithVenueAction } from '@/features/events/api/crud'
 import { SaveEventButton } from '@/routes/-components/SaveEventButton'
@@ -21,7 +21,6 @@ import {
 } from '@/features/events/lib/description-presentation'
 import {
   getExternalEventUrl,
-  getSourceCtaLabel,
   getSourceLabel,
 } from '@/features/events/lib/source-presentation'
 import { getDistinctVenueAddress } from '@/features/events/lib/location-presentation'
@@ -105,8 +104,20 @@ function EventDetailPage() {
   const displayDescription = pickDisplayDescription(event, locale)
   const hasDescription = Boolean(displayDescription?.trim())
   const sourceLabel = getSourceLabel(event.source)
-  const sourceCtaLabel = getSourceCtaLabel(event.source)
+  const sourceCtaLabel = event.ticket_url
+    ? sourceLabel
+      ? m.event_get_tickets_on({ source: sourceLabel })
+      : m.event_get_tickets()
+    : sourceLabel
+      ? m.event_view_on({ source: sourceLabel })
+      : m.event_open_event()
   const distinctVenueAddress = getDistinctVenueAddress(event.venue_name, event.venue_address)
+  const priceDisplay = event.is_free
+    ? m.event_free()
+    : event.price === null
+      ? null
+      : `$${event.price.toLocaleString('es-AR')} ARS`
+  const hasKnownPrice = event.is_free || event.price !== null
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -143,156 +154,158 @@ function EventDetailPage() {
         <div className="absolute bottom-24 -right-32 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative px-6 py-6">
-        <div className="max-w-4xl mx-auto space-y-6">
-          <div className="flex flex-col gap-4">
-            <div className="min-w-0">
-              {fromChat && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleBackToChat}
-                  className="-ml-3 mb-3 min-h-11 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                >
-                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  {m.event_back_to_chat()}
-                </Button>
-              )}
-              <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
-                {event.name}
-              </h1>
-              {/* Meta hidden on mobile — the details card below repeats it */}
-              <div className="mt-3 hidden md:flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                <span className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-primary/70" />
-                  {dateStr}
-                </span>
-                <span className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-primary/70" />
-                  {timeStr}
-                </span>
-                {!event.location_hidden && (event.venue_neighborhood || event.venue_name) && (
-                  <span className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-primary/70" />
-                    {event.venue_neighborhood || event.venue_name}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
-              <div className="flex items-center justify-end gap-2 md:justify-start">
-                <SaveEventButton
-                  eventId={event.id}
-                  eventName={event.name}
-                  source="event_detail"
-                  className="max-md:size-11"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={handleShare}
-                  aria-label={copied ? 'Copied' : 'Share'}
-                  className="text-muted-foreground hover:bg-primary/10 hover:text-primary max-md:size-11 max-md:p-0"
-                >
-                  {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-                  <span className="hidden md:inline">{copied ? 'Copied' : 'Share'}</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={!mapUrl}
-                  onClick={() => mapUrl && window.open(mapUrl, '_blank', 'noopener,noreferrer')}
-                  aria-label="Open in Maps"
-                  className="text-muted-foreground hover:bg-primary/10 hover:text-primary max-md:size-11 max-md:p-0"
-                >
-                  <MapPin className="h-4 w-4" />
-                  <span className="hidden md:inline">Open in Maps</span>
-                </Button>
-              </div>
-              <Button
-                type="button"
-                disabled={!externalEventUrl}
-                onClick={() => externalEventUrl && window.open(externalEventUrl, '_blank', 'noopener,noreferrer')}
-                className="w-full md:w-auto"
-              >
-                <ExternalLink className="h-4 w-4" />
-                {sourceCtaLabel}
-              </Button>
-            </div>
-          </div>
-
-          {event.image_url && (
-            <div className="overflow-hidden rounded-2xl border border-border/30 bg-card">
-              <img
-                src={resolveSiteUrl(event.image_url)}
-                alt={event.name}
-                className="h-64 w-full object-cover"
-                loading="lazy"
-              />
-            </div>
+      <div className="relative px-5 py-5 sm:px-6 sm:py-6">
+        <div className="mx-auto max-w-4xl">
+          {fromChat && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleBackToChat}
+              className="-ml-3 mb-5 min-h-11 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              {m.event_back_to_chat()}
+            </Button>
           )}
 
-          <div className="rounded-2xl border border-border/30 bg-card p-6 space-y-4">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {sourceLabel && (
-                <Badge className="bg-muted text-muted-foreground border-border/60">
-                  {sourceLabel}
-                </Badge>
-              )}
-              {!hasDescription && (
-                <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                  Limited info
-                </Badge>
-              )}
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary/70" />
-                <span>
-                  {event.time_tba
-                    ? `${dateStr} · ${m.concierge_time_tba()}`
-                    : formatEventTime(event.starts_at, event.ends_at)}
-                </span>
+          <div className={event.image_url
+            ? 'grid gap-6 md:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] md:items-start md:gap-8'
+            : 'max-w-2xl'}
+          >
+            {event.image_url && (
+              <div className="overflow-hidden rounded-2xl border border-border/30 bg-card">
+                <img
+                  src={resolveSiteUrl(event.image_url)}
+                  alt={event.name}
+                  className="aspect-square w-full object-cover"
+                  loading="lazy"
+                />
               </div>
-              {event.venue_name && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-primary/70" />
-                  <span>{event.venue_name}</span>
+            )}
+
+            <section className="min-w-0 space-y-5" aria-labelledby="event-title">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {sourceLabel && (
+                    <Badge className="bg-muted text-muted-foreground border-border/60">
+                      {sourceLabel}
+                    </Badge>
+                  )}
+                  {!hasDescription && (
+                    <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                      {m.event_limited_info()}
+                    </Badge>
+                  )}
                 </div>
-              )}
-              {!event.location_hidden && distinctVenueAddress && (
-                <div className="flex items-start gap-2 md:col-span-2">
-                  <MapPin className="h-4 w-4 text-primary/70 mt-0.5" />
-                  <span>{distinctVenueAddress}</span>
+
+                <h1
+                  id="event-title"
+                  className="text-balance text-[1.75rem] font-semibold leading-[1.08] tracking-[-0.035em] text-foreground sm:text-3xl"
+                >
+                  {event.name}
+                </h1>
+              </div>
+
+              <dl className="space-y-3 text-sm text-muted-foreground">
+                <div className="flex items-start gap-3">
+                  <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                  <dd>{event.time_tba ? `${dateStr} · ${timeStr}` : formatEventTime(event.starts_at, event.ends_at)}</dd>
                 </div>
-              )}
-            </div>
 
-            {event.location_hidden && (
-              <div className="rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                Location is hidden until registration. Use the event link to reveal the address.
-              </div>
-            )}
+                {(event.location_hidden || event.venue_name || event.venue_neighborhood) && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                    <dd className="min-w-0">
+                      {event.location_hidden ? (
+                        m.event_location_hidden()
+                      ) : (
+                        <>
+                          <span className="block text-foreground/90">
+                            {event.venue_name || event.venue_neighborhood}
+                          </span>
+                          {distinctVenueAddress && (
+                            <span className="mt-0.5 block">{distinctVenueAddress}</span>
+                          )}
+                        </>
+                      )}
+                    </dd>
+                  </div>
+                )}
 
-            {hasDescription && (
-              <div className="text-sm prose prose-sm prose-warm max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-3 [&_ul]:my-3 [&_ol]:my-3 [&_strong]:text-foreground [&_strong]:font-semibold">
-                <ReactMarkdown>{displayDescription!}</ReactMarkdown>
-              </div>
-            )}
+                {hasKnownPrice && (
+                  <div className="flex items-start gap-3">
+                    <Ticket className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden="true" />
+                    <dd>{priceDisplay}</dd>
+                  </div>
+                )}
+              </dl>
 
-            {event.categories.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {event.categories.map((cat) => (
-                  <Badge key={cat} className="bg-primary/10 text-primary/90 border-primary/20">
-                    {cat}
-                  </Badge>
-                ))}
+              <div className="space-y-2.5">
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={!externalEventUrl}
+                  onClick={() => externalEventUrl && window.open(externalEventUrl, '_blank', 'noopener,noreferrer')}
+                  className="min-h-11 w-full"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {sourceCtaLabel}
+                </Button>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <SaveEventButton
+                    eventId={event.id}
+                    eventName={event.name}
+                    source="event_detail"
+                    showLabel
+                    className="border border-border/60 bg-background/50 text-muted-foreground hover:border-primary/30"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleShare}
+                    aria-label={copied ? m.event_copied() : m.event_share()}
+                    className="h-11 min-w-0 px-2 text-muted-foreground hover:text-primary"
+                  >
+                    {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+                    <span className="truncate">{copied ? m.event_copied() : m.event_share()}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!mapUrl}
+                    onClick={() => mapUrl && window.open(mapUrl, '_blank', 'noopener,noreferrer')}
+                    aria-label={m.event_open_maps()}
+                    className="h-11 min-w-0 px-2 text-muted-foreground hover:text-primary"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    <span className="truncate">{m.event_maps()}</span>
+                  </Button>
+                </div>
               </div>
-            )}
+            </section>
           </div>
+
+          {(hasDescription || event.categories.length > 0) && (
+            <div className="mt-6 rounded-2xl border border-border/30 bg-card p-5 sm:p-6 space-y-4">
+              {hasDescription && (
+                <div className="text-sm prose prose-sm prose-warm max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-3 [&_ul]:my-3 [&_ol]:my-3 [&_strong]:text-foreground [&_strong]:font-semibold">
+                  <ReactMarkdown>{displayDescription!}</ReactMarkdown>
+                </div>
+              )}
+
+              {event.categories.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {event.categories.map((cat) => (
+                    <Badge key={cat} className="bg-primary/10 text-primary/90 border-primary/20">
+                      {cat}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
