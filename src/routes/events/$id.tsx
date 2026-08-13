@@ -197,6 +197,14 @@ function EventDetailPage() {
                       {m.event_limited_info()}
                     </Badge>
                   )}
+                  {event.categories.map((category) => (
+                    <Badge
+                      key={category}
+                      className="bg-primary/10 text-primary/90 border-primary/20"
+                    >
+                      {formatCategoryLabel(category)}
+                    </Badge>
+                  ))}
                 </div>
 
                 <h1
@@ -287,29 +295,23 @@ function EventDetailPage() {
             </section>
           </div>
 
-          {(hasDescription || event.categories.length > 0) && (
+          {hasDescription && (
             <div className="mt-6 rounded-2xl border border-border/30 bg-card p-5 sm:p-6 space-y-4">
-              {hasDescription && (
-                <div className="text-sm prose prose-sm prose-warm max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-3 [&_ul]:my-3 [&_ol]:my-3 [&_strong]:text-foreground [&_strong]:font-semibold">
-                  <ReactMarkdown>{displayDescription!}</ReactMarkdown>
-                </div>
-              )}
-
-              {event.categories.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {event.categories.map((cat) => (
-                    <Badge key={cat} className="bg-primary/10 text-primary/90 border-primary/20">
-                      {cat}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+              <div className="text-sm prose prose-sm prose-warm max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-3 [&_ul]:my-3 [&_ol]:my-3 [&_strong]:text-foreground [&_strong]:font-semibold">
+                <ReactMarkdown>{displayDescription!}</ReactMarkdown>
+              </div>
             </div>
           )}
         </div>
       </div>
     </div>
   )
+}
+
+function formatCategoryLabel(category: string): string {
+  return category
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function buildEventSummary(event: EventWithVenue, locale: 'en' | 'es' = 'en'): string {
