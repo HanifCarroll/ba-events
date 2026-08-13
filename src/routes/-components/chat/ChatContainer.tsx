@@ -778,7 +778,6 @@ export function ChatContainer({
 
         await sendMessage({
           text: content,
-          messageId: userClientMessageId,
           metadata: { createdAt: new Date().toISOString() },
         })
         await userPersistencePromise
