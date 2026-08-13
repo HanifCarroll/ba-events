@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, type UIEvent } from 'react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
@@ -142,6 +142,8 @@ export function ChatContainer({
     registerStartNewChatHandler,
     setPendingFirstMessage,
     takePendingFirstMessage,
+    saveConversationScrollPosition,
+    getConversationScrollPosition,
   } = useChatContext()
   const { user } = useAuthContext()
   const isAuthenticated = !!user
@@ -195,6 +197,7 @@ export function ChatContainer({
   // Track if this is the first exchange (for title generation)
   const isFirstExchangeRef = useRef(true)
   const isFlushingOutboxRef = useRef(false)
+  const restoredScrollConversationIdRef = useRef<string | null>(null)
 
   const setAttachedDataMap = useCallback((next: Map<string, MessageAttachedData>) => {
     messageAttachedDataMapRef.current = next
@@ -868,6 +871,48 @@ export function ChatContainer({
     })
   }, [chatMessages])
 
+  const handleConversationScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (
+        !conversationId ||
+        restoredScrollConversationIdRef.current !== conversationId
+      ) {
+        return
+      }
+
+      saveConversationScrollPosition(conversationId, event.currentTarget.scrollTop)
+    },
+    [conversationId, saveConversationScrollPosition]
+  )
+
+  useEffect(() => {
+    if (
+      !conversationId ||
+      displayMessages.length === 0 ||
+      restoredScrollConversationIdRef.current === conversationId
+    ) {
+      return
+    }
+
+    const savedScrollTop = getConversationScrollPosition(conversationId)
+    const frame = window.requestAnimationFrame(() => {
+      const scrollContainer = containerRef.current
+      if (!scrollContainer) return
+
+      restoredScrollConversationIdRef.current = conversationId
+      if (savedScrollTop !== null) {
+        scrollContainer.scrollTop = savedScrollTop
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [
+    conversationId,
+    containerRef,
+    displayMessages.length,
+    getConversationScrollPosition,
+  ])
+
   const hasMessages = displayMessages.length > 0
 
   const lastAssistantMessage = [...chatMessages].reverse().find((message) => message.role === 'assistant')
@@ -932,7 +977,11 @@ export function ChatContainer({
         </div>
       )}
 
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto">
+      <div
+        ref={containerRef}
+        onScroll={handleConversationScroll}
+        className="flex-1 min-h-0 overflow-y-auto"
+      >
         <PullToRefreshIndicator ref={indicatorRef} />
 
         {showConversationLoading ? (

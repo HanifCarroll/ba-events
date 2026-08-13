@@ -44,6 +44,11 @@ interface ChatContextValue {
    * returns null, so repeated mount effects can't double-send.
    */
   takePendingFirstMessage: () => PendingFirstMessage | null
+
+  /** Remember the internal chat scroller position while navigating away. */
+  saveConversationScrollPosition: (conversationId: string, scrollTop: number) => void
+  /** Read a previously remembered position for this conversation. */
+  getConversationScrollPosition: (conversationId: string) => number | null
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -55,6 +60,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // One-shot first-message handoff between ChatContainer instances (see
   // PendingFirstMessage above). Ref-based: survives the remount, no renders.
   const pendingFirstMessageRef = useRef<PendingFirstMessage | null>(null)
+  const conversationScrollPositionsRef = useRef<Map<string, number>>(new Map())
 
   // Conversation state
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null)
@@ -86,6 +92,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return message
   }, [])
 
+  const saveConversationScrollPosition = useCallback(
+    (conversationId: string, scrollTop: number) => {
+      conversationScrollPositionsRef.current.set(conversationId, Math.max(0, scrollTop))
+    },
+    []
+  )
+
+  const getConversationScrollPosition = useCallback((conversationId: string) => {
+    return conversationScrollPositionsRef.current.get(conversationId) ?? null
+  }, [])
+
   return (
     <ChatContext.Provider
       value={{
@@ -95,6 +112,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setActiveConversationId,
         setPendingFirstMessage,
         takePendingFirstMessage,
+        saveConversationScrollPosition,
+        getConversationScrollPosition,
       }}
     >
       {children}
