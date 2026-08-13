@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from '@/shared/ui/tooltip'
 import { track } from '@/lib/analytics'
+import { openMapsUrl } from '@/shared/lib/utils/maps'
 import type { EventWithVenue } from '@/shared/lib/types'
 
 interface EventActionsProps {
@@ -55,7 +56,7 @@ export function EventActions({ event, shareUrl }: EventActionsProps) {
     if (address) {
       track('event:link_clicked', { event_id: event.id, event_name: event.name, link_type: 'map' })
       const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address + ', Buenos Aires, Argentina')}`
-      window.open(mapsUrl, '_blank', 'noopener,noreferrer')
+      openMapsUrl(mapsUrl)
     }
   }
 

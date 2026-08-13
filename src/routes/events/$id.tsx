@@ -14,6 +14,7 @@ import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { formatEventTime, formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
 import { getEventUrl, resolveSiteUrl } from '@/shared/lib/utils/url'
+import { openMapsUrl } from '@/shared/lib/utils/maps'
 import { getLocale } from '@/paraglide/runtime'
 import {
   pickDescriptionSummary,
@@ -283,7 +284,7 @@ function EventDetailPage() {
                     type="button"
                     variant="outline"
                     disabled={!mapUrl}
-                    onClick={() => mapUrl && window.open(mapUrl, '_blank', 'noopener,noreferrer')}
+                    onClick={() => mapUrl && openMapsUrl(mapUrl)}
                     aria-label={m.event_open_maps()}
                     className="h-11 min-w-0 px-2 text-muted-foreground hover:text-primary"
                   >

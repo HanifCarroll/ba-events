@@ -1,5 +1,6 @@
 import { MapPin, Navigation, ExternalLink } from 'lucide-react'
 import { track } from '@/lib/analytics'
+import { openMapsUrl } from '@/shared/lib/utils/maps'
 import type { DirectionsData } from '@/shared/lib/types'
 
 interface DirectionsCardProps {
@@ -55,9 +56,11 @@ export function DirectionsCard({ directions }: DirectionsCardProps) {
         {/* CTA Button */}
         <a
           href={mapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={handleOpenMaps}
+          onClick={(event) => {
+            event.preventDefault()
+            handleOpenMaps()
+            openMapsUrl(mapsUrl)
+          }}
           className="group/btn flex items-center justify-center gap-2 w-full mt-4 px-4 py-2.5 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 hover:shadow-md hover:shadow-primary/25 transition-all duration-200"
         >
           <Navigation className="h-4 w-4" />
