@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ChevronDown, Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from 'lucide-react'
 import {
@@ -224,6 +224,12 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
     }
   }
 
+  const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    handleOpenChange(!isOpen)
+  }
+
   return (
     <Collapsible open={isOpen} onOpenChange={handleOpenChange}>
       <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
@@ -232,6 +238,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
             <CollapsibleTrigger asChild>
               <button
                 type="button"
+                onKeyDown={handleTriggerKeyDown}
                 className="w-full min-w-0 cursor-pointer rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
               >
@@ -255,6 +262,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               <CollapsibleTrigger asChild>
                 <button
                   type="button"
+                  onKeyDown={handleTriggerKeyDown}
                   className={`flex size-11 items-center justify-center rounded-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-8 ${
                     isOpen
                       ? 'bg-primary/10 text-primary'
