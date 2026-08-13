@@ -1,11 +1,6 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from 'lucide-react'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/shared/ui/collapsible'
 import { EventActions } from './EventActions'
 import { SaveEventButton } from '../SaveEventButton'
 import { formatPrice } from '@/features/chat/lib/messages'
@@ -270,7 +265,6 @@ function MobileEventCard({ event, source }: Pick<DefaultEventCardProps, 'event' 
 }
 
 function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
-  const [isOpen, setIsOpen] = useState(false)
   const locale = getLocale() as 'en' | 'es'
 
   const startDate = new Date(event.starts_at)
@@ -283,50 +277,24 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
   const hasDescription = Boolean(summaryDescription)
   const sourceLabel = getSourceLabel(event.source)
 
-  const handleOpenChange = (open: boolean) => {
-    setIsOpen(open)
-    // Track when user expands an event card
-    if (open) {
-      // Track for chat analytics (existing)
-      track('chat:event_clicked', {
-        event_id: event.id,
-        event_name: event.name,
-        position,
-        source,
-      })
-      // Track for top events analytics (event:viewed)
-      track('event:viewed', {
-        event_id: event.id,
-        event_name: event.name,
-        position,
-        source,
-      })
-    }
-  }
-
-  const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    handleOpenChange(!isOpen)
-  }
+  // Card content is always visible — track the view on mount.
+  useEffect(() => {
+    track('event:viewed', {
+      event_id: event.id,
+      event_name: event.name,
+      position,
+      source,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id])
 
   return (
-    <Collapsible open={isOpen} onOpenChange={handleOpenChange}>
-      <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
+    <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
         <div className="p-4">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                onKeyDown={handleTriggerKeyDown}
-                className="w-full min-w-0 cursor-pointer rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
-              >
-                <h3 className="line-clamp-1 font-display text-base font-medium text-foreground transition-colors duration-300 group-hover:text-primary">
-                  {event.name}
-                </h3>
-              </button>
-            </CollapsibleTrigger>
+            <h3 className="line-clamp-1 font-display text-base font-medium text-foreground">
+              {event.name}
+            </h3>
 
             <div className="flex shrink-0 items-center gap-2">
               <span
@@ -365,12 +333,7 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
           </div>
         </div>
 
-        <CollapsibleContent>
-          <div id={`event-details-${event.id}`} className="px-4 pb-4">
-            {/* Separator */}
-            <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent mb-4" />
-
-            {/* Expanded view */}
+        <div id={`event-details-${event.id}`} className="px-4 pb-4">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 {sourceLabel && (
@@ -413,7 +376,6 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:underline font-medium"
-                          onClick={(e) => e.stopPropagation()}
                         >
                           Register to see
                         </a>
@@ -458,8 +420,7 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
               </div>
 
             </div>
-          </div>
-        </CollapsibleContent>
+        </div>
 
         {/* Footer actions - save and event details grouped together */}
         <div className="flex items-center gap-2 border-t border-border/40 px-4 py-3">
@@ -468,7 +429,6 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
             to="/events/$id"
             params={{ id: event.id }}
             state={{ fromChat: source === 'chat' }}
-            onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
           >
             <Info className="h-3.5 w-3.5" />
@@ -479,7 +439,6 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
               href={event.link}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
             >
               <span>{m.event_view()}</span>
@@ -488,6 +447,5 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
           )}
         </div>
       </div>
-    </Collapsible>
   )
 }
