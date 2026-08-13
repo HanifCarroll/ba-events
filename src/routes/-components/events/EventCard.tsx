@@ -190,6 +190,86 @@ interface DefaultEventCardProps {
 }
 
 function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
+  return (
+    <>
+      <div className="sm:hidden">
+        <MobileEventCard event={event} source={source} />
+      </div>
+      <div className="hidden sm:block">
+        <DesktopEventCard event={event} position={position} source={source} />
+      </div>
+    </>
+  )
+}
+
+function MobileEventCard({ event, source }: Pick<DefaultEventCardProps, 'event' | 'source'>) {
+  const startDate = new Date(event.starts_at)
+  const dateStr = formatShortDate(startDate)
+  const timeStr = event.time_tba ? m.concierge_time_tba() : formatTime(startDate)
+  const priceDisplay = formatPrice(event.price, event.is_free)
+  const isFree = event.is_free || event.price === 0
+
+  return (
+    <article className="rounded-xl bg-card/60 px-3 py-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <h3 className="line-clamp-2 font-display text-base font-medium leading-snug text-foreground">
+          {event.name}
+        </h3>
+        <span
+          className={`rounded-lg border px-2.5 py-1 text-xs font-medium tracking-wide ${
+            isFree
+              ? 'border-primary/20 bg-primary/15 text-primary'
+              : 'border-border/50 bg-muted text-muted-foreground'
+          }`}
+        >
+          {priceDisplay}
+        </span>
+      </div>
+
+      <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+        <p className="flex min-w-0 items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 shrink-0 text-primary/60" aria-hidden="true" />
+          <span className="truncate">
+            {event.location_hidden
+              ? m.event_location_hidden()
+              : event.venue_name || m.concierge_location_tba()}
+          </span>
+        </p>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="flex items-center gap-1.5">
+            <Calendar className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
+            {dateStr}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
+            {timeStr}
+          </span>
+        </p>
+      </div>
+
+      <div className="mt-2 flex items-center gap-1 border-t border-border/40 pt-1">
+        <SaveEventButton
+          eventId={event.id}
+          eventName={event.name}
+          size="sm"
+          source={source}
+          className="size-11"
+        />
+        <Link
+          to="/events/$id"
+          params={{ id: event.id }}
+          state={{ fromChat: source === 'chat' }}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Info className="h-4 w-4" aria-hidden="true" />
+          <span>{m.event_details_short()}</span>
+        </Link>
+      </div>
+    </article>
+  )
+}
+
+function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
   const [isOpen, setIsOpen] = useState(false)
   const locale = getLocale() as 'en' | 'es'
 
@@ -233,8 +313,8 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
   return (
     <Collapsible open={isOpen} onOpenChange={handleOpenChange}>
       <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
-        <div className="p-3 sm:p-4">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:gap-x-4">
+        <div className="p-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
             <CollapsibleTrigger asChild>
               <button
                 type="button"
@@ -248,7 +328,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               </button>
             </CollapsibleTrigger>
 
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <span
                 className={`rounded-lg border px-2.5 py-1 text-xs font-medium tracking-wide ${
                   isFree
@@ -263,7 +343,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
                 <button
                   type="button"
                   onKeyDown={handleTriggerKeyDown}
-                  className={`flex size-11 items-center justify-center rounded-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-8 ${
+                  className={`flex size-8 items-center justify-center rounded-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     isOpen
                       ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground hover:bg-primary/10 hover:text-primary'
@@ -275,7 +355,7 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               </CollapsibleTrigger>
             </div>
 
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 sm:col-auto sm:mt-2 sm:gap-x-3 sm:gap-y-1">
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               {event.location_hidden ? (
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <MapPin className="h-3 w-3 text-primary/60" />
@@ -297,18 +377,11 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               </span>
             </div>
 
-            <SaveEventButton
-              eventId={event.id}
-              eventName={event.name}
-              size="sm"
-              source={source}
-              className="size-11 justify-self-end sm:hidden"
-            />
           </div>
         </div>
 
         <CollapsibleContent>
-          <div id={`event-details-${event.id}`} className="px-3 pb-3 sm:px-4 sm:pb-4">
+          <div id={`event-details-${event.id}`} className="px-4 pb-4">
             {/* Separator */}
             <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent mb-4" />
 
@@ -399,34 +472,12 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
                 <EventActions event={event} shareUrl={getEventUrl(event.id)} />
               </div>
 
-              <div className="flex items-center gap-1 border-t border-border/40 pt-2 sm:hidden">
-                <Link
-                  to="/events/$id"
-                  params={{ id: event.id }}
-                  state={{ fromChat: source === 'chat' }}
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-primary/[0.06] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Info className="h-4 w-4" aria-hidden="true" />
-                  <span>{m.event_details_short()}</span>
-                </Link>
-                {event.link && (
-                  <a
-                    href={event.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-primary/[0.06] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <span>{m.event_view()}</span>
-                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                  </a>
-                )}
-              </div>
             </div>
           </div>
         </CollapsibleContent>
 
         {/* Footer actions - save and event details grouped together */}
-        <div className="hidden items-center gap-2 border-t border-border/40 px-4 py-3 sm:flex">
+        <div className="flex items-center gap-2 border-t border-border/40 px-4 py-3">
           <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
           <Link
             to="/events/$id"
