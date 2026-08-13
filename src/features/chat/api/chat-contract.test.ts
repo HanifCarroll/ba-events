@@ -171,6 +171,17 @@ describe('chat final-only contract helpers', () => {
     expect(filtered.map((e) => e.id)).toEqual(['e1', 'e2'])
   })
 
+  it('keeps every discovery card when the prose only names the best pick', () => {
+    const events = [
+      event('e1', 'Make Friends: Deep talks & Coffee'),
+      event('e2', 'Café, manos y creatividad'),
+    ]
+    const text = 'Best pick: Make Friends — it is structured around real conversation.'
+
+    const filtered = filterEventsMentionedInText(events, text, { preserveAll: true })
+    expect(filtered.map((e) => e.id)).toEqual(['e1', 'e2'])
+  })
+
   it('returns empty for no events or empty text', () => {
     expect(filterEventsMentionedInText([], 'anything')).toEqual([])
     expect(filterEventsMentionedInText([event('e1', 'Club night')], '')).toEqual([

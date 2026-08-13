@@ -206,18 +206,18 @@ function normalizeForNameMatch(value: string): string {
 
 /**
  * Filter accumulated events down to the ones the final assistant text actually
- * mentions by name. The model may search with a broad limit but only write
- * about one pick — emitting every searched event as a card makes the UI show
- * more cards than the answer references.
+ * mentions by name. Discovery lists can opt out because their concise prose
+ * adds judgment while the cards carry the complete option set.
  *
  * Falls back to all events when nothing matches (generic "here are options"
  * replies that present a list without naming each event).
  */
 export function filterEventsMentionedInText(
   events: ChatEventPayload[],
-  finalText: string
+  finalText: string,
+  options?: { preserveAll?: boolean }
 ): ChatEventPayload[] {
-  if (events.length === 0 || !finalText) return events
+  if (events.length === 0 || !finalText || options?.preserveAll) return events
 
   const normalizedText = normalizeForNameMatch(finalText)
   const mentioned = events.filter((event) => {
@@ -479,10 +479,14 @@ export const Route = createFileRoute('/api/chat')({
               // would be in the app locale — wrong language for a user who
               // wrote in another one.
 
-              // Only attach cards for events the final answer actually names —
-              // the model may search a broad set but recommend a single pick,
-              // and showing every searched event contradicts the prose.
-              let events = filterEventsMentionedInText(accumulatedEvents, finalText)
+              // Decisive searches only attach cards the answer names. A
+              // deliberate multi-result search keeps its complete card list.
+              const isDiscoveryList = (lastSearchInput?.limit ?? 1) > 1
+              let events = filterEventsMentionedInText(accumulatedEvents, finalText, {
+                // In discovery mode the prose adds judgment while the cards
+                // carry the full option set and its practical details.
+                preserveAll: isDiscoveryList,
+              })
 
               // Topical guardrail: replace off-topic replies (code, general
               // knowledge, etc.) with a canned refusal. Fails open on error.
