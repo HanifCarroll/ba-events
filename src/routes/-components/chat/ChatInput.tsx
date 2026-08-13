@@ -206,11 +206,11 @@ export function ChatInput({
                 placeholder={m.chat_placeholder()}
                 disabled={disabled}
                 rows={1}
-                // All the attributes to prevent autofill
+                // Discourage autofill while preserving mobile writing assistance
                 autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
+                autoCorrect="on"
+                autoCapitalize="sentences"
+                spellCheck
                 data-form-type="other"
                 data-lpignore="true"
                 data-1p-ignore="true"
