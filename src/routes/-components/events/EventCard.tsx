@@ -203,12 +203,10 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
   const hasDescription = Boolean(summaryDescription)
   const sourceLabel = getSourceLabel(event.source)
 
-  const handleToggle = () => {
-    const willOpen = !isOpen
-    setIsOpen(willOpen)
-
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open)
     // Track when user expands an event card
-    if (willOpen) {
+    if (open) {
       // Track for chat analytics (existing)
       track('chat:event_clicked', {
         event_id: event.id,
@@ -227,16 +225,13 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
   }
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+    <Collapsible open={isOpen} onOpenChange={handleOpenChange}>
       <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
         <div className="p-3 sm:p-4">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:gap-x-4">
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                onClick={() => {
-                  if (!isOpen) handleToggle()
-                }}
                 className="w-full min-w-0 cursor-pointer rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={isOpen ? `Collapse details for ${event.name}` : `Expand details for ${event.name}`}
               >
@@ -260,9 +255,6 @@ function DefaultEventCard({ event, position, source }: DefaultEventCardProps) {
               <CollapsibleTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!isOpen) handleToggle()
-                  }}
                   className={`flex size-11 items-center justify-center rounded-lg transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-8 ${
                     isOpen
                       ? 'bg-primary/10 text-primary'
