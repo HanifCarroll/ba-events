@@ -201,15 +201,16 @@ export function MainLayout({ children }: MainLayoutProps) {
                 </Button>
               </div>
             ) : (
-              <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
-                >
+              <Button
+                asChild
+                variant="ghost"
+                className="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                   <User className="h-5 w-5" />
                   <span>{m.auth_sign_in()}</span>
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )}
           </nav>
         </div>
@@ -343,29 +344,31 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !mobileMenuOpen ? (
               <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
-                  <Link to="/login" className="block">
-                    <Button
-                      variant="ghost"
-                      className="w-full p-3 justify-center text-foreground hover:bg-muted hover:text-foreground"
-                    >
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="w-full p-3 justify-center text-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Link to="/login" className="block">
                       <User className="h-5 w-5" />
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="font-medium">
                   {m.auth_sign_in()}
                 </TooltipContent>
               </Tooltip>
             ) : (
-              <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
-                >
+              <Button
+                asChild
+                variant="ghost"
+                className="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                   <User className="h-5 w-5" />
                   <span>{m.auth_sign_in()}</span>
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )
           )}
         </div>
