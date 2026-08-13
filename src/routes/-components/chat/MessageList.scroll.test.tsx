@@ -26,8 +26,10 @@ Object.assign(globalThis, {
 // providers). The mock still renders data-message-id so the completion-scroll
 // effect can find the assistant message in the DOM.
 vi.mock('./ChatMessage', () => ({
-  ChatMessage: ({ message }: { message: ChatMessageType }) => (
-    <div data-message-id={message.id}>{message.content}</div>
+  ChatMessage: ({ message, isLast }: { message: ChatMessageType; isLast?: boolean }) => (
+    <div data-message-id={message.id} data-is-last={isLast}>
+      {message.content}
+    </div>
   ),
 }))
 
@@ -114,6 +116,12 @@ describe('MessageList completion top-alignment', () => {
 
     expect(scrollCalls).toHaveLength(0)
     expect(container.querySelectorAll('[data-message-id]')).toHaveLength(2)
+    expect(container.querySelector('[data-message-id="u1"]')?.getAttribute('data-is-last')).toBe(
+      'false'
+    )
+    expect(container.querySelector('[data-message-id="a1"]')?.getAttribute('data-is-last')).toBe(
+      'true'
+    )
   })
 
   it('does not scroll when a request ends without an assistant message', () => {

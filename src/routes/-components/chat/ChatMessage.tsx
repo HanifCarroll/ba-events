@@ -12,12 +12,14 @@ interface ChatMessageProps {
   message: ChatMessageType
   onSuggestionSelect?: (prompt: string) => void
   suggestionsDisabled?: boolean
+  isLast?: boolean
 }
 
 export const ChatMessage = memo(function ChatMessage({
   message,
   onSuggestionSelect,
   suggestionsDisabled,
+  isLast = false,
 }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const hasContent = message.content.trim().length > 0
@@ -35,7 +37,8 @@ export const ChatMessage = memo(function ChatMessage({
     <div
       data-message-id={message.id}
       className={cn(
-        'flex w-full mb-8 animate-fade-in-up',
+        'flex w-full animate-fade-in-up',
+        isLast ? 'mb-3 sm:mb-8' : 'mb-8',
         isUser ? 'justify-end' : 'justify-start'
       )}
     >

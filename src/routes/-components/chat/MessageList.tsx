@@ -204,19 +204,20 @@ export function MessageList({
   }, [messages, isLoading])
 
   return (
-    <div ref={containerRef} className="px-4 py-8 sm:px-8 sm:py-12 lg:py-16">
+    <div ref={containerRef} className="px-4 pt-8 pb-4 sm:px-8 sm:py-12 lg:py-16">
       <div
         className="max-w-[860px] mx-auto"
         role="log"
         aria-live="polite"
         aria-label="Chat messages"
       >
-        {messages.map((message) => (
+        {messages.map((message, index) => (
           <ChatMessage
             key={message.id}
             message={message}
             onSuggestionSelect={onSuggestionSelect}
             suggestionsDisabled={isLoading}
+            isLast={!isLoading && index === messages.length - 1}
           />
         ))}
 
