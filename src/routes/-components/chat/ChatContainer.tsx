@@ -47,6 +47,13 @@ import {
 } from '@/shared/lib/db/guest-conversations'
 import { useAuthContext } from '@/features/auth/hooks/useAuthContext'
 import { sortMessagesByTurnOrderAsc } from '@/features/chat/lib/message-order'
+import { resolveMessageTimestamp } from '@/features/chat/lib/message-timestamps'
+
+interface ChatMessageMetadata {
+  createdAt?: string
+}
+
+type ChatUIMessage = UIMessage<ChatMessageMetadata>
 
 type RequestPhase =
   | 'idle'
@@ -124,6 +131,7 @@ export function ChatContainer({
     Map<string, MessageAttachedData>
   >(new Map())
   const messageAttachedDataMapRef = useRef<Map<string, MessageAttachedData>>(new Map())
+  const messageTimestampsByIdRef = useRef<Map<string, Date>>(new Map())
 
   const startTimeRef = useRef<number>(0)
   const eventsCountRef = useRef<number>(0)
@@ -354,9 +362,9 @@ export function ChatContainer({
     status,
     setMessages,
     stop,
-  } = useChat({
+  } = useChat<ChatUIMessage>({
     id: chatSessionIdRef.current,
-    transport: new DefaultChatTransport({
+    transport: new DefaultChatTransport<ChatUIMessage>({
       api: '/api/chat',
       body: () => {
         const trendingEventId = pendingTrendingEventIdRef.current
@@ -587,6 +595,7 @@ export function ChatContainer({
     if (!conversationId || conversationId !== prev) {
       setMessages([])
       setAttachedDataMap(new Map())
+      messageTimestampsByIdRef.current.clear()
       executionTraceByAssistantIdRef.current.clear()
       persistedAssistantMessageIdsRef.current.clear()
       isFirstExchangeRef.current = true
@@ -610,9 +619,10 @@ export function ChatContainer({
           (a.created_at ?? '').localeCompare(b.created_at ?? '')
         )
 
-    const uiMessages: UIMessage[] = sortedMessages.map((storedMessage) => ({
+    const uiMessages: ChatUIMessage[] = sortedMessages.map((storedMessage) => ({
       id: storedMessage.id,
       role: storedMessage.role as 'user' | 'assistant',
+      metadata: { createdAt: storedMessage.created_at },
       parts: [
         {
           type: 'text' as const,
@@ -674,6 +684,7 @@ export function ChatContainer({
       stop()
       setMessages([])
       setAttachedDataMap(new Map())
+      messageTimestampsByIdRef.current.clear()
       executionTraceByAssistantIdRef.current.clear()
       setRequestLifecyclePhase('idle')
       setError(null)
@@ -762,7 +773,11 @@ export function ChatContainer({
 
         pendingUserPersistencePromiseRef.current = userPersistencePromise
 
-        await sendMessage({ text: content })
+        await sendMessage({
+          text: content,
+          messageId: userClientMessageId,
+          metadata: { createdAt: new Date().toISOString() },
+        })
         await userPersistencePromise
       } catch (err) {
         console.error('Failed to send message:', err)
@@ -833,8 +848,7 @@ export function ChatContainer({
         id: message.id,
         role: message.role as 'user' | 'assistant',
         content: textContent,
-        // UIMessage has no createdAt; timestamps are display-only here.
-        timestamp: new Date(),
+        timestamp: resolveMessageTimestamp(message, messageTimestampsByIdRef.current),
         isStreaming,
         events: storedData?.events,
         suggestions: storedData?.suggestions,

@@ -2,8 +2,8 @@ import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
 import type { ChatMessage as ChatMessageType } from '@/shared/lib/types'
+import { getLocale } from '@/paraglide/runtime'
 import { EventList } from './../events/EventList'
 import { RefinementSuggestions } from './RefinementSuggestions'
 import { DirectionsCard } from './DirectionsCard'
@@ -101,10 +101,9 @@ export const ChatMessage = memo(function ChatMessage({
               isUser ? 'text-right pr-1' : 'text-left pl-1'
             )}
           >
-            {message.timestamp.toLocaleTimeString('en-US', {
+            {message.timestamp.toLocaleTimeString(getLocale(), {
               hour: '2-digit',
               minute: '2-digit',
-              timeZone: BA_TIMEZONE,
             })}
           </p>
         )}
