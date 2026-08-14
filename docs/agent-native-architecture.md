@@ -48,6 +48,36 @@ system prompt by the chat route).
 
 It uses a **single-search model** (max 2 Claude calls), not a true agent loop.
 
+### Vibe vs. Semantic Retrieval (added 2026-08-14)
+
+`search_events` has two retrieval paths behind the same tool interface:
+
+- **Vibe queries** (bilingual signals: chill/tranqui, techno, energetic/party,
+  free/gratis, date-like, plus geo/time signals like a named neighborhood,
+  weekday, today/tonight/tomorrow/weekend) are ranked by a deterministic
+  structured scorer — `src/features/chat/api/tools/vibe-search.ts` — over the
+  **complete hard-filtered candidate set** (bounded by
+  `VIBE_CANDIDATE_CAP = 1000`, Supabase's default response limit — exhaustive
+  for the current corpus; a documented safeguard rather than a guarantee of
+  universal completeness). The scorer combines keyword
+  overlap with intent signals (soft boosts/penalties) and context signals
+  (neighborhood/day/time + completeness quality). It returns **fewer than the
+  requested limit when relevance is poor**: only events whose keyword +
+  strong-text/free evidence clears the `MIN_CONTENT_SCORE` gate are returned,
+  so a "chill" ask is never padded with loud party nights. Query-named
+  neighborhoods exclude events known to be elsewhere.
+- **Non-vibe queries** (factual/enumeration asks: "tango classes", "bbq
+  festival", "tech talks") keep the semantic embedding path
+  (`hybridEventSearch`) unchanged. No hybrid fusion, RRF, or LLM retry
+  pipeline exists by design.
+
+The labeled bilingual evaluation set lives in `evals/search/vibe-golden.ts`
+(deterministic fixture corpus in `evals/search/vibe-fixtures.ts`); run it with
+`bun evals/search/vibe-run.ts`. Every search (vibe or not) emits
+`search:executed` server telemetry with query, filters, mode, counts, and
+duration, and `agent:tool_used` reports the REAL tool success (no longer a
+hardcoded `true`).
+
 ---
 
 ## Parity Gap Analysis

@@ -92,13 +92,22 @@ export function useConversation(id: string | null) {
 /**
  * Get a guest conversation (with messages) from the local IndexedDB store.
  * Only used when not authenticated.
+ *
+ * Fails safe: an IndexedDB read error (private mode, storage disabled) returns
+ * null instead of throwing, so the chat UI never shows an error/retry state
+ * for a persistence layer the conversation can still run without.
  */
 export function useGuestConversation(id: string | null) {
   return useQuery({
     queryKey: queryKeys.conversations.guestDetail(id ?? 'none'),
     queryFn: async (): Promise<GuestConversationWithMessages | null> => {
       if (!id) return null
-      return getGuestConversationWithMessages(id)
+      try {
+        return await getGuestConversationWithMessages(id)
+      } catch (readError) {
+        console.error('[chat] Failed to read guest conversation from IndexedDB:', readError)
+        return null
+      }
     },
     enabled: !!id,
   })

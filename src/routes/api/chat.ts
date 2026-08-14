@@ -449,16 +449,61 @@ export const Route = createFileRoute('/api/chat')({
                     }
                   }
 
-                  // Track tool usage
+                  // Track tool usage with the REAL outcome (the previous
+                  // hardcoded `success: true` reported failed searches as
+                  // successful). Search calls additionally emit a dedicated
+                  // search:executed event with retrieval metadata.
                   for (const call of toolCalls) {
                     writeStatus('calling_tool', {
                       toolName: call.toolName,
                       stepIndex,
                     })
+                    const matchingResult = toolResults.find(
+                      (result) => result.toolCallId === call.toolCallId
+                    )
+                    const toolSucceeded = matchingResult
+                      ? inferToolResultSuccess(matchingResult.output)
+                      : false
                     trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
                       tool: call.toolName,
-                      success: true,
+                      success: toolSucceeded,
                     })
+
+                    if (call.toolName === 'search_events') {
+                      const searchOutput = matchingResult?.output as {
+                        success?: boolean
+                        metadata?: {
+                          resultCount?: number
+                          hasQuery?: boolean
+                          hasFilters?: boolean
+                          searchMode?: 'vibe' | 'semantic' | 'filter_only' | 'now'
+                          durationMs?: number
+                          coverage?: {
+                            totalMatches?: number
+                            returned?: number
+                            searchedFrom?: string | null
+                            searchedTo?: string | null
+                            maxEventDate?: string | null
+                          }
+                          toolInput?: SearchEventsInput
+                        }
+                      } | null
+                      trackServer('search:executed', userContext.userId ?? 'anonymous', {
+                        query: searchOutput?.metadata?.toolInput?.query ?? null,
+                        has_query: searchOutput?.metadata?.hasQuery ?? false,
+                        has_filters: searchOutput?.metadata?.hasFilters ?? false,
+                        search_mode: searchOutput?.metadata?.searchMode ?? null,
+                        result_count: searchOutput?.metadata?.resultCount ?? 0,
+                        total_matches: searchOutput?.metadata?.coverage?.totalMatches ?? 0,
+                        returned: searchOutput?.metadata?.coverage?.returned ?? 0,
+                        time_filter: searchOutput?.metadata?.toolInput?.timeFilter ?? null,
+                        limit: searchOutput?.metadata?.toolInput?.limit ?? null,
+                        success: searchOutput
+                          ? inferToolResultSuccess(searchOutput)
+                          : false,
+                        duration_ms: searchOutput?.metadata?.durationMs ?? null,
+                      })
+                    }
                   }
                 },
               })

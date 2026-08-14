@@ -10,6 +10,7 @@ export type ChatEvent =
   | 'chat:final_only_response_emitted'
   | 'chat:response_contract_violation'
   | 'chat:error'
+  | 'chat:first_message_handoff'
 
 // Event engagement tracking
 export type EventEngagementEvent =
@@ -38,6 +39,7 @@ export type HomeEvent =
 // Agent tool usage events (server-side tracking)
 export type AgentToolEvent =
   | 'agent:tool_used'
+  | 'search:executed'
 
 export type AnalyticsEvent =
   | ChatEvent

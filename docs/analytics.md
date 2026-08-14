@@ -181,6 +181,7 @@ These are the most important events - chat is the primary user experience.
 | `chat:conversation_ended` | `message_count`, `session_duration_ms`, `events_clicked` | Chat session ends (tab close/navigate) |
 | `chat:error` | `error_type`, `error_message`, `query` | Chat error occurred |
 | `chat:no_results` | `query`, `filters_used` | Query returned zero events |
+| `chat:first_message_handoff` | `handoff_id`, `query`, `persistence_ms`, `navigation_ms`, `consumption_ms`, `request_start_ms`, `first_response_ms`, `completion_ms`, `total_ms` | First message submitted from the home screen: phase breakdown of the home → `/chat/:id` remount handoff (IndexedDB persistence, navigation/remount, pending-message consumption, request start, first response, completion). `handoff_id` correlates the event with the scoped `chat:handoff:<id>:*` performance marks; a missing phase stays missing (never borrows an earlier handoff's mark) |
 
 **Implementation:**
 
@@ -237,6 +238,7 @@ const sendMessage = async (query: string) => {
 |-------|------------|-------------|
 | `search:filters_applied` | `categories[]`, `vibes[]`, `neighborhood`, `time_filter`, `is_free`, `max_price` | Filters changed |
 | `search:results_displayed` | `result_count`, `filters_used` | Search results shown |
+| `search:executed` | `query`, `has_query`, `has_filters`, `search_mode` (`vibe`/`semantic`/`filter_only`/`now`), `result_count`, `total_matches`, `returned`, `time_filter`, `limit`, `success`, `duration_ms` | Server-side, emitted per `search_events` tool execution by the chat API (`trackServer`); `success` reflects the real tool outcome |
 
 ### Authentication
 

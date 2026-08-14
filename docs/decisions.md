@@ -26,6 +26,42 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### First-Message Handoff: Immediate Render, Off-Path Persistence
+
+**Date:** 2026-08-14
+
+**Decision:** Reworked the home-screen → `/chat/:id` first-message flow so the submitted message renders on the first frame of the remounted instance and nothing blocks the navigation. The parked first message (ChatProvider) is now peeked non-destructively at mount and rendered optimistically until `sendMessage` appends the real one; the full-pane conversation spinner and "not found" states are suppressed while a handoff is pending. Guest conversation creation is fire-and-forget — the IndexedDB write no longer sits on the navigation path, the guest-detail query cache is seeded synchronously before navigating, and IndexedDB read/write failures degrade to an in-memory chat (logged) instead of blocking or erroring the UI. The composer locks on both instances (home submit lock + parked-message lock) to prevent duplicate submission. Streams still only ever start from the mounted `/chat/:id` instance — never from the unmounting home instance. A `chat:first_message_handoff` event breaks down persistence, navigation/remount, pending-message consumption, request start, first response, and completion.
+
+**Alternatives Considered:**
+- Streaming from the home instance before navigation: rejected — the component unmounts mid-stream and the response never renders (the original bug class).
+- Awaiting IndexedDB before navigating (previous behavior): rejected — a slow/failing IndexedDB write blocked the submit and the first paint.
+- Keeping the optimistic message only in provider state without a render peek: rejected — the first frame after mount would still show the spinner/empty state.
+
+**Rationale:** The navigation remount is inherent to the URL-per-conversation model; the fix makes the handoff invisible (message visible immediately, spinner never shown) and persistence a background concern with a seeded cache as the source of truth for the first paint. Hydration/LCP work stayed out of scope.
+
+Related Decision: [Fix New Chat Message Sending] (2026-08-06) — superseded for the first-message path.
+
+---
+
+### Vibe Search: Deterministic Scorer Over Hard-Filtered Candidates
+
+**Date:** 2026-08-14
+
+**Decision:** Added a structured vibe scorer (`src/features/chat/api/tools/vibe-search.ts`) as a second retrieval path inside `search_events`. Vibe queries — detected by bilingual (en/es) signals for chill/tranqui, techno, energetic/party, free/gratis, date-like, plus geo/time signals (named neighborhood, weekday, today/tonight/tomorrow/weekend) — are ranked in memory over the hard-filtered candidate set. The candidate fetch is capped at `VIBE_CANDIDATE_CAP = 1000` (Supabase's default response limit): exhaustive for the current small corpus, and a documented bounded safeguard if the matching corpus ever exceeds that limit (no paging implemented — revisit when the corpus approaches it). Scoring combines keyword overlap (name-weighted), intent-signal soft boosts/penalties, neighborhood/day/time context boosts, and completeness quality adjustments. The relevance gate is strong-evidence only (keyword overlap + text/free-flag signal matches ≥ `MIN_CONTENT_SCORE`); category nudges rank but never qualify. Results are capped at the requested limit and may be FEWER when relevance is poor — a corpus that does not fit the ask yields a short or empty list, never filler. Query-named neighborhoods exclude events known to be elsewhere. Non-vibe queries keep the existing `hybridEventSearch` semantic path. No hybrid fusion, RRF, or LLM retry pipeline was built.
+
+Also fixed server search telemetry: `agent:tool_used` now reports the REAL tool success (was hardcoded `true`), and each search emits a dedicated `search:executed` event (query, filters, `search_mode`, counts, duration, success).
+
+Added a reusable labeled bilingual evaluation set (`evals/search/vibe-golden.ts` + deterministic fixture corpus `vibe-fixtures.ts`, runner `vibe-run.ts`, `bun run eval:vibe`) covering chill/tranqui, techno, free/gratis, date-like/cita, neighborhood, and tonight/today-signal searches, plus vitest coverage in `vibe-search.test.ts` and `search-events.test.ts`.
+
+**Alternatives Considered:**
+- Routing all queries through embeddings: rejected — embeddings are blind to free-vs-paid, neighborhood, weekday, and chill-vs-techno structure, and the corpus is small enough for exhaustive in-memory scoring.
+- Hybrid fusion / RRF over semantic + lexical: rejected (explicitly out of scope) — adds tuning complexity for a small corpus where the deterministic scorer already isolates the relevant signals.
+- LLM-based re-ranking: rejected (explicitly out of scope) — latency and cost per search with no accuracy need at this corpus size.
+
+**Rationale:** Deterministic, pure, testable scoring matches the small-corpus reality: the hard filters already shrink the candidate set, and the labeled eval set pins the bilingual behavior permanently (no DB staleness).
+
+---
+
 ### Vite 8 Unblocked via Dev-Middleware Workaround
 
 **Date:** 2026-08-11

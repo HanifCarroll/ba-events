@@ -16,9 +16,12 @@ let serverPostHogClient: PostHog | null = null
 function getServerPostHog(): PostHog | null {
   if (serverPostHogClient) return serverPostHogClient
 
-  const apiKey = process.env.VITE_POSTHOG_KEY
+  // Canonical variable — the same VITE_PUBLIC_POSTHOG_KEY the browser build
+  // reads in __root.tsx. VITE_* vars are exposed to the client build, and this
+  // key is a public PostHog project key by design (client-side readable).
+  const apiKey = process.env.VITE_PUBLIC_POSTHOG_KEY
   if (!apiKey) {
-    console.warn('[Analytics] VITE_POSTHOG_KEY not set, server-side tracking disabled')
+    console.warn('[Analytics] VITE_PUBLIC_POSTHOG_KEY not set, server-side tracking disabled')
     return null
   }
 

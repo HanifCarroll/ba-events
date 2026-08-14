@@ -12,7 +12,21 @@ import { searchEventsWithFilters, countEventsWithFilters, getFurthestEventDate, 
 import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
 import type { EventFilters } from '@/shared/lib/types'
 import { getNowInBA, baToUTC, ensureChatEventPayloads, formatEventsToolResult } from './utils'
+import {
+  detectVibeIntent,
+  rankVibeMatches,
+  formatVibeEventsToolResult,
+  MIN_CONTENT_SCORE,
+  type VibeRankedResult,
+} from './vibe-search'
 import { logger } from '@/shared/lib/logger'
+
+// The vibe scorer runs over the hard-filtered candidate set (the corpus is
+// small), then ranks in memory. The fetch is capped at Supabase's default
+// response limit (1000 rows) — exhaustive for the current corpus and a
+// documented bounded safeguard if the matching set ever exceeds it. No
+// paging here; revisit when the corpus approaches the cap.
+const VIBE_CANDIDATE_CAP = 1000
 
 // ============================================================================
 // INPUT SCHEMA
@@ -189,9 +203,12 @@ The result includes coverage metadata: the window you searched, total matches, a
   requiresAuth: false,
 
   execute: async (input) => {
+    const searchStartedAt = performance.now()
     try {
       const filters = toolInputToFilters(input)
       const limit = input.limit ?? 1 // Default to 1 - concierge mode makes single recommendations
+      const query = (input.query ?? '').trim()
+      const vibeIntent = query ? detectVibeIntent(query) : null
 
       logger.debug('[search_events] Search parameters', {
         input,
@@ -202,6 +219,10 @@ The result includes coverage metadata: the window you searched, total matches, a
       })
 
       let results
+      // The retrieval mode, reported in metadata/telemetry.
+      let searchMode: 'vibe' | 'semantic' | 'filter_only' | 'now' = 'filter_only'
+      // Full vibe ranking outcome (for the relevance note in `formatted`).
+      let vibeRanked: VibeRankedResult | null = null
 
       // Coverage bookkeeping: how many events actually match the window (vs.
       // how many were returned), and how far the calendar truly reaches. This
@@ -211,7 +232,8 @@ The result includes coverage metadata: the window you searched, total matches, a
       if (input.timeFilter === 'now') {
         // "Now" can't be expressed as a starts_at range - it means events that
         // already started and haven't ended. Fetch those, then apply the
-        // remaining filters in memory (semantic query is ignored here).
+        // remaining filters in memory.
+        searchMode = 'now'
         let nowEvents = await getEventsHappeningNow()
         if (input.categories?.length) {
           nowEvents = nowEvents.filter((e) =>
@@ -228,14 +250,46 @@ The result includes coverage metadata: the window you searched, total matches, a
           nowEvents = nowEvents.filter((e) => (e.price ?? 0) <= input.maxPrice!)
         }
         totalMatches = nowEvents.length
-        results = nowEvents.slice(0, limit)
+        if (vibeIntent) {
+          // Rank what's happening now by vibe too — the candidates ARE the
+          // complete hard-filtered set. Mode reports 'vibe' so the relevance
+          // note and telemetry reflect the vibe path; the fact that the
+          // window is "now" stays visible in toolInput.timeFilter.
+          searchMode = 'vibe'
+          vibeRanked = rankVibeMatches(nowEvents, query, vibeIntent, limit)
+          results = vibeRanked.events
+        } else {
+          results = nowEvents.slice(0, limit)
+        }
       } else {
         // Coverage count reflects the full window (ignores semantic ranking and
         // limit) so the model can see how much exists vs. how much it got back.
         totalMatches = await countEventsWithFilters(filters)
-        if (input.query && input.query.trim()) {
-          logger.debug('[search_events] Using hybrid search', { query: input.query })
-          results = await hybridEventSearch(input.query, filters, limit)
+        if (query) {
+          if (vibeIntent) {
+            // Vibe search: score the hard-filtered candidate set in memory
+            // (bounded by VIBE_CANDIDATE_CAP — exhaustive for the current
+            // corpus), returning fewer than `limit` when relevance is poor.
+            // Semantic embeddings are preserved for non-vibe queries below.
+            searchMode = 'vibe'
+            logger.debug('[search_events] Using vibe search', {
+              query,
+              signals: vibeIntent,
+            })
+            const candidates = await searchEventsWithFilters(filters, VIBE_CANDIDATE_CAP)
+            vibeRanked = rankVibeMatches(candidates, query, vibeIntent, limit)
+            results = vibeRanked.events
+            logger.info('[search_events] Vibe search completed', {
+              candidateCount: vibeRanked.candidateCount,
+              relevantCount: vibeRanked.relevantCount,
+              returned: vibeRanked.events.length,
+              limit,
+            })
+          } else {
+            searchMode = 'semantic'
+            logger.debug('[search_events] Using hybrid search', { query })
+            results = await hybridEventSearch(query, filters, limit)
+          }
         } else {
           // Otherwise, use filter-only search
           logger.debug('[search_events] Using filter-only search')
@@ -247,21 +301,32 @@ The result includes coverage metadata: the window you searched, total matches, a
       // must answer "furthest into the future" from.
       const maxEventDate = await getFurthestEventDate()
 
+      const durationMs = Math.round(performance.now() - searchStartedAt)
+
       logger.info('[search_events] Search completed', {
         resultCount: results.length,
         totalMatches,
-        hasQuery: !!input.query,
+        hasQuery: !!query,
+        searchMode,
+        durationMs,
         maxEventDate,
       })
+
+      const formatted =
+        searchMode === 'vibe' && vibeRanked
+          ? formatVibeEventsToolResult(vibeRanked, MIN_CONTENT_SCORE)
+          : formatEventsToolResult(results)
 
       return {
         success: true,
         events: ensureChatEventPayloads(results),
-        formatted: formatEventsToolResult(results),
+        formatted,
         metadata: {
           resultCount: results.length,
-          hasQuery: !!input.query,
+          hasQuery: !!query,
           hasFilters: !!(input.categories || input.neighborhood || input.timeFilter),
+          searchMode,
+          durationMs,
           // Coverage metadata: what window was searched, how many matched, and
           // the true furthest event date. The model must never claim a ceiling
           // beyond this — if it only searched a narrow window, coverage makes
