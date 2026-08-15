@@ -338,6 +338,7 @@
 				pendingTrendingEventIdRef = null
 				return {
 					locale: getLocale() as 'en' | 'es',
+					conversationId: conversationId ?? pendingConversationIdRef ?? null,
 					...(trendingEventId ? { trendingEventId } : {})
 				}
 			}

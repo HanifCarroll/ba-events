@@ -6,6 +6,7 @@ import {
   canonicalizeSearchIntent,
   mustToFilters,
   applyPreferAvoid,
+  detectChillIntent,
 } from './search-intent.ts'
 
 vi.mock('#shared/lib/db/client.server.ts', () => ({
@@ -212,5 +213,34 @@ describe('applyPreferAvoid', () => {
     const intent = await canonicalizeSearchIntent({ query: 'ciudad' }, WEDNESDAY_NOON)
     const filters = applyPreferAvoid(intent)
     expect(filters.avoidGenres).toBeUndefined()
+  })
+})
+
+describe('detectChillIntent', () => {
+  it.each([
+    ['chill tonight'],
+    ['algo tranquilo'],
+    ['algo tranqui'],
+    ['algo tranquila'],
+    ['algo relajado'],
+    ['algo relajada'],
+    ['something relaxed'],
+    ['something lowkey'],
+    ['a low-key evening'],
+    ['algo calmado'],
+    ['jazz suave'],
+  ])('detects %j as a chill ask', (query) => {
+    expect(detectChillIntent(query)).toBe(true)
+  })
+
+  it.each([
+    ['recital de rock'],
+    ['chillout festival'],
+    ['freestyle rap'],
+    ['techno party'],
+    [''],
+    ['   '],
+  ])('does NOT detect %j as a chill ask (token boundary, no substring)', (query) => {
+    expect(detectChillIntent(query)).toBe(false)
   })
 })

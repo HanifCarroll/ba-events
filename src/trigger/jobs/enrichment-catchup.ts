@@ -17,6 +17,7 @@ import { schedules, task, tasks, metadata } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client.ts'
 import {
   enrichEvents,
+  enrichmentStartsAtFloor,
   type EnrichmentStats,
 } from '#features/import/core/event-enrichment.ts'
 
@@ -34,6 +35,9 @@ async function getEventsForCatchup(
     .from('events')
     .select('id, name, link, source, categories, venue_id')
     .in('enrichment_status', ['pending', 'failed'])
+    .neq('status', 'canceled')
+    .neq('status', 'past')
+    .gte('starts_at', enrichmentStartsAtFloor())
     .not('link', 'is', null)
     .order('starts_at', { ascending: true })
     .limit(limit)
@@ -54,6 +58,9 @@ async function getPendingCount(client: ReturnType<typeof createServiceRoleClient
     .from('events')
     .select('*', { count: 'exact', head: true })
     .in('enrichment_status', ['pending', 'failed'])
+    .neq('status', 'canceled')
+    .neq('status', 'past')
+    .gte('starts_at', enrichmentStartsAtFloor())
     .not('link', 'is', null)
 
   return count ?? 0

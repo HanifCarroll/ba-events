@@ -14,17 +14,38 @@ import {
 } from '#shared/lib/ai/enrichment.ts'
 import { HttpError } from '#shared/lib/errors.ts'
 import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
-import { hasServerEnrichment } from '#features/import/adapters/enrichment-types.ts'
+import { hasServerEnrichment, EnrichmentSkippedError } from '#features/import/adapters/enrichment-types.ts'
 import type { ImportSource } from '#features/import/adapters/types.ts'
 import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { extractEventFacets } from '#shared/lib/ai/extract-facets.ts'
-import type { EventFacets } from '#shared/lib/search-facets.ts'
+import { isEmptyFacets, type EventFacets } from '#shared/lib/search-facets.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { settleVenue, type VenueSettlementResult } from './venue-settlement.ts'
 import { delay } from './nominatim.ts'
+
+// ============================================================================
+// QUEUE SELECTION FILTERS
+// ============================================================================
+
+/**
+ * Events that started more than this long ago are past-due; catch-up must not
+ * keep reprocessing them (they can never become upcoming results). 12 hours
+ * keeps tonight's already-started events in scope.
+ */
+const ENRICHMENT_FLOOR_HOURS = 12
+
+/**
+ * ISO timestamp floor for catch-up selection (`now - 12h`). `now` is injectable
+ * so tests can pin the boundary.
+ */
+export function enrichmentStartsAtFloor(now: Date = new Date()): string {
+  return new Date(
+    now.getTime() - ENRICHMENT_FLOOR_HOURS * 60 * 60 * 1000
+  ).toISOString()
+}
 
 // ============================================================================
 // TYPES
@@ -39,8 +60,8 @@ export interface EventEnrichmentInput {
   venue_id?: string | null // Existing venue ID (if any)
   description_es?: string | null // Existing Spanish description (translate-only fast path)
   description_en?: string | null // Existing English description (skip if already present)
-  enrichment_status?: 'pending' | 'completed' | 'failed' | null // Used to route the facets-only path
-  embedding?: number[] | null // Existing embedding (facets-only path never rewrites it)
+  enrichment_status?: 'pending' | 'completed' | 'failed' | 'skipped' | null // Used to route the facets-only path
+  embedding?: number[] | null // Existing embedding (facets-only path rewrites it only when facets are non-empty)
   price?: number | null // Existing price — embedded into the search document
   is_free?: boolean // Existing free/paid flag — embedded into the search document
 }
@@ -111,7 +132,7 @@ async function updateEventEnrichment(
     embedding_version?: number
     venue_id?: string | null
     facets?: EventFacets
-    enrichment_status?: 'pending' | 'completed' | 'failed'
+    enrichment_status?: 'pending' | 'completed' | 'failed' | 'skipped'
     enrichment_error?: string | null
     enriched_at?: string | null
     status?: 'scheduled' | 'canceled' | 'postponed' | 'past' | 'pending_review'
@@ -172,10 +193,10 @@ export async function enrichSingleEvent(
   }
 
   // FACETS-ONLY PATH (Phase 5): a previously-completed event that only needs
-  // its empty `facets = {}` backfilled already has enriching descriptions. To
-  // avoid overwriting the existing embedding (Phase 5 forbids re-embed) we
-  // extract facets and update ONLY `facets` — no `generateEventEmbedding`, no
-  // description rewrites.
+  // its empty `facets = {}` backfilled already has enriching descriptions. We
+  // extract facets and update `facets` without rewriting descriptions. Empty
+  // facets stay a facets-only write; non-empty facets re-embed the canonical
+  // search document so the newly-extracted vibe tags are searchable.
   const alreadyEnriched =
     input.enrichment_status === 'completed' ||
     // Row was enriched but the status is missing/ambiguous; a present embedding
@@ -190,9 +211,42 @@ export async function enrichSingleEvent(
       categories,
     })
 
-    await updateEventEnrichment(client, id, {
-      facets,
-    })
+    if (isEmptyFacets(facets)) {
+      // No signal to embed: keep the facets-only write (no re-embed).
+      await updateEventEnrichment(client, id, {
+        facets,
+      })
+    } else {
+      // Non-empty facets carry searchable vibe tags. Rebuild the search
+      // document + embedding with the same canonical builder as the full path
+      // so those tags become visible to semantic/lexical search.
+      let venueName: string | null = null
+      let venueNeighborhood: Neighborhood | null = null
+      if (venue_id) {
+        const existingVenue = await getVenueNameAndNeighborhood(client, venue_id)
+        venueName = existingVenue.name
+        venueNeighborhood = existingVenue.neighborhood
+      }
+
+      const { embedding, searchDocument } = await embedEventWithDocument({
+        name,
+        description_es: input.description_es,
+        description_en: input.description_en,
+        categories: categories || null,
+        facets,
+        price: price ?? null,
+        is_free,
+        venue_name: venueName ?? null,
+        venue_neighborhood: venueNeighborhood ?? null,
+      })
+
+      await updateEventEnrichment(client, id, {
+        facets,
+        embedding,
+        search_document: searchDocument,
+        embedding_version: CURRENT_EMBEDDING_VERSION,
+      })
+    }
 
     return {
       eventId: id,
@@ -208,13 +262,20 @@ export async function enrichSingleEvent(
     const adapter = getEnrichmentAdapter(source as ImportSource)
     const needsVenue = !venue_id
 
-    // Skip sources that require client-side enrichment (e.g., Passline with Cloudflare)
-    if (adapter?.config.requiresClientSide) {
+    // Sources that require client-side enrichment and have no server-side
+    // fallback are permanently ineligible for this server job. Mark them
+    // `skipped` (terminal) instead of `failed` so catch-up stops reselecting
+    // them. If the adapter implements `serverEnrich`, fall through and use it.
+    if (adapter?.config.requiresClientSide && !adapter.serverEnrich) {
+      await updateEventEnrichment(client, id, {
+        enrichment_status: 'skipped',
+        enrichment_error: `${source} requires client-side extraction`,
+      })
+
       return {
         eventId: id,
-        success: false,
+        success: true,
         enriched: false,
-        error: `${source} requires client-side extraction`,
       }
     }
 
@@ -387,6 +448,25 @@ export async function enrichSingleEvent(
       venueSettlement,
     }
   } catch (error) {
+    // Permanently ineligible for the server job (client-side-only source,
+    // Browserbase unavailable, Cloudflare challenge): terminal `skipped`.
+    if (error instanceof EnrichmentSkippedError) {
+      const errorMsg = error.message
+      console.log(`[event-enrichment] Marking as skipped: ${name} (${errorMsg})`)
+
+      await updateEventEnrichment(client, id, {
+        enrichment_status: 'skipped',
+        enrichment_error: errorMsg,
+      })
+
+      return {
+        eventId: id,
+        success: true,
+        enriched: false,
+        error: errorMsg,
+      }
+    }
+
     // Handle 404/410 errors by marking event as canceled (page no longer exists)
     if (error instanceof HttpError && error.isNotFound) {
       const errorMsg = `HTTP ${error.status} - Event page not found`
@@ -394,7 +474,7 @@ export async function enrichSingleEvent(
 
       await updateEventEnrichment(client, id, {
         status: 'canceled',
-        enrichment_status: 'failed',
+        enrichment_status: 'skipped',
         enrichment_error: errorMsg,
       })
 
@@ -521,12 +601,9 @@ export function enrichEvents(
 // ============================================================================
 
 /**
- * Get events that need enrichment: either never enriched (pending) or already
- * enriched but still missing structured facets (`facets = '{}'::jsonb`).
- *
- * Facets were added in Phase 5, so previously-enriched rows must be re-queued
- * so the enrich job backfills `facets` (extracting from stored descriptions
- * when present — `enrichSingleEvent` already skips the URL fetch on that path).
+ * Get events that need enrichment: `pending` or `failed` rows with a link,
+ * not canceled, and not already past-due (started no earlier than 12h ago).
+ * `failed` stays retryable; `skipped`/`completed` are terminal for this job.
  */
 export async function getEventsNeedingEnrichment(
   client: SupabaseClient,
@@ -541,7 +618,10 @@ export async function getEventsNeedingEnrichment(
     .select(
       'id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, embedding, price, is_free'
     )
-    .or('enrichment_status.eq.pending,facets.eq.{},facets.is.null')
+    .in('enrichment_status', ['pending', 'failed'])
+    .neq('status', 'canceled')
+    .neq('status', 'past')
+    .gte('starts_at', enrichmentStartsAtFloor())
     .not('link', 'is', null)
     .order('starts_at', { ascending: true })
 

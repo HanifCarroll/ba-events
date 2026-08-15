@@ -22,6 +22,11 @@ export interface SearchScoreable {
   location_tba: boolean
   description_unavailable: boolean
   categories: string[]
+  facets?: {
+    vibes?: string[]
+    energy?: 'low' | 'medium' | 'high'
+    eventType?: string[]
+  } | null
 }
 
 export const QUALITY_WEIGHT = 2
@@ -141,6 +146,34 @@ export function surpriseRank<T extends SearchScoreable>(
       (dupSiblings.get(b.id) ?? 0) * DUP_PENALTY
     return sb - sa
   })
+}
+
+// ============================================================================
+// CHILL RERANK (soft, additive ranking for relaxed asks — never a filter)
+// ============================================================================
+
+/** Score one event for a chill ask. 0 when facets are missing/empty. */
+function chillScore(ev: SearchScoreable): number {
+  const f = ev.facets
+  if (!f) return 0
+  let s = 0
+  if (f.vibes?.includes('relaxed') || f.vibes?.includes('intimate')) s += 2
+  if (f.energy === 'low') s += 2
+  if (f.eventType?.includes('class') || f.eventType?.includes('exhibition')) s += 1
+  if (f.eventType?.includes('party')) s -= 3
+  if (f.energy === 'high') s -= 2
+  if (f.vibes?.includes('energetic')) s -= 1
+  return s
+}
+
+/**
+ * Soft-rerank candidates for a chill ask: relaxed / low-energy events rise,
+ * parties / high-energy events sink, and untagged events stay put relative to
+ * each other (score 0). Stable — ties keep the retrieval order — and it drops
+ * nothing, so it can only reorder, never filter.
+ */
+export function chillRerank<T extends SearchScoreable>(events: T[]): T[] {
+  return [...events].sort((a, b) => chillScore(b) - chillScore(a))
 }
 
 // ============================================================================

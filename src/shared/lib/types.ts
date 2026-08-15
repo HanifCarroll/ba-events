@@ -61,7 +61,7 @@ export const EVENT_STATUSES = ['scheduled', 'canceled', 'postponed', 'past', 'pe
 export type EventStatus = (typeof EVENT_STATUSES)[number]
 
 // Enrichment status (for both events and venues)
-export const ENRICHMENT_STATUSES = ['pending', 'in_progress', 'completed', 'failed'] as const
+export const ENRICHMENT_STATUSES = ['pending', 'in_progress', 'completed', 'failed', 'skipped'] as const
 
 export type EnrichmentStatus = (typeof ENRICHMENT_STATUSES)[number]
 

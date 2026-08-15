@@ -12,8 +12,8 @@ import { defineTool } from './types.ts'
 import { searchEventsWithFilters, countEventsWithFilters, getFurthestEventDate, hybridEventSearch, getEventsHappeningNow } from '#shared/lib/db/client.server.ts'
 import { CATEGORIES } from '#shared/lib/types.ts'
 import { getNowInBA, ensureChatEventPayloads, formatEventsToolResult } from './utils.ts'
-import { canonicalizeSearchIntent, applyPreferAvoid, type EventSearchMust } from './search-intent.ts'
-import { surpriseRank, applyDiversity } from './quality-diversity.ts'
+import { canonicalizeSearchIntent, applyPreferAvoid, detectChillIntent, type EventSearchMust } from './search-intent.ts'
+import { surpriseRank, applyDiversity, chillRerank } from './quality-diversity.ts'
 import { logger } from '#shared/lib/logger.ts'
 
 // Display vs. candidate limits. The display limit is how many events the user
@@ -282,11 +282,13 @@ The result includes coverage metadata: the window you searched, total matches, a
           results = surpriseRank(nowEvents, getNowInBA().getTime()).slice(0, 1)
         } else {
           // Now-lists get the same diversity pass as other lists (cap venues /
-          // category signatures) before slicing to the display limit.
+          // category signatures) before slicing to the display limit. A chill
+          // semantic query still soft-reranks first (same helper as semantic).
+          const reranked = detectChillIntent(query) ? chillRerank(nowEvents) : nowEvents
           results =
             displayLimit > 1
-              ? applyDiversity(nowEvents, displayLimit)
-              : nowEvents.slice(0, displayLimit)
+              ? applyDiversity(reranked, displayLimit)
+              : reranked.slice(0, displayLimit)
         }
       } else {
         // Coverage count reflects the full window (ignores semantic ranking and
@@ -313,10 +315,14 @@ The result includes coverage metadata: the window you searched, total matches, a
           // by vector order. Quality must NOT reorder the semantic path; on
           // lists we only drop over-capped / near-duplicate events (diversity).
           const candidates = await hybridEventSearch(query, filters, CANDIDATE_LIMIT)
+          // Chill ask → soft rerank (relaxed/low-energy up, party/high-energy
+          // down, untagged untouched). Ranking only — never drops events, and
+          // never applies to the surprise path.
+          const reranked = detectChillIntent(query) ? chillRerank(candidates) : candidates
           results =
             displayLimit > 1
-              ? applyDiversity(candidates, displayLimit)
-              : candidates.slice(0, displayLimit)
+              ? applyDiversity(reranked, displayLimit)
+              : reranked.slice(0, displayLimit)
         } else {
           // No semantic text left after canonicalize — filter-only search
           // (chronological), with list diversity applied when displaying >1.

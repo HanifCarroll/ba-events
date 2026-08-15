@@ -14,6 +14,19 @@
 import type { ImportSource } from './types.ts'
 
 /**
+ * Typed error for enrichment attempts that are permanently ineligible for the
+ * server batch job (client-side-only source, Browserbase unavailable, or a
+ * Cloudflare challenge). Callers should mark the row `skipped` — NOT `failed` —
+ * so catch-up does not reselect it on the next run.
+ */
+export class EnrichmentSkippedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EnrichmentSkippedError'
+  }
+}
+
+/**
  * Venue information extracted from event pages
  */
 export interface EnrichedVenueInfo {

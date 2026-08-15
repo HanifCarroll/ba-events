@@ -45,6 +45,8 @@ import type {
   ChatStreamStatusData,
 } from '#shared/lib/types.ts'
 import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
+import { upsertGuestChatDebug } from '#features/chat/api/guest-debug.server.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 /**
  * Get client IP for rate limiting.
@@ -108,17 +110,20 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   let locale: 'en' | 'es'
   let trendingEventId: string | undefined
+  let conversationId: string | null
 
   try {
     const body = (await request.json()) as {
       messages?: UIMessage[]
       locale?: 'en' | 'es'
       trendingEventId?: string
+      conversationId?: string | null
     }
 
     locale = body.locale ?? 'en'
     uiMessages = Array.isArray(body.messages) ? body.messages : []
     trendingEventId = body.trendingEventId
+    conversationId = body.conversationId ?? null
     modelMessages = await convertToModelMessages(uiMessages)
   } catch {
     return createErrorStream('Invalid request body')
@@ -135,6 +140,26 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   // Get user context for authenticated actions
   const userContext = await getUserToolContext(event)
   console.log(`[DEBUG] User context: authenticated=${userContext.isAuthenticated}, userId=${userContext.userId?.slice(0, 8) ?? 'none'}`)
+
+  // Server-side debug copy for GUEST chats only. Authenticated chats already
+  // have a server record in `conversations` and are deliberately skipped.
+  // Fire-and-forget so the write can never delay the stream; any failure is
+  // swallowed inside the helper (and re-guarded here).
+  if (!userContext.isAuthenticated && conversationId) {
+    const lastUserText = getLastUserQuery(uiMessages)
+    void upsertGuestChatDebug({
+      conversationId,
+      locale,
+      ip,
+      messages: uiMessages,
+      lastUserText: lastUserText || null,
+    }).catch((error) => {
+      logger.warn('[guest-debug] Unexpected persist failure', {
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
+  }
 
   // Inject auth state into the system prompt (replaces the old
   // get_user_context tool - static info, not worth a model step)

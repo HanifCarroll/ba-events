@@ -329,6 +329,60 @@ describe('search_events token-boundary semantic routing', () => {
   })
 })
 
+// ============================================================================
+// P1 — chill soft rerank. A chill semantic query reorders (never drops) the
+// hybrid mock's return so the relaxed fixture wins over a party fixture.
+// ============================================================================
+
+describe('search_events chill soft rerank', () => {
+  let tool: ToolDefinition
+
+  beforeEach(async () => {
+    vi.resetAllMocks()
+    mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00.000Z')
+    mockedCountEventsWithFilters.mockResolvedValue(3)
+    tool = searchEventsTool
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('a "chill" semantic call reranks the relaxed fixture first and keeps the party', async () => {
+    const mk = (id: string, facets: unknown) => ({
+      id,
+      name: id,
+      starts_at: '2026-12-20T11:00:00.000Z',
+      image_url: null,
+      venue_id: null,
+      venue_name: null,
+      venue_neighborhood: null,
+      venue_address: null,
+      location_tba: false,
+      description_unavailable: false,
+      categories: [] as string[],
+      is_free: false,
+      price: null,
+      facets,
+    })
+
+    const party = mk('party-high', { vibes: ['energetic'], energy: 'high', eventType: ['party'] })
+    const relaxed = mk('relaxed-low', { vibes: ['relaxed'], energy: 'low', eventType: ['class'] })
+    const untagged = mk('untagged', null)
+
+    // Hybrid returns vector order: party first, relaxed last.
+    mockedHybridEventSearch.mockResolvedValue([party, untagged, relaxed])
+
+    const result = await tool.execute({ query: 'chill', limit: 3 }, context)
+
+    expect(result.success).toBe(true)
+    expect(result.metadata?.searchMode).toBe('semantic')
+    expect(mockedHybridEventSearch).toHaveBeenCalledWith('chill', expect.anything(), 50)
+    const events = result.events ?? []
+    expect(events.map((e) => e.id)).toEqual(['relaxed-low', 'untagged', 'party-high'])
+  })
+})
+
 describe('search_events timeFilter "now" respects explicit date bounds', () => {
   let tool: ToolDefinition
 
