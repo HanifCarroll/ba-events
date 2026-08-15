@@ -26,6 +26,18 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Happening soon grid; rolling 12h floor
+
+**Date:** 2026-08-15
+
+**Decision:** Rename the home grid from "trending" to "happening soon" in code, i18n, analytics, and the chat pin field (`happeningSoonEventId`). The query floor is now + 12 hours from request time, not next 6 PM Buenos Aires.
+
+**Alternatives Considered (if applicable):**
+- Keep `trending*` identifiers because the UI already said "Happening soon": rejected — the name leaked into APIs and analytics.
+- Keep the 6 PM nightlife gate and only rename: rejected — a 2 PM visit should still see events 12+ hours out, including daytime ones.
+
+**Rationale:** The grid was never popularity-ranked. A rolling 12h floor matches the label and stops hiding afternoon events or a night that has not started yet.
+
 ### Adaptive thinking on chat; facets on search RPCs
 
 **Date:** 2026-08-15

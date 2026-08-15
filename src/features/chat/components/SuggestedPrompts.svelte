@@ -9,17 +9,17 @@
 	import * as m from '#paraglide/messages.js'
 	import type { ChatEventPayload } from '#shared/lib/types.ts'
 	import { track } from '#shared/lib/analytics.ts'
-	import TrendingEvents from './TrendingEvents.svelte'
+	import HappeningSoonEvents from './HappeningSoonEvents.svelte'
 
 	let {
 		onSelectPrompt,
-		trendingEvents,
+		happeningSoonEvents,
 		timeContext = null,
 		onTimeContextChange
 	}: {
-		/** @param options.eventId exact event tapped (from trending cards) — hidden from chat text */
+		/** @param options.eventId exact event tapped (from happening-soon cards) — hidden from chat text */
 		onSelectPrompt: (prompt: string, options?: { eventId?: string }) => void
-		trendingEvents?: ChatEventPayload[]
+		happeningSoonEvents?: ChatEventPayload[]
 		timeContext: HomeTimeContext
 		onTimeContextChange: (context: HomeTimeContext) => void
 	} = $props()
@@ -60,7 +60,7 @@
 			</h1>
 		</div>
 
-		<TrendingEvents onSelectPrompt={onSelectPrompt} initialEvents={trendingEvents} />
+		<HappeningSoonEvents onSelectPrompt={onSelectPrompt} initialEvents={happeningSoonEvents} />
 
 		<div class="mt-auto pt-4">
 			<div class="rounded-xl bg-muted/45 px-3 py-3 sm:px-4">

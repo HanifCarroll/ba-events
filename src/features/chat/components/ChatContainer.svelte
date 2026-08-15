@@ -63,12 +63,12 @@
 	let {
 		conversationId = null as string | null,
 		onConversationChange = undefined as ((id: string) => void) | undefined,
-		trendingEvents = undefined as ChatEventPayload[] | undefined,
+		happeningSoonEvents = undefined as ChatEventPayload[] | undefined,
 		preloadedConversation = null as ConversationWithMessages | null
 	}: {
 		conversationId?: string | null
 		onConversationChange?: (id: string) => void
-		trendingEvents?: ChatEventPayload[]
+		happeningSoonEvents?: ChatEventPayload[]
 		preloadedConversation?: ConversationWithMessages | null
 	} = $props()
 
@@ -108,7 +108,7 @@
 	let executionTraceByAssistantIdRef = new Map<string, MessageExecutionStep[]>()
 	let prevConversationIdRef: string | null | undefined = untrack(() => conversationId)
 
-	let pendingTrendingEventIdRef: string | null = null
+	let pendingHappeningSoonEventIdRef: string | null = null
 	let pendingUserMessageRef: string | null = null
 	let pendingConversationIdRef: string | null = null
 	let pendingAssistantClientMessageIdRef: string | null = null
@@ -333,12 +333,12 @@
 		transport: new DefaultChatTransport<ChatUIMessage>({
 			api: '/api/chat',
 			body: () => {
-				const trendingEventId = pendingTrendingEventIdRef
-				pendingTrendingEventIdRef = null
+				const happeningSoonEventId = pendingHappeningSoonEventIdRef
+				pendingHappeningSoonEventIdRef = null
 				return {
 					locale: getLocale() as 'en' | 'es',
 					conversationId: conversationId ?? pendingConversationIdRef ?? null,
-					...(trendingEventId ? { trendingEventId } : {})
+					...(happeningSoonEventId ? { happeningSoonEventId } : {})
 				}
 			}
 		}),
@@ -595,7 +595,7 @@
 	// Send message (ports the legacy handleSendMessage useCallback)
 	// ==========================================================================
 	async function handleSendMessage(content: string, options?: { eventId?: string }) {
-		pendingTrendingEventIdRef = options?.eventId ?? null
+		pendingHappeningSoonEventIdRef = options?.eventId ?? null
 		error = null
 		resetRequestCorrelations()
 		eventsCountRef = 0
@@ -1117,7 +1117,7 @@
 		{:else}
 			<SuggestedPrompts
 				onSelectPrompt={handleSendMessage}
-				trendingEvents={trendingEvents}
+				happeningSoonEvents={happeningSoonEvents}
 				timeContext={homeTimeContext}
 				onTimeContextChange={(context) => (homeTimeContext = context)}
 			/>

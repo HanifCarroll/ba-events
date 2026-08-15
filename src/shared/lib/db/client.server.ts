@@ -1,11 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { toZonedTime, fromZonedTime } from 'date-fns-tz'
-import { addDays, getHours, setHours, startOfDay } from 'date-fns'
+import { addHours } from 'date-fns'
 
 // Re-export SupabaseClient type for use in other modules
 export type { SupabaseClient }
-
-import { BA_TIMEZONE } from '../constants.ts'
 
 import type {
   Event,
@@ -117,13 +114,7 @@ export async function getEventsWithVenues(limit = 50) {
 }
 
 /**
- * Events on the home grid must start in the evening at the earliest —
- * 6 PM Buenos Aires time, matching the search tool's "tonight" definition.
- */
-const EVENING_START_HOUR = 18
-
-/**
- * Fetch the next upcoming events for the chat home "Happening soon" grid.
+ * Next upcoming events for the home "Happening soon" grid.
  * Chat columns only (no embedding), soonest first, capped at `limit`.
  *
  * Only events with complete, actionable info make the grid: a real start
@@ -132,27 +123,17 @@ const EVENING_START_HOUR = 18
  * these are excluded so every card shows where the event happens, what it
  * is, and what it looks like.
  *
- * Events must start in the evening at the earliest (6 PM Buenos Aires
- * time) — the grid is a nightlife surface. If it's already evening in BA,
- * the earliest slot rolls to tomorrow evening so we never surface a night
- * that's already in progress.
+ * Floor is now + 12 hours, rolling. Daytime events can appear if they
+ * start at least 12 hours out; a night already in progress does not.
  */
-export async function getTrendingEvents(limit = 8): Promise<ChatEventPayload[]> {
-  const nowBA = toZonedTime(new Date(), BA_TIMEZONE)
-  const eveningStart = getHours(nowBA) >= EVENING_START_HOUR ? 1 : 0
-  const earliestEveningBA = setHours(
-    startOfDay(addDays(nowBA, eveningStart)),
-    EVENING_START_HOUR
-  )
-  const earliestStartUTC = fromZonedTime(earliestEveningBA, BA_TIMEZONE).toISOString()
+export async function getHappeningSoonEvents(limit = 8): Promise<ChatEventPayload[]> {
+  const earliestStartUTC = addHours(new Date(), 12).toISOString()
 
   const { data, error } = await getSupabase()
     .from('events_with_venues')
     .select(CHAT_EVENT_COLUMNS)
     .neq('status', 'past')
     .gte('starts_at', earliestStartUTC)
-    // The grid is a nightlife surface: no daytime events, and no nights
-    // that are already in progress (if it's past 6 PM, roll to tomorrow).
     .eq('location_tba', false)
     .eq('description_unavailable', false)
     // Every card must have a photo.

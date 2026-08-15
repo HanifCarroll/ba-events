@@ -1,5 +1,5 @@
 import {
-  getTrendingEvents,
+  getHappeningSoonEvents,
   getEventWithVenue,
 } from '#shared/lib/db/client.server.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
@@ -8,8 +8,8 @@ import type { ChatEventPayload } from '#shared/lib/types.ts'
  * Next upcoming events for the chat home "Happening soon" grid.
  * Public — no auth, lightweight chat columns only.
  */
-export async function getTrendingEventsForGrid(): Promise<ChatEventPayload[]> {
-  return getTrendingEvents(8)
+export async function getHappeningSoonEventsForGrid(): Promise<ChatEventPayload[]> {
+  return getHappeningSoonEvents(8)
 }
 
 /**

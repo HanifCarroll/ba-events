@@ -36,7 +36,7 @@ export type ConciergeEvent =
 
 // Home screen events
 export type HomeEvent =
-  | 'home:trending_clicked'
+  | 'home:happening_soon_clicked'
 
 // Agent tool usage events (server-side tracking)
 export type AgentToolEvent =

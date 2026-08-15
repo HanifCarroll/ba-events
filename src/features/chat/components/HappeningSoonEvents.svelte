@@ -25,10 +25,10 @@
 {#if displayedEvents.length === 0}
 	<!-- Hidden entirely when there are no events to show (legacy behavior). -->
 {:else}
-	<section class="border-t border-border/60 pt-3" aria-label={m.home_trending_title()}>
+	<section class="border-t border-border/60 pt-3" aria-label={m.home_happening_soon_title()}>
 		<div class="mb-2.5 flex items-baseline justify-between gap-3">
-			<h2 class="text-sm font-medium text-foreground">{m.home_trending_title()}</h2>
-			<p class="text-right text-xs text-muted-foreground">{m.home_trending_hint()}</p>
+			<h2 class="text-sm font-medium text-foreground">{m.home_happening_soon_title()}</h2>
+			<p class="text-right text-xs text-muted-foreground">{m.home_happening_soon_hint()}</p>
 		</div>
 
 		<div
@@ -43,13 +43,13 @@
 				<button
 					type="button"
 					onclick={() => {
-						track('home:trending_clicked', {
+						track('home:happening_soon_clicked', {
 							event_id: event.id,
 							event_name: event.name
 						})
-						onSelectPrompt(m.home_trending_prompt({ name: event.name }), { eventId: event.id })
+						onSelectPrompt(m.home_happening_soon_prompt({ name: event.name }), { eventId: event.id })
 					}}
-					aria-label={m.home_trending_prompt({ name: event.name })}
+					aria-label={m.home_happening_soon_prompt({ name: event.name })}
 					class="group flex w-[58%] max-w-[220px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
 				>
 					{#if event.image_url}

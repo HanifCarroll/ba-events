@@ -11,14 +11,14 @@
 	 */
 	const conversationId = $derived((page.params.conversationId as string | undefined) ?? null)
 
-	// The home route prefetches trending events; the /chat/:id route prefetches
-	// the signed-in conversation. Guests get `conversation: null` from the
-	// server (their chats live in IndexedDB and are read client-side).
+	// The home route prefetches happening-soon events; the /chat/:id route
+	// prefetches the signed-in conversation. Guests get `conversation: null`
+	// from the server (their chats live in IndexedDB and are read client-side).
 	const data = $derived(page.data as {
-		trending?: ChatEventPayload[]
+		happeningSoon?: ChatEventPayload[]
 		conversation?: ConversationWithMessages | null
 	})
-	const trending = $derived(data.trending)
+	const happeningSoon = $derived(data.happeningSoon)
 	const preloadedConversation = $derived(data.conversation ?? null)
 
 	function handleConversationChange(id: string) {
@@ -29,7 +29,7 @@
 <div class="h-full flex flex-col">
 	<ChatContainer
 		conversationId={conversationId}
-		trendingEvents={trending}
+		happeningSoonEvents={happeningSoon}
 		preloadedConversation={preloadedConversation}
 		onConversationChange={handleConversationChange}
 	/>

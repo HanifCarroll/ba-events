@@ -112,20 +112,20 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let uiMessages: UIMessage[]
   let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   let locale: 'en' | 'es'
-  let trendingEventId: string | undefined
+  let happeningSoonEventId: string | undefined
   let conversationId: string | null
 
   try {
     const body = (await request.json()) as {
       messages?: UIMessage[]
       locale?: 'en' | 'es'
-      trendingEventId?: string
+      happeningSoonEventId?: string
       conversationId?: string | null
     }
 
     locale = body.locale ?? 'en'
     uiMessages = Array.isArray(body.messages) ? body.messages : []
-    trendingEventId = body.trendingEventId
+    happeningSoonEventId = body.happeningSoonEventId
     conversationId = body.conversationId ?? null
     modelMessages = await convertToModelMessages(uiMessages)
   } catch {
@@ -168,12 +168,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     savedEventsCount,
   })
 
-  // Pin a home-screen trending event tap to that exact event. The id is
-  // carried in the request body (never in the visible message text), so
+  // Pin a home-screen happening-soon event tap to that exact event. The id
+  // is carried in the request body (never in the visible message text), so
   // the chat UI and persisted history stay clean.
-  if (trendingEventId) {
+  if (happeningSoonEventId) {
     try {
-      const pinnedEvent = await getEventWithVenue(trendingEventId)
+      const pinnedEvent = await getEventWithVenue(happeningSoonEventId)
       if (pinnedEvent) {
         systemPrompt =
           `${systemPrompt}\n\n` +
@@ -385,7 +385,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           preserveAll: isDiscoveryList,
         })
 
-        if (finalText && !trendingEventId) {
+        if (finalText && !happeningSoonEventId) {
           const guarded = await guardForOffTopic(finalText, locale, {
             query: lastOriginalQuery,
             eventNames: events.map((e) => e.name),
