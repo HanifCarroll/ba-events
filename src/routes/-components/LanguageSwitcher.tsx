@@ -62,7 +62,7 @@ export function LanguageSwitcher({ collapsed = false }: LanguageSwitcherProps) {
             <DropdownMenuItem
               key={locale}
               onClick={() => handleLocaleChange(locale)}
-              className={`flex items-center gap-2 cursor-pointer ${isActive ? 'bg-primary/10 text-primary' : ''}`}
+              className={`flex items-center gap-2 cursor-pointer focus:bg-primary/10 focus:text-primary ${isActive ? 'bg-primary/10 text-primary' : ''}`}
             >
               <span>{config.label}</span>
               {isActive && <span className="ml-auto text-primary">✓</span>}

@@ -4,7 +4,7 @@ import { Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from 'lucide-reac
 import { EventActions } from './EventActions'
 import { SaveEventButton } from '../SaveEventButton'
 import { formatPrice } from '@/features/chat/lib/messages'
-import { formatShortDate, formatTime, formatEventTime } from '@/shared/lib/utils/formatting'
+import { formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
 import { track } from '@/lib/analytics'
 import { getEventUrl } from '@/shared/lib/utils/url'
 import { Badge } from '@/shared/ui/badge'
@@ -357,14 +357,6 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
 
               {/* Details grid */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4 text-primary/60" />
-                  <span>
-                    {event.time_tba
-                      ? `${dateStr} · ${m.concierge_time_tba()}`
-                      : formatEventTime(event.starts_at, event.ends_at)}
-                  </span>
-                </div>
                 {event.location_hidden ? (
                   <div className="flex items-start gap-2 text-sm text-muted-foreground col-span-2">
                     <MapPin className="h-4 w-4 text-primary/60 shrink-0 mt-0.5" />
