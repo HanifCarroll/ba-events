@@ -174,7 +174,7 @@
 						<img
 							src={resolveSiteUrl(event.image_url)}
 							alt={event.name}
-							class="block h-auto max-h-[70vh] max-w-full rounded-2xl w-auto"
+							class="block h-auto max-h-[60vh] max-w-full rounded-2xl w-auto"
 							loading="lazy"
 						/>
 					</div>
@@ -202,7 +202,7 @@
 
 						<h1
 							id="event-title"
-							class="text-balance text-[1.75rem] font-semibold leading-[1.08] tracking-[-0.035em] text-foreground sm:text-3xl"
+							class="text-balance text-2xl font-semibold leading-[1.08] tracking-[-0.035em] text-foreground"
 						>
 							{event.name}
 						</h1>
