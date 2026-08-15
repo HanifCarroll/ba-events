@@ -212,7 +212,7 @@ function MobileEventCard({ event, source }: Pick<DefaultEventCardProps, 'event' 
   return (
     <article className="rounded-xl bg-card/60 px-3 py-3">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <h3 className="line-clamp-2 font-display text-base font-medium leading-snug text-foreground">
+        <h3 className="line-clamp-2 text-base font-medium leading-snug text-foreground">
           {event.name}
         </h3>
         <span
@@ -235,7 +235,10 @@ function MobileEventCard({ event, source }: Pick<DefaultEventCardProps, 'event' 
               : event.venue_name || m.concierge_location_tba()}
           </span>
         </p>
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <p className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5 text-primary/60" aria-hidden="true" />
             {dateStr}
@@ -245,25 +248,24 @@ function MobileEventCard({ event, source }: Pick<DefaultEventCardProps, 'event' 
             {timeStr}
           </span>
         </p>
-      </div>
-
-      <div className="mt-2 flex items-center gap-1 border-t border-border/40 pt-1">
-        <SaveEventButton
-          eventId={event.id}
-          eventName={event.name}
-          size="sm"
-          source={source}
-          className="size-11"
-        />
-        <Link
-          to="/events/$id"
-          params={{ id: event.id }}
-          state={{ fromChat: source === 'chat' }}
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Info className="h-4 w-4" aria-hidden="true" />
-          <span>{m.event_details_short()}</span>
-        </Link>
+        <div className="flex shrink-0 items-center gap-1">
+          <SaveEventButton
+            eventId={event.id}
+            eventName={event.name}
+            size="sm"
+            source={source}
+            className="size-11"
+          />
+          <Link
+            to="/events/$id"
+            params={{ id: event.id }}
+            state={{ fromChat: source === 'chat' }}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Info className="h-4 w-4" aria-hidden="true" />
+            <span>{m.event_details_short()}</span>
+          </Link>
+        </div>
       </div>
     </article>
   )

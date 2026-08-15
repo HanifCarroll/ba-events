@@ -279,3 +279,95 @@ describe('DesktopEventCard', () => {
     expect(text).not.toMatch(/null|undefined/)
   })
 })
+
+// =============================================================================
+// MobileEventCard
+// =============================================================================
+
+function renderMobileCard(event: EventWithVenue, source: 'chat' | 'saved_page' = 'chat') {
+  const { container } = render(<EventCard event={event} source={source} />)
+  // DefaultEventCard renders the mobile variant first inside its own container.
+  return container.querySelector('article') as HTMLElement
+}
+
+describe('MobileEventCard', () => {
+  it('renders a sans-serif title sharing the first row with the price badge', () => {
+    const card = renderMobileCard(makeEvent())
+
+    const title = within(card).getByText('Jazz Night at Niceto')
+    expect(title.className).toContain('line-clamp-2')
+    expect(title.className).not.toContain('font-display')
+
+    const price = within(card).getByText(m.event_free())
+    expect(price.className).toContain('rounded-lg')
+    // Title (left) and price badge (right) sit in the same first row.
+    expect(title.parentElement).toBe(price.parentElement)
+  })
+
+  it('keeps the location as its own row with all fallbacks intact', () => {
+    expect(within(renderMobileCard(makeEvent())).getByText('Niceto Club')).toBeTruthy()
+
+    expect(
+      within(renderMobileCard(makeEvent({ venue_name: null }))).getByText(
+        m.concierge_location_tba()
+      )
+    ).toBeTruthy()
+
+    expect(
+      within(renderMobileCard(makeEvent({ location_hidden: true }))).getByText(
+        m.event_location_hidden()
+      )
+    ).toBeTruthy()
+  })
+
+  it('shows the paid price and TBA time fallbacks in the metadata', () => {
+    expect(within(renderMobileCard(makeEvent({ is_free: false, price: 15000 }))).getByText('$15.000 ARS')).toBeTruthy()
+    expect(within(renderMobileCard(makeEvent({ time_tba: true }))).getByText(m.concierge_time_tba())).toBeTruthy()
+  })
+
+  it('shares the final row between date/time and the save + details actions with no footer divider', () => {
+    const card = renderMobileCard(makeEvent())
+
+    // Three rows only: title/price, location, then meta + actions. No footer.
+    expect(card.children).toHaveLength(3)
+    expect(card.querySelector('[class*="border-t"]')).toBeNull()
+
+    const finalRow = card.lastElementChild as HTMLElement
+    expect(finalRow.children).toHaveLength(2)
+
+    // Left: the wrap-friendly date/time spans with their icons.
+    const meta = finalRow.firstElementChild as HTMLElement
+    expect(meta.tagName).toBe('P')
+    expect(meta.className).toContain('flex-wrap')
+    expect(meta.querySelectorAll('svg')).toHaveLength(2)
+
+    // Right: the distinct save + details actions.
+    const actions = finalRow.lastElementChild as HTMLElement
+    expect(actions.className).toContain('shrink-0')
+    expect(within(actions).getByLabelText(m.event_save())).toBeTruthy()
+    expect(within(actions).getByText(m.event_details_short())).toBeTruthy()
+  })
+
+  it('keeps a 44px save target and a min-height 44px details link routed to the event page', () => {
+    const card = renderMobileCard(makeEvent())
+
+    const save = within(card).getByLabelText(m.event_save())
+    expect(save.className).toContain('size-11')
+
+    const details = within(card)
+      .getByText(m.event_details_short())
+      .closest('a') as HTMLAnchorElement
+    expect(details.className).toContain('min-h-11')
+    expect(details.getAttribute('to')).toBe('/events/$id')
+    expect(details.hasAttribute('state')).toBe(true)
+    expect(details.querySelector('svg')).toBeTruthy()
+  })
+
+  it('does not add mobile-only analytics on render or details click', () => {
+    const card = renderMobileCard(makeEvent())
+    expect(track).not.toHaveBeenCalledWith('chat:event_clicked', expect.anything())
+
+    fireEvent.click(within(card).getByText(m.event_details_short()))
+    expect(track).not.toHaveBeenCalledWith('chat:event_clicked', expect.anything())
+  })
+})
