@@ -201,7 +201,7 @@ export function formatEventTime(startsAt: string, endsAt: string | null): string
     weekday: 'short',
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     // Pin to BA time: server (UTC) and client render identical strings (SSR hydration)
     timeZone: BA_TIMEZONE,
@@ -211,7 +211,7 @@ export function formatEventTime(startsAt: string, endsAt: string | null): string
 
   if (endsAt) {
     const end = new Date(endsAt)
-    const endTime = end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: BA_TIMEZONE })
+    const endTime = end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: BA_TIMEZONE })
     result += ` - ${endTime}`
   }
 

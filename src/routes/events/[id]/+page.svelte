@@ -174,7 +174,7 @@
 						<img
 							src={resolveSiteUrl(event.image_url)}
 							alt={event.name}
-							class="aspect-square w-full object-cover"
+							class="aspect-square w-full object-contain"
 							loading="lazy"
 						/>
 					</div>
