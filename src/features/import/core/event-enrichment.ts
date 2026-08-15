@@ -31,20 +31,11 @@ import { delay } from './nominatim.ts'
 // ============================================================================
 
 /**
- * Events that started more than this long ago are past-due; catch-up must not
- * keep reprocessing them (they can never become upcoming results). 12 hours
- * keeps tonight's already-started events in scope.
- */
-const ENRICHMENT_FLOOR_HOURS = 12
-
-/**
- * ISO timestamp floor for catch-up selection (`now - 12h`). `now` is injectable
- * so tests can pin the boundary.
+ * Catch-up only selects events that have not started yet.
+ * `now` is injectable so tests can pin the boundary.
  */
 export function enrichmentStartsAtFloor(now: Date = new Date()): string {
-  return new Date(
-    now.getTime() - ENRICHMENT_FLOOR_HOURS * 60 * 60 * 1000
-  ).toISOString()
+  return now.toISOString()
 }
 
 // ============================================================================
@@ -602,7 +593,7 @@ export function enrichEvents(
 
 /**
  * Get events that need enrichment: `pending` or `failed` rows with a link,
- * not canceled, and not already past-due (started no earlier than 12h ago).
+ * not canceled, and not already started (`starts_at >= now`).
  * `failed` stays retryable; `skipped`/`completed` are terminal for this job.
  */
 export async function getEventsNeedingEnrichment(
