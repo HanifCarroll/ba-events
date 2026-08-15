@@ -3,13 +3,13 @@
  * Agent runner for evals.
  *
  * Mirrors src/routes/api/chat.ts model setup: same system prompt, same tools,
- * same NO_THINKING + step cap. Runs against the real dev database with an
+ * same CHAT_THINKING + step cap. Runs against the real dev database with an
  * anonymous user context (read-only search tools only).
  */
 import { generateText, stepCountIs } from 'ai'
 import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
 import { createTools } from '#features/chat/api/tools-ai-sdk.ts'
-import { NO_THINKING, textModel } from '#shared/lib/ai/providers.ts'
+import { CHAT_THINKING, textModel } from '#shared/lib/ai/providers.ts'
 import type { UserToolContext } from '#features/chat/api/user-tools.server.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
 
@@ -36,7 +36,7 @@ export async function runConcierge(message: string, locale: 'en' | 'es'): Promis
     system: getSystemPrompt({ isAuthenticated: false, savedEventsCount: 0 }),
     messages: [{ role: 'user', content: message }],
     tools: createTools(ANON_CONTEXT, locale),
-    ...NO_THINKING,
+    ...CHAT_THINKING,
     stopWhen: stepCountIs(MAX_STEPS),
   })
 

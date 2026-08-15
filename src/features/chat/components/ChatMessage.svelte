@@ -24,10 +24,10 @@
 
 	const isUser = $derived(message.role === 'user')
 	const hasContent = $derived(message.content.trim().length > 0)
+	const hasReasoning = $derived((message.reasoning ?? '').trim().length > 0)
 	const events = $derived(message.events ?? [])
 	const suggestions = $derived(message.suggestions ?? [])
 	const directions = $derived(message.directions ?? null)
-
 	// react-markdown → marked + DOMPurify (client-side only). The legacy
 	// react-markdown escaped raw HTML; DOMPurify sanitizes it the same way.
 	const renderedContent = $derived(
@@ -46,7 +46,7 @@
 	Don't render empty assistant messages that are still streaming (waiting for
 	tool results). The loading indicator in MessageList handles this state.
 -->
-{#if isUser || hasContent || events.length > 0 || directions || !message.isStreaming}
+{#if isUser || hasContent || hasReasoning || events.length > 0 || directions || !message.isStreaming}
 	<div
 		data-message-id={message.id}
 		class={cn(
@@ -69,6 +69,11 @@
 			)}
 		>
 			<!-- Only render the text bubble if there's content -->
+			{#if !isUser && hasReasoning}
+				<p class="mb-3 max-w-[68ch] text-[13px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+					{message.reasoning}
+				</p>
+			{/if}
 			{#if hasContent}
 				<div
 					class={cn(

@@ -13,8 +13,9 @@ unchanged (Dexie-only, no anon auth, no shareable links).
   authed).
 - `src/features/chat/api/guest-debug.server.ts` — new `upsertGuestChatDebug`
   helper (service-role upsert, swallows errors).
-- `src/routes/api/chat/+server.ts` — parses `conversationId`, fire-and-forget
-  debug write for guests only.
+- `src/routes/api/chat/+server.ts` — parses `conversationId`; fire-and-forget
+  debug write for guests at request start (incoming `uiMessages`) and again
+  after the assembled reply (or error) exists.
 - `src/features/chat/api/guest-debug.test.ts` — unit tests (mock the supabase
   client).
 - `supabase/migrations/20260815161000_guest_chat_debug.sql` — table + RLS.
@@ -54,31 +55,27 @@ body: () => {
 }
 ```
 
-## Server write — exact call site in `+server.ts`
+## Server writes
 
-After the body is parsed, rate-limit passes, and `getUserToolContext` runs:
+Start of request (user turn only, so a crash still leaves the ask):
 
 ```ts
-  // Server-side debug copy for GUEST chats only. Authenticated chats already
-  // have a server record in `conversations` and are deliberately skipped.
-  // Fire-and-forget so the write can never delay the stream; any failure is
-  // swallowed inside the helper (and re-guarded here).
-  if (!userContext.isAuthenticated && conversationId) {
-    const lastUserText = getLastUserQuery(uiMessages)
-    void upsertGuestChatDebug({
+  if (!userContext.isAuthenticated) {
+    persistGuestChatDebug({
       conversationId,
       locale,
       ip,
       messages: uiMessages,
-      lastUserText: lastUserText || null,
-    }).catch((error) => {
-      logger.warn('[guest-debug] Unexpected persist failure', {
-        conversationId,
-        error: error instanceof Error ? error.message : String(error),
-      })
+      lastUserText: getLastUserQuery(uiMessages) || null,
     })
   }
 ```
+
+After `finalText` is composed (and again on the stream `catch` with
+`error`): `messages` is overwritten with
+`buildGuestDebugTranscript(uiMessages, assistant)`, where the assistant
+object is `{ id, role, parts: [{ type: 'text', text: finalText }],
+executionTrace }` (plus `error` on failure).
 
 `conversationId` is extracted in the body parse block:
 
@@ -106,9 +103,10 @@ is a no-op. All errors are caught and logged with `logger.warn`.
 bun scripts/guest-chat-debug.ts <conversationId>
 ```
 
-Prints `updated_at`, `locale`, `last_user_text`, and each message `role` +
-`text`. Uses the service role from `.env`. Exits 1 when the record is missing
-or the query fails. No admin UI.
+Prints `updated_at`, `locale`, `last_user_text`, each message `role` +
+`text`, and any assistant `executionTrace` steps (tool name + input, plus
+step text when present). Uses the service role from `.env`. Exits 1 when
+the record is missing or the query fails. No admin UI.
 
 ## Acceptance checks (actually run)
 

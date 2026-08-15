@@ -32,9 +32,10 @@ import {
   filterEventsMentionedInText,
   buildStreamEnvelope,
   inferToolResultSuccess,
+  chunkTextForStream,
   type StepResultLike,
 } from '#features/chat/api/stream-helpers.ts'
-import { NO_THINKING, textModel } from '#shared/lib/ai/providers.ts'
+import { CHAT_THINKING, textModel } from '#shared/lib/ai/providers.ts'
 import { getEventWithVenue } from '#shared/lib/db/client.server.ts'
 import { trackServer } from '#shared/lib/analytics.server.ts'
 import { formatTime } from '#shared/lib/utils/formatting.ts'
@@ -45,8 +46,10 @@ import type {
   ChatStreamStatusData,
 } from '#shared/lib/types.ts'
 import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
-import { upsertGuestChatDebug } from '#features/chat/api/guest-debug.server.ts'
-import { logger } from '#shared/lib/logger.ts'
+import {
+  buildGuestDebugTranscript,
+  persistGuestChatDebug,
+} from '#features/chat/api/guest-debug.server.ts'
 
 /**
  * Get client IP for rate limiting.
@@ -143,21 +146,15 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
   // Server-side debug copy for GUEST chats only. Authenticated chats already
   // have a server record in `conversations` and are deliberately skipped.
-  // Fire-and-forget so the write can never delay the stream; any failure is
-  // swallowed inside the helper (and re-guarded here).
-  if (!userContext.isAuthenticated && conversationId) {
-    const lastUserText = getLastUserQuery(uiMessages)
-    void upsertGuestChatDebug({
+  // Written at request start (user turn) and again after the reply exists.
+  // Fire-and-forget so the write can never delay the stream.
+  if (!userContext.isAuthenticated) {
+    persistGuestChatDebug({
       conversationId,
       locale,
       ip,
       messages: uiMessages,
-      lastUserText: lastUserText || null,
-    }).catch((error) => {
-      logger.warn('[guest-debug] Unexpected persist failure', {
-        conversationId,
-        error: error instanceof Error ? error.message : String(error),
-      })
+      lastUserText: getLastUserQuery(uiMessages) || null,
     })
   }
 
@@ -210,7 +207,10 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
       const writeStatus = (
         phase: ChatStreamStatusData['phase'],
-        options?: Pick<ChatStreamStatusData, 'toolName' | 'stepIndex' | 'assistantMessageId'>
+        options?: Pick<
+          ChatStreamStatusData,
+          'toolName' | 'stepIndex' | 'assistantMessageId' | 'reasoning'
+        >
       ) => {
         writer.write({
           type: 'data-status' as const,
@@ -221,6 +221,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
             requestId,
             assistantMessageId: options?.assistantMessageId,
             timestamp: new Date().toISOString(),
+            reasoning: options?.reasoning,
           },
         })
       }
@@ -228,13 +229,46 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       try {
         writeStatus('thinking')
 
+        const messageId = generateId()
+        assistantMessageId = messageId
+        writer.write({ type: 'start', messageId })
+        wroteStart = true
+
+        let streamedReasoning = ''
+        let reasoningBlockId: string | undefined
+
         const result = streamText({
           model: textModel,
           system: systemPrompt,
           messages: modelMessages,
           tools: createTools(userContext, locale),
-          ...NO_THINKING,
+          ...CHAT_THINKING,
           stopWhen: stepCountIs(MAX_STEPS),
+          onChunk: ({ chunk }) => {
+            if (chunk.type === 'reasoning-start') {
+              reasoningBlockId = chunk.id
+              writer.write({ type: 'reasoning-start', id: chunk.id })
+              return
+            }
+            if (chunk.type === 'reasoning-delta' && chunk.text) {
+              streamedReasoning += chunk.text
+              writer.write({
+                type: 'reasoning-delta',
+                id: chunk.id,
+                delta: chunk.text,
+              })
+              writeStatus('thinking', {
+                stepIndex: stepIndex >= 0 ? stepIndex : undefined,
+                assistantMessageId,
+                reasoning: streamedReasoning,
+              })
+              return
+            }
+            if (chunk.type === 'reasoning-end') {
+              writer.write({ type: 'reasoning-end', id: chunk.id })
+              reasoningBlockId = undefined
+            }
+          },
           onStepFinish: ({ toolCalls, toolResults }) => {
             stepIndex += 1
 
@@ -336,10 +370,16 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           },
         })
 
-        // Collect all steps first, then emit exactly one final assistant message.
+        // Guards still need the finished answer. Stream tokens after that.
         const [steps, generatedText] = await Promise.all([result.steps, result.text])
+        if (reasoningBlockId) {
+          writer.write({ type: 'reasoning-end', id: reasoningBlockId })
+        }
         const typedSteps = steps as StepResultLike[]
         const executionTrace = buildExecutionTrace(typedSteps)
+        if (streamedReasoning && executionTrace[0] && !executionTrace[0].reasoning) {
+          executionTrace[0].reasoning = streamedReasoning
+        }
 
         const rawFinalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
         const nonEmptyStepTextCount = getNonEmptyStepTextCount(typedSteps)
@@ -347,25 +387,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         let finalText = sanitizeFinalAssistantText(rawFinalText, {
           hasStructuredData: accumulatedEvents.length > 0 || directionsData !== null,
         })
-        // No fallback prose when the model ends tool-only: cards (or the
-        // directions card) carry the content, and any injected intro
-        // would be in the app locale — wrong language for a user who
-        // wrote in another one.
 
-        // Decisive searches only attach cards the answer names. A
-        // deliberate multi-result search keeps its complete card list.
         const isDiscoveryList = (lastSearchInput?.limit ?? 1) > 1
         let events = filterEventsMentionedInText(accumulatedEvents, finalText, {
-          // In discovery mode the prose adds judgment while the cards
-          // carry the full option set and its practical details.
           preserveAll: isDiscoveryList,
         })
 
-        // Topical guardrail: replace off-topic replies (code, general
-        // knowledge, etc.) with a canned refusal. Fails open on error.
-        // Skipped entirely for pinned home-screen taps — the system
-        // prompt forced an answer about that exact event, and the
-        // classifier cannot see that context reliably.
         if (finalText && !trendingEventId) {
           const guarded = await guardForOffTopic(finalText, locale, {
             query: lastOriginalQuery,
@@ -373,17 +400,10 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           })
           if (guarded) {
             finalText = guarded
-            // A refused reply must not ship event cards — refusal text
-            // with a card below it is the confusing mismatch the guard
-            // was meant to prevent in the first place.
             events = []
           }
         }
 
-        // Coverage guardrail: if the model asserted a coverage ceiling
-        // ("furthest is X", "no events past X") while only having
-        // searched a window short of the true horizon, append a grounded
-        // correction. Fails open (returns text unchanged).
         if (finalText && lastSearchCoverage) {
           finalText = guardCoverageClaims(finalText, locale, lastSearchCoverage)
         }
@@ -414,23 +434,20 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           trace_size_bytes: JSON.stringify(executionTrace).length,
         })
 
-        const messageId = generateId()
-        assistantMessageId = messageId
         const textBlockId = generateId()
 
         writeStatus('composing', {
           stepIndex: finalStepIndex,
           assistantMessageId,
+          reasoning: streamedReasoning || undefined,
         })
 
-        writer.write({ type: 'start', messageId })
-        wroteStart = true
         writer.write({ type: 'text-start', id: textBlockId })
-        if (finalText.length > 0) {
+        for (const delta of chunkTextForStream(finalText)) {
           writer.write({
             type: 'text-delta',
             id: textBlockId,
-            delta: finalText,
+            delta,
           })
         }
         writer.write({ type: 'text-end', id: textBlockId })
@@ -485,6 +502,20 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           type: 'finish',
           finishReason: 'stop',
         })
+        if (!userContext.isAuthenticated) {
+          persistGuestChatDebug({
+            conversationId,
+            locale,
+            ip,
+            messages: buildGuestDebugTranscript(uiMessages, {
+              id: messageId,
+              role: 'assistant',
+              parts: [{ type: 'text', text: finalText }],
+              executionTrace,
+            }),
+            lastUserText: lastOriginalQuery || null,
+          })
+        }
       } catch (error) {
         console.error('[Chat API] Error:', error)
         writeStatus('error', {
@@ -499,6 +530,20 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           writer.write({
             type: 'finish',
             finishReason: 'error',
+          })
+        }
+        if (!userContext.isAuthenticated) {
+          persistGuestChatDebug({
+            conversationId,
+            locale,
+            ip,
+            messages: buildGuestDebugTranscript(uiMessages, {
+              id: assistantMessageId ?? generateId(),
+              role: 'assistant',
+              parts: [{ type: 'text', text: '' }],
+              error: error instanceof Error ? error.message : 'An error occurred',
+            }),
+            lastUserText: lastOriginalQuery || null,
           })
         }
       }

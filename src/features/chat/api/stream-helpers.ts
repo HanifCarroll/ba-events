@@ -24,6 +24,8 @@ export const MAX_STEPS = 3
 export type StepResultLike = {
   stepType?: string
   text?: string
+  reasoning?: string | Array<{ type?: string; text?: string }>
+  reasoningText?: string
   finishReason?: string
   toolCalls?: Array<{
     toolCallId?: string
@@ -36,6 +38,22 @@ export type StepResultLike = {
     input?: unknown
     output?: unknown
   }>
+}
+
+export function extractStepReasoning(step: StepResultLike): string {
+  if (typeof step.reasoningText === 'string' && step.reasoningText.trim()) {
+    return step.reasoningText
+  }
+  if (typeof step.reasoning === 'string' && step.reasoning.trim()) {
+    return step.reasoning
+  }
+  if (Array.isArray(step.reasoning)) {
+    return step.reasoning
+      .map((part) => (typeof part.text === 'string' ? part.text : ''))
+      .join('')
+      .trim()
+  }
+  return ''
 }
 
 export function toJsonSafe(value: unknown): Json | null {
@@ -74,6 +92,7 @@ export function buildExecutionTrace(steps: StepResultLike[]): MessageExecutionSt
     stepIndex: index,
     stepType: normalizeStepType(step.stepType),
     text: step.text ?? '',
+    reasoning: extractStepReasoning(step) || undefined,
     finishReason: step.finishReason ?? 'unknown',
     toolCalls: (step.toolCalls ?? []).map((call) => ({
       toolCallId: call.toolCallId ?? '',
@@ -225,4 +244,14 @@ export function buildStreamEnvelope<T>(
     assistantMessageId,
     data,
   }
+}
+
+/** Split a finished answer into small deltas so the client can type it. */
+export function chunkTextForStream(text: string, chunkSize = 24): string[] {
+  if (!text) return []
+  const chunks: string[] = []
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize))
+  }
+  return chunks
 }

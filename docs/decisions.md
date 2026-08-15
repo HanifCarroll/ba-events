@@ -26,6 +26,19 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Adaptive thinking on chat; facets on search RPCs
+
+**Date:** 2026-08-15
+
+**Decision:** Concierge `streamText` uses DeepSeek `thinking: { type: 'adaptive' }` (`CHAT_THINKING`). Structured calls keep `NO_THINKING`. The finished answer is still guarded, then emitted as 24-char `text-delta` chunks so the bubble types instead of appearing all at once. Reasoning tokens stream live as muted text above the answer. Both `match_events_with_venues_filtered` and `lexical_match_events_with_venues` now return `e.facets` so `chillRerank` can score hybrid hits.
+
+**Alternatives Considered (if applicable):**
+- `enabled` + `reasoningEffort: high` on chat: rejected as the first step — slower and more expensive before we know adaptive is insufficient.
+- Stream unguarded model tokens: rejected — off-topic and coverage guards still need the finished answer.
+- Join facets in app code after hybrid: rejected — the RPC already has the column; returning it is one migration.
+
+**Rationale:** Saturday "next weekend" needs a thinking step; extract/categorize do not. Chill ranking was a no-op because hybrid results omitted a column that already existed on `events`.
+
 ### Semantic external event actions (desktop card CTA)
 
 **Date:** 2026-08-14

@@ -23,10 +23,18 @@ export const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY })
 export const embeddingModel = openai.textEmbeddingModel(EMBEDDING_MODEL)
 
 /**
- * Spread into generateText/generateObject/streamText to disable DeepSeek's
- * thinking mode — required for calls with small token budgets (categorization,
- * extraction) and for snappy chat responses.
+ * Spread into generateText/generateObject to disable DeepSeek's thinking
+ * mode. Required for small-budget structured calls (categorization,
+ * extraction, titles, topic guard). Do not use this on the concierge chat.
  */
 export const NO_THINKING = {
   providerOptions: { deepseek: { thinking: { type: 'disabled' } } },
+} as const
+
+/**
+ * Concierge chat only. Adaptive thinking lets DeepSeek reason on ambiguous
+ * asks (e.g. "next weekend" on a Saturday) and skip it on simple ones.
+ */
+export const CHAT_THINKING = {
+  providerOptions: { deepseek: { thinking: { type: 'adaptive' } } },
 } as const

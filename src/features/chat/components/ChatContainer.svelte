@@ -84,6 +84,7 @@
 	let pendingFirstMessage = $state<PendingFirstMessage | null>(null)
 	let isHandoffPending = $state(false)
 	let requestPhase = $state<RequestPhase>('idle')
+	let liveReasoning = $state('')
 	let guestConversation = $state<GuestConversationWithMessages | null>(null)
 	let isLoadingGuestConversation = $state(false)
 	let scrollContainerRef = $state<HTMLDivElement | null>(null)
@@ -140,7 +141,7 @@
 		}
 	}
 
-	type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
+	type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions' | 'reasoning'>
 
 	function assistantMessageHasVisibleContent(
 		message: AssistantVisibilityMessage | null | undefined
@@ -148,6 +149,7 @@
 		if (!message) return false
 		return !!(
 			message.content.trim().length > 0 ||
+			(message.reasoning && message.reasoning.trim().length > 0) ||
 			(message.events && message.events.length > 0) ||
 			message.directions
 		)
@@ -537,6 +539,9 @@
 				}
 
 				setRequestLifecyclePhase(mapStatusPhaseToRequestPhase(statusData.phase))
+				if (typeof statusData.reasoning === 'string') {
+					liveReasoning = statusData.reasoning
+				}
 				return
 			}
 
@@ -598,6 +603,7 @@
 	async function handleSendMessage(content: string, options?: { eventId?: string }) {
 		pendingTrendingEventIdRef = options?.eventId ?? null
 		error = null
+		liveReasoning = ''
 		resetRequestCorrelations()
 		eventsCountRef = 0
 
@@ -968,6 +974,7 @@
 				id: message.id,
 				role: message.role as 'user' | 'assistant',
 				content: textContent,
+				reasoning: liveReasoning || undefined,
 				timestamp: resolveMessageTimestamp(message, messageTimestampsById),
 				isStreaming,
 				events: storedData?.events,
@@ -982,6 +989,7 @@
 			if (chatMessage.role === 'user') return true
 			const hasVisibleContent =
 				chatMessage.content.trim().length > 0 ||
+				(chatMessage.reasoning && chatMessage.reasoning.trim().length > 0) ||
 				(chatMessage.events && chatMessage.events.length > 0) ||
 				chatMessage.directions
 			return hasVisibleContent || chatMessage.isStreaming

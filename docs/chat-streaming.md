@@ -145,16 +145,17 @@ Time    Status      Loading     Visible Content
 
 10ms    submitted   VISIBLE     User message: "Find techno..."
 
-200ms   streaming   VISIBLE     (Claude calling search_events)
+200ms   streaming   VISIBLE     (model thinking / calling search_events)
 
-800ms   streaming   VISIBLE     (Tool executing, no text yet)
-
-1200ms  streaming   hidden      Text: "Here are some techno..."
-
-1500ms  streaming   hidden      Text continues streaming...
+800ms   streaming   hidden      Reasoning text streams (muted), then the
+                                guarded answer types as 24-char text-deltas.
 
 2000ms  ready       hidden      Text + Events + Suggestions
 ```
+
+Reasoning is streamed live via `reasoning-*` chunks plus `data-status.reasoning`.
+The finished answer is still assembled and guarded first, then emitted as
+`text-delta` chunks so the bubble types instead of appearing all at once.
 
 ## Related Files
 

@@ -345,6 +345,7 @@ export interface ChatStreamStatusData {
   requestId: string
   assistantMessageId?: string
   timestamp: string
+  reasoning?: string
 }
 
 export interface ChatStreamDataEnvelope<T> {
@@ -358,6 +359,7 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string // Display text
+  reasoning?: string
   events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
@@ -626,11 +628,11 @@ export interface MessageExecutionToolResult {
   success: boolean
 }
 
-/** Internal step-by-step trace for one assistant message */
 export interface MessageExecutionStep {
   stepIndex: number
   stepType: 'initial' | 'continue' | 'tool-result' | 'unknown'
   text: string
+  reasoning?: string
   finishReason: string
   toolCalls: MessageExecutionToolCall[]
   toolResults: MessageExecutionToolResult[]

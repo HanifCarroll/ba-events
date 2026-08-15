@@ -26,6 +26,16 @@ interface DebugMessage {
   role?: string
   parts?: Array<{ type?: string; text?: string }>
   content?: string
+  error?: string
+  executionTrace?: Array<{
+    stepIndex?: number
+    stepType?: string
+    text?: string
+    reasoning?: string
+    finishReason?: string
+    toolCalls?: Array<{ toolName?: string; input?: unknown }>
+    toolResults?: Array<{ toolName?: string; success?: boolean; output?: unknown }>
+  }>
 }
 
 function extractVisibleText(message: DebugMessage): string {
@@ -78,7 +88,24 @@ async function main(): Promise<void> {
   for (const message of messages) {
     const role = message.role ?? '(unknown)'
     const text = extractVisibleText(message)
-    console.log(`  [${role}] ${text || '(no text)'}`)
+    const error = typeof message.error === 'string' ? ` ERROR=${message.error}` : ''
+    console.log(`  [${role}] ${text || '(no text)'}${error}`)
+    if (Array.isArray(message.executionTrace)) {
+      for (const step of message.executionTrace) {
+        const calls = (step.toolCalls ?? [])
+          .map((call) => `${call.toolName ?? 'unknown'} ${JSON.stringify(call.input ?? {})}`)
+          .join('; ')
+        console.log(
+          `    step ${step.stepIndex ?? '?'} type=${step.stepType ?? '?'} finish=${step.finishReason ?? '?'}${calls ? ` tools=${calls}` : ''}`
+        )
+        if (typeof step.reasoning === 'string' && step.reasoning.trim().length > 0) {
+          console.log(`      reasoning: ${step.reasoning}`)
+        }
+        if (typeof step.text === 'string' && step.text.trim().length > 0) {
+          console.log(`      thinking: ${step.text}`)
+        }
+      }
+    }
   }
 }
 

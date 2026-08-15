@@ -14,6 +14,47 @@
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { logger } from '#shared/lib/logger.ts'
 
+import type { UIMessage } from 'ai'
+import type { MessageExecutionStep } from '#shared/lib/types.ts'
+
+export type GuestDebugAssistantMessage = {
+  id: string
+  role: 'assistant'
+  parts: Array<{ type: 'text'; text: string }>
+  executionTrace?: MessageExecutionStep[]
+  error?: string
+}
+
+export function persistGuestChatDebug(input: {
+  conversationId: string | null
+  locale: 'en' | 'es'
+  ip: string
+  messages: unknown
+  lastUserText: string | null
+}): void {
+  if (!input.conversationId) return
+
+  void upsertGuestChatDebug({
+    conversationId: input.conversationId,
+    locale: input.locale,
+    ip: input.ip,
+    messages: input.messages,
+    lastUserText: input.lastUserText,
+  }).catch((error) => {
+    logger.warn('[guest-debug] Unexpected persist failure', {
+      conversationId: input.conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  })
+}
+
+export function buildGuestDebugTranscript(
+  uiMessages: UIMessage[],
+  assistant: GuestDebugAssistantMessage
+): unknown[] {
+  return [...uiMessages, assistant]
+}
+
 export async function upsertGuestChatDebug(input: {
   conversationId: string
   locale: 'en' | 'es'
