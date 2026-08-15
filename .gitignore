@@ -21,3 +21,7 @@ supabase/.temp/
 
 # Server logs
 logs/
+
+# Agent scratch (not product)
+.pi-tasks/
+.impeccable/

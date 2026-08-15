@@ -5,6 +5,7 @@
  * for automated scraping jobs. Uses existing AI functions from shared lib.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Neighborhood } from '@/shared/lib/types'
 import {
   enrichEventFull,
   extractVenueFromUrl,
@@ -17,7 +18,12 @@ import {
   hasServerEnrichment,
 } from '@/features/import/adapters/enrichment'
 import type { ImportSource } from '@/features/import/adapters/types'
-import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import {
+  embedEventWithDocument,
+  CURRENT_EMBEDDING_VERSION,
+} from '@/shared/lib/ai/embeddings'
+import { extractEventFacets } from '@/shared/lib/ai/extract-facets'
+import type { EventFacets } from '@/shared/lib/search-facets'
 import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { settleVenue, type VenueSettlementResult } from './venue-settlement'
 import { delay } from './nominatim'
@@ -35,6 +41,10 @@ export interface EventEnrichmentInput {
   venue_id?: string | null // Existing venue ID (if any)
   description_es?: string | null // Existing Spanish description (translate-only fast path)
   description_en?: string | null // Existing English description (skip if already present)
+  enrichment_status?: 'pending' | 'completed' | 'failed' | null // Used to route the facets-only path
+  embedding?: number[] | null // Existing embedding (facets-only path never rewrites it)
+  price?: number | null // Existing price — embedded into the search document
+  is_free?: boolean // Existing free/paid flag — embedded into the search document
 }
 
 export interface EventEnrichmentResult {
@@ -60,6 +70,32 @@ export interface EnrichmentStats {
 // ============================================================================
 
 /**
+ * Resolve an existing venue's name + neighborhood by id, so an already-settled
+ * venue feeds the canonical search document even when no new settlement happens
+ * during this enrichment pass (e.g. sources that ship a venue_id at import).
+ */
+async function getVenueNameAndNeighborhood(
+  client: SupabaseClient,
+  venueId: string
+): Promise<{ name: string | null; neighborhood: Neighborhood | null }> {
+  const { data, error } = await client
+    .from('venues')
+    .select('name, neighborhood')
+    .eq('id', venueId)
+    .maybeSingle()
+
+  if (error) {
+    console.error(`[event-enrichment] Failed to fetch venue ${venueId}:`, error)
+    return { name: null, neighborhood: null }
+  }
+
+  return {
+    name: data?.name ?? null,
+    neighborhood: (data?.neighborhood as Neighborhood | null) ?? null,
+  }
+}
+
+/**
  * Update event with enrichment data.
  */
 async function updateEventEnrichment(
@@ -73,8 +109,11 @@ async function updateEventEnrichment(
     description_summary_es?: string | null
     description_summary_en?: string | null
     embedding?: number[] | null
+    search_document?: string | null
+    embedding_version?: number
     venue_id?: string | null
-    enrichment_status: 'pending' | 'completed' | 'failed'
+    facets?: EventFacets
+    enrichment_status?: 'pending' | 'completed' | 'failed'
     enrichment_error?: string | null
     enriched_at?: string | null
     status?: 'scheduled' | 'canceled' | 'postponed' | 'past' | 'pending_review'
@@ -95,13 +134,34 @@ async function updateEventEnrichment(
 // ============================================================================
 
 /**
+ * Injectable dependency for structured-facet extraction, so tests can
+ * supply a fake without mocking the whole extract-facets module (whose mock
+ * registry leaks across files in a shared vitest process). Defaults to the
+ * real implementation.
+ */
+export type ExtractFacetsFn = (
+  input: {
+    name: string
+    description_es: string | null
+    description_en?: string | null
+    categories?: string[] | null
+  }
+) => Promise<import('@/shared/lib/search-facets').EventFacets>
+
+export interface EnrichSingleEventOptions {
+  extractFacets?: ExtractFacetsFn
+}
+
+/**
  * Enrich a single event with description, venue, and embedding.
  */
 export async function enrichSingleEvent(
   client: SupabaseClient,
-  input: EventEnrichmentInput
+  input: EventEnrichmentInput,
+  options: EnrichSingleEventOptions = {}
 ): Promise<EventEnrichmentResult> {
-  const { id, name, link, source, categories, venue_id } = input
+  const { id, name, link, source, categories, venue_id, price, is_free } = input
+  const extractFacets = options.extractFacets ?? extractEventFacets
 
   // Skip events without links
   if (!link) {
@@ -110,6 +170,36 @@ export async function enrichSingleEvent(
       success: true,
       enriched: false,
       error: 'No link available',
+    }
+  }
+
+  // FACETS-ONLY PATH (Phase 5): a previously-completed event that only needs
+  // its empty `facets = {}` backfilled already has enriching descriptions. To
+  // avoid overwriting the existing embedding (Phase 5 forbids re-embed) we
+  // extract facets and update ONLY `facets` — no `generateEventEmbedding`, no
+  // description rewrites.
+  const alreadyEnriched =
+    input.enrichment_status === 'completed' ||
+    // Row was enriched but the status is missing/ambiguous; a present embedding
+    // is the ground-truth sign that it already went through full enrichment.
+    (Array.isArray(input.embedding) && input.embedding.length > 0)
+  if (input.description_es && alreadyEnriched) {
+    console.log(`[event-enrichment] Backfilling facets only for: ${name}`)
+    const facets = await extractFacets({
+      name,
+      description_es: input.description_es,
+      description_en: input.description_en,
+      categories,
+    })
+
+    await updateEventEnrichment(client, id, {
+      facets,
+    })
+
+    return {
+      eventId: id,
+      success: true,
+      enriched: true,
     }
   }
 
@@ -139,15 +229,19 @@ export async function enrichSingleEvent(
     } | null = null
 
     // Fast path: the event already has a Spanish description (sources that ship
-    // descriptions natively — BA Tourism, Eventbrite, Venti). Just translate
-    // es -> en instead of re-scraping the source page. Avoids redundant Jina
+    // descriptions natively — BA Tourism, Eventbrite, Venti — plus any
+    // previously-enriched row being re-queued to backfill empty facets). Reuse
+    // the stored description instead of re-scraping the source page, translating
+    // es -> en only if the English side is missing. Avoids redundant Jina
     // fetches and works for SPA pages (e.g. Venti) that Jina cannot parse.
     // Skips venue extraction (venues are settled at import for these sources).
-    if (input.description_es && !input.description_en) {
-      console.log(`[event-enrichment] Translating existing Spanish description for ${name}`)
+    if (input.description_es) {
+      console.log(`[event-enrichment] Reusing stored Spanish description for ${name}`)
       enrichmentResult = {
         description_es: input.description_es,
-        description_en: await translateText(input.description_es, 'es-to-en'),
+        description_en: input.description_en
+          ? input.description_en
+          : await translateText(input.description_es, 'es-to-en'),
         venue_name: null,
       }
     } else if (adapter && hasServerEnrichment(adapter)) {
@@ -198,7 +292,7 @@ export async function enrichSingleEvent(
       }
     }
 
-    // Step 2: Settle venue if needed and we extracted a venue name
+    // Step 3: Settle venue if needed and we extracted a venue name
     let venueSettlement: VenueSettlementResult | undefined
     let settledVenueId: string | null = null
 
@@ -214,23 +308,66 @@ export async function enrichSingleEvent(
       console.log(`[event-enrichment] Venue settled: ${venueSettlement.action} (${venueSettlement.venueId})`)
     }
 
-    // Step 3: Generate embedding with new Spanish description
-    const embedding = await generateEventEmbedding({
+    // Step 5: Extract structured facets from the now-available descriptions.
+    // Only assigns keys the text supports; on failure extractEventFacets
+    // returns {} and logs, so a single event never fails enrichment. Note the
+    // order: facets are extracted BEFORE the embedding so the richer document
+    // (which includes facets as readable phrases) is embedded once.
+    const facets = await extractFacets({
       name,
       description_es: enrichmentResult.description_es,
+      description_en: enrichmentResult.description_en,
+      categories,
+    })
+
+    // Step 4: Generate embedding using the richer search document — Spanish +
+    // English descriptions, facets, price/free status, and venue
+    // name/neighborhood when known. The venue data comes from the settlement
+    // when a venue was resolved here; else from the existing venue (resolved by
+    // id from the venues table); else from the freshly-extracted venue name. The
+    // exact text embedded is stored as `search_document` so the vector and
+    // document can never drift apart.
+    let venueName: string | null = null
+    let venueNeighborhood: Neighborhood | null = null
+
+    if (settledVenueId) {
+      venueName = venueSettlement!.venueName
+    } else if (venue_id) {
+      const existingVenue = await getVenueNameAndNeighborhood(client, venue_id)
+      venueName = existingVenue.name
+      venueNeighborhood = existingVenue.neighborhood
+    } else {
+      venueName = enrichmentResult.venue_name ?? null
+    }
+    if (settledVenueId) {
+      venueNeighborhood = venueSettlement!.neighborhood ?? null
+    }
+
+    const { embedding, searchDocument } = await embedEventWithDocument({
+      name,
+      description_es: enrichmentResult.description_es,
+      description_en: enrichmentResult.description_en,
       categories: categories || null,
+      facets,
+      price: price ?? null,
+      is_free,
+      venue_name: venueName ?? null,
+      venue_neighborhood: venueNeighborhood ?? null,
     })
     const presentationFields = await buildDescriptionPresentationFields({
       description_es: enrichmentResult.description_es,
       description_en: enrichmentResult.description_en,
     })
 
-    // Step 4: Update event with all enrichment data
+    // Step 6: Update event with all enrichment data
     const updateData: Parameters<typeof updateEventEnrichment>[2] = {
       description_es: enrichmentResult.description_es,
       description_en: enrichmentResult.description_en,
       ...presentationFields,
       embedding,
+      search_document: searchDocument,
+      embedding_version: CURRENT_EMBEDDING_VERSION,
+      facets,
       enrichment_status: 'completed',
       enrichment_error: null,
       enriched_at: new Date().toISOString(),
@@ -296,11 +433,13 @@ export async function enrichSingleEvent(
 interface BatchEnrichmentOptions {
   delayMs?: number
   onProgress?: (current: number, total: number, result: EventEnrichmentResult) => void
+  extractFacets?: ExtractFacetsFn
 }
 
 type EnrichmentHandler = (
   client: SupabaseClient,
-  input: EventEnrichmentInput
+  input: EventEnrichmentInput,
+  options?: EnrichSingleEventOptions
 ) => Promise<EventEnrichmentResult>
 
 /**
@@ -315,6 +454,9 @@ async function processBatch(
   options?: BatchEnrichmentOptions
 ): Promise<EnrichmentStats> {
   const delayMs = options?.delayMs ?? 1000
+  const enrichOptions = options?.extractFacets
+    ? { extractFacets: options.extractFacets }
+    : undefined
 
   const stats: EnrichmentStats = {
     total: events.length,
@@ -329,7 +471,7 @@ async function processBatch(
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i]
-    const result = await handler(client, event)
+    const result = await handler(client, event, enrichOptions)
 
     // Update stats
     if (result.canceled) {
@@ -381,7 +523,12 @@ export function enrichEvents(
 // ============================================================================
 
 /**
- * Get events that need enrichment (pending status, have link).
+ * Get events that need enrichment: either never enriched (pending) or already
+ * enriched but still missing structured facets (`facets = '{}'::jsonb`).
+ *
+ * Facets were added in Phase 5, so previously-enriched rows must be re-queued
+ * so the enrich job backfills `facets` (extracting from stored descriptions
+ * when present — `enrichSingleEvent` already skips the URL fetch on that path).
  */
 export async function getEventsNeedingEnrichment(
   client: SupabaseClient,
@@ -393,8 +540,10 @@ export async function getEventsNeedingEnrichment(
 ): Promise<EventEnrichmentInput[]> {
   let query = client
     .from('events')
-    .select('id, name, link, source, categories, venue_id, description_es, description_en')
-    .eq('enrichment_status', 'pending')
+    .select(
+      'id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, embedding, price, is_free'
+    )
+    .or('enrichment_status.eq.pending,facets.eq.{},facets.is.null')
     .not('link', 'is', null)
     .order('starts_at', { ascending: true })
 
@@ -458,7 +607,8 @@ export async function getEnrichmentPendingCounts(
  */
 export async function enrichEventVenueOnly(
   client: SupabaseClient,
-  input: EventEnrichmentInput
+  input: EventEnrichmentInput,
+  _options?: EnrichSingleEventOptions
 ): Promise<EventEnrichmentResult> {
   const { id, name, link, source, venue_id } = input
 

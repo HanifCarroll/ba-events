@@ -290,6 +290,7 @@ export async function settleVenue(
       confidence: 1,
       method: 'exact',
       venueName: match.venue!.name, // Use the matched venue's actual name
+      neighborhood: match.venue!.neighborhood,
     }
   }
 
@@ -304,6 +305,7 @@ export async function settleVenue(
       confidence: match.confidence,
       method: 'fuzzy',
       venueName: match.venue!.name, // Use the matched venue's actual name
+      neighborhood: match.venue!.neighborhood,
     }
   }
 
@@ -326,6 +328,7 @@ export async function settleVenue(
       confidence: match.confidence,
       method: 'fuzzy',
       venueName: match.venue!.name,
+      neighborhood: match.venue!.neighborhood,
     }
   }
 
@@ -469,6 +472,23 @@ export function getVenueIdFromResults(
   if (!venueName) return null
   const key = venueName.trim().toLowerCase()
   return results.get(key)?.venueId || null
+}
+
+/**
+ * Get the settled venue neighborhood from settlement results by venue name.
+ * Returns null when the venue was matched to an existing row (whose neighborhood
+ * lives on the venues table) or auto-created without a resolved CABA
+ * neighborhood. Callers that prefer the settled neighborhood over a source-side
+ * city value (Meeting/Luma pass the city, not a CABA neighborhood) should use
+ * this to feed the canonical search document.
+ */
+export function getVenueNeighborhoodFromResults(
+  results: Map<string, VenueSettlementResult>,
+  venueName: string | null | undefined
+): Neighborhood | null {
+  if (!venueName) return null
+  const key = venueName.trim().toLowerCase()
+  return results.get(key)?.neighborhood ?? null
 }
 
 /**

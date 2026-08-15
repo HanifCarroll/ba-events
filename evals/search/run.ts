@@ -2,9 +2,14 @@
 /**
  * Semantic search retrieval eval.
  *
- * Runs golden vibe queries through hybridEventSearch (the same function the
+ * Runs semantic/hybrid golden queries through hybridEventSearch (the same function the
  * search_events tool uses) and scores recall@5 and hit@5 against labeled
  * relevant event IDs.
+ *
+ * `hybridEventSearch` is now the fused hybrid: it calls semanticEventSearch +
+ * lexicalEventSearch in parallel and merges via RRF. For the dense-only
+ * baseline (to isolate fusion regressions), run `bun run eval:search:semantic`
+ * (evals/search/run-semantic.ts) which hits semanticEventSearch alone.
  *
  * Per-case pass = at least one relevant event in top 5 (hit@5).
  * Suite fails if hit rate < 70% or mean recall@5 < 0.5 — retrieval is

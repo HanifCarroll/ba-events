@@ -16,11 +16,14 @@ import { fetchPasslineEventsWithBrowserbase } from '../scrapers/passline/browser
 import { isBrowserbaseAvailable } from '@/shared/lib/browser'
 import { transformPasslineEvent } from '../scrapers/passline/transformer'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
-import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import {
+  embedEventWithDocument,
+  CURRENT_EMBEDDING_VERSION,
+} from '@/shared/lib/ai/embeddings'
 import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
-import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
+import { settleVenues, getVenueIdFromResults, getVenueNeighborhoodFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
 import { delay } from './nominatim'
 import type { EventInsert } from '@/shared/lib/types'
 import { logger } from '@/shared/lib/logger'
@@ -192,24 +195,35 @@ export async function processPasslineImport(
 
   // Step 7: Generate embeddings and upsert
   logger.info('[passline] Generating embeddings and upserting events')
-  for (const { transformed, isUpdate } of eventsToProcess) {
+  for (const { event, transformed, isUpdate } of eventsToProcess) {
     try {
       const presentationFields = await buildDescriptionPresentationFields({
         description_es: transformed.description_es,
         description_en: transformed.description_en,
       })
 
-      // Generate embedding
-      const embedding = await generateEventEmbedding({
+      // Generate embedding + search document together (they must not drift).
+      // Passline provides the venue name (`lugar`) on the source event; when the
+      // settlement resolved a CABA neighborhood for that venue, prefer it so the
+      // canonical document carries real neighborhood context.
+      const { embedding, searchDocument } = await embedEventWithDocument({
         name: transformed.name,
         description_es: transformed.description_es,
+        description_en: transformed.description_en,
         categories: transformed.categories,
+        price: transformed.price,
+        is_free: transformed.is_free,
+        facets: transformed.facets,
+        venue_name: event.lugar || null,
+        venue_neighborhood: getVenueNeighborhoodFromResults(venueResults, event.lugar),
       })
 
       const eventWithEmbedding = {
         ...transformed,
         ...presentationFields,
         embedding,
+        search_document: searchDocument,
+        embedding_version: CURRENT_EMBEDDING_VERSION,
         enrichment_status: 'pending' as const,
       }
 
@@ -235,6 +249,8 @@ export async function processPasslineImport(
             is_free: eventWithEmbedding.is_free,
             image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
+            search_document: eventWithEmbedding.search_document,
+            embedding_version: eventWithEmbedding.embedding_version,
             location_tba: eventWithEmbedding.location_tba ?? false,
           })
           .eq('id', existing!.id)

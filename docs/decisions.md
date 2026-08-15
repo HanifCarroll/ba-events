@@ -26,6 +26,42 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Surprise-me and list diversity (Phase 9)
+
+**Date:** 2026-08-14
+
+**Decision:** Added `objective: 'surprise'` to `search_events`. When triggered (explicitly, or derived when there is no semantic query and the `must` set is only the default upcoming window), the tool ranks the filtered upcoming set (cap 50) with a deterministic quality + near-term-decay scorer and returns one event — no longer "the soonest event." For lists (`displayLimit > 1`) on both the filter-only and semantic paths, a greedy order-preserving diversity pass caps 2 events per venue and 3 per identical categories signature, filling from remaining ranked candidates.
+
+**Alternatives Considered (if applicable):**
+- Make surprise return multiple options: Rejected — a decisive pick is one event, and surprises shouldn't read as a discovery list.
+- Apply quality to the semantic path's relevance order: Rejected — quality must not leak into "is this a good semantic match." Diversity only drops over-capped events on lists, preserving vector/RRF order.
+- Track "already shown in this conversation" to avoid repeats: Deferred — the tool context carries no event ids, so we skip rather than invent session state.
+
+**Rationale:** Addresses the live `eval:search` gap where retrieval tops are the right *kind* of current event but surprise-me was just the soonest scheduled event. A quality/soonness pick and venue/category diversity give better surfacing without compromising semantic relevance. Quality scoring uses image / `!location_tba` / `!description_unavailable` / has-venue; soonness is an exponential decay over ~2 days (not a hard "soonest"). Related Decision: Vibe Search (2026-08-14, superseded).
+
+### Removed vibe scorer
+
+**Date:** 2026-08-14
+
+**Decision:** Constrained semantic retrieval is the only search path. The phrase-table scorer is deleted.
+
+**Related Decision:** [Constrained Semantic Retrieval] (2026-08-14).
+
+### Constrained Semantic Retrieval
+
+**Date:** 2026-08-14
+
+**Decision:** Vibe phrase-scoring is a temporary comparison path behind `SEARCH_VIBE_PATH`. Retrieval becomes must-filter → dense+lexical → RRF → optional LLM rerank → quality/diversity. String matching is limited to alias canonicalization.
+
+**Alternatives Considered:**
+- Keep expanding `vibe-search.ts`: rejected — a second incompatible engine, false positives, unmaintainable.
+- Embeddings-only with limit=1: rejected — the retriever is not a ranker.
+- Dedicated intent-extraction LLM on every request: deferred until the expanded tool schema fails.
+
+**Rationale:** One retrieval method should not be asked to return the final answer directly. The plan is a staged migration (see `docs/constrained-semantic-retrieval-plan.md`) that keeps today's behavior default-on behind `SEARCH_VIBE_PATH` while the new pipeline lands phase by phase.
+
+**Related Decision:** [Vibe Search: Deterministic Scorer Over Hard-Filtered Candidates] (2026-08-14).
+
 ### First-Message Handoff: Immediate Render, Off-Path Persistence
 
 **Date:** 2026-08-14
@@ -2128,3 +2164,55 @@ server-rendered navigation documents in Workbox.
 **Rationale:** The server is the source of truth for locale negotiation. Navigation
 documents are small and online event discovery already requires a live connection,
 so correct SSR and hydration are more valuable than stale offline page shells.
+
+---
+
+## Re-embed scripts write via the service-role client (anon has no UPDATE on events)
+
+**Date:** 2026-08-14
+
+**Decision:** `scripts/reembed-stale.ts` writes `embedding`, `search_document`, and
+`embedding_version` through `getSupabaseServiceRoleClient()` instead of the anon
+`getSupabase()` client. Reads still use anon.
+
+**Alternatives Considered:**
+- Keep anon for writes: PostgREST returned `success: true` with `error: null` yet
+  the row never changed (`updated_at` stayed frozen), so a full backfill would
+  silently re-process the same stale rows forever with no error to catch.
+
+**Rationale:** The anon role has no RLS `UPDATE` policy on `events`, so anon updates
+are silently dropped. Embedded vectors/text written with the anon key never
+persist. Service role bypasses RLS and is the only reliable writer for
+maintenance scripts that mutate row state.
+
+**Related:** `match_events_with_venues_filtered` / `lexical_match_events_with_venues`
+and the PostgREST filter/count paths. See the "Avoid = hard exclude" note in
+`docs/constrained-semantic-retrieval-plan.md` for the corrected facet predicate.
+
+- - -
+
+## Avoid-genre excludes must not drop events with missing facets
+
+**Date:** 2026-08-14
+
+**Decision:** The search avoid predicate excludes an event only if its
+`facets.genres` actually overlaps the avoided list.
+- SQL RPCs use `NOT (coalesce(facets->'genres','[]') ?| filter_avoid_genres)`.
+- PostgREST filter-only / count paths apply avoid **in memory**
+  (`applyAvoidGenres`) because no PostgREST JSONB filter expresses the overlap with
+  the correct missing-key semantics.
+
+**Alternatives Considered:**
+- `NOT (facets->'genres' ?| arr)`: `facets->'genres'` is NULL for `facets = {}`
+  (the pre-enrichment default), `NULL ?| arr` is NULL, `NOT NULL` is NULL, and a
+  NULL WHERE clause drops the row — so every event without a `genres` key would be
+  excluded even when it carries no avoided genre.
+- PostgREST `.not('facets->genres','ov',arr)`: errors at runtime with
+  `operator does not exist: jsonb && unknown`.
+- PostgREST `cs` (contains) on `facets->genres`: also NULL-drops missing genres
+  and only matches "contains the full set", not "shares any element".
+
+**Rationale:** Avoid is a hard exclude but only meaningful against genres an event
+actually has. Coalescing missing genres to `[]` keeps events without facets
+eligible, which matches the import reality where most events are pre-enrichment
+(`facets = {}`).

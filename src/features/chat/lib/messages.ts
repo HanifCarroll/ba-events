@@ -129,7 +129,7 @@ export function intentToFilters(intent: ParsedIntent): EventFilters {
     filters.categories = intent.categories
   }
   if (intent.neighborhood) {
-    filters.neighborhood = intent.neighborhood
+    filters.neighborhoods = [intent.neighborhood]
   }
   if (intent.isFree) {
     filters.isFree = true

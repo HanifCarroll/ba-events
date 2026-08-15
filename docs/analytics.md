@@ -238,7 +238,7 @@ const sendMessage = async (query: string) => {
 |-------|------------|-------------|
 | `search:filters_applied` | `categories[]`, `vibes[]`, `neighborhood`, `time_filter`, `is_free`, `max_price` | Filters changed |
 | `search:results_displayed` | `result_count`, `filters_used` | Search results shown |
-| `search:executed` | `query`, `has_query`, `has_filters`, `search_mode` (`vibe`/`semantic`/`filter_only`/`now`), `result_count`, `total_matches`, `returned`, `time_filter`, `limit`, `success`, `duration_ms` | Server-side, emitted per `search_events` tool execution by the chat API (`trackServer`); `success` reflects the real tool outcome |
+| `search:executed` | `query`, `has_query`, `has_filters`, `search_mode` (`semantic`/`filter_only`/`now`), `result_count`, `total_matches`, `returned`, `time_filter`, `limit`, `success`, `duration_ms` | Server-side, emitted per `search_events` tool execution by the chat API (`trackServer`); `success` reflects the real tool outcome |
 
 ### Authentication
 

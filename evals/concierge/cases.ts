@@ -83,7 +83,7 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
       anyToolOf: ['search_events'],
       limitMin: 2,
       limitMax: 5,
-      searchArgs: { neighborhood: 'Palermo' },
+      searchArgs: { neighborhoods: ['Palermo'] },
     },
   },
   {
@@ -140,7 +140,7 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
     locale: 'en',
     expect: {
       anyToolOf: ['search_events'],
-      searchArgs: { isFree: true, neighborhood: 'Palermo', timeFilter: 'weekend' },
+      searchArgs: { isFree: true, neighborhoods: ['Palermo'], timeFilter: 'weekend' },
     },
   },
   {

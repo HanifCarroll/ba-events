@@ -17,6 +17,7 @@ import type {
   VenueInsert,
 } from '../types'
 import { generateEmbedding } from '../ai/embeddings'
+import { rrfFuse } from '../search/rrf'
 import { nodeRealtimeOptions } from './node-realtime'
 
 // Lazy-initialize Supabase client (only when needed, server-side only)
@@ -98,7 +99,8 @@ const CHAT_EVENT_COLUMNS = `
   venue_id, categories, price, is_free, min_age, image_url, link, ticket_url,
   source, external_id, status, location_hidden, location_tba, description_unavailable,
   enrichment_status, enrichment_error, enriched_at, created_at, updated_at,
-  venue_name, venue_neighborhood, venue_address
+  venue_name, venue_neighborhood, venue_address,
+  facets
 `
 
 export async function getEventsWithVenues(limit = 50) {
@@ -202,6 +204,22 @@ export async function createEvent(event: EventInsert, client?: SupabaseClient) {
 // SEARCH OPERATIONS
 // ============================================================================
 
+// Hard avoid-genre exclude, applied in memory on already-fetched events. An
+// event is excluded only if its `facets.genres` actually overlaps the avoided
+// list; events with no facets or no genres stay eligible (a missing/empty
+// genres array cannot contain an avoided genre).
+export function applyAvoidGenres<T extends { facets?: { genres?: string[] } | null }>(
+  rows: T[],
+  avoidGenres?: string[]
+): T[] {
+  if (!avoidGenres || avoidGenres.length === 0) return rows
+  return rows.filter((e) => {
+    const genres = e.facets?.genres
+    if (!genres || genres.length === 0) return true
+    return !avoidGenres.some((g) => genres.includes(g))
+  })
+}
+
 // Filter-based search (for structured queries)
 export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50): Promise<ChatEventPayload[]> {
   let query = getSupabase().from('events_with_venues').select(CHAT_EVENT_COLUMNS)
@@ -215,11 +233,11 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
   if (filters.startsBefore) {
     query = query.lte('starts_at', filters.startsBefore)
   }
-  if (filters.neighborhood) {
-    query = query.eq('venue_neighborhood', filters.neighborhood)
+  if (filters.neighborhoods && filters.neighborhoods.length > 0) {
+    query = query.in('venue_neighborhood', filters.neighborhoods)
   }
-  if (filters.venueId) {
-    query = query.eq('venue_id', filters.venueId)
+  if (filters.venueIds && filters.venueIds.length > 0) {
+    query = query.in('venue_id', filters.venueIds)
   }
   if (filters.categories && filters.categories.length > 0) {
     query = query.overlaps('categories', filters.categories)
@@ -239,13 +257,63 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
 
   const { data, error } = await query
   if (error) throw error
-  return data as ChatEventPayload[]
+  const results = data as ChatEventPayload[]
+  return applyAvoidGenres(results, filters.avoidGenres)
 }
 
 // Count scheduled events matching the given filters (ignores `limit`). Used to
 // report search coverage so the model knows how much it searched vs. returned.
 // Mirrors the predicate in searchEventsWithFilters.
 export async function countEventsWithFilters(filters: EventFilters): Promise<number> {
+  // Avoid genres can't be expressed as a PostgREST filter (the `ov` operator on
+  // a `facets->genres` jsonb path errors, and `cs`/overlap mishandles events
+  // with no genres key). So when avoid is present we fetch matched `facets` and
+  // apply the hard exclude in memory. The corpus is small and `avoid` is rare.
+  const needAvoid = !!filters.avoidGenres && filters.avoidGenres.length > 0
+
+  if (needAvoid) {
+    // Avoid genres can't be expressed as a PostgREST filter (the `ov` operator
+    // on a `facets->genres` jsonb path errors, and `cs`/overlap mishandles
+    // events with no genres key). Fetch matched events' facets in pages and
+    // apply the hard exclude in memory. PostgREST caps a single response at
+    // 1000 rows, so page through in blocks below that.
+    const PAGE = 1000
+    let kept = 0
+    let offset = 0
+    for (;;) {
+      let q = getSupabase()
+        .from('events_with_venues')
+        .select('id, facets')
+        .eq('status', filters.status || 'scheduled')
+
+      if (filters.startsAfter) q = q.gte('starts_at', filters.startsAfter)
+      if (filters.startsBefore) q = q.lte('starts_at', filters.startsBefore)
+      if (filters.neighborhoods && filters.neighborhoods.length > 0) {
+        q = q.in('venue_neighborhood', filters.neighborhoods)
+      }
+      if (filters.venueIds && filters.venueIds.length > 0) {
+        q = q.in('venue_id', filters.venueIds)
+      }
+      if (filters.categories && filters.categories.length > 0) {
+        q = q.overlaps('categories', filters.categories)
+      }
+      if (filters.isFree) q = q.eq('is_free', true)
+      if (filters.maxPrice !== undefined) q = q.lte('price', filters.maxPrice)
+      if (filters.minAge !== undefined) q = q.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
+
+      const { data, error } = await q
+        .order('starts_at', { ascending: true })
+        .range(offset, offset + PAGE - 1)
+      if (error) throw error
+      if (!data || data.length === 0) break
+      const rows = applyAvoidGenres(data as ChatEventPayload[], filters.avoidGenres!)
+      kept += rows.length
+      offset += data.length
+      if (data.length < PAGE) break
+    }
+    return kept
+  }
+
   let query = getSupabase()
     .from('events_with_venues')
     .select('id', { count: 'exact', head: true })
@@ -257,11 +325,11 @@ export async function countEventsWithFilters(filters: EventFilters): Promise<num
   if (filters.startsBefore) {
     query = query.lte('starts_at', filters.startsBefore)
   }
-  if (filters.neighborhood) {
-    query = query.eq('venue_neighborhood', filters.neighborhood)
+  if (filters.neighborhoods && filters.neighborhoods.length > 0) {
+    query = query.in('venue_neighborhood', filters.neighborhoods)
   }
-  if (filters.venueId) {
-    query = query.eq('venue_id', filters.venueId)
+  if (filters.venueIds && filters.venueIds.length > 0) {
+    query = query.in('venue_id', filters.venueIds)
   }
   if (filters.categories && filters.categories.length > 0) {
     query = query.overlaps('categories', filters.categories)
@@ -312,12 +380,16 @@ export async function getEventsHappeningNow(): Promise<ChatEventPayload[]> {
   return data as ChatEventPayload[]
 }
 
-// Hybrid semantic + filter search (filtering done in PostgreSQL for performance)
-export async function hybridEventSearch(
+// Dense (vector) semantic search with filter application done in PostgreSQL.
+export async function semanticEventSearch(
   query: string,
   filters: EventFilters,
   matchCount = 10
 ): Promise<ChatEventPayload[]> {
+  // Empty/whitespace queries have no retrieval text — do NOT embed a blank
+  // string. The filter-only path is the caller's responsibility.
+  if (!query.trim()) return []
+
   // Generate embedding for the search query
   const queryEmbedding = await generateEmbedding(query)
 
@@ -330,16 +402,67 @@ export async function hybridEventSearch(
       match_count: matchCount,
       filter_starts_after: filters.startsAfter || null,
       filter_starts_before: filters.startsBefore || null,
-      filter_neighborhood: filters.neighborhood || null,
+      filter_neighborhoods: filters.neighborhoods && filters.neighborhoods.length > 0 ? filters.neighborhoods : null,
+      filter_venue_ids: filters.venueIds && filters.venueIds.length > 0 ? filters.venueIds : null,
       filter_is_free: filters.isFree || null,
       filter_max_price: filters.maxPrice ?? null,
       filter_categories: filters.categories && filters.categories.length > 0 ? filters.categories : null,
       filter_min_age: filters.minAge ?? null,
+      filter_avoid_genres: filters.avoidGenres && filters.avoidGenres.length > 0 ? filters.avoidGenres : null,
     }
   )
 
   if (error) throw error
   return (data as ChatEventPayload[]) || []
+}
+
+// Lexical (full-text) search over the events search document, with the same
+// filter surface applied server-side. Orders by ts_rank_cd.
+export async function lexicalEventSearch(
+  query: string,
+  filters: EventFilters,
+  matchCount = 50
+): Promise<ChatEventPayload[]> {
+  if (!query.trim()) return []
+
+  const { data, error } = await getSupabase().rpc(
+    'lexical_match_events_with_venues',
+    {
+      query,
+      match_count: matchCount,
+      filter_starts_after: filters.startsAfter || null,
+      filter_starts_before: filters.startsBefore || null,
+      filter_neighborhoods: filters.neighborhoods && filters.neighborhoods.length > 0 ? filters.neighborhoods : null,
+      filter_venue_ids: filters.venueIds && filters.venueIds.length > 0 ? filters.venueIds : null,
+      filter_is_free: filters.isFree || null,
+      filter_max_price: filters.maxPrice ?? null,
+      filter_categories: filters.categories && filters.categories.length > 0 ? filters.categories : null,
+      filter_min_age: filters.minAge ?? null,
+      filter_avoid_genres: filters.avoidGenres && filters.avoidGenres.length > 0 ? filters.avoidGenres : null,
+    }
+  )
+
+  if (error) throw error
+  return (data as ChatEventPayload[]) || []
+}
+
+// Hybrid retrieval: dense (semanticEventSearch) + lexical (lexicalEventSearch)
+// in parallel, fused by Reciprocal Rank Fusion to `candidateLimit` rows.
+// An empty/whitespace query has no retrieval text and must NOT embed — the
+// filter-only path is the caller's responsibility and never reaches here.
+export async function hybridEventSearch(
+  query: string,
+  filters: EventFilters,
+  candidateLimit = 50
+): Promise<ChatEventPayload[]> {
+  if (!query.trim()) return []
+
+  const [semanticResults, lexicalResults] = await Promise.all([
+    semanticEventSearch(query, filters, candidateLimit),
+    lexicalEventSearch(query, filters, candidateLimit),
+  ])
+
+  return rrfFuse([semanticResults, lexicalResults], { limit: candidateLimit })
 }
 
 // ============================================================================

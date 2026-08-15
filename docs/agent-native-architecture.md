@@ -48,34 +48,33 @@ system prompt by the chat route).
 
 It uses a **single-search model** (max 2 Claude calls), not a true agent loop.
 
-### Vibe vs. Semantic Retrieval (added 2026-08-14)
+### Constrained Semantic Retrieval
 
-`search_events` has two retrieval paths behind the same tool interface:
+`search_events` uses **constrained semantic retrieval** behind the tool
+interface. Raw natural-language input is canonicalized into a structured
+intent (`must` = non-negotiable SQL filters such as free / neighborhood /
+venue / named day, `prefer` / `avoid`, and a leftover `semanticQuery`) by
+`src/features/chat/api/tools/search-intent.ts`. The must constraints are
+enforced as hard SQL filters; the leftover semantic text drives retrieval.
 
-- **Vibe queries** (bilingual signals: chill/tranqui, techno, energetic/party,
-  free/gratis, date-like, plus geo/time signals like a named neighborhood,
-  weekday, today/tonight/tomorrow/weekend) are ranked by a deterministic
-  structured scorer — `src/features/chat/api/tools/vibe-search.ts` — over the
-  **complete hard-filtered candidate set** (bounded by
-  `VIBE_CANDIDATE_CAP = 1000`, Supabase's default response limit — exhaustive
-  for the current corpus; a documented safeguard rather than a guarantee of
-  universal completeness). The scorer combines keyword
-  overlap with intent signals (soft boosts/penalties) and context signals
-  (neighborhood/day/time + completeness quality). It returns **fewer than the
-  requested limit when relevance is poor**: only events whose keyword +
-  strong-text/free evidence clears the `MIN_CONTENT_SCORE` gate are returned,
-  so a "chill" ask is never padded with loud party nights. Query-named
-  neighborhoods exclude events known to be elsewhere.
-- **Non-vibe queries** (factual/enumeration asks: "tango classes", "bbq
-  festival", "tech talks") keep the semantic embedding path
-  (`hybridEventSearch`) unchanged. No hybrid fusion, RRF, or LLM retry
-  pipeline exists by design.
+- **must → hybrid**: the constrained filter set narrows candidates in SQL,
+  then retrieval is dense + lexical fusion (RRF → fusion to ~50 candidates),
+  presented in vector/fused order.
+    - **optional LLM rerank** (planned, Phase 8): a later stage for subjective
+  fit / composition / negation over the top 20–30 candidates.
+- **quality / diversity** (planned, Phase 9): final-stage priors only — they
+  never leak into relevance.
 
-The labeled bilingual evaluation set lives in `evals/search/vibe-golden.ts`
-(deterministic fixture corpus in `evals/search/vibe-fixtures.ts`); run it with
-`bun evals/search/vibe-run.ts`. Every search (vibe or not) emits
-`search:executed` server telemetry with query, filters, mode, counts, and
-duration, and `agent:tool_used` reports the REAL tool success (no longer a
+The roadmap (`docs/constrained-semantic-retrieval-plan.md`,
+[decision](decisions.md)) describes the phases. The former phrase-table
+scorer (`vibe-search.ts`) was removed; constrained semantic retrieval is the
+only search path (2026-08-14). String matching is limited to alias
+canonicalization (free → `isFree`, "Palermo Soho" → `Palermo`, a venue name →
+venue ids, a named weekday → a date window); it never ranks.
+
+Every search emits `search:executed` server telemetry with query, filters,
+mode, counts, and duration, and `agent:tool_used` reports the REAL tool
+success (no longer a
 hardcoded `true`).
 
 ---

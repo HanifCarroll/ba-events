@@ -7,6 +7,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { embed } from 'ai'
 import { embeddingModel } from '../src/shared/lib/ai/providers'
+import { buildEmbeddingText, CURRENT_EMBEDDING_VERSION } from '../src/shared/lib/ai/embeddings'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY
@@ -21,52 +22,16 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 interface EventWithVenue {
   id: string
   name: string
-  description: string | null
-  categories: string[]
-  vibes: string[]
+  description_es: string | null
+  categories: string[] | null
   is_free: boolean
   price: number | null
   venue_name: string | null
   venue_neighborhood: string | null
-  venue_type: string | null
 }
 
-function buildEmbeddingText(event: EventWithVenue): string {
-  const parts: string[] = []
-
-  parts.push(event.name)
-  if (event.description) {
-    parts.push(event.description)
-  }
-
-  if (event.categories && event.categories.length > 0) {
-    parts.push(`Categories: ${event.categories.join(', ')}`)
-  }
-
-  if (event.vibes && event.vibes.length > 0) {
-    parts.push(`Vibes: ${event.vibes.join(', ')}`)
-  }
-
-  if (event.venue_name) {
-    const venueParts = [event.venue_name]
-    if (event.venue_neighborhood) {
-      venueParts.push(`in ${event.venue_neighborhood}`)
-    }
-    parts.push(`Venue: ${venueParts.join(' ')}`)
-
-    if (event.venue_type && event.venue_type !== 'other') {
-      parts.push(`Venue type: ${event.venue_type}`)
-    }
-  }
-
-  if (event.is_free) {
-    parts.push('This is a free event')
-  } else if (event.price) {
-    parts.push(`Price: ${event.price} ARS`)
-  }
-
-  return parts.join('. ')
-}
+// buildEmbeddingText is imported from src/shared/lib/ai/embeddings (the
+// canonical builder) — never fork it here.
 
 async function generateEmbedding(text: string): Promise<number[]> {
   const { embedding } = await embed({
@@ -115,7 +80,11 @@ async function main() {
 
           const { error: updateError } = await supabase
             .from('events')
-            .update({ embedding })
+            .update({
+              embedding,
+              search_document: text,
+              embedding_version: CURRENT_EMBEDDING_VERSION,
+            })
             .eq('id', event.id)
 
           if (updateError) throw updateError

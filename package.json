@@ -10,7 +10,9 @@
     "eval:concierge": "bun evals/concierge/run.ts",
     "eval:topic-guard": "bun evals/topic-guard/run.ts",
     "eval:search": "bun evals/search/run.ts",
-    "eval:vibe": "bun evals/search/vibe-run.ts",
+    "eval:search:semantic": "bun evals/search/run-semantic.ts",
+    "eval:relevance": "bun evals/search/relevance/run.ts",
+    "snapshot:search-corpus": "bun scripts/snapshot-search-corpus.ts",
     "eval:titles": "bun evals/titles/run.ts",
     "trigger:dev": "npx trigger.dev@latest dev",
     "trigger:deploy": "npx trigger.dev@latest deploy"

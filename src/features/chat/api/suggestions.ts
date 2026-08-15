@@ -145,7 +145,7 @@ export function generateSuggestions(context: SuggestionContext): RefinementSugge
           neighborhoodCounts.set(e.venue_neighborhood, (neighborhoodCounts.get(e.venue_neighborhood) || 0) + 1)
         }
       })
-      if (neighborhoodCounts.size > 0 && !toolInput.neighborhood) {
+      if (neighborhoodCounts.size > 0 && !toolInput.neighborhoods?.length) {
         const topNeighborhood = [...neighborhoodCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
         suggestions.push({
           id: `neighborhood-${topNeighborhood}`,

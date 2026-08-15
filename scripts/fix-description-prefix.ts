@@ -10,6 +10,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { embed } from 'ai'
 import { embeddingModel } from '../src/shared/lib/ai/providers'
+import { buildEmbeddingText, CURRENT_EMBEDDING_VERSION } from '../src/shared/lib/ai/embeddings'
 
 // Initialize clients
 const supabase = createClient(
@@ -34,23 +35,8 @@ function cleanDescription(description: string): string {
   return cleaned.trim()
 }
 
-function buildEmbeddingText(event: {
-  name: string
-  description_es: string | null
-  categories: string[] | null
-}): string {
-  const parts: string[] = [event.name]
-
-  if (event.description_es) {
-    parts.push(event.description_es)
-  }
-
-  if (event.categories && event.categories.length > 0) {
-    parts.push(`Categories: ${event.categories.join(', ')}`)
-  }
-
-  return parts.join('. ')
-}
+// buildEmbeddingText is imported from src/shared/lib/ai/embeddings (the
+// canonical builder) — never fork it here.
 
 async function generateEmbedding(text: string): Promise<number[]> {
   const { embedding } = await embed({
@@ -87,7 +73,13 @@ async function main() {
     console.log(`   ID: ${event.id}`)
 
     let needsUpdate = false
-    const updates: { description_es?: string; description_en?: string; embedding?: number[] } = {}
+    const updates: {
+      description_es?: string
+      description_en?: string
+      embedding?: number[]
+      search_document?: string
+      embedding_version?: number
+    } = {}
 
     // Check and clean Spanish description
     if (event.description_es) {
@@ -128,6 +120,8 @@ async function main() {
       categories: event.categories,
     })
     updates.embedding = await generateEmbedding(embeddingText)
+    updates.search_document = embeddingText
+    updates.embedding_version = CURRENT_EMBEDDING_VERSION
     console.log(`   ✅ Embedding regenerated (${updates.embedding.length} dimensions)`)
 
     // Update the event

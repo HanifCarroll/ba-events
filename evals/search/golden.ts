@@ -2,10 +2,16 @@
 /**
  * Golden set for semantic search eval.
  *
- * Labeled against events present in the dev DB on 2026-08-08 (see
+ * Labeled against scheduled events in the dev DB on 2026-08-14 (see
  * inspect-events.ts to dump current data). Events expire, so this set goes
  * stale — refresh labels when the suite starts failing for data reasons
  * rather than retrieval reasons.
+ *
+ * Keep labels tight (1–3 IDs): recall@5 is found/labeled, so listing every
+ * recurring date of the same series makes a correct top-5 look like a miss.
+ * Prefer the soonest distinct matches, not every later copy.
+ *
+ * Previous labels (2026-08-08, mostly past): golden-2026-08-08.ts
  */
 export interface GoldenQuery {
   query: string
@@ -17,161 +23,162 @@ export interface GoldenQuery {
 export const GOLDEN_QUERIES: GoldenQuery[] = [
   {
     query: 'bbq smoked meats festival',
-    relevant: ['a5fa63f9-09fc-4b9b-8558-504e14a061b5', '7ea97ad4-9ede-48d4-8863-a2c6956f1978'],
+    relevant: [
+      '03dfc9b0-e284-4e8e-9faf-588901710772', // Smoked, Festival de Ahumados
+      '5d2a620c-2f9c-440d-b96b-ca78e8c2e763', // Carne! Festival de Parrillas
+    ],
   },
   {
     query: 'argentine alfajor sweets celebration',
-    relevant: ['3bb5c70d-52f2-40ea-b1ca-d7a22fee41c5', '08784b70-d1cc-4356-9817-7960f6241769'],
+    relevant: ['e5c000c5-28f4-4730-84c9-b93af5ceebdf'], // Campenato Argentino del Alfajor
   },
   {
     query: 'tango dancing class',
-    relevant: ['9a0f3383-b859-43db-a764-c0d79e372b10', '2a60d877-8a0d-4ac2-9a68-5b70ae91a740'],
+    relevant: [
+      '6186ade4-3281-4598-942b-713ba80f7f49', // TANGO desde cero y AMIGOS
+      '25422ab4-a181-4e40-8ea1-3d50bfcddcac', // Learn Tango
+    ],
   },
   {
     query: 'practice english language exchange',
     relevant: [
-      '0e188ed2-d662-49df-98ea-93c73a9e9615',
-      '33a31869-ec0f-46da-9136-b8a560750b92',
-      'a24063e0-4042-4247-97a6-a4c77703f1e7',
-      'b2bd49af-f5db-469b-a612-17577d993b1b',
-      'd0dee98f-3502-425f-b1ec-e97aafc91a85',
-      'fa6345a9-68fa-427f-a237-7d153b9bf98a',
-      'e5d5a8c1-0866-4091-b994-177fe47187eb',
-      'c7625df8-5fff-4862-9f2c-8c4c3e3c698c',
+      'c7625df8-5fff-4862-9f2c-8c4c3e3c698c', // Language Exchange Café
+      '2d2f9265-31ee-4e76-af85-d44ee2feb4ef', // Language Exchange Party
+      '9b542a00-2316-408d-82d1-e22a6725db7f', // Spanglish Thursday
     ],
   },
   {
     query: 'meet new people make friends social',
     relevant: [
-      'c6cbafa2-f190-46ad-9c53-c860d56a6f22',
-      '06dc5301-15ef-4727-8fbd-b071d1548d38',
-      'd0dee98f-3502-425f-b1ec-e97aafc91a85',
+      '06dc5301-15ef-4727-8fbd-b071d1548d38', // Make Friends: Deep talks & Coffee
+      'f3bcb0c1-145a-4db7-bbc7-ecfefc7d18ee', // Social Meet - International Friends
     ],
   },
   {
     query: 'elegant classical music evening with wine',
     relevant: [
-      '5076d830-344d-4ca9-a137-e864a53725ca',
-      '1070ee85-464b-4d32-9cc7-9595883d8291',
-      '3c752f97-65cd-487f-9f58-3bab2248af0e',
+      'e49e9331-5e37-4488-8b80-8436b8cfbefc', // Coldplay. Piano, Violín y vino
+      'c1c87611-9f28-4a80-bdb6-5046fc0efca8', // Cata y Lírica Palacio Paz
     ],
   },
   {
     query: 'family theater show for kids',
-    relevant: ['12a30899-25f6-4fc8-8aba-3b65b0e95e63', 'a341b0d7-061c-4a04-b3c1-2febf25de225'],
+    relevant: ['6e66cb18-af7d-422f-bba5-aced7a62df1a'], // Annie
   },
   {
     query: 'boat tour on the river',
-    relevant: ['314ae9d9-e91c-4223-881e-3b5a01d00974', 'eac6f420-eb4d-4d7f-ad4b-d349318c6f2a'],
+    relevant: [
+      '68cb980f-4406-494e-a607-fe7c701438ad', // Navegación por el Riachuelo
+      'ba144010-5b45-4971-819c-d99c48056a5c',
+    ],
   },
   {
     query: 'tourist sightseeing iconic landmarks',
     relevant: [
-      '1f26283f-75aa-4188-9844-8fe5540a2dbf',
-      'ab379ceb-1612-47c6-b358-52a5833a3051',
-      '314ae9d9-e91c-4223-881e-3b5a01d00974',
+      '3a266e15-53ce-45f7-8ac2-3d82137e159b', // Bus Turístico
+      'c10d1c02-09fe-4d9d-9bc8-2b1bb207a091', // Mirador Obelisco
     ],
   },
   {
     query: 'bar crawl nightlife party',
     relevant: [
-      'aba2fe76-236c-4a0f-aff5-b24204d926d9',
-      '34948a68-4ee8-49f3-aafb-6389f04d5744',
-      'c9913cd2-c23d-4151-90ce-ef3a04aecb29',
-      '48b4f854-c7f4-43d4-ac5d-5b354edd50ff',
+      'e57b7b50-5e2f-463b-b6c8-3081e14ec343', // NightCrawl BA - Bar Tour
+      '48b4f854-c7f4-43d4-ac5d-5b354edd50ff', // Speakeasy Hidden Bar Tour
     ],
   },
   {
     query: 'trivia quiz night with games',
     relevant: [
-      '499064c6-8568-4ec2-8853-7142d9488ff9',
-      '70ecd710-c091-448a-b837-9dec168176d1',
-      '3e2c85ff-b014-4559-bc2d-2894664ee027',
-      '0dbb3dc0-7a35-446c-966e-cf8dd8c22231',
+      '9be96614-ce8c-42c9-af98-60585bbb8b9e', // Noche de Trivia Shamrock
+      '686fe228-5753-4751-9b94-4ec2b3c96ce5', // Trivia Night
+      '64d2185f-1b5f-4683-b689-98ebed30222b', // BA Trivia Pub Quiz
     ],
   },
   {
     query: 'k-pop festival',
-    relevant: ['c43a8fa8-a52d-4b24-bcab-d029dcb42cf6'],
+    relevant: ['bfdaeaf5-fa3e-4d08-a515-963fbbca8f08'], // EXPERIENCIA KPOP
   },
   {
     query: 'independent books literature fair',
-    relevant: ['e372472e-4dea-4b99-99c0-30f6c1570ac3'],
+    relevant: [
+      '9f5c3a5d-517d-4a0e-8bee-6e010d20ea1e', // Feria de Editores 2026
+      '4c17a7f3-e22a-415d-aa4b-34c646b548de', // Feria del Libro Raro y Curioso
+    ],
   },
   {
     query: 'interactive murder mystery comedy',
-    relevant: ['29b9cd6e-17ee-406d-a32e-9eb5be144a2d'],
+    relevant: [
+      'edf5b371-200d-4013-90dc-469896b5047d', // Mafia Game Night
+      '23f7d601-4f8e-4d3f-a816-0192fd58a6f3', // El Cuadro Maldito
+    ],
   },
   {
     query: 'argentine rock tribute charly garcia',
-    relevant: ['5c4bf123-e2a5-4243-ae98-f6b62516d99e', 'fd9c8616-788b-46d6-abad-c43af9e14299'],
+    relevant: [
+      '7a3858f8-acc2-42ed-9f8d-79d59b40555e', // Íconos del Rock Nacional
+      '9d47e23c-ff08-429a-8d2e-d9bf9a504659', // Charly García Hello! MTV Unplugged
+    ],
   },
   {
     query: 'wine tasting afternoon drinks',
     relevant: [
-      '463c30eb-3627-4f46-982a-da9c2296fb2e',
-      '5076d830-344d-4ca9-a137-e864a53725ca',
-      '4dd1ca75-bf4a-49cf-bf38-4c5936958d4f',
-      '2322ae00-3811-4288-a890-ace309f445a2',
+      '8cf4728c-1652-47fc-a552-91e92b38c498', // Cata con maridaje Bodega Benegas
+      '4dd1ca75-bf4a-49cf-bf38-4c5936958d4f', // Degustación de 12 Pinot Noir
+      '2b4768da-a94c-4629-ba8b-d00d9fc8a17b', // WINE ARGENTINA Palacio San Miguel
     ],
   },
   {
     query: 'spiritual wellness meditation movement',
     relevant: [
-      '38ef587d-6cd6-4903-975f-3568d53610e7',
-      '80e40fa7-86a4-435c-b958-0225ad514bec',
-      'f460022b-b590-41e5-8ed2-a22b5472d67e',
-      '92897937-7651-4451-8df8-f2991743fe31',
-      '49b45d5c-ee35-4490-8a0b-fcb3c9ba54ed',
-      '6103fe25-9948-4a40-98d1-b99870a47c34',
-      'd3100db2-0ccc-4e2a-a815-92ebd70886bc',
+      'd3100db2-0ccc-4e2a-a815-92ebd70886bc', // Experiencia Wellness
+      'c03a9098-5693-4233-8dfd-f0c2d733cd03', // Meditación presencial San Telmo
+      '6103fe25-9948-4a40-98d1-b99870a47c34', // Biodanza
+      '9089d173-0ef3-40a5-9419-e12381470bbd', // Ecstatic Dance
     ],
   },
   {
     query: 'big live music concert in an arena',
-    relevant: ['96a874e9-4a13-44c7-b555-57a48878f39e'],
+    relevant: [
+      '35a3b49b-847b-41cf-8539-9ca602c68a08', // Soda Stereo Ecos — Movistar Arena
+      '58205866-2251-4aee-9509-90367d25081b', // Serú Girán — Movistar Arena
+    ],
   },
   {
     query: 'casual coffee meetup conversation',
     relevant: [
-      '8c77545e-a0d5-4930-8eb4-a913ea97bc77',
-      'c6cbafa2-f190-46ad-9c53-c860d56a6f22',
-      '06dc5301-15ef-4727-8fbd-b071d1548d38',
+      '06dc5301-15ef-4727-8fbd-b071d1548d38', // Make Friends: Deep talks & Coffee
+      '981174e8-d77a-4eb8-9d5a-db1a5ab1b395', // Coffee meeting
     ],
   },
   {
     query: 'tech talks engineering networking',
-    relevant: ['d86fffa5-fbae-440b-99eb-4f6086ccacda', 'c1e04ab3-522f-4575-9939-f2c9357dfa2a'],
+    relevant: [
+      '4e3d7563-7c13-4354-81ad-420913959009', // Hackware hardware hackathon
+      'c62659df-d767-4dfb-8d3e-180de8009a62', // Networking en Palermo
+      'cb26fb08-d75f-4959-b24b-55f2d5a0ffc2', // Tecnologías para la Transición Climática
+    ],
   },
   {
     query: 'museum cultural art experience',
     relevant: [
-      '29b9cd6e-17ee-406d-a32e-9eb5be144a2d',
-      '72bacff2-802b-4e9c-85fe-e217a570bd94',
-      '59091cc3-6ea4-4e86-ae96-b9885dab274d',
+      '97ac54c8-0b12-40ec-b281-eb4c95cb04b0', // Museo del Mate
+      'fe340bbf-7161-48e4-be1a-c204dcfc8b20', // Casa Nacional / Museo del Grabado
     ],
   },
   {
     query: 'creative writing group',
-    relevant: ['f7132a32-c67a-45e1-aa9c-ce82d169b9e1'],
+    relevant: ['7b9fd51a-a936-4349-86f8-b46e895ddf05'], // Write Club
   },
   {
     query: 'relaxed board games afternoon',
-    relevant: [
-      'bf7f726e-a41c-4cbd-9cef-de34c42661b4',
-      '78a53762-d3ac-42bd-85fb-28f38abb12d5',
-      '21740c83-72bc-449d-8cda-4e8e2b636bd7',
-      'ccec7b1e-d664-483e-8ada-f961ac6b6ef8',
-      'cbc66003-cf8c-4b93-ba28-39692a5cea53',
-    ],
+    relevant: ['21740c83-72bc-449d-8cda-4e8e2b636bd7'], // Board Game Night
   },
   {
     query: 'outdoor food festival',
     relevant: [
-      'a5fa63f9-09fc-4b9b-8558-504e14a061b5',
-      '7ea97ad4-9ede-48d4-8863-a2c6956f1978',
-      '08784b70-d1cc-4356-9817-7960f6241769',
-      '3bb5c70d-52f2-40ea-b1ca-d7a22fee41c5',
+      '03dfc9b0-e284-4e8e-9faf-588901710772', // Smoked, Festival de Ahumados
+      '5d2a620c-2f9c-440d-b96b-ca78e8c2e763', // Carne! Festival de Parrillas
+      'e5c000c5-28f4-4730-84c9-b93af5ceebdf', // Campenato Argentino del Alfajor
     ],
   },
 ]

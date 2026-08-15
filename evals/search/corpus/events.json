@@ -1,0 +1,798 @@
+{
+  "meta": {
+    "kind": "fixture",
+    "generatedAt": "2026-08-01T00:00:00.000Z",
+    "source": "evals/search/corpus/fixture.ts"
+  },
+  "events": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "Techno Night en Niceto Club",
+      "descriptions": {
+        "es": "Noche de techno underground y house en Niceto. Ingreso solo mayores de 18 con DNI. Persisten hasta las 6am.",
+        "en": "Underground techno and house night at Niceto. 18+ only. Open until 6am.",
+        "es_summary": "Noche de techno underground y house en Niceto. Ingreso solo mayores de 18 con DNI. Persisten hasta las 6am.",
+        "en_summary": "Underground techno and house night at Niceto. 18+ only. Open until 6am."
+      },
+      "categories": [
+        "music"
+      ],
+      "facets": {
+        "genres": [
+          "techno",
+          "house"
+        ],
+        "ageRestriction": "18+",
+        "vibe": "lively"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000001",
+        "name": "Niceto Club",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-16T02:00:00.000Z",
+      "is_free": false,
+      "price": 15000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": 18
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "Sun Session Niceto",
+      "descriptions": {
+        "es": "Session de la tarde en Niceto con indie y funk, ambiente distendido para charlar.",
+        "en": "Afternoon session at Niceto with indie and funk, relaxed vibe for chatting.",
+        "es_summary": "Session de la tarde en Niceto con indie y funk, ambiente distendido para charlar.",
+        "en_summary": "Afternoon session at Niceto with indie and funk, relaxed vibe for chatting."
+      },
+      "categories": [
+        "music",
+        "social"
+      ],
+      "facets": {
+        "genres": [
+          "indie",
+          "funk"
+        ],
+        "vibe": "chill"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000001",
+        "name": "Niceto Club",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-16T22:00:00.000Z",
+      "is_free": false,
+      "price": 12000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "Yoga & Meditación al Aire Libre",
+      "descriptions": {
+        "es": "Clase de yoga y meditación en Palermo, ambiente tranquilo y chill para desconectar. Gratuita.",
+        "en": "Outdoor yoga and meditation class in Palermo, calm and chill. Free.",
+        "es_summary": "Clase de yoga y meditación en Palermo, ambiente tranquilo y chill para desconectar. Gratuita.",
+        "en_summary": "Outdoor yoga and meditation class in Palermo, calm and chill. Free."
+      },
+      "categories": [
+        "sports",
+        "social"
+      ],
+      "facets": {
+        "vibes": [
+          "chill",
+          "yoga"
+        ],
+        "activity": "yoga"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000006",
+        "name": "Bosques de Palermo",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-15T13:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "name": "Cena Romántica con Jazz en Vivo",
+      "descriptions": {
+        "es": "Velada íntima en San Telmo con cena, vino y jazz en vivo. Perfecto para parejas.",
+        "en": "Intimate San Telmo evening with dinner, wine and live jazz. Perfect for couples.",
+        "es_summary": "Velada íntima en San Telmo con cena, vino y jazz en vivo. Perfecto para parejas.",
+        "en_summary": "Intimate San Telmo evening with dinner, wine and live jazz. Perfect for couples."
+      },
+      "categories": [
+        "music",
+        "food"
+      ],
+      "facets": {
+        "genres": [
+          "jazz"
+        ],
+        "vibe": "romantic"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000002",
+        "name": "Café San Telmo",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-16T00:00:00.000Z",
+      "is_free": false,
+      "price": 25000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "name": "Milonga Tradicional en San Telmo",
+      "descriptions": {
+        "es": "Milonga gratuita en San Telmo con clase previa de tango y música en vivo.",
+        "en": "Free milonga in San Telmo with a tango class and live music.",
+        "es_summary": "Milonga gratuita en San Telmo con clase previa de tango y música en vivo.",
+        "en_summary": "Free milonga in San Telmo with a tango class and live music."
+      },
+      "categories": [
+        "music",
+        "arts"
+      ],
+      "facets": {
+        "genres": [
+          "tango"
+        ],
+        "price": "free"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000003",
+        "name": "Salón San Telmo",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-16T20:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "name": "Warehouse Techno Miller",
+      "descriptions": {
+        "es": "Rave de techno industrial en un galpón de Palermo. Evento 18+.",
+        "en": "Industrial techno rave in a Palermo warehouse. 18+ event.",
+        "es_summary": "Rave de techno industrial en un galpón de Palermo. Evento 18+.",
+        "en_summary": "Industrial techno rave in a Palermo warehouse. 18+ event."
+      },
+      "categories": [
+        "music"
+      ],
+      "facets": {
+        "genres": [
+          "techno"
+        ],
+        "ageRestriction": "18+"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000004",
+        "name": "Miller Warehouse",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-17T02:00:00.000Z",
+      "is_free": false,
+      "price": 13000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": 18
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "name": "Perreo Palermo",
+      "descriptions": {
+        "es": "Noche de reggaetón y baile a todo volumen en Palermo.",
+        "en": "Loud reggaeton night with dancing in Palermo.",
+        "es_summary": "Noche de reggaetón y baile a todo volumen en Palermo.",
+        "en_summary": "Loud reggaeton night with dancing in Palermo."
+      },
+      "categories": [
+        "music",
+        "social"
+      ],
+      "facets": {
+        "genres": [
+          "reggaeton"
+        ]
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000004",
+        "name": "La Rural",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-16T01:00:00.000Z",
+      "is_free": false,
+      "price": 12000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "name": "Palermo Rooftop Gratis Happy Hour",
+      "descriptions": {
+        "es": "Festival gratuito en una terraza de Palermo al atardecer, con DJ y comida.",
+        "en": "Free rooftop festival in Palermo at sunset with DJ and food.",
+        "es_summary": "Festival gratuito en una terraza de Palermo al atardecer, con DJ y comida.",
+        "en_summary": "Free rooftop festival in Palermo at sunset with DJ and food."
+      },
+      "categories": [
+        "festival",
+        "music"
+      ],
+      "facets": {
+        "vibe": "festive",
+        "price": "free"
+      },
+      "venue": {
+        "id": null,
+        "name": "Terraza Palermo",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-15T17:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "name": "Feria de Diseño en Palermo",
+      "descriptions": {
+        "es": "Feria gratuita de diseño, plantas y comida callejera en Palermo.",
+        "en": "Free design fair with plants and street food in Palermo.",
+        "es_summary": "Feria gratuita de diseño, plantas y comida callejera en Palermo.",
+        "en_summary": "Free design fair with plants and street food in Palermo."
+      },
+      "categories": [
+        "arts",
+        "food"
+      ],
+      "facets": {
+        "price": "free"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000006",
+        "name": "Plaza Palermo",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-16T14:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "name": "Tango Callejero San Telmo",
+      "descriptions": {
+        "es": "Espectáculo gratuito de tango en la calle, en las plazas de San Telmo.",
+        "en": "Free street tango show in San Telmo plazas.",
+        "es_summary": "Espectáculo gratuito de tango en la calle, en las plazas de San Telmo.",
+        "en_summary": "Free street tango show in San Telmo plazas."
+      },
+      "categories": [
+        "arts"
+      ],
+      "facets": {
+        "genres": [
+          "tango"
+        ],
+        "price": "free"
+      },
+      "venue": {
+        "id": null,
+        "name": "Plazas de San Telmo",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-15T22:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "name": "Experiencia Sorpresa en Palermo",
+      "descriptions": {
+        "es": "Evento sorpresa: la ubicación se revela al comprar la entrada. Asistí a una fiesta secreta.",
+        "en": "Surprise experience in Palermo: location revealed on purchase. Secret party.",
+        "es_summary": "Evento sorpresa: la ubicación se revela al comprar la entrada. Asistí a una fiesta secreta.",
+        "en_summary": "Surprise experience in Palermo: location revealed on purchase. Secret party."
+      },
+      "categories": [
+        "social",
+        "festival"
+      ],
+      "facets": {
+        "surprising": true,
+        "location": "tba"
+      },
+      "venue": {
+        "id": null,
+        "name": "Ubicación secreta",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-16T02:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": true,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "name": "Jazz Íntimo de Domingo",
+      "descriptions": {
+        "es": "Trío de jazz en San Telmo, entrada moderada, ambiente tranquilo y acogedor.",
+        "en": "Jazz trio in San Telmo, moderate entry, quiet and cozy atmosphere.",
+        "es_summary": "Trío de jazz en San Telmo, entrada moderada, ambiente tranquilo y acogedor.",
+        "en_summary": "Jazz trio in San Telmo, moderate entry, quiet and cozy atmosphere."
+      },
+      "categories": [
+        "music"
+      ],
+      "facets": {
+        "genres": [
+          "jazz"
+        ],
+        "vibe": "romantic"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000003",
+        "name": "Salón San Telmo",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-16T23:00:00.000Z",
+      "is_free": false,
+      "price": 12000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000013",
+      "name": "Bar Tranqui Boedo",
+      "descriptions": {
+        "es": "Bar tranqui en Boedo con música de fondo, ideal para hablar y tomar algo.",
+        "en": "Chill Boedo bar with background music, great for conversation.",
+        "es_summary": "Bar tranqui en Boedo con música de fondo, ideal para hablar y tomar algo.",
+        "en_summary": "Chill Boedo bar with background music, great for conversation."
+      },
+      "categories": [
+        "social",
+        "music"
+      ],
+      "facets": {
+        "vibe": "chill",
+        "canTalk": true
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000005",
+        "name": "Bar Tranqui Boedo",
+        "neighborhood": "Boedo"
+      },
+      "starts_at": "2026-08-16T23:00:00.000Z",
+      "is_free": false,
+      "price": 8000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000014",
+      "name": "Noche Clásica del Recoleta",
+      "descriptions": {
+        "es": "Concierto de música clásica y cuerdas en Recoleta.",
+        "en": "Classical strings concert in Recoleta.",
+        "es_summary": "Concierto de música clásica y cuerdas en Recoleta.",
+        "en_summary": "Classical strings concert in Recoleta."
+      },
+      "categories": [
+        "music",
+        "arts"
+      ],
+      "facets": {
+        "genres": [
+          "classical"
+        ]
+      },
+      "venue": {
+        "id": null,
+        "name": "Usina del Arte Recoleta",
+        "neighborhood": "Recoleta"
+      },
+      "starts_at": "2026-08-15T23:00:00.000Z",
+      "is_free": false,
+      "price": 20000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000015",
+      "name": "Trivia y Birra Gratis Palermo",
+      "descriptions": {
+        "es": "Noche de trivia gratuita en Palermo con cerveza artesanal barata.",
+        "en": "Free trivia night in Palermo with cheap craft beer.",
+        "es_summary": "Noche de trivia gratuita en Palermo con cerveza artesanal barata.",
+        "en_summary": "Free trivia night in Palermo with cheap craft beer."
+      },
+      "categories": [
+        "social"
+      ],
+      "facets": {
+        "vibe": "chill"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000005",
+        "name": "Bar de Palermo",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-16T21:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000016",
+      "name": "Acústico a la Gorra en Niceto",
+      "descriptions": {
+        "es": "Recital acústico a la gorra (entrada libre y a modo de colaboración) en Niceto.",
+        "en": "Acoustic concert with pay-what-you-like (\"a la gorra\") entry at Niceto.",
+        "es_summary": "Recital acústico a la gorra (entrada libre y a modo de colaboración) en Niceto.",
+        "en_summary": "Acoustic concert with pay-what-you-like (\"a la gorra\") entry at Niceto."
+      },
+      "categories": [
+        "music"
+      ],
+      "facets": {
+        "genres": [
+          "acoustic"
+        ],
+        "price": "a-la-gorra"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000001",
+        "name": "Niceto Club",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-15T20:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000017",
+      "name": "Punk en vivo La Bartola",
+      "descriptions": {
+        "es": "Gig punk con bandas locales en San Telmo, entrada a moderada.",
+        "en": "Punk gig with local bands in San Telmo, moderate entry.",
+        "es_summary": "Gig punk con bandas locales en San Telmo, entrada a moderada.",
+        "en_summary": "Punk gig with local bands in San Telmo, moderate entry."
+      },
+      "categories": [
+        "music"
+      ],
+      "facets": {
+        "genres": [
+          "punk"
+        ]
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000002",
+        "name": "La Bartola",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-16T00:00:00.000Z",
+      "is_free": false,
+      "price": 10000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000018",
+      "name": "Karting Nocturno Palermo",
+      "descriptions": {
+        "es": "Carreras de karting bajo luces la noche del jueves en Palermo.",
+        "en": "Floodlit go-karting Thursday night in Palermo.",
+        "es_summary": "Carreras de karting bajo luces la noche del jueves en Palermo.",
+        "en_summary": "Floodlit go-karting Thursday night in Palermo."
+      },
+      "categories": [
+        "sports"
+      ],
+      "facets": {
+        "activity": "karting"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000006",
+        "name": "Karting Palermo",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-14T00:00:00.000Z",
+      "is_free": false,
+      "price": 9000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000019",
+      "name": "Muestra de Arte Gratuita Palermo",
+      "descriptions": {
+        "es": "Exposición gratuita de arte contemporáneo en un espacio de Palermo.",
+        "en": "Free contemporary art exhibition in Palermo.",
+        "es_summary": "Exposición gratuita de arte contemporáneo en un espacio de Palermo.",
+        "en_summary": "Free contemporary art exhibition in Palermo."
+      },
+      "categories": [
+        "arts"
+      ],
+      "facets": {
+        "price": "free"
+      },
+      "venue": {
+        "id": null,
+        "name": "Galería Palermo",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-16T15:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000020",
+      "name": "Día de Familia Gratis San Telmo",
+      "descriptions": {
+        "es": "Jornada familiar gratuita en San Telmo con juegos y ferias de comida.",
+        "en": "Free family day in San Telmo with games and food stalls.",
+        "es_summary": "Jornada familiar gratuita en San Telmo con juegos y ferias de comida.",
+        "en_summary": "Free family day in San Telmo with games and food stalls."
+      },
+      "categories": [
+        "festival",
+        "food"
+      ],
+      "facets": {
+        "price": "free"
+      },
+      "venue": {
+        "id": null,
+        "name": "Plaza Dorrego",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-16T18:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000022",
+      "name": "Reggaetón en el Centro",
+      "descriptions": {
+        "es": "Baile de reggaetón en Monserrat, principalmente urbano.",
+        "en": "Reggaeton dance party in Monserrat.",
+        "es_summary": "Baile de reggaetón en Monserrat, principalmente urbano.",
+        "en_summary": "Reggaeton dance party in Monserrat."
+      },
+      "categories": [
+        "music",
+        "social"
+      ],
+      "facets": {
+        "genres": [
+          "reggaeton"
+        ]
+      },
+      "venue": {
+        "id": null,
+        "name": "Espacio Monserrat",
+        "neighborhood": "Monserrat"
+      },
+      "starts_at": "2026-08-16T02:00:00.000Z",
+      "is_free": false,
+      "price": 10000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000023",
+      "name": "Café Nocturno Gratis Palermo",
+      "descriptions": {
+        "es": "Café y juegos de mesa gratuito esta noche en Palermo.",
+        "en": "Free coffee and board games tonight in Palermo.",
+        "es_summary": "Café y juegos de mesa gratuito esta noche en Palermo.",
+        "en_summary": "Free coffee and board games tonight in Palermo."
+      },
+      "categories": [
+        "social"
+      ],
+      "facets": {
+        "price": "free",
+        "vibe": "chill"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000006",
+        "name": "Café Bar Palermo",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-13T23:00:00.000Z",
+      "is_free": true,
+      "price": 0,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000024",
+      "name": "Carrera Solidaria al Amanecer",
+      "descriptions": {
+        "es": "Carrera solidaria de 10k en San Telmo el viernes por la mañana.",
+        "en": "Sunrise charity 10k run in San Telmo on Friday morning.",
+        "es_summary": "Carrera solidaria de 10k en San Telmo el viernes por la mañana.",
+        "en_summary": "Sunrise charity 10k run in San Telmo on Friday morning."
+      },
+      "categories": [
+        "sports"
+      ],
+      "facets": {
+        "activity": "running"
+      },
+      "venue": {
+        "id": null,
+        "name": "Ruta San Telmo",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-14T12:00:00.000Z",
+      "is_free": false,
+      "price": 5000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000025",
+      "name": "Cumbia Viernes en Niceto",
+      "descriptions": {
+        "es": "Música cumbia y baile en Niceto el viernes a la noche.",
+        "en": "Cumbia music and dancing at Niceto on Friday night.",
+        "es_summary": "Música cumbia y baile en Niceto el viernes a la noche.",
+        "en_summary": "Cumbia music and dancing at Niceto on Friday night."
+      },
+      "categories": [
+        "music"
+      ],
+      "facets": {
+        "genres": [
+          "cumbia"
+        ]
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000001",
+        "name": "Niceto Club",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-15T01:00:00.000Z",
+      "is_free": false,
+      "price": 14000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000026",
+      "name": "Brunch Caro San Telmo",
+      "descriptions": {
+        "es": "Brunch premium en San Telmo con opciones gourmet y precio elevado.",
+        "en": "Premium brunch in San Telmo with gourmet options and a high price.",
+        "es_summary": "Brunch premium en San Telmo con opciones gourmet y precio elevado.",
+        "en_summary": "Premium brunch in San Telmo with gourmet options and a high price."
+      },
+      "categories": [
+        "food"
+      ],
+      "facets": {
+        "price": "expensive"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000002",
+        "name": "Café San Telmo",
+        "neighborhood": "San Telmo"
+      },
+      "starts_at": "2026-08-14T14:00:00.000Z",
+      "is_free": false,
+      "price": 30000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000027",
+      "name": "After Hours Silencio Palermo",
+      "descriptions": {
+        "es": "Sesión 'after hours' nocturna en Palermo pasada la medianoche, ambiente oscuro con deep house para los que recién llegan esta noche.",
+        "en": "Nocturnal 'after hours' session in Palermo after midnight, dark deep-house vibe for those just arriving tonight.",
+        "es_summary": "Sesión 'after hours' nocturna en Palermo pasada la medianoche, ambiente oscuro con deep house para los que recién llegan esta noche.",
+        "en_summary": "Nocturnal 'after hours' session in Palermo after midnight, dark deep-house vibe for those just arriving tonight."
+      },
+      "categories": [
+        "music",
+        "social"
+      ],
+      "facets": {
+        "genres": [
+          "deep-house"
+        ],
+        "vibe": "dark"
+      },
+      "venue": {
+        "id": "11111111-1111-4000-8000-000000000005",
+        "name": "Club Silencio",
+        "neighborhood": "Palermo"
+      },
+      "starts_at": "2026-08-14T04:00:00.000Z",
+      "is_free": false,
+      "price": 7000,
+      "image_url": null,
+      "location_tba": false,
+      "time_tba": false,
+      "min_age": null
+    }
+  ]
+}

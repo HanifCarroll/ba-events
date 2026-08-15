@@ -19,7 +19,10 @@ import {
 } from '../scrapers/eventbrite/transformer'
 import { fetchEventbriteDetailsBatch } from '../scrapers/eventbrite/detail'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
-import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import {
+  embedEventWithDocument,
+  CURRENT_EMBEDDING_VERSION,
+} from '@/shared/lib/ai/embeddings'
 import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
@@ -251,24 +254,37 @@ export async function processEventbriteImport(
 
   // Step 8: Generate embeddings and upsert
   console.log('[eventbrite] Generating embeddings and upserting events...')
-  for (const { transformed, isUpdate } of eventsToProcess) {
+  for (const { event, transformed, isUpdate } of eventsToProcess) {
     try {
       const presentationFields = await buildDescriptionPresentationFields({
         description_es: transformed.description_es,
         description_en: transformed.description_en,
       })
 
-      // Generate embedding
-      const embedding = await generateEventEmbedding({
+      // Generate embedding + search document together (they must not drift).
+      // Eventbrite provides the venue name + address locality on the source
+      // event, and they feed the canonical document alongside facets, price
+      // and free/paid status.
+      const eventbriteVenueName = event.location?.name ?? null
+      const eventbriteNeighborhood = event.location?.address?.addressLocality ?? null
+      const { embedding, searchDocument } = await embedEventWithDocument({
         name: transformed.name,
         description_es: transformed.description_es,
+        description_en: transformed.description_en,
         categories: transformed.categories,
+        price: transformed.price,
+        is_free: transformed.is_free,
+        facets: transformed.facets,
+        venue_name: eventbriteVenueName,
+        venue_neighborhood: eventbriteNeighborhood,
       })
 
       const eventWithEmbedding = {
         ...transformed,
         ...presentationFields,
         embedding,
+        search_document: searchDocument,
+        embedding_version: CURRENT_EMBEDDING_VERSION,
         enrichment_status: 'pending' as const,
       }
 
@@ -296,6 +312,8 @@ export async function processEventbriteImport(
             min_age: eventWithEmbedding.min_age ?? null,
             image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
+            search_document: eventWithEmbedding.search_document,
+            embedding_version: eventWithEmbedding.embedding_version,
             location_tba: eventWithEmbedding.location_tba ?? false,
           })
           .eq('id', existing!.id)

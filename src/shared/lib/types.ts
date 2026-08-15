@@ -1,3 +1,6 @@
+import type { SearchEventsInput } from '@/features/chat/api/tools/search-events'
+import type { EventFacets } from '@/shared/lib/search-facets'
+
 // All 48 official CABA neighborhoods
 export const NEIGHBORHOODS = [
   'Agronomía',
@@ -141,6 +144,7 @@ export interface Event {
   enrichment_status: EnrichmentStatus
   enrichment_error: string | null
   enriched_at: string | null
+  facets: EventFacets
   created_at: string
   updated_at: string
 }
@@ -187,53 +191,32 @@ export interface EventInsert {
   enrichment_status?: EnrichmentStatus
   enrichment_error?: string | null
   enriched_at?: string | null
+  facets?: EventFacets
+  /** Full search document (title + descriptions + facets + venue + cost). */
+  search_document?: string | null
+  /** Schema version of the embedding/search_document. */
+  embedding_version?: number
 }
 
 // Filters for querying events
 export interface EventFilters {
   startsAfter?: string // ISO datetime
   startsBefore?: string // ISO datetime
-  neighborhood?: Neighborhood
-  venueId?: string
+  neighborhoods?: Neighborhood[]
+  venueIds?: string[]
   categories?: string[]
   isFree?: boolean
   maxPrice?: number
   minAge?: number
   status?: EventStatus
+  /** Closed facet genres to hard-exclude (events whose facets.genres overlap are dropped). */
+  avoidGenres?: string[]
 }
 
 // Content block types for Claude API messages
 export type TextBlock = { type: 'text'; text: string }
 
 // Tool input types for the concierge chat tools exposed through /api/chat
-export interface SearchEventsToolInput {
-  /** Natural language search query for semantic matching */
-  query?: string
-  /** Event categories to filter by */
-  categories?: string[]
-  /** Vibe/mood descriptors for the search */
-  vibes?: string[]
-  /** Buenos Aires neighborhoods to filter by */
-  neighborhoods?: string[]
-  /** Buenos Aires neighborhood to filter by (single) - for backwards compatibility */
-  neighborhood?: string
-  /** Start date filter (ISO string) */
-  dateFrom?: string
-  /** End date filter (ISO string) */
-  dateTo?: string
-  /** Minimum price in ARS */
-  priceMin?: number
-  /** Maximum price in ARS */
-  priceMax?: number
-  /** Set to true to only show free events */
-  isFree?: boolean
-  /** Maximum price in ARS - alias for priceMax for backwards compatibility */
-  maxPrice?: number
-  /** Time period filter */
-  timeFilter?: 'tonight' | 'tomorrow' | 'weekend' | 'week'
-  /** Maximum number of events to return */
-  limit?: number
-}
 
 export interface GetVenueDetailsToolInput {
   /** The venue ID (if known from a previous event search) */
@@ -272,7 +255,7 @@ export type SearchEventsToolUseBlock = {
   type: 'tool_use'
   id: string
   name: 'search_events'
-  input: SearchEventsToolInput
+  input: SearchEventsInput
 }
 
 export type GetVenueDetailsToolUseBlock = {

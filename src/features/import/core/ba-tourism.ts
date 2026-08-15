@@ -17,7 +17,10 @@ import {
 } from '../scrapers/ba-tourism/transformer'
 import type { BATourismEvent } from '../scrapers/ba-tourism/types'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
-import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import {
+  embedEventWithDocument,
+  CURRENT_EMBEDDING_VERSION,
+} from '@/shared/lib/ai/embeddings'
 import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
 import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
@@ -231,24 +234,35 @@ export async function processBATourismImport(
 
   // Step 7: Generate embeddings and upsert
   console.log('[ba-tourism] Generating embeddings and upserting events...')
-  for (const { transformed, isUpdate } of eventsToProcess) {
+  for (const { transformed, sourceEvent, isUpdate } of eventsToProcess) {
     try {
       const presentationFields = await buildDescriptionPresentationFields({
         description_es: transformed.description_es,
         description_en: transformed.description_en,
       })
 
-      // Generate embedding
-      const embedding = await generateEventEmbedding({
+      // Generate embedding + search document together (they must not drift).
+      // BA Tourism provides the venue name + neighborhood directly on the
+      // source event, so they feed the canonical document alongside facets,
+      // price and free/paid status.
+      const { embedding, searchDocument } = await embedEventWithDocument({
         name: transformed.name,
         description_es: transformed.description_es,
+        description_en: transformed.description_en,
         categories: transformed.categories,
+        price: transformed.price,
+        is_free: transformed.is_free,
+        facets: transformed.facets,
+        venue_name: sourceEvent.venueName || null,
+        venue_neighborhood: sourceEvent.neighborhood || null,
       })
 
       const eventWithEmbedding = {
         ...transformed,
         ...presentationFields,
         embedding,
+        search_document: searchDocument,
+        embedding_version: CURRENT_EMBEDDING_VERSION,
         enrichment_status: 'pending' as const,
       }
 
@@ -271,6 +285,8 @@ export async function processBATourismImport(
             categories: eventWithEmbedding.categories,
             is_free: eventWithEmbedding.is_free,
             embedding: eventWithEmbedding.embedding,
+            search_document: eventWithEmbedding.search_document,
+            embedding_version: eventWithEmbedding.embedding_version,
             location_tba: eventWithEmbedding.location_tba ?? false,
           })
           .eq('id', existing!.id)

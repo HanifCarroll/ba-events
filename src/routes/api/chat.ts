@@ -476,7 +476,7 @@ export const Route = createFileRoute('/api/chat')({
                           resultCount?: number
                           hasQuery?: boolean
                           hasFilters?: boolean
-                          searchMode?: 'vibe' | 'semantic' | 'filter_only' | 'now'
+                          searchMode?: 'semantic' | 'filter_only' | 'now'
                           durationMs?: number
                           coverage?: {
                             totalMatches?: number

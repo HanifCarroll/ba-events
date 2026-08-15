@@ -1,7 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { createEvent, getEventsWithVenues } from '@/shared/lib/db/client'
-import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import {
+  embedEventWithDocument,
+  CURRENT_EMBEDDING_VERSION,
+} from '@/shared/lib/ai/embeddings'
 import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
 import { checkApiRateLimit } from '@/features/auth/api/rate-limit'
 import { apiSuccess, apiList, apiError, CachePresets, withCache } from '@/shared/lib/api-response'
@@ -194,8 +197,8 @@ export const Route = createFileRoute('/api/events')({
             status: validated.status,
           }
 
-          // Generate embedding from event data
-          const embedding = await generateEventEmbedding(eventData)
+          // Generate embedding + search document together (they must not drift)
+          const { embedding, searchDocument } = await embedEventWithDocument(eventData)
           const presentationFields = await buildDescriptionPresentationFields({
             description_es: eventData.description_es,
             description_en: eventData.description_en,
@@ -206,6 +209,8 @@ export const Route = createFileRoute('/api/events')({
             ...eventData,
             ...presentationFields,
             embedding,
+            search_document: searchDocument,
+            embedding_version: CURRENT_EMBEDDING_VERSION,
           })
 
           return Response.json(
