@@ -501,6 +501,7 @@ export async function enrichSingleEvent(
 
 interface BatchEnrichmentOptions {
   delayMs?: number
+  concurrency?: number
   onProgress?: (current: number, total: number, result: EventEnrichmentResult) => void
   extractFacets?: ExtractFacetsFn
 }
@@ -511,9 +512,11 @@ type EnrichmentHandler = (
   options?: EnrichSingleEventOptions
 ) => Promise<EventEnrichmentResult>
 
+const DEFAULT_ENRICHMENT_CONCURRENCY = 4
+
 /**
  * Generic batch processor for event enrichment.
- * Handles rate limiting, progress tracking, and stats collection.
+ * Bounded concurrency; optional delay after each item (default none).
  */
 async function processBatch(
   client: SupabaseClient,
@@ -522,7 +525,8 @@ async function processBatch(
   logPrefix: string,
   options?: BatchEnrichmentOptions
 ): Promise<EnrichmentStats> {
-  const delayMs = options?.delayMs ?? 1000
+  const delayMs = options?.delayMs ?? 0
+  const concurrency = Math.max(1, options?.concurrency ?? DEFAULT_ENRICHMENT_CONCURRENCY)
   const enrichOptions = options?.extractFacets
     ? { extractFacets: options.extractFacets }
     : undefined
@@ -536,37 +540,52 @@ async function processBatch(
     errors: [],
   }
 
-  console.log(`[event-enrichment] Starting ${logPrefix} for ${events.length} events`)
+  console.log(
+    `[event-enrichment] Starting ${logPrefix} for ${events.length} events (concurrency ${concurrency})`
+  )
 
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i]
-    const result = await handler(client, event, enrichOptions)
+  let nextIndex = 0
+  let completed = 0
 
-    // Update stats
-    if (result.canceled) {
-      stats.canceled++
-    } else if (result.enriched) {
-      stats.enriched++
-    } else if (result.success) {
-      stats.skipped++
-    } else {
-      stats.failed++
-      if (result.error) {
-        stats.errors.push({
-          eventId: result.eventId,
-          eventName: event.name,
-          error: result.error,
-        })
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = nextIndex++
+      if (i >= events.length) {
+        return
+      }
+
+      const event = events[i]
+      const result = await handler(client, event, enrichOptions)
+
+      if (result.canceled) {
+        stats.canceled++
+      } else if (result.enriched) {
+        stats.enriched++
+      } else if (result.success) {
+        stats.skipped++
+      } else {
+        stats.failed++
+        if (result.error) {
+          stats.errors.push({
+            eventId: result.eventId,
+            eventName: event.name,
+            error: result.error,
+          })
+        }
+      }
+
+      completed++
+      options?.onProgress?.(completed, events.length, result)
+
+      if (delayMs > 0 && completed < events.length) {
+        await delay(delayMs)
       }
     }
-
-    options?.onProgress?.(i + 1, events.length, result)
-
-    // Rate limiting (except for last item)
-    if (i < events.length - 1) {
-      await delay(delayMs)
-    }
   }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, events.length) }, () => worker())
+  )
 
   console.log(
     `[event-enrichment] ${logPrefix} completed: ${stats.enriched} enriched, ${stats.skipped} skipped, ${stats.failed} failed, ${stats.canceled} canceled`
@@ -576,8 +595,7 @@ async function processBatch(
 }
 
 /**
- * Enrich multiple events with rate limiting.
- * Processes sequentially with 1 second delay between requests.
+ * Enrich multiple events with bounded concurrency.
  */
 export function enrichEvents(
   client: SupabaseClient,

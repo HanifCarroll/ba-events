@@ -130,7 +130,8 @@ export const enrichmentBatch = task({
 
     // Process events
     const stats = await enrichEvents(client, events, {
-      delayMs: 1000,
+      concurrency: 4,
+      delayMs: 0,
       onProgress: (current, total, result) => {
         if (result.canceled) {
           canceledCount++
@@ -140,7 +141,7 @@ export const enrichmentBatch = task({
           failedCount++
         }
 
-        const currentEventName = events[current - 1]?.name ?? null
+        const currentEventName = events.find((event) => event.id === result.eventId)?.name ?? null
 
         metadata.set('progress', {
           batchNumber,

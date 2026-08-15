@@ -84,7 +84,8 @@ export const enrichEventsJob = task({
 
     // Process with progress logging and metadata updates
     const stats = await enrichEvents(client, events, {
-      delayMs: 1000, // 1 second between requests
+      concurrency: 4,
+      delayMs: 0,
       onProgress: (current, total, result) => {
         // Update counts
         if (result.canceled) {
@@ -105,7 +106,7 @@ export const enrichEventsJob = task({
         }
 
         // Find current event name for display
-        const currentEventName = events[current - 1]?.name ?? null
+        const currentEventName = events.find((event) => event.id === result.eventId)?.name ?? null
 
         // Update metadata for real-time frontend updates
         metadata.set('progress', {
