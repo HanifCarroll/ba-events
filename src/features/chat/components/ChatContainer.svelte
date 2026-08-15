@@ -8,7 +8,11 @@
 	import { track } from '#shared/lib/analytics.ts'
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { chatState, type PendingFirstMessage } from '#features/chat/state/chat.svelte.ts'
-	import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract-visible-text.ts'
+	import {
+		extractReasoningFromUIMessageParts,
+		extractVisibleTextFromUIMessageParts
+	} from '#features/chat/lib/extract-visible-text.ts'
+	import { stripLeakedReasoning } from '#features/chat/api/stream-helpers.ts'
 	import {
 		flushMessagePersistenceOutbox,
 		persistMessageWithOutbox,
@@ -959,8 +963,18 @@
 	// ==========================================================================
 	const chatMessages = $derived.by(() => {
 		return chat.messages.map((message, index) => {
-			const textContent = extractVisibleTextFromUIMessageParts(
-				message.parts as Array<{ type?: string; text?: string }>
+			const parts = message.parts as Array<{ type?: string; text?: string }>
+			const storedReasoning = extractReasoningFromUIMessageParts(parts)
+			const live =
+				message.role === 'assistant' &&
+				index === chat.messages.length - 1 &&
+				liveReasoning.trim().length > 0
+					? liveReasoning
+					: ''
+			const reasoning = storedReasoning || live || undefined
+			const textContent = stripLeakedReasoning(
+				extractVisibleTextFromUIMessageParts(parts),
+				reasoning ?? ''
 			)
 
 			const isLastAssistant =
@@ -974,7 +988,7 @@
 				id: message.id,
 				role: message.role as 'user' | 'assistant',
 				content: textContent,
-				reasoning: liveReasoning || undefined,
+				reasoning,
 				timestamp: resolveMessageTimestamp(message, messageTimestampsById),
 				isStreaming,
 				events: storedData?.events,

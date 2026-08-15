@@ -5,6 +5,7 @@ import {
   filterEventsMentionedInText,
   getFinalVisibleTextFromSteps,
   sanitizeFinalAssistantText,
+  stripLeakedReasoning,
   type StepResultLike,
 } from '#features/chat/api/stream-helpers.ts'
 import { ensureChatEventPayload } from './tools/utils.ts'
@@ -154,6 +155,31 @@ describe('chat final-only contract helpers', () => {
       { hasStructuredData: true }
     )
     expect(sanitized).toBe('Go to Trade Sky Bar tonight. It is your best upscale option with skyline views.')
+  })
+
+  it('drops answer text that is just a copy of streamed reasoning', () => {
+    const reasoning =
+      'The user wants something chill. Let me search with a query for chill vibes.'
+    expect(stripLeakedReasoning(reasoning, reasoning)).toBe('')
+  })
+
+  it('keeps a real answer after a leaked reasoning prefix', () => {
+    const reasoning = 'The user wants something chill. Let me search.'
+    expect(
+      stripLeakedReasoning(
+        `${reasoning}\n\nBest pick: the Sunday acoustic set in Palermo.`,
+        reasoning
+      )
+    ).toBe('Best pick: the Sunday acoustic set in Palermo.')
+  })
+
+  it('drops unmarked CoT that still reads like planning notes', () => {
+    expect(
+      stripLeakedReasoning(
+        'The user asked for next weekend. I should search with time filter weekend. Keep it short and let the cards carry details.',
+        ''
+      )
+    ).toBe('')
   })
 
   it('filters cards to events mentioned in the answer text', () => {

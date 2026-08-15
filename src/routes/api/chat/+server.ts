@@ -29,6 +29,7 @@ import {
   getFinalVisibleTextFromSteps,
   getNonEmptyStepTextCount,
   sanitizeFinalAssistantText,
+  stripLeakedReasoning,
   filterEventsMentionedInText,
   buildStreamEnvelope,
   inferToolResultSuccess,
@@ -384,9 +385,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         const rawFinalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
         const nonEmptyStepTextCount = getNonEmptyStepTextCount(typedSteps)
         const accumulatedEvents = Array.from(allEvents.values())
-        let finalText = sanitizeFinalAssistantText(rawFinalText, {
-          hasStructuredData: accumulatedEvents.length > 0 || directionsData !== null,
-        })
+        let finalText = stripLeakedReasoning(
+          sanitizeFinalAssistantText(rawFinalText, {
+            hasStructuredData: accumulatedEvents.length > 0 || directionsData !== null,
+          }),
+          streamedReasoning
+        )
 
         const isDiscoveryList = (lastSearchInput?.limit ?? 1) > 1
         let events = filterEventsMentionedInText(accumulatedEvents, finalText, {

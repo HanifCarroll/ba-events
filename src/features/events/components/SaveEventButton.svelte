@@ -93,15 +93,15 @@
 		}
 	};
 
-	const iconSize = $derived(size === 'sm' ? 'h-4 w-4' : 'h-5 w-5');
+	const iconSize = $derived(size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4');
 	const buttonSize = $derived(
 		showLabel
 			? size === 'sm'
-				? 'h-9 px-3'
-				: 'h-11 w-full px-3'
+				? 'h-7 px-2 text-xs'
+				: 'h-9 w-full px-3'
 			: size === 'sm'
-				? 'h-8 w-8'
-				: 'h-10 w-10'
+				? 'h-7 w-7'
+				: 'h-9 w-9'
 	);
 </script>
 

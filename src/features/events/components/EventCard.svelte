@@ -220,18 +220,18 @@
 					<p class="mt-4 text-sm text-muted-foreground">{tips[0]}</p>
 				{/if}
 
-				<div class="mt-6 flex flex-wrap items-center gap-2">
+				<div class="mt-6 flex flex-wrap items-center gap-1.5">
 					<SaveEventButton
 						eventId={event.id}
 						eventName={event.name}
-						size="md"
+						size="sm"
 						source={source}
 					/>
 					<a
 						href={detailsHref}
-						class="inline-flex min-h-11 items-center rounded-lg px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						class="inline-flex h-7 items-center rounded-md px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
-						<Info class="mr-1.5 h-4 w-4" aria-hidden="true" />
+						<Info class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
 						{m.concierge_event_details()}
 					</a>
 				</div>
@@ -286,13 +286,13 @@
 						eventName={event.name}
 						size="sm"
 						source={source}
-						className="size-11"
+						className="size-9"
 					/>
 					<a
 						href={detailsHref}
-						class="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
-						<Info class="h-4 w-4" aria-hidden="true" />
+						<Info class="h-3.5 w-3.5" aria-hidden="true" />
 						<span>{m.event_details_short()}</span>
 					</a>
 				</div>
@@ -337,7 +337,7 @@
 				</p>
 			{/if}
 
-			<div class="mt-3 flex flex-wrap items-center gap-2">
+			<div class="mt-3 flex flex-wrap items-center gap-1.5">
 				<SaveEventButton
 					eventId={event.id}
 					eventName={event.name}
@@ -351,12 +351,12 @@
 					size="sm"
 					onclick={handleShare}
 					aria-label={copied ? m.event_copied() : m.event_share()}
-					class="text-muted-foreground hover:text-primary hover:bg-primary/10"
+					class="h-7 px-2 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10"
 				>
 					{#if copied}
-						<Check class="h-4 w-4" />
+						<Check class="h-3.5 w-3.5" />
 					{:else}
-						<Share2 class="h-4 w-4" />
+						<Share2 class="h-3.5 w-3.5" />
 					{/if}
 					<span>{copied ? m.event_copied() : m.event_share()}</span>
 				</Button>
@@ -365,9 +365,9 @@
 					variant="ghost"
 					size="sm"
 					onclick={handleDetailsClick}
-					class="text-muted-foreground hover:text-primary hover:bg-primary/10"
+					class="h-7 px-2 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10"
 				>
-					<Info class="h-4 w-4" aria-hidden="true" />
+					<Info class="h-3.5 w-3.5" aria-hidden="true" />
 					<span>{m.event_details_short()}</span>
 				</Button>
 				<!-- Comparison-list external actions are quiet outlines, not filled
@@ -381,9 +381,9 @@
 						variant="outline"
 						size="sm"
 						onclick={handleExternalClick}
-						class="ml-auto border-primary/40 bg-transparent text-primary shadow-none hover:bg-primary/10 hover:text-primary"
+						class="ml-auto h-7 px-2 text-xs border-primary/40 bg-transparent text-primary shadow-none hover:bg-primary/10 hover:text-primary"
 					>
-						<ExternalLink class="h-4 w-4" aria-hidden="true" />
+						<ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
 						<span>{externalActionLabel}</span>
 					</Button>
 				{/if}

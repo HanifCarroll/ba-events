@@ -185,6 +185,43 @@ export function sanitizeFinalAssistantText(
   return trimmed
 }
 
+const REASONING_LEAK_MARKERS = [
+  /\bthe user (?:wants|asked|wrote|said)\b/i,
+  /\blet me (?:search|do that)\b/i,
+  /\bi should (?:search|present|respond)\b/i,
+  /\bkeep it short\b/i,
+  /\blet the cards carry\b/i,
+  /\btime filter\b/i,
+  /\bdiscovery ask\b/i,
+]
+
+function looksLikeLeakedReasoning(text: string): boolean {
+  const hits = REASONING_LEAK_MARKERS.reduce(
+    (count, marker) => count + (marker.test(text) ? 1 : 0),
+    0
+  )
+  return hits >= 2
+}
+
+/** Drop CoT that DeepSeek also wrote into the answer text. */
+export function stripLeakedReasoning(text: string, reasoning: string): string {
+  const trimmed = text.trim()
+  const reasoningText = reasoning.trim()
+  if (!trimmed) return ''
+
+  if (reasoningText) {
+    if (trimmed === reasoningText) return ''
+    if (trimmed.startsWith(reasoningText)) {
+      return trimmed.slice(reasoningText.length).trim()
+    }
+    if (reasoningText.includes(trimmed) || trimmed.includes(reasoningText)) {
+      return ''
+    }
+  }
+
+  return looksLikeLeakedReasoning(trimmed) ? '' : trimmed
+}
+
 /**
  * Normalize a string for event-name matching in assistant text: lowercase,
  * collapse whitespace, strip emoji and the "|" separator used in titles.
