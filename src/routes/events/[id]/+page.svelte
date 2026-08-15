@@ -266,10 +266,10 @@
 							/>
 							<Button
 								type="button"
-								variant="outline"
+								variant="ghost"
 								onclick={handleShare}
 								aria-label={copied ? m.event_copied() : m.event_share()}
-								class="h-9 min-w-0 px-2 text-muted-foreground hover:text-primary"
+								class="h-9 min-w-0 border border-border/60 bg-background/50 px-2 text-muted-foreground hover:border-primary/30 hover:text-primary"
 							>
 								{#if copied}
 									<Check class="h-4 w-4" />
@@ -280,11 +280,11 @@
 							</Button>
 							<Button
 								type="button"
-								variant="outline"
+								variant="ghost"
 								disabled={!mapUrl}
 								onclick={() => mapUrl && openMapsUrl(mapUrl)}
 								aria-label={m.event_open_maps()}
-								class="h-9 min-w-0 px-2 text-muted-foreground hover:text-primary"
+								class="h-9 min-w-0 border border-border/60 bg-background/50 px-2 text-muted-foreground hover:border-primary/30 hover:text-primary"
 							>
 								<MapPin class="h-4 w-4" />
 								<span class="truncate">{m.event_maps()}</span>
