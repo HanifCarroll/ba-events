@@ -170,11 +170,11 @@
 					: 'max-w-2xl'}
 			>
 				{#if event.image_url}
-					<div class="overflow-hidden rounded-2xl border border-border/30 bg-card">
+					<div class="flex items-start justify-center">
 						<img
 							src={resolveSiteUrl(event.image_url)}
 							alt={event.name}
-							class="aspect-square w-full object-contain"
+							class="block h-auto max-h-[70vh] max-w-full rounded-2xl w-auto"
 							loading="lazy"
 						/>
 					</div>
@@ -269,7 +269,7 @@
 								variant="outline"
 								onclick={handleShare}
 								aria-label={copied ? m.event_copied() : m.event_share()}
-								class="h-11 min-w-0 px-2 text-muted-foreground hover:text-primary"
+								class="h-9 min-w-0 px-2 text-muted-foreground hover:text-primary"
 							>
 								{#if copied}
 									<Check class="h-4 w-4" />
@@ -284,7 +284,7 @@
 								disabled={!mapUrl}
 								onclick={() => mapUrl && openMapsUrl(mapUrl)}
 								aria-label={m.event_open_maps()}
-								class="h-11 min-w-0 px-2 text-muted-foreground hover:text-primary"
+								class="h-9 min-w-0 px-2 text-muted-foreground hover:text-primary"
 							>
 								<MapPin class="h-4 w-4" />
 								<span class="truncate">{m.event_maps()}</span>
@@ -298,7 +298,7 @@
 				<div class="mt-6 rounded-2xl border border-border/30 bg-card p-5 sm:p-6 space-y-4">
 					<div
 						use:renderMarkdown={displayDescription}
-						class="text-sm prose prose-sm prose-warm max-w-none leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-3 [&_ul]:my-3 [&_ol]:my-3 [&_strong]:text-foreground [&_strong]:font-semibold"
+						class="mx-auto max-w-[70ch] text-sm prose prose-sm prose-warm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-3 [&_ul]:my-3 [&_ol]:my-3 [&_strong]:text-foreground [&_strong]:font-semibold"
 					></div>
 				</div>
 			{/if}
