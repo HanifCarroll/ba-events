@@ -8,11 +8,7 @@
 	import { track } from '#shared/lib/analytics.ts'
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { chatState, type PendingFirstMessage } from '#features/chat/state/chat.svelte.ts'
-	import {
-		extractReasoningFromUIMessageParts,
-		extractVisibleTextFromUIMessageParts
-	} from '#features/chat/lib/extract-visible-text.ts'
-	import { stripLeakedReasoning } from '#features/chat/api/stream-helpers.ts'
+	import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract-visible-text.ts'
 	import {
 		flushMessagePersistenceOutbox,
 		persistMessageWithOutbox,
@@ -88,11 +84,9 @@
 	let pendingFirstMessage = $state<PendingFirstMessage | null>(null)
 	let isHandoffPending = $state(false)
 	let requestPhase = $state<RequestPhase>('idle')
-	let liveReasoning = $state('')
 	let guestConversation = $state<GuestConversationWithMessages | null>(null)
 	let isLoadingGuestConversation = $state(false)
 	let scrollContainerRef = $state<HTMLDivElement | null>(null)
-
 	// ==========================================================================
 	// Non-rendered refs (legacy useRef → plain let)
 	// ==========================================================================
@@ -145,7 +139,7 @@
 		}
 	}
 
-	type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions' | 'reasoning'>
+	type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
 
 	function assistantMessageHasVisibleContent(
 		message: AssistantVisibilityMessage | null | undefined
@@ -153,7 +147,6 @@
 		if (!message) return false
 		return !!(
 			message.content.trim().length > 0 ||
-			(message.reasoning && message.reasoning.trim().length > 0) ||
 			(message.events && message.events.length > 0) ||
 			message.directions
 		)
@@ -543,9 +536,6 @@
 				}
 
 				setRequestLifecyclePhase(mapStatusPhaseToRequestPhase(statusData.phase))
-				if (typeof statusData.reasoning === 'string') {
-					liveReasoning = statusData.reasoning
-				}
 				return
 			}
 
@@ -607,10 +597,8 @@
 	async function handleSendMessage(content: string, options?: { eventId?: string }) {
 		pendingTrendingEventIdRef = options?.eventId ?? null
 		error = null
-		liveReasoning = ''
 		resetRequestCorrelations()
 		eventsCountRef = 0
-
 		startTimeRef = Date.now()
 		track('chat:message_sent', {
 			query: content,
@@ -964,23 +952,10 @@
 	const chatMessages = $derived.by(() => {
 		return chat.messages.map((message, index) => {
 			const parts = message.parts as Array<{ type?: string; text?: string }>
-			const storedReasoning = extractReasoningFromUIMessageParts(parts)
-			const live =
-				message.role === 'assistant' &&
-				index === chat.messages.length - 1 &&
-				liveReasoning.trim().length > 0
-					? liveReasoning
-					: ''
-			const reasoning = storedReasoning || live || undefined
-			const textContent = stripLeakedReasoning(
-				extractVisibleTextFromUIMessageParts(parts),
-				reasoning ?? ''
-			)
-
+			const textContent = extractVisibleTextFromUIMessageParts(parts)
 			const isLastAssistant =
 				message.role === 'assistant' && index === chat.messages.length - 1
 			const isStreaming = isLastAssistant && chat.status === 'streaming'
-
 			const storedData =
 				message.role === 'assistant' ? messageAttachedDataMap.get(message.id) : undefined
 
@@ -988,7 +963,6 @@
 				id: message.id,
 				role: message.role as 'user' | 'assistant',
 				content: textContent,
-				reasoning,
 				timestamp: resolveMessageTimestamp(message, messageTimestampsById),
 				isStreaming,
 				events: storedData?.events,
@@ -1003,7 +977,6 @@
 			if (chatMessage.role === 'user') return true
 			const hasVisibleContent =
 				chatMessage.content.trim().length > 0 ||
-				(chatMessage.reasoning && chatMessage.reasoning.trim().length > 0) ||
 				(chatMessage.events && chatMessage.events.length > 0) ||
 				chatMessage.directions
 			return hasVisibleContent || chatMessage.isStreaming

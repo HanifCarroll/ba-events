@@ -147,15 +147,15 @@ Time    Status      Loading     Visible Content
 
 200ms   streaming   VISIBLE     (model thinking / calling search_events)
 
-800ms   streaming   hidden      Reasoning text streams (muted), then the
-                                guarded answer types as 24-char text-deltas.
+800ms   streaming   hidden      Guarded answer types as 24-char text-deltas.
+                                Reasoning is not sent to the client.
 
 2000ms  ready       hidden      Text + Events + Suggestions
 ```
 
-Reasoning is streamed live via `reasoning-*` chunks plus `data-status.reasoning`.
-The finished answer is still assembled and guarded first, then emitted as
-`text-delta` chunks so the bubble types instead of appearing all at once.
+Reasoning stays on the server: collected from DeepSeek `reasoning-delta`
+chunks, written onto `executionTrace`, and persisted. The client only
+receives the guarded answer as `text-delta` chunks.
 
 ## Related Files
 

@@ -73,17 +73,3 @@ export function extractVisibleTextFromUIMessageParts(parts: TextPartLike[] | und
   stepTexts.push(currentStepText)
   return extractVisibleTextFromStepTexts(stepTexts)
 }
-
-/** Concatenate reasoning parts. Never mix these into the answer bubble. */
-export function extractReasoningFromUIMessageParts(
-  parts: TextPartLike[] | undefined
-): string {
-  if (!parts || parts.length === 0) return ''
-
-  let reasoning = ''
-  for (const part of parts) {
-    if (part.type !== 'reasoning' || typeof part.text !== 'string') continue
-    reasoning = appendTextSegment(reasoning, part.text)
-  }
-  return reasoning.trim()
-}

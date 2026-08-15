@@ -210,7 +210,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         phase: ChatStreamStatusData['phase'],
         options?: Pick<
           ChatStreamStatusData,
-          'toolName' | 'stepIndex' | 'assistantMessageId' | 'reasoning'
+          'toolName' | 'stepIndex' | 'assistantMessageId'
         >
       ) => {
         writer.write({
@@ -222,7 +222,6 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
             requestId,
             assistantMessageId: options?.assistantMessageId,
             timestamp: new Date().toISOString(),
-            reasoning: options?.reasoning,
           },
         })
       }
@@ -236,7 +235,6 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         wroteStart = true
 
         let streamedReasoning = ''
-        let reasoningBlockId: string | undefined
 
         const result = streamText({
           model: textModel,
@@ -246,28 +244,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           ...CHAT_THINKING,
           stopWhen: stepCountIs(MAX_STEPS),
           onChunk: ({ chunk }) => {
-            if (chunk.type === 'reasoning-start') {
-              reasoningBlockId = chunk.id
-              writer.write({ type: 'reasoning-start', id: chunk.id })
-              return
-            }
             if (chunk.type === 'reasoning-delta' && chunk.text) {
               streamedReasoning += chunk.text
-              writer.write({
-                type: 'reasoning-delta',
-                id: chunk.id,
-                delta: chunk.text,
-              })
-              writeStatus('thinking', {
-                stepIndex: stepIndex >= 0 ? stepIndex : undefined,
-                assistantMessageId,
-                reasoning: streamedReasoning,
-              })
-              return
-            }
-            if (chunk.type === 'reasoning-end') {
-              writer.write({ type: 'reasoning-end', id: chunk.id })
-              reasoningBlockId = undefined
             }
           },
           onStepFinish: ({ toolCalls, toolResults }) => {
@@ -373,9 +351,6 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
         // Guards still need the finished answer. Stream tokens after that.
         const [steps, generatedText] = await Promise.all([result.steps, result.text])
-        if (reasoningBlockId) {
-          writer.write({ type: 'reasoning-end', id: reasoningBlockId })
-        }
         const typedSteps = steps as StepResultLike[]
         const executionTrace = buildExecutionTrace(typedSteps)
         if (streamedReasoning && executionTrace[0] && !executionTrace[0].reasoning) {
@@ -443,7 +418,6 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         writeStatus('composing', {
           stepIndex: finalStepIndex,
           assistantMessageId,
-          reasoning: streamedReasoning || undefined,
         })
 
         writer.write({ type: 'text-start', id: textBlockId })

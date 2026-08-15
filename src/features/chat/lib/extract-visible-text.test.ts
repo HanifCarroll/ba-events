@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  extractReasoningFromUIMessageParts,
   extractVisibleTextFromStepTexts,
   extractVisibleTextFromUIMessageParts,
 } from './extract-visible-text.ts'
@@ -56,17 +55,5 @@ describe('extractVisibleTextFromUIMessageParts', () => {
       { type: 'text', text: 'Got it.' },
     ])
     expect(result).toBe('combo. Nothing listing in Belgrano. Let me check. Got it.')
-  })
-})
-
-describe('extractReasoningFromUIMessageParts', () => {
-  it('joins reasoning parts and ignores answer text', () => {
-    expect(
-      extractReasoningFromUIMessageParts([
-        { type: 'reasoning', text: 'Search weekend first.' },
-        { type: 'text', text: 'Best pick: the acoustic set.' },
-        { type: 'reasoning', text: 'Keep it short.' },
-      ])
-    ).toBe('Search weekend first. Keep it short.')
   })
 })

@@ -345,7 +345,6 @@ export interface ChatStreamStatusData {
   requestId: string
   assistantMessageId?: string
   timestamp: string
-  reasoning?: string
 }
 
 export interface ChatStreamDataEnvelope<T> {
@@ -359,7 +358,6 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string // Display text
-  reasoning?: string
   events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
