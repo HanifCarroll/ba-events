@@ -1,16 +1,21 @@
 import { useState, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Calendar, MapPin, Clock, ExternalLink, Ticket, Info } from 'lucide-react'
-import { EventActions } from './EventActions'
+import { Calendar, MapPin, Clock, ExternalLink, Ticket, Info, Share2, Check } from 'lucide-react'
 import { SaveEventButton } from '../SaveEventButton'
+import { Button } from '@/shared/ui/button'
 import { formatPrice } from '@/features/chat/lib/messages'
 import { formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
 import { track } from '@/lib/analytics'
 import { getEventUrl } from '@/shared/lib/utils/url'
-import { Badge } from '@/shared/ui/badge'
 import { getLocale } from '@/paraglide/runtime'
 import { pickDescriptionSummary } from '@/features/events/lib/description-presentation'
-import { getSourceLabel } from '@/features/events/lib/source-presentation'
+import {
+  getExternalActionKind,
+  getExternalActionLabel,
+  getExternalEventUrl,
+  getExternalLinkType,
+  getSourceLabel,
+} from '@/features/events/lib/source-presentation'
 import type { EventWithVenue } from '@/shared/lib/types'
 import * as m from '@/paraglide/messages'
 
@@ -266,16 +271,28 @@ function MobileEventCard({ event, source }: Pick<DefaultEventCardProps, 'event' 
 
 function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
   const locale = getLocale() as 'en' | 'es'
+  const [copied, setCopied] = useState(false)
 
   const startDate = new Date(event.starts_at)
   const dateStr = formatShortDate(startDate)
   const timeStr = event.time_tba ? m.concierge_time_tba() : formatTime(startDate)
 
   const priceDisplay = formatPrice(event.price, event.is_free)
-  const isFree = event.is_free || event.price === 0
   const summaryDescription = pickDescriptionSummary(event, locale)
   const hasDescription = Boolean(summaryDescription)
   const sourceLabel = getSourceLabel(event.source)
+  const placeLabel = event.location_hidden
+    ? m.event_location_hidden()
+    : event.venue_name || event.venue_neighborhood || m.concierge_location_tba()
+
+  const externalUrl = getExternalEventUrl(event)
+  const externalActionKind = getExternalActionKind(event.source)
+  const externalActionLabel = getExternalActionLabel(externalActionKind, sourceLabel)
+  const contextSegments = [
+    ...(sourceLabel ? [sourceLabel] : []),
+    ...event.categories.slice(0, 2),
+    ...(!hasDescription ? [m.event_limited_info()] : []),
+  ]
 
   // Card content is always visible — track the view on mount.
   useEffect(() => {
@@ -288,156 +305,130 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event.id])
 
+  const handleShare = async () => {
+    const shareUrl = getEventUrl(event.id)
+    const shareText = event.venue_name
+      ? m.event_share_text_venue({ name: event.name, venue: event.venue_name })
+      : m.event_share_text_no_venue({ name: event.name })
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: event.name, text: shareText, url: shareUrl })
+        track('event:shared', { event_id: event.id, event_name: event.name, share_method: 'native' })
+        return
+      } catch {
+        // User canceled or share failed — fall back to clipboard
+      }
+    }
+
+    await navigator.clipboard.writeText(shareUrl)
+    setCopied(true)
+    track('event:shared', { event_id: event.id, event_name: event.name, share_method: 'clipboard' })
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleExternalClick = () => {
+    track('event:link_clicked', {
+      event_id: event.id,
+      event_name: event.name,
+      link_type: getExternalLinkType(externalActionKind),
+    })
+  }
+
+  const handleDetailsClick = () => {
+    track('chat:event_clicked', {
+      event_id: event.id,
+      event_name: event.name,
+      position,
+      source,
+    })
+  }
+
   return (
-    <div className="group relative overflow-hidden rounded-xl bg-card/60 transition-colors duration-300 hover:bg-card/90">
-        <div className="p-4">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
-            <h3 className="line-clamp-1 font-display text-base font-medium text-foreground">
-              {event.name}
-            </h3>
+    <article className="border-b border-border/40 py-4 last:border-b-0">
+      <div className="flex items-baseline justify-between gap-4">
+        <h3 className="min-w-0 truncate text-[15px] font-medium tracking-[-0.01em] text-foreground">
+          {event.name}
+        </h3>
+        <span className="shrink-0 text-sm font-medium text-foreground/85">{priceDisplay}</span>
+      </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              <span
-                className={`rounded-lg border px-2.5 py-1 text-xs font-medium tracking-wide ${
-                  isFree
-                    ? 'border-primary/20 bg-primary/15 text-primary'
-                    : 'border-border/50 bg-muted text-muted-foreground'
-                }`}
-              >
-                {priceDisplay}
-              </span>
-            </div>
+      <p className="mt-1 flex flex-nowrap items-center gap-x-1.5 text-[13px] text-muted-foreground">
+        <span className="shrink-0">{dateStr}</span>
+        <span aria-hidden="true" className="text-muted-foreground/50">·</span>
+        <span className="shrink-0">{timeStr}</span>
+        <span aria-hidden="true" className="text-muted-foreground/50">·</span>
+        <span className="min-w-0 truncate">{placeLabel}</span>
+      </p>
 
-            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              {event.location_hidden ? (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <MapPin className="h-3 w-3 text-primary/60" />
-                  <span className="truncate max-w-[140px] italic">Address after registration</span>
-                </span>
-              ) : event.venue_name && (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <MapPin className="h-3 w-3 text-primary/60" />
-                  <span className="truncate max-w-[120px]">{event.venue_name}</span>
-                </span>
+      {summaryDescription && (
+        <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+          {summaryDescription}
+        </p>
+      )}
+
+      {contextSegments.length > 0 && (
+        <p className="mt-1.5 text-xs text-muted-foreground/75">
+          {contextSegments.map((segment, index) => (
+            <span key={`${index}-${segment}`}>
+              {index > 0 && (
+                <span aria-hidden="true" className="mx-1.5 text-muted-foreground/40">·</span>
               )}
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="h-3 w-3 text-primary/60" />
-                {dateStr}
-              </span>
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3 text-primary/60" />
-                {timeStr}
-              </span>
-            </div>
+              {segment}
+            </span>
+          ))}
+        </p>
+      )}
 
-          </div>
-        </div>
-
-        <div id={`event-details-${event.id}`} className="px-4 pb-4">
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                {sourceLabel && (
-                  <Badge className="bg-muted text-muted-foreground border-border/60">
-                    {sourceLabel}
-                  </Badge>
-                )}
-                {!hasDescription && (
-                  <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                    Limited info
-                  </Badge>
-                )}
-              </div>
-
-              {/* Description */}
-              {summaryDescription && (
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {summaryDescription}
-                </p>
-              )}
-
-              {/* Details grid */}
-              <div className="grid grid-cols-2 gap-3">
-                {event.location_hidden ? (
-                  <div className="flex items-start gap-2 text-sm text-muted-foreground col-span-2">
-                    <MapPin className="h-4 w-4 text-primary/60 shrink-0 mt-0.5" />
-                    <span className="italic">
-                      Address shared after registration.{' '}
-                      {event.link && (
-                        <a
-                          href={event.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline font-medium"
-                        >
-                          Register to see
-                        </a>
-                      )}
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    {event.venue_neighborhood && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <MapPin className="h-4 w-4 text-primary/60" />
-                        <span>{event.venue_neighborhood}</span>
-                      </div>
-                    )}
-                    {event.venue_address && (
-                      <div className="flex items-start gap-2 text-sm text-muted-foreground col-span-2">
-                        <MapPin className="h-4 w-4 text-primary/60 shrink-0 mt-0.5" />
-                        <span>{event.venue_address}</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Categories */}
-              {event.categories.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {event.categories.slice(0, 3).map((cat) => (
-                    <span
-                      key={cat}
-                      className="px-2.5 py-1 rounded-lg text-xs bg-primary/10 text-primary/90 border border-primary/20"
-                    >
-                      {cat}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex items-center justify-between pt-2">
-                <EventActions event={event} shareUrl={getEventUrl(event.id)} />
-              </div>
-
-            </div>
-        </div>
-
-        {/* Footer actions - save and event details grouped together */}
-        <div className="flex items-center gap-2 border-t border-border/40 px-4 py-3">
-          <SaveEventButton eventId={event.id} eventName={event.name} size="sm" source={source} />
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <SaveEventButton
+          eventId={event.id}
+          eventName={event.name}
+          size="sm"
+          showLabel
+          source={source}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleShare}
+          aria-label={copied ? m.event_copied() : m.event_share()}
+          className="text-muted-foreground hover:text-primary hover:bg-primary/10"
+        >
+          {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+          <span>{copied ? m.event_copied() : m.event_share()}</span>
+        </Button>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-primary hover:bg-primary/10"
+        >
           <Link
             to="/events/$id"
             params={{ id: event.id }}
             state={{ fromChat: source === 'chat' }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
+            onClick={handleDetailsClick}
           >
-            <Info className="h-3.5 w-3.5" />
+            <Info className="h-4 w-4" aria-hidden="true" />
             <span>{m.event_details_short()}</span>
           </Link>
-          {event.link && (
+        </Button>
+        {externalUrl && (
+          <Button asChild size="sm" className="ml-auto">
             <a
-              href={event.link}
+              href={externalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors duration-200"
+              onClick={handleExternalClick}
             >
-              <span>{m.event_view()}</span>
-              <ExternalLink className="h-3 w-3" />
+              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              <span>{externalActionLabel}</span>
             </a>
-          )}
-        </div>
+          </Button>
+        )}
       </div>
+    </article>
   )
 }

@@ -26,6 +26,18 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Semantic external event actions (desktop card CTA)
+
+**Date:** 2026-08-14
+
+**Decision:** External event CTAs are derived from the import source, not from `ticket_url`. `src/features/events/lib/source-presentation.ts` exports `getExternalActionKind` (passline/eventbrite/venti → `tickets`, meetup → `rsvp`, luma → `register`, everything else → `source`), `getExternalLinkType`, and `getExternalActionLabel`; the desktop event card and the event detail page share them. The desktop default card was redesigned from an expanded-accordion surface into a flat divided row (DM Sans, no card chrome, labeled actions only — no icon tooltips) per DESIGN.md.
+
+**Alternatives Considered (if applicable):**
+- Keep deriving the CTA from `ticket_url` presence: Rejected — importers store the plain event/source page in `ticket_url` for Meetup, Luma and BA Tourism, so "Get tickets" was wrong for those sources.
+- Sniff the URL host to guess the action: Rejected — source is already canonical on the event row and covers future sources; URL hostnames change.
+
+**Rationale:** `ticket_url` is not semantic (all six transformers mirror the event page into it), so the source string is the only reliable signal. Reusing one helper in both surfaces keeps labels and analytics `link_type` (`ticket`/`rsvp`/`register`/`source`) consistent. Related Decision: Surprise-me and list diversity (2026-08-14).
+
 ### Surprise-me and list diversity (Phase 9)
 
 **Date:** 2026-08-14

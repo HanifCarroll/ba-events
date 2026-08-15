@@ -95,7 +95,9 @@ export function SaveEventButton({
 
   const iconSize = size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'
   const buttonSize = showLabel
-    ? 'h-11 w-full px-3'
+    ? size === 'sm'
+      ? 'h-9 px-3'
+      : 'h-11 w-full px-3'
     : size === 'sm'
       ? 'h-8 w-8'
       : 'h-10 w-10'
@@ -116,26 +118,30 @@ export function SaveEventButton({
     )
   }
 
-  // If not logged in, show tooltip prompting to sign in
+  // If not logged in, show tooltip prompting to sign in (icon-only only)
   if (!user) {
+    const signInButton = (
+      <Button
+        asChild
+        variant="ghost"
+        size={showLabel ? 'default' : 'icon'}
+        className={`${buttonSize} text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors ${className}`}
+      >
+        <Link
+          to="/login"
+          aria-label={m.event_sign_in_to_save()}
+        >
+          <Heart className={iconSize} />
+          {showLabel && <span>{m.event_save()}</span>}
+        </Link>
+      </Button>
+    )
+
+    if (showLabel) return signInButton
+
     return (
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="ghost"
-            size={showLabel ? 'default' : 'icon'}
-            className={`${buttonSize} text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors ${className}`}
-          >
-            <Link
-              to="/login"
-              aria-label={m.event_sign_in_to_save()}
-            >
-              <Heart className={iconSize} />
-              {showLabel && <span>{m.event_save()}</span>}
-            </Link>
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger asChild>{signInButton}</TooltipTrigger>
         <TooltipContent side="top">
           <p className="text-xs">{m.event_sign_in_to_save()}</p>
         </TooltipContent>
@@ -143,33 +149,37 @@ export function SaveEventButton({
     )
   }
 
+  const toggleButton = (
+    <Button
+      variant="ghost"
+      size={showLabel ? 'default' : 'icon'}
+      onClick={handleToggle}
+      disabled={isUpdating}
+      aria-label={isSaved ? m.event_remove_from_saved() : m.event_save()}
+      aria-pressed={isSaved}
+      className={`
+        ${buttonSize}
+        transition-all duration-200
+        ${isSaved
+          ? 'text-primary hover:text-primary/80 hover:bg-primary/10'
+          : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
+        }
+        ${isUpdating ? 'opacity-50' : ''}
+        ${className}
+      `}
+    >
+      <Heart
+        className={`${iconSize} transition-all duration-200 ${isSaved ? 'fill-current scale-110' : ''}`}
+      />
+      {showLabel && <span>{isSaved ? m.event_saved() : m.event_save()}</span>}
+    </Button>
+  )
+
+  if (showLabel) return toggleButton
+
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size={showLabel ? 'default' : 'icon'}
-          onClick={handleToggle}
-          disabled={isUpdating}
-          aria-label={isSaved ? m.event_remove_from_saved() : m.event_save()}
-          aria-pressed={isSaved}
-          className={`
-            ${buttonSize}
-            transition-all duration-200
-            ${isSaved
-              ? 'text-primary hover:text-primary/80 hover:bg-primary/10'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
-            }
-            ${isUpdating ? 'opacity-50' : ''}
-            ${className}
-          `}
-        >
-          <Heart
-            className={`${iconSize} transition-all duration-200 ${isSaved ? 'fill-current scale-110' : ''}`}
-          />
-          {showLabel && <span>{isSaved ? m.event_saved() : m.event_save()}</span>}
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{toggleButton}</TooltipTrigger>
       <TooltipContent side="top">
         <p className="text-xs">{isSaved ? m.event_remove_from_saved() : m.event_save()}</p>
       </TooltipContent>

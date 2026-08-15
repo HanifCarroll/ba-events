@@ -229,8 +229,8 @@ const sendMessage = async (query: string) => {
 | `event:viewed` | `event_id`, `source`, `categories[]`, `neighborhood` | Event details viewed |
 | `event:saved` | `event_id`, `categories[]`, `neighborhood`, `is_free` | User saves an event |
 | `event:unsaved` | `event_id` | User removes saved event |
-| `event:link_clicked` | `event_id`, `link_type` (ticket/venue/website) | External link clicked |
-| `event:shared` | `event_id`, `share_method` | Event shared (if implemented) |
+| `event:link_clicked` | `event_id`, `link_type` (`ticket`/`rsvp`/`register`/`source`) | External link clicked; kind derived from event source, not URL |
+| `event:shared` | `event_id`, `share_method` (`native`/`clipboard`) | Event shared via native share sheet or clipboard copy |
 
 ### Search & Filters
 

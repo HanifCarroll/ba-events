@@ -18,6 +18,7 @@ export type EventEngagementEvent =
   | 'event:saved'
   | 'event:unsaved'
   | 'event:link_clicked'
+  | 'event:shared'
 
 // Authentication events
 export type AuthEvent =

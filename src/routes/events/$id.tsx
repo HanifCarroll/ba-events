@@ -15,13 +15,17 @@ import { Badge } from '@/shared/ui/badge'
 import { formatEventTime, formatShortDate, formatTime } from '@/shared/lib/utils/formatting'
 import { getEventUrl, resolveSiteUrl } from '@/shared/lib/utils/url'
 import { openMapsUrl } from '@/shared/lib/utils/maps'
+import { track } from '@/lib/analytics'
 import { getLocale } from '@/paraglide/runtime'
 import {
   pickDescriptionSummary,
   pickDisplayDescription,
 } from '@/features/events/lib/description-presentation'
 import {
+  getExternalActionKind,
+  getExternalActionLabel,
   getExternalEventUrl,
+  getExternalLinkType,
   getSourceLabel,
 } from '@/features/events/lib/source-presentation'
 import { getDistinctVenueAddress } from '@/features/events/lib/location-presentation'
@@ -105,13 +109,8 @@ function EventDetailPage() {
   const displayDescription = pickDisplayDescription(event, locale)
   const hasDescription = Boolean(displayDescription?.trim())
   const sourceLabel = getSourceLabel(event.source)
-  const sourceCtaLabel = event.ticket_url
-    ? sourceLabel
-      ? m.event_get_tickets_on({ source: sourceLabel })
-      : m.event_get_tickets()
-    : sourceLabel
-      ? m.event_view_on({ source: sourceLabel })
-      : m.event_open_event()
+  const externalActionKind = getExternalActionKind(event.source)
+  const sourceCtaLabel = getExternalActionLabel(externalActionKind, sourceLabel)
   const distinctVenueAddress = getDistinctVenueAddress(event.venue_name, event.venue_address)
   const priceDisplay = event.is_free
     ? m.event_free()
@@ -128,6 +127,7 @@ function EventDetailPage() {
           text: buildEventSummary(event, locale),
           url: shareUrl,
         })
+        track('event:shared', { event_id: event.id, event_name: event.name, share_method: 'native' })
         return
       } catch {
         // fall back to clipboard
@@ -136,7 +136,18 @@ function EventDetailPage() {
 
     await navigator.clipboard.writeText(shareUrl)
     setCopied(true)
+    track('event:shared', { event_id: event.id, event_name: event.name, share_method: 'clipboard' })
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleExternalLink = () => {
+    if (!externalEventUrl) return
+    track('event:link_clicked', {
+      event_id: event.id,
+      event_name: event.name,
+      link_type: getExternalLinkType(externalActionKind),
+    })
+    window.open(externalEventUrl, '_blank', 'noopener,noreferrer')
   }
 
   const handleBackToChat = () => {
@@ -255,7 +266,7 @@ function EventDetailPage() {
                   type="button"
                   size="lg"
                   disabled={!externalEventUrl}
-                  onClick={() => externalEventUrl && window.open(externalEventUrl, '_blank', 'noopener,noreferrer')}
+                  onClick={handleExternalLink}
                   className="min-h-11 w-full"
                 >
                   <ExternalLink className="h-4 w-4" />

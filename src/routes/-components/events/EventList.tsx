@@ -30,7 +30,7 @@ export function EventList({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 sm:space-y-0">
       {events.map((event, index) => (
         <EventCard
           key={event.id}
