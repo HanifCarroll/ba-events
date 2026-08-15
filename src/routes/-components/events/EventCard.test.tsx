@@ -155,6 +155,31 @@ describe('DesktopEventCard', () => {
     expect(within(card).getByText(m.event_details_short())).toBeTruthy()
   })
 
+  it('renders the external CTA as a quiet outlined link-button with preserved semantics', () => {
+    render(<EventCard event={makeEvent()} position={0} source="chat" />)
+
+    const cta = within(desktopCard())
+      .getByText(m.event_rsvp_on({ source: 'Meetup' }))
+      .closest('a') as HTMLAnchorElement
+
+    // Anchor semantics, truthful source label, icon, target/rel are unchanged
+    expect(cta.tagName).toBe('A')
+    expect(cta.getAttribute('href')).toBe('https://example.com/jazz')
+    expect(cta.getAttribute('target')).toBe('_blank')
+    expect(cta.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(cta.querySelector('svg')).toBeTruthy()
+
+    // Quiet outline treatment: outline variant, transparent at rest, restrained
+    // indigo border/text, pale indigo hover, right-aligned, visible focus ring
+    expect(cta.getAttribute('data-variant')).toBe('outline')
+    expect(cta.className).toContain('bg-transparent')
+    expect(cta.className).toContain('border-primary/40')
+    expect(cta.className).toContain('text-primary')
+    expect(cta.className).toContain('hover:bg-primary/10')
+    expect(cta.className).toContain('ml-auto')
+    expect(cta.className).toContain('focus-visible:ring')
+  })
+
   it('shows limited info as quiet context when no summary exists', () => {
     render(
       <EventCard

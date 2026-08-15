@@ -415,8 +415,16 @@ function DesktopEventCard({ event, position, source }: DefaultEventCardProps) {
             <span>{m.event_details_short()}</span>
           </Link>
         </Button>
+        {/* Comparison-list external actions are quiet outlines, not filled
+            primaries: transparent at rest, restrained indigo border/text,
+            pale indigo hover, and the shared Button focus ring. */}
         {externalUrl && (
-          <Button asChild size="sm" className="ml-auto">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="ml-auto border-primary/40 bg-transparent text-primary shadow-none hover:bg-primary/10 hover:text-primary"
+          >
             <a
               href={externalUrl}
               target="_blank"
