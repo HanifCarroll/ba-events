@@ -16,20 +16,22 @@
 </script>
 
 {#if events.length === 1}
-	<!-- Single recommendation → confident hero card. -->
-	<EventCard
-		event={events[0]}
-		position={0}
-		source="chat"
-		variant="hero"
-		commentary={commentary}
-		tips={tips}
-	/>
+	<div class="animate-fade-in-up">
+		<EventCard
+			event={events[0]}
+			position={0}
+			source="chat"
+			variant="hero"
+			commentary={commentary}
+			tips={tips}
+		/>
+	</div>
 {:else}
-	<!-- Multiple events → plain equal list (no "main" pick, no "you might also like"). -->
-	<div class="space-y-3 sm:space-y-0">
+	<div class="stagger-children space-y-3 sm:space-y-0">
 		{#each events as event, index (event.id)}
-			<EventCard event={event} position={index} source="chat" variant="default" />
+			<div>
+				<EventCard event={event} position={index} source="chat" variant="default" />
+			</div>
 		{/each}
 	</div>
 {/if}

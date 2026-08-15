@@ -147,15 +147,15 @@ Time    Status      Loading     Visible Content
 
 200ms   streaming   VISIBLE     (model thinking / calling search_events)
 
-800ms   streaming   hidden      Guarded answer types as 24-char text-deltas.
-                                Reasoning is not sent to the client.
+800ms   streaming   hidden      Live answer text-deltas as the model writes
+                                them. Event cards fade in after the answer.
 
 2000ms  ready       hidden      Text + Events + Suggestions
 ```
 
-Reasoning stays on the server: collected from DeepSeek `reasoning-delta`
-chunks, written onto `executionTrace`, and persisted. The client only
-receives the guarded answer as `text-delta` chunks.
+Answer tokens are forwarded from `streamText` as they arrive. Reasoning is
+kept on the server. Event cards cannot stream; they animate in after the
+answer. Guards may replace the bubble only if they rewrite the text.
 
 ## Related Files
 

@@ -33,7 +33,6 @@ import {
   filterEventsMentionedInText,
   buildStreamEnvelope,
   inferToolResultSuccess,
-  chunkTextForStream,
   type StepResultLike,
 } from '#features/chat/api/stream-helpers.ts'
 import { CHAT_THINKING, textModel } from '#shared/lib/ai/providers.ts'
@@ -235,6 +234,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         wroteStart = true
 
         let streamedReasoning = ''
+        let textBlockId: string | undefined
+        let streamedAnswer = ''
 
         const result = streamText({
           model: textModel,
@@ -246,7 +247,20 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           onChunk: ({ chunk }) => {
             if (chunk.type === 'reasoning-delta' && chunk.text) {
               streamedReasoning += chunk.text
+              return
             }
+            if (chunk.type !== 'text-delta' || !chunk.text) return
+            if (!textBlockId) {
+              textBlockId = generateId()
+              writeStatus('composing', { assistantMessageId })
+              writer.write({ type: 'text-start', id: textBlockId })
+            }
+            streamedAnswer += chunk.text
+            writer.write({
+              type: 'text-delta',
+              id: textBlockId,
+              delta: chunk.text,
+            })
           },
           onStepFinish: ({ toolCalls, toolResults }) => {
             stepIndex += 1
@@ -349,7 +363,6 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           },
         })
 
-        // Guards still need the finished answer. Stream tokens after that.
         const [steps, generatedText] = await Promise.all([result.steps, result.text])
         const typedSteps = steps as StepResultLike[]
         const executionTrace = buildExecutionTrace(typedSteps)
@@ -413,19 +426,23 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           trace_size_bytes: JSON.stringify(executionTrace).length,
         })
 
-        const textBlockId = generateId()
+        if (!textBlockId) {
+          textBlockId = generateId()
+          writeStatus('composing', {
+            stepIndex: finalStepIndex,
+            assistantMessageId,
+          })
+          writer.write({ type: 'text-start', id: textBlockId })
+        }
 
-        writeStatus('composing', {
-          stepIndex: finalStepIndex,
-          assistantMessageId,
-        })
-
-        writer.write({ type: 'text-start', id: textBlockId })
-        for (const delta of chunkTextForStream(finalText)) {
+        if (finalText && finalText !== streamedAnswer) {
+          writer.write({ type: 'text-end', id: textBlockId })
+          textBlockId = generateId()
+          writer.write({ type: 'text-start', id: textBlockId })
           writer.write({
             type: 'text-delta',
             id: textBlockId,
-            delta,
+            delta: finalText,
           })
         }
         writer.write({ type: 'text-end', id: textBlockId })

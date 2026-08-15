@@ -283,12 +283,3 @@ export function buildStreamEnvelope<T>(
   }
 }
 
-/** Split a finished answer into small deltas so the client can type it. */
-export function chunkTextForStream(text: string, chunkSize = 24): string[] {
-  if (!text) return []
-  const chunks: string[] = []
-  for (let i = 0; i < text.length; i += chunkSize) {
-    chunks.push(text.slice(i, i + chunkSize))
-  }
-  return chunks
-}

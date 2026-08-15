@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildExecutionTrace,
-  chunkTextForStream,
   filterEventsMentionedInText,
   getFinalVisibleTextFromSteps,
   sanitizeFinalAssistantText,
@@ -93,11 +92,6 @@ describe('chat final-only contract helpers', () => {
 
     const trace = buildExecutionTrace(steps)
     expect(trace[0].reasoning).toBe('Next weekend means Aug 22-23, not leftover Saturday.')
-  })
-
-  it('chunks a finished answer into typed deltas', () => {
-    expect(chunkTextForStream('abcdefghij', 4)).toEqual(['abcd', 'efgh', 'ij'])
-    expect(chunkTextForStream('')).toEqual([])
   })
 
   it('strips embeddings from execution trace tool outputs', () => {
