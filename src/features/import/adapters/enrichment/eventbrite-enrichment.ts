@@ -20,9 +20,9 @@ import type {
   EnrichmentAdapter,
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
-} from '../enrichment-types'
-import { enrichEventFull } from '@/shared/lib/ai/enrichment'
-import { extractEventbriteVenueInfo } from '../../scrapers/eventbrite/enrichment'
+} from '../enrichment-types.ts'
+import { enrichEventFull } from '#shared/lib/ai/enrichment.ts'
+import { extractEventbriteVenueInfo } from '../../scrapers/eventbrite/enrichment.ts'
 
 export const eventbriteEnrichmentAdapter: EnrichmentAdapter = {
   source: 'eventbrite',

@@ -9,9 +9,9 @@
  *
  * Usage: bun evals/search/run-semantic.ts
  */
-import { semanticEventSearch } from '@/shared/lib/db/client'
-import { mapWithConcurrency } from '../lib/checks'
-import { GOLDEN_QUERIES } from './golden'
+import { semanticEventSearch } from '#shared/lib/db/client.server.ts'
+import { mapWithConcurrency } from '../lib/checks.ts'
+import { GOLDEN_QUERIES } from './golden.ts'
 
 const K = 5
 const MIN_HIT_RATE = 0.7

@@ -6,9 +6,9 @@
  */
 
 import { z } from 'zod'
-import { defineTool } from './types'
-import { getEventDetailsForUser } from '../user-tools'
-import { formatEventDetailsForClaude } from './utils'
+import { defineTool } from './types.ts'
+import { getEventDetailsForUser } from '../user-tools.server.ts'
+import { formatEventDetailsForClaude } from './utils.ts'
 
 // ============================================================================
 // INPUT SCHEMA

@@ -10,10 +10,10 @@
  *
  * Usage: bun evals/titles/run.ts
  */
-import { generateConversationTitle } from '@/features/chat/api/generate-title'
-import { detectLanguage, mapWithConcurrency } from '../lib/checks'
-import { printReport, type CaseResult } from '../lib/report'
-import { TITLE_CASES } from './cases'
+import { generateConversationTitle } from '#features/chat/api/generate-title.server.ts'
+import { detectLanguage, mapWithConcurrency } from '../lib/checks.ts'
+import { printReport, type CaseResult } from '../lib/report.ts'
+import { TITLE_CASES } from './cases.ts'
 
 console.log(`Running ${TITLE_CASES.length} title cases...`)
 const results = await mapWithConcurrency(TITLE_CASES, 6, async (c): Promise<CaseResult> => {

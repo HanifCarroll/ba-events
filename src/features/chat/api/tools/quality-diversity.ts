@@ -9,7 +9,7 @@
  * relevant to.
  */
 
-import { normalizeText } from '@/shared/lib/utils/normalize-text'
+import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
 
 /** Fields the surprise scorer / diversity pass read off an event. */
 export interface SearchScoreable {

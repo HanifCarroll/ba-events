@@ -10,4 +10,4 @@
 export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'luma' | 'venti' | 'csv'
 
 // Re-export DuplicateInfo for convenience
-export type { DuplicateInfo } from '../api/duplicate-detection'
+export type { DuplicateInfo } from '../api/duplicate-detection.ts'

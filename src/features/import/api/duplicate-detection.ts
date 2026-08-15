@@ -9,9 +9,9 @@
  * to ensure visibility of all events (bypasses RLS).
  */
 
-import { getSupabase, type SupabaseClient } from '@/shared/lib/db/client'
-import type { EventInsert } from '@/shared/lib/types'
-import type { ImportSource } from '../adapters/types'
+import { getSupabase, type SupabaseClient } from '#shared/lib/db/client.server.ts'
+import type { EventInsert } from '#shared/lib/types.ts'
+import type { ImportSource } from '../adapters/types.ts'
 
 // Fields we compare for detecting changes (initial scrape fields only, not enriched)
 export const DIFF_FIELDS = [

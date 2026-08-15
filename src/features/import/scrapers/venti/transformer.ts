@@ -7,15 +7,15 @@
  */
 
 import { toZonedTime } from 'date-fns-tz'
-import type { EventInsert, Category } from '@/shared/lib/types'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import type { EventInsert, Category } from '#shared/lib/types.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import {
   normalizeTitle,
   normalizeDescription,
   normalizeUrl,
   normalizeImageUrl,
-} from '../shared/normalization'
-import type { VentiEvent, VentiTicketAvailability, VentiVenueInfo } from './types'
+} from '../shared/normalization.ts'
+import type { VentiEvent, VentiTicketAvailability, VentiVenueInfo } from './types.ts'
 
 /**
  * Map Venti's native categories to our 6 intent-based categories.

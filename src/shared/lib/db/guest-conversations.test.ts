@@ -1,6 +1,5 @@
+import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
-// fake-indexeddb globals are installed by the shared `test-setup.ts` preload
-// (see bunfig.toml), so Dexie sees a working IndexedDB regardless of load order.
 import {
   addGuestMessage,
   createGuestConversation,
@@ -10,7 +9,7 @@ import {
   listGuestConversations,
   setGuestConversationTitle,
   touchGuestConversation,
-} from './guest-conversations'
+} from './guest-conversations.ts'
 
 describe('guest-conversations store', () => {
   beforeEach(async () => {

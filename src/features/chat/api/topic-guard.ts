@@ -12,7 +12,7 @@
 
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import { textModel, NO_THINKING } from '@/shared/lib/ai/providers'
+import { textModel, NO_THINKING } from '#shared/lib/ai/providers.ts'
 
 const TOPIC_SCHEMA = z.object({ on_topic: z.boolean() })
 

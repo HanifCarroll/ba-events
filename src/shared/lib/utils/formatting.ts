@@ -1,6 +1,6 @@
 import { toZonedTime } from 'date-fns-tz'
-import { getLocale } from '@/paraglide/runtime'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import { getLocale } from '#paraglide/runtime.js'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 /**
  * All date/time formatters render in Buenos Aires time.

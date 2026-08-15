@@ -8,14 +8,14 @@
  * - < 0.60 or no match: Auto-create with neighborhood lookup
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { matchVenue } from '../scrapers/venue-matcher'
+import { matchVenue } from '../scrapers/venue-matcher.ts'
 import {
   lookupNeighborhoodTiered,
   delay,
   isAddressLikeVenueName,
   lookupBusinessAtAddress,
-} from './nominatim'
-import type { Venue, Neighborhood, VenueInsert } from '@/shared/lib/types'
+} from './nominatim.ts'
+import type { Venue, Neighborhood, VenueInsert } from '#shared/lib/types.ts'
 
 // ============================================================================
 // CONSTANTS

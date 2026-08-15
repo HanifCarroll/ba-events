@@ -7,12 +7,12 @@
 
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { format } from 'date-fns'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import {
   pickDescriptionSummary,
   pickDisplayDescription,
-} from '@/features/events/lib/description-presentation'
-import type { ChatEventPayload, EventWithVenue, Venue } from '@/shared/lib/types'
+} from '#features/events/lib/description-presentation.ts'
+import type { ChatEventPayload, EventWithVenue, Venue } from '#shared/lib/types.ts'
 
 // ============================================================================
 // DATE/TIME UTILITIES

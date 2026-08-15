@@ -3,7 +3,7 @@ import {
   getFallbackConversationTitle,
   isGenericConversationTitle,
   normalizeConversationTitle,
-} from './title'
+} from './title.ts'
 
 describe('conversation title utilities', () => {
   it('normalizes quotes and repeated whitespace', () => {
@@ -30,4 +30,3 @@ describe('conversation title utilities', () => {
     expect(isGenericConversationTitle('Weekend plan')).toBe(false)
   })
 })
-

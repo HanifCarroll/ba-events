@@ -12,8 +12,8 @@
 
 import { generateObject, generateText } from 'ai'
 import { z } from 'zod'
-import { textModel, NO_THINKING } from './providers'
-import { HttpError } from '../errors'
+import { textModel, NO_THINKING } from './providers.ts'
+import { HttpError } from '../errors.ts'
 
 // ============================================================================
 // SCHEMAS

@@ -12,27 +12,27 @@ import {
   scrapeMeetupEvents,
   filterInPersonEvents,
   filterByDateRange,
-  enrichMeetupEventsWithVenues,
-  type MeetupEvent,
-} from '../scrapers/meetup'
-import { logger } from '@/shared/lib/logger'
+} from '../scrapers/meetup/browser-scraper.ts'
+import { enrichMeetupEventsWithVenues } from '../scrapers/meetup/venue-enrichment.ts'
+import type { MeetupEvent } from '../scrapers/meetup/types.ts'
+import { logger } from '#shared/lib/logger.ts'
 import {
   transformMeetupEventWithExpansion,
   getUniqueVenueNames,
-} from '../scrapers/meetup/transformer'
-import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
+} from '../scrapers/meetup/transformer.ts'
+import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
-} from '@/shared/lib/ai/embeddings'
-import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
-import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
-import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
-import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
-import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
-import { delay } from './nominatim'
-import { filterEventsByLocation } from './geo-validation'
-import type { EventInsert } from '@/shared/lib/types'
+} from '#shared/lib/ai/embeddings.ts'
+import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { checkDuplicateEventsWithData } from '../api/duplicate-detection.ts'
+import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
+import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
+import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
+import { delay } from './nominatim.ts'
+import { filterEventsByLocation } from './geo-validation.ts'
+import type { EventInsert } from '#shared/lib/types.ts'
 
 // ============================================================================
 // TYPES
@@ -123,8 +123,8 @@ interface BatchProcessResult {
 async function processBatch(
   client: SupabaseClient,
   batchEvents: MeetupEvent[],
-  venueResults: Map<string, import('./venue-settlement').VenueSettlementResult>,
-  existingEventsMap: Map<string, import('../api/duplicate-detection').ExistingEventData>,
+  venueResults: Map<string, import('./venue-settlement.ts').VenueSettlementResult>,
+  existingEventsMap: Map<string, import('../api/duplicate-detection.ts').ExistingEventData>,
   expandRecurringWeeks: number
 ): Promise<BatchProcessResult> {
   const result: BatchProcessResult = {

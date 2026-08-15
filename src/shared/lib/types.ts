@@ -1,5 +1,5 @@
-import type { SearchEventsInput } from '@/features/chat/api/tools/search-events'
-import type { EventFacets } from '@/shared/lib/search-facets'
+import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
+import type { EventFacets } from '#shared/lib/search-facets.ts'
 
 // All 48 official CABA neighborhoods
 export const NEIGHBORHOODS = [

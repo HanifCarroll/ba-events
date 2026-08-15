@@ -4,9 +4,9 @@ import {
   getOutboxItemByClientMessageId,
   listDueOutboxItems,
   updateOutboxItem,
-} from '@/shared/lib/db/local-outbox'
-import type { LocalOutboxItem } from '@/shared/lib/db/local-outbox'
-import type { MessageAttachedData, MessageExecutionStep, MessageRole } from '@/shared/lib/types'
+} from '#shared/lib/db/local-outbox.ts'
+import type { LocalOutboxItem } from '#shared/lib/db/local-outbox.ts'
+import type { MessageAttachedData, MessageExecutionStep, MessageRole } from '#shared/lib/types.ts'
 
 const BASE_RETRY_DELAY_MS = 2_000
 const MAX_RETRY_DELAY_MS = 120_000

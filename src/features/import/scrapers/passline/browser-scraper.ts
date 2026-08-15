@@ -12,10 +12,10 @@
  * datacenter-IP blocking. This mirrors the Meetup scraper's Browserbase path.
  */
 import { chromium } from 'playwright'
-import { createBrowserbaseSession } from '@/shared/lib/browser'
-import { logger } from '@/shared/lib/logger'
-import { PASSLINE_API_URL } from './api'
-import type { PasslineEvent } from './api'
+import { createBrowserbaseSession } from '#shared/lib/browser/index.ts'
+import { logger } from '#shared/lib/logger.ts'
+import { PASSLINE_API_URL } from './api.ts'
+import type { PasslineEvent } from './api.ts'
 
 /**
  * Fetch all Passline events for Argentina from inside a Browserbase session.

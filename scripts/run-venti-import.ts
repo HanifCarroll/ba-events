@@ -3,8 +3,8 @@
  *
  * Run with: bun scripts/run-venti-import.ts
  */
-import { processVentiImport } from '../src/features/import/core/venti'
-import { createServiceRoleClient } from '../src/trigger/utils/db-client'
+import { processVentiImport } from '#features/import/core/venti.ts'
+import { createServiceRoleClient } from '#trigger/utils/db-client.ts'
 
 async function main() {
   console.log('[run-venti-import] Starting Venti import...')

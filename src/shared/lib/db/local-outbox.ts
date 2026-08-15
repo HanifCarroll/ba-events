@@ -3,7 +3,7 @@ import type {
   MessageAttachedData,
   MessageExecutionStep,
   MessageRole,
-} from '@/shared/lib/types'
+} from '#shared/lib/types.ts'
 
 export type LocalOutboxStatus = 'pending' | 'failed'
 

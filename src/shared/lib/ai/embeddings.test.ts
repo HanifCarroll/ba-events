@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from './embeddings'
+import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from './embeddings.ts'
 
 describe('buildSearchDocument', () => {
   it('includes title, descriptions, categories, facets, venue, neighborhood, free/paid, and event type for a venued event', () => {

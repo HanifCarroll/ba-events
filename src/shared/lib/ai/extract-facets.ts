@@ -15,8 +15,8 @@
  *     event must never fail the whole enrichment run.
  */
 import { generateObject } from 'ai'
-import { logger } from '@/shared/lib/logger'
-import { textModel, NO_THINKING } from './providers'
+import { logger } from '#shared/lib/logger.ts'
+import { textModel, NO_THINKING } from './providers.ts'
 import {
   EVENT_TYPE_VALUES,
   GENRE_VALUES,
@@ -26,7 +26,7 @@ import {
   SETTING_VALUES,
   eventFacetsSchema,
   type EventFacets,
-} from '@/shared/lib/search-facets'
+} from '#shared/lib/search-facets.ts'
 
 export interface ExtractFacetsInput {
   name: string

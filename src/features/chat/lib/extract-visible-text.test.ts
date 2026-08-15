@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   extractVisibleTextFromStepTexts,
   extractVisibleTextFromUIMessageParts,
-} from './extract-visible-text'
+} from './extract-visible-text.ts'
 
 describe('extractVisibleTextFromStepTexts', () => {
   it('returns single-step text unchanged', () => {

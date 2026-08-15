@@ -6,8 +6,8 @@
  */
 
 import { z } from 'zod'
-import { defineTool } from './types'
-import { saveEventForUser } from '../user-tools'
+import { defineTool } from './types.ts'
+import { saveEventForUser } from '../user-tools.server.ts'
 
 // ============================================================================
 // INPUT SCHEMA

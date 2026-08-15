@@ -5,8 +5,8 @@
  * Extracted for reuse in both server functions and Trigger.dev jobs.
  */
 import { z } from 'zod'
-import { mapToNeighborhood } from '@/shared/lib/utils/neighborhood'
-import type { Neighborhood } from '@/shared/lib/types'
+import { mapToNeighborhood } from '#shared/lib/utils/neighborhood.ts'
+import type { Neighborhood } from '#shared/lib/types.ts'
 
 // ============================================================================
 // NOMINATIM API RESPONSE VALIDATION

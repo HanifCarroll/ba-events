@@ -5,8 +5,8 @@
  */
 
 import { z } from 'zod'
-import { defineTool } from './types'
-import { getEventWithVenue, getVenueById } from '@/shared/lib/db/client'
+import { defineTool } from './types.ts'
+import { getEventWithVenue, getVenueById } from '#shared/lib/db/client.server.ts'
 
 // ============================================================================
 // INPUT SCHEMA

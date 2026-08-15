@@ -5,8 +5,8 @@
  * API discovered via browser network inspection - no official documentation.
  */
 
-import { isBlockedByEntries } from '../shared'
-import type { ImportBlocklistEntry } from '@/shared/lib/types'
+import { isBlockedByEntries } from '../shared/blocklist-filter.ts'
+import type { ImportBlocklistEntry } from '#shared/lib/types.ts'
 
 // Passline event structure from their API
 export interface PasslineEvent {

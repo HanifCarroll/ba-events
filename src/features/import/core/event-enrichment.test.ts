@@ -13,12 +13,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 
-vi.mock('@/shared/lib/ai/embeddings', () => ({
+vi.mock('#shared/lib/ai/embeddings.ts', () => ({
   generateEventEmbedding: vi.fn(),
 }))
 
-import { enrichSingleEvent } from './event-enrichment'
-import { generateEventEmbedding } from '@/shared/lib/ai/embeddings'
+import { enrichSingleEvent } from './event-enrichment.ts'
+import { generateEventEmbedding } from '#shared/lib/ai/embeddings.ts'
 
 const generateEventEmbeddingMock = generateEventEmbedding as unknown as Mock
 

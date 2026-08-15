@@ -18,6 +18,8 @@
  * recognition only behind a flag, off by default).
  */
 
+import { browser } from '$app/env'
+
 export interface SpeechRecognitionAlternativeLike {
   transcript: string
 }
@@ -68,7 +70,7 @@ interface SpeechRecognitionStaticLike {
 export type RecognitionMode = 'on-device' | 'cloud' | 'unsupported'
 
 function getCtor(): SpeechRecognitionCtor | null {
-  if (typeof window === 'undefined') return null
+  if (!browser) return null
   const w = window as unknown as {
     SpeechRecognition?: SpeechRecognitionCtor
     webkitSpeechRecognition?: SpeechRecognitionCtor

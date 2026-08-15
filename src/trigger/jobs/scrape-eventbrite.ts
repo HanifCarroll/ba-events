@@ -4,8 +4,8 @@
  * Imports events from Eventbrite JSON-LD page.
  */
 import { task } from '@trigger.dev/sdk/v3'
-import { createServiceRoleClient } from '../utils/db-client'
-import { processEventbriteImport, type EventbriteImportResult } from '@/features/import/core/eventbrite'
+import { createServiceRoleClient } from '../utils/db-client.ts'
+import { processEventbriteImport, type EventbriteImportResult } from '#features/import/core/eventbrite.ts'
 
 export interface EventbriteJobPayload {
   daysAhead?: number

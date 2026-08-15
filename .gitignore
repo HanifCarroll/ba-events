@@ -1,27 +1,36 @@
 node_modules
-.DS_Store
-dist
-dist-ssr
-*.local
-count.txt
-.env
-.nitro
-.tanstack
-.wrangler
+
+# Output
 .output
-.vinxi
-todos.json
+.vercel
 .netlify
+.wrangler
+/.svelte-kit
+/build
+/dist
+/tmp
+/.tanstack
+/.trigger
 
-# MCP server config (contains API keys)
+# Server logs and agent scratch
+logs/
+.pi-tasks/
 .mcp.json
-
-# Supabase temp files
 supabase/.temp/
 
-# Server logs
-logs/
+# OS
+.DS_Store
+Thumbs.db
 
-# Agent scratch (not product)
-.pi-tasks/
-.impeccable/
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+# Paraglide
+src/lib/paraglide
+project.inlang/cache/

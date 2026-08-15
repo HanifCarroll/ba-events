@@ -1,4 +1,4 @@
-import type { MessageRole } from '@/shared/lib/types'
+import type { MessageRole } from '#shared/lib/types.ts'
 
 type OrderedMessageLike = {
   turn_index?: number | null

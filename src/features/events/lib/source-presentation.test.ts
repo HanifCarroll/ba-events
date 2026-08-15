@@ -4,7 +4,7 @@ import {
   getExternalEventUrl,
   getExternalLinkType,
   getSourceLabel,
-} from './source-presentation'
+} from './source-presentation.ts'
 
 describe('getExternalActionKind', () => {
   it('classifies ticketed sources as tickets', () => {

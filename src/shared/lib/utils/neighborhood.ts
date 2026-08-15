@@ -4,8 +4,8 @@
  * Pure functions for mapping scraped neighborhood strings to valid Neighborhood types.
  * This file has no TanStack Start dependencies so it can be imported by Trigger.dev jobs.
  */
-import type { Neighborhood } from '@/shared/lib/types'
-import { NEIGHBORHOODS } from '@/shared/lib/types'
+import type { Neighborhood } from '#shared/lib/types.ts'
+import { NEIGHBORHOODS } from '#shared/lib/types.ts'
 
 /**
  * Map scraped neighborhood string to valid Neighborhood type

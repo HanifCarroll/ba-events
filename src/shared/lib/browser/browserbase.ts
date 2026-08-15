@@ -7,7 +7,7 @@
  */
 
 import { Browserbase } from '@browserbasehq/sdk'
-import { BROWSER_VIEWPORT } from './constants'
+import { BROWSER_VIEWPORT } from './constants.ts'
 
 /**
  * Check if Browserbase is available (BROWSERBASE_API_KEY is set)

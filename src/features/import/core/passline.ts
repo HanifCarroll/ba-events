@@ -11,22 +11,22 @@ import {
   filterCABAEvents,
   filterByDateRange,
   type PasslineEvent,
-} from '../scrapers/passline/api'
-import { fetchPasslineEventsWithBrowserbase } from '../scrapers/passline/browser-scraper'
-import { isBrowserbaseAvailable } from '@/shared/lib/browser'
-import { transformPasslineEvent } from '../scrapers/passline/transformer'
-import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
+} from '../scrapers/passline/api.ts'
+import { fetchPasslineEventsWithBrowserbase } from '../scrapers/passline/browser-scraper.ts'
+import { isBrowserbaseAvailable } from '#shared/lib/browser/browserbase.ts'
+import { transformPasslineEvent } from '../scrapers/passline/transformer.ts'
+import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
-} from '@/shared/lib/ai/embeddings'
-import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
-import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
-import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
-import { settleVenues, getVenueIdFromResults, getVenueNeighborhoodFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
-import { delay } from './nominatim'
-import type { EventInsert } from '@/shared/lib/types'
-import { logger } from '@/shared/lib/logger'
+} from '#shared/lib/ai/embeddings.ts'
+import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { checkDuplicateEventsWithData } from '../api/duplicate-detection.ts'
+import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
+import { settleVenues, getVenueIdFromResults, getVenueNeighborhoodFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
+import { delay } from './nominatim.ts'
+import type { EventInsert } from '#shared/lib/types.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 // ============================================================================
 // TYPES

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { guardCoverageClaims, type CoverageInfo } from './coverage-guard'
+import { guardCoverageClaims, type CoverageInfo } from './coverage-guard.ts'
 
 // True horizon is well beyond the bounded search window in all these cases.
 const coverage: CoverageInfo = {

@@ -27,8 +27,8 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { buildFixtureFile } from '../evals/search/corpus/fixture'
-import type { CorpusEvent, CorpusFile } from '../evals/search/corpus/types'
+import { buildFixtureFile } from '../evals/search/corpus/fixture.ts'
+import type { CorpusEvent, CorpusFile } from '../evals/search/corpus/types.ts'
 
 const OUT_PATH = new URL('../evals/search/corpus/events.json', import.meta.url).pathname
 
@@ -49,7 +49,7 @@ const forceFixture = args.includes('--fixture')
 // ---------------------------------------------------------------------------
 async function dumpLive(limitN: number): Promise<CorpusFile | null> {
   try {
-    const { getSupabase } = await import('@/shared/lib/db/client')
+    const { getSupabase } = await import('#shared/lib/db/client.server.ts')
     const supabase = getSupabase()
     const now = new Date().toISOString()
     const { data, error } = await supabase

@@ -11,15 +11,15 @@
  *
  * Usage: bun evals/concierge/run.ts
  */
-import { runConcierge, type AgentRun } from '../lib/run-agent'
+import { runConcierge, type AgentRun } from '../lib/run-agent.ts'
 import {
   detectLanguage,
   mapWithConcurrency,
   mentionsReturnedEvent,
   voiceViolations,
-} from '../lib/checks'
-import { printReport, type CaseResult } from '../lib/report'
-import { CONCIERGE_CASES, type ConciergeCase } from './cases'
+} from '../lib/checks.ts'
+import { printReport, type CaseResult } from '../lib/report.ts'
+import { CONCIERGE_CASES, type ConciergeCase } from './cases.ts'
 
 const SEARCH_LIKE_TOOLS = ['search_events']
 const DEFAULT_LIMIT: Record<string, number> = {

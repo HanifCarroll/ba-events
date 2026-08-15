@@ -6,7 +6,7 @@ vi.mock('ai', () => ({
 }))
 
 import { generateObject } from 'ai'
-import { guardForOffTopic } from './topic-guard'
+import { guardForOffTopic } from './topic-guard.ts'
 
 // The mocked module export IS the mock fn; cast only for typing
 // (bun test does not provide vi.mocked).

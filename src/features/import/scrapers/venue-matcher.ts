@@ -5,10 +5,10 @@
  * Uses a three-tier approach: exact match, fuzzy match, no match.
  */
 
-import { getSupabase } from '@/shared/lib/db/client'
+import { getSupabase } from '#shared/lib/db/client.server.ts'
 
 const supabase = getSupabase()
-import type { Venue } from '@/shared/lib/types'
+import type { Venue } from '#shared/lib/types.ts'
 
 export interface VenueMatchResult {
   venue: Venue | null

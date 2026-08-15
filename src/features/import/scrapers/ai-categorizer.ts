@@ -8,8 +8,8 @@
 
 import { generateObject, NoObjectGeneratedError } from 'ai'
 import { z } from 'zod'
-import type { Category } from '@/shared/lib/types'
-import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
+import type { Category } from '#shared/lib/types.ts'
+import { NO_THINKING, textModel } from '#shared/lib/ai/providers.ts'
 
 // The 6 simplified categories
 const CATEGORY_SCHEMA = z.object({

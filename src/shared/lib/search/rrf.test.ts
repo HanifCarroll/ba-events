@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rrfFuse } from './rrf'
+import { rrfFuse } from './rrf.ts'
 
 interface Item {
   id: string

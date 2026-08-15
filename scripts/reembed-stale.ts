@@ -23,9 +23,9 @@
  *
  * On an OpenAI error this stops and reports — it does not retry forever.
  */
-import { getSupabase } from '@/shared/lib/db/client'
-import { getSupabaseServiceRoleClient } from '@/shared/lib/db/service'
-import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '@/shared/lib/ai/embeddings'
+import { getSupabase } from '#shared/lib/db/client.server.ts'
+import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
+import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 
 const DELAY_MS = 150
 

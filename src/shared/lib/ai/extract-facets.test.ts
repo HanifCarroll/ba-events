@@ -6,13 +6,13 @@ vi.mock('ai', () => ({
 }))
 
 import { generateObject } from 'ai'
-import { extractEventFacets } from './extract-facets'
+import { extractEventFacets } from './extract-facets.ts'
 import {
   eventFacetsSchema,
   parseEventFacets,
   isEmptyFacets,
   EMPTY_FACETS,
-} from '@/shared/lib/search-facets'
+} from '#shared/lib/search-facets.ts'
 
 const generateObjectMock = generateObject as unknown as Mock
 

@@ -5,9 +5,9 @@
  * Server-side fetch is blocked by Cloudflare.
  */
 
-import type { PasslineEvent, DateRange } from './api'
-import { isBlockedByEntries } from '../shared'
-import type { ImportBlocklistEntry } from '@/shared/lib/types'
+import type { PasslineEvent, DateRange } from './api.ts'
+import { isBlockedByEntries } from '../shared/blocklist-filter.ts'
+import type { ImportBlocklistEntry } from '#shared/lib/types.ts'
 
 const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
 

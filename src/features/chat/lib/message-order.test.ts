@@ -3,7 +3,7 @@ import {
   compareMessagesByTurnOrderAsc,
   pickLatestMessageByTurnOrder,
   sortMessagesByTurnOrderAsc,
-} from './message-order'
+} from './message-order.ts'
 
 describe('message turn ordering helpers', () => {
   it('orders user before assistant within the same turn', () => {

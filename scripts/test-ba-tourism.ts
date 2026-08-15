@@ -1,4 +1,4 @@
-import { scrapeBATourismEventsWithBrowser } from '../src/features/import/scrapers/ba-tourism'
+import { scrapeBATourismEventsWithBrowser } from '#features/import/scrapers/ba-tourism/browser-scraper.ts'
 
 async function test() {
   console.log('Starting BA Tourism browser scraper test...')

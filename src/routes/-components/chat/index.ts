@@ -1,5 +1,0 @@
-export { ChatContainer } from './ChatContainer'
-export { ChatInput } from './ChatInput'
-export { ChatMessage } from './ChatMessage'
-export { MessageList } from './MessageList'
-export { SuggestedPrompts } from './SuggestedPrompts'

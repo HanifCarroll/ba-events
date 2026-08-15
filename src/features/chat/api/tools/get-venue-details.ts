@@ -6,9 +6,9 @@
  */
 
 import { z } from 'zod'
-import { defineTool } from './types'
-import { getVenueById, searchVenuesByName } from '@/shared/lib/db/client'
-import { formatVenueForClaude } from './utils'
+import { defineTool } from './types.ts'
+import { getVenueById, searchVenuesByName } from '#shared/lib/db/client.server.ts'
+import { formatVenueForClaude } from './utils.ts'
 
 // ============================================================================
 // INPUT SCHEMA

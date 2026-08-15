@@ -4,8 +4,8 @@ import {
   computeDiffs,
   extractExternalIds,
   type ExistingEventData,
-} from './duplicate-detection'
-import type { EventInsert } from '@/shared/lib/types'
+} from './duplicate-detection.ts'
+import type { EventInsert } from '#shared/lib/types.ts'
 
 const EXISTING: ExistingEventData = {
   id: 'existing-uuid',

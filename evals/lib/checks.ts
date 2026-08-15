@@ -5,10 +5,10 @@
  */
 
 // Keep in sync with META_NARRATION_PATTERN in src/routes/api/chat.ts
+// (single source of truth now lives in #features/chat/api/stream-helpers.ts).
 // Refined to genuine tool-work narration only — dropped the ambient "looking
 // for", "I'll look", "I'm trying" matches that flagged natural phrasing.
-const META_NARRATION_PATTERN =
-  /\b(?:let me\s+(?:check|search|look|try)|search(?:ing now| again)|still getting|different angle)\b/i
+import { META_NARRATION_PATTERN } from '#features/chat/api/stream-helpers.ts'
 
 const EXCLAIM_OPENER =
   /^(great|perfect|absolutely|awesome|amazing|excellent|love it|genial|perfecto|buen[ií]simo|excelente|me encanta)[\s!,]/i

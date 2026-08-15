@@ -14,11 +14,11 @@
  * - enrichmentBatch processes 50 events, then chains to itself if more remain
  */
 import { schedules, task, tasks, metadata } from '@trigger.dev/sdk/v3'
-import { createServiceRoleClient } from '../utils/db-client'
+import { createServiceRoleClient } from '../utils/db-client.ts'
 import {
   enrichEvents,
   type EnrichmentStats,
-} from '@/features/import/core/event-enrichment'
+} from '#features/import/core/event-enrichment.ts'
 
 // Smaller batch size - each event takes 15-30 seconds due to API calls
 const BATCH_SIZE = 50

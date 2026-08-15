@@ -7,8 +7,8 @@
  * Use this with browser automation tools (like Puppeteer, Playwright, or Chrome MCP).
  */
 
-import type { BATourismEvent, Coordinates, WeekContext } from './types'
-import { parseWeekContext } from './date-parser'
+import type { BATourismEvent, Coordinates, WeekContext } from './types.ts'
+import { parseWeekContext } from './date-parser.ts'
 
 /**
  * Extract coordinates from Google Maps URL

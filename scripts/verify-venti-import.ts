@@ -3,7 +3,7 @@
  *
  * Run with: bun scripts/verify-venti-import.ts
  */
-import { createServiceRoleClient } from '../src/trigger/utils/db-client'
+import { createServiceRoleClient } from '#trigger/utils/db-client.ts'
 
 async function main() {
   const client = createServiceRoleClient()

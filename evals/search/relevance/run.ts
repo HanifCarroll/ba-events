@@ -35,11 +35,11 @@
 import { readFileSync } from 'node:fs'
 import { addDays, getDay, startOfDay } from 'date-fns'
 import { fromZonedTime, toZonedTime } from 'date-fns-tz'
-import { canonicalizeSearchIntent, type EventSearchIntent } from '@/features/chat/api/tools/search-intent'
-import { normalizeText } from '@/shared/lib/utils/normalize-text'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
-import type { CorpusEvent, CorpusFile } from '../corpus/types'
-import { RELEVANCE_QUERIES, RELEVANCE_NOW_BA, type SeedQuery, type SeedMust } from './queries'
+import { canonicalizeSearchIntent, type EventSearchIntent } from '#features/chat/api/tools/search-intent.ts'
+import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
+import type { CorpusEvent, CorpusFile } from '../corpus/types.ts'
+import { RELEVANCE_QUERIES, RELEVANCE_NOW_BA, type SeedQuery, type SeedMust } from './queries.ts'
 
 const NDCG_K = 5
 const RECALL_K = 50

@@ -5,8 +5,8 @@
  * located within Buenos Aires / CABA boundaries.
  */
 
-import type { MeetupEvent } from '../scrapers/meetup/types'
-import { logger } from '@/shared/lib/logger'
+import type { MeetupEvent } from '../scrapers/meetup/types.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 // ============================================================================
 // BUENOS AIRES BOUNDING BOX

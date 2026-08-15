@@ -11,17 +11,17 @@
  */
 
 import { tool } from 'ai'
-import type { UserToolContext } from './user-tools'
+import type { UserToolContext } from './user-tools.server.ts'
 
 // Import all tool definitions and their input schemas
-import { searchEventsInputSchema, searchEventsTool } from './tools/search-events'
-import { getVenueDetailsInputSchema, getVenueDetailsTool } from './tools/get-venue-details'
-import { saveEventInputSchema, saveEventTool } from './tools/save-event'
-import { unsaveEventInputSchema, unsaveEventTool } from './tools/unsave-event'
-import { listSavedEventsInputSchema, listSavedEventsTool } from './tools/list-saved-events'
-import { getEventDetailsInputSchema, getEventDetailsTool } from './tools/get-event-details'
-import { checkEventSavedInputSchema, checkEventSavedTool } from './tools/check-event-saved'
-import { getDirectionsInputSchema, getDirectionsTool } from './tools/get-directions'
+import { searchEventsInputSchema, searchEventsTool } from './tools/search-events.ts'
+import { getVenueDetailsInputSchema, getVenueDetailsTool } from './tools/get-venue-details.ts'
+import { saveEventInputSchema, saveEventTool } from './tools/save-event.ts'
+import { unsaveEventInputSchema, unsaveEventTool } from './tools/unsave-event.ts'
+import { listSavedEventsInputSchema, listSavedEventsTool } from './tools/list-saved-events.ts'
+import { getEventDetailsInputSchema, getEventDetailsTool } from './tools/get-event-details.ts'
+import { checkEventSavedInputSchema, checkEventSavedTool } from './tools/check-event-saved.ts'
+import { getDirectionsInputSchema, getDirectionsTool } from './tools/get-directions.ts'
 
 /**
  * Create all tools with the given user context and locale.

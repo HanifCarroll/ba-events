@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { PasslineEvent } from './api'
-import { transformPasslineEvent } from './transformer'
+import type { PasslineEvent } from './api.ts'
+import { transformPasslineEvent } from './transformer.ts'
 
 const baseEvent: PasslineEvent = {
   id: '1',

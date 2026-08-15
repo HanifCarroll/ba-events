@@ -5,4 +5,4 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export { debounce } from './debounce'
+export { debounce } from './debounce.ts'

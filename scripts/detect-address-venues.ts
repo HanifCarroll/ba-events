@@ -1,11 +1,10 @@
 // scripts/detect-address-venues.ts
 import { createClient } from '@supabase/supabase-js'
-import { config } from 'dotenv'
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import { NO_THINKING, textModel } from '../src/shared/lib/ai/providers'
+import { NO_THINKING, textModel } from '#shared/lib/ai/providers.ts'
 
-config({ path: '.env' })
+// .env is auto-loaded by Bun (dotenv removed: not a dependency in this repo; see migration evidence T1)
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 

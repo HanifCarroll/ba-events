@@ -1,253 +1,169 @@
 import { createBrowserClient as createSupabaseBrowserClient } from '@supabase/ssr'
-import { SupabaseClient } from '@supabase/supabase-js'
-import { useState, useEffect, useCallback } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
-import type { Profile } from '@/shared/lib/types'
+import type { SupabaseClient, Session } from '@supabase/supabase-js'
+import { browser, dev } from '$app/env'
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$app/env/public'
+import type { Profile } from '#shared/lib/types.ts'
 
 // Browser-side Supabase client for auth
 // Note: These are public keys, safe to expose to browser
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 type BrowserClient = SupabaseClient
 
 let browserClient: BrowserClient | null = null
 
 function createBrowserAuthClient(): BrowserClient {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
-  }
-  const client = createSupabaseBrowserClient(supabaseUrl, supabaseAnonKey)
+	if (!PUBLIC_SUPABASE_URL || !PUBLIC_SUPABASE_ANON_KEY) {
+		throw new Error('Missing PUBLIC_SUPABASE_URL or PUBLIC_SUPABASE_ANON_KEY')
+	}
+	const client = createSupabaseBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY)
 
-  // Expose on window for debugging in development
-  if (import.meta.env.DEV && typeof window !== 'undefined') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).__supabase = client
-  }
+	// Expose on window for debugging in development
+	if (browser && dev) {
+		;(window as unknown as Record<string, unknown>).__supabase = client
+	}
 
-  return client
+	return client
 }
 
 export function getSupabaseBrowserClient(): BrowserClient {
-  if (typeof window === 'undefined') {
-    throw new Error('getSupabaseBrowserClient should only be called on the client')
-  }
+	if (!browser) {
+		throw new Error('getSupabaseBrowserClient should only be called on the client')
+	}
 
-  if (!browserClient) {
-    browserClient = createBrowserAuthClient()
-  }
+	if (!browserClient) {
+		browserClient = createBrowserAuthClient()
+	}
 
-  return browserClient
+	return browserClient
 }
 
 // Reset the browser client (useful when connection goes stale)
 export function resetSupabaseBrowserClient() {
-  if (typeof window === 'undefined') return
-  browserClient = null
+	if (!browser) return
+	browserClient = null
 }
 
 // Wrapper that adds timeout and retry logic for stale connections
 async function withConnectionRetry<T>(
-  operation: (client: BrowserClient) => Promise<T>,
-  timeoutMs = 10000
+	operation: (client: BrowserClient) => Promise<T>,
+	timeoutMs = 10000
 ): Promise<T> {
-  const attempt = async (isRetry = false): Promise<T> => {
-    if (isRetry) {
-      console.warn('Supabase connection appears stale, resetting client...')
-      resetSupabaseBrowserClient()
-    }
+	const attempt = async (isRetry = false): Promise<T> => {
+		if (isRetry) {
+			console.warn('Supabase connection appears stale, resetting client...')
+			resetSupabaseBrowserClient()
+		}
 
-    const client = getSupabaseBrowserClient()
+		const client = getSupabaseBrowserClient()
 
-    // Race the operation against a timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), timeoutMs)
-    })
+		// Race the operation against a timeout
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			setTimeout(() => reject(new Error('Connection timeout')), timeoutMs)
+		})
 
-    try {
-      return await Promise.race([operation(client), timeoutPromise])
-    } catch (err) {
-      if (!isRetry && err instanceof Error && err.message === 'Connection timeout') {
-        return attempt(true)
-      }
-      throw err
-    }
-  }
+		try {
+			return await Promise.race([operation(client), timeoutPromise])
+		} catch (err) {
+			if (!isRetry && err instanceof Error && err.message === 'Connection timeout') {
+				return attempt(true)
+			}
+			throw err
+		}
+	}
 
-  return attempt()
+	return attempt()
 }
 
 // Sign in with magic link (sends email)
 export async function signInWithMagicLink(email: string) {
-  const client = getSupabaseBrowserClient()
-  const { data, error } = await client.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
-    },
-  })
+	const client = getSupabaseBrowserClient()
+	const { data, error } = await client.auth.signInWithOtp({
+		email,
+		options: {
+			emailRedirectTo: `${window.location.origin}/auth/callback`
+		}
+	})
 
-  if (error) {
-    throw error
-  }
+	if (error) {
+		throw error
+	}
 
-  return data
+	return data
 }
 
 // Sign out
 export async function signOut() {
-  const client = getSupabaseBrowserClient()
-  const { error } = await client.auth.signOut()
+	const client = getSupabaseBrowserClient()
+	const { error } = await client.auth.signOut()
 
-  if (error) {
-    throw error
-  }
+	if (error) {
+		throw error
+	}
 }
 
 // Get current session
-export async function getSession() {
-  return withConnectionRetry(async (client) => {
-    const { data: { session }, error } = await client.auth.getSession()
+export async function getSession(): Promise<Session | null> {
+	return withConnectionRetry(async (client) => {
+		const {
+			data: { session },
+			error
+		} = await client.auth.getSession()
 
-    if (error) {
-      throw error
-    }
+		if (error) {
+			throw error
+		}
 
-    return session
-  })
+		return session
+	})
 }
 
 // Fetch user profile from database
 export async function fetchProfile(userId: string): Promise<Profile | null> {
-  return withConnectionRetry(async (client) => {
-    const { data, error } = await client
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
+	return withConnectionRetry(async (client) => {
+		const { data, error } = await client
+			.from('profiles')
+			.select('*')
+			.eq('id', userId)
+			.single()
 
-    if (error) {
-      console.error('Error fetching profile:', error)
-      return null
-    }
+		if (error) {
+			console.error('Error fetching profile:', error)
+			return null
+		}
 
-    return data as Profile
-  })
+		return data as Profile
+	})
 }
 
 // Exchange auth code for session (for magic link callback)
 export async function exchangeCodeForSession(code: string) {
-  const client = getSupabaseBrowserClient()
-  const { data, error } = await client.auth.exchangeCodeForSession(code)
+	const client = getSupabaseBrowserClient()
+	const { data, error } = await client.auth.exchangeCodeForSession(code)
 
-  if (error) {
-    throw error
-  }
+	if (error) {
+		throw error
+	}
 
-  return data
-}
-
-// Hook for auth state with profile
-export function useAuth() {
-  const [session, setSession] = useState<Session | null>(null)
-  const [user, setUser] = useState<User | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const loadProfile = useCallback(async (userId: string) => {
-    try {
-      const profileData = await fetchProfile(userId)
-      setProfile(profileData)
-    } catch (err) {
-      console.error('Error loading profile:', err)
-    }
-  }, [])
-
-  useEffect(() => {
-    // Only run on client
-    if (typeof window === 'undefined') {
-      setLoading(false)
-      return
-    }
-
-    let subscription: { unsubscribe: () => void } | null = null
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
-
-    const initAuth = async () => {
-      // Safety timeout - ensure loading is set to false even if something hangs
-      timeoutId = setTimeout(() => {
-        console.warn('Auth initialization timeout - forcing loading to false')
-        setLoading(false)
-      }, 5000)
-
-      try {
-        const client = getSupabaseBrowserClient()
-
-        // Get initial session
-        const { data: { session }, error } = await client.auth.getSession()
-        if (error) {
-          console.error('Error getting session:', error)
-        }
-
-        setSession(session)
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await loadProfile(session.user.id)
-        }
-
-        // Listen for auth changes
-        const { data } = client.auth.onAuthStateChange(
-          async (_event, session) => {
-            setSession(session)
-            setUser(session?.user ?? null)
-            if (session?.user) {
-              await loadProfile(session.user.id)
-            } else {
-              setProfile(null)
-            }
-          }
-        )
-        subscription = data.subscription
-      } catch (err) {
-        console.error('Error initializing auth:', err)
-      } finally {
-        if (timeoutId) {
-          clearTimeout(timeoutId)
-        }
-        setLoading(false)
-      }
-    }
-
-    initAuth()
-
-    return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-      }
-      subscription?.unsubscribe()
-    }
-  }, [loadProfile])
-
-  const isAdmin = profile?.role === 'admin'
-
-  return { session, user, profile, loading, isAdmin }
+	return data
 }
 
 // Update display name in profiles table
 export async function updateDisplayName(name: string): Promise<void> {
-  const client = getSupabaseBrowserClient()
+	const client = getSupabaseBrowserClient()
 
-  const { data: { user } } = await client.auth.getUser()
-  if (!user) {
-    throw new Error('Must be logged in to update profile')
-  }
+	const {
+		data: { user }
+	} = await client.auth.getUser()
+	if (!user) {
+		throw new Error('Must be logged in to update profile')
+	}
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (client.from('profiles') as any)
-    .update({ display_name: name, updated_at: new Date().toISOString() })
-    .eq('id', user.id)
+	const { error } = await client
+		.from('profiles')
+		.update({ display_name: name, updated_at: new Date().toISOString() })
+		.eq('id', user.id)
 
-  if (error) {
-    throw error
-  }
+	if (error) {
+		throw error
+	}
 }

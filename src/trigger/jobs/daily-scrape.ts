@@ -6,16 +6,16 @@
  */
 import { schedules, tasks, runs } from '@trigger.dev/sdk/v3'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createServiceRoleClient } from '../utils/db-client'
+import { createServiceRoleClient } from '../utils/db-client.ts'
 
 // Import task types for type-safe triggering
-import type { scrapeEventbrite } from './scrape-eventbrite'
-import type { scrapeBATourism } from './scrape-ba-tourism'
-import type { scrapeMeetup } from './scrape-meetup'
-import type { scrapeLuma } from './scrape-luma'
-import type { scrapePassline } from './scrape-passline'
-import type { scrapeVenti } from './scrape-venti'
-import type { enrichEventsJob } from './enrich-events'
+import type { scrapeEventbrite } from './scrape-eventbrite.ts'
+import type { scrapeBATourism } from './scrape-ba-tourism.ts'
+import type { scrapeMeetup } from './scrape-meetup.ts'
+import type { scrapeLuma } from './scrape-luma.ts'
+import type { scrapePassline } from './scrape-passline.ts'
+import type { scrapeVenti } from './scrape-venti.ts'
+import type { enrichEventsJob } from './enrich-events.ts'
 
 // Source job IDs
 const SOURCE_JOBS = [

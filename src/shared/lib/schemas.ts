@@ -3,7 +3,7 @@ import {
   CATEGORIES,
   EVENT_STATUSES,
   NEIGHBORHOODS,
-} from './types'
+} from './types.ts'
 
 // =============================================================================
 // Primitive schemas with proper transforms

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveMessageTimestamp } from './message-timestamps'
+import { resolveMessageTimestamp } from './message-timestamps.ts'
 
 describe('resolveMessageTimestamp', () => {
   it('uses the persisted creation time when present', () => {

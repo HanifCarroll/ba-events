@@ -12,14 +12,14 @@ import type { Page, Browser } from 'playwright'
 import type {
   PasslineDescriptionEnrichProgress,
   PasslineDescriptionEnrichComplete,
-} from '@/shared/lib/streaming-types'
+} from '#shared/lib/streaming-types.ts'
 import {
   isCloudflareChallenge,
   BROWSER_USER_AGENT,
   BROWSER_VIEWPORT,
   STEALTH_LAUNCH_ARGS,
   DEFAULT_LOCALE,
-} from '@/shared/lib/browser'
+} from '#shared/lib/browser/index.ts'
 
 export interface PasslineDescriptionResult {
   id: string

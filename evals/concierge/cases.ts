@@ -7,7 +7,7 @@
  * short list vs max 5), tool selection, filter arguments, scope refusals.
  * Voice, locale, and grounding checks apply globally in run.ts.
  */
-import type { AgentRun } from '../lib/run-agent'
+import type { AgentRun } from '../lib/run-agent.ts'
 
 export interface ConciergeExpectation {
   /** at least one of these tools must be called */

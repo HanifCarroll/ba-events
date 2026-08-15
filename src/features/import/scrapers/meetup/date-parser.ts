@@ -9,8 +9,8 @@
 
 import { parse, parseISO, isValid, addWeeks, format } from 'date-fns'
 import { fromZonedTime, toZonedTime } from 'date-fns-tz'
-import type { ParsedMeetupDateTime } from './types'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import type { ParsedMeetupDateTime } from './types.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 /**
  * Day name to day of week mapping (0 = Sunday, 6 = Saturday)

@@ -1,14 +1,14 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import type { Mock } from 'vitest'
-import { searchVenuesByName } from '@/shared/lib/db/client'
-import { baToUTC } from './utils'
+import { searchVenuesByName } from '#shared/lib/db/client.server.ts'
+import { baToUTC } from './utils.ts'
 import {
   canonicalizeSearchIntent,
   mustToFilters,
   applyPreferAvoid,
-} from './search-intent'
+} from './search-intent.ts'
 
-vi.mock('@/shared/lib/db/client', () => ({
+vi.mock('#shared/lib/db/client.server.ts', () => ({
   searchVenuesByName: vi.fn(),
 }))
 

@@ -4,7 +4,7 @@
  * Single source for the concierge system prompt.
  */
 
-import { conciergePrompt } from './concierge'
+import { conciergePrompt } from './concierge.ts'
 
 export interface SystemPromptUserContext {
   isAuthenticated: boolean

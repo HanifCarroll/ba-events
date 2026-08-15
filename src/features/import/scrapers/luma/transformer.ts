@@ -5,15 +5,15 @@
  */
 
 import { toZonedTime } from 'date-fns-tz'
-import type { EventInsert } from '@/shared/lib/types'
-import type { LumaEvent, LumaVenueInfo } from './types'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import type { EventInsert } from '#shared/lib/types.ts'
+import type { LumaEvent, LumaVenueInfo } from './types.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import {
   normalizeTitle,
   normalizeDescription,
   normalizeUrl,
   normalizeImageUrl,
-} from '../shared/normalization'
+} from '../shared/normalization.ts'
 
 /**
  * Extract venue name from Luma event

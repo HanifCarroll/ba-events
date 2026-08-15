@@ -1,20 +1,21 @@
+import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import type { LocalOutboxItem } from '@/shared/lib/db/local-outbox'
+import type { LocalOutboxItem } from '#shared/lib/db/local-outbox.ts'
 import {
   flushMessagePersistenceOutbox,
   MAX_OUTBOX_ATTEMPTS,
   persistMessageWithOutbox,
-} from './persistence-outbox'
+} from './persistence-outbox.ts'
 import {
   addOutboxItem,
   deleteOutboxItem,
   getOutboxItemByClientMessageId,
   listDueOutboxItems,
   updateOutboxItem,
-} from '@/shared/lib/db/local-outbox'
+} from '#shared/lib/db/local-outbox.ts'
 
-vi.mock('@/shared/lib/db/local-outbox', () => ({
+vi.mock('#shared/lib/db/local-outbox.ts', () => ({
   addOutboxItem: vi.fn(),
   deleteOutboxItem: vi.fn(),
   getOutboxItemByClientMessageId: vi.fn(),

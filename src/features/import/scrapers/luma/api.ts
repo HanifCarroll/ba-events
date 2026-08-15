@@ -7,7 +7,7 @@
  * No API key required - uses publicly available data.
  */
 
-import type { LumaEvent, LumaVenue, LumaHost } from './types'
+import type { LumaEvent, LumaVenue, LumaHost } from './types.ts'
 
 const LUMA_BUENOS_AIRES_URL = 'https://luma.com/buenos-aires'
 

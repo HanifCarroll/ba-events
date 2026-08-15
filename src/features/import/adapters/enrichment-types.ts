@@ -11,7 +11,7 @@
  * - Declarative config for routing decisions
  */
 
-import type { ImportSource } from './types'
+import type { ImportSource } from './types.ts'
 
 /**
  * Venue information extracted from event pages

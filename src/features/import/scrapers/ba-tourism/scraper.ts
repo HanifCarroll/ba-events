@@ -5,8 +5,8 @@
  */
 
 import * as cheerio from 'cheerio'
-import type { BATourismEvent, Coordinates, WeekContext } from './types'
-import { parseWeekContext } from './date-parser'
+import type { BATourismEvent, Coordinates, WeekContext } from './types.ts'
+import { parseWeekContext } from './date-parser.ts'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
 

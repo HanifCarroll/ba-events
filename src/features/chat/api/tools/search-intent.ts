@@ -17,12 +17,12 @@
  */
 
 import { getDay, addDays, startOfDay, setHours } from 'date-fns'
-import type { Neighborhood, EventFilters } from '@/shared/lib/types'
-import { NEIGHBORHOODS } from '@/shared/lib/types'
-import { searchVenuesByName } from '@/shared/lib/db/client'
-import { normalizeText } from '@/shared/lib/utils/normalize-text'
-import { GENRE_VALUES } from '@/shared/lib/search-facets'
-import { baToUTC } from './utils'
+import type { Neighborhood, EventFilters } from '#shared/lib/types.ts'
+import { NEIGHBORHOODS } from '#shared/lib/types.ts'
+import { searchVenuesByName } from '#shared/lib/db/client.server.ts'
+import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
+import { GENRE_VALUES } from '#shared/lib/search-facets.ts'
+import { baToUTC } from './utils.ts'
 
 // ============================================================================
 // INTENT CONTRACTS (plan §2.1)

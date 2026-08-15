@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getDistinctVenueAddress } from './location-presentation'
+import { getDistinctVenueAddress } from './location-presentation.ts'
 
 describe('getDistinctVenueAddress', () => {
   it('hides an address that duplicates the venue name', () => {

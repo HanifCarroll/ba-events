@@ -1,10 +1,10 @@
 import { embed } from 'ai'
 import { createHash } from 'crypto'
-import { getSupabase } from '../db/client'
-import type { Event, EventWithVenue, Neighborhood } from '../types'
-import { embeddingModel } from './providers'
-import type { EventFacets } from '@/shared/lib/search-facets'
-import { EMPTY_FACETS } from '@/shared/lib/search-facets'
+import { getSupabase } from '#shared/lib/db/client.server.ts'
+import type { Event, EventWithVenue, Neighborhood } from '../types.ts'
+import { embeddingModel } from './providers.ts'
+import type { EventFacets } from '#shared/lib/search-facets.ts'
+import { EMPTY_FACETS } from '#shared/lib/search-facets.ts'
 
 // Version of the search-document schema this code produces. Bump it whenever
 // `buildSearchDocument` changes in a way that changes the embedding/text, then

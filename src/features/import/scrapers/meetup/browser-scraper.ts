@@ -10,12 +10,12 @@
 
 import type { Browser, Page } from 'playwright'
 import { parseISO, eachDayOfInterval } from 'date-fns'
-import type { MeetupEvent, MeetupGraphQLEvent } from './types'
-import { extractRecurrencePattern, isRecurringEvent } from './date-parser'
-import { isBrowserbaseAvailable, createBrowserbaseSession } from '@/shared/lib/browser'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
-import { sanitizeError } from '@/shared/lib/security'
-import { logger } from '@/shared/lib/logger'
+import type { MeetupEvent, MeetupGraphQLEvent } from './types.ts'
+import { extractRecurrencePattern, isRecurringEvent } from './date-parser.ts'
+import { isBrowserbaseAvailable, createBrowserbaseSession } from '#shared/lib/browser/index.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
+import { sanitizeError } from '#shared/lib/security.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
 

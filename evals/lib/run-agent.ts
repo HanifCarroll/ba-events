@@ -7,11 +7,11 @@
  * anonymous user context (read-only search tools only).
  */
 import { generateText, stepCountIs } from 'ai'
-import { getSystemPrompt } from '@/features/chat/api/prompts'
-import { createTools } from '@/features/chat/api/tools-ai-sdk'
-import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
-import type { UserToolContext } from '@/features/chat/api/user-tools'
-import type { ChatEventPayload } from '@/shared/lib/types'
+import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
+import { createTools } from '#features/chat/api/tools-ai-sdk.ts'
+import { NO_THINKING, textModel } from '#shared/lib/ai/providers.ts'
+import type { UserToolContext } from '#features/chat/api/user-tools.server.ts'
+import type { ChatEventPayload } from '#shared/lib/types.ts'
 
 const MAX_STEPS = 3 // mirrors src/routes/api/chat.ts
 

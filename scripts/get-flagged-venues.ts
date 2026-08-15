@@ -1,8 +1,7 @@
 // scripts/get-flagged-venues.ts
 import { createClient } from '@supabase/supabase-js'
-import { config } from 'dotenv'
 
-config({ path: '.env' })
+// .env is auto-loaded by Bun (dotenv removed: not a dependency in this repo; see migration evidence T1)
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 

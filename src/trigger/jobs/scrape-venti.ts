@@ -5,8 +5,8 @@
  * Plain server-side fetches — no browser required.
  */
 import { task } from '@trigger.dev/sdk/v3'
-import { createServiceRoleClient } from '../utils/db-client'
-import { processVentiImport, type VentiImportResult } from '@/features/import/core/venti'
+import { createServiceRoleClient } from '../utils/db-client.ts'
+import { processVentiImport, type VentiImportResult } from '#features/import/core/venti.ts'
 
 export interface VentiJobPayload {
   scrapeRunId?: string | null

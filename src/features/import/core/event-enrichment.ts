@@ -5,28 +5,26 @@
  * for automated scraping jobs. Uses existing AI functions from shared lib.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Neighborhood } from '@/shared/lib/types'
+import type { Neighborhood } from '#shared/lib/types.ts'
 import {
   enrichEventFull,
   extractVenueFromUrl,
   detectLanguage,
   translateText,
-} from '@/shared/lib/ai/enrichment'
-import { HttpError } from '@/shared/lib/errors'
-import {
-  getEnrichmentAdapter,
-  hasServerEnrichment,
-} from '@/features/import/adapters/enrichment'
-import type { ImportSource } from '@/features/import/adapters/types'
+} from '#shared/lib/ai/enrichment.ts'
+import { HttpError } from '#shared/lib/errors.ts'
+import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
+import { hasServerEnrichment } from '#features/import/adapters/enrichment-types.ts'
+import type { ImportSource } from '#features/import/adapters/types.ts'
 import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
-} from '@/shared/lib/ai/embeddings'
-import { extractEventFacets } from '@/shared/lib/ai/extract-facets'
-import type { EventFacets } from '@/shared/lib/search-facets'
-import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
-import { settleVenue, type VenueSettlementResult } from './venue-settlement'
-import { delay } from './nominatim'
+} from '#shared/lib/ai/embeddings.ts'
+import { extractEventFacets } from '#shared/lib/ai/extract-facets.ts'
+import type { EventFacets } from '#shared/lib/search-facets.ts'
+import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { settleVenue, type VenueSettlementResult } from './venue-settlement.ts'
+import { delay } from './nominatim.ts'
 
 // ============================================================================
 // TYPES
@@ -146,7 +144,7 @@ export type ExtractFacetsFn = (
     description_en?: string | null
     categories?: string[] | null
   }
-) => Promise<import('@/shared/lib/search-facets').EventFacets>
+) => Promise<import('#shared/lib/search-facets.ts').EventFacets>
 
 export interface EnrichSingleEventOptions {
   extractFacets?: ExtractFacetsFn

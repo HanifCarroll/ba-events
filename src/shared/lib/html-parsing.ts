@@ -8,7 +8,7 @@
  * serverless compatibility.
  */
 
-import { HttpError } from './errors'
+import { HttpError } from './errors.ts'
 
 /**
  * Extract all JSON-LD structured data from HTML

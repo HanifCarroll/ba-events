@@ -6,7 +6,7 @@
  * In browser: writes to console only
  *
  * Usage:
- *   import { logger } from '@/shared/lib/logger'
+ *   import { logger } from '#shared/lib/logger.ts'
  *   logger.info('Server started')
  *   logger.error('Something failed', { userId: 123 })
  *

@@ -4,7 +4,7 @@
  * Filters out "advertisement events" based on blocklist entries from the database.
  */
 
-import type { ImportBlocklistEntry } from '@/shared/lib/types'
+import type { ImportBlocklistEntry } from '#shared/lib/types.ts'
 
 /**
  * Check if an event matches any blocklist entries

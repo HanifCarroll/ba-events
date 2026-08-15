@@ -17,8 +17,8 @@ import type {
   EnrichmentAdapter,
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
-} from '../enrichment-types'
-import { enrichEventFull } from '@/shared/lib/ai/enrichment'
+} from '../enrichment-types.ts'
+import { enrichEventFull } from '#shared/lib/ai/enrichment.ts'
 
 export const baTourismEnrichmentAdapter: EnrichmentAdapter = {
   source: 'ba-tourism',

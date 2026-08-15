@@ -3,13 +3,13 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSupabase } from './client'
+import { getSupabase } from './client.server.ts'
 import type {
   ImportBlocklistEntry,
   ImportBlocklistEntryInsert,
   ImportBlocklistEntryUpdate,
   BlocklistSource,
-} from '../types'
+} from '../types.ts'
 
 /**
  * Get all blocklist entries, optionally filtered by source

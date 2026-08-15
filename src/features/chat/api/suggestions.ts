@@ -5,8 +5,8 @@
  * Used to help users refine their event searches.
  */
 
-import type { EventWithVenue, RefinementSuggestion } from '@/shared/lib/types'
-import type { SearchEventsInput } from './tools/search-events'
+import type { EventWithVenue, RefinementSuggestion } from '#shared/lib/types.ts'
+import type { SearchEventsInput } from './tools/search-events.ts'
 
 /**
  * Context for generating suggestions

@@ -1,6 +1,6 @@
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import { createOpenAI } from '@ai-sdk/openai'
-import { AI_BASE_URL, AI_MODEL, EMBEDDING_MODEL } from './constants'
+import { AI_BASE_URL, AI_MODEL, EMBEDDING_MODEL } from './constants.ts'
 
 /**
  * AI SDK providers.

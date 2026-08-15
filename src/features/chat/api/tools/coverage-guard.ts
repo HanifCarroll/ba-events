@@ -15,7 +15,7 @@
  */
 
 import { formatInTimeZone } from 'date-fns-tz'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 export interface CoverageInfo {
   /** UTC ISO upper bound of the window the model actually searched (null = unbounded). */
@@ -32,7 +32,7 @@ export interface CoverageInfo {
 // Spanish mirrors (es is the base locale): "no hay eventos después/más allá",
 // "solo hay/cubre/llega hasta", "es lo más lejos que puedo llegar".
 const CEILING_CLAIM_RE =
-  /\b(?:no|nothing|not|don['’]t|doesn['’]t|can['’]t|cannot|won['’]t)\b[^.!?]{0,90}\b(?:after|past|beyond|further|farther|ahead)\b|\b(?:only|just)\s+(?:covers|reaches|shows|lists|runs|goes|has|includes|spans|gets)\b|\bcoverage\s+(?:ends|stops|covers|reaches|runs|goes)\b|\b(?:furthest|farthest)\b[^.!?]{0,60}\b(?:i['’]?ve got|i (?:can|could|have)|that['’]?s (?:it|all|about|the extent))\b|\bno hay (?:eventos|nada|más)\b[^.!?]{0,60}\b(?:después|más allá|más adelante|más lejos|pasado)\b|\b(?:solo|sólo|solamente)\s+(?:hay|cubre|alcanza|llega|incluye|muestra|tiene|tengo|existen)\b|\bes lo más (?:lejos|largo|adelante) que\b|\bhasta ahí (?:llega|llego|termina|termina el|se termina)\b/i
+  /\b(?:no|nothing|not|don['’]t|doesn['’]t|can['’]t|cannot|won['’]t)\b[^.!?]{0,90}\b(?:after|past|beyond|further|farther|ahead)\b|\b(?:only|just)\s+(?:covers|reaches|shows|lists|runs|goes|has|includes|spans|gets)\b|\bcoverage\s+(?:ends|stops|covers|reaches|runs|goes)\b|\b(?:furthest|farthest)\b[^.!?]{0,60}\b(?:i['’]?ve got|i (?:can|could|have)|that['’]s (?:it|all|about|the extent))\b|\bno hay (?:eventos|nada|más)\b[^.!?]{0,60}\b(?:después|más allá|más adelante|más lejos|pasado)\b|\b(?:solo|sólo|solamente)\s+(?:hay|cubre|alcanza|llega|incluye|muestra|tiene|tengo|existen)\b|\bes lo más (?:lejos|largo|adelante) que\b|\bhasta ahí (?:llega|llego|termina|termina el|se termina)\b/i
 
 function buildNote(locale: 'en' | 'es', horizon: string, searched: string): string {
   if (locale === 'es') {

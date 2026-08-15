@@ -1,19 +1,29 @@
-import { getSupabaseBrowserClient } from '@/features/auth/api/client'
-import type { SavedEventWithDetails } from '@/shared/lib/types'
+import { browser } from '$app/env'
+import { getSupabaseBrowserClient } from '#features/auth/api/client.ts'
+import type { Event, Venue, SavedEventWithDetails } from '#shared/lib/types.ts'
 
 function dispatchSavedEventsChanged() {
-  if (typeof window === 'undefined') return
+  if (!browser) return
   window.dispatchEvent(new CustomEvent('event-save-changed'))
 }
 
-function mapSavedEventRow(item: any): SavedEventWithDetails | null {
+interface SavedEventRow {
+  created_at: string
+  events: (Event & { venues: Venue | null }) | null
+}
+
+interface SavedEventIdRow {
+  event_id: string
+}
+
+function mapSavedEventRow(item: SavedEventRow): SavedEventWithDetails | null {
   if (!item.events) return null
   const event = item.events
   return {
     ...event,
-    venue_name: event.venues?.name || null,
-    venue_address: event.venues?.address || null,
-    venue_neighborhood: event.venues?.neighborhood || null,
+    venue_name: event.venues?.name ?? null,
+    venue_address: event.venues?.address ?? null,
+    venue_neighborhood: event.venues?.neighborhood ?? null,
     saved_at: item.created_at,
   }
 }
@@ -28,7 +38,7 @@ export async function getSavedEvents(): Promise<SavedEventWithDetails[]> {
   }
 
   // Query saved_events joined with events and venues
-  const { data, error } = await (client
+  const { data, error } = await client
     .from('saved_events')
     .select(`
       id,
@@ -40,15 +50,19 @@ export async function getSavedEvents(): Promise<SavedEventWithDetails[]> {
       )
     `)
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false }) as any)
+    .order('created_at', { ascending: false })
 
   if (error) {
     console.error('Error fetching saved events:', error)
     return []
   }
 
-  // Transform the nested data to match EventWithVenue type
-  return (data || [])
+  // Transform the nested data to match EventWithVenue type.
+  // The untyped Supabase client infers the `events (...)` join as `any[]`, but
+  // `saved_events.event_id -> events.id` is a many-to-one FK, so PostgREST
+  // actually returns a single nested object (or null) here.
+  const rows = (data ?? []) as unknown as SavedEventRow[]
+  return rows
     .map(mapSavedEventRow)
     .filter((event: SavedEventWithDetails | null): event is SavedEventWithDetails => event !== null)
 }
@@ -62,17 +76,17 @@ export async function getSavedEventIds(): Promise<Set<string>> {
     return new Set()
   }
 
-  const { data, error } = await (client
+  const { data, error } = await client
     .from('saved_events')
     .select('event_id')
-    .eq('user_id', user.id) as any)
+    .eq('user_id', user.id)
 
   if (error) {
     console.error('Error fetching saved event IDs:', error)
     return new Set()
   }
 
-  return new Set((data || []).map((item: any) => item.event_id))
+  return new Set((data || []).map((item: SavedEventIdRow) => item.event_id))
 }
 
 // Save an event
@@ -84,8 +98,7 @@ export async function saveEvent(eventId: string): Promise<boolean> {
     throw new Error('Must be logged in to save events')
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (client.from('saved_events') as any).insert({
+  const result = await client.from('saved_events').insert({
     user_id: user.id,
     event_id: eventId,
   })
@@ -114,11 +127,11 @@ export async function unsaveEvent(eventId: string): Promise<boolean> {
     throw new Error('Must be logged in to unsave events')
   }
 
-  const { error } = await (client
+  const { error } = await client
     .from('saved_events')
     .delete()
     .eq('user_id', user.id)
-    .eq('event_id', eventId) as any)
+    .eq('event_id', eventId)
 
   if (error) {
     console.error('Error unsaving event:', error)
@@ -138,12 +151,12 @@ export async function isEventSaved(eventId: string): Promise<boolean> {
     return false
   }
 
-  const { data, error } = await (client
+  const { data, error } = await client
     .from('saved_events')
     .select('id')
     .eq('user_id', user.id)
     .eq('event_id', eventId)
-    .maybeSingle() as any)
+    .maybeSingle()
 
   if (error) {
     console.error('Error checking saved event:', error)

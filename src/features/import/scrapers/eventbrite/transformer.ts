@@ -5,15 +5,15 @@
  */
 
 import { fromZonedTime } from 'date-fns-tz'
-import type { EventInsert } from '@/shared/lib/types'
-import { extractEventId, type EventbriteEvent } from './api'
+import type { EventInsert } from '#shared/lib/types.ts'
+import { extractEventId, type EventbriteEvent } from './api.ts'
 import {
   normalizeTitle,
   normalizeDescription,
   normalizeUrl,
   normalizeImageUrl,
-} from '../shared/normalization'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+} from '../shared/normalization.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 /**
  * Convert Eventbrite date (YYYY-MM-DD) to ISO datetime string

@@ -5,9 +5,9 @@ import {
   getFinalVisibleTextFromSteps,
   sanitizeFinalAssistantText,
   type StepResultLike,
-} from '@/routes/api/chat'
-import { ensureChatEventPayload } from './tools/utils'
-import type { ChatEventPayload } from '@/shared/lib/types'
+} from '#features/chat/api/stream-helpers.ts'
+import { ensureChatEventPayload } from './tools/utils.ts'
+import type { ChatEventPayload } from '#shared/lib/types.ts'
 
 function event(id: string, name: string): ChatEventPayload {
   return { id, name } as ChatEventPayload

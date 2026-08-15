@@ -5,7 +5,7 @@
  *
  * Usage: bun evals/search/inspect-events.ts
  */
-import { searchEventsWithFilters } from '@/shared/lib/db/client'
+import { searchEventsWithFilters } from '#shared/lib/db/client.server.ts'
 
 const events = await searchEventsWithFilters({} as never, 60)
 

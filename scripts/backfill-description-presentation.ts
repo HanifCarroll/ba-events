@@ -7,12 +7,11 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { config } from 'dotenv'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
+import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 
-config({ path: '.env' })
+// .env is auto-loaded by Bun (dotenv removed: not a dependency in this repo; see migration evidence T1)
 
 const BATCH_SIZE = Number(process.env.BACKFILL_BATCH_SIZE ?? 25)
 const SCAN_LIMIT = Number(process.env.BACKFILL_SCAN_LIMIT ?? 400)

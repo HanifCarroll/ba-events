@@ -1,7 +1,7 @@
-import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category } from '@/shared/lib/types'
-import { CATEGORIES, NEIGHBORHOODS } from '@/shared/lib/types'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
-import * as m from '@/paraglide/messages'
+import type { ChatMessage, EventWithVenue, EventFilters, Neighborhood, Category } from '#shared/lib/types.ts'
+import { CATEGORIES, NEIGHBORHOODS } from '#shared/lib/types.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
+import * as m from '#paraglide/messages.js'
 
 // Generate unique ID for messages
 export function generateId(): string {

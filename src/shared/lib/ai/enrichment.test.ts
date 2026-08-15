@@ -7,7 +7,7 @@ vi.mock('ai', () => ({
 }))
 
 import { generateObject } from 'ai'
-import { generateDescriptionSummary } from './enrichment'
+import { generateDescriptionSummary } from './enrichment.ts'
 
 // The mocked module export IS the mock fn; cast only for typing
 // (bun test does not provide vi.mocked).

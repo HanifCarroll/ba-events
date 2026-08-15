@@ -4,7 +4,7 @@ import {
   buildFallbackSummary,
   pickDescriptionSummary,
   pickDisplayDescription,
-} from './description-presentation'
+} from './description-presentation.ts'
 
 describe('description presentation helpers', () => {
   it('preserves paragraph boundaries while cleaning html', () => {

@@ -6,15 +6,15 @@
  */
 
 import { fromZonedTime } from 'date-fns-tz'
-import type { EventInsert } from '@/shared/lib/types'
-import type { PasslineEvent } from './api'
+import type { EventInsert } from '#shared/lib/types.ts'
+import type { PasslineEvent } from './api.ts'
 import {
   normalizeTitle,
   normalizePrice,
   normalizeUrl,
   normalizeImageUrl,
-} from '../shared/normalization'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+} from '../shared/normalization.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 /**
  * Combine date and time strings into ISO datetime string

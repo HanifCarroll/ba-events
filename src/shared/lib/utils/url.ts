@@ -1,14 +1,11 @@
+import { browser } from '$app/env'
+
 export function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '')
 }
 
 export function getSiteUrl(): string {
-  const envUrl = import.meta.env.VITE_PUBLIC_SITE_URL
-  if (envUrl && envUrl.trim().length > 0) {
-    return normalizeBaseUrl(envUrl.trim())
-  }
-
-  if (typeof window !== 'undefined' && window.location?.origin) {
+  if (browser && window.location?.origin) {
     return window.location.origin
   }
 

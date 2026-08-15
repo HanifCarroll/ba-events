@@ -11,8 +11,8 @@
 import {
   findJsonLdByType,
   fetchHtml,
-} from '@/shared/lib/html-parsing'
-import { logger } from '@/shared/lib/logger'
+} from '#shared/lib/html-parsing.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 export interface MeetupVenueInfo {
   name: string

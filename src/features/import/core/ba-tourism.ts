@@ -10,24 +10,24 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   scrapeBATourismEventsWithBrowser,
-} from '../scrapers/ba-tourism/browser-scraper'
+} from '../scrapers/ba-tourism/browser-scraper.ts'
 import {
   transformBATourismEvent,
   getUniqueVenueNames,
-} from '../scrapers/ba-tourism/transformer'
-import type { BATourismEvent } from '../scrapers/ba-tourism/types'
-import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
+} from '../scrapers/ba-tourism/transformer.ts'
+import type { BATourismEvent } from '../scrapers/ba-tourism/types.ts'
+import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
-} from '@/shared/lib/ai/embeddings'
-import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
-import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
-import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
-import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
-import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement'
-import { delay } from './nominatim'
-import type { EventInsert } from '@/shared/lib/types'
+} from '#shared/lib/ai/embeddings.ts'
+import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { checkDuplicateEventsWithData } from '../api/duplicate-detection.ts'
+import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
+import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
+import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
+import { delay } from './nominatim.ts'
+import type { EventInsert } from '#shared/lib/types.ts'
 
 // ============================================================================
 // TYPES

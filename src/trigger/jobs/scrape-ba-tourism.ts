@@ -7,8 +7,8 @@
  * Note: BA Tourism only shows events for the current week.
  */
 import { task } from '@trigger.dev/sdk/v3'
-import { createServiceRoleClient } from '../utils/db-client'
-import { processBATourismImport, type BATourismImportResult } from '@/features/import/core/ba-tourism'
+import { createServiceRoleClient } from '../utils/db-client.ts'
+import { processBATourismImport, type BATourismImportResult } from '#features/import/core/ba-tourism.ts'
 
 export interface BATourismJobPayload {
   scrapeRunId?: string | null

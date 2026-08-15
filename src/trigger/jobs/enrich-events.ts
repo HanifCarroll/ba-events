@@ -7,12 +7,12 @@
  * - Updates embeddings
  */
 import { task, metadata } from '@trigger.dev/sdk/v3'
-import { createServiceRoleClient } from '../utils/db-client'
+import { createServiceRoleClient } from '../utils/db-client.ts'
 import {
   enrichEvents,
   getEventsNeedingEnrichment,
   type EnrichmentStats,
-} from '@/features/import/core/event-enrichment'
+} from '#features/import/core/event-enrichment.ts'
 
 export interface EnrichEventsJobPayload {
   /** Limit events to enrich per run (default: 50) */

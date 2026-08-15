@@ -4,8 +4,8 @@
  * Imports events from Luma Buenos Aires page.
  */
 import { task } from '@trigger.dev/sdk/v3'
-import { createServiceRoleClient } from '../utils/db-client'
-import { processLumaImport, type LumaImportResult } from '@/features/import/core/luma'
+import { createServiceRoleClient } from '../utils/db-client.ts'
+import { processLumaImport, type LumaImportResult } from '#features/import/core/luma.ts'
 
 export interface LumaJobPayload {
   scrapeRunId?: string | null

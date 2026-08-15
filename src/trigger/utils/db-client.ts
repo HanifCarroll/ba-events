@@ -5,7 +5,7 @@
  * This bypasses Row Level Security (RLS) for admin operations.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { nodeRealtimeOptions } from '@/shared/lib/db/node-realtime'
+import { nodeRealtimeOptions } from '#shared/lib/db/node-realtime.ts'
 
 let serviceRoleClient: SupabaseClient | null = null
 

@@ -8,10 +8,10 @@
  *
  * Usage: bun evals/topic-guard/run.ts
  */
-import { guardForOffTopic } from '@/features/chat/api/topic-guard'
-import { mapWithConcurrency } from '../lib/checks'
-import { printReport, type CaseResult } from '../lib/report'
-import { TOPIC_GUARD_CASES } from './cases'
+import { guardForOffTopic } from '#features/chat/api/topic-guard.ts'
+import { mapWithConcurrency } from '../lib/checks.ts'
+import { printReport, type CaseResult } from '../lib/report.ts'
+import { TOPIC_GUARD_CASES } from './cases.ts'
 
 console.log(`Running ${TOPIC_GUARD_CASES.length} topic-guard cases...`)
 const results = await mapWithConcurrency(TOPIC_GUARD_CASES, 6, async (c): Promise<CaseResult> => {

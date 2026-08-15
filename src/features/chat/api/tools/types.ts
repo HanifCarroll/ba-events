@@ -6,8 +6,8 @@
  */
 
 import { z } from 'zod'
-import type { UserToolContext } from '../user-tools'
-import type { ChatEventPayload } from '@/shared/lib/types'
+import type { UserToolContext } from '../user-tools.server.ts'
+import type { ChatEventPayload } from '#shared/lib/types.ts'
 
 // ============================================================================
 // CONTEXT TYPES

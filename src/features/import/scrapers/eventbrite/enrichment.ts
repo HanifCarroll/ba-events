@@ -10,9 +10,9 @@
 
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import type { Category } from '@/shared/lib/types'
-import { NO_THINKING, textModel } from '@/shared/lib/ai/providers'
-import { HttpError } from '@/shared/lib/errors'
+import type { Category } from '#shared/lib/types.ts'
+import { NO_THINKING, textModel } from '#shared/lib/ai/providers.ts'
+import { HttpError } from '#shared/lib/errors.ts'
 
 // ---------------------------------------------------------------------------
 // Price Extraction

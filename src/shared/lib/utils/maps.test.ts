@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldOpenMapsInSameTab } from './maps'
+import { shouldOpenMapsInSameTab } from './maps.ts'
 
 describe('shouldOpenMapsInSameTab', () => {
   it('uses the current tab for mobile browsers', () => {

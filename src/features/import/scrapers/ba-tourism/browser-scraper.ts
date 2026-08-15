@@ -9,9 +9,9 @@
  * playwright build extension in production).
  */
 
-import type { BATourismEvent, WeekContext } from './types'
-import { parseWeekContext } from './date-parser'
-import { logger } from '@/shared/lib/logger'
+import type { BATourismEvent, WeekContext } from './types.ts'
+import { parseWeekContext } from './date-parser.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-esta-semana'
 

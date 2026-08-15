@@ -16,9 +16,9 @@ import type {
   EnrichmentAdapter,
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
-} from '../enrichment-types'
-import { fetchMeetupDescriptionFromDetailPage } from '../../scrapers/meetup/description-enrichment'
-import { fetchMeetupVenueFromUrl } from '../../scrapers/meetup/venue-enrichment'
+} from '../enrichment-types.ts'
+import { fetchMeetupDescriptionFromDetailPage } from '../../scrapers/meetup/description-enrichment.ts'
+import { fetchMeetupVenueFromUrl } from '../../scrapers/meetup/venue-enrichment.ts'
 
 export const meetupEnrichmentAdapter: EnrichmentAdapter = {
   source: 'meetup',

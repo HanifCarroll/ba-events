@@ -8,13 +8,13 @@
  */
 
 import { z } from 'zod'
-import { defineTool } from './types'
-import { searchEventsWithFilters, countEventsWithFilters, getFurthestEventDate, hybridEventSearch, getEventsHappeningNow } from '@/shared/lib/db/client'
-import { CATEGORIES } from '@/shared/lib/types'
-import { getNowInBA, ensureChatEventPayloads, formatEventsToolResult } from './utils'
-import { canonicalizeSearchIntent, applyPreferAvoid, type EventSearchMust } from './search-intent'
-import { surpriseRank, applyDiversity } from './quality-diversity'
-import { logger } from '@/shared/lib/logger'
+import { defineTool } from './types.ts'
+import { searchEventsWithFilters, countEventsWithFilters, getFurthestEventDate, hybridEventSearch, getEventsHappeningNow } from '#shared/lib/db/client.server.ts'
+import { CATEGORIES } from '#shared/lib/types.ts'
+import { getNowInBA, ensureChatEventPayloads, formatEventsToolResult } from './utils.ts'
+import { canonicalizeSearchIntent, applyPreferAvoid, type EventSearchMust } from './search-intent.ts'
+import { surpriseRank, applyDiversity } from './quality-diversity.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 // Display vs. candidate limits. The display limit is how many events the user
 // asked to see (clamped to 1..5). Candidate limit is how many the retrieval

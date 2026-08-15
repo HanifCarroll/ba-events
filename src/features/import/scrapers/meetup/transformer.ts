@@ -5,16 +5,16 @@
  * Categories are assigned via AI during import.
  */
 
-import type { EventInsert } from '@/shared/lib/types'
-import type { MeetupEvent } from './types'
-import { parseMeetupDate, expandRecurringEventWithIds } from './date-parser'
+import type { EventInsert } from '#shared/lib/types.ts'
+import type { MeetupEvent } from './types.ts'
+import { parseMeetupDate, expandRecurringEventWithIds } from './date-parser.ts'
 import {
   normalizeTitle,
   normalizeDescription,
   normalizeUrl,
   normalizePrice,
   normalizeImageUrl,
-} from '../shared/normalization'
+} from '../shared/normalization.ts'
 
 /**
  * Generate unique external ID for a Meetup event

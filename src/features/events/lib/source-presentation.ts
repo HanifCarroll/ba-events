@@ -1,4 +1,4 @@
-import * as m from '@/paraglide/messages'
+import * as m from '#paraglide/messages.js'
 
 interface ExternalEventLike {
   ticket_url: string | null

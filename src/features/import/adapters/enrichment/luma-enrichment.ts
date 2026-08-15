@@ -16,9 +16,9 @@ import type {
   EnrichmentAdapter,
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
-} from '../enrichment-types'
-import { fetchLumaDescriptionFromDetailPage } from '../../scrapers/luma/description-enrichment'
-import { fetchLumaVenueFromUrl } from '../../scrapers/luma/venue-enrichment'
+} from '../enrichment-types.ts'
+import { fetchLumaDescriptionFromDetailPage } from '../../scrapers/luma/description-enrichment.ts'
+import { fetchLumaVenueFromUrl } from '../../scrapers/luma/venue-enrichment.ts'
 
 export const lumaEnrichmentAdapter: EnrichmentAdapter = {
   source: 'luma',

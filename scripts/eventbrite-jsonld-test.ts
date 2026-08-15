@@ -7,7 +7,7 @@
  * Run with: bun scripts/eventbrite-jsonld-test.ts
  */
 
-import type { EventInsert } from '../src/shared/lib/types'
+import type { EventInsert } from '#shared/lib/types.ts'
 
 // JSON-LD Event structure from Eventbrite
 interface EventbriteJsonLdEvent {

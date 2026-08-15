@@ -10,10 +10,9 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { config } from 'dotenv'
 
 // Load environment variables
-config({ path: '.env' })
+// .env is auto-loaded by Bun (dotenv removed: not a dependency in this repo; see migration evidence T1)
 
 const DRY_RUN = process.env.DRY_RUN !== 'false'
 

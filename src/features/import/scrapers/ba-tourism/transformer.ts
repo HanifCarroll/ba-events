@@ -5,15 +5,15 @@
  * Categories are assigned via AI during import.
  */
 
-import type { EventInsert } from '@/shared/lib/types'
-import type { BATourismEvent, WeekContext } from './types'
-import { parseSpanishDate, toISODateTime, getEndTimeISO } from './date-parser'
+import type { EventInsert } from '#shared/lib/types.ts'
+import type { BATourismEvent, WeekContext } from './types.ts'
+import { parseSpanishDate, toISODateTime, getEndTimeISO } from './date-parser.ts'
 import {
   normalizeTitle,
   normalizeDescription,
   normalizeUrl,
   generateExternalId,
-} from '../shared/normalization'
+} from '../shared/normalization.ts'
 
 /**
  * Transform a single BA Tourism event into EventInsert entries

@@ -10,21 +10,21 @@
  * festival/gastronomy), and prices from the per-event availability endpoint.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fetchVentiEvents, filterCABAEvents, fetchVentiAvailabilityBatch } from '../scrapers/venti/api'
-import { transformVentiEvent, getAllVenueInfo, getVenueName } from '../scrapers/venti/transformer'
-import type { VentiEvent } from '../scrapers/venti/types'
-import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer'
+import { fetchVentiEvents, filterCABAEvents, fetchVentiAvailabilityBatch } from '../scrapers/venti/api.ts'
+import { transformVentiEvent, getAllVenueInfo, getVenueName } from '../scrapers/venti/transformer.ts'
+import type { VentiEvent } from '../scrapers/venti/types.ts'
+import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
-} from '@/shared/lib/ai/embeddings'
-import { buildDescriptionPresentationFields } from '@/features/events/lib/description-presentation.server'
-import { checkDuplicateEventsWithData } from '../api/duplicate-detection'
-import { getBlocklistEntries } from '@/shared/lib/db/blocklist'
-import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter'
-import { settleVenues, getVenueIdFromResults, getVenueNeighborhoodFromResults, type VenueSettlementInput } from './venue-settlement'
-import { delay } from './nominatim'
-import type { EventInsert, ImportBlocklistEntry } from '@/shared/lib/types'
+} from '#shared/lib/ai/embeddings.ts'
+import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { checkDuplicateEventsWithData } from '../api/duplicate-detection.ts'
+import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
+import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
+import { settleVenues, getVenueIdFromResults, getVenueNeighborhoodFromResults, type VenueSettlementInput } from './venue-settlement.ts'
+import { delay } from './nominatim.ts'
+import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
 
 // ============================================================================
 // TYPES

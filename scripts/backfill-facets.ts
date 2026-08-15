@@ -16,10 +16,10 @@
  * Requires SUPABASE_URL + SUPABASE_ANON_KEY in the environment. This script is
  * NOT executed by any unit test (no DeepSeek calls in tests).
  */
-import { logger } from '@/shared/lib/logger'
-import { getSupabase } from '@/shared/lib/db/client'
-import { extractEventFacets } from '@/shared/lib/ai/extract-facets'
-import { isEmptyFacets, type EventFacets } from '@/shared/lib/search-facets'
+import { logger } from '#shared/lib/logger.ts'
+import { getSupabase } from '#shared/lib/db/client.server.ts'
+import { extractEventFacets } from '#shared/lib/ai/extract-facets.ts'
+import { isEmptyFacets, type EventFacets } from '#shared/lib/search-facets.ts'
 
 const DELAY_MS = 200
 

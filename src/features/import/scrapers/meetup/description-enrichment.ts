@@ -14,12 +14,12 @@
 import type {
   DescriptionEnrichProgress,
   DescriptionEnrichComplete,
-} from '@/shared/lib/streaming-types'
+} from '#shared/lib/streaming-types.ts'
 import {
   extractNextData,
   getNestedValue,
   fetchHtml,
-} from '@/shared/lib/html-parsing'
+} from '#shared/lib/html-parsing.ts'
 
 export interface MeetupDescriptionResult {
   eventId: string

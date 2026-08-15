@@ -40,8 +40,8 @@ exercised by `tonight-late` (its target "after hours" event starts Fri 01:00 BA,
 
 import { addDays, getDay, setHours, startOfDay } from 'date-fns'
 import { fromZonedTime } from 'date-fns-tz'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
-import type { SearchEventsInput } from '@/features/chat/api/tools/search-events'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
+import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
 
 /** Pinned eval "now" in Buenos Aires wall clock. Thu 2026-08-13 12:00. */
 export const RELEVANCE_NOW_BA = new Date(2026, 7, 13, 12, 0, 0)

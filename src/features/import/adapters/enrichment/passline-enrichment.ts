@@ -11,11 +11,11 @@
  * Language: Always Spanish (es)
  */
 
-import type { EnrichmentAdapter, DescriptionExtractionResult, VenueExtractionResult } from '../enrichment-types'
+import type { EnrichmentAdapter, DescriptionExtractionResult, VenueExtractionResult } from '../enrichment-types.ts'
 import {
   extractPasslineEventsBatchClient,
   type PasslineEnrichmentResult,
-} from '../../scrapers/passline/client-enrichment'
+} from '../../scrapers/passline/client-enrichment.ts'
 
 export const passlineEnrichmentAdapter: EnrichmentAdapter = {
   source: 'passline',

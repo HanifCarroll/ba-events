@@ -12,13 +12,13 @@
 
 import { generateObject } from 'ai'
 import { z } from 'zod'
-import { NO_THINKING, textModel } from '../src/shared/lib/ai/providers'
-import { getSupabase } from '../src/shared/lib/db/client'
-import { getSupabaseServiceRoleClient } from '../src/shared/lib/db/service'
+import { NO_THINKING, textModel } from '#shared/lib/ai/providers.ts'
+import { getSupabase } from '#shared/lib/db/client.server.ts'
+import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import {
   embedEventWithDocument,
   CURRENT_EMBEDDING_VERSION,
-} from '../src/shared/lib/ai/embeddings'
+} from '#shared/lib/ai/embeddings.ts'
 
 // The 6 simplified categories
 const CATEGORY_SCHEMA = z.object({

@@ -18,8 +18,8 @@ import {
   addMonths,
 } from 'date-fns'
 import { fromZonedTime } from 'date-fns-tz'
-import type { ParsedDateTime, WeekContext } from './types'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
+import type { ParsedDateTime, WeekContext } from './types.ts'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 // Spanish day names (lowercase)
 const SPANISH_DAYS: Record<string, number> = {

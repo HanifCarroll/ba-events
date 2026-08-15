@@ -6,8 +6,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { embed } from 'ai'
-import { embeddingModel } from '../src/shared/lib/ai/providers'
-import { buildEmbeddingText, CURRENT_EMBEDDING_VERSION } from '../src/shared/lib/ai/embeddings'
+import { embeddingModel } from '#shared/lib/ai/providers.ts'
+import { buildEmbeddingText, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_ANON_KEY

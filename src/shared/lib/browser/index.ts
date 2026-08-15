@@ -8,10 +8,10 @@
  */
 
 // Cloudflare utilities
-export { isCloudflareChallenge } from './cloudflare'
+export { isCloudflareChallenge } from './cloudflare.ts'
 
 // Browserbase (cloud browser) helpers
-export { isBrowserbaseAvailable, createBrowserbaseSession } from './browserbase'
+export { isBrowserbaseAvailable, createBrowserbaseSession } from './browserbase.ts'
 
 // Constants
 export {
@@ -19,4 +19,4 @@ export {
   BROWSER_VIEWPORT,
   STEALTH_LAUNCH_ARGS,
   DEFAULT_LOCALE,
-} from './constants'
+} from './constants.ts'

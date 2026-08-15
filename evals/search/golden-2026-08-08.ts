@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Expired golden labels from 2026-08-08. Kept for history only.
- * Live runner imports `./golden`.
+ * Live runner imports `./golden.ts`.
  */
 export interface GoldenQuery {
   query: string

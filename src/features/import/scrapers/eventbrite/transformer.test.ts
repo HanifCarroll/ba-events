@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { extractEventId, type EventbriteEvent } from './api'
-import { transformEventbriteEvent } from './transformer'
+import { extractEventId, type EventbriteEvent } from './api.ts'
+import { transformEventbriteEvent } from './transformer.ts'
 
 const baseEvent: EventbriteEvent = {
   '@type': 'Event',

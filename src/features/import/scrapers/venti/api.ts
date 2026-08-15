@@ -11,8 +11,8 @@
  * and are only required for events we actually import.
  */
 
-import { delay } from '../../core/nominatim'
-import type { VentiEvent, VentiTicketAvailability } from './types'
+import { delay } from '../../core/nominatim.ts'
+import type { VentiEvent, VentiTicketAvailability } from './types.ts'
 
 const VENTI_API_BASE = 'https://api.venti.live'
 const VENTI_PAGE_SIZE = 200 // Max page size (verified: limit=200 works)

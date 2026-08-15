@@ -20,8 +20,8 @@
  */
 
 import { fromZonedTime } from 'date-fns-tz'
-import { BA_TIMEZONE } from '@/shared/lib/constants'
-import type { CorpusEvent, CorpusVenue } from './types'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
+import type { CorpusEvent, CorpusVenue } from './types.ts'
 
 /** Stable fake venue ids (not production). */
 export const VENUES = {
@@ -411,7 +411,7 @@ export const FIXTURE_EVENTS: CorpusEvent[] = [
  * script overwrites; the fixture file keeps a stable date so labels never
  * drift.
  */
-export function buildFixtureFile(): import('./types').CorpusFile {
+export function buildFixtureFile(): import('./types.ts').CorpusFile {
   return {
     meta: {
       kind: 'fixture',

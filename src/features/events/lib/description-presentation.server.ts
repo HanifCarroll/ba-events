@@ -1,5 +1,5 @@
-import { generateDescriptionSummary } from '@/shared/lib/ai/enrichment'
-import { buildDisplayDescription } from './description-presentation'
+import { generateDescriptionSummary } from '#shared/lib/ai/enrichment.ts'
+import { buildDisplayDescription } from './description-presentation.ts'
 
 export interface DescriptionPresentationFields {
   description_display_es: string | null

@@ -5,8 +5,8 @@
  * Uses browser automation (Browserbase cloud browser) to scrape day-by-day.
  */
 import { task } from '@trigger.dev/sdk/v3'
-import { createServiceRoleClient } from '../utils/db-client'
-import { processMeetupImport, type MeetupImportResult } from '@/features/import/core/meetup'
+import { createServiceRoleClient } from '../utils/db-client.ts'
+import { processMeetupImport, type MeetupImportResult } from '#features/import/core/meetup.ts'
 
 export interface MeetupJobPayload {
   daysAhead?: number

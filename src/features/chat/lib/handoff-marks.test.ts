@@ -3,7 +3,7 @@ import {
   handoffMarkName,
   markHandoffPhaseTime,
   readHandoffMarkTime,
-} from './handoff-marks'
+} from './handoff-marks.ts'
 
 describe('handoff performance marks', () => {
   it('names are scoped by the handoff id', () => {

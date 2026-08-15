@@ -1,4 +1,4 @@
-import type { Locale } from '@/shared/lib/types'
+import type { Locale } from '#shared/lib/types.ts'
 
 const NOISY_PREFIX_PATTERNS = [
   /^semantic\s+description\s+for\s+indexing:\s*/i,

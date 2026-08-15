@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import * as m from '@/paraglide/messages'
-import { formatPrice } from '@/features/chat/lib/messages'
+import * as m from '#paraglide/messages.js'
+import { formatPrice } from '#features/chat/lib/messages.ts'
 
 describe('formatPrice', () => {
   it('presents zero-priced events as free even when the source flag is inconsistent', () => {

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import type { ToolDefinition } from './types'
-import { searchEventsTool } from './search-events'
-import { applyDiversity } from './quality-diversity'
+import type { ToolDefinition } from './types.ts'
+import { searchEventsTool } from './search-events.ts'
+import { applyDiversity } from './quality-diversity.ts'
 import {
   getEventsHappeningNow,
   getFurthestEventDate,
@@ -10,9 +10,9 @@ import {
   countEventsWithFilters,
   hybridEventSearch,
   searchVenuesByName,
-} from '@/shared/lib/db/client'
+} from '#shared/lib/db/client.server.ts'
 
-vi.mock('@/shared/lib/db/client', () => ({
+vi.mock('#shared/lib/db/client.server.ts', () => ({
   getEventsHappeningNow: vi.fn(),
   searchEventsWithFilters: vi.fn(),
   countEventsWithFilters: vi.fn(),

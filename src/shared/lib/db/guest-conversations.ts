@@ -3,7 +3,7 @@ import type {
   MessageAttachedData,
   MessageExecutionStep,
   MessageRole,
-} from '@/shared/lib/types'
+} from '#shared/lib/types.ts'
 
 /**
  * Client-side persistence for guest (not signed-in) conversations.
