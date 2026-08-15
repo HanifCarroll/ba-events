@@ -10,6 +10,7 @@
  */
 
 import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
+import { preferIsEmpty, type EventSearchPrefer } from './search-intent.ts'
 
 /** Fields the surprise scorer / diversity pass read off an event. */
 export interface SearchScoreable {
@@ -23,7 +24,11 @@ export interface SearchScoreable {
   description_unavailable: boolean
   categories: string[]
   facets?: {
+    genres?: string[]
     vibes?: string[]
+    activities?: string[]
+    audience?: string[]
+    setting?: string[]
     energy?: 'low' | 'medium' | 'high'
     eventType?: string[]
   } | null
@@ -174,6 +179,45 @@ function chillScore(ev: SearchScoreable): number {
  */
 export function chillRerank<T extends SearchScoreable>(events: T[]): T[] {
   return [...events].sort((a, b) => chillScore(b) - chillScore(a))
+}
+
+// ============================================================================
+// PREFER RERANK (generic facet-overlap boost — soft, additive, never a filter)
+// ============================================================================
+
+const PREFER_FACET_KEYS = ['genres', 'vibes', 'activities', 'audience', 'setting'] as const
+
+/**
+ * Soft-rerank candidates by how many of their facets overlap `prefer` (same
+ * key). Missing/empty facets score 0, ties keep input order (stable), and
+ * nothing is dropped. An empty prefer returns the input array unchanged.
+ */
+export function preferRerank<T extends SearchScoreable>(
+  events: T[],
+  prefer: EventSearchPrefer
+): T[] {
+  if (preferIsEmpty(prefer)) return events
+
+  const scored = events.map((ev) => {
+    const f = ev.facets
+    if (!f) return { ev, score: 0 }
+    let score = 0
+    for (const key of PREFER_FACET_KEYS) {
+      const preferValues = prefer[key]
+      const facetValues = f[key]
+      if (!preferValues?.length || !facetValues?.length) continue
+      const preferSet = new Set(preferValues)
+      const facetSet = new Set(facetValues)
+      for (const value of preferSet) {
+        if (facetSet.has(value)) score++
+      }
+    }
+    return { ev, score }
+  })
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .map(({ ev }) => ev)
 }
 
 // ============================================================================

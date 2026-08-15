@@ -21,7 +21,13 @@ import type { Neighborhood, EventFilters } from '#shared/lib/types.ts'
 import { NEIGHBORHOODS } from '#shared/lib/types.ts'
 import { searchVenuesByName } from '#shared/lib/db/client.server.ts'
 import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
-import { GENRE_VALUES } from '#shared/lib/search-facets.ts'
+import {
+  GENRE_VALUES,
+  VIBE_VALUES,
+  ACTIVITY_VALUES,
+  AUDIENCE_VALUES,
+  SETTING_VALUES,
+} from '#shared/lib/search-facets.ts'
 import { baToUTC } from './utils.ts'
 
 // ============================================================================
@@ -129,6 +135,152 @@ const NORMALIZED_NEIGHBORHOODS: Array<{ name: Neighborhood; tokens: string[] }> 
     name,
     tokens: normalizeText(name).split(' ').filter(Boolean),
   }))
+
+// ============================================================================
+// PREFER FACET EXTRACTION (soft hints — never filters)
+// ============================================================================
+
+/** Whole-token chill markers. Matches token-boundary aware on normalized text. */
+const CHILL_TOKENS = new Set([
+  'chill',
+  'tranqui',
+  'tranquilo',
+  'tranquila',
+  'relajado',
+  'relajada',
+  'relaxed',
+  'lowkey',
+  'calmado',
+  'suave',
+])
+
+// The free-form (user phrase → facet) genre keys. Extend only from eval
+// failures; unknown tokens are ignored rather than guessed.
+const GENRE_ALIASES: Array<{ token: string; genre: (typeof GENRE_VALUES)[number] }> =
+  GENRE_VALUES.map((g) => ({ token: normalizeText(g), genre: g })).concat([
+    { token: 'tecnico', genre: 'techno' },
+    { token: 'reggueton', genre: 'reggaeton' },
+    { token: 'deephouse', genre: 'house' },
+    { token: 'hiphop', genre: 'hip-hop' },
+    { token: 'electronica', genre: 'electronic' },
+    { token: 'electro', genre: 'electronic' },
+    { token: 'clasical', genre: 'classical' },
+    { token: 'clasico', genre: 'classical' },
+  ])
+
+type PreferFacetKey = 'genres' | 'vibes' | 'activities' | 'audience' | 'setting'
+const PREFER_FACET_KEYS: PreferFacetKey[] = [
+  'genres',
+  'vibes',
+  'activities',
+  'audience',
+  'setting',
+]
+
+interface PreferAlias {
+  /** Normalized tokens, space-separated. Whole-token (and phrase) matched. */
+  phrase: string
+  value: string
+}
+
+const PREFER_ALIASES: Record<PreferFacetKey, PreferAlias[]> = {
+  genres: GENRE_ALIASES.map((a) => ({ phrase: a.token, value: a.genre })),
+  vibes: [
+    ...VIBE_VALUES.map((v) => ({ phrase: normalizeText(v), value: v })),
+    ...[...CHILL_TOKENS].map((token) => ({ phrase: token, value: 'relaxed' })),
+    // "low-key" normalizes to the adjacent pair "low key".
+    { phrase: 'low key', value: 'relaxed' },
+  ],
+  activities: [
+    ...ACTIVITY_VALUES.map((v) => ({ phrase: normalizeText(v), value: v })),
+    { phrase: 'live', value: 'live-music' },
+    { phrase: 'vivo', value: 'live-music' },
+    { phrase: 'en vivo', value: 'live-music' },
+    { phrase: 'afuera', value: 'outdoor' },
+    { phrase: 'al aire', value: 'outdoor' },
+  ],
+  audience: [
+    ...AUDIENCE_VALUES.map((v) => ({ phrase: normalizeText(v), value: v })),
+    { phrase: 'date', value: 'couples' },
+    { phrase: 'cita', value: 'couples' },
+    { phrase: 'pareja', value: 'couples' },
+  ],
+  setting: [
+    ...SETTING_VALUES.map((v) => ({ phrase: normalizeText(v), value: v })),
+    { phrase: 'afuera', value: 'outdoor' },
+    { phrase: 'exterior', value: 'outdoor' },
+    { phrase: 'adentro', value: 'indoor' },
+    { phrase: 'interior', value: 'indoor' },
+  ],
+}
+
+/** Negation markers whose following token must not feed a soft prefer boost. */
+const NEGATION_MARKERS = new Set(['except', 'excepto', 'salvo', 'menos', 'sin', 'avoid', 'not'])
+
+/** Whole-token/phrase match that ignores tokens in a negation context. */
+function phraseMatches(
+  tokens: string[],
+  phraseTokens: string[],
+  blocked: Set<number>
+): boolean {
+  const n = phraseTokens.length
+  if (n === 0) return false
+  for (let i = 0; i + n <= tokens.length; i++) {
+    let ok = true
+    for (let j = 0; j < n; j++) {
+      if (tokens[i + j] !== phraseTokens[j] || blocked.has(i + j)) {
+        ok = false
+        break
+      }
+    }
+    if (ok) return true
+  }
+  return false
+}
+
+/** Extract soft `prefer` hints from free-text query tokens (never filters). */
+function extractPreferFromQuery(normalizedQuery: string): EventSearchPrefer {
+  const tokens = normalizedQuery ? normalizedQuery.split(' ').filter(Boolean) : []
+  if (tokens.length === 0) return {}
+
+  const blocked = new Set<number>()
+  for (let i = 0; i < tokens.length; i++) {
+    if (NEGATION_MARKERS.has(tokens[i])) {
+      blocked.add(i)
+      if (i + 1 < tokens.length) blocked.add(i + 1)
+    }
+  }
+
+  const prefer: EventSearchPrefer = {}
+  for (const key of PREFER_FACET_KEYS) {
+    const hits = new Set<string>()
+    for (const alias of PREFER_ALIASES[key]) {
+      const phraseTokens = alias.phrase.split(' ')
+      if (phraseMatches(tokens, phraseTokens, blocked)) hits.add(alias.value)
+    }
+    if (hits.size > 0) prefer[key] = [...hits]
+  }
+  return prefer
+}
+
+/** Merge an explicit prefer with extracted hints (union per key, de-duped). */
+function mergePrefer(
+  base: EventSearchPrefer | undefined,
+  extra: EventSearchPrefer
+): EventSearchPrefer {
+  const merged: EventSearchPrefer = { ...(base ?? {}) }
+  for (const key of PREFER_FACET_KEYS) {
+    const values = new Set<string>([...(merged[key] ?? []), ...(extra[key] ?? [])])
+    if (values.size > 0) merged[key] = [...values]
+  }
+  return merged
+}
+
+/** True when a prefer has no populated facet arrays. */
+export function preferIsEmpty(prefer: EventSearchPrefer | undefined | null): boolean {
+  if (!prefer) return true
+  return !PREFER_FACET_KEYS.some((key) => (prefer[key]?.length ?? 0) > 0)
+}
 
 // ============================================================================
 // NEIGHBORHOOD RESOLUTION
@@ -351,8 +503,11 @@ export async function canonicalizeSearchIntent(
   const avoid: EventSearchAvoid = {}
 
   // displayLimit: default 1, clamped 1..5 (never lower than 1 so a negative
-  // limit cannot slice(0, negative)).
-  const displayLimit = Math.max(1, Math.min(input.limit ?? DISPLAY_LIMIT_DEFAULT, DISPLAY_LIMIT_MAX))
+  // limit cannot slice(0, negative)). Vague discovery asks (a time window /
+  // vibe / prefer with no named constraint and no explicit limit) default to 3
+  // below, once the objective and hard-must set are known.
+  const explicitLimit = input.limit !== undefined
+  let displayLimit = Math.max(1, Math.min(input.limit ?? DISPLAY_LIMIT_DEFAULT, DISPLAY_LIMIT_MAX))
 
   // --- isFree from explicit input or free-language ---
   const strippedTokens = new Set<string>()
@@ -440,12 +595,24 @@ export async function canonicalizeSearchIntent(
     semanticQuery = remaining.join(' ')
   }
 
-  // Prefer is retrieval text only — never a filter. When the user-facing
-  // semanticQuery is empty but prefer terms exist, append them so the hybrid
-  // retriever still has something to embed / lexically match.
-  const prefer = applyPrefer(input.prefer)
+  // Prefer is retrieval text only — never a filter. It merges explicit
+  // `input.prefer` with soft hints extracted from the free-text query tokens.
+  // When the user-facing semanticQuery is empty but prefer terms exist, append
+  // them so the hybrid retriever still has something to embed / lexically match.
+  const prefer = mergePrefer(input.prefer, extractPreferFromQuery(normalizedQuery))
   if (!semanticQuery) {
     semanticQuery = joinPreferIntoQuery(prefer)
+  }
+
+  const objective = resolveObjective(input, must, semanticQuery)
+  // Vague discovery asks (no explicit limit, not a surprise pick, no named
+  // constraint) default to a short list of 3 rather than a single pick.
+  if (
+    !explicitLimit &&
+    objective !== 'surprise' &&
+    !hasHardMust(input, must, weekday)
+  ) {
+    displayLimit = 3
   }
 
   return {
@@ -455,7 +622,7 @@ export async function canonicalizeSearchIntent(
     semanticQuery,
     displayLimit,
     candidateLimit: CANDIDATE_LIMIT,
-    objective: resolveObjective(input, must, semanticQuery),
+    objective,
   }
 }
 
@@ -515,38 +682,39 @@ function isDefaultWindowOnly(input: CanonicalizeInput, must: EventSearchMust): b
   return true
 }
 
-// Apply prefer to the intent. Prefer is NEVER a filter — it only feeds the
-// retrieval query text (see joinPreferIntoQuery) and later the reranker.
-function applyPrefer(prefer: CanonicalizeInput['prefer']): EventSearchPrefer {
-  return prefer ?? {}
+// True when the intent carries a named constraint that should keep the default
+// display limit at 1 (neighborhood / venue / category / free / price / age /
+// explicit date or named weekday). A timeFilter preset is NOT a hard must —
+// "what's on tonight?" is a discovery list, not a decisive pick.
+function hasHardMust(
+  input: CanonicalizeInput,
+  must: EventSearchMust,
+  weekday: number | null
+): boolean {
+  if ((must.neighborhoodIds?.length ?? 0) > 0) return true
+  if ((must.venueIds?.length ?? 0) > 0) return true
+  if ((must.categories?.length ?? 0) > 0) return true
+  if (must.isFree !== undefined) return true
+  if (must.maxPrice !== undefined) return true
+  if (must.attendeeAge !== undefined) return true
+  if (input.dateFrom || input.dateTo) return true
+  if (weekday !== null) return true
+  return false
 }
 
 // Join prefer terms into a retrieval query string when the user gave no
-// semantic text of their own. Preferred genres/vibes/audience/setting become
-// the query so the dense + lexical retrievers still have signal.
+// semantic text of their own. Preferred facets become the query so the dense +
+// lexical retrievers still have signal.
 function joinPreferIntoQuery(prefer: EventSearchPrefer): string {
   const terms = [
     ...(prefer.genres ?? []),
     ...(prefer.vibes ?? []),
+    ...(prefer.activities ?? []),
     ...(prefer.audience ?? []),
     ...(prefer.setting ?? []),
   ]
   return terms.join(' ')
 }
-
-// The free-form (user phrase → facet) genre keys. Extend only from eval
-// failures; unknown tokens are ignored rather than guessed.
-const GENRE_ALIASES: Array<{ token: string; genre: (typeof GENRE_VALUES)[number] }> =
-  GENRE_VALUES.map((g) => ({ token: normalizeText(g), genre: g })).concat([
-    { token: 'tecnico', genre: 'techno' },
-    { token: 'reggueton', genre: 'reggaeton' },
-    { token: 'deephouse', genre: 'house' },
-    { token: 'hiphop', genre: 'hip-hop' },
-    { token: 'electronica', genre: 'electronic' },
-    { token: 'electro', genre: 'electronic' },
-    { token: 'clasical', genre: 'classical' },
-    { token: 'clasico', genre: 'classical' },
-  ])
 
 /**
  * Map free-text avoid tokens onto the closed facet genre keys, ignoring
@@ -567,25 +735,6 @@ export function mapAvoidGenres(avoid: CanonicalizeInput['avoid'] | undefined): s
 // ============================================================================
 // CHILL INTENT (ranking signal only — never a filter, never event scoring)
 // ============================================================================
-
-/**
- * Whole-token chill markers. Matching is token-boundary aware on normalized,
- * accent-stripped text — "chill" in "chillout" or "cita" in "recital" never
- * matches. `low-key` is handled separately below because `normalizeText` turns
- * the hyphen into a space, splitting it into two tokens.
- */
-const CHILL_TOKENS = new Set([
-  'chill',
-  'tranqui',
-  'tranquilo',
-  'tranquila',
-  'relajado',
-  'relajada',
-  'relaxed',
-  'lowkey',
-  'calmado',
-  'suave',
-])
 
 /**
  * True when the semantic query asks for something chill / tranquilo / relaxed.

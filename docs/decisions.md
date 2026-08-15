@@ -26,6 +26,18 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Generic prefer-facet rerank and default 3-item discovery limit
+
+**Date:** 2026-08-15
+
+**Decision:** `search_events` now soft-reranks results by facet overlap against the canonicalized `prefer` hints (genres, vibes, activities, audience, setting) instead of only reranking chill asks. `prefer` is populated from both `input.prefer` and whole-token extraction from the free-text query, merged per key. Chill keeps its existing scorer and wins when `detectChillIntent` fires; otherwise a non-empty prefer runs `preferRerank` (overlap count, stable, never drops). Vague discovery asks with no explicit limit, no surprise objective, and no named must (neighborhood/venue/category/free/price/age/date) now default to a display limit of 3 instead of 1.
+
+**Alternatives Considered (if applicable):**
+- Reuse `chillRerank` scoring for all prefer dimensions: rejected — chill's energy/eventType weights are chill-specific and would distort genre/vibe boosts.
+- Keep the default display limit at 1 and let the model always set 3: rejected — the model under-specified limits on discovery asks, so "what's on tonight" returned a single pick.
+
+**Rationale:** Prefer was already carried on the intent but only joined into retrieval text; the reranker comment promised a boost that never shipped. A generic overlap boost generalizes the existing soft-rerank without making prefer a hard filter, and a discovery default of 3 matches the concierge's list intent for time/vibe asks.
+
 ### Happening soon grid; rolling 12h floor
 
 **Date:** 2026-08-15

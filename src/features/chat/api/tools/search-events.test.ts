@@ -383,6 +383,54 @@ describe('search_events chill soft rerank', () => {
   })
 })
 
+describe('search_events prefer soft rerank', () => {
+  let tool: ToolDefinition
+
+  beforeEach(async () => {
+    vi.resetAllMocks()
+    mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00.000Z')
+    mockedCountEventsWithFilters.mockResolvedValue(2)
+    tool = searchEventsTool
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('a non-chill prefer query reranks a romantic-tagged fixture above a party', async () => {
+    const mk = (id: string, facets: unknown) => ({
+      id,
+      name: id,
+      starts_at: '2026-12-20T11:00:00.000Z',
+      image_url: null,
+      venue_id: null,
+      venue_name: null,
+      venue_neighborhood: null,
+      venue_address: null,
+      location_tba: false,
+      description_unavailable: false,
+      categories: [] as string[],
+      is_free: false,
+      price: null,
+      facets,
+    })
+
+    const party = mk('party', { vibes: ['energetic'], energy: 'high', eventType: ['party'] })
+    const romantic = mk('romantic', { vibes: ['romantic'], energy: 'low', eventType: ['dinner'] })
+
+    // Hybrid returns vector order: party first, romantic last.
+    mockedHybridEventSearch.mockResolvedValue([party, romantic])
+
+    const result = await tool.execute({ query: 'romantic', limit: 2 }, context)
+
+    expect(result.success).toBe(true)
+    expect(result.metadata?.searchMode).toBe('semantic')
+    expect(mockedHybridEventSearch).toHaveBeenCalledWith('romantic', expect.anything(), 50)
+    const events = result.events ?? []
+    expect(events.map((e) => e.id)).toEqual(['romantic', 'party'])
+  })
+})
+
 describe('search_events timeFilter "now" respects explicit date bounds', () => {
   let tool: ToolDefinition
 

@@ -171,6 +171,87 @@ describe('canonicalizeSearchIntent — categories', () => {
   })
 })
 
+describe('canonicalizeSearchIntent — prefer extraction', () => {
+  it('extracts romantic vibe and jazz genre from "romantic jazz"', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'romantic jazz' }, WEDNESDAY_NOON)
+    expect(intent.prefer.vibes).toContain('romantic')
+    expect(intent.prefer.genres).toContain('jazz')
+  })
+
+  it('extracts techno genre from "techno"', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'techno' }, WEDNESDAY_NOON)
+    expect(intent.prefer.genres).toContain('techno')
+  })
+
+  it('keeps chill detection and fills relaxed vibe for "chill tonight"', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'chill tonight' }, WEDNESDAY_NOON)
+    expect(detectChillIntent(intent.semanticQuery)).toBe(true)
+    expect(intent.prefer.vibes).toContain('relaxed')
+  })
+
+  it('does NOT turn "recital" into an intimate vibe', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'recital' }, WEDNESDAY_NOON)
+    expect(intent.prefer.vibes ?? []).not.toContain('intimate')
+  })
+
+  it('does NOT classify "dark comedy" as techno', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'dark comedy' }, WEDNESDAY_NOON)
+    expect(intent.prefer.genres ?? []).not.toContain('techno')
+  })
+})
+
+describe('canonicalizeSearchIntent — display limit defaults', () => {
+  it('timeFilter tonight defaults to displayLimit 3 and objective search', async () => {
+    const intent = await canonicalizeSearchIntent({ timeFilter: 'tonight' }, WEDNESDAY_NOON)
+    expect(intent.displayLimit).toBe(3)
+    expect(intent.objective).toBe('search')
+  })
+
+  it('vibe-only "chill" defaults to displayLimit 3', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'chill' }, WEDNESDAY_NOON)
+    expect(intent.displayLimit).toBe(3)
+  })
+
+  it('romantic vibe-only defaults to displayLimit 3', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'romantic' }, WEDNESDAY_NOON)
+    expect(intent.displayLimit).toBe(3)
+  })
+
+  it('surprise / empty input stays at displayLimit 1', async () => {
+    const surprise = await canonicalizeSearchIntent({ objective: 'surprise' }, WEDNESDAY_NOON)
+    expect(surprise.displayLimit).toBe(1)
+    expect(surprise.objective).toBe('surprise')
+
+    const empty = await canonicalizeSearchIntent({}, WEDNESDAY_NOON)
+    expect(empty.displayLimit).toBe(1)
+    expect(empty.objective).toBe('surprise')
+  })
+
+  it('tonight + neighborhood stays at displayLimit 1', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { timeFilter: 'tonight', neighborhoods: ['Palermo'] },
+      WEDNESDAY_NOON
+    )
+    expect(intent.displayLimit).toBe(1)
+  })
+
+  it('tonight + explicit limit 1 stays 1', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { timeFilter: 'tonight', limit: 1 },
+      WEDNESDAY_NOON
+    )
+    expect(intent.displayLimit).toBe(1)
+  })
+
+  it('tonight + explicit limit 5 stays 5', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { timeFilter: 'tonight', limit: 5 },
+      WEDNESDAY_NOON
+    )
+    expect(intent.displayLimit).toBe(5)
+  })
+})
+
 describe('mustToFilters', () => {
   it('maps neighborhoodIds and venueIds to arrays', () => {
     const filters = mustToFilters({

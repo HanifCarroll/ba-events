@@ -59,7 +59,7 @@ export function conciergePrompt(): string {
 ## Tools
 - search_events: ALL event discovery goes through this one tool — vibe asks (query: "underground techno", "romantic dinner"), "what's on tonight?" (timeFilter: "tonight"), "what's happening right now?" (timeFilter: "now"), plus filters (neighborhoods, venueName, isFree, maxPrice, categories), date windows (dateFrom/dateTo for named days like "Saturday"), exclusions (avoid, e.g. ["techno"]), and a decisive "surprise me" pick (objective: "surprise").
   Put resolvable specifics in their dedicated fields, NOT in query text: free/gratis → isFree, a named neighborhood (e.g. Palermo, San Telmo, "Palermo Soho") → neighborhoods, a named venue (e.g. Niceto) → venueName, "Saturday"/"Sunday"/explicit dates → dateFrom/dateTo, and what the user does NOT want ("anything except techno") → avoid. Leave only descriptive/vibe text in query.
-  Limit: 1 for decisive picks (default), 3-4 for discovery lists, never >5.
+  Limit: default 1 for a pick or any named constraint (venue/neighborhood/category/price/free/age/date); 3 for open discovery asks ("what's on tonight", a weekend, a vibe) when the user did not name a count; never >5.
 - list_saved_events / save_event / unsave_event / check_event_saved: saved-event management.
 - get_event_details: "tell me more" about a mentioned event.
 - get_venue_details / get_directions: venue info / directions to a venue.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chillRerank, type SearchScoreable } from './quality-diversity.ts'
+import { chillRerank, preferRerank, type SearchScoreable } from './quality-diversity.ts'
 
 // Minimal SearchScoreable fixtures. `facets` is optional on the interface so
 // untagged events exercise the "missing facets → 0" branch, and `null` facets
@@ -43,6 +43,57 @@ const intimateClass = mk('intimate-class', {
   vibes: ['intimate'],
   energy: 'medium',
   eventType: ['exhibition'],
+})
+
+describe('preferRerank', () => {
+  const jazzRomantic = mk('jazz-romantic', {
+    genres: ['jazz'],
+    vibes: ['romantic'],
+  })
+  const technoParty = mk('techno-party', {
+    genres: ['techno'],
+    vibes: ['energetic'],
+    energy: 'high',
+    eventType: ['party'],
+  })
+
+  it('boosts an event whose facets overlap the prefer arrays', () => {
+    const out = preferRerank([technoParty, jazzRomantic], { vibes: ['romantic'] })
+    expect(out.map((e) => e.id)).toEqual(['jazz-romantic', 'techno-party'])
+  })
+
+  it('returns the input array unchanged for an empty prefer', () => {
+    const input = [technoParty, jazzRomantic]
+    expect(preferRerank(input, {})).toBe(input)
+  })
+
+  it('keeps untagged events in their original relative order (score 0)', () => {
+    const out = preferRerank(
+      [untaggedMissing, untaggedNull, untaggedEmpty],
+      { genres: ['jazz'] }
+    )
+    expect(out.map((e) => e.id)).toEqual([
+      'untagged-missing',
+      'untagged-null',
+      'untagged-empty',
+    ])
+  })
+
+  it('never drops events (ranking, not filtering)', () => {
+    const input = [technoParty, untaggedMissing, jazzRomantic]
+    const out = preferRerank(input, { genres: ['jazz'] })
+    expect(out).toHaveLength(input.length)
+    expect(out.map((e) => e.id)).toContain('techno-party')
+    expect(out.map((e) => e.id)).toContain('untagged-missing')
+    expect(out.map((e) => e.id)).toContain('jazz-romantic')
+  })
+
+  it('is stable for equal overlap scores', () => {
+    const a = mk('a', { genres: ['jazz'] })
+    const b = mk('b', { genres: ['jazz'] })
+    const out = preferRerank([a, b], { genres: ['jazz'] })
+    expect(out.map((e) => e.id)).toEqual(['a', 'b'])
+  })
 })
 
 describe('chillRerank', () => {
