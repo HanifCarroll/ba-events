@@ -15,18 +15,13 @@ import { getNowInBA, ensureChatEventPayloads, formatEventsToolResult } from './u
 import {
   canonicalizeSearchIntent,
   applyPreferAvoid,
-  detectChillIntent,
-  preferIsEmpty,
   type EventSearchMust,
-  type EventSearchPrefer,
 } from './search-intent.ts'
 import {
   surpriseRank,
   applyDiversity,
-  chillRerank,
-  preferRerank,
-  type SearchScoreable,
 } from './quality-diversity.ts'
+import { rerankEvents, type RerankMeta } from '#shared/lib/search/rerank.ts'
 import { logger } from '#shared/lib/logger.ts'
 
 // Display vs. candidate limits. The display limit is how many events the user
@@ -189,6 +184,12 @@ The result includes coverage metadata: the window you searched, total matches, a
       const query = intent.semanticQuery
       const objective = intent.objective
 
+      // Avoid terms for the hosted reranker are soft context only. Genres
+      // already hard-excluded upstream (intent.avoid.genres) are gone from the
+      // candidate set, so pass the raw input.avoid strings only when no genre
+      // was hard-excluded.
+      const rerankAvoid = intent.avoid.genres?.length ? [] : (input.avoid ?? [])
+
       logger.debug('[search_events] Search parameters', {
         input,
         intent,
@@ -232,6 +233,8 @@ The result includes coverage metadata: the window you searched, total matches, a
       let results
       // The retrieval mode, reported in metadata/telemetry.
       let searchMode: 'semantic' | 'filter_only' | 'now' | 'surprise' = 'filter_only'
+      // Hosted rerank diagnostics, reported in metadata/telemetry.
+      let rerankMeta: RerankMeta | null = null
 
       // Coverage bookkeeping: how many events actually match the window (vs.
       // how many were returned), and how far the calendar truly reaches.
@@ -294,11 +297,16 @@ The result includes coverage metadata: the window you searched, total matches, a
           // Surprise is always exactly one pick, ignoring displayLimit.
           results = surpriseRank(nowEvents, getNowInBA().getTime()).slice(0, 1)
         } else {
-          // Now-lists get the same diversity pass as other lists (cap venues /
-          // category signatures) before slicing to the display limit. A chill
-          // semantic query still soft-reranks first (same helper as semantic);
-          // otherwise a non-empty prefer soft-reranks by facet overlap.
-          const reranked = rerankByPrefer(nowEvents, query, intent.prefer)
+          // The happening-now list is reranked by the hosted reranker (input
+          // order = chronological RPC order = baseRank), then gets the same
+          // diversity pass as other lists before slicing to the display limit.
+          // A pure "what's happening now" with no query/prefer/avoid no-ops.
+          const { ordered: reranked, meta } = await rerankEvents(nowEvents, {
+            semanticQuery: query,
+            prefer: intent.prefer,
+            avoid: rerankAvoid,
+          })
+          rerankMeta = meta
           results =
             displayLimit > 1
               ? applyDiversity(reranked, displayLimit)
@@ -325,26 +333,35 @@ The result includes coverage metadata: the window you searched, total matches, a
         } else if (query) {
           searchMode = 'semantic'
           logger.debug('[search_events] Using hybrid search', { query })
-          // Retrieve CANDIDATE_LIMIT nearest vector neighbors, present the top
-          // by vector order. Quality must NOT reorder the semantic path; on
-          // lists we only drop over-capped / near-duplicate events (diversity).
+          // Retrieve CANDIDATE_LIMIT nearest vector neighbors, then rerank
+          // them with the hosted reranker (input order = fused retrieval order
+          // = baseRank) before the diversity pass. Ranking only — never drops
+          // events, and never applies to the surprise path.
           const candidates = await hybridEventSearch(query, filters, CANDIDATE_LIMIT)
-          // Chill ask → soft rerank (relaxed/low-energy up, party/high-energy
-          // down, untagged untouched); otherwise a non-empty prefer boosts
-          // facet-overlapping events. Ranking only — never drops events, and
-          // never applies to the surprise path.
-          const reranked = rerankByPrefer(candidates, query, intent.prefer)
+          const { ordered: reranked, meta } = await rerankEvents(candidates, {
+            semanticQuery: query,
+            prefer: intent.prefer,
+            avoid: rerankAvoid,
+          })
+          rerankMeta = meta
           results =
             displayLimit > 1
               ? applyDiversity(reranked, displayLimit)
               : reranked.slice(0, displayLimit)
         } else {
           // No semantic text left after canonicalize — filter-only search
-          // (chronological), with list diversity applied when displaying >1.
-          // An explicit prefer still soft-reranks the chronological set.
+          // (chronological), reranked by the hosted reranker when a non-empty
+          // prefer gives it signal (e.g. "jazz tonight"), then list diversity
+          // applied when displaying >1. Nothing subjective → no-op, stays
+          // chronological.
           logger.debug('[search_events] Using filter-only search')
           const candidates = await searchEventsWithFilters(filters, CANDIDATE_LIMIT)
-          const reranked = rerankByPrefer(candidates, query, intent.prefer)
+          const { ordered: reranked, meta } = await rerankEvents(candidates, {
+            semanticQuery: query,
+            prefer: intent.prefer,
+            avoid: rerankAvoid,
+          })
+          rerankMeta = meta
           results =
             displayLimit > 1 ? applyDiversity(reranked, displayLimit) : reranked.slice(0, displayLimit)
         }
@@ -365,6 +382,29 @@ The result includes coverage metadata: the window you searched, total matches, a
         maxEventDate,
       })
 
+      if (rerankMeta) {
+        logger.info('[search_events] Rerank', {
+          status: rerankMeta.status,
+          model: rerankMeta.model,
+          latencyMs: rerankMeta.latencyMs,
+          totalTokens: rerankMeta.totalTokens,
+          displayed:
+            rerankMeta.status === 'applied'
+              ? results.map((e) => {
+                  const r = rerankMeta.ranks?.get(e.id)
+                  return r
+                    ? {
+                        id: e.id,
+                        baseRank: r.baseRank,
+                        rerankerRank: r.rerankerRank,
+                        finalRank: r.finalRank,
+                      }
+                    : { id: e.id }
+                })
+              : undefined,
+        })
+      }
+
       const formatted = formatEventsToolResult(results)
 
       return {
@@ -376,6 +416,7 @@ The result includes coverage metadata: the window you searched, total matches, a
           hasQuery: !!query,
           hasFilters: hasMustConstraints(intent.must),
           searchMode,
+          ...(rerankMeta ? { rerank: rerankMeta.status } : {}),
           durationMs,
           // Coverage metadata: what window was searched, how many matched, and
           // the true furthest event date. The model must never claim a ceiling
@@ -403,19 +444,6 @@ The result includes coverage metadata: the window you searched, total matches, a
     }
   },
 })
-
-// Soft-rerank candidates for a chill ask (chillRerank) or any non-empty
-// prefer (facet-overlap preferRerank). Never applies both, never drops events,
-// and never runs on the surprise path.
-function rerankByPrefer<T extends SearchScoreable>(
-  events: T[],
-  query: string,
-  prefer: EventSearchPrefer
-): T[] {
-  if (detectChillIntent(query)) return chillRerank(events)
-  if (!preferIsEmpty(prefer)) return preferRerank(events, prefer)
-  return events
-}
 
 // Whether the canonicalized intent carries any non-time must constraint
 // (used for the telemetry `hasFilters` flag).

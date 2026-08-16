@@ -12,3 +12,9 @@ bunx tsc --noEmit
 ```
 
 Never start the dev server.  
+
+## Environment Variables
+
+### AI APIs
+
+- `VOYAGE_API_KEY` — Voyage AI hosted reranker key for `search_events` stage-2 (optional; search falls back to retrieval order without it).

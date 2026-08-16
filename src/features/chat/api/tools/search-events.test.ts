@@ -11,6 +11,7 @@ import {
   hybridEventSearch,
   searchVenuesByName,
 } from '#shared/lib/db/client.server.ts'
+import { rerankEvents } from '#shared/lib/search/rerank.ts'
 
 vi.mock('#shared/lib/db/client.server.ts', () => ({
   getEventsHappeningNow: vi.fn(),
@@ -21,6 +22,17 @@ vi.mock('#shared/lib/db/client.server.ts', () => ({
   searchVenuesByName: vi.fn(),
 }))
 
+// Mock the reranker but keep the real implementation as the default, so the
+// "no VOYAGE_API_KEY → disabled → retrieval order" behavior is still exercised;
+// individual tests override the implementation to inject a reranked order.
+vi.mock('#shared/lib/search/rerank.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#shared/lib/search/rerank.ts')>()
+  return {
+    ...actual,
+    rerankEvents: vi.fn(actual.rerankEvents),
+  }
+})
+
 // The mocked module exports ARE the mock fns; cast only for typing
 // (bun test does not provide vi.mocked).
 const mockedGetEventsHappeningNow = getEventsHappeningNow as unknown as Mock
@@ -29,6 +41,7 @@ const mockedSearchEventsWithFilters = searchEventsWithFilters as unknown as Mock
 const mockedCountEventsWithFilters = countEventsWithFilters as unknown as Mock
 const mockedHybridEventSearch = hybridEventSearch as unknown as Mock
 const mockedSearchVenuesByName = searchVenuesByName as unknown as Mock
+const mockedRerankEvents = rerankEvents as unknown as Mock
 
 const context = { userContext: { userId: null, isAuthenticated: false }, locale: 'en' as const }
 
@@ -330,11 +343,12 @@ describe('search_events token-boundary semantic routing', () => {
 })
 
 // ============================================================================
-// P1 — chill soft rerank. A chill semantic query reorders (never drops) the
-// hybrid mock's return so the relaxed fixture wins over a party fixture.
+// Hosted rerank (disabled) — with no VOYAGE_API_KEY the reranker no-ops and
+// the retrieval order is preserved. The real rerankEvents is mocked through to
+// its actual implementation, so "disabled" behavior is still exercised.
 // ============================================================================
 
-describe('search_events chill soft rerank', () => {
+describe('search_events chill rerank disabled', () => {
   let tool: ToolDefinition
 
   beforeEach(async () => {
@@ -348,7 +362,7 @@ describe('search_events chill soft rerank', () => {
     vi.restoreAllMocks()
   })
 
-  it('a "chill" semantic call reranks the relaxed fixture first and keeps the party', async () => {
+  it('a "chill" semantic call preserves retrieval order when the reranker is disabled', async () => {
     const mk = (id: string, facets: unknown) => ({
       id,
       name: id,
@@ -370,20 +384,22 @@ describe('search_events chill soft rerank', () => {
     const relaxed = mk('relaxed-low', { vibes: ['relaxed'], energy: 'low', eventType: ['class'] })
     const untagged = mk('untagged', null)
 
-    // Hybrid returns vector order: party first, relaxed last.
+    // Hybrid returns vector order: party first, relaxed last. With no API key
+    // the hosted reranker is disabled and must not reorder anything.
     mockedHybridEventSearch.mockResolvedValue([party, untagged, relaxed])
 
     const result = await tool.execute({ query: 'chill', limit: 3 }, context)
 
     expect(result.success).toBe(true)
     expect(result.metadata?.searchMode).toBe('semantic')
+    expect(result.metadata?.rerank).toBe('disabled')
     expect(mockedHybridEventSearch).toHaveBeenCalledWith('chill', expect.anything(), 50)
     const events = result.events ?? []
-    expect(events.map((e) => e.id)).toEqual(['relaxed-low', 'untagged', 'party-high'])
+    expect(events.map((e) => e.id)).toEqual(['party-high', 'untagged', 'relaxed-low'])
   })
 })
 
-describe('search_events prefer soft rerank', () => {
+describe('search_events prefer rerank', () => {
   let tool: ToolDefinition
 
   beforeEach(async () => {
@@ -397,7 +413,7 @@ describe('search_events prefer soft rerank', () => {
     vi.restoreAllMocks()
   })
 
-  it('a non-chill prefer query reranks a romantic-tagged fixture above a party', async () => {
+  it('preserves retrieval order when the reranker is disabled', async () => {
     const mk = (id: string, facets: unknown) => ({
       id,
       name: id,
@@ -418,16 +434,52 @@ describe('search_events prefer soft rerank', () => {
     const party = mk('party', { vibes: ['energetic'], energy: 'high', eventType: ['party'] })
     const romantic = mk('romantic', { vibes: ['romantic'], energy: 'low', eventType: ['dinner'] })
 
-    // Hybrid returns vector order: party first, romantic last.
+    // Hybrid returns vector order: party first, romantic last. The reranker is
+    // disabled without an API key, so the raw retrieval order is preserved.
     mockedHybridEventSearch.mockResolvedValue([party, romantic])
 
     const result = await tool.execute({ query: 'romantic', limit: 2 }, context)
 
     expect(result.success).toBe(true)
     expect(result.metadata?.searchMode).toBe('semantic')
+    expect(result.metadata?.rerank).toBe('disabled')
     expect(mockedHybridEventSearch).toHaveBeenCalledWith('romantic', expect.anything(), 50)
     const events = result.events ?? []
-    expect(events.map((e) => e.id)).toEqual(['romantic', 'party'])
+    expect(events.map((e) => e.id)).toEqual(['party', 'romantic'])
+  })
+
+  it('applies the reranked order and then diversity', async () => {
+    // The reranker reorders (here: reverses), then diversity caps the same
+    // venue at 2 — the tool must apply both, in that order.
+    mockedRerankEvents.mockImplementation(async (candidates: Array<{ id: string }>) => ({
+      ordered: [...candidates].reverse(),
+      meta: { status: 'applied' },
+    }))
+
+    const mk = (id: string) => ({
+      id,
+      name: id,
+      starts_at: new Date(Date.now() + 3600_000).toISOString(),
+      image_url: null,
+      venue_id: 'venue-x',
+      venue_name: 'Venue X',
+      location_tba: false,
+      description_unavailable: false,
+      categories: ['music'],
+      is_free: false,
+      price: null,
+    })
+    const candidates = [mk('c-0'), mk('c-1'), mk('c-2'), mk('c-3')]
+    mockedHybridEventSearch.mockResolvedValue(candidates)
+
+    const result = await tool.execute({ query: 'romantic', limit: 4 }, context)
+
+    expect(result.success).toBe(true)
+    expect(result.metadata?.rerank).toBe('applied')
+    expect(mockedRerankEvents).toHaveBeenCalledTimes(1)
+    const events = result.events ?? []
+    // reranked order [c-3, c-2, c-1, c-0]; diversity caps venue-x at 2.
+    expect(events.map((e) => e.id)).toEqual(['c-3', 'c-2'])
   })
 })
 

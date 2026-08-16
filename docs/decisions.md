@@ -2265,3 +2265,43 @@ and the PostgREST filter/count paths. See the "Avoid = hard exclude" note in
 actually has. Coalescing missing genres to `[]` keeps events without facets
 eligible, which matches the import reality where most events are pre-enrichment
 (`facets = {}`).
+
+- - -
+
+## Hosted Voyage rerank replaces facet-overlap rerank
+
+**Date:** 2026-08-15
+
+**Decision:** Stage-2 rerank of `search_events` candidates now calls the hosted
+Voyage rerank API (`rerank-2.5-lite` by default, `VOYAGE_RERANK_MODEL` to
+override) over compact per-event documents (name, summary, venue, neighborhood,
+categories, facet labels, start, cost). Final order is weighted rank fusion
+`2/(60+rerankerRank) + 1/(60+baseRank)` against retrieval order. The facet/chill
+rerankers leave the production path (kept in `quality-diversity.ts` for the
+offline eval's comparison variant). Failure, timeout (1.2s), or a missing
+`VOYAGE_API_KEY` falls back to retrieval order — never facet order, never an
+error. Retrieval rank is derived from the fused array order; `rrf.ts` and
+`client.server.ts` are unchanged because the fusion is rank-based and reranker
+scores are not calibrated across queries anyway.
+
+Related Decision: "Generic prefer-facet rerank and default 3-item discovery
+limit" (2026-08-15) — its stage-2 rerank is superseded by this one. The 3-item
+discovery default stands.
+
+**Alternatives Considered:**
+- Self-hosted cross-encoder (bge/jina MiniLM on a persistent service): rejected
+  — no model hosting on Netlify functions; another service to run.
+- Listwise LLM rerank (one generateObject over ~30 cards): rejected — extra
+  seconds of latency and cost on the chat path, positional bias, coarse grades
+  leave most ordering to tie-breaks anyway.
+- Keeping facet overlap as a post-rerank boost: rejected — double-counts a
+  signal already present in the query text and the tags, and biases toward
+  better-enriched events.
+
+**Rationale:** Facet-overlap sorting ranks the extractor, not the event: a
+weakly-matching tagged event could jump a strongly-matching untagged one, and
+the RRF score was discarded entirely. A hosted cross-encoder reads name +
+summary + tags, so uneven facet coverage stops mattering, while rank fusion
+keeps retrieval evidence in the final order. The offline relevance eval
+(`--rerank`) compares baseline vs facet vs voyage vs voyage+fused on the frozen
+corpus before this ships to production behavior.

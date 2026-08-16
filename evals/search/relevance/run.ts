@@ -38,6 +38,8 @@ import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import { canonicalizeSearchIntent, type EventSearchIntent } from '#features/chat/api/tools/search-intent.ts'
 import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
+import { rerankEvents, type RerankDocumentEvent, type RerankMeta } from '#shared/lib/search/rerank.ts'
+import { corpusToRerankDocument, corpusToScoreable, facetRerank } from './rerank-variants.ts'
 import type { CorpusEvent, CorpusFile } from '../corpus/types.ts'
 import { RELEVANCE_QUERIES, RELEVANCE_NOW_BA, type SeedQuery, type SeedMust } from './queries.ts'
 
@@ -231,6 +233,17 @@ const cases: CaseResult[] = []
 let structuredSeeds = 0
 let structureHits = 0
 
+// Inputs captured for the --rerank comparison variants (parallel to `cases`).
+interface VariantInput {
+  seed: SeedQuery
+  intent: EventSearchIntent
+  candidates: CorpusEvent[]
+  baselineRanked: CorpusEvent[]
+  relevantSet: Set<string>
+  k: number
+}
+const variantInputs: VariantInput[] = []
+
 for (const seed of RELEVANCE_QUERIES) {
   const input = seed.toolInput ?? { query: seed.query }
   const intent = await canonicalizeSearchIntent({ query: seed.query, ...input }, RELEVANCE_NOW_BA)
@@ -295,47 +308,242 @@ for (const seed of RELEVANCE_QUERIES) {
     expectEmpty,
     noMatchPass,
   })
+
+  variantInputs.push({ seed, intent, candidates, baselineRanked: ranked, relevantSet, k })
 }
 
 // ============================================================================
-// Aggregate + table
+// Aggregate + table (baseline-only output; suppressed when --rerank is set)
 // ============================================================================
-const intentAccuracy = structuredSeeds > 0 ? structureHits / structuredSeeds : 1
-const harmSeeds = cases.filter((c) => c.candidates > 0)
-const totalViolations = harmSeeds.reduce((s, c) => s + c.violations, 0)
-const totalCandidates = harmSeeds.reduce((s, c) => s + c.candidates, 0)
-const violationRate = totalCandidates > 0 ? totalViolations / totalCandidates : 0
+if (!process.argv.includes('--rerank')) {
+  const intentAccuracy = structuredSeeds > 0 ? structureHits / structuredSeeds : 1
+  const harmSeeds = cases.filter((c) => c.candidates > 0)
+  const totalViolations = harmSeeds.reduce((s, c) => s + c.violations, 0)
+  const totalCandidates = harmSeeds.reduce((s, c) => s + c.candidates, 0)
+  const violationRate = totalCandidates > 0 ? totalViolations / totalCandidates : 0
 
-const recall50Mean = cases.reduce((s, c) => s + c.recall50, 0) / cases.length
-const ndcg5Mean = cases.reduce((s, c) => s + c.ndcg5, 0) / cases.length
-const hitRate = cases.reduce((s, c) => s + c.hit, 0) / cases.length
+  const recall50Mean = cases.reduce((s, c) => s + c.recall50, 0) / cases.length
+  const ndcg5Mean = cases.reduce((s, c) => s + c.ndcg5, 0) / cases.length
+  const hitRate = cases.reduce((s, c) => s + c.hit, 0) / cases.length
 
-const emptySeeds = cases.filter((c) => c.expectEmpty)
-const noMatchHits = emptySeeds.filter((c) => c.noMatchPass === true).length
-const noMatchAccuracy = emptySeeds.length > 0 ? noMatchHits / emptySeeds.length : 1
+  const emptySeeds = cases.filter((c) => c.expectEmpty)
+  const noMatchHits = emptySeeds.filter((c) => c.noMatchPass === true).length
+  const noMatchAccuracy = emptySeeds.length > 0 ? noMatchHits / emptySeeds.length : 1
 
-console.log(`\n=== relevance eval (offline, corpus=${EVENTS.length} events) ===`)
-console.log(
-  `${'id'.padEnd(28)} ${'cand'.padStart(4)} ${'top'.padStart(3)} ${'rel'.padStart(3)} ${'r@50'.padStart(5)} ${'ndcg@5'.padStart(7)} ${'hit'.padStart(3)} ${'intent'.padStart(6)} ${'viol'.padStart(4)} ${'nomatch'.padStart(7)}`
-)
-for (const c of cases) {
-  const nomatch = c.expectEmpty ? (c.noMatchPass ? 'ok' : 'MISS') : '-'
+  console.log(`\n=== relevance eval (offline, corpus=${EVENTS.length} events) ===`)
   console.log(
-    `${c.id.padEnd(28)} ${String(c.candidates).padStart(4)} ${String(c.top).padStart(3)} ` +
-      `${String(c.relevant).padStart(3)} ${c.recall50.toFixed(2).padStart(5)} ${c.ndcg5.toFixed(2).padStart(7)} ` +
-      `${String(c.hit).padStart(3)} ${c.intentAccurate ? 'ok' : 'MISS'.padStart(6)} ` +
-      `${String(c.violations).padStart(4)} ${nomatch.padStart(7)}`
+    `${'id'.padEnd(28)} ${'cand'.padStart(4)} ${'top'.padStart(3)} ${'rel'.padStart(3)} ${'r@50'.padStart(5)} ${'ndcg@5'.padStart(7)} ${'hit'.padStart(3)} ${'intent'.padStart(6)} ${'viol'.padStart(4)} ${'nomatch'.padStart(7)}`
   )
+  for (const c of cases) {
+    const nomatch = c.expectEmpty ? (c.noMatchPass ? 'ok' : 'MISS') : '-'
+    console.log(
+      `${c.id.padEnd(28)} ${String(c.candidates).padStart(4)} ${String(c.top).padStart(3)} ` +
+        `${String(c.relevant).padStart(3)} ${c.recall50.toFixed(2).padStart(5)} ${c.ndcg5.toFixed(2).padStart(7)} ` +
+        `${String(c.hit).padStart(3)} ${c.intentAccurate ? 'ok' : 'MISS'.padStart(6)} ` +
+        `${String(c.violations).padStart(4)} ${nomatch.padStart(7)}`
+    )
+  }
+
+  console.log(`\n--- summary ---`)
+  console.log(`corpus events           : ${EVENTS.length}`)
+  console.log(`structured intent acc   : ${intentAccuracy.toFixed(3)} (${structureHits}/${structuredSeeds})`)
+  console.log(`constraint-violation    : ${violationRate.toFixed(3)} (${totalViolations}/${totalCandidates} of must-filtered candidates)`)
+  console.log(`mean recall@${RECALL_K}        : ${recall50Mean.toFixed(3)}`)
+  console.log(`mean NDCG@${NDCG_K}           : ${ndcg5Mean.toFixed(3)}`)
+  console.log(`hit@${'1'} (limit=1)         : ${hitRate.toFixed(3)}`)
+  console.log(`no-match accuracy        : ${noMatchAccuracy.toFixed(3)} (${noMatchHits}/${emptySeeds.length} expectEmpty seeds)`)
+  console.log(`intent-fidelity misses  : ${cases.filter((c) => !c.intentAccurate).map((c) => c.id).join(', ') || 'none'}`)
+  console.log(`no-match misses          : ${emptySeeds.filter((c) => c.noMatchPass !== true).map((c) => c.id).join(', ') || 'none'}`)
+  console.log(`\nnote: ranking is the placeholder token-overlap retriever (Phase 4/6 not loaded here).`)
 }
 
-console.log(`\n--- summary ---`)
-console.log(`corpus events           : ${EVENTS.length}`)
-console.log(`structured intent acc   : ${intentAccuracy.toFixed(3)} (${structureHits}/${structuredSeeds})`)
-console.log(`constraint-violation    : ${violationRate.toFixed(3)} (${totalViolations}/${totalCandidates} of must-filtered candidates)`)
-console.log(`mean recall@${RECALL_K}        : ${recall50Mean.toFixed(3)}`)
-console.log(`mean NDCG@${NDCG_K}           : ${ndcg5Mean.toFixed(3)}`)
-console.log(`hit@${'1'} (limit=1)         : ${hitRate.toFixed(3)}`)
-console.log(`no-match accuracy        : ${noMatchAccuracy.toFixed(3)} (${noMatchHits}/${emptySeeds.length} expectEmpty seeds)`)
-console.log(`intent-fidelity misses  : ${cases.filter((c) => !c.intentAccurate).map((c) => c.id).join(', ') || 'none'}`)
-console.log(`no-match misses          : ${emptySeeds.filter((c) => c.noMatchPass !== true).map((c) => c.id).join(', ') || 'none'}`)
-console.log(`\nnote: ranking is the placeholder token-overlap retriever (Phase 4/6 not loaded here).`)
+// ============================================================================
+// --rerank comparison variants
+// ============================================================================
+
+function variantMetrics(
+  ranked: CorpusEvent[],
+  seed: SeedQuery,
+  relevantSet: Set<string>,
+  k: number
+): { ndcg5: number; hit: number } {
+  const actualTop5 = ranked.slice(0, NDCG_K).map((e) => seed.labels[e.id] ?? 0)
+  const idealTop5 = Object.values(seed.labels)
+    .sort((a, b) => b - a)
+    .slice(0, NDCG_K)
+  const idealDcg = dcg(idealTop5)
+  const ndcg5 = idealDcg > 0 ? dcg(actualTop5) / idealDcg : 0
+  const hit = ranked.slice(0, k).some((e) => relevantSet.has(e.id)) ? 1 : 0
+  return { ndcg5, hit }
+}
+
+function rankDisplacement(
+  baseline: CorpusEvent[],
+  variant: CorpusEvent[],
+  relevantSet: Set<string>
+): number | null {
+  const baseRank = new Map(baseline.map((e, i) => [e.id, i]))
+  const varRank = new Map(variant.map((e, i) => [e.id, i]))
+  let total = 0
+  let count = 0
+  for (const id of relevantSet) {
+    const b = baseRank.get(id)
+    const v = varRank.get(id)
+    if (b === undefined || v === undefined) continue
+    total += Math.abs(v - b)
+    count++
+  }
+  return count > 0 ? total / count : null
+}
+
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))]
+}
+
+function printVariantTable(
+  name: string,
+  cases: CaseResult[],
+  inputs: VariantInput[],
+  orders: CorpusEvent[][]
+): void {
+  console.log(`\n--- ${name} ---`)
+  console.log(
+    `${'id'.padEnd(28)} ${'cand'.padStart(4)} ${'top'.padStart(3)} ${'ndcg@5'.padStart(7)} ${'hit'.padStart(3)} ${'viol'.padStart(4)} ${'nomatch'.padStart(7)}`
+  )
+
+  let ndcgSum = 0
+  let hitSum = 0
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i]
+    const m = variantMetrics(orders[i], inputs[i].seed, inputs[i].relevantSet, inputs[i].k)
+    ndcgSum += m.ndcg5
+    hitSum += m.hit
+    const nomatch = c.expectEmpty ? (c.noMatchPass ? 'ok' : 'MISS') : '-'
+    console.log(
+      `${c.id.padEnd(28)} ${String(c.candidates).padStart(4)} ${String(c.top).padStart(3)} ` +
+        `${m.ndcg5.toFixed(2).padStart(7)} ${String(m.hit).padStart(3)} ` +
+        `${String(c.violations).padStart(4)} ${nomatch.padStart(7)}`
+    )
+  }
+
+  const harmCases = cases.filter((c) => c.candidates > 0)
+  const totalViolations = harmCases.reduce((s, c) => s + c.violations, 0)
+  const totalCandidates = harmCases.reduce((s, c) => s + c.candidates, 0)
+  const violationRate = totalCandidates > 0 ? totalViolations / totalCandidates : 0
+  const emptySeeds = cases.filter((c) => c.expectEmpty)
+  const noMatchHits = emptySeeds.filter((c) => c.noMatchPass === true).length
+  const noMatchAccuracy = emptySeeds.length > 0 ? noMatchHits / emptySeeds.length : 1
+
+  console.log(`mean NDCG@${NDCG_K}       : ${(ndcgSum / cases.length).toFixed(3)}`)
+  console.log(`hit@1 (limit=1)     : ${(hitSum / cases.length).toFixed(3)}`)
+  console.log(`constraint-violation: ${violationRate.toFixed(3)}`)
+  console.log(`no-match accuracy    : ${noMatchAccuracy.toFixed(3)}`)
+}
+
+async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): Promise<void> {
+  const hasKey = !!process.env.VOYAGE_API_KEY
+
+  const baselineOrders: CorpusEvent[][] = inputs.map((inp) => inp.baselineRanked.slice(0, RECALL_K))
+  const facetOrders: CorpusEvent[][] = inputs.map((inp) => {
+    const byId = new Map(inp.baselineRanked.map((e) => [e.id, e]))
+    const scoreables = inp.baselineRanked.slice(0, RECALL_K).map(corpusToScoreable)
+    return facetRerank(scoreables, inp.intent.semanticQuery, inp.intent.prefer).map((s) => byId.get(s.id)!)
+  })
+
+  const voyageOrders: CorpusEvent[][] = []
+  const fusedOrders: CorpusEvent[][] = []
+  const latencies: number[] = []
+  let fallbacks = 0
+
+  if (hasKey) {
+    // Free-tier keys are rate-limited per minute; pace calls so the comparison
+    // measures reranker quality, not 429 fallbacks. Production makes one call
+    // per search, so this delay is eval-only.
+    const PACE_MS = 1100
+    for (const inp of inputs) {
+      const baseline50 = inp.baselineRanked.slice(0, RECALL_K)
+      const byId = new Map(baseline50.map((e) => [e.id, e]))
+      const docs = baseline50.map(corpusToRerankDocument)
+      // Eval-only retry on free-tier 429s (production rerankEvents stays
+      // fail-closed). Backoff: 5s, 15s, 30s.
+      let fusedDocs: RerankDocumentEvent[] = docs
+      let meta: RerankMeta = { status: 'failed', error: 'not run' }
+      for (const backoffMs of [0, 5000, 15000, 30000]) {
+        if (backoffMs > 0) {
+          const { promise: wait, resolve: waitResolve } = Promise.withResolvers<void>()
+          setTimeout(waitResolve, backoffMs)
+          await wait
+        }
+        const result = await rerankEvents(docs, {
+          semanticQuery: inp.intent.semanticQuery,
+          prefer: inp.intent.prefer,
+          avoid: [],
+        })
+        fusedDocs = result.ordered
+        meta = result.meta
+        if (meta.status !== 'failed' || !meta.error?.includes('429')) break
+      }
+
+      if (meta.status === 'failed') fallbacks += 1
+      if (meta.status === 'applied' && meta.latencyMs !== undefined) latencies.push(meta.latencyMs)
+
+      if (meta.status === 'applied') {
+        const mapBack = (ds: RerankDocumentEvent[]) => ds.map((d) => byId.get(d.id)!)
+        fusedOrders.push(mapBack(fusedDocs))
+        const byRerankerRank = [...docs].sort(
+          (a, b) => meta.ranks!.get(a.id)!.rerankerRank - meta.ranks!.get(b.id)!.rerankerRank
+        )
+        voyageOrders.push(mapBack(byRerankerRank))
+      } else {
+        fusedOrders.push(baseline50)
+        voyageOrders.push(baseline50)
+      }
+
+      const { promise: paced, resolve: pacedResolve } = Promise.withResolvers<void>()
+      setTimeout(pacedResolve, PACE_MS)
+      await paced
+    }
+  }
+
+  console.log(`\n=== rerank variants ===`)
+
+  printVariantTable('baseline', cases, inputs, baselineOrders)
+  printVariantTable('facet', cases, inputs, facetOrders)
+  if (hasKey) {
+    printVariantTable('voyage', cases, inputs, voyageOrders)
+    printVariantTable('voyage+fused', cases, inputs, fusedOrders)
+  }
+
+  const ordersByName: Record<string, CorpusEvent[][]> = hasKey
+    ? { facet: facetOrders, voyage: voyageOrders, 'voyage+fused': fusedOrders }
+    : { facet: facetOrders }
+  for (const name of Object.keys(ordersByName)) {
+    let total = 0
+    let queries = 0
+    for (let i = 0; i < inputs.length; i++) {
+      const d = rankDisplacement(baselineOrders[i], ordersByName[name][i], inputs[i].relevantSet)
+      if (d !== null) {
+        total += d
+        queries++
+      }
+    }
+    const mean = queries > 0 ? total / queries : null
+    console.log(
+      `mean rank displacement vs baseline (${name}): ${mean === null ? 'n/a' : mean.toFixed(3)}`
+    )
+  }
+
+  if (hasKey) {
+    const sorted = [...latencies].sort((a, b) => a - b)
+    console.log(`rerank latency p50 (ms) : ${percentile(sorted, 0.5) ?? 'n/a'}`)
+    console.log(`rerank latency p95 (ms) : ${percentile(sorted, 0.95) ?? 'n/a'}`)
+    console.log(`rerank fallbacks         : ${fallbacks}`)
+  } else {
+    console.log(`\nnote: voyage variants skipped (no VOYAGE_API_KEY).`)
+  }
+}
+
+if (process.argv.includes('--rerank')) {
+  await runRerankVariants(cases, variantInputs)
+}
