@@ -1,0 +1,453 @@
+{
+  "meta": {
+    "seed": 20260816,
+    "capture": "evals/search/relevance/holdout-capture.json",
+    "labels": "evals/search/relevance/holdout-labels.ts",
+    "capturedAt": "2026-08-16T04:06:08.458Z",
+    "note": "Sealed identity key for the blinded worksheet. caseId -> queryId, optionId -> eventId (option IDs are globally unique, so every worksheet option reverses exactly once), plus pure/fused(2) top booleans per option, selection-reason booleans per case, and the existing adjudicated label for after-the-human comparison only."
+  },
+  "cases": [
+    {
+      "caseId": "case-01",
+      "queryId": "hold-es-solo-post-laburo",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0001",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0002",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "caseId": "case-02",
+      "queryId": "hold-es-aire-libre-lluvia",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0003",
+          "eventId": "8e041344-be8e-4e0f-9d3f-d45fc86ec1ab",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0004",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "caseId": "case-03",
+      "queryId": "hold-es-musica-no-tributo",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0005",
+          "eventId": "70cfa8f5-8f99-4b29-91b6-7963c8197054",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0006",
+          "eventId": "ae63afaf-6e94-4904-a9f5-010675899b39",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "caseId": "case-04",
+      "queryId": "hold-es-bailar-no-cachengue",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0007",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0008",
+          "eventId": "9089d173-0ef3-40a5-9419-e12381470bbd",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "caseId": "case-05",
+      "queryId": "hold-es-standup-barato",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0009",
+          "eventId": "043f86c9-7b2d-4738-ad8e-4c0f8e578913",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0010",
+          "eventId": "fd70761b-9160-4042-99e5-d72bcb8e16e9",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "caseId": "case-06",
+      "queryId": "hold-en-family-tomorrow",
+      "topOneDisagreement": false,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0011",
+          "eventId": "7ee4dd4c-cd94-4e0c-9a56-edb986d58c28",
+          "isPureTop": true,
+          "isFusedTop": true,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-07",
+      "queryId": "hold-mix-dance-talk",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0012",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0013",
+          "eventId": "d7a98eed-e83f-476b-9081-fd3497b39c6d",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "caseId": "case-08",
+      "queryId": "hold-es-queer-no-megafiesta",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0014",
+          "eventId": "7e1c463c-e835-46e4-8d19-3082492d534a",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0015",
+          "eventId": "8c4d5b7e-d66c-42d8-a671-b046a804aeb3",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "caseId": "case-09",
+      "queryId": "hold-mix-free-palermo-weekend",
+      "topOneDisagreement": false,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0016",
+          "eventId": "c91a0a54-d937-438a-84bd-26f434e3b646",
+          "isPureTop": true,
+          "isFusedTop": true,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-10",
+      "queryId": "hold-es-bailar-charlar",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0017",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0018",
+          "eventId": "eb9fe5fb-4ec6-459b-8727-d627f68ea7be",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "caseId": "case-11",
+      "queryId": "hold-mix-cozy-date",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0019",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0020",
+          "eventId": "18750704-d655-40c4-b247-cb4dc9f8b981",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "caseId": "case-12",
+      "queryId": "hold-es-teatro-almagro",
+      "topOneDisagreement": false,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0021",
+          "eventId": "6fab8bf4-90a0-4dd7-827e-8270dfb91756",
+          "isPureTop": true,
+          "isFusedTop": true,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-13",
+      "queryId": "hold-mix-art-sunday",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0022",
+          "eventId": "280a18d8-85d6-4ec9-a0d6-2b9787482af0",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0023",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "caseId": "case-14",
+      "queryId": "hold-es-cine-hoy",
+      "topOneDisagreement": false,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0024",
+          "eventId": "3e815330-3ce6-415b-bafe-a02ae6b12fbc",
+          "isPureTop": true,
+          "isFusedTop": true,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-15",
+      "queryId": "hold-es-museo-gratis",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0025",
+          "eventId": "e197177c-3b21-47fd-9ed7-d78ab52a5259",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0026",
+          "eventId": "cfb52731-0d97-42c0-b703-ab6c52adcfd7",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-16",
+      "queryId": "hold-es-padres-sin-ruido",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0027",
+          "eventId": "c4665b91-618c-46ea-8e62-5d118887927a",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0028",
+          "eventId": "8c41f343-f584-4237-a563-1aaa02126c6e",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-17",
+      "queryId": "hold-es-artistico-no-boliche",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0029",
+          "eventId": "6a262dbf-be1b-42c4-a07b-4b799cd82210",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0030",
+          "eventId": "551f4911-1207-4707-ad66-efb93c2a6c7b",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "caseId": "case-18",
+      "queryId": "hold-mix-jazz-cheap-chill",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0031",
+          "eventId": "59edf8d4-333a-4014-9d1a-327fd702d817",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0032",
+          "eventId": "3f373854-348b-4433-8ba0-a528f34be097",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "caseId": "case-19",
+      "queryId": "hold-es-taller-ceramica",
+      "topOneDisagreement": false,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0033",
+          "eventId": "9d360c34-01a8-4155-aedd-b5e03461fb24",
+          "isPureTop": true,
+          "isFusedTop": true,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-20",
+      "queryId": "hold-es-no-fiesta-reggaeton",
+      "topOneDisagreement": false,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0034",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+          "isPureTop": true,
+          "isFusedTop": true,
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "caseId": "case-21",
+      "queryId": "hold-es-recoleta-cultural-gratis",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": false,
+      "options": [
+        {
+          "optionId": "op-0035",
+          "eventId": "21f43631-0765-49f6-9d17-d9561b217b63",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0036",
+          "eventId": "927bfc75-044c-4a9d-abe3-0f660f753efc",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "caseId": "case-22",
+      "queryId": "hold-es-energia-no-apretado",
+      "topOneDisagreement": true,
+      "pureTopWasGradeZero": true,
+      "options": [
+        {
+          "optionId": "op-0037",
+          "eventId": "764bba3a-cb14-4939-ad34-da64d681e4bf",
+          "isPureTop": true,
+          "isFusedTop": false,
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0038",
+          "eventId": "c0359146-fb0b-4cef-9b31-2aa02950fdb5",
+          "isPureTop": false,
+          "isFusedTop": true,
+          "existingGrade": 1
+        }
+      ]
+    }
+  ]
+}

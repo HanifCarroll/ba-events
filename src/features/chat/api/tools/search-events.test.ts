@@ -343,6 +343,100 @@ describe('search_events token-boundary semantic routing', () => {
 })
 
 // ============================================================================
+// Generic discovery + temporal routing regressions
+//
+// "qué hay" / "what's on" / "things to do" / "planes en Recoleta" canonicalize
+// to an empty semantic query and must route to filter-only search (never
+// hybrid, never surprise). A specific query keeps its semantic residue.
+// ============================================================================
+
+describe('search_events generic discovery + temporal routing', () => {
+  let tool: ToolDefinition
+
+  // Distinct venues + categories so list diversity never collapses the 3
+  // candidates while asserting filter-only routing (not surprise ranking).
+  const candidates = Array.from({ length: 3 }, (_, i) => ({
+    id: `generic-${i}`,
+    name: `Generic ${i}`,
+    starts_at: new Date(Date.now() + (i + 1) * 3600_000).toISOString(),
+    image_url: null,
+    venue_id: `venue-${i}`,
+    venue_name: `Venue ${i}`,
+    location_tba: false,
+    description_unavailable: false,
+    categories: [`cat-${i}`],
+    is_free: false,
+    price: null,
+  }))
+
+  beforeEach(async () => {
+    vi.resetAllMocks()
+    mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00.000Z')
+    mockedCountEventsWithFilters.mockResolvedValue(3)
+    mockedSearchEventsWithFilters.mockResolvedValue(candidates)
+    // Deterministic no-op reranker: filter-only must preserve candidate order.
+    mockedRerankEvents.mockImplementation(async (cs: Array<{ id: string }>) => ({
+      ordered: cs,
+      meta: { status: 'disabled' },
+    }))
+    tool = searchEventsTool
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each(['qué hay', 'eventos', "what's on", 'things to do'])(
+    '%s routes to filter-only search (never hybrid, never surprise)',
+    async (query) => {
+      const result = await tool.execute({ query }, context)
+
+      expect(result.success).toBe(true)
+      expect(result.metadata?.searchMode).toBe('filter_only')
+      expect(mockedSearchEventsWithFilters).toHaveBeenCalledTimes(1)
+      expect(mockedHybridEventSearch).not.toHaveBeenCalled()
+      // Default discovery display limit (not the single surprise pick).
+      expect((result.events ?? []).length).toBe(3)
+    }
+  )
+
+  const neighborhoodAsks: Array<{ query: string; neighborhood: string[] }> = [
+    { query: 'planes en Recoleta', neighborhood: ['Recoleta'] },
+    { query: 'eventos en Palermo', neighborhood: ['Palermo'] },
+    { query: 'qué hay en San Telmo', neighborhood: ['San Telmo'] },
+    { query: 'things to do in Belgrano', neighborhood: ['Belgrano'] },
+  ]
+
+  it.each(neighborhoodAsks)(
+    '$query filters by its canonical neighborhood and never hybrid',
+    async ({ query, neighborhood }) => {
+      const result = await tool.execute({ query }, context)
+
+      expect(result.success).toBe(true)
+      expect(result.metadata?.searchMode).toBe('filter_only')
+      expect(mockedSearchEventsWithFilters).toHaveBeenCalledTimes(1)
+      expect(mockedSearchEventsWithFilters.mock.calls[0][0].neighborhoods).toEqual(neighborhood)
+      expect(mockedHybridEventSearch).not.toHaveBeenCalled()
+    }
+  )
+
+  it('specific "ópera gratis en Recoleta" still uses hybrid with query "opera"', async () => {
+    mockedHybridEventSearch.mockResolvedValue(candidates)
+
+    const result = await tool.execute({ query: 'ópera gratis en Recoleta' }, context)
+
+    expect(result.success).toBe(true)
+    expect(result.metadata?.searchMode).toBe('semantic')
+    expect(mockedHybridEventSearch).toHaveBeenCalledTimes(1)
+    const [q, filters] = mockedHybridEventSearch.mock.calls[0] as [string, Record<string, unknown>]
+    expect(q).toBe('opera')
+    expect(filters.isFree).toBe(true)
+    expect(filters.neighborhoods).toEqual(['Recoleta'])
+    expect(mockedSearchEventsWithFilters).not.toHaveBeenCalled()
+  })
+})
+
+// ============================================================================
 // Hosted rerank (disabled) — with no VOYAGE_API_KEY the reranker no-ops and
 // the retrieval order is preserved. The real rerankEvents is mocked through to
 // its actual implementation, so "disabled" behavior is still exercised.

@@ -107,6 +107,9 @@ const CANDIDATE_LIMIT = 50
 const SEMANTIC_FILLER = new Set([
   'el', 'la', 'los', 'las', 'lo', 'un', 'una', 'unos', 'unas',
   'de', 'del', 'en', 'a', 'y', 'o', 'que', 'para', 'por', 'con', 'al',
+  // English preposition glue for discovery/location asks ("things to do in
+  // Belgrano" — "in" carries no semantic signal once the location resolves).
+  'in',
 ])
 
 /** Whole-word tokens that mark a query as free (never a substring). */
@@ -147,6 +150,61 @@ const WEEKDAY_PHRASES: string[][] = [
   ['dia', 'de', 'semana'],
   ['dias', 'de', 'semana'],
 ]
+
+/**
+ * Generic discovery phrases — "what's on?" / "qué hay?" / "things to do" —
+ * that name the ask itself rather than a subject. Matched as exact contiguous
+ * token spans on the normalized query (never substring). Removing them turns a
+ * pure discovery ask into filter-only search instead of embedding meaningless
+ * tokens.
+ */
+const GENERIC_DISCOVERY_PHRASES: string[][] = [
+  // Spanish
+  ['planes'],
+  ['eventos'],
+  ['actividades'],
+  ['cosas', 'para', 'hacer'],
+  ['algo', 'para', 'hacer'],
+  ['que', 'hay'], // "qué hay"
+  // English
+  ['what', 's', 'on'], // "what's on"
+  ['what', 'is', 'on'],
+  ['whats', 'on'],
+  ['things', 'to', 'do'],
+  ['thing', 'to', 'do'],
+  ['something', 'to', 'do'],
+  ['events'],
+  ['activities'],
+]
+
+/**
+ * Temporal phrases keyed by the structured `timeFilter`, so only the phrase
+ * matching the *active* filter is stripped from semantic residue. This avoids
+ * globally deleting "night" / "week" / "now" when no structured filter exists.
+ */
+const TEMPORAL_PHRASES_BY_FILTER: Record<
+  NonNullable<CanonicalizeInput['timeFilter']>,
+  string[][]
+> = {
+  now: [['now'], ['right', 'now'], ['ahora'], ['en', 'este', 'momento']],
+  tonight: [
+    ['tonight'],
+    ['this', 'evening'],
+    ['esta', 'noche'],
+    ['hoy', 'a', 'la', 'noche'],
+  ],
+  tomorrow: [['tomorrow'], ['manana']], // "mañana"
+  weekend: [
+    ['weekend'],
+    ['this', 'weekend'],
+    ['este', 'fin', 'de', 'semana'],
+    ['fin', 'de', 'semana'],
+    ['este', 'finde'],
+    ['finde'],
+  ],
+  week: [['this', 'week'], ['esta', 'semana']],
+  future: [['in', 'the', 'future'], ['en', 'el', 'futuro']],
+}
 
 const NORMALIZED_NEIGHBORHOODS: Array<{ name: Neighborhood; tokens: string[] }> =
   NEIGHBORHOODS.map((name) => ({
@@ -254,6 +312,34 @@ function phraseMatches(
     if (ok) return true
   }
   return false
+}
+
+/**
+ * Return the union of token indexes covered by any phrase in `phrases`,
+ * matching exact contiguous token spans (whole tokens, never substrings).
+ * Empty when nothing matches. Indexes — not values — are tracked so a title
+ * occurrence ("Stranger Things") survives while only the generic phrase is
+ * removed.
+ */
+function matchPhraseIndexes(tokens: string[], phrases: string[][]): Set<number> {
+  const matched = new Set<number>()
+  for (const phrase of phrases) {
+    const n = phrase.length
+    if (n === 0) continue
+    for (let i = 0; i + n <= tokens.length; i++) {
+      let ok = true
+      for (let j = 0; j < n; j++) {
+        if (tokens[i + j] !== phrase[j]) {
+          ok = false
+          break
+        }
+      }
+      if (ok) {
+        for (let j = 0; j < n; j++) matched.add(i + j)
+      }
+    }
+  }
+  return matched
 }
 
 /**
@@ -556,7 +642,17 @@ export async function canonicalizeSearchIntent(
 ): Promise<EventSearchIntent> {
   const query = input.query?.trim() ?? ''
   const normalizedQuery = normalizeText(query)
-  const queryTokens = new Set(normalizedQuery ? normalizedQuery.split(' ') : [])
+  const queryTokenList = normalizedQuery ? normalizedQuery.split(' ').filter(Boolean) : []
+  const queryTokens = new Set(queryTokenList)
+
+  // --- phrase-aware generic discovery + active temporal stripping ---
+  // Matched by token index (not value) so a title occurrence like "Stranger
+  // Things" is preserved while only the generic phrase is removed.
+  const genericIndexes = matchPhraseIndexes(queryTokenList, GENERIC_DISCOVERY_PHRASES)
+  const hadGenericDiscoveryIntent = genericIndexes.size > 0
+  const temporalIndexes = input.timeFilter
+    ? matchPhraseIndexes(queryTokenList, TEMPORAL_PHRASES_BY_FILTER[input.timeFilter])
+    : new Set<number>()
 
   const must: EventSearchMust = {}
   const avoid: EventSearchAvoid = {}
@@ -616,9 +712,7 @@ export async function canonicalizeSearchIntent(
   // means Monday–Friday — NOT timeFilter "week" (the next 7 days). Only when
   // no named weekday is present (a named day wins over the generic phrasing).
   const weekdayPhrase =
-    weekdays.size === 0
-      ? matchWeekdayPhrase(normalizedQuery ? normalizedQuery.split(' ') : [])
-      : null
+    weekdays.size === 0 ? matchWeekdayPhrase(queryTokenList) : null
 
   if (weekdays.size > 0) {
     const w = weekdayWindow(nowBA, [...weekdays])
@@ -656,12 +750,18 @@ export async function canonicalizeSearchIntent(
   const avoidGenres = mapAvoidGenres(input.avoid)
   if (avoidGenres.length > 0) avoid.genres = avoidGenres
 
-  // --- semanticQuery = query minus resolved constraint tokens + filler ---
+  // --- semanticQuery = query minus resolved constraint tokens + filler +
+  // generic-discovery + active-temporal phrases ---
   let semanticQuery = ''
   if (normalizedQuery) {
-    const remaining = normalizedQuery
-      .split(' ')
-      .filter((t) => t && !strippedTokens.has(t) && !SEMANTIC_FILLER.has(t))
+    const remaining = queryTokenList.filter(
+      (t, i) =>
+        t &&
+        !strippedTokens.has(t) &&
+        !SEMANTIC_FILLER.has(t) &&
+        !genericIndexes.has(i) &&
+        !temporalIndexes.has(i)
+    )
     semanticQuery = remaining.join(' ')
   }
 
@@ -674,7 +774,7 @@ export async function canonicalizeSearchIntent(
     semanticQuery = joinPreferIntoQuery(prefer)
   }
 
-  const objective = resolveObjective(input, must, semanticQuery)
+  const objective = resolveObjective(input, must, semanticQuery, hadGenericDiscoveryIntent)
   // Vague discovery asks (no explicit limit, not a surprise pick, no named
   // constraint) default to a short list of 3 rather than a single pick.
   if (
@@ -709,18 +809,21 @@ export async function canonicalizeSearchIntent(
 function resolveObjective(
   input: CanonicalizeInput,
   must: EventSearchMust,
-  semanticQuery: string
+  semanticQuery: string,
+  hadGenericDiscoveryIntent: boolean
 ): 'search' | 'surprise' {
-  // Surprise is never legitimate when there is semantic text OR a hard must
-  // beyond the default upcoming window. That gate holds even for an explicit
-  // `objective: 'surprise'` hint — hard filters (Palermo / free / Niceto /
-  // Saturday) make it a directed search, not a surprise pick.
+  // Non-empty semantic text is always a directed search, never a surprise.
   if (semanticQuery) return 'search'
+  // Hard must constraints / a non-default window are a directed search.
   if (!isDefaultWindowOnly(input, must)) return 'search'
   // Passed the gate. An explicit `objective: 'search'` must never surprise;
-  // an explicit `surprise` picks; otherwise the empty-query default surprises.
+  // an explicit `surprise` still picks (the real "surprise me" path).
   if (input.objective === 'search') return 'search'
   if (input.objective === 'surprise') return 'surprise'
+  // A generic discovery ask ("what's on?", "qué hay?", "things to do") with no
+  // other signal is a directed discovery search, not a surprise pick.
+  if (hadGenericDiscoveryIntent) return 'search'
+  // Truly empty/default input → surprise.
   return 'surprise'
 }
 

@@ -41,7 +41,11 @@ describe('canonicalizeSearchIntent — free language', () => {
     const intent = await canonicalizeSearchIntent({ query: 'eventos gratis' }, WEDNESDAY_NOON)
     expect(intent.must.isFree).toBe(true)
     expect(intent.semanticQuery).not.toContain('gratis')
-    expect(intent.semanticQuery).toBe('eventos')
+    // "eventos" is a generic discovery phrase — the clean cutover leaves an
+    // empty semantic query so this routes to filter-only search, not to an
+    // embedding of the word "eventos".
+    expect(intent.semanticQuery).toBe('')
+    expect(intent.objective).toBe('search')
   })
 
   it('does NOT set isFree from the substring "free" in "freestyle rap"', async () => {
@@ -279,6 +283,101 @@ describe('canonicalizeSearchIntent — display limit defaults', () => {
       WEDNESDAY_NOON
     )
     expect(intent.displayLimit).toBe(5)
+  })
+})
+
+describe('canonicalizeSearchIntent — generic discovery + temporal stripping', () => {
+  const locationAsks: Array<{ query: string; neighborhood: string[] }> = [
+    { query: 'planes en Recoleta', neighborhood: ['Recoleta'] },
+    { query: 'eventos en Palermo', neighborhood: ['Palermo'] },
+    { query: 'qué hay en San Telmo', neighborhood: ['San Telmo'] },
+    { query: 'things to do in Belgrano', neighborhood: ['Belgrano'] },
+  ]
+
+  it.each(locationAsks)(
+    '$query resolves the neighborhood, empties semanticQuery, and searches',
+    async ({ query, neighborhood }) => {
+      const intent = await canonicalizeSearchIntent({ query }, WEDNESDAY_NOON)
+      expect(intent.must.neighborhoodIds).toEqual(neighborhood)
+      expect(intent.semanticQuery).toBe('')
+      expect(intent.objective).toBe('search')
+    }
+  )
+
+  it.each(['qué hay', 'eventos', "what's on", 'things to do'])(
+    '%s is filter-only discovery: empty semantic query, search, display limit 3',
+    async (query) => {
+      const intent = await canonicalizeSearchIntent({ query }, WEDNESDAY_NOON)
+      expect(intent.semanticQuery).toBe('')
+      expect(intent.objective).toBe('search')
+      expect(intent.displayLimit).toBe(3)
+    }
+  )
+
+  it('explicit objective surprise still yields exactly one surprise pick', async () => {
+    const intent = await canonicalizeSearchIntent({ objective: 'surprise' }, WEDNESDAY_NOON)
+    expect(intent.objective).toBe('surprise')
+    expect(intent.displayLimit).toBe(1)
+    expect(intent.semanticQuery).toBe('')
+  })
+
+  it('"what\'s on tonight" with timeFilter tonight strips both phrases and keeps the tonight window', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { query: "what's on tonight", timeFilter: 'tonight' },
+      WEDNESDAY_NOON
+    )
+    expect(intent.semanticQuery).toBe('')
+    expect(intent.objective).toBe('search')
+    expect(intent.displayLimit).toBe(3)
+    expect(intent.must.startsAfter).toBe(baToUTC(new Date(2026, 7, 12, 18, 0, 0)))
+    expect(intent.must.startsBefore).toBe(baToUTC(new Date(2026, 7, 13, 6, 0, 0)))
+  })
+
+  it('"chill tonight" with timeFilter tonight keeps semantic "chill" and relaxed prefer', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { query: 'chill tonight', timeFilter: 'tonight' },
+      WEDNESDAY_NOON
+    )
+    expect(intent.semanticQuery).toBe('chill')
+    expect(intent.prefer.vibes).toContain('relaxed')
+  })
+
+  it('keeps specific residue: "ópera gratis en Recoleta" → semantic opera + free + Recoleta', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { query: 'ópera gratis en Recoleta' },
+      WEDNESDAY_NOON
+    )
+    expect(intent.semanticQuery).toBe('opera')
+    expect(intent.must.isFree).toBe(true)
+    expect(intent.must.neighborhoodIds).toEqual(['Recoleta'])
+  })
+
+  it('keeps specific residue: "eventos de ópera gratis en Recoleta" → semantic opera, not empty', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { query: 'eventos de ópera gratis en Recoleta' },
+      WEDNESDAY_NOON
+    )
+    expect(intent.semanticQuery).toBe('opera')
+  })
+
+  it('preserves the "Stranger Things" title and strips only the generic phrase', async () => {
+    // The em-dash normalizes away, so this becomes
+    // "stranger things things to do in belgrano": "things" appears both in the
+    // title and in the generic phrase. Only the phrase's token *indexes* are
+    // stripped, so the title's "things" survives — a value-based stripper
+    // would delete both occurrences and fail this assertion.
+    const intent = await canonicalizeSearchIntent(
+      { query: 'Stranger Things — things to do in Belgrano' },
+      WEDNESDAY_NOON
+    )
+    expect(intent.semanticQuery).toBe('stranger things')
+    expect(intent.must.neighborhoodIds).toEqual(['Belgrano'])
+    expect(intent.objective).toBe('search')
+  })
+
+  it('keeps a temporal word as semantic when no structured filter exists ("jazz night")', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'jazz night' }, WEDNESDAY_NOON)
+    expect(intent.semanticQuery).toBe('jazz night')
   })
 })
 

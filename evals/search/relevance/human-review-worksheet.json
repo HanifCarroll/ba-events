@@ -1,0 +1,1422 @@
+{
+  "meta": {
+    "seed": 20260816,
+    "capturedAt": "2026-08-16T04:06:08.458Z",
+    "rubric": {
+      "0": "irrelevant / contradicts the request",
+      "1": "marginal",
+      "2": "good / relevant",
+      "3": "excellent / ideal"
+    },
+    "instructions": "Grade each option independently on the 0-3 rubric below. Each case has one or two options; judge every option on its own merit for the given query rather than ranking options against each other. Fill `grade` with an integer 0-3 and `rationale` with a short justification for every option. Do not edit any other field.",
+    "counts": {
+      "cases": 22,
+      "options": 38
+    },
+    "note": "Blinded review worksheet. Case and option IDs are opaque; only human-relevant event evidence is shown. Fill grade (0-3) and rationale per option."
+  },
+  "cases": [
+    {
+      "caseId": "case-01",
+      "query": "salgo solo del laburo y quiero un plan relajado",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0001",
+          "name": "Experiencia Wellness",
+          "summary": "Retiro holístico que integra yoga, meditación, alimentación consciente y arteterapia para reconectar con el gozo y la creatividad del cuerpo.",
+          "description": "**💫Experiencia RenaSER💫**\n**Yoga- Meditación - Alimentación conciente - Arteterapia de Integración -**\n\n**✨Esta invitación es un llamado a volver a vos.**\n**A sanar memorias que te alejan del gozo.**\n**A recordar que tu cuerpo no solo existe para cumplir, rendir o agradar... sino también para sentir, disfrutar y crear✨**\n\n**🦋Durante este encuentro vamos a compartir:**\n\n**🧘‍♀️ Clase de Yoga**\n*",
+          "venue": "Centro Manipura",
+          "neighborhood": null,
+          "starts_at": "2026-08-16T12:00:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "relaxed"
+            ],
+            "activities": [
+              "workshop"
+            ],
+            "audience": [
+              "solo"
+            ],
+            "setting": [
+              "indoor"
+            ],
+            "energy": "low",
+            "eventType": [
+              "class"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0002",
+          "name": "SPEAKEASY NIGHT: HIDDEN BAR TOUR (25+)🍻",
+          "summary": "Explora tres bares escondidos de Palermo con música, cócteles de autor y un ambiente internacional, empezando con tragos y terminando bailando.",
+          "description": "Tus planes para el jueves por la noche están oficialmente resueltos. ✨\n\n**El plan:**\nExploraremos tres bares escondidos para descubrir el lado menos obvio de Palermo. Buena música, cócteles de autor y una mezcla social de locales y viajeros.\n\n📍 **Punto de encuentro: DÁRSENA BAR (José A. Cabrera 4354)**\n⌚ **Hora: 10:00 PM**\n**🌐 Evento bilingüe: español e inglés**\n\n**¿Qué incluye?**\n✔ Shots de bie",
+          "venue": null,
+          "neighborhood": null,
+          "starts_at": "2026-08-21T00:00:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "relaxed",
+              "energetic"
+            ],
+            "activities": [
+              "drinks",
+              "dancing",
+              "outdoor"
+            ],
+            "audience": [
+              "solo",
+              "networking"
+            ],
+            "setting": [
+              "outdoor"
+            ],
+            "energy": "high",
+            "eventType": [
+              "meetup"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-02",
+      "query": "elegime un plan al aire libre, salvo que llueva",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0003",
+          "name": "Día del Niño en la Floralis",
+          "summary": "Celebración familiar con shows en vivo, juegos interactivos y actividades creativas para niñxs de todas las edades.",
+          "description": "Celebración del Día del Niño al aire libre en la Floralis, con shows en vivo, juegos interactivos, espacios temáticos, gastronomía y actividades para toda la familia. Ambiente festivo y familiar, pensado para niños y niñas de todas las edades, con zonas especiales para la primera infancia, movimiento, creatividad y juegos de mesa. Incluye presentaciones de Topa, Monster Buu Band, Urraka, Anilú, pr",
+          "venue": "Plaza de las Naciones Unidas",
+          "neighborhood": "Recoleta",
+          "starts_at": "2026-08-16T15:00:14.85+00:00",
+          "is_free": false,
+          "price": null,
+          "categories": [
+            "festival"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "family"
+            ],
+            "activities": [
+              "live-music",
+              "outdoor",
+              "screening"
+            ],
+            "audience": [
+              "families"
+            ],
+            "setting": [
+              "outdoor"
+            ],
+            "energy": "high",
+            "eventType": [
+              "festival"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0004",
+          "name": "CONEJO NEGRO - OASIS - KEEP ON GROOVE en Niceto Bar",
+          "summary": "Noche de house al aire libre en terraza con DJs en vivo, ambiente relajado y festivo para bailar bajo las estrellas.",
+          "description": "Una noche de música house al aire libre en la terraza de Niceto Bar, con actuaciones en vivo de Leandro Pazos, Simon B2B Feder y Milli Blache. El ambiente es relajado y festivo, ideal para bailar bajo las estrellas. Perfecto para los amantes de la música electrónica que buscan una experiencia vibrante y memorable.",
+          "venue": "Niceto Bar",
+          "neighborhood": "Palermo",
+          "starts_at": "2026-08-30T02:00:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [
+              "house",
+              "electronic"
+            ],
+            "vibes": [
+              "relaxed",
+              "energetic"
+            ],
+            "activities": [
+              "live-music",
+              "dancing",
+              "outdoor"
+            ],
+            "audience": [
+              "friends"
+            ],
+            "setting": [
+              "outdoor",
+              "standing"
+            ],
+            "energy": "high",
+            "eventType": [
+              "party"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-03",
+      "query": "elegime una sola opción de música que no sea tributo",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0005",
+          "name": "TRIBUTO A ELVIS - STUDIO SESSIONS!",
+          "summary": "Noche de música en vivo con los grandes éxitos de Elvis Presley en una puesta en escena llena de energía y emoción.",
+          "description": "👑 ¡Una noche para revivir la magia del Rey del Rock! 🎤Disfrutá de una performance de 60 minutos que recorre los grandes éxitos de Elvis Presley, con una puesta en escena llena de energía, emoción y los clásicos que marcaron generaciones.🎶 Vas a cantar himnos como Can&#39;t Help Falling in Love, Jailhouse Rock, Suspicious Minds, Love Me Tender y muchos más.Una experiencia ideal para fanáticos de",
+          "venue": "CLUB TEMPLE - Espacio Studio",
+          "neighborhood": null,
+          "starts_at": "2026-09-05T22:30:00+00:00",
+          "is_free": false,
+          "price": 15000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [
+              "rock"
+            ],
+            "vibes": [
+              "energetic"
+            ],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [],
+            "energy": "high",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0006",
+          "name": "ZABAL: RESISTANCE",
+          "summary": "Experiencia musical inmersiva con sonido de alta fidelidad y entrada libre hasta la medianoche.",
+          "description": "CANCEL POR PRIMERA VEZ EN ARGENTINA | INGRESO GRATUITO CON QR HASTA LAS 00:30 | SONIDO FUNKTION-ONE | NO FOTOS - NO VIDEOS",
+          "venue": "Under Club",
+          "neighborhood": "Palermo",
+          "starts_at": "2026-08-17T02:59:52+00:00",
+          "is_free": false,
+          "price": 0,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-04",
+      "query": "tres opciones para bailar que no sean cachengue",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0007",
+          "name": "Tinder en la vida real - Bailando",
+          "summary": "Experiencia única para conocer gente en persona, con dinámicas, baile y ambiente relajado.",
+          "description": "¿Cansado/a de las apps de citas y de los perfiles que no son lo que parecen? Te invitamos a vivir una experiencia distinta: conocer personas en la vida real, sin filtros, sin pantallas y bailando (de 25 a 55 años) ¿Qué incluye la experiencia? -2 horas de experiencia guiada -2 consumiciones (con o sin alcohol) -Dinámicas rompehielo para conectar de forma natural -Clase de baile (nivel principiante)",
+          "venue": "Poco Floro Bar",
+          "neighborhood": null,
+          "starts_at": "2026-08-30T20:00:00+00:00",
+          "is_free": false,
+          "price": 29900,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "relaxed",
+              "energetic"
+            ],
+            "activities": [
+              "dancing",
+              "drinks",
+              "workshop",
+              "dinner"
+            ],
+            "audience": [
+              "solo",
+              "networking",
+              "friends"
+            ],
+            "setting": [
+              "indoor",
+              "standing"
+            ],
+            "energy": "medium",
+            "eventType": [
+              "party",
+              "class",
+              "meetup"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0008",
+          "name": "Explorar | Ecstatic Dance",
+          "summary": "Ecstatic Dance es una meditación activa donde el baile libre con música electrónica y luz cromoterápica guía un viaje sensorial de introspección y bienestar.",
+          "description": "Explorar | Ecstatic Dance es una experiencia inmersiva de meditación activa con música electrónica, donde los asistentes bailan libremente sin coreografía en un espacio transformado por sonido holofónico e iluminación cromoterápica. Durante 3 horas, la música guía un viaje sensorial que busca aquietar la mente, expandir la percepción y reconectar con el cuerpo. La sesión incluye warm-up, y los asi",
+          "venue": "Umbral Holistic Wellness",
+          "neighborhood": null,
+          "starts_at": "2026-08-29T21:30:00+00:00",
+          "is_free": false,
+          "price": 15000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [
+              "electronic"
+            ],
+            "vibes": [
+              "intimate"
+            ],
+            "activities": [
+              "dancing"
+            ],
+            "audience": [
+              "solo"
+            ],
+            "setting": [
+              "indoor"
+            ],
+            "energy": "high",
+            "eventType": [
+              "class"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-05",
+      "query": "stand up por menos de quince mil pesos",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0009",
+          "name": "POPE STAND UP / MIÉRCOLES 19/08 DIEGO SACCO y PICHI PICCIRILLO",
+          "summary": "Show de stand up en POPE con Diego Sacco y Pichi Piccirillo, una noche de humor y risas en vivo.",
+          "description": "Miércoles 19.08 a las 21:00 llega:\n\nShow de Stand up en POPE x Diego Sacco y Pichi Piccirillo",
+          "venue": "POPE SOCIAL CLUB",
+          "neighborhood": null,
+          "starts_at": "2026-08-19T21:00:00+00:00",
+          "is_free": false,
+          "price": 6000,
+          "categories": [
+            "food"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0010",
+          "name": "Primer Aviso - Stand Up COMEDIA PICANTE",
+          "summary": "Show de humor picante con un elenco magnífico que te hará reír sin parar.",
+          "description": "En este show vas a ver un elenco Magnífico con quienes no vas a poder para de reír¡Seguinos en instagram para enterarte qué comediantas/tes se suben cada sábado!Show de humor picante a la gorra. Precio sugerido por persona: $5.000.Podés acceder a la sala con las consumisiones de la barra. Además de variedad de vinos, y tragos Hay opciones veganas y sin tacc para disfrutar durante los shows.Horario",
+          "venue": "Medio Crudo en Blue Velvet",
+          "neighborhood": null,
+          "starts_at": "2026-08-23T01:00:00+00:00",
+          "is_free": false,
+          "price": 5000,
+          "categories": [
+            "arts"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [
+              "drinks",
+              "talk"
+            ],
+            "audience": [
+              "friends"
+            ],
+            "setting": [
+              "indoor"
+            ],
+            "energy": "high",
+            "eventType": [
+              "party"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-06",
+      "query": "three family-friendly daytime plans tomorrow for a 12-year-old",
+      "lang": "en",
+      "options": [
+        {
+          "optionId": "op-0011",
+          "name": "TOUR DE BARES Y BOLICHES EN PALERMO",
+          "summary": "Tour de bares y boliches en Palermo para vivir una experiencia inolvidable.",
+          "description": "Consigue tus entradas para TOUR DE BARES Y BOLICHES EN PALERMO en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.",
+          "venue": "TOUR DE BARES",
+          "neighborhood": null,
+          "starts_at": "2026-08-18T00:00:00+00:00",
+          "is_free": true,
+          "price": 0,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "energetic"
+            ],
+            "activities": [
+              "drinks",
+              "dancing"
+            ],
+            "audience": [
+              "friends"
+            ],
+            "setting": [
+              "indoor",
+              "outdoor"
+            ],
+            "energy": "high",
+            "eventType": [
+              "party"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-07",
+      "query": "quiero bailar but somewhere we can talk",
+      "lang": "mixed",
+      "options": [
+        {
+          "optionId": "op-0012",
+          "name": "Tinder en la vida real - Bailando",
+          "summary": "Experiencia única para conocer gente en persona, con dinámicas, baile y ambiente relajado.",
+          "description": "¿Cansado/a de las apps de citas y de los perfiles que no son lo que parecen? Te invitamos a vivir una experiencia distinta: conocer personas en la vida real, sin filtros, sin pantallas y bailando (de 25 a 55 años) ¿Qué incluye la experiencia? -2 horas de experiencia guiada -2 consumiciones (con o sin alcohol) -Dinámicas rompehielo para conectar de forma natural -Clase de baile (nivel principiante)",
+          "venue": "Poco Floro Bar",
+          "neighborhood": null,
+          "starts_at": "2026-08-30T20:00:00+00:00",
+          "is_free": false,
+          "price": 29900,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "relaxed",
+              "energetic"
+            ],
+            "activities": [
+              "dancing",
+              "drinks",
+              "workshop",
+              "dinner"
+            ],
+            "audience": [
+              "solo",
+              "networking",
+              "friends"
+            ],
+            "setting": [
+              "indoor",
+              "standing"
+            ],
+            "energy": "medium",
+            "eventType": [
+              "party",
+              "class",
+              "meetup"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0013",
+          "name": "Project Dance Buenos Aires 2026",
+          "summary": "Tres días de danza con shows, clases magistrales, networking y audiciones en un ambiente energético y comunitario.",
+          "description": "Project Dance Buenos Aires 2026 es un evento de tres días que reúne a bailarines de todo el mundo para actuar, conectar, entrenar e inspirar. Incluye un show de danza al aire libre, clases magistrales con reconocidos maestros, charlas con invitados especiales, bolsas de regalo y la oportunidad de audicionar para becas internacionales. El ambiente es energético y comunitario, ideal para bailarines ",
+          "venue": "Buenos Aires",
+          "neighborhood": null,
+          "starts_at": "2026-09-11T16:00:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "festival"
+          ],
+          "facets": {
+            "genres": [
+              "hip-hop"
+            ],
+            "vibes": [
+              "energetic"
+            ],
+            "activities": [
+              "workshop",
+              "talk",
+              "outdoor",
+              "dancing"
+            ],
+            "audience": [
+              "networking"
+            ],
+            "setting": [
+              "outdoor"
+            ],
+            "energy": "high",
+            "eventType": [
+              "festival"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-08",
+      "query": "una salida queer friendly que no sea una mega fiesta",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0014",
+          "name": "Folklorazo Queer en agosto",
+          "summary": "Celebración especial del cumpleaños de Sole, una fiesta para disfrutar la vida juntos.",
+          "description": "¡Esta edición es especial porque festejamos el cumple de Sole! Nos vemos para festejar la vida, te esperamos.",
+          "venue": "Casa Brandon",
+          "neighborhood": "Villa Crespo",
+          "starts_at": "2026-08-23T23:00:00+00:00",
+          "is_free": false,
+          "price": 12000,
+          "categories": [
+            "festival"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": "medium",
+            "eventType": [
+              "festival"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0015",
+          "name": "Fun Fun @ Shamrock Basement - Mystery Affair / Djs Pareja / Bond",
+          "summary": "Fiesta queer con sets electrizantes de house, disco y techno, presentando a la DJ y productora Mystery Affair.",
+          "description": "FUN FUN Internacional con MYSTERY AFFAIR. La fiesta de los Djs Pareja que ya es un mega clásico de la noche porteña, continúa el próximo viernes 21 de agosto en The Shamrock Basement, y en esta edición internacional presentan a Mystery Affair. Dj, productora y promotora queer mexicana. Es residente de las fiestas SUNDAY SUNDAY y PERVERT, además de tener su propio sello y fiesta llamada PWR [Power]",
+          "venue": "The Shamrock Bar & Basement Club",
+          "neighborhood": "Recoleta",
+          "starts_at": "2026-08-22T02:59:00+00:00",
+          "is_free": false,
+          "price": 20000,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-09",
+      "query": "free plans para este weekend en Palermo",
+      "lang": "mixed",
+      "options": [
+        {
+          "optionId": "op-0016",
+          "name": "DOMINGO 16 DE JULIO | KIKA CLUB",
+          "summary": "Consigue tus entradas para una experiencia inolvidable en KIKA CLUB.",
+          "description": "Consigue tus entradas para DOMINGO 16 DE JULIO | KIKA CLUB en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.",
+          "venue": "KIKA CLUB",
+          "neighborhood": "Palermo",
+          "starts_at": "2026-08-17T02:55:00+00:00",
+          "is_free": true,
+          "price": 0,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [],
+            "energy": "medium",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-10",
+      "query": "quiero bailar pero también poder charlar, nada demasiado explotado",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0017",
+          "name": "Tinder en la vida real - Bailando",
+          "summary": "Experiencia única para conocer gente en persona, con dinámicas, baile y ambiente relajado.",
+          "description": "¿Cansado/a de las apps de citas y de los perfiles que no son lo que parecen? Te invitamos a vivir una experiencia distinta: conocer personas en la vida real, sin filtros, sin pantallas y bailando (de 25 a 55 años) ¿Qué incluye la experiencia? -2 horas de experiencia guiada -2 consumiciones (con o sin alcohol) -Dinámicas rompehielo para conectar de forma natural -Clase de baile (nivel principiante)",
+          "venue": "Poco Floro Bar",
+          "neighborhood": null,
+          "starts_at": "2026-08-30T20:00:00+00:00",
+          "is_free": false,
+          "price": 29900,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "relaxed",
+              "energetic"
+            ],
+            "activities": [
+              "dancing",
+              "drinks",
+              "workshop",
+              "dinner"
+            ],
+            "audience": [
+              "solo",
+              "networking",
+              "friends"
+            ],
+            "setting": [
+              "indoor",
+              "standing"
+            ],
+            "energy": "medium",
+            "eventType": [
+              "party",
+              "class",
+              "meetup"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0018",
+          "name": "NOCHE DE MACH",
+          "summary": "Una noche para conectar, conversar, bailar y conocer personas en un ambiente cálido y distendido.",
+          "description": "Una noche para conectarNOCHE DE MACH +25 nace como un espacio para compartir, conversar, bailar, divertirse y conocer personas en un ambiente cálido y distendido.Porque nunca sabes cuando una buena charla puede convertirse en una gran historia.¿Te lo vas a perder?Vantage DINNER I LIVE I LOUNGE",
+          "venue": "VANTAGE",
+          "neighborhood": null,
+          "starts_at": "2026-08-21T00:00:00+00:00",
+          "is_free": false,
+          "price": 15000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-11",
+      "query": "algo cozy for a date, no loud party",
+      "lang": "mixed",
+      "options": [
+        {
+          "optionId": "op-0019",
+          "name": "Coldplay. Piano, Violín y vino. Experiencia",
+          "summary": "Una noche íntima con éxitos de Coldplay en piano y violín, acompañada de una copa de vino, para conectar con la música y la emoción.",
+          "description": "✨ COLDPLAY COMO NUNCA LO VIVISTE ✨                                           Una noche íntima, con luces bajas en un ambiente casi secreto, tomando una copa de vino y disfrutando de los éxitos de Coldplay, interpretados en piano y violín por músicos profesionales reconocidos en el ambiente. Sonando en vivo al lado tuyo. Una experiencia íntima que te va a llenar el corazón para regalarte,  para ir ",
+          "venue": "La Pianería",
+          "neighborhood": null,
+          "starts_at": "2026-09-06T23:00:00+00:00",
+          "is_free": false,
+          "price": 31000,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "intimate"
+            ],
+            "activities": [
+              "live-music",
+              "drinks"
+            ],
+            "audience": [
+              "couples",
+              "families",
+              "friends"
+            ],
+            "setting": [
+              "indoor",
+              "seated"
+            ],
+            "energy": "low",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0020",
+          "name": "INTIMO THE FUNKY STONES / 29 de agosto",
+          "summary": "Noche íntima de música en vivo con nuevas canciones y repertorio especial, cerca del público.",
+          "description": "Los invitamos a compartir una noche íntima y de capacidad limitada, donde vamos a presentar algunas canciones nuevas junto con el repertorio que nos viene acompañando hasta ahora. Va a ser un show cálido y muy especial, de esos que se viven distinto cuando la música y la gente están bien cerca.",
+          "venue": "BB Bar",
+          "neighborhood": null,
+          "starts_at": "2026-08-29T23:00:00+00:00",
+          "is_free": false,
+          "price": 15000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "intimate"
+            ],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [
+              "indoor",
+              "seated"
+            ],
+            "energy": "low",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-12",
+      "query": "teatro independiente en Almagro",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0021",
+          "name": "RØDHÂD 7 HORAS",
+          "summary": "Una noche intensa de música y baile que se extiende hasta la madrugada.",
+          "description": "EL INGRESO POR LEY CON TICKET CIERRA 04:00 AM.",
+          "venue": "Amerika",
+          "neighborhood": "Almagro",
+          "starts_at": "2026-08-29T02:59:53+00:00",
+          "is_free": false,
+          "price": 55000,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-13",
+      "query": "a chill plan con arte para el domingo",
+      "lang": "mixed",
+      "options": [
+        {
+          "optionId": "op-0022",
+          "name": "EL SHOW DE LOS PELADOS - COMEDY SHOW.",
+          "summary": "Una noche de comedia en vivo con monólogos y humor fresco, ideal para disfrutar con amigos o en pareja.",
+          "description": "🎤 Stand Up en Club Temple – Espacio StudioUna noche de comedia para olvidarte de todo y reírte sin parar. Monólogos, anécdotas, observaciones de la vida cotidiana y mucho humor en un show dinámico, fresco y cercano.Cada función es una experiencia única donde las risas son las verdaderas protagonistas. Ideal para venir con amigos, en pareja o para regalarte una salida diferente.📅 Todos los miérco",
+          "venue": "CLUB TEMPLE - Espacio Studio",
+          "neighborhood": null,
+          "starts_at": "2026-08-17T01:00:00+00:00",
+          "is_free": false,
+          "price": 20000,
+          "categories": [
+            "arts"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "relaxed"
+            ],
+            "activities": [
+              "talk"
+            ],
+            "audience": [
+              "friends",
+              "couples",
+              "solo"
+            ],
+            "setting": [
+              "indoor"
+            ],
+            "energy": "medium",
+            "eventType": [
+              "meetup"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0023",
+          "name": "Experiencia Wellness",
+          "summary": "Retiro holístico que integra yoga, meditación, alimentación consciente y arteterapia para reconectar con el gozo y la creatividad del cuerpo.",
+          "description": "**💫Experiencia RenaSER💫**\n**Yoga- Meditación - Alimentación conciente - Arteterapia de Integración -**\n\n**✨Esta invitación es un llamado a volver a vos.**\n**A sanar memorias que te alejan del gozo.**\n**A recordar que tu cuerpo no solo existe para cumplir, rendir o agradar... sino también para sentir, disfrutar y crear✨**\n\n**🦋Durante este encuentro vamos a compartir:**\n\n**🧘‍♀️ Clase de Yoga**\n*",
+          "venue": "Centro Manipura",
+          "neighborhood": null,
+          "starts_at": "2026-08-16T12:00:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "relaxed"
+            ],
+            "activities": [
+              "workshop"
+            ],
+            "audience": [
+              "solo"
+            ],
+            "setting": [
+              "indoor"
+            ],
+            "energy": "low",
+            "eventType": [
+              "class"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-14",
+      "query": "elegime una función de cine para esta noche",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0024",
+          "name": "RCW Latam presenta: COUNTDOWN",
+          "summary": "La batalla real de 30 luchadores más importante del país define al main eventer de Origen Extremo 4.",
+          "description": "VUELVE LA BATALLA REAL DE 30 LUCHADORES MAS IMPORTANTE DEL PAÍS!QUIEN SE ALZARÁ CON LA OPORTUNIDAD DE SER MAIN EVENTER DE ORIGEN EXTREMO 4?",
+          "venue": "El Teatrito",
+          "neighborhood": "San Nicolás",
+          "starts_at": "2026-08-16T07:30:00+00:00",
+          "is_free": false,
+          "price": 22500,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": "high",
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-15",
+      "query": "museos o muestras gratis esta semana",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0025",
+          "name": "Istituto Marangoni Miami - Diseñando el Futuro: Buenos Aires",
+          "summary": null,
+          "description": null,
+          "venue": null,
+          "neighborhood": null,
+          "starts_at": "2026-08-18T18:30:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "arts"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0026",
+          "name": "★ CERAMICA Y VINO 21/08 ★",
+          "summary": null,
+          "description": null,
+          "venue": "Merci",
+          "neighborhood": "Recoleta",
+          "starts_at": "2026-08-21T23:30:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "arts"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-16",
+      "query": "algo lindo para hacer con mis viejos, sin mucho ruido",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0027",
+          "name": "MERY GRANADOS · Encuentro íntimo",
+          "summary": "Mery Granados ofrece un concierto íntimo con piano y sorpresas en un ambiente cercano.",
+          "description": "Mery Granados presenta un encuentro único, íntimo y a solas con su público. Un formato especial en el que recorrerá sus canciones acompañada por un artista invitado en piano, con momentos únicos y algunas sorpresas, como ya es costumbre en sus shows. Una experiencia cercana y emotiva, con capacidad limitada.La Casa de Lolita / “En nuestra casa la experiencia es íntima y de cercanía, comienza desde",
+          "venue": "La Casa de Lolita",
+          "neighborhood": null,
+          "starts_at": "2026-08-27T23:00:00+00:00",
+          "is_free": false,
+          "price": 35000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "intimate"
+            ],
+            "activities": [
+              "live-music",
+              "drinks",
+              "dinner"
+            ],
+            "audience": [
+              "friends",
+              "solo"
+            ],
+            "setting": [
+              "indoor",
+              "seated"
+            ],
+            "energy": "low",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0028",
+          "name": "Veto y Fer, El Bingo.",
+          "summary": "Una noche de bingo musical con los hits de los 2000 para cantar, bailar y disfrutar en familia o con amigos.",
+          "description": "Una propuesta lúdica y divertida para compartir con familia y/o amigos yrevivir los temas más icónicos de la década del 2000.Una noche donde el tradicional bingo es reversionado por temas musicalespara que los participantes disfruten jugando, cantando y compartiendo laalegría y el recuerdo que trae cada canción.Una experiencia donde cantar, bailar y jugar es la premisa fundamental de lanoche.Con e",
+          "venue": "La Paz Arriba",
+          "neighborhood": "Recoleta",
+          "starts_at": "2026-08-29T00:00:00+00:00",
+          "is_free": false,
+          "price": 40000,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "family"
+            ],
+            "activities": [
+              "dancing"
+            ],
+            "audience": [
+              "families",
+              "friends"
+            ],
+            "setting": [],
+            "energy": "high",
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-17",
+      "query": "algo medio artístico y distinto, pero no boliche",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0029",
+          "name": "Cabaret Porteño",
+          "summary": "Un viaje entre el tango, el burlesque y la noche porteña, con humor, música, sensualidad y la energía de 12 artistas, que revive la esencia libre y provocadora de Buenos Aires.",
+          "description": "CABARET PORTEÑOUn viaje entre el tango, el burlesque y la noche porteñaA journey through tango, burlesque, and the Buenos Aires nightCABARET PORTEÑO es un espectáculo de tango burlesque que rescata y resignifica la esencia de la noche milonguera de Buenos Aires, en clave de humor, música y sensualidad. CABARET PORTEÑO is a tango-burlesque show that revives and reimagines the spirit of Buenos Aires",
+          "venue": "La Carbonera - San Telmo",
+          "neighborhood": null,
+          "starts_at": "2026-08-16T23:30:00+00:00",
+          "is_free": false,
+          "price": 20000,
+          "categories": [
+            "arts"
+          ],
+          "facets": {
+            "genres": [
+              "tango"
+            ],
+            "vibes": [
+              "energetic"
+            ],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [],
+            "energy": "high",
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0030",
+          "name": "BIAN LUNA Y BAUTI CARMONA - SET ACÚSTICO",
+          "summary": "Una noche íntima con Bian Luna, donde su voz cálida y auténtica fusiona indie, soul y pop en una experiencia emocional inolvidable.",
+          "description": "Descubrí a Bian Luna, una de las nuevas voces de la escena independiente. Con un estilo que combina indie, soul y pop, presenta un show íntimo donde la emoción, la calidez de su voz y la fuerza de cada interpretación crean una experiencia única. Acompañada por Bauti Carmona en guitarra, recorrerá una cuidada selección de canciones que invitan a conectar con la música desde un lugar cercano y autén",
+          "venue": "Cervelar Paseo La Plaza",
+          "neighborhood": null,
+          "starts_at": "2026-08-16T22:00:00+00:00",
+          "is_free": false,
+          "price": 15000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [
+              "indie"
+            ],
+            "vibes": [
+              "intimate"
+            ],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [],
+            "energy": "low",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-18",
+      "query": "live jazz pero barato y tranqui",
+      "lang": "mixed",
+      "options": [
+        {
+          "optionId": "op-0031",
+          "name": "Denise Izaguirre Quartet - West Coast Jazz - ALWAYS COOL - Jazz Voyeur Club",
+          "summary": "Noche de cool jazz con el Denise Izaguirre Quartet, evocando la elegancia intimista de la Costa Oeste en un ambiente sofisticado.",
+          "description": "Always Cool: West Coast JazzDenise Izaguirre QuartetEn el marco del ciclo Always Cool de Jazz Voyeur Club, llega Always Cool: West Coast Jazz, una noche dedicada al universo del cool jazz y al sonido elegante e intimista de la Costa Oeste norteamericana.El repertorio recorrerá canciones y paisajes musicales inspirados en artistas como Chet Baker, Miles Davis, Stan Getz, Julie London, Gerry Mulliga",
+          "venue": "JAZZ VOYEUR CLUB - Hotel Melia Recoleta Plaza",
+          "neighborhood": null,
+          "starts_at": "2026-09-01T23:00:00+00:00",
+          "is_free": false,
+          "price": 10000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [
+              "jazz"
+            ],
+            "vibes": [
+              "intimate"
+            ],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [
+              "indoor",
+              "seated"
+            ],
+            "energy": "low",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0032",
+          "name": "Cortázar y el jazz en las alturas",
+          "summary": "Disfruta de una experiencia inolvidable de Cortázar y jazz en las alturas.",
+          "description": "Consigue tus entradas para Cortázar y el jazz en las alturas en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.",
+          "venue": "Edificio Bencich",
+          "neighborhood": "San Nicolás",
+          "starts_at": "2026-08-30T00:00:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [
+              "jazz"
+            ],
+            "vibes": [],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [],
+            "energy": "medium",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-19",
+      "query": "talleres de cerámica este fin de semana",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0033",
+          "name": "Museo del Mate 16-08",
+          "summary": "Recorrido guiado que celebra la historia y tradición del mate con degustación incluida.",
+          "description": "Museo del Mate El Museo del Mate es un espacio cultural único, dedicado a la preservación y difusión de la historia y las tradiciones de nuestra infusión nacional. Reconocido como KM 0 de la Ruta de la Yerba Mate, ofrece a los visitantes un recorrido guiado por su colección permanente, destacando la evolución del mate en la Argentina y el mundo.📍 Dirección: Av. de Mayo 853, Ciudad Autónoma de Bue",
+          "venue": "Museo del Mate",
+          "neighborhood": null,
+          "starts_at": "2026-08-16T12:00:00+00:00",
+          "is_free": false,
+          "price": 5000,
+          "categories": [
+            "arts"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [
+              "talk",
+              "workshop"
+            ],
+            "audience": [],
+            "setting": [
+              "indoor"
+            ],
+            "energy": "low",
+            "eventType": [
+              "exhibition"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-20",
+      "query": "tres planes, cualquier cosa menos fiesta o reggaetón",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0034",
+          "name": "FIEBRE FIESTA en MEDUSA LA PLATA 11/09",
+          "summary": "Noche de puro perreo con reggaeton old school, sin remixes, en una fiesta 100% vieja escuela.",
+          "description": "LA PLATA: vuelve el V E R D A D E R O reggaeton viejo a MEDUSA el VIERNES 11/09. LO PIDIERON Y AHI NOS VEMOSSSS!\n\n🌡️ MEDUSA (CALLE 55, ESQ 11)\n\nPERREO TODA LA NOCHE ❤️‍🔥 OLD SCHOOL REGGAETON, NADA DE REMIX, 100% VIEJA ESCUELA: LOS RECUERDOS SON PARA SIEMPRE, Y LAS NOCHES EN FIEBRE TAMBIÉN.\n\nLas entradas anticipadas son válidas para ingresar hasta 2:30 AM.\n\nPOR MESAS VIP COMUNICARSE AL: 11 7035 0",
+          "venue": "Medusa",
+          "neighborhood": null,
+          "starts_at": "2026-09-12T02:59:00+00:00",
+          "is_free": false,
+          "price": 8000,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-21",
+      "query": "planes culturales gratis en Recoleta",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0035",
+          "name": "Viernes 21 de Agosto PAUL DEEP @LaBiblioteca x Get Deep by My House",
+          "summary": "PAUL DEEP en LaBiblioteca x Get Deep by My House ofrece una experiencia inolvidable de música electrónica.",
+          "description": "Consigue tus entradas para Viernes 21 de Agosto PAUL DEEP @LaBiblioteca x Get Deep by My House en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.",
+          "venue": "LA BIBLIOTECA",
+          "neighborhood": "Recoleta",
+          "starts_at": "2026-08-22T02:55:00+00:00",
+          "is_free": true,
+          "price": 0,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "underground"
+            ],
+            "activities": [
+              "live-music",
+              "dancing"
+            ],
+            "audience": [],
+            "setting": [
+              "indoor"
+            ],
+            "energy": "high",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0036",
+          "name": "PPTfest2.0 -- 20/08/26",
+          "summary": "Disfruta de una experiencia inolvidable en PPTfest2.0 con música y ambiente vibrante.",
+          "description": "Consigue tus entradas para PPTfest2.0 -- 20/08/26 en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.",
+          "venue": "La Paz Arriba",
+          "neighborhood": "Recoleta",
+          "starts_at": "2026-08-20T23:30:00+00:00",
+          "is_free": true,
+          "price": null,
+          "categories": [
+            "festival"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [],
+            "audience": [],
+            "setting": [],
+            "energy": null,
+            "eventType": []
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    },
+    {
+      "caseId": "case-22",
+      "query": "quiero energía pero no estar apretado en un boliche",
+      "lang": "es",
+      "options": [
+        {
+          "optionId": "op-0037",
+          "name": "TOUR DE BARES Y BOLICHES EN PALERMO",
+          "summary": "Explora la noche de Palermo con un tour de bares y boliches, una experiencia inolvidable llena de diversión y buena vibra.",
+          "description": "Consigue tus entradas para TOUR DE BARES Y BOLICHES EN PALERMO en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.",
+          "venue": "TOUR DE BARES",
+          "neighborhood": null,
+          "starts_at": "2026-08-17T00:00:00+00:00",
+          "is_free": true,
+          "price": 0,
+          "categories": [
+            "social"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [
+              "energetic"
+            ],
+            "activities": [
+              "drinks",
+              "dancing"
+            ],
+            "audience": [
+              "friends"
+            ],
+            "setting": [],
+            "energy": "high",
+            "eventType": [
+              "party"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        },
+        {
+          "optionId": "op-0038",
+          "name": "NOCHE DE BOLEROS.",
+          "summary": "Una noche vibrante de boliche para disfrutar una experiencia inolvidable.",
+          "description": "Consigue tus entradas para NOCHE DE BOLEROS. en Passline. Encuentra detalles, asegura tu asistencia y prepárate para disfrutar de una experiencia inolvidable.",
+          "venue": "CLUB SOCIAL CAMBALACHE",
+          "neighborhood": null,
+          "starts_at": "2026-08-23T00:00:00+00:00",
+          "is_free": false,
+          "price": 20000,
+          "categories": [
+            "music"
+          ],
+          "facets": {
+            "genres": [],
+            "vibes": [],
+            "activities": [
+              "live-music"
+            ],
+            "audience": [],
+            "setting": [],
+            "energy": "medium",
+            "eventType": [
+              "concert"
+            ]
+          },
+          "grade": null,
+          "rationale": ""
+        }
+      ]
+    }
+  ]
+}
