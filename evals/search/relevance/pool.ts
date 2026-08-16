@@ -1,81 +1,90 @@
 #!/usr/bin/env bun
 /**
- * Build the labeling worksheet for the live rerank eval.
+ * Build the labeling worksheet for the rerank eval.
  *
- * For each captured query, pools the union of the top-8 events across all
- * replay variants (baseline / facet / voyage / fused@2) — these are the only
- * events whose grades can move NDCG@5 or Hit@1 for any variant. Everything
- * outside the pool is implicitly graded 0 by replay.
+ * For each captured query, pools the union of the top-8 events across every
+ * replay variant (baseline / facet / pure voyage / fused@1 / fused@2 /
+ * fused@3), plus the top-5 of the reranking-depth ablation variants (10/20/30;
+ * depth 50 equals pure voyage). These are the only events whose grades can
+ * move any measured top-five metric, so replay.ts treats anything outside the
+ * pool as unjudged — never as an implicit zero.
  *
- * Usage: bun evals/search/relevance/pool.ts
- * Writes: evals/search/relevance/labeling-worksheet.json
+ * Usage:
+ *   bun evals/search/relevance/pool.ts
+ *   bun evals/search/relevance/pool.ts --capture ./capture-holdout.json --out ./labeling-worksheet-holdout.json
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
-
-interface FrozenEvent {
-  id: string
-  name: string
-  starts_at: string
-  is_free: boolean
-  price: number | null
-  categories: string[]
-  venue_name: string | null
-  venue_neighborhood: string | null
-  description_summary_es: string | null
-  description_summary_en: string | null
-  description_es: string | null
-  facets: Record<string, unknown>
-}
-
-interface FrozenQuery {
-  id: string
-  query: string
-  subjective: boolean
-  lang: string
-  hasMust: boolean
-  path: string
-  semanticQuery: string
-  baseOrder: string[]
-  voyage: { status: string; ranks?: Record<string, { baseRank: number; rerankerRank: number }> }
-}
-
-interface CaptureFile {
-  events: Record<string, FrozenEvent>
-  queries: FrozenQuery[]
-}
+import { resolve } from 'node:path'
+import {
+  baseOrder,
+  facetOrder,
+  fusedOrder,
+  voyageOrder,
+  depthVoyageOrder,
+  type CaptureFile,
+  type FrozenQuery,
+} from './frozen-variants.ts'
 
 const POOL_DEPTH = 8
-const FUSION_W = 2
+const ABLATION_DEPTHS = [10, 20, 30] // depth 50 === pure voyage, already pooled
 
-const capture: CaptureFile = JSON.parse(
-  readFileSync(new URL('./capture-latest.json', import.meta.url).pathname, 'utf-8')
-)
+// ============================================================================
+// CLI
+// ============================================================================
 
-function voyageOrder(q: FrozenQuery): string[] {
-  if (q.voyage.status !== 'applied' || !q.voyage.ranks) return [...q.baseOrder]
-  return [...q.baseOrder].sort(
-    (a, b) => (q.voyage.ranks![a]?.rerankerRank ?? 999) - (q.voyage.ranks![b]?.rerankerRank ?? 999)
-  )
+function argValue(flag: string): string | undefined {
+  const i = process.argv.indexOf(flag)
+  return i >= 0 ? process.argv[i + 1] : undefined
 }
 
-function fusedOrder(q: FrozenQuery): string[] {
-  if (q.voyage.status !== 'applied' || !q.voyage.ranks) return [...q.baseOrder]
-  const score = (id: string) => {
-    const r = q.voyage.ranks![id]
-    if (!r) return 0
-    return FUSION_W / (60 + r.rerankerRank) + 1 / (60 + r.baseRank)
-  }
-  return [...q.baseOrder].sort((a, b) => score(b) - score(a))
+const captureArg = argValue('--capture')
+const outArg = argValue('--out')
+
+const CAPTURE_PATH = captureArg
+  ? resolve(process.cwd(), captureArg)
+  : new URL('./capture-latest.json', import.meta.url).pathname
+const OUT_PATH = outArg
+  ? resolve(process.cwd(), outArg)
+  : new URL('./labeling-worksheet.json', import.meta.url).pathname
+
+const capture: CaptureFile = JSON.parse(readFileSync(CAPTURE_PATH, 'utf-8'))
+
+// ============================================================================
+// Variant orders
+// ============================================================================
+
+interface Variant {
+  name: string
+  order: (q: FrozenQuery) => string[]
 }
+
+const mainVariants: Variant[] = [
+  { name: 'baseline', order: baseOrder },
+  { name: 'facet', order: (q) => facetOrder(q, capture.events) },
+  { name: 'voyage', order: voyageOrder },
+  { name: 'fused(1)', order: (q) => fusedOrder(q, 1) },
+  { name: 'fused(2)', order: (q) => fusedOrder(q, 2) },
+  { name: 'fused(3)', order: (q) => fusedOrder(q, 3) },
+]
+
+// ============================================================================
+// Build worksheet
+// ============================================================================
 
 const worksheet = capture.queries.map((q) => {
+  const baseIndex = new Map(q.baseOrder.map((id, i) => [id, i]))
   const pool = new Set<string>()
-  for (const id of q.baseOrder.slice(0, POOL_DEPTH)) pool.add(id)
-  for (const id of voyageOrder(q).slice(0, POOL_DEPTH)) pool.add(id)
-  for (const id of fusedOrder(q).slice(0, POOL_DEPTH)) pool.add(id)
-  // facet variant order needs the SearchScoreable machinery; baseline top-8
-  // already covers most of it, and fused/voyage shifts dominate the pool.
+
+  for (const v of mainVariants) {
+    for (const id of v.order(q).slice(0, POOL_DEPTH)) pool.add(id)
+  }
+  for (const depth of ABLATION_DEPTHS) {
+    for (const id of depthVoyageOrder(q, depth).slice(0, 5)) pool.add(id)
+  }
+
+  // Stable, natural presentation order: base retrieval order.
+  const ordered = [...pool].sort((a, b) => (baseIndex.get(a) ?? 0) - (baseIndex.get(b) ?? 0))
 
   return {
     queryId: q.id,
@@ -83,7 +92,7 @@ const worksheet = capture.queries.map((q) => {
     semanticQuery: q.semanticQuery,
     subjective: q.subjective,
     lang: q.lang,
-    pool: [...pool].map((id) => {
+    pool: ordered.map((id) => {
       const e = capture.events[id]
       return {
         eventId: id,
@@ -102,7 +111,6 @@ const worksheet = capture.queries.map((q) => {
   }
 })
 
-const out = new URL('./labeling-worksheet.json', import.meta.url).pathname
-writeFileSync(out, JSON.stringify(worksheet, null, 2) + '\n')
+writeFileSync(OUT_PATH, JSON.stringify(worksheet, null, 2) + '\n')
 const totalPairs = worksheet.reduce((s, w) => s + w.pool.length, 0)
-console.log(`[pool] ${worksheet.length} queries, ${totalPairs} query-event pairs → ${out}`)
+console.log(`[pool] ${worksheet.length} queries, ${totalPairs} query-event pairs → ${OUT_PATH}`)

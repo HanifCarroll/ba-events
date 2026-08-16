@@ -2,20 +2,26 @@
 /**
  * Live-capture for the conclusive rerank eval.
  *
- * Freezes the PRODUCTION retrieval path for each live query: canonicalize the
+ * Freezes the PRODUCTION retrieval path for each query: canonicalize the
  * input with a single real "now", mirror the search_events retrieval mode
  * (hybrid when a semantic query survives canonicalization, else filter-only),
  * then record the hosted Voyage rerank ranks as they stand at capture time.
  *
- * The frozen artifact (capture-latest.json) is what replay.ts scores offline
- * against LIVE_LABELS — no DB, no network, no env keys at replay time.
+ * The frozen artifact is what replay.ts scores offline against labels — no DB,
+ * no network, no env keys at replay time.
  *
- * Usage: bun evals/search/relevance/capture.ts
+ * Usage:
+ *   bun evals/search/relevance/capture.ts
+ *   bun evals/search/relevance/capture.ts --queries ./my-queries.ts --out ./capture-holdout.json
+ *
+ * The --queries module must export exactly one of `LIVE_QUERIES` or
+ * `HOLDOUT_QUERIES` (an array of the LiveQuery shape).
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { LIVE_QUERIES } from './live-queries.ts'
+import { dirname, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import type { LiveQuery } from './live-queries.ts'
 import {
   canonicalizeSearchIntent,
   applyPreferAvoid,
@@ -28,8 +34,11 @@ import {
 import { rerankEvents } from '#shared/lib/search/rerank.ts'
 import { getNowInBA } from '#features/chat/api/tools/utils.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
+import type { CaptureFile, FrozenEvent, FrozenQuery, FrozenVoyage } from './frozen-variants.ts'
 
-const OUT_PATH = new URL('./capture-latest.json', import.meta.url).pathname
+const DEFAULT_QUERIES_PATH = new URL('./live-queries.ts', import.meta.url).pathname
+const DEFAULT_OUT_PATH = new URL('./capture-latest.json', import.meta.url).pathname
+
 const CANDIDATE_LIMIT = 50
 // Payment method added → standard rate limits (no 3 RPM / 10K TPM ceiling).
 // Modest pacing to stay polite; production makes one call per search.
@@ -38,65 +47,19 @@ const PACE_MS = 500
 const RETRY_BACKOFFS = [2000, 5000]
 
 // ============================================================================
-// Frozen artifact shapes
+// CLI
 // ============================================================================
 
-interface FrozenEvent {
-  id: string
-  name: string
-  starts_at: string
-  is_free: boolean
-  price: number | null
-  min_age: number | null
-  categories: string[]
-  venue_id: string | null
-  venue_name: string | null
-  venue_neighborhood: string | null
-  image_url: string | null
-  location_tba: boolean
-  description_unavailable: boolean
-  description_summary_es: string | null
-  description_summary_en: string | null
-  description_es: string | null
-  description_en: string | null
-  facets: Record<string, unknown>
+function argValue(flag: string): string | undefined {
+  const i = process.argv.indexOf(flag)
+  return i >= 0 ? process.argv[i + 1] : undefined
 }
 
-interface FrozenRank {
-  baseRank: number
-  rerankerRank: number
-  rerankerScore: number
-  finalRank: number
-}
+const queriesArg = argValue('--queries')
+const outArg = argValue('--out')
 
-interface FrozenVoyage {
-  status: string
-  model?: string
-  ranks?: Record<string, FrozenRank>
-}
-
-interface FrozenQueryEntry {
-  id: string
-  query: string
-  subjective: boolean
-  lang: 'es' | 'en' | 'mixed'
-  hasMust: boolean
-  path: 'semantic' | 'filter_only'
-  semanticQuery: string
-  prefer: EventSearchPrefer
-  baseOrder: string[]
-  voyage: FrozenVoyage
-}
-
-interface CaptureFile {
-  meta: {
-    capturedAt: string
-    nowBA: string
-    queries: number
-  }
-  events: Record<string, FrozenEvent>
-  queries: FrozenQueryEntry[]
-}
+const QUERIES_PATH = queriesArg ? resolve(process.cwd(), queriesArg) : DEFAULT_QUERIES_PATH
+const OUT_PATH = outArg ? resolve(process.cwd(), outArg) : DEFAULT_OUT_PATH
 
 // ============================================================================
 // Helpers
@@ -149,6 +112,33 @@ async function rerankWithRetry(
 }
 
 // ============================================================================
+// Query module loading
+// ============================================================================
+
+interface QueriesModule {
+  LIVE_QUERIES?: LiveQuery[]
+  HOLDOUT_QUERIES?: LiveQuery[]
+}
+
+const queriesModule = (await import(pathToFileURL(QUERIES_PATH).href)) as QueriesModule
+const hasLive = Array.isArray(queriesModule.LIVE_QUERIES)
+const hasHoldout = Array.isArray(queriesModule.HOLDOUT_QUERIES)
+
+if (hasLive && hasHoldout) {
+  throw new Error(
+    `queries module ${QUERIES_PATH} exports both LIVE_QUERIES and HOLDOUT_QUERIES; ` +
+      `export exactly one`
+  )
+}
+if (!hasLive && !hasHoldout) {
+  throw new Error(
+    `queries module ${QUERIES_PATH} exports neither LIVE_QUERIES nor HOLDOUT_QUERIES`
+  )
+}
+
+const QUERIES: LiveQuery[] = hasLive ? queriesModule.LIVE_QUERIES! : queriesModule.HOLDOUT_QUERIES!
+
+// ============================================================================
 // Capture
 // ============================================================================
 
@@ -156,21 +146,21 @@ const capturedAt = new Date()
 const nowBA = getNowInBA()
 
 const events: Record<string, FrozenEvent> = {}
-const queries: FrozenQueryEntry[] = []
+const queries: FrozenQuery[] = []
 
 const pathCounts = { semantic: 0, filter_only: 0 }
 const statusCounts = new Map<string, number>()
 
 let nextAllowedAt = 0
 
-for (let i = 0; i < LIVE_QUERIES.length; i++) {
-  const q = LIVE_QUERIES[i]
+for (let i = 0; i < QUERIES.length; i++) {
+  const q = QUERIES[i]
   const input = { query: q.query, ...(q.toolInput ?? {}) }
 
   const intent = await canonicalizeSearchIntent(input, nowBA)
   if (intent.objective === 'surprise') {
     throw new Error(
-      `live query ${q.id} canonicalized to objective=surprise; capture does not support the surprise path`
+      `query ${q.id} canonicalized to objective=surprise; capture does not support the surprise path`
     )
   }
 
@@ -197,6 +187,15 @@ for (let i = 0; i < LIVE_QUERIES.length; i++) {
     if (!events[e.id]) events[e.id] = freezeEvent(e)
   }
 
+  const voyage: FrozenVoyage =
+    meta.status === 'applied'
+      ? {
+          status: meta.status,
+          model: meta.model,
+          ranks: Object.fromEntries(meta.ranks ?? new Map()),
+        }
+      : { status: meta.status }
+
   queries.push({
     id: q.id,
     query: q.query,
@@ -207,18 +206,12 @@ for (let i = 0; i < LIVE_QUERIES.length; i++) {
     semanticQuery: intent.semanticQuery,
     prefer: intent.prefer,
     baseOrder,
-    voyage:
-      meta.status === 'applied'
-        ? {
-            status: meta.status,
-            model: meta.model,
-            ranks: Object.fromEntries(meta.ranks ?? new Map()),
-          }
-        : { status: meta.status },
+    voyage,
+    displayLimit: intent.displayLimit,
   })
 
   console.error(
-    `[${i + 1}/${LIVE_QUERIES.length}] ${q.id.padEnd(30)} path=${path.padEnd(11)} ` +
+    `[${i + 1}/${QUERIES.length}] ${q.id.padEnd(30)} path=${path.padEnd(11)} ` +
       `candidates=${String(candidates.length).padStart(2)} voyage=${meta.status}`
   )
   flush()
@@ -232,7 +225,7 @@ function buildOutput(): CaptureFile {
     meta: {
       capturedAt: capturedAt.toISOString(),
       nowBA: nowBA.toISOString(),
-      queries: LIVE_QUERIES.length,
+      queries: QUERIES.length,
     },
     events,
     queries,
