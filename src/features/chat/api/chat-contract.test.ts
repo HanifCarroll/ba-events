@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildExecutionTrace,
+  buildStreamOpeningChunks,
   filterEventsMentionedInText,
   getFinalVisibleTextFromSteps,
   sanitizeFinalAssistantText,
@@ -227,5 +228,15 @@ describe('chat final-only contract helpers', () => {
     expect(filterEventsMentionedInText([event('e1', 'Club night')], '')).toEqual([
       event('e1', 'Club night'),
     ])
+  })
+})
+
+describe('chat stream opening order', () => {
+  it('emits start before any data chunk so no phantom assistant is created', () => {
+    const chunks = buildStreamOpeningChunks('msg-1', 'req-1', '2026-08-16T00:00:00.000Z')
+
+    expect(chunks[0].type).toBe('start')
+    expect(chunks[0].type).not.toMatch(/^data-/)
+    expect(chunks.map((chunk) => chunk.type)).toEqual(['start', 'data-status'])
   })
 })

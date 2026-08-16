@@ -9,7 +9,7 @@
  *   - neighborhood aliases → canonical NEIGHBORHOODS names
  *   - venueName → venue ids (via searchVenuesByName)
  *   - free-language → must.isFree
- *   - named weekdays / "este sábado" / "el domingo" → BA date range
+ *   - named weekdays (single or multiple) / weekday phrasing ("during the week", "entre semana") → BA date range
  *   - dateFrom/dateTo vs timeFilter intersection
  *
  * It never scores "romantic"/"chill", never classifies genre by regex, and
@@ -130,6 +130,24 @@ const WEEKDAY_TOKENS: Record<string, number> = {
   domingo: 0, sunday: 0,
 }
 
+/**
+ * Weekday-only phrasing meaning Monday–Friday ("during the week", "on
+ * weekdays", "entre semana") — NOT `timeFilter: "week"` (the next 7 days).
+ * Whole-phrase matched on normalized tokens.
+ */
+const WEEKDAY_PHRASES: string[][] = [
+  ['weekday'],
+  ['weekdays'],
+  ['on', 'weekdays'],
+  ['during', 'the', 'week'],
+  ['during', 'week'],
+  ['entre', 'semana'],
+  ['durante', 'la', 'semana'],
+  ['durante', 'semana'],
+  ['dia', 'de', 'semana'],
+  ['dias', 'de', 'semana'],
+]
+
 const NORMALIZED_NEIGHBORHOODS: Array<{ name: Neighborhood; tokens: string[] }> =
   NEIGHBORHOODS.map((name) => ({
     name,
@@ -236,6 +254,17 @@ function phraseMatches(
     if (ok) return true
   }
   return false
+}
+
+/**
+ * Return the weekday-phrase tokens present in the query (to strip from
+ * semanticQuery), or null when the query has no weekday-only phrasing.
+ */
+function matchWeekdayPhrase(tokens: string[]): string[] | null {
+  for (const phrase of WEEKDAY_PHRASES) {
+    if (phraseMatches(tokens, phrase, new Set())) return phrase
+  }
+  return null
 }
 
 /** Extract soft `prefer` hints from free-text query tokens (never filters). */
@@ -345,12 +374,42 @@ function weekendWindow(now: Date): { after: Date; before: Date } {
   return { after: saturday, before: monday }
 }
 
-/** Next occurrence of a named weekday as a single-day window (00:00 → 00:00). */
-function weekdayWindow(now: Date, targetWeekday: number): { after: Date; before: Date } {
+/**
+ * Next occurrence(s) of one or more named weekdays as a window spanning the
+ * earliest to the latest occurrence (00:00 → 00:00). A single weekday yields
+ * the same single-day window as before; "lunes o martes" spans both days.
+ */
+function weekdayWindow(now: Date, targetWeekdays: number[]): { after: Date; before: Date } {
   const nowWeekday = getDay(now)
-  const daysUntil = (targetWeekday - nowWeekday + 7) % 7
-  const day = startOfDay(addDays(now, daysUntil))
-  return { after: day, before: startOfDay(addDays(day, 1)) }
+  let after: Date | null = null
+  let before: Date | null = null
+  for (const targetWeekday of targetWeekdays) {
+    const daysUntil = (targetWeekday - nowWeekday + 7) % 7
+    const day = startOfDay(addDays(now, daysUntil))
+    if (after === null || day < after) after = day
+    const dayEnd = startOfDay(addDays(day, 1))
+    if (before === null || dayEnd > before) before = dayEnd
+  }
+  return { after: after!, before: before! }
+}
+
+/**
+ * Weekday-only phrasing ("during the week", "entre semana") → the upcoming
+ * Monday–Friday block, mirroring `weekendWindow`: already inside it → start
+ * now; otherwise → the coming Monday through Friday.
+ */
+function weekdaysWindow(now: Date): { after: Date; before: Date } {
+  const dayOfWeek = getDay(now)
+  if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+    // Already a weekday — start now, end Saturday midnight.
+    const daysUntilSaturday = 6 - dayOfWeek
+    const saturday = startOfDay(addDays(now, daysUntilSaturday))
+    return { after: now, before: saturday }
+  }
+  // Weekend — the coming Monday through Friday.
+  const daysUntilMonday = dayOfWeek === 6 ? 2 : 1
+  const monday = startOfDay(addDays(now, daysUntilMonday))
+  return { after: monday, before: startOfDay(addDays(monday, 5)) }
 }
 
 /**
@@ -546,23 +605,34 @@ export async function canonicalizeSearchIntent(
   }
 
   // --- weekday / timeFilter / dateFrom-dateTo ---
-  let weekday: number | null = null
+  // Every named weekday present in the query ("lunes o martes" → both days).
+  const weekdays = new Set<number>()
   for (const token of queryTokens) {
     const day = WEEKDAY_TOKENS[token]
-    if (day !== undefined) {
-      weekday = day
-      break
-    }
+    if (day !== undefined) weekdays.add(day)
   }
 
-  if (weekday !== null) {
-    const w = weekdayWindow(nowBA, weekday)
+  // Weekday-only phrasing ("during the week", "on weekdays", "entre semana")
+  // means Monday–Friday — NOT timeFilter "week" (the next 7 days). Only when
+  // no named weekday is present (a named day wins over the generic phrasing).
+  const weekdayPhrase =
+    weekdays.size === 0
+      ? matchWeekdayPhrase(normalizedQuery ? normalizedQuery.split(' ') : [])
+      : null
+
+  if (weekdays.size > 0) {
+    const w = weekdayWindow(nowBA, [...weekdays])
     must.startsAfter = baToUTC(w.after)
     must.startsBefore = baToUTC(w.before)
-    // Strip the weekday token.
+    // Strip every named-weekday token.
     for (const [key, value] of Object.entries(WEEKDAY_TOKENS)) {
-      if (value === weekday && queryTokens.has(key)) strippedTokens.add(key)
+      if (weekdays.has(value) && queryTokens.has(key)) strippedTokens.add(key)
     }
+  } else if (weekdayPhrase) {
+    const w = weekdaysWindow(nowBA)
+    must.startsAfter = baToUTC(w.after)
+    must.startsBefore = baToUTC(w.before)
+    for (const token of weekdayPhrase) strippedTokens.add(token)
   } else {
     applyTimeFilter(must, input.timeFilter, nowBA)
   }
@@ -610,7 +680,7 @@ export async function canonicalizeSearchIntent(
   if (
     !explicitLimit &&
     objective !== 'surprise' &&
-    !hasHardMust(input, must, weekday)
+    !hasHardMust(input, must, weekdays)
   ) {
     displayLimit = 3
   }
@@ -689,7 +759,7 @@ function isDefaultWindowOnly(input: CanonicalizeInput, must: EventSearchMust): b
 function hasHardMust(
   input: CanonicalizeInput,
   must: EventSearchMust,
-  weekday: number | null
+  weekdays: Set<number>
 ): boolean {
   if ((must.neighborhoodIds?.length ?? 0) > 0) return true
   if ((must.venueIds?.length ?? 0) > 0) return true
@@ -698,7 +768,7 @@ function hasHardMust(
   if (must.maxPrice !== undefined) return true
   if (must.attendeeAge !== undefined) return true
   if (input.dateFrom || input.dateTo) return true
-  if (weekday !== null) return true
+  if (weekdays.size > 0) return true
   return false
 }
 

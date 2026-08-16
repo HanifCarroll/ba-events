@@ -32,6 +32,7 @@ import {
   stripLeakedReasoning,
   filterEventsMentionedInText,
   buildStreamEnvelope,
+  buildStreamOpeningChunks,
   inferToolResultSuccess,
   type StepResultLike,
 } from '#features/chat/api/stream-helpers.ts'
@@ -147,9 +148,10 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   // Server-side debug copy for GUEST chats only. Authenticated chats already
   // have a server record in `conversations` and are deliberately skipped.
   // Written at request start (user turn) and again after the reply exists.
-  // Fire-and-forget so the write can never delay the stream.
+  // Request-start capture is fire-and-forget so it can never delay the stream;
+  // the terminal writes are awaited so a completed execute cannot lose them.
   if (!userContext.isAuthenticated) {
-    persistGuestChatDebug({
+    void persistGuestChatDebug({
       conversationId,
       locale,
       ip,
@@ -226,12 +228,17 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       }
 
       try {
-        writeStatus('thinking')
-
         const messageId = generateId()
         assistantMessageId = messageId
-        writer.write({ type: 'start', messageId })
         wroteStart = true
+
+        for (const chunk of buildStreamOpeningChunks(
+          messageId,
+          requestId,
+          new Date().toISOString(),
+        )) {
+          writer.write(chunk)
+        }
 
         let streamedReasoning = ''
         let textBlockId: string | undefined
@@ -498,7 +505,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           finishReason: 'stop',
         })
         if (!userContext.isAuthenticated) {
-          persistGuestChatDebug({
+          await persistGuestChatDebug({
             conversationId,
             locale,
             ip,
@@ -528,7 +535,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           })
         }
         if (!userContext.isAuthenticated) {
-          persistGuestChatDebug({
+          await persistGuestChatDebug({
             conversationId,
             locale,
             ip,

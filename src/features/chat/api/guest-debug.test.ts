@@ -99,20 +99,29 @@ describe('persistGuestChatDebug', () => {
     expect(getClientMock).not.toHaveBeenCalled()
   })
 
-  it('fire-and-forgets an upsert for a guest conversation', async () => {
-    upsertMock.mockResolvedValue({ error: null })
+  it('awaits the upsert so terminal persistence cannot be lost', async () => {
+    const { promise: upsertGate, resolve: resolveUpsert } =
+      Promise.withResolvers<{ error: null }>()
+    upsertMock.mockImplementation(() => upsertGate)
 
-    persistGuestChatDebug({
+    let persisted = false
+    const persistPromise = persistGuestChatDebug({
       conversationId: 'guest-nanoid-123',
       locale: 'en',
       ip: '203.0.113.7',
       messages: [{ role: 'user' }],
       lastUserText: 'Hi',
+    }).then(() => {
+      persisted = true
     })
 
-    await vi.waitFor(() => {
-      expect(upsertMock).toHaveBeenCalledTimes(1)
-    })
+    await Promise.resolve()
+    expect(upsertMock).toHaveBeenCalledTimes(1)
+    expect(persisted).toBe(false)
+
+    resolveUpsert({ error: null })
+    await persistPromise
+    expect(persisted).toBe(true)
   })
 })
 

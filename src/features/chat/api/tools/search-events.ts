@@ -39,7 +39,7 @@ export const CANDIDATE_LIMIT = 50
 
 export const searchEventsInputSchema = z.object({
   query: z.string().optional().describe(
-    `Natural language search query for semantic matching. Use for descriptive/vibe text ONLY — specific, resolvable requirements belong in their own fields, not here. Put "free"/"gratis" in isFree, named neighborhoods in neighborhoods, a named venue in venueName, named days ("Saturday") in dateFrom/dateTo or timeFilter, and exclusions ("except techno") in avoid.`
+    `Natural language search query for semantic matching. Use for descriptive/vibe text, and for named days / weekday-only asks ("Saturday", "Monday or Tuesday", "during the week", "on weekdays") which the tool resolves to Buenos Aires date windows. Put other resolvable specifics in their own fields: "free"/"gratis" → isFree, named neighborhoods → neighborhoods, a named venue → venueName, explicit calendar dates → dateFrom/dateTo, exclusions ("except techno") → avoid.`
   ),
   categories: z.array(z.string()).optional().describe(
     `Event categories to filter by. Options: ${CATEGORIES.join(', ')}`
@@ -54,10 +54,10 @@ export const searchEventsInputSchema = z.object({
     'Explicit venue database ids to filter by.'
   ),
   dateFrom: z.string().optional().describe(
-    'Earliest start date/datetime (ISO) to include events from. Use for named days and explicit date ranges.'
+    'Earliest start date/datetime (ISO) to include events from. Use for explicit calendar dates and ranges the user names.'
   ),
   dateTo: z.string().optional().describe(
-    'Latest start date/datetime (ISO) to include events up to. Use for named days and explicit date ranges.'
+    'Latest start date/datetime (ISO) to include events up to. Use for explicit calendar dates and ranges the user names.'
   ),
   isFree: z.boolean().optional().describe('Set to true to only show free events'),
   maxPrice: z.number().optional().describe('Maximum price in ARS'),
@@ -68,7 +68,7 @@ export const searchEventsInputSchema = z.object({
     .enum(['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'])
     .optional()
     .describe(
-      'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future").'
+      'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future"). Never use "week" for weekday-only asks ("during the week", "on weekdays") — put those in query instead.'
     ),
   avoid: z.array(z.string()).optional().describe(
     `Free-text exclusions — things the user explicitly does NOT want (e.g. ["techno"]). Do not search for excluded genres.`
@@ -91,11 +91,11 @@ export const searchEventsTool = defineTool({
   name: 'search_events',
 
   description: `Search for events in Buenos Aires using semantic search and/or filters.
-Use the 'query' parameter for natural language descriptive or vibe text (e.g., "romantic jazz night", "underground techno party", "chill outdoor activities").
-Put resolvable specifics in dedicated fields instead of query text: free shows in isFree, named neighborhoods in neighborhoods, a named venue in venueName, named days or ranges in dateFrom/dateTo, and exclusions ("except techno") in avoid.
+Use the 'query' parameter for natural language descriptive or vibe text (e.g., "romantic jazz night", "underground techno party", "chill outdoor activities"), plus named days and weekday-only asks ("Saturday", "Monday or Tuesday", "during the week", "on weekdays") which the tool resolves to Buenos Aires date windows.
+Put resolvable specifics in dedicated fields instead of query text: free shows in isFree, named neighborhoods in neighborhoods, a named venue in venueName, explicit calendar dates/ranges in dateFrom/dateTo, and exclusions ("except techno") in avoid.
 Use other parameters for specific requirements. Combine both for best results.
 For "what's on tonight?" asks use timeFilter "tonight"; for "what's happening right now?" use timeFilter "now".
-For asks about events further ahead — "furthest", "next month", "anything in the future" — use timeFilter "future" (unbounded).
+For asks about events further ahead — "furthest", "next month", "anything in the future" — use timeFilter "future" (unbounded). timeFilter "week" means the next 7 days ("this week", "the coming week") — never weekday-only asks ("during the week", "on weekdays").
 The result includes coverage metadata: the window you searched, total matches, and the furthest event date on record. Never claim there are no events past the window you actually searched.`,
 
   inputSchema: searchEventsInputSchema,
@@ -105,7 +105,7 @@ The result includes coverage metadata: the window you searched, total matches, a
     properties: {
       query: {
         type: 'string',
-        description: `Natural language search query for semantic matching. Use for descriptive/vibe text ONLY — specific, resolvable requirements belong in their own fields. Put "free"/"gratis" in isFree, named neighborhoods in neighborhoods, a named venue in venueName, named days in dateFrom/dateTo, and exclusions ("except techno") in avoid.`,
+        description: `Natural language search query for semantic matching. Use for descriptive/vibe text, and for named days / weekday-only asks ("Saturday", "Monday or Tuesday", "during the week", "on weekdays") which the tool resolves to Buenos Aires date windows. Put other resolvable specifics in their own fields: "free"/"gratis" → isFree, named neighborhoods → neighborhoods, a named venue → venueName, explicit calendar dates → dateFrom/dateTo, exclusions ("except techno") → avoid.`,
       },
       categories: {
         type: 'array',
@@ -128,11 +128,11 @@ The result includes coverage metadata: the window you searched, total matches, a
       },
       dateFrom: {
         type: 'string',
-        description: 'Earliest start date/datetime (ISO) to include events from.',
+        description: 'Earliest start date/datetime (ISO) to include events from. Use for explicit calendar dates and ranges the user names.',
       },
       dateTo: {
         type: 'string',
-        description: 'Latest start date/datetime (ISO) to include events up to.',
+        description: 'Latest start date/datetime (ISO) to include events up to. Use for explicit calendar dates and ranges the user names.',
       },
       isFree: {
         type: 'boolean',
@@ -150,7 +150,7 @@ The result includes coverage metadata: the window you searched, total matches, a
         type: 'string',
         enum: ['now', 'tonight', 'tomorrow', 'weekend', 'week', 'future'],
         description:
-          'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future").',
+          'Time period filter. now = started and not yet ended, tonight = today evening, tomorrow = next day, weekend = Saturday/Sunday, week = next 7 days, future = any upcoming event with no upper date limit. Prefer "future" when the user asks about events ahead (e.g. "furthest", "next month", "any time in the future"). Never use "week" for weekday-only asks ("during the week", "on weekdays") — put those in query instead.',
       },
       avoid: {
         type: 'array',

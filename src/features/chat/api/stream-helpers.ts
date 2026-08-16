@@ -14,6 +14,7 @@ import {
 import type {
   ChatEventPayload,
   ChatStreamDataEnvelope,
+  ChatStreamStatusData,
   Json,
   MessageExecutionStep,
 } from '#shared/lib/types.ts'
@@ -281,5 +282,28 @@ export function buildStreamEnvelope<T>(
     assistantMessageId,
     data,
   }
+}
+
+/**
+ * Opening chunks for a chat stream, in emission order. The `start` chunk MUST
+ * precede any data/status chunk: the client creates the assistant message from
+ * `start`, so a status part arriving first would correlate against a message id
+ * that does not exist yet (a "phantom" assistant).
+ */
+export function buildStreamOpeningChunks(
+  messageId: string,
+  requestId: string,
+  timestamp: string
+): Array<
+  | { type: 'start'; messageId: string }
+  | { type: 'data-status'; data: ChatStreamStatusData }
+> {
+  return [
+    { type: 'start', messageId },
+    {
+      type: 'data-status',
+      data: { phase: 'thinking', requestId, timestamp },
+    },
+  ]
 }
 

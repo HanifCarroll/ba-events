@@ -25,26 +25,21 @@ export type GuestDebugAssistantMessage = {
   error?: string
 }
 
-export function persistGuestChatDebug(input: {
+export async function persistGuestChatDebug(input: {
   conversationId: string | null
   locale: 'en' | 'es'
   ip: string
   messages: unknown
   lastUserText: string | null
-}): void {
+}): Promise<void> {
   if (!input.conversationId) return
 
-  void upsertGuestChatDebug({
+  await upsertGuestChatDebug({
     conversationId: input.conversationId,
     locale: input.locale,
     ip: input.ip,
     messages: input.messages,
     lastUserText: input.lastUserText,
-  }).catch((error) => {
-    logger.warn('[guest-debug] Unexpected persist failure', {
-      conversationId: input.conversationId,
-      error: error instanceof Error ? error.message : String(error),
-    })
   })
 }
 

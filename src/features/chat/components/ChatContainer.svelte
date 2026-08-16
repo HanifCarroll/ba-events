@@ -1097,7 +1097,11 @@
 			</div>
 		{:else if conversationMissing}
 			<div class="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
-				<p class="text-muted-foreground">{m.chat_conversation_not_found()}</p>
+				<p class="text-muted-foreground">
+					{isAuthenticated
+						? m.chat_conversation_not_found()
+						: m.chat_guest_conversation_not_found()}
+				</p>
 				<a
 					href="/"
 					class="text-sm font-medium text-primary hover:underline"

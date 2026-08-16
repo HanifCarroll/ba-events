@@ -35,6 +35,7 @@
   "chat_status_error": "Something went wrong",
   "chat_rate_limit": "You've reached the rate limit ({count} requests per hour). Please try again after {time}.",
   "chat_conversation_not_found": "This conversation could not be found.",
+  "chat_guest_conversation_not_found": "Guest conversations are saved only in the browser where they were created. This conversation isn't available here.",
   "chat_start_new_chat": "Start a new chat",
   "chat_history": "History",
   "chat_untitled": "Untitled chat",

@@ -35,6 +35,7 @@
   "chat_status_error": "Algo salió mal",
   "chat_rate_limit": "Alcanzaste el límite de solicitudes ({count} por hora). Intentá de nuevo después de las {time}.",
   "chat_conversation_not_found": "No se pudo encontrar esta conversación.",
+  "chat_guest_conversation_not_found": "Las conversaciones como invitado se guardan solo en el navegador donde se crearon. Esta conversación no está disponible acá.",
   "chat_start_new_chat": "Empezar un nuevo chat",
   "chat_history": "Historial",
   "chat_untitled": "Chat sin título",

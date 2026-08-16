@@ -23,6 +23,9 @@ const WEDNESDAY_NOON = new Date(2026, 7, 12, 12, 0, 0) // Wed, Aug 12 2026 12:00
 const SATURDAY = new Date(2026, 7, 15, 0, 0, 0) // Aug 15 00:00 BA
 const SUNDAY = new Date(2026, 7, 16, 0, 0, 0) // Aug 16 00:00 BA
 const MONDAY = new Date(2026, 7, 17, 0, 0, 0) // Aug 17 00:00 BA
+const WEDNESDAY_AUG19 = new Date(2026, 7, 19, 0, 0, 0) // Aug 19 00:00 BA
+const SATURDAY_AUG22 = new Date(2026, 7, 22, 0, 0, 0) // Aug 22 00:00 BA
+const NEXT_WEEK_NOON = new Date(2026, 7, 19, 12, 0, 0) // Aug 19 12:00 BA (Wed + 7d)
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -94,6 +97,33 @@ describe('canonicalizeSearchIntent — date intent', () => {
     )
     // Weekend window ends Mon Aug 17; explicit range starts Aug 30 → after > before.
     expect(intent.must.startsBefore! < intent.must.startsAfter!).toBe(true)
+  })
+
+  it('maps "lunes o martes" to a Monday → Wednesday window spanning both named days', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'lunes o martes' }, WEDNESDAY_NOON)
+    expect(intent.must.startsAfter).toBe(baToUTC(MONDAY))
+    expect(intent.must.startsBefore).toBe(baToUTC(WEDNESDAY_AUG19))
+    expect(intent.semanticQuery).not.toContain('lunes')
+    expect(intent.semanticQuery).not.toContain('martes')
+  })
+
+  it('maps "during the week" on a Wednesday to a now → Saturday weekday window (not week)', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'during the week' }, WEDNESDAY_NOON)
+    expect(intent.must.startsAfter).toBe(baToUTC(WEDNESDAY_NOON))
+    expect(intent.must.startsBefore).toBe(baToUTC(SATURDAY))
+    expect(intent.semanticQuery).toBe('')
+  })
+
+  it('maps "entre semana" on a Saturday to the coming Monday → Friday weekday window', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'entre semana' }, SATURDAY)
+    expect(intent.must.startsAfter).toBe(baToUTC(MONDAY))
+    expect(intent.must.startsBefore).toBe(baToUTC(SATURDAY_AUG22))
+  })
+
+  it('keeps timeFilter "week" as the next 7 days (now → +7 days)', async () => {
+    const intent = await canonicalizeSearchIntent({ timeFilter: 'week' }, WEDNESDAY_NOON)
+    expect(intent.must.startsAfter).toBe(baToUTC(WEDNESDAY_NOON))
+    expect(intent.must.startsBefore).toBe(baToUTC(NEXT_WEEK_NOON))
   })
 })
 
