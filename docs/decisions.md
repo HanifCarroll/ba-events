@@ -26,6 +26,42 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Validate hosted Voyage reranking on frozen production candidates
+
+**Date:** 2026-08-16
+
+**Decision:** Keep the hosted Voyage reranker and its current weighted rank
+fusion in production. A frozen live-catalog evaluation compared production RRF
+order, the superseded facet reranker, pure Voyage order, and Voyage/RRF fusion
+across 88 labeled queries. Pure Voyage decisively beat the RRF baseline:
+NDCG@5 `0.830` vs `0.730`, Hit@1 `0.875` vs `0.795`, and mean paired
+NDCG@5 improvement `+0.0997` (100,000-sample paired bootstrap probability
+`1.000`; 53 query wins, 13 ties, 22 losses). The current `2:1` fusion scored
+NDCG@5 `0.818` and Hit@1 `0.852`.
+
+Related Decision: "Hosted Voyage rerank replaces facet-overlap rerank"
+(2026-08-15).
+
+**Alternatives Considered (if applicable):**
+- Remove hosted reranking: rejected — RRF was materially worse overall and in
+  both subjective (`0.698` vs pure Voyage `0.784`) and literal (`0.752` vs
+  `0.861`) NDCG@5 slices.
+- Replace fusion with pure Voyage order: deferred — pure Voyage led fusion by
+  `0.0125` mean NDCG@5, but its paired bootstrap probability was only `0.907`.
+  That is useful tuning evidence, not enough to remove the retrieval hedge.
+- Restore facet reranking: rejected — it improved over RRF but trailed pure
+  Voyage overall (`0.763` vs `0.830` NDCG@5).
+
+**Rationale:** The earlier 26-event synthetic fixture could verify plumbing but
+could not distinguish ranking quality. This evaluation froze 50 production
+candidates and Voyage ranks per query, pooled the top results from every
+variant, graded 1,181 query-event pairs, and replayed all variants offline.
+Labels were drafted by DeepSeek Pro under a fixed 0–3 rubric and spot-checked
+against event names, summaries, and facets; this provenance remains the main
+measurement caveat. The effect over baseline is large and consistent enough to
+support hosted reranking. The smaller pure-Voyage advantage does not yet justify
+removing rank fusion.
+
 ### Generic prefer-facet rerank and default 3-item discovery limit
 
 **Date:** 2026-08-15
