@@ -1,0 +1,974 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-16T04:45:41.250Z",
+    "capturePath": "evals/search/relevance/holdout-capture.json",
+    "labelsPath": "evals/search/relevance/holdout-labels.ts",
+    "variantA": "voyage",
+    "variantB": "fused(2)",
+    "seed": 123456789,
+    "samples": 100000,
+    "addOneCorrection": true,
+    "methods": {
+      "bootstrapCI": "paired bootstrap percentile 95% CI (2.5th/97.5th percentiles, nearest-rank) of per-query A-B differences, seeded, frequentist",
+      "signFlipP": "two-sided paired sign-flip randomization p-value of mean A-B with add-one correction (count+1)/(samples+1), frequentist",
+      "mcnemarP": "exact two-sided McNemar/binomial p-value on discordant pairs (H0 p=0.5), sum of binomial probabilities <= observed"
+    },
+    "captureMeta": {
+      "capturedAt": "2026-08-16T04:06:08.458Z",
+      "nowBA": "2026-08-16T04:06:08.458Z",
+      "queries": 40
+    },
+    "totalQueries": 40,
+    "scoredQueries": 38,
+    "excludedZeroCandidateQueries": 2,
+    "topOneDisagreementCount": 16
+  },
+  "excludedQueries": [
+    {
+      "id": "hold-es-tango-san-telmo-hoy",
+      "query": "elegime tango en San Telmo para esta noche",
+      "subjective": false,
+      "lang": "es",
+      "hasMust": true,
+      "path": "semantic",
+      "semanticQuery": "elegime tango esta noche",
+      "displayLimit": 1
+    },
+    {
+      "id": "hold-en-solo-tonight",
+      "query": "pick one low-pressure thing to do alone tonight",
+      "subjective": true,
+      "lang": "en",
+      "hasMust": true,
+      "path": "semantic",
+      "semanticQuery": "pick one low pressure thing to do alone tonight",
+      "displayLimit": 1
+    }
+  ],
+  "slices": [
+    {
+      "name": "overall",
+      "n": 38,
+      "excluded": 2,
+      "metrics": {
+        "ndcg3": {
+          "aMean": 0.692495,
+          "bMean": 0.672103,
+          "diffMean": 0.020392,
+          "ciLo": -0.032152,
+          "ciHi": 0.079299,
+          "signFlipP": 0.500955,
+          "wins": 10,
+          "ties": 16,
+          "losses": 12
+        },
+        "ndcg5": {
+          "aMean": 0.698364,
+          "bMean": 0.688358,
+          "diffMean": 0.010007,
+          "ciLo": -0.023302,
+          "ciHi": 0.045608,
+          "signFlipP": 0.584994,
+          "wins": 10,
+          "ties": 13,
+          "losses": 15
+        },
+        "ndcgK": {
+          "aMean": 0.704508,
+          "bMean": 0.664557,
+          "diffMean": 0.039951,
+          "ciLo": -0.019988,
+          "ciHi": 0.114848,
+          "signFlipP": 0.300757,
+          "wins": 8,
+          "ties": 21,
+          "losses": 9
+        },
+        "grade1": {
+          "aMean": 2.026316,
+          "bMean": 2.052632,
+          "diffMean": -0.026316,
+          "ciLo": -0.289474,
+          "ciHi": 0.236842,
+          "signFlipP": 1
+        },
+        "excellent1": {
+          "aMean": 0.5,
+          "bMean": 0.526316,
+          "diffMean": -0.026316,
+          "aOnly": 3,
+          "bOnly": 4,
+          "mcnemarP": 1
+        },
+        "relevant1": {
+          "aMean": 0.736842,
+          "bMean": 0.736842,
+          "diffMean": 0,
+          "aOnly": 1,
+          "bOnly": 1,
+          "mcnemarP": 1
+        },
+        "bad1": {
+          "aMean": 0.210526,
+          "bMean": 0.210526,
+          "diffMean": 0,
+          "aOnly": 2,
+          "bOnly": 2,
+          "mcnemarP": 1
+        }
+      }
+    },
+    {
+      "name": "subjective: true",
+      "n": 21,
+      "excluded": 1,
+      "metrics": {
+        "ndcg3": {
+          "aMean": 0.702576,
+          "bMean": 0.706475,
+          "diffMean": -0.003899,
+          "ciLo": -0.083938,
+          "ciHi": 0.087277,
+          "signFlipP": 0.937911,
+          "wins": 5,
+          "ties": 5,
+          "losses": 11
+        },
+        "ndcg5": {
+          "aMean": 0.70444,
+          "bMean": 0.712457,
+          "diffMean": -0.008017,
+          "ciLo": -0.058336,
+          "ciHi": 0.045127,
+          "signFlipP": 0.772132,
+          "wins": 5,
+          "ties": 4,
+          "losses": 12
+        },
+        "ndcgK": {
+          "aMean": 0.713776,
+          "bMean": 0.706097,
+          "diffMean": 0.007679,
+          "ciLo": -0.06498,
+          "ciHi": 0.093119,
+          "signFlipP": 0.865811,
+          "wins": 4,
+          "ties": 9,
+          "losses": 8
+        },
+        "grade1": {
+          "aMean": 2.142857,
+          "bMean": 2.380952,
+          "diffMean": -0.238095,
+          "ciLo": -0.619048,
+          "ciHi": 0.095238,
+          "signFlipP": 0.343187
+        },
+        "excellent1": {
+          "aMean": 0.47619,
+          "bMean": 0.571429,
+          "diffMean": -0.095238,
+          "aOnly": 2,
+          "bOnly": 4,
+          "mcnemarP": 0.6875
+        },
+        "relevant1": {
+          "aMean": 0.809524,
+          "bMean": 0.857143,
+          "diffMean": -0.047619,
+          "aOnly": 0,
+          "bOnly": 1,
+          "mcnemarP": 1
+        },
+        "bad1": {
+          "aMean": 0.142857,
+          "bMean": 0.047619,
+          "diffMean": 0.095238,
+          "aOnly": 2,
+          "bOnly": 0,
+          "mcnemarP": 0.5
+        }
+      }
+    },
+    {
+      "name": "subjective: false",
+      "n": 17,
+      "excluded": 1,
+      "metrics": {
+        "ndcg3": {
+          "aMean": 0.680043,
+          "bMean": 0.629645,
+          "diffMean": 0.050398,
+          "ciLo": -0.004149,
+          "ciHi": 0.122762,
+          "signFlipP": 0.159328,
+          "wins": 5,
+          "ties": 11,
+          "losses": 1
+        },
+        "ndcg5": {
+          "aMean": 0.690859,
+          "bMean": 0.658588,
+          "diffMean": 0.032272,
+          "ciLo": -0.003953,
+          "ciHi": 0.077344,
+          "signFlipP": 0.171148,
+          "wins": 5,
+          "ties": 9,
+          "losses": 3
+        },
+        "ndcgK": {
+          "aMean": 0.693058,
+          "bMean": 0.613243,
+          "diffMean": 0.079815,
+          "ciLo": 0.001382,
+          "ciHi": 0.208676,
+          "signFlipP": 0.125239,
+          "wins": 4,
+          "ties": 12,
+          "losses": 1
+        },
+        "grade1": {
+          "aMean": 1.882353,
+          "bMean": 1.647059,
+          "diffMean": 0.235294,
+          "ciLo": 0,
+          "ciHi": 0.647059,
+          "signFlipP": 0.498205
+        },
+        "excellent1": {
+          "aMean": 0.529412,
+          "bMean": 0.470588,
+          "diffMean": 0.058824,
+          "aOnly": 1,
+          "bOnly": 0,
+          "mcnemarP": 1
+        },
+        "relevant1": {
+          "aMean": 0.647059,
+          "bMean": 0.588235,
+          "diffMean": 0.058824,
+          "aOnly": 1,
+          "bOnly": 0,
+          "mcnemarP": 1
+        },
+        "bad1": {
+          "aMean": 0.294118,
+          "bMean": 0.411765,
+          "diffMean": -0.117647,
+          "aOnly": 0,
+          "bOnly": 2,
+          "mcnemarP": 0.5
+        }
+      }
+    },
+    {
+      "name": "lang: es",
+      "n": 26,
+      "excluded": 1,
+      "metrics": {
+        "ndcg3": {
+          "aMean": 0.664057,
+          "bMean": 0.636939,
+          "diffMean": 0.027118,
+          "ciLo": -0.045385,
+          "ciHi": 0.107355,
+          "signFlipP": 0.518815,
+          "wins": 7,
+          "ties": 10,
+          "losses": 9
+        },
+        "ndcg5": {
+          "aMean": 0.678961,
+          "bMean": 0.658217,
+          "diffMean": 0.020744,
+          "ciLo": -0.023445,
+          "ciHi": 0.067185,
+          "signFlipP": 0.399506,
+          "wins": 7,
+          "ties": 10,
+          "losses": 9
+        },
+        "ndcgK": {
+          "aMean": 0.678279,
+          "bMean": 0.625909,
+          "diffMean": 0.05237,
+          "ciLo": -0.030137,
+          "ciHi": 0.15762,
+          "signFlipP": 0.349647,
+          "wins": 5,
+          "ties": 15,
+          "losses": 6
+        },
+        "grade1": {
+          "aMean": 2,
+          "bMean": 1.961538,
+          "diffMean": 0.038462,
+          "ciLo": -0.346154,
+          "ciHi": 0.384615,
+          "signFlipP": 1
+        },
+        "excellent1": {
+          "aMean": 0.538462,
+          "bMean": 0.5,
+          "diffMean": 0.038462,
+          "aOnly": 3,
+          "bOnly": 2,
+          "mcnemarP": 1
+        },
+        "relevant1": {
+          "aMean": 0.692308,
+          "bMean": 0.692308,
+          "diffMean": 0,
+          "aOnly": 1,
+          "bOnly": 1,
+          "mcnemarP": 1
+        },
+        "bad1": {
+          "aMean": 0.230769,
+          "bMean": 0.230769,
+          "diffMean": 0,
+          "aOnly": 2,
+          "bOnly": 2,
+          "mcnemarP": 1
+        }
+      }
+    },
+    {
+      "name": "lang: en",
+      "n": 7,
+      "excluded": 1,
+      "metrics": {
+        "ndcg3": {
+          "aMean": 0.73783,
+          "bMean": 0.74488,
+          "diffMean": -0.00705,
+          "ciLo": -0.074619,
+          "ciHi": 0.064644,
+          "signFlipP": 1,
+          "wins": 1,
+          "ties": 4,
+          "losses": 2
+        },
+        "ndcg5": {
+          "aMean": 0.708517,
+          "bMean": 0.725279,
+          "diffMean": -0.016762,
+          "ciLo": -0.052578,
+          "ciHi": 0.024158,
+          "signFlipP": 0.469805,
+          "wins": 2,
+          "ties": 1,
+          "losses": 4
+        },
+        "ndcgK": {
+          "aMean": 0.750214,
+          "bMean": 0.74488,
+          "diffMean": 0.005334,
+          "ciLo": -0.042285,
+          "ciHi": 0.067053,
+          "signFlipP": 1,
+          "wins": 1,
+          "ties": 4,
+          "losses": 2
+        },
+        "grade1": {
+          "aMean": 2.285714,
+          "bMean": 2.285714,
+          "diffMean": 0,
+          "ciLo": 0,
+          "ciHi": 0,
+          "signFlipP": 1
+        },
+        "excellent1": {
+          "aMean": 0.571429,
+          "bMean": 0.571429,
+          "diffMean": 0,
+          "aOnly": 0,
+          "bOnly": 0,
+          "mcnemarP": 1
+        },
+        "relevant1": {
+          "aMean": 0.857143,
+          "bMean": 0.857143,
+          "diffMean": 0,
+          "aOnly": 0,
+          "bOnly": 0,
+          "mcnemarP": 1
+        },
+        "bad1": {
+          "aMean": 0.142857,
+          "bMean": 0.142857,
+          "diffMean": 0,
+          "aOnly": 0,
+          "bOnly": 0,
+          "mcnemarP": 1
+        }
+      }
+    },
+    {
+      "name": "lang: mixed",
+      "n": 5,
+      "excluded": 0,
+      "metrics": {
+        "ndcg3": {
+          "aMean": 0.776907,
+          "bMean": 0.753072,
+          "diffMean": 0.023835,
+          "ciLo": -0.08976,
+          "ciHi": 0.153072,
+          "signFlipP": 0.750092,
+          "wins": 2,
+          "ties": 2,
+          "losses": 1
+        },
+        "ndcg5": {
+          "aMean": 0.785048,
+          "bMean": 0.793401,
+          "diffMean": -0.008353,
+          "ciLo": -0.103653,
+          "ciHi": 0.088186,
+          "signFlipP": 0.749333,
+          "wins": 1,
+          "ties": 2,
+          "losses": 2
+        },
+        "ndcgK": {
+          "aMean": 0.776907,
+          "bMean": 0.753072,
+          "diffMean": 0.023835,
+          "ciLo": -0.08976,
+          "ciHi": 0.153072,
+          "signFlipP": 0.750262,
+          "wins": 2,
+          "ties": 2,
+          "losses": 1
+        },
+        "grade1": {
+          "aMean": 1.8,
+          "bMean": 2.2,
+          "diffMean": -0.4,
+          "ciLo": -0.8,
+          "ciHi": 0,
+          "signFlipP": 0.501145
+        },
+        "excellent1": {
+          "aMean": 0.2,
+          "bMean": 0.6,
+          "diffMean": -0.4,
+          "aOnly": 0,
+          "bOnly": 2,
+          "mcnemarP": 0.5
+        },
+        "relevant1": {
+          "aMean": 0.8,
+          "bMean": 0.8,
+          "diffMean": 0,
+          "aOnly": 0,
+          "bOnly": 0,
+          "mcnemarP": 1
+        },
+        "bad1": {
+          "aMean": 0.2,
+          "bMean": 0.2,
+          "diffMean": 0,
+          "aOnly": 0,
+          "bOnly": 0,
+          "mcnemarP": 1
+        }
+      }
+    }
+  ],
+  "topOneDisagreements": [
+    {
+      "queryId": "hold-es-bailar-charlar",
+      "query": "quiero bailar pero también poder charlar, nada demasiado explotado",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "eb9fe5fb-4ec6-459b-8727-d627f68ea7be",
+        "name": "NOCHE DE MACH",
+        "grade": 3,
+        "baseRank": 25,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+        "name": "Tinder en la vida real - Bailando",
+        "grade": 3,
+        "baseRank": 1,
+        "rerankerRank": 4
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-padres-sin-ruido",
+      "query": "algo lindo para hacer con mis viejos, sin mucho ruido",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "8c41f343-f584-4237-a563-1aaa02126c6e",
+        "name": "Veto y Fer, El Bingo.",
+        "grade": 0,
+        "baseRank": 23,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "c4665b91-618c-46ea-8e62-5d118887927a",
+        "name": "MERY GRANADOS · Encuentro íntimo",
+        "grade": 3,
+        "baseRank": 2,
+        "rerankerRank": 5
+      },
+      "flags": {
+        "aBadBNot": true,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": true,
+        "aRelevantBNot": false,
+        "bRelevantANot": true
+      }
+    },
+    {
+      "queryId": "hold-es-solo-post-laburo",
+      "query": "salgo solo del laburo y quiero un plan relajado",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 1,
+      "a": {
+        "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "name": "Experiencia Wellness",
+        "grade": 1,
+        "baseRank": 41,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+        "name": "SPEAKEASY NIGHT: HIDDEN BAR TOUR (25+)🍻",
+        "grade": 1,
+        "baseRank": 7,
+        "rerankerRank": 3
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-artistico-no-boliche",
+      "query": "algo medio artístico y distinto, pero no boliche",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "6a262dbf-be1b-42c4-a07b-4b799cd82210",
+        "name": "Cabaret Porteño",
+        "grade": 3,
+        "baseRank": 28,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "551f4911-1207-4707-ad66-efb93c2a6c7b",
+        "name": "BIAN LUNA Y BAUTI CARMONA - SET ACÚSTICO",
+        "grade": 2,
+        "baseRank": 8,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": true,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-bailar-no-cachengue",
+      "query": "tres opciones para bailar que no sean cachengue",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "9089d173-0ef3-40a5-9419-e12381470bbd",
+        "name": "Explorar | Ecstatic Dance",
+        "grade": 3,
+        "baseRank": 44,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+        "name": "Tinder en la vida real - Bailando",
+        "grade": 2,
+        "baseRank": 1,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": true,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-energia-no-apretado",
+      "query": "quiero energía pero no estar apretado en un boliche",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "764bba3a-cb14-4939-ad34-da64d681e4bf",
+        "name": "TOUR DE BARES Y BOLICHES EN PALERMO",
+        "grade": 0,
+        "baseRank": 29,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "c0359146-fb0b-4cef-9b31-2aa02950fdb5",
+        "name": "NOCHE DE BOLEROS.",
+        "grade": 1,
+        "baseRank": 17,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": true,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-queer-no-megafiesta",
+      "query": "una salida queer friendly que no sea una mega fiesta",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "8c4d5b7e-d66c-42d8-a671-b046a804aeb3",
+        "name": "Fun Fun @ Shamrock Basement - Mystery Affair / Djs Pareja / Bond",
+        "grade": 2,
+        "baseRank": 21,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "7e1c463c-e835-46e4-8d19-3082492d534a",
+        "name": "Folklorazo Queer en agosto",
+        "grade": 3,
+        "baseRank": 1,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": true,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-museo-gratis",
+      "query": "museos o muestras gratis esta semana",
+      "subjective": false,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "e197177c-3b21-47fd-9ed7-d78ab52a5259",
+        "name": "Istituto Marangoni Miami - Diseñando el Futuro: Buenos Aires",
+        "grade": 1,
+        "baseRank": 9,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "cfb52731-0d97-42c0-b703-ab6c52adcfd7",
+        "name": "★ CERAMICA Y VINO 21/08 ★",
+        "grade": 0,
+        "baseRank": 1,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": true,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-standup-barato",
+      "query": "stand up por menos de quince mil pesos",
+      "subjective": false,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "043f86c9-7b2d-4738-ad8e-4c0f8e578913",
+        "name": "POPE STAND UP / MIÉRCOLES 19/08 DIEGO SACCO y PICHI PICCIRILLO",
+        "grade": 3,
+        "baseRank": 14,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "fd70761b-9160-4042-99e5-d72bcb8e16e9",
+        "name": "Primer Aviso - Stand Up COMEDIA PICANTE",
+        "grade": 3,
+        "baseRank": 4,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-recoleta-cultural-gratis",
+      "query": "planes culturales gratis en Recoleta",
+      "subjective": false,
+      "lang": "es",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "21f43631-0765-49f6-9d17-d9561b217b63",
+        "name": "Viernes 21 de Agosto PAUL DEEP @LaBiblioteca x Get Deep by My House",
+        "grade": 2,
+        "baseRank": 11,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "927bfc75-044c-4a9d-abe3-0f660f753efc",
+        "name": "PPTfest2.0 -- 20/08/26",
+        "grade": 2,
+        "baseRank": 1,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-mix-cozy-date",
+      "query": "algo cozy for a date, no loud party",
+      "subjective": true,
+      "lang": "mixed",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+        "name": "Coldplay. Piano, Violín y vino. Experiencia",
+        "grade": 3,
+        "baseRank": 15,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "18750704-d655-40c4-b247-cb4dc9f8b981",
+        "name": "INTIMO THE FUNKY STONES / 29 de agosto",
+        "grade": 3,
+        "baseRank": 3,
+        "rerankerRank": 5
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-mix-dance-talk",
+      "query": "quiero bailar but somewhere we can talk",
+      "subjective": true,
+      "lang": "mixed",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "d7a98eed-e83f-476b-9081-fd3497b39c6d",
+        "name": "Project Dance Buenos Aires 2026",
+        "grade": 2,
+        "baseRank": 6,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+        "name": "Tinder en la vida real - Bailando",
+        "grade": 3,
+        "baseRank": 1,
+        "rerankerRank": 3
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": true,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-mix-jazz-cheap-chill",
+      "query": "live jazz pero barato y tranqui",
+      "subjective": true,
+      "lang": "mixed",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "3f373854-348b-4433-8ba0-a528f34be097",
+        "name": "Cortázar y el jazz en las alturas",
+        "grade": 2,
+        "baseRank": 27,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "59edf8d4-333a-4014-9d1a-327fd702d817",
+        "name": "Denise Izaguirre Quartet - West Coast Jazz - ALWAYS COOL - Jazz Voyeur Club",
+        "grade": 3,
+        "baseRank": 7,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": true,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-mix-art-sunday",
+      "query": "a chill plan con arte para el domingo",
+      "subjective": true,
+      "lang": "mixed",
+      "displayLimit": 3,
+      "a": {
+        "eventId": "280a18d8-85d6-4ec9-a0d6-2b9787482af0",
+        "name": "EL SHOW DE LOS PELADOS - COMEDY SHOW.",
+        "grade": 2,
+        "baseRank": 24,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "name": "Experiencia Wellness",
+        "grade": 2,
+        "baseRank": 6,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-musica-no-tributo",
+      "query": "elegime una sola opción de música que no sea tributo",
+      "subjective": false,
+      "lang": "es",
+      "displayLimit": 1,
+      "a": {
+        "eventId": "ae63afaf-6e94-4904-a9f5-010675899b39",
+        "name": "ZABAL: RESISTANCE",
+        "grade": 3,
+        "baseRank": 29,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "70cfa8f5-8f99-4b29-91b6-7963c8197054",
+        "name": "TRIBUTO A ELVIS - STUDIO SESSIONS!",
+        "grade": 0,
+        "baseRank": 2,
+        "rerankerRank": 5
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": true,
+        "aExcellentBNot": true,
+        "bExcellentANot": false,
+        "aRelevantBNot": true,
+        "bRelevantANot": false
+      }
+    },
+    {
+      "queryId": "hold-es-aire-libre-lluvia",
+      "query": "elegime un plan al aire libre, salvo que llueva",
+      "subjective": true,
+      "lang": "es",
+      "displayLimit": 1,
+      "a": {
+        "eventId": "8a955768-4625-4a75-ad64-385601709025",
+        "name": "CONEJO NEGRO - OASIS - KEEP ON GROOVE en Niceto Bar",
+        "grade": 3,
+        "baseRank": 8,
+        "rerankerRank": 1
+      },
+      "b": {
+        "eventId": "8e041344-be8e-4e0f-9d3f-d45fc86ec1ab",
+        "name": "Día del Niño en la Floralis",
+        "grade": 3,
+        "baseRank": 3,
+        "rerankerRank": 2
+      },
+      "flags": {
+        "aBadBNot": false,
+        "bBadANot": false,
+        "aExcellentBNot": false,
+        "bExcellentANot": false,
+        "aRelevantBNot": false,
+        "bRelevantANot": false
+      }
+    }
+  ],
+  "flagSummaries": {
+    "overall": {
+      "aBadBNot": 2,
+      "bBadANot": 2,
+      "aExcellentBNot": 3,
+      "bExcellentANot": 4,
+      "aRelevantBNot": 1,
+      "bRelevantANot": 1
+    },
+    "subjectiveTrue": {
+      "aBadBNot": 2,
+      "bBadANot": 0,
+      "aExcellentBNot": 2,
+      "bExcellentANot": 4,
+      "aRelevantBNot": 0,
+      "bRelevantANot": 1
+    },
+    "subjectiveFalse": {
+      "aBadBNot": 0,
+      "bBadANot": 2,
+      "aExcellentBNot": 1,
+      "bExcellentANot": 0,
+      "aRelevantBNot": 1,
+      "bRelevantANot": 0
+    }
+  }
+}

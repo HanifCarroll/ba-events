@@ -1,10 +1,11 @@
 /**
  * Hosted reranker for search_events stage-2.
  *
- * Calls the Voyage AI rerank API over compact per-event documents and fuses the
- * reranker order with the incoming retrieval (RRF) order via weighted rank
- * fusion. The reranker only REORDERS: it never drops candidates, never filters,
- * and has no score threshold — hard `must` constraints stay in SQL exactly as
+ * Calls the Voyage AI rerank API over compact per-event documents and orders
+ * the candidates by the reranker's returned rank (rerankerRank ascending),
+ * using the incoming retrieval (RRF) order only as a deterministic tie-break.
+ * The reranker only REORDERS: it never drops candidates, never filters, and
+ * has no score threshold — hard `must` constraints stay in SQL exactly as
  * today. Any failure (missing key, timeout, HTTP error, malformed response)
  * silently falls back to the pre-rerank candidate order.
  *
@@ -180,11 +181,9 @@ function isValidRerankData(
 // ============================================================================
 
 /**
- * Reorder candidates via the hosted Voyage reranker, fused with the incoming
- * retrieval order (baseRank). Never throws, never drops or duplicates.
- *
- * Final order: weighted rank fusion `2/(60 + rerankerRank) + 1/(60 + baseRank)`
- * sorted descending, ties broken by lower baseRank first (deterministic).
+ * Reorder candidates by the hosted Voyage reranker's rank (rerankerRank
+ * ascending), using the incoming retrieval order (baseRank) only as a
+ * deterministic tie-break. Never throws, never drops or duplicates.
  */
 export async function rerankEvents<T extends { id: string }>(
   candidates: T[],
@@ -240,21 +239,20 @@ export async function rerankEvents<T extends { id: string }>(
       scoreByInputIndex.set(item.index, item.relevance_score)
     })
 
-    const fused = candidates.map((event, i) => {
+    const ranked = candidates.map((event, i) => {
       const baseRank = i + 1
       const rerankerRank = rerankerRankByInputIndex.get(i)!
       const rerankerScore = scoreByInputIndex.get(i)!
-      const finalScore = 2 / (60 + rerankerRank) + 1 / (60 + baseRank)
-      return { event, baseRank, rerankerRank, rerankerScore, finalScore }
+      return { event, baseRank, rerankerRank, rerankerScore }
     })
 
-    fused.sort((a, b) => {
-      if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore
+    ranked.sort((a, b) => {
+      if (a.rerankerRank !== b.rerankerRank) return a.rerankerRank - b.rerankerRank
       return a.baseRank - b.baseRank
     })
 
     const ranks = new Map<string, { baseRank: number; rerankerRank: number; rerankerScore: number; finalRank: number }>()
-    fused.forEach((entry, position) => {
+    ranked.forEach((entry, position) => {
       ranks.set(entry.event.id, {
         baseRank: entry.baseRank,
         rerankerRank: entry.rerankerRank,
@@ -265,7 +263,7 @@ export async function rerankEvents<T extends { id: string }>(
 
     const usage = json.usage as { total_tokens?: number } | undefined
     return {
-      ordered: fused.map((entry) => entry.event),
+      ordered: ranked.map((entry) => entry.event),
       meta: {
         status: 'applied',
         model: (json.model as string | undefined) ?? model,

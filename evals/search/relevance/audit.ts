@@ -36,6 +36,7 @@ import {
   type FrozenEvent,
   type FrozenQuery,
 } from './frozen-variants.ts'
+import { portablePath } from './portable-path.ts'
 
 type Grade = 0 | 1 | 2 | 3
 type Labels = Record<string, Record<string, Grade>>
@@ -307,8 +308,8 @@ const worksheet = {
   meta: {
     generatedAt,
     seed: AUDIT_SEED,
-    capture: CAPTURE_PATH,
-    labels: LABELS_PATH,
+    capture: portablePath(CAPTURE_PATH),
+    labels: portablePath(LABELS_PATH),
     note:
       'Blinded disagreement worksheet. Option IDs are opaque; no ranker, rank, variant order, previous grade, or event database ID is exposed. Fill grade (0..3) and rationale per option.',
   },
@@ -319,8 +320,8 @@ const key = {
   meta: {
     generatedAt,
     seed: AUDIT_SEED,
-    capture: CAPTURE_PATH,
-    labels: LABELS_PATH,
+    capture: portablePath(CAPTURE_PATH),
+    labels: portablePath(LABELS_PATH),
     note:
       'Restores identity for the blinded worksheet. Contains variant orders, selection reasons, and existing labels for later comparison.',
   },

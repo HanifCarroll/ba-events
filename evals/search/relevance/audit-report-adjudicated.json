@@ -1,0 +1,464 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-16T04:45:26.952Z",
+    "capture": "evals/search/relevance/capture-latest.json",
+    "key": "evals/search/relevance/audit-key.json",
+    "grades": "evals/search/relevance/audit-grades-adjudicated.json",
+    "existingLabels": "evals/search/relevance/live-labels.ts",
+    "queries": 50,
+    "note": "Blinded disagreement audit. No statistical probability claim is made."
+  },
+  "systems": {
+    "voyage": {
+      "ndcg3": 0.8020429405044733,
+      "ndcg5": 0.8402993848878714,
+      "ndcgDl": 0.7666666666666667,
+      "grade1": 2.24,
+      "excellent1": 0.66,
+      "relevant1": 0.76,
+      "bad1": 0.18,
+      "n": 50
+    },
+    "fused(2)": {
+      "ndcg3": 0.7344834843592553,
+      "ndcg5": 0.762310635653829,
+      "ndcgDl": 0.7666666666666666,
+      "grade1": 2.22,
+      "excellent1": 0.7,
+      "relevant1": 0.72,
+      "bad1": 0.2,
+      "n": 50
+    }
+  },
+  "pairedNdcg5": {
+    "wins": 28,
+    "ties": 10,
+    "losses": 12,
+    "meanDifference": 0.07798874923404271
+  },
+  "agreement": {
+    "exactRate": 0.4636363636363636,
+    "compared": 330,
+    "confusion": [
+      [
+        27,
+        27,
+        14,
+        8
+      ],
+      [
+        5,
+        18,
+        15,
+        9
+      ],
+      [
+        3,
+        7,
+        22,
+        12
+      ],
+      [
+        1,
+        10,
+        66,
+        86
+      ]
+    ]
+  },
+  "reversals": [
+    {
+      "queryId": "vibe-desconectar",
+      "blindedVoyageNdcg5": 0.8919478197221427,
+      "blindedFusedNdcg5": 0.9733983476116026,
+      "existingVoyageNdcg5": 0.43067655807339306,
+      "existingFusedNdcg5": 1,
+      "changes": [
+        "voyage-top1-bad: blinded=2, existing=0",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "vibe-en-cultural",
+      "blindedVoyageNdcg5": 0.9254090060404282,
+      "blindedFusedNdcg5": 0.8308597971528897,
+      "existingVoyageNdcg5": 0.5546926965455995,
+      "existingFusedNdcg5": 0.7575672829873702,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused",
+        "voyage-top1-excellent: blinded=3, existing=1"
+      ]
+    },
+    {
+      "queryId": "sparse-ajedrez",
+      "blindedVoyageNdcg5": 0.7606395682357036,
+      "blindedFusedNdcg5": 0.6366824387328317,
+      "existingVoyageNdcg5": 0.6182885020492784,
+      "existingFusedNdcg5": 0.7653606369886217,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "vibe-en-talk",
+      "blindedVoyageNdcg5": 0.6393696075944694,
+      "blindedFusedNdcg5": 0.8836040457049016,
+      "existingVoyageNdcg5": 0.8219622766731811,
+      "existingFusedNdcg5": 0.9408880358412802,
+      "changes": [
+        "voyage-top1-excellent: blinded=1, existing=3"
+      ]
+    },
+    {
+      "queryId": "mix-fiesta-not-crazy",
+      "blindedVoyageNdcg5": 0.5012658353418871,
+      "blindedFusedNdcg5": 0.3065735963827292,
+      "existingVoyageNdcg5": 0.5678155901715274,
+      "existingFusedNdcg5": 0.7197404739702886,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused",
+        "fused-top1-bad: blinded=0, existing=1"
+      ]
+    },
+    {
+      "queryId": "vibe-wellness",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.9903929125301808,
+      "existingVoyageNdcg5": 0.9085294828962065,
+      "existingFusedNdcg5": 0.9948189840222265,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "slang-musica-vivo",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 1,
+      "existingVoyageNdcg5": 0.9110983816788429,
+      "existingFusedNdcg5": 1,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=fused",
+        "voyage-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "lit-en-sports",
+      "blindedVoyageNdcg5": 0.9085294828962065,
+      "blindedFusedNdcg5": 0.8576132083665359,
+      "existingVoyageNdcg5": 0.8175817129665458,
+      "existingFusedNdcg5": 0.8947723458331541,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "slang-previa",
+      "blindedVoyageNdcg5": 0.8541213885406519,
+      "blindedFusedNdcg5": 0.8427183604763097,
+      "existingVoyageNdcg5": 0.8463917128526507,
+      "existingFusedNdcg5": 0.9231958564263254,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "vibe-cultural-relajado",
+      "blindedVoyageNdcg5": 0.827570972947307,
+      "blindedFusedNdcg5": 0.9270412660695304,
+      "existingVoyageNdcg5": 0.815770349131416,
+      "existingFusedNdcg5": 0.8919478197221427,
+      "changes": [
+        "voyage-top1-excellent: blinded=3, existing=2",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "lit-en-art",
+      "blindedVoyageNdcg5": 0.6131471927654584,
+      "blindedFusedNdcg5": 0.8503449055347546,
+      "existingVoyageNdcg5": 0.8775416530133452,
+      "existingFusedNdcg5": 0.9557034395662896,
+      "changes": [
+        "voyage-top1-excellent: blinded=3, existing=2",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "lit-en-workshop",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.8308597971528897,
+      "existingVoyageNdcg5": 0.8550077055393716,
+      "existingFusedNdcg5": 0.9275038527696858,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused",
+        "voyage-top1-excellent: blinded=3, existing=2",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "lit-techno-finde",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 1,
+      "existingVoyageNdcg5": 0.943636064714473,
+      "existingFusedNdcg5": 1,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=fused"
+      ]
+    },
+    {
+      "queryId": "must-esta-noche",
+      "blindedVoyageNdcg5": 0.9866232943931771,
+      "blindedFusedNdcg5": 0.9948189840222265,
+      "existingVoyageNdcg5": 0.8550077055393716,
+      "existingFusedNdcg5": 0.917452487864839,
+      "changes": [
+        "voyage-top1-excellent: blinded=3, existing=2",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "avoid-reggaeton",
+      "blindedVoyageNdcg5": 0.6608397947263838,
+      "blindedFusedNdcg5": 0.6608397947263838,
+      "existingVoyageNdcg5": 0.5840870116961285,
+      "existingFusedNdcg5": 0.6412981241640476,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=fused"
+      ]
+    },
+    {
+      "queryId": "lit-en-film",
+      "blindedVoyageNdcg5": 0.8508180120808563,
+      "blindedFusedNdcg5": 0.8092874019170173,
+      "existingVoyageNdcg5": 0.8796737474885314,
+      "existingFusedNdcg5": 0.9275113302344571,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "lit-en-food",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.9513105500524311,
+      "existingVoyageNdcg5": 0.9490837254703294,
+      "existingFusedNdcg5": 0.9948189840222265,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "vibe-cita-romantica",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.38685280723454163,
+      "existingVoyageNdcg5": 0.9075755242149837,
+      "existingFusedNdcg5": 0.9513105500524311,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused",
+        "fused-top1-bad: blinded=0, existing=3",
+        "fused-top1-excellent: blinded=0, existing=3"
+      ]
+    },
+    {
+      "queryId": "vibe-bailar-tarde",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.9562649741625525,
+      "existingVoyageNdcg5": 0.9562649741625525,
+      "existingFusedNdcg5": 1,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "lit-cumbia",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 1,
+      "existingVoyageNdcg5": 0.9562649741625525,
+      "existingFusedNdcg5": 1,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=fused"
+      ]
+    },
+    {
+      "queryId": "slang-joda",
+      "blindedVoyageNdcg5": 0.8765950557047865,
+      "blindedFusedNdcg5": 0.9948189840222265,
+      "existingVoyageNdcg5": 0.809948798153059,
+      "existingFusedNdcg5": 0.8613383596426211,
+      "changes": [
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "must-manana",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 1,
+      "existingVoyageNdcg5": 0.9243710230888972,
+      "existingFusedNdcg5": 0.9675767966332455,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=fused",
+        "voyage-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "vibe-en-big-night",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.9513105500524311,
+      "existingVoyageNdcg5": 0.8721445442095548,
+      "existingFusedNdcg5": 0.894783849173495,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "vibe-en-date-night",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.9125299483251055,
+      "existingVoyageNdcg5": 0.9377168077248125,
+      "existingFusedNdcg5": 0.95181114444963,
+      "changes": [
+        "winner-reversed: blinded=voyage, existing=fused"
+      ]
+    },
+    {
+      "queryId": "vibe-en-lowkey",
+      "blindedVoyageNdcg5": 0,
+      "blindedFusedNdcg5": 0,
+      "existingVoyageNdcg5": 0.7030192765759926,
+      "existingFusedNdcg5": 0.438840019015176,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=voyage",
+        "voyage-top1-bad: blinded=0, existing=1",
+        "fused-top1-bad: blinded=0, existing=1"
+      ]
+    },
+    {
+      "queryId": "mix-tranqui-tonight",
+      "blindedVoyageNdcg5": 0,
+      "blindedFusedNdcg5": 0,
+      "existingVoyageNdcg5": 0.8667982449242396,
+      "existingFusedNdcg5": 0.49235960872608,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=voyage",
+        "voyage-top1-bad: blinded=0, existing=2"
+      ]
+    },
+    {
+      "queryId": "mix-free-finde",
+      "blindedVoyageNdcg5": 0.9026211001048622,
+      "blindedFusedNdcg5": 0.9026211001048622,
+      "existingVoyageNdcg5": 1,
+      "existingFusedNdcg5": 1,
+      "changes": [
+        "voyage-top1-excellent: blinded=3, existing=2",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "sparse-salsa",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.5531464700081437,
+      "existingVoyageNdcg5": 0.94582648534813,
+      "existingFusedNdcg5": 0.7551873543795546,
+      "changes": [
+        "voyage-top1-excellent: blinded=1, existing=3",
+        "fused-top1-excellent: blinded=1, existing=3"
+      ]
+    },
+    {
+      "queryId": "must-semana",
+      "blindedVoyageNdcg5": 0.8869465982421278,
+      "blindedFusedNdcg5": 0.9026211001048622,
+      "existingVoyageNdcg5": 1,
+      "existingFusedNdcg5": 0.8421757737602428,
+      "changes": [
+        "winner-reversed: blinded=fused, existing=voyage",
+        "voyage-top1-excellent: blinded=3, existing=2",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "vibe-en-chill-sunday",
+      "blindedVoyageNdcg5": 0.9149871004746097,
+      "blindedFusedNdcg5": 0.8131504231744373,
+      "existingVoyageNdcg5": 0.9913646294746149,
+      "existingFusedNdcg5": 0.8667982449242396,
+      "changes": [
+        "voyage-top1-excellent: blinded=2, existing=3"
+      ]
+    },
+    {
+      "queryId": "slang-cita-piola",
+      "blindedVoyageNdcg5": 0.9948189840222265,
+      "blindedFusedNdcg5": 0.6389572243331247,
+      "existingVoyageNdcg5": 0.9161872351436834,
+      "existingFusedNdcg5": 0.7775255947863045,
+      "changes": [
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "vibe-fiesta-suave",
+      "blindedVoyageNdcg5": 0.7601875334318685,
+      "blindedFusedNdcg5": 0.23981246656813146,
+      "existingVoyageNdcg5": 0.8622240278900382,
+      "existingFusedNdcg5": 0.7379010106089332,
+      "changes": [
+        "fused-top1-bad: blinded=0, existing=1"
+      ]
+    },
+    {
+      "queryId": "vibe-en-relaxed-afternoon",
+      "blindedVoyageNdcg5": 0.7603475849741373,
+      "blindedFusedNdcg5": 0.7579494602129495,
+      "existingVoyageNdcg5": 0.8363944621669542,
+      "existingFusedNdcg5": 0.7290988186673495,
+      "changes": [
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "vibe-chill-amigos",
+      "blindedVoyageNdcg5": 0.9750551834421469,
+      "blindedFusedNdcg5": 0.9859056632751826,
+      "existingVoyageNdcg5": 0.9733983476116026,
+      "existingFusedNdcg5": 0.8613383596426211,
+      "changes": [
+        "winner-reversed: blinded=fused, existing=voyage",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "must-barato",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 0.6399453854227659,
+      "existingVoyageNdcg5": 0.7888656644950534,
+      "existingFusedNdcg5": 0.7074370767860957,
+      "changes": [
+        "voyage-top1-excellent: blinded=3, existing=2",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "must-san-telmo",
+      "blindedVoyageNdcg5": 1,
+      "blindedFusedNdcg5": 1,
+      "existingVoyageNdcg5": 1,
+      "existingFusedNdcg5": 0.917452487864839,
+      "changes": [
+        "winner-reversed: blinded=tie, existing=voyage",
+        "fused-top1-excellent: blinded=3, existing=2"
+      ]
+    },
+    {
+      "queryId": "mix-piola-hoy",
+      "blindedVoyageNdcg5": 0.5,
+      "blindedFusedNdcg5": 0,
+      "existingVoyageNdcg5": 0.8775416530133452,
+      "existingFusedNdcg5": 0.7947520282959947,
+      "changes": [
+        "voyage-top1-bad: blinded=0, existing=2",
+        "fused-top1-bad: blinded=0, existing=2"
+      ]
+    }
+  ]
+}

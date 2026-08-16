@@ -452,7 +452,7 @@ async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): P
   })
 
   const voyageOrders: CorpusEvent[][] = []
-  const fusedOrders: CorpusEvent[][] = []
+  const rerankedOrders: CorpusEvent[][] = []
   const latencies: number[] = []
   let fallbacks = 0
 
@@ -467,7 +467,7 @@ async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): P
       const docs = baseline50.map(corpusToRerankDocument)
       // Eval-only retry on free-tier 429s (production rerankEvents stays
       // fail-closed). Backoff: 5s, 15s, 30s.
-      let fusedDocs: RerankDocumentEvent[] = docs
+      let rerankedDocs: RerankDocumentEvent[] = docs
       let meta: RerankMeta = { status: 'failed', error: 'not run' }
       for (const backoffMs of [0, 5000, 15000, 30000]) {
         if (backoffMs > 0) {
@@ -480,7 +480,7 @@ async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): P
           prefer: inp.intent.prefer,
           avoid: [],
         })
-        fusedDocs = result.ordered
+        rerankedDocs = result.ordered
         meta = result.meta
         if (meta.status !== 'failed' || !meta.error?.includes('429')) break
       }
@@ -490,13 +490,13 @@ async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): P
 
       if (meta.status === 'applied') {
         const mapBack = (ds: RerankDocumentEvent[]) => ds.map((d) => byId.get(d.id)!)
-        fusedOrders.push(mapBack(fusedDocs))
+        rerankedOrders.push(mapBack(rerankedDocs))
         const byRerankerRank = [...docs].sort(
           (a, b) => meta.ranks!.get(a.id)!.rerankerRank - meta.ranks!.get(b.id)!.rerankerRank
         )
         voyageOrders.push(mapBack(byRerankerRank))
       } else {
-        fusedOrders.push(baseline50)
+        rerankedOrders.push(baseline50)
         voyageOrders.push(baseline50)
       }
 
@@ -512,11 +512,11 @@ async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): P
   printVariantTable('facet', cases, inputs, facetOrders)
   if (hasKey) {
     printVariantTable('voyage', cases, inputs, voyageOrders)
-    printVariantTable('voyage+fused', cases, inputs, fusedOrders)
+    printVariantTable('voyage+production', cases, inputs, rerankedOrders)
   }
 
   const ordersByName: Record<string, CorpusEvent[][]> = hasKey
-    ? { facet: facetOrders, voyage: voyageOrders, 'voyage+fused': fusedOrders }
+    ? { facet: facetOrders, voyage: voyageOrders, 'voyage+production': rerankedOrders }
     : { facet: facetOrders }
   for (const name of Object.keys(ordersByName)) {
     let total = 0

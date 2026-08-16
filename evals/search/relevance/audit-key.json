@@ -1,0 +1,3178 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-16T04:45:05.298Z",
+    "seed": 20260816,
+    "capture": "evals/search/relevance/capture-latest.json",
+    "labels": "evals/search/relevance/live-labels.ts",
+    "note": "Restores identity for the blinded worksheet. Contains variant orders, selection reasons, and existing labels for later comparison."
+  },
+  "queries": [
+    {
+      "queryId": "vibe-desconectar",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss",
+        "subjective-facet-protection"
+      ],
+      "voyageTop5": [
+        "93ba61f1-8299-4ecf-adfd-edefac82ba06",
+        "f6d9f995-dcd0-4715-a17c-054f98dbea18",
+        "0118b60e-ce2c-424b-979d-08ef4e4f756b",
+        "eb9fe5fb-4ec6-459b-8727-d627f68ea7be",
+        "d4d83e39-c2b9-4baa-b49d-65c88e791c77"
+      ],
+      "fused2Top5": [
+        "eb9fe5fb-4ec6-459b-8727-d627f68ea7be",
+        "f6d9f995-dcd0-4715-a17c-054f98dbea18",
+        "93ba61f1-8299-4ecf-adfd-edefac82ba06",
+        "d4d83e39-c2b9-4baa-b49d-65c88e791c77",
+        "0118b60e-ce2c-424b-979d-08ef4e4f756b"
+      ],
+      "facetTop5": [
+        "1e204112-8e2a-4453-bcc3-80bf4c9816a2",
+        "c62659df-d767-4dfb-8d3e-180de8009a62",
+        "eb9fe5fb-4ec6-459b-8727-d627f68ea7be",
+        "5e49108a-8827-4210-950e-dd23ab7e5f43",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+      ],
+      "options": [
+        {
+          "optionId": "op-0001",
+          "eventId": "0118b60e-ce2c-424b-979d-08ef4e4f756b",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0002",
+          "eventId": "93ba61f1-8299-4ecf-adfd-edefac82ba06",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0003",
+          "eventId": "eb9fe5fb-4ec6-459b-8727-d627f68ea7be",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0004",
+          "eventId": "f6d9f995-dcd0-4715-a17c-054f98dbea18",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0005",
+          "eventId": "d4d83e39-c2b9-4baa-b49d-65c88e791c77",
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "queryId": "avoid-cachengue",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss",
+        "subjective-facet-protection"
+      ],
+      "voyageTop5": [
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "8ec3e337-005e-4d37-af4d-5b927606080e",
+        "107df7a8-4a7e-4718-8369-f49f37cf5c3a",
+        "e6fe9318-e36b-45be-81c1-b8ef91b37142",
+        "6267c5f4-0758-41d8-9193-85d4ed047d67"
+      ],
+      "fused2Top5": [
+        "107df7a8-4a7e-4718-8369-f49f37cf5c3a",
+        "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "9cb58bdf-b0da-4fa4-b3c5-8dd7ff04c929",
+        "206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6"
+      ],
+      "facetTop5": [
+        "4acb4582-2771-4d9a-a32a-9b8d0d28842e",
+        "107df7a8-4a7e-4718-8369-f49f37cf5c3a",
+        "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+        "164cf7a8-bdb2-44c5-a9d1-c43a8d34f646",
+        "1ce9501b-0715-4713-ab08-b5905796b411"
+      ],
+      "options": [
+        {
+          "optionId": "op-0006",
+          "eventId": "6267c5f4-0758-41d8-9193-85d4ed047d67",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0007",
+          "eventId": "9cb58bdf-b0da-4fa4-b3c5-8dd7ff04c929",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0008",
+          "eventId": "8ec3e337-005e-4d37-af4d-5b927606080e",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0009",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0010",
+          "eventId": "206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0011",
+          "eventId": "107df7a8-4a7e-4718-8369-f49f37cf5c3a",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0012",
+          "eventId": "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0013",
+          "eventId": "e6fe9318-e36b-45be-81c1-b8ef91b37142",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-cultural",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss",
+        "subjective-facet-protection"
+      ],
+      "voyageTop5": [
+        "06dc5301-15ef-4727-8fbd-b071d1548d38",
+        "c7625df8-5fff-4862-9f2c-8c4c3e3c698c",
+        "ee916329-2d55-453f-9e92-cc99b7f85a51",
+        "bc33ef30-747a-475f-ace6-19f49adabdb3",
+        "b3fb3905-12c8-457b-836c-43c689aa2290"
+      ],
+      "fused2Top5": [
+        "c7625df8-5fff-4862-9f2c-8c4c3e3c698c",
+        "06dc5301-15ef-4727-8fbd-b071d1548d38",
+        "25422ab4-a181-4e40-8ea1-3d50bfcddcac",
+        "c26c48c9-bcfe-4e1e-a7ef-21fa5e247932",
+        "b3fb3905-12c8-457b-836c-43c689aa2290"
+      ],
+      "facetTop5": [
+        "6103fe25-9948-4a40-98d1-b99870a47c34",
+        "f3bcb0c1-145a-4db7-bbc7-ecfefc7d18ee",
+        "9089d173-0ef3-40a5-9419-e12381470bbd",
+        "cf87229a-d90f-4361-b791-32baabcfaeb1",
+        "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+      ],
+      "options": [
+        {
+          "optionId": "op-0014",
+          "eventId": "b3fb3905-12c8-457b-836c-43c689aa2290",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0015",
+          "eventId": "c26c48c9-bcfe-4e1e-a7ef-21fa5e247932",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0016",
+          "eventId": "c7625df8-5fff-4862-9f2c-8c4c3e3c698c",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0017",
+          "eventId": "06dc5301-15ef-4727-8fbd-b071d1548d38",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0018",
+          "eventId": "bc33ef30-747a-475f-ace6-19f49adabdb3",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0019",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0020",
+          "eventId": "ee916329-2d55-453f-9e92-cc99b7f85a51",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "sparse-ajedrez",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "5aa05820-cb62-4a71-8098-7cec243861f8",
+        "0646ee85-c3be-4a00-b595-3140291f8589",
+        "156cdfb8-90c0-40f2-bd23-333e1500a623",
+        "21740c83-72bc-449d-8cda-4e8e2b636bd7",
+        "93e58803-5e15-4b17-b8ae-4b27d39183da"
+      ],
+      "fused2Top5": [
+        "156cdfb8-90c0-40f2-bd23-333e1500a623",
+        "93e58803-5e15-4b17-b8ae-4b27d39183da",
+        "f8ec7149-322e-4393-a72b-36ac3c5481c2",
+        "5aa05820-cb62-4a71-8098-7cec243861f8",
+        "e5c000c5-28f4-4730-84c9-b93af5ceebdf"
+      ],
+      "facetTop5": [
+        "f8ec7149-322e-4393-a72b-36ac3c5481c2",
+        "e5c000c5-28f4-4730-84c9-b93af5ceebdf",
+        "156cdfb8-90c0-40f2-bd23-333e1500a623",
+        "93e58803-5e15-4b17-b8ae-4b27d39183da",
+        "948b399e-a118-45d8-a598-1048a06c8f58"
+      ],
+      "options": [
+        {
+          "optionId": "op-0021",
+          "eventId": "93e58803-5e15-4b17-b8ae-4b27d39183da",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0022",
+          "eventId": "5aa05820-cb62-4a71-8098-7cec243861f8",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0023",
+          "eventId": "e5c000c5-28f4-4730-84c9-b93af5ceebdf",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0024",
+          "eventId": "156cdfb8-90c0-40f2-bd23-333e1500a623",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0025",
+          "eventId": "21740c83-72bc-449d-8cda-4e8e2b636bd7",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0026",
+          "eventId": "0646ee85-c3be-4a00-b595-3140291f8589",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0027",
+          "eventId": "f8ec7149-322e-4393-a72b-36ac3c5481c2",
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "queryId": "slang-boliche",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "c0359146-fb0b-4cef-9b31-2aa02950fdb5",
+        "8e501c39-92d5-4f1d-b23a-774b90d993e7",
+        "e18ed662-842b-4d83-9528-d429d2926342",
+        "92bfff98-f10b-48fd-9e03-8c4657226349",
+        "c8debaa2-c4c6-406d-9bb1-750c20c9d7ba"
+      ],
+      "fused2Top5": [
+        "8e501c39-92d5-4f1d-b23a-774b90d993e7",
+        "c0359146-fb0b-4cef-9b31-2aa02950fdb5",
+        "faeb5923-03f3-43c8-948e-a1923549bec2",
+        "c8debaa2-c4c6-406d-9bb1-750c20c9d7ba",
+        "92bfff98-f10b-48fd-9e03-8c4657226349"
+      ],
+      "facetTop5": [
+        "f48f808d-567a-4e4b-9ddf-7aa8db53819d",
+        "8e501c39-92d5-4f1d-b23a-774b90d993e7",
+        "8c41f343-f584-4237-a563-1aaa02126c6e",
+        "6e98c7d2-c30f-47fe-8346-947651ea9a4e",
+        "d44036b3-17e3-422c-9bf7-1dc2fdd6b2c3"
+      ],
+      "options": [
+        {
+          "optionId": "op-0028",
+          "eventId": "92bfff98-f10b-48fd-9e03-8c4657226349",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0029",
+          "eventId": "8e501c39-92d5-4f1d-b23a-774b90d993e7",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0030",
+          "eventId": "e18ed662-842b-4d83-9528-d429d2926342",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0031",
+          "eventId": "c0359146-fb0b-4cef-9b31-2aa02950fdb5",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0032",
+          "eventId": "c8debaa2-c4c6-406d-9bb1-750c20c9d7ba",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0033",
+          "eventId": "faeb5923-03f3-43c8-948e-a1923549bec2",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-talk",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "00411076-7bc2-47d6-9493-78e3e5253a92",
+        "8cb16d20-8558-4a9f-97ab-4665212b1002",
+        "c7625df8-5fff-4862-9f2c-8c4c3e3c698c",
+        "005c68b5-1611-4395-b31d-018aee75bf82",
+        "9b542a00-2316-408d-82d1-e22a6725db7f"
+      ],
+      "fused2Top5": [
+        "c7625df8-5fff-4862-9f2c-8c4c3e3c698c",
+        "00411076-7bc2-47d6-9493-78e3e5253a92",
+        "cf87229a-d90f-4361-b791-32baabcfaeb1",
+        "005c68b5-1611-4395-b31d-018aee75bf82",
+        "5ee16380-c2e4-45a6-ad41-441a0f1ae7b4"
+      ],
+      "facetTop5": [
+        "c7625df8-5fff-4862-9f2c-8c4c3e3c698c",
+        "00411076-7bc2-47d6-9493-78e3e5253a92",
+        "ee916329-2d55-453f-9e92-cc99b7f85a51",
+        "005c68b5-1611-4395-b31d-018aee75bf82",
+        "9b542a00-2316-408d-82d1-e22a6725db7f"
+      ],
+      "options": [
+        {
+          "optionId": "op-0034",
+          "eventId": "c7625df8-5fff-4862-9f2c-8c4c3e3c698c",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0035",
+          "eventId": "005c68b5-1611-4395-b31d-018aee75bf82",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0036",
+          "eventId": "cf87229a-d90f-4361-b791-32baabcfaeb1",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0037",
+          "eventId": "5ee16380-c2e4-45a6-ad41-441a0f1ae7b4",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0038",
+          "eventId": "8cb16d20-8558-4a9f-97ab-4665212b1002",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0039",
+          "eventId": "9b542a00-2316-408d-82d1-e22a6725db7f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0040",
+          "eventId": "00411076-7bc2-47d6-9493-78e3e5253a92",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "mix-fiesta-not-crazy",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss",
+        "subjective-facet-protection",
+        "mixed-language"
+      ],
+      "voyageTop5": [
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "6267c5f4-0758-41d8-9193-85d4ed047d67",
+        "e6fe9318-e36b-45be-81c1-b8ef91b37142",
+        "107df7a8-4a7e-4718-8369-f49f37cf5c3a",
+        "206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6"
+      ],
+      "fused2Top5": [
+        "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+        "6267c5f4-0758-41d8-9193-85d4ed047d67",
+        "107df7a8-4a7e-4718-8369-f49f37cf5c3a",
+        "e6fe9318-e36b-45be-81c1-b8ef91b37142",
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf"
+      ],
+      "facetTop5": [
+        "4acb4582-2771-4d9a-a32a-9b8d0d28842e",
+        "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+        "164cf7a8-bdb2-44c5-a9d1-c43a8d34f646",
+        "31ba29ae-47fe-4c8b-aa25-cd9adb9778d9",
+        "50598dd0-9fb8-4ae2-804e-45e356202a88"
+      ],
+      "options": [
+        {
+          "optionId": "op-0041",
+          "eventId": "107df7a8-4a7e-4718-8369-f49f37cf5c3a",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0042",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0043",
+          "eventId": "6267c5f4-0758-41d8-9193-85d4ed047d67",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0044",
+          "eventId": "e6fe9318-e36b-45be-81c1-b8ef91b37142",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0045",
+          "eventId": "206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0046",
+          "eventId": "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-wellness",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "eb83ecd5-d475-4d0a-926b-ca68d90ba676",
+        "f58285b2-b9d4-4fc3-b41e-88141b0115ad",
+        "9bcb2636-9952-4d02-818b-f1a0c0abf6e9",
+        "d6c129f6-c073-4134-97a4-a8114747c952"
+      ],
+      "fused2Top5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "eb83ecd5-d475-4d0a-926b-ca68d90ba676",
+        "9bcb2636-9952-4d02-818b-f1a0c0abf6e9",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "f58285b2-b9d4-4fc3-b41e-88141b0115ad"
+      ],
+      "facetTop5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "df60d986-b5bd-4f87-b78e-2af5744abef4",
+        "9bcb2636-9952-4d02-818b-f1a0c0abf6e9",
+        "eb83ecd5-d475-4d0a-926b-ca68d90ba676"
+      ],
+      "options": [
+        {
+          "optionId": "op-0047",
+          "eventId": "f58285b2-b9d4-4fc3-b41e-88141b0115ad",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0048",
+          "eventId": "eb83ecd5-d475-4d0a-926b-ca68d90ba676",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0049",
+          "eventId": "9bcb2636-9952-4d02-818b-f1a0c0abf6e9",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0050",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0051",
+          "eventId": "d6c129f6-c073-4134-97a4-a8114747c952",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0052",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "slang-musica-vivo",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "b064ecff-1844-443f-94f7-45f7047b4ee9",
+        "1f9bf01f-1a7a-4b6b-be32-5c5b191c3e7a",
+        "0bc33d63-074c-43a2-ac28-a4d73868170f",
+        "a477e04a-bac2-4baa-879b-f49959fdec6e",
+        "b14fd4eb-0b58-431a-93bd-f4c566616244"
+      ],
+      "fused2Top5": [
+        "b14fd4eb-0b58-431a-93bd-f4c566616244",
+        "0bc33d63-074c-43a2-ac28-a4d73868170f",
+        "b064ecff-1844-443f-94f7-45f7047b4ee9",
+        "a477e04a-bac2-4baa-879b-f49959fdec6e",
+        "8cc21b64-114e-498c-8a35-6d026eed9855"
+      ],
+      "facetTop5": [
+        "8cc21b64-114e-498c-8a35-6d026eed9855",
+        "b14fd4eb-0b58-431a-93bd-f4c566616244",
+        "c39d244e-96b9-4e41-aa70-92237cbab0cd",
+        "a0b297ef-8db4-4125-8761-60a9bf92a43a",
+        "2fd9521f-ebdf-4869-9dc8-ab40688d6ca3"
+      ],
+      "options": [
+        {
+          "optionId": "op-0053",
+          "eventId": "1f9bf01f-1a7a-4b6b-be32-5c5b191c3e7a",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0054",
+          "eventId": "a477e04a-bac2-4baa-879b-f49959fdec6e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0055",
+          "eventId": "8cc21b64-114e-498c-8a35-6d026eed9855",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0056",
+          "eventId": "0bc33d63-074c-43a2-ac28-a4d73868170f",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0057",
+          "eventId": "b064ecff-1844-443f-94f7-45f7047b4ee9",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0058",
+          "eventId": "b14fd4eb-0b58-431a-93bd-f4c566616244",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "lit-en-sports",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "c9c94603-6693-4722-8b8e-19b90c9dfeb9",
+        "9bcb2636-9952-4d02-818b-f1a0c0abf6e9",
+        "eb83ecd5-d475-4d0a-926b-ca68d90ba676",
+        "f58285b2-b9d4-4fc3-b41e-88141b0115ad",
+        "cf32326c-7907-4188-ae9b-19d00cf5ba02"
+      ],
+      "fused2Top5": [
+        "c9c94603-6693-4722-8b8e-19b90c9dfeb9",
+        "9bcb2636-9952-4d02-818b-f1a0c0abf6e9",
+        "eb83ecd5-d475-4d0a-926b-ca68d90ba676",
+        "3e815330-3ce6-415b-bafe-a02ae6b12fbc",
+        "3e45b1e5-fccf-4e48-9718-17c352c401e1"
+      ],
+      "facetTop5": [
+        "f2dc104d-341f-44f4-b196-a15c6af634a8",
+        "c9c94603-6693-4722-8b8e-19b90c9dfeb9",
+        "08f7be30-cbe4-4f5e-add9-d29ac1df3a47",
+        "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7",
+        "f4d53443-d3fc-4318-bfb6-e9bf02d7586e"
+      ],
+      "options": [
+        {
+          "optionId": "op-0059",
+          "eventId": "f58285b2-b9d4-4fc3-b41e-88141b0115ad",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0060",
+          "eventId": "3e45b1e5-fccf-4e48-9718-17c352c401e1",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0061",
+          "eventId": "c9c94603-6693-4722-8b8e-19b90c9dfeb9",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0062",
+          "eventId": "9bcb2636-9952-4d02-818b-f1a0c0abf6e9",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0063",
+          "eventId": "cf32326c-7907-4188-ae9b-19d00cf5ba02",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0064",
+          "eventId": "3e815330-3ce6-415b-bafe-a02ae6b12fbc",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0065",
+          "eventId": "eb83ecd5-d475-4d0a-926b-ca68d90ba676",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "slang-previa",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf",
+        "dd963564-86ac-49c1-b0a7-140b213d7464",
+        "8a19c723-a81e-4893-89ac-d53491ccb381",
+        "9e6bb8cc-d1df-40aa-a4b1-84d8c9e9a546",
+        "ed301d95-6302-4e33-9217-c2494ad553a0"
+      ],
+      "fused2Top5": [
+        "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf",
+        "7a4f35c4-a688-4233-a2d7-22772d13536d",
+        "5631a93d-6096-4a06-b849-b2b662f7e2ef",
+        "dd963564-86ac-49c1-b0a7-140b213d7464",
+        "ed301d95-6302-4e33-9217-c2494ad553a0"
+      ],
+      "facetTop5": [
+        "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf",
+        "5631a93d-6096-4a06-b849-b2b662f7e2ef",
+        "b134fdb4-1f7a-4192-ab23-74a1084a3f7a",
+        "7a4f35c4-a688-4233-a2d7-22772d13536d",
+        "35224f6d-d5cb-468c-8535-6d77f3aae07d"
+      ],
+      "options": [
+        {
+          "optionId": "op-0066",
+          "eventId": "7a4f35c4-a688-4233-a2d7-22772d13536d",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0067",
+          "eventId": "9e6bb8cc-d1df-40aa-a4b1-84d8c9e9a546",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0068",
+          "eventId": "8a19c723-a81e-4893-89ac-d53491ccb381",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0069",
+          "eventId": "dd963564-86ac-49c1-b0a7-140b213d7464",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0070",
+          "eventId": "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0071",
+          "eventId": "5631a93d-6096-4a06-b849-b2b662f7e2ef",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0072",
+          "eventId": "ed301d95-6302-4e33-9217-c2494ad553a0",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-cultural-relajado",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "10b20b74-734d-4539-bfcd-cf8551dfcb7b",
+        "45b4fdfc-21c7-4835-9424-622908ce2c7f",
+        "e3d14290-5abd-4dc6-890c-9ef71853b140",
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "48b4f854-c7f4-43d4-ac5d-5b354edd50ff"
+      ],
+      "fused2Top5": [
+        "10b20b74-734d-4539-bfcd-cf8551dfcb7b",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "e3d14290-5abd-4dc6-890c-9ef71853b140",
+        "f6b90f90-785c-4678-a9f6-e7ac66e0475d",
+        "45b4fdfc-21c7-4835-9424-622908ce2c7f"
+      ],
+      "facetTop5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "e747b584-e5d5-4343-8d2d-a35718141498",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "c4665b91-618c-46ea-8e62-5d118887927a",
+        "532ccd73-c93b-450b-8102-3d34bb22dc64"
+      ],
+      "options": [
+        {
+          "optionId": "op-0073",
+          "eventId": "e3d14290-5abd-4dc6-890c-9ef71853b140",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0074",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0075",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0076",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0077",
+          "eventId": "10b20b74-734d-4539-bfcd-cf8551dfcb7b",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0078",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0079",
+          "eventId": "45b4fdfc-21c7-4835-9424-622908ce2c7f",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "lit-en-art",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "d3a67f2b-6159-4ffe-9a12-2691ba1d1702",
+        "e197177c-3b21-47fd-9ed7-d78ab52a5259",
+        "8f9be0b5-d61f-42b4-b031-d98dfbb5b7b9",
+        "cfb52731-0d97-42c0-b703-ab6c52adcfd7",
+        "23f7d601-4f8e-4d3f-a816-0192fd58a6f3"
+      ],
+      "fused2Top5": [
+        "d3a67f2b-6159-4ffe-9a12-2691ba1d1702",
+        "cfb52731-0d97-42c0-b703-ab6c52adcfd7",
+        "8f9be0b5-d61f-42b4-b031-d98dfbb5b7b9",
+        "23f7d601-4f8e-4d3f-a816-0192fd58a6f3",
+        "292190b2-d693-464d-9d69-26fa87256f4b"
+      ],
+      "facetTop5": [
+        "292190b2-d693-464d-9d69-26fa87256f4b",
+        "d3a67f2b-6159-4ffe-9a12-2691ba1d1702",
+        "cfb52731-0d97-42c0-b703-ab6c52adcfd7",
+        "23f7d601-4f8e-4d3f-a816-0192fd58a6f3",
+        "cd865517-cbea-4648-bd15-c2d6608d07f1"
+      ],
+      "options": [
+        {
+          "optionId": "op-0080",
+          "eventId": "292190b2-d693-464d-9d69-26fa87256f4b",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0081",
+          "eventId": "d3a67f2b-6159-4ffe-9a12-2691ba1d1702",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0082",
+          "eventId": "cfb52731-0d97-42c0-b703-ab6c52adcfd7",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0083",
+          "eventId": "23f7d601-4f8e-4d3f-a816-0192fd58a6f3",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0084",
+          "eventId": "e197177c-3b21-47fd-9ed7-d78ab52a5259",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0085",
+          "eventId": "8f9be0b5-d61f-42b4-b031-d98dfbb5b7b9",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "lit-en-workshop",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "f7603ca9-0ded-463d-b0a0-2c867d3ffc8e",
+        "7b9fd51a-a936-4349-86f8-b46e895ddf05",
+        "3638c2a4-7475-43c5-8e55-04b0787c228c",
+        "fd06039c-735c-45e8-a82e-59a700a07bab",
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+      ],
+      "fused2Top5": [
+        "f7603ca9-0ded-463d-b0a0-2c867d3ffc8e",
+        "3638c2a4-7475-43c5-8e55-04b0787c228c",
+        "2255a2a6-3e15-466b-ac88-a37c29f4c3ba",
+        "4e3d7563-7c13-4354-81ad-420913959009",
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+      ],
+      "facetTop5": [
+        "b3cb4530-4dd2-4cfa-b0c7-a8bc7cc2331b",
+        "2255a2a6-3e15-466b-ac88-a37c29f4c3ba",
+        "82e6724e-880c-438b-affa-0304c406059a",
+        "d7a98eed-e83f-476b-9081-fd3497b39c6d",
+        "43f6d987-a3e6-479b-a4a4-4dec935c655b"
+      ],
+      "options": [
+        {
+          "optionId": "op-0086",
+          "eventId": "7b9fd51a-a936-4349-86f8-b46e895ddf05",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0087",
+          "eventId": "fd06039c-735c-45e8-a82e-59a700a07bab",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0088",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0089",
+          "eventId": "3638c2a4-7475-43c5-8e55-04b0787c228c",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0090",
+          "eventId": "f7603ca9-0ded-463d-b0a0-2c867d3ffc8e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0091",
+          "eventId": "4e3d7563-7c13-4354-81ad-420913959009",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0092",
+          "eventId": "2255a2a6-3e15-466b-ac88-a37c29f4c3ba",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "lit-techno-finde",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "dbffa23d-a587-4989-b2fe-19c20b3b3dc4",
+        "9f824c01-c9ef-42b7-8eb5-af5c59afd4c2",
+        "cf12e7a1-f1ca-43c6-a698-90a184e09298",
+        "8a19c723-a81e-4893-89ac-d53491ccb381",
+        "eff033f1-6aaa-401b-b49d-4b2ad8213c3a"
+      ],
+      "fused2Top5": [
+        "9f824c01-c9ef-42b7-8eb5-af5c59afd4c2",
+        "dbffa23d-a587-4989-b2fe-19c20b3b3dc4",
+        "cf12e7a1-f1ca-43c6-a698-90a184e09298",
+        "c5a2f6b3-388f-46a4-95cd-16a39ff4add1",
+        "8a19c723-a81e-4893-89ac-d53491ccb381"
+      ],
+      "facetTop5": [
+        "9f824c01-c9ef-42b7-8eb5-af5c59afd4c2",
+        "dbffa23d-a587-4989-b2fe-19c20b3b3dc4",
+        "c802a85b-4768-450e-967b-3f7e0b920628",
+        "c5a2f6b3-388f-46a4-95cd-16a39ff4add1",
+        "2d418e28-f636-4636-8582-9e06488a03bf"
+      ],
+      "options": [
+        {
+          "optionId": "op-0093",
+          "eventId": "dbffa23d-a587-4989-b2fe-19c20b3b3dc4",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0094",
+          "eventId": "eff033f1-6aaa-401b-b49d-4b2ad8213c3a",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0095",
+          "eventId": "cf12e7a1-f1ca-43c6-a698-90a184e09298",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0096",
+          "eventId": "c5a2f6b3-388f-46a4-95cd-16a39ff4add1",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0097",
+          "eventId": "9f824c01-c9ef-42b7-8eb5-af5c59afd4c2",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0098",
+          "eventId": "8a19c723-a81e-4893-89ac-d53491ccb381",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "slang-after-office",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+        "1e98afff-4958-4f4d-bb0c-4d2ad1e44f91",
+        "9238bf9e-8f18-448c-acad-4e04e7416816",
+        "c3308d1b-8819-4aba-980c-ac90ed191ca6",
+        "aeefd4f3-92b5-4dac-8a31-f33db721873c"
+      ],
+      "fused2Top5": [
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+        "1e98afff-4958-4f4d-bb0c-4d2ad1e44f91",
+        "aeefd4f3-92b5-4dac-8a31-f33db721873c",
+        "9238bf9e-8f18-448c-acad-4e04e7416816",
+        "2af5be04-6192-4aed-9658-54fe11ff00b8"
+      ],
+      "facetTop5": [
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+        "c32781b8-0925-422c-94d0-8da93595dada",
+        "8c57f883-bce0-40fc-9eb3-6a05378ea3df",
+        "2209f336-c3cd-425c-ac86-9ae126f49bc4",
+        "a56b63ca-9322-407e-bec1-21d0a1b56fdb"
+      ],
+      "options": [
+        {
+          "optionId": "op-0099",
+          "eventId": "2af5be04-6192-4aed-9658-54fe11ff00b8",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0100",
+          "eventId": "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0101",
+          "eventId": "1e98afff-4958-4f4d-bb0c-4d2ad1e44f91",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0102",
+          "eventId": "aeefd4f3-92b5-4dac-8a31-f33db721873c",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0103",
+          "eventId": "c3308d1b-8819-4aba-980c-ac90ed191ca6",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0104",
+          "eventId": "9238bf9e-8f18-448c-acad-4e04e7416816",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "must-esta-noche",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "6447b3d0-2432-4986-9ee9-866430962799",
+        "0f1ec61a-395e-4bb7-b84e-3a88f66fcee2",
+        "e569b5b5-cb1b-4aea-8b42-33f91419adbe",
+        "4a99e44a-3b6e-48c8-95ae-4958f61a5c1e",
+        "84e07753-41c2-4675-8ff3-3fecd5512d88"
+      ],
+      "fused2Top5": [
+        "6447b3d0-2432-4986-9ee9-866430962799",
+        "84e07753-41c2-4675-8ff3-3fecd5512d88",
+        "0f1ec61a-395e-4bb7-b84e-3a88f66fcee2",
+        "33f36b94-6fef-4a27-9743-6af0a34c5e21",
+        "4a99e44a-3b6e-48c8-95ae-4958f61a5c1e"
+      ],
+      "facetTop5": [
+        "84e07753-41c2-4675-8ff3-3fecd5512d88",
+        "33f36b94-6fef-4a27-9743-6af0a34c5e21",
+        "7151b3c7-0f76-430a-b0ea-1eacae4af755",
+        "6447b3d0-2432-4986-9ee9-866430962799",
+        "01d360eb-e90d-4011-95c0-af952043a927"
+      ],
+      "options": [
+        {
+          "optionId": "op-0105",
+          "eventId": "33f36b94-6fef-4a27-9743-6af0a34c5e21",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0106",
+          "eventId": "4a99e44a-3b6e-48c8-95ae-4958f61a5c1e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0107",
+          "eventId": "6447b3d0-2432-4986-9ee9-866430962799",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0108",
+          "eventId": "0f1ec61a-395e-4bb7-b84e-3a88f66fcee2",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0109",
+          "eventId": "e569b5b5-cb1b-4aea-8b42-33f91419adbe",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0110",
+          "eventId": "84e07753-41c2-4675-8ff3-3fecd5512d88",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "avoid-reggaeton",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "2ce92377-30db-4d2b-9906-c23a24ec4e50",
+        "3c56305e-1dce-4f7f-8a68-7aa496d03a29",
+        "3603b6fb-b272-45b0-a2d7-155634f28d57",
+        "cacdfd48-032b-46fd-9ca9-85bd52f93c64"
+      ],
+      "fused2Top5": [
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "cacdfd48-032b-46fd-9ca9-85bd52f93c64",
+        "3c56305e-1dce-4f7f-8a68-7aa496d03a29",
+        "a424e9bf-1edb-47e7-88ba-82535bafbd00",
+        "2ce92377-30db-4d2b-9906-c23a24ec4e50"
+      ],
+      "facetTop5": [
+        "ab9b28a7-1c7b-4859-9218-41cd85553294",
+        "0246376b-17c3-4c0c-ada8-9fb0cd2a3473",
+        "ba5aca80-b685-4f35-9a46-d8313bec761b",
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "cacdfd48-032b-46fd-9ca9-85bd52f93c64"
+      ],
+      "options": [
+        {
+          "optionId": "op-0111",
+          "eventId": "3c56305e-1dce-4f7f-8a68-7aa496d03a29",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0112",
+          "eventId": "3603b6fb-b272-45b0-a2d7-155634f28d57",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0113",
+          "eventId": "a424e9bf-1edb-47e7-88ba-82535bafbd00",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0114",
+          "eventId": "2ce92377-30db-4d2b-9906-c23a24ec4e50",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0115",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0116",
+          "eventId": "cacdfd48-032b-46fd-9ca9-85bd52f93c64",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "lit-en-film",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "fcea3a32-3bcf-4f13-a563-03efb4ce035d",
+        "2a016d1d-2bb7-492a-b5f4-33464a9e093c",
+        "1753af6b-c3e5-4693-a65e-0b4048551768",
+        "c8e46a03-26f6-4d5e-98b6-5cae20d2305e",
+        "83c379ca-755c-4084-80db-10fcac1b6dcc"
+      ],
+      "fused2Top5": [
+        "2a016d1d-2bb7-492a-b5f4-33464a9e093c",
+        "1753af6b-c3e5-4693-a65e-0b4048551768",
+        "fcea3a32-3bcf-4f13-a563-03efb4ce035d",
+        "18d95eda-70f6-4c31-97a2-ca42cf9d0f7d",
+        "c8e46a03-26f6-4d5e-98b6-5cae20d2305e"
+      ],
+      "facetTop5": [
+        "ff6130cd-0a8a-4aa6-839c-cdaaf565c917",
+        "ccfb0877-7ae2-4ae9-897f-8f2018ad4f61",
+        "5f2ac6b9-346d-4047-b9a5-2e7d37e3f5a0",
+        "d2b90b54-c91e-49fd-a8e3-fc08d3f197d6",
+        "acf71f8c-2455-4fad-9aee-ba4166e6e51f"
+      ],
+      "options": [
+        {
+          "optionId": "op-0117",
+          "eventId": "c8e46a03-26f6-4d5e-98b6-5cae20d2305e",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0118",
+          "eventId": "1753af6b-c3e5-4693-a65e-0b4048551768",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0119",
+          "eventId": "18d95eda-70f6-4c31-97a2-ca42cf9d0f7d",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0120",
+          "eventId": "fcea3a32-3bcf-4f13-a563-03efb4ce035d",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0121",
+          "eventId": "83c379ca-755c-4084-80db-10fcac1b6dcc",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0122",
+          "eventId": "2a016d1d-2bb7-492a-b5f4-33464a9e093c",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "lit-en-food",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "fd89c013-5c10-420e-ae3b-87e59af2e692",
+        "7b4b101d-08df-4c2f-b2ca-a1161e73b6ba",
+        "03dfc9b0-e284-4e8e-9faf-588901710772",
+        "afbbfe86-d044-4faa-b0df-b37119c64bd9",
+        "5f2ac6b9-346d-4047-b9a5-2e7d37e3f5a0"
+      ],
+      "fused2Top5": [
+        "fd89c013-5c10-420e-ae3b-87e59af2e692",
+        "7b4b101d-08df-4c2f-b2ca-a1161e73b6ba",
+        "03dfc9b0-e284-4e8e-9faf-588901710772",
+        "c8324456-ed35-4493-97df-9d46539356cb",
+        "e5c000c5-28f4-4730-84c9-b93af5ceebdf"
+      ],
+      "facetTop5": [
+        "fd89c013-5c10-420e-ae3b-87e59af2e692",
+        "fd06039c-735c-45e8-a82e-59a700a07bab",
+        "7b4b101d-08df-4c2f-b2ca-a1161e73b6ba",
+        "7b9fd51a-a936-4349-86f8-b46e895ddf05",
+        "03dfc9b0-e284-4e8e-9faf-588901710772"
+      ],
+      "options": [
+        {
+          "optionId": "op-0123",
+          "eventId": "afbbfe86-d044-4faa-b0df-b37119c64bd9",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0124",
+          "eventId": "03dfc9b0-e284-4e8e-9faf-588901710772",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0125",
+          "eventId": "5f2ac6b9-346d-4047-b9a5-2e7d37e3f5a0",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0126",
+          "eventId": "c8324456-ed35-4493-97df-9d46539356cb",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0127",
+          "eventId": "e5c000c5-28f4-4730-84c9-b93af5ceebdf",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0128",
+          "eventId": "fd89c013-5c10-420e-ae3b-87e59af2e692",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0129",
+          "eventId": "7b4b101d-08df-4c2f-b2ca-a1161e73b6ba",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-cita-romantica",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "bff3637b-a12d-40df-acca-880a30d8189f",
+        "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+        "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+        "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+        "532ccd73-c93b-450b-8102-3d34bb22dc64"
+      ],
+      "fused2Top5": [
+        "f6b90f90-785c-4678-a9f6-e7ac66e0475d",
+        "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+        "b35403b0-43d4-4d67-a658-9cb1c4f8368f",
+        "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+        "bff3637b-a12d-40df-acca-880a30d8189f"
+      ],
+      "facetTop5": [
+        "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+        "45b4fdfc-21c7-4835-9424-622908ce2c7f",
+        "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+        "bff3637b-a12d-40df-acca-880a30d8189f",
+        "e49e9331-5e37-4488-8b80-8436b8cfbefc"
+      ],
+      "options": [
+        {
+          "optionId": "op-0130",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0131",
+          "eventId": "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0132",
+          "eventId": "bff3637b-a12d-40df-acca-880a30d8189f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0133",
+          "eventId": "b35403b0-43d4-4d67-a658-9cb1c4f8368f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0134",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0135",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0136",
+          "eventId": "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-bailar-tarde",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "4772ff91-63b5-4816-a90d-fea5f39a8676",
+        "6267c5f4-0758-41d8-9193-85d4ed047d67",
+        "2cdd3dca-9427-440d-8968-298c24f50215",
+        "99b88664-2c1c-4931-ab6c-24603f6161ee",
+        "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4"
+      ],
+      "fused2Top5": [
+        "6267c5f4-0758-41d8-9193-85d4ed047d67",
+        "99b88664-2c1c-4931-ab6c-24603f6161ee",
+        "4772ff91-63b5-4816-a90d-fea5f39a8676",
+        "2cdd3dca-9427-440d-8968-298c24f50215",
+        "e8d7dc75-8e4d-4adc-af27-ade1b8fbb315"
+      ],
+      "facetTop5": [
+        "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+        "abb7aaf1-a62c-4f3d-9ee0-7853978b0f70",
+        "99b88664-2c1c-4931-ab6c-24603f6161ee",
+        "6267c5f4-0758-41d8-9193-85d4ed047d67",
+        "c1043331-27e1-4edf-a9cb-c5ba3e0250ff"
+      ],
+      "options": [
+        {
+          "optionId": "op-0137",
+          "eventId": "2cdd3dca-9427-440d-8968-298c24f50215",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0138",
+          "eventId": "6267c5f4-0758-41d8-9193-85d4ed047d67",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0139",
+          "eventId": "99b88664-2c1c-4931-ab6c-24603f6161ee",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0140",
+          "eventId": "4772ff91-63b5-4816-a90d-fea5f39a8676",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0141",
+          "eventId": "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0142",
+          "eventId": "e8d7dc75-8e4d-4adc-af27-ade1b8fbb315",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "lit-cumbia",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "1db8c51f-2eb1-43f7-909c-b74f50a0c4b3",
+        "40957e84-0713-40bd-9c20-2df44555e802",
+        "ecff8855-184b-4ddc-b20d-3a6041f41d12",
+        "f798d76d-5c92-4ad6-86a3-6d54765225f3",
+        "13b7b33b-6ba0-437c-afc9-f9b34c955c4a"
+      ],
+      "fused2Top5": [
+        "1db8c51f-2eb1-43f7-909c-b74f50a0c4b3",
+        "40957e84-0713-40bd-9c20-2df44555e802",
+        "755ce9bd-742d-4e67-9356-daf50afa1477",
+        "ecff8855-184b-4ddc-b20d-3a6041f41d12",
+        "d3a99efe-3cd3-4a67-9c35-511ea1733493"
+      ],
+      "facetTop5": [
+        "d3a99efe-3cd3-4a67-9c35-511ea1733493",
+        "755ce9bd-742d-4e67-9356-daf50afa1477",
+        "40957e84-0713-40bd-9c20-2df44555e802",
+        "1db8c51f-2eb1-43f7-909c-b74f50a0c4b3",
+        "7d01da94-33a9-469b-98e7-f0c21c1835d6"
+      ],
+      "options": [
+        {
+          "optionId": "op-0143",
+          "eventId": "40957e84-0713-40bd-9c20-2df44555e802",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0144",
+          "eventId": "d3a99efe-3cd3-4a67-9c35-511ea1733493",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0145",
+          "eventId": "ecff8855-184b-4ddc-b20d-3a6041f41d12",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0146",
+          "eventId": "13b7b33b-6ba0-437c-afc9-f9b34c955c4a",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0147",
+          "eventId": "755ce9bd-742d-4e67-9356-daf50afa1477",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0148",
+          "eventId": "1db8c51f-2eb1-43f7-909c-b74f50a0c4b3",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0149",
+          "eventId": "f798d76d-5c92-4ad6-86a3-6d54765225f3",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "slang-joda",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "b838e3e1-72ea-4931-ab44-60ea4a6bb296",
+        "8a19c723-a81e-4893-89ac-d53491ccb381",
+        "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7",
+        "d6c129f6-c073-4134-97a4-a8114747c952",
+        "4772ff91-63b5-4816-a90d-fea5f39a8676"
+      ],
+      "fused2Top5": [
+        "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7",
+        "8a19c723-a81e-4893-89ac-d53491ccb381",
+        "4772ff91-63b5-4816-a90d-fea5f39a8676",
+        "d6c129f6-c073-4134-97a4-a8114747c952",
+        "08f7be30-cbe4-4f5e-add9-d29ac1df3a47"
+      ],
+      "facetTop5": [
+        "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7",
+        "4772ff91-63b5-4816-a90d-fea5f39a8676",
+        "08f7be30-cbe4-4f5e-add9-d29ac1df3a47",
+        "d6c129f6-c073-4134-97a4-a8114747c952",
+        "269d85b8-8314-4345-bb9f-51ccc9220efc"
+      ],
+      "options": [
+        {
+          "optionId": "op-0150",
+          "eventId": "b838e3e1-72ea-4931-ab44-60ea4a6bb296",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0151",
+          "eventId": "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0152",
+          "eventId": "08f7be30-cbe4-4f5e-add9-d29ac1df3a47",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0153",
+          "eventId": "d6c129f6-c073-4134-97a4-a8114747c952",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0154",
+          "eventId": "8a19c723-a81e-4893-89ac-d53491ccb381",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0155",
+          "eventId": "4772ff91-63b5-4816-a90d-fea5f39a8676",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "must-manana",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "84c0287b-ddeb-4472-ad72-8eab22ae902d",
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "6453129b-cc8b-4522-9e3b-aff0d80d898c",
+        "25422ab4-a181-4e40-8ea1-3d50bfcddcac",
+        "08f7be30-cbe4-4f5e-add9-d29ac1df3a47"
+      ],
+      "fused2Top5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "08f7be30-cbe4-4f5e-add9-d29ac1df3a47",
+        "4772ff91-63b5-4816-a90d-fea5f39a8676",
+        "84c0287b-ddeb-4472-ad72-8eab22ae902d",
+        "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+      ],
+      "facetTop5": [
+        "8a19c723-a81e-4893-89ac-d53491ccb381",
+        "9ca50eef-d338-4c25-8b0b-f862236a5815",
+        "4772ff91-63b5-4816-a90d-fea5f39a8676",
+        "2cef14bd-e517-4ec8-bc10-ca03eeb4545c",
+        "e8d7dc75-8e4d-4adc-af27-ade1b8fbb315"
+      ],
+      "options": [
+        {
+          "optionId": "op-0156",
+          "eventId": "84c0287b-ddeb-4472-ad72-8eab22ae902d",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0157",
+          "eventId": "4772ff91-63b5-4816-a90d-fea5f39a8676",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0158",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0159",
+          "eventId": "6453129b-cc8b-4522-9e3b-aff0d80d898c",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0160",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0161",
+          "eventId": "08f7be30-cbe4-4f5e-add9-d29ac1df3a47",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-cozy-jazz",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "401d71ea-c0cd-4107-a57f-f98f75da1369",
+        "6bbccf0c-539a-4b97-9175-0ac560e4f366",
+        "59edf8d4-333a-4014-9d1a-327fd702d817",
+        "57281bff-302d-4f13-b231-d4bb03e4b0e5",
+        "4df71035-976e-4625-88b6-ef6e6c9088e1"
+      ],
+      "fused2Top5": [
+        "2374526a-1d02-49b3-ab4d-ece5a2e61340",
+        "59edf8d4-333a-4014-9d1a-327fd702d817",
+        "4df71035-976e-4625-88b6-ef6e6c9088e1",
+        "51bf09aa-1011-4af5-8bb2-043ce6c0f07b",
+        "6bbccf0c-539a-4b97-9175-0ac560e4f366"
+      ],
+      "facetTop5": [
+        "beda1315-8efc-46d9-9a7f-5eb6443b7eb8",
+        "2374526a-1d02-49b3-ab4d-ece5a2e61340",
+        "7212c409-d991-479b-8b31-a14848271996",
+        "0d6e4c06-576f-4935-8a71-a30b29c27b94",
+        "51bf09aa-1011-4af5-8bb2-043ce6c0f07b"
+      ],
+      "options": [
+        {
+          "optionId": "op-0162",
+          "eventId": "2374526a-1d02-49b3-ab4d-ece5a2e61340",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0163",
+          "eventId": "57281bff-302d-4f13-b231-d4bb03e4b0e5",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0164",
+          "eventId": "4df71035-976e-4625-88b6-ef6e6c9088e1",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0165",
+          "eventId": "59edf8d4-333a-4014-9d1a-327fd702d817",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0166",
+          "eventId": "51bf09aa-1011-4af5-8bb2-043ce6c0f07b",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0167",
+          "eventId": "6bbccf0c-539a-4b97-9175-0ac560e4f366",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0168",
+          "eventId": "401d71ea-c0cd-4107-a57f-f98f75da1369",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-big-night",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "8e501c39-92d5-4f1d-b23a-774b90d993e7",
+        "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4",
+        "c19d4f32-9483-4033-9cd8-a5a4042dcbd2",
+        "bdcad403-8e05-4e51-b2bc-1b8b734ded12",
+        "4568ace0-2841-48de-bbde-1a61586db008"
+      ],
+      "fused2Top5": [
+        "51da49ad-f6f8-444e-b9b1-2b761a5e9bb9",
+        "143e815e-37b8-4b93-adb2-f8693111b565",
+        "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4",
+        "61974b87-9d19-4640-90d4-2560d9cbed0b",
+        "8e501c39-92d5-4f1d-b23a-774b90d993e7"
+      ],
+      "facetTop5": [
+        "51da49ad-f6f8-444e-b9b1-2b761a5e9bb9",
+        "143e815e-37b8-4b93-adb2-f8693111b565",
+        "61974b87-9d19-4640-90d4-2560d9cbed0b",
+        "96817b93-ad2b-42a2-a521-b8c9a3200303",
+        "7151b3c7-0f76-430a-b0ea-1eacae4af755"
+      ],
+      "options": [
+        {
+          "optionId": "op-0169",
+          "eventId": "4568ace0-2841-48de-bbde-1a61586db008",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0170",
+          "eventId": "bdcad403-8e05-4e51-b2bc-1b8b734ded12",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0171",
+          "eventId": "51da49ad-f6f8-444e-b9b1-2b761a5e9bb9",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0172",
+          "eventId": "c19d4f32-9483-4033-9cd8-a5a4042dcbd2",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0173",
+          "eventId": "61974b87-9d19-4640-90d4-2560d9cbed0b",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0174",
+          "eventId": "143e815e-37b8-4b93-adb2-f8693111b565",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0175",
+          "eventId": "8e501c39-92d5-4f1d-b23a-774b90d993e7",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0176",
+          "eventId": "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-date-night",
+      "reasons": [
+        "top5-material-differs",
+        "voyage-ndcg-loss"
+      ],
+      "voyageTop5": [
+        "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+        "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+        "603f9903-fc1e-4196-96e9-c27dbf20af1e",
+        "193ac214-c72b-439b-b514-d19d08e87773",
+        "95a49ba9-11ae-491a-bb0c-b5440142a39e"
+      ],
+      "fused2Top5": [
+        "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+        "45b4fdfc-21c7-4835-9424-622908ce2c7f",
+        "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+        "603f9903-fc1e-4196-96e9-c27dbf20af1e",
+        "535162af-4480-41ae-aecc-ebb0f0a9bcb4"
+      ],
+      "facetTop5": [
+        "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+        "45b4fdfc-21c7-4835-9424-622908ce2c7f",
+        "2ab0c8d4-e203-4fd7-81cc-abc704d25b50",
+        "b7445890-5d20-4a76-85b1-328d970bab5a",
+        "7d26d792-d9f9-48ed-b571-785ae966fc7e"
+      ],
+      "options": [
+        {
+          "optionId": "op-0177",
+          "eventId": "603f9903-fc1e-4196-96e9-c27dbf20af1e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0178",
+          "eventId": "779ae65f-6084-4787-92e0-39c7a6f14b0c",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0179",
+          "eventId": "535162af-4480-41ae-aecc-ebb0f0a9bcb4",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0180",
+          "eventId": "193ac214-c72b-439b-b514-d19d08e87773",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0181",
+          "eventId": "45b4fdfc-21c7-4835-9424-622908ce2c7f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0182",
+          "eventId": "95a49ba9-11ae-491a-bb0c-b5440142a39e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0183",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-lowkey",
+      "reasons": [
+        "top5-material-differs",
+        "subjective-facet-protection"
+      ],
+      "voyageTop5": [
+        "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+        "8a955768-4625-4a75-ad64-385601709025",
+        "61974b87-9d19-4640-90d4-2560d9cbed0b",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+      ],
+      "fused2Top5": [
+        "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+        "8a955768-4625-4a75-ad64-385601709025",
+        "61974b87-9d19-4640-90d4-2560d9cbed0b",
+        "1b5f3aa3-e3c7-4e13-b617-bbe6c43dbe9e",
+        "9b2d6e07-db5d-4dc9-b94a-d9001c9707a9"
+      ],
+      "facetTop5": [
+        "18750704-d655-40c4-b247-cb4dc9f8b981",
+        "b3fb3905-12c8-457b-836c-43c689aa2290",
+        "532ccd73-c93b-450b-8102-3d34bb22dc64",
+        "c4665b91-618c-46ea-8e62-5d118887927a",
+        "29a83015-b50c-4208-a35c-452e5b3d7356"
+      ],
+      "options": [
+        {
+          "optionId": "op-0184",
+          "eventId": "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0185",
+          "eventId": "9b2d6e07-db5d-4dc9-b94a-d9001c9707a9",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0186",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0187",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0188",
+          "eventId": "1b5f3aa3-e3c7-4e13-b617-bbe6c43dbe9e",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0189",
+          "eventId": "61974b87-9d19-4640-90d4-2560d9cbed0b",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0190",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-impresionar",
+      "reasons": [
+        "top5-material-differs",
+        "subjective-facet-protection"
+      ],
+      "voyageTop5": [
+        "5e81d25f-d97f-465d-84b6-0dd67d0b04f7",
+        "ffbd2462-eb0d-4483-a2f2-dd986d715b76",
+        "c4665b91-618c-46ea-8e62-5d118887927a",
+        "2ead3659-e802-46da-be06-b4ba8989e788",
+        "e49e9331-5e37-4488-8b80-8436b8cfbefc"
+      ],
+      "fused2Top5": [
+        "5e81d25f-d97f-465d-84b6-0dd67d0b04f7",
+        "2ead3659-e802-46da-be06-b4ba8989e788",
+        "ffbd2462-eb0d-4483-a2f2-dd986d715b76",
+        "c4665b91-618c-46ea-8e62-5d118887927a",
+        "06dc5301-15ef-4727-8fbd-b071d1548d38"
+      ],
+      "facetTop5": [
+        "2255a2a6-3e15-466b-ac88-a37c29f4c3ba",
+        "2ead3659-e802-46da-be06-b4ba8989e788",
+        "5e81d25f-d97f-465d-84b6-0dd67d0b04f7",
+        "292190b2-d693-464d-9d69-26fa87256f4b",
+        "973c565f-03d1-48d1-a4c8-c961502cf5d6"
+      ],
+      "options": [
+        {
+          "optionId": "op-0191",
+          "eventId": "5e81d25f-d97f-465d-84b6-0dd67d0b04f7",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0192",
+          "eventId": "06dc5301-15ef-4727-8fbd-b071d1548d38",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0193",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0194",
+          "eventId": "2ead3659-e802-46da-be06-b4ba8989e788",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0195",
+          "eventId": "c4665b91-618c-46ea-8e62-5d118887927a",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0196",
+          "eventId": "ffbd2462-eb0d-4483-a2f2-dd986d715b76",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "mix-tranqui-tonight",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "mixed-language"
+      ],
+      "voyageTop5": [
+        "7d26d792-d9f9-48ed-b571-785ae966fc7e",
+        "c41d4445-06fe-47bb-bd80-b645666c10c7",
+        "b7445890-5d20-4a76-85b1-328d970bab5a",
+        "401d71ea-c0cd-4107-a57f-f98f75da1369",
+        "95a49ba9-11ae-491a-bb0c-b5440142a39e"
+      ],
+      "fused2Top5": [
+        "8a955768-4625-4a75-ad64-385601709025",
+        "61974b87-9d19-4640-90d4-2560d9cbed0b",
+        "7c7641e9-4d03-4172-aa8c-eb92c0ec080f",
+        "401d71ea-c0cd-4107-a57f-f98f75da1369",
+        "c41d4445-06fe-47bb-bd80-b645666c10c7"
+      ],
+      "facetTop5": [
+        "18750704-d655-40c4-b247-cb4dc9f8b981",
+        "b3fb3905-12c8-457b-836c-43c689aa2290",
+        "f7c857e7-5dab-4926-9675-486d4d738ea0",
+        "c4665b91-618c-46ea-8e62-5d118887927a",
+        "401d71ea-c0cd-4107-a57f-f98f75da1369"
+      ],
+      "options": [
+        {
+          "optionId": "op-0197",
+          "eventId": "b7445890-5d20-4a76-85b1-328d970bab5a",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0198",
+          "eventId": "7c7641e9-4d03-4172-aa8c-eb92c0ec080f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0199",
+          "eventId": "61974b87-9d19-4640-90d4-2560d9cbed0b",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0200",
+          "eventId": "7d26d792-d9f9-48ed-b571-785ae966fc7e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0201",
+          "eventId": "95a49ba9-11ae-491a-bb0c-b5440142a39e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0202",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0203",
+          "eventId": "401d71ea-c0cd-4107-a57f-f98f75da1369",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0204",
+          "eventId": "c41d4445-06fe-47bb-bd80-b645666c10c7",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "mix-free-finde",
+      "reasons": [
+        "top5-material-differs",
+        "mixed-language"
+      ],
+      "voyageTop5": [
+        "b838e3e1-72ea-4931-ab44-60ea4a6bb296",
+        "4c5639b8-7235-42bd-a125-aff578cb41ab",
+        "dd4766f9-c8e5-461b-9d93-bb6f4bbe492a",
+        "c91a0a54-d937-438a-84bd-26f434e3b646",
+        "ddc8c5a2-d74f-467f-bd60-77a91ac0b8cf"
+      ],
+      "fused2Top5": [
+        "b838e3e1-72ea-4931-ab44-60ea4a6bb296",
+        "dd4766f9-c8e5-461b-9d93-bb6f4bbe492a",
+        "4c5639b8-7235-42bd-a125-aff578cb41ab",
+        "c91a0a54-d937-438a-84bd-26f434e3b646",
+        "207d942b-f186-4af6-92e5-1426ac9b65f4"
+      ],
+      "facetTop5": [
+        "3e45b1e5-fccf-4e48-9718-17c352c401e1",
+        "dd4766f9-c8e5-461b-9d93-bb6f4bbe492a",
+        "b838e3e1-72ea-4931-ab44-60ea4a6bb296",
+        "207d942b-f186-4af6-92e5-1426ac9b65f4",
+        "9f824c01-c9ef-42b7-8eb5-af5c59afd4c2"
+      ],
+      "options": [
+        {
+          "optionId": "op-0205",
+          "eventId": "4c5639b8-7235-42bd-a125-aff578cb41ab",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0206",
+          "eventId": "dd4766f9-c8e5-461b-9d93-bb6f4bbe492a",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0207",
+          "eventId": "ddc8c5a2-d74f-467f-bd60-77a91ac0b8cf",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0208",
+          "eventId": "b838e3e1-72ea-4931-ab44-60ea4a6bb296",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0209",
+          "eventId": "207d942b-f186-4af6-92e5-1426ac9b65f4",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0210",
+          "eventId": "c91a0a54-d937-438a-84bd-26f434e3b646",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "mix-jazz-palermo",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs",
+        "mixed-language"
+      ],
+      "voyageTop5": [
+        "401d71ea-c0cd-4107-a57f-f98f75da1369",
+        "de1fca92-c97d-4359-929a-9d04525caa9f",
+        "8a6c5f62-9fc1-4a63-8da7-8baaf68ac094",
+        "7a963c41-3779-46de-af84-4d58ea4d7af8",
+        "23a78dc3-0964-45ab-9dc5-2a398cc5ed2d"
+      ],
+      "fused2Top5": [
+        "de1fca92-c97d-4359-929a-9d04525caa9f",
+        "401d71ea-c0cd-4107-a57f-f98f75da1369",
+        "7a963c41-3779-46de-af84-4d58ea4d7af8",
+        "8a6c5f62-9fc1-4a63-8da7-8baaf68ac094",
+        "23a78dc3-0964-45ab-9dc5-2a398cc5ed2d"
+      ],
+      "facetTop5": [
+        "7a963c41-3779-46de-af84-4d58ea4d7af8",
+        "de1fca92-c97d-4359-929a-9d04525caa9f",
+        "8a6c5f62-9fc1-4a63-8da7-8baaf68ac094",
+        "23a78dc3-0964-45ab-9dc5-2a398cc5ed2d",
+        "401d71ea-c0cd-4107-a57f-f98f75da1369"
+      ],
+      "options": [
+        {
+          "optionId": "op-0211",
+          "eventId": "8a6c5f62-9fc1-4a63-8da7-8baaf68ac094",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0212",
+          "eventId": "401d71ea-c0cd-4107-a57f-f98f75da1369",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0213",
+          "eventId": "de1fca92-c97d-4359-929a-9d04525caa9f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0214",
+          "eventId": "7a963c41-3779-46de-af84-4d58ea4d7af8",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0215",
+          "eventId": "23a78dc3-0964-45ab-9dc5-2a398cc5ed2d",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "slang-merienda",
+      "reasons": [
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "b0a73606-c719-4af2-b0e4-1a04ec0cfdd2",
+        "3499ef10-c64a-48c2-af7a-facfdb5e2a7b",
+        "5f2ac6b9-346d-4047-b9a5-2e7d37e3f5a0",
+        "2a33b3df-f504-4698-b64b-fd04a9ba07ea"
+      ],
+      "fused2Top5": [
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "b0a73606-c719-4af2-b0e4-1a04ec0cfdd2",
+        "782ce4b6-d839-441b-8a68-2f4796fcd25e",
+        "2a33b3df-f504-4698-b64b-fd04a9ba07ea",
+        "d6c129f6-c073-4134-97a4-a8114747c952"
+      ],
+      "facetTop5": [
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "d6c129f6-c073-4134-97a4-a8114747c952",
+        "782ce4b6-d839-441b-8a68-2f4796fcd25e",
+        "96817b93-ad2b-42a2-a521-b8c9a3200303",
+        "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf"
+      ],
+      "options": [
+        {
+          "optionId": "op-0216",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0217",
+          "eventId": "d6c129f6-c073-4134-97a4-a8114747c952",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0218",
+          "eventId": "b0a73606-c719-4af2-b0e4-1a04ec0cfdd2",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0219",
+          "eventId": "2a33b3df-f504-4698-b64b-fd04a9ba07ea",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0220",
+          "eventId": "5f2ac6b9-346d-4047-b9a5-2e7d37e3f5a0",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0221",
+          "eventId": "782ce4b6-d839-441b-8a68-2f4796fcd25e",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0222",
+          "eventId": "3499ef10-c64a-48c2-af7a-facfdb5e2a7b",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "sparse-salsa",
+      "reasons": [
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "12d3a135-60e6-4c4b-ae7a-4c45f55f9472",
+        "10c71364-0714-4fe4-9034-decfb9d36b62",
+        "3c56305e-1dce-4f7f-8a68-7aa496d03a29",
+        "8cc21b64-114e-498c-8a35-6d026eed9855",
+        "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+      ],
+      "fused2Top5": [
+        "12d3a135-60e6-4c4b-ae7a-4c45f55f9472",
+        "10c71364-0714-4fe4-9034-decfb9d36b62",
+        "c1043331-27e1-4edf-a9cb-c5ba3e0250ff",
+        "6453129b-cc8b-4522-9e3b-aff0d80d898c",
+        "b62e332c-5c00-472a-a004-cf1c1de5e3b6"
+      ],
+      "facetTop5": [
+        "c1043331-27e1-4edf-a9cb-c5ba3e0250ff",
+        "12d3a135-60e6-4c4b-ae7a-4c45f55f9472",
+        "7d8dda73-ef4a-4fe7-924b-17c0e6501191",
+        "b62e332c-5c00-472a-a004-cf1c1de5e3b6",
+        "10c71364-0714-4fe4-9034-decfb9d36b62"
+      ],
+      "options": [
+        {
+          "optionId": "op-0223",
+          "eventId": "8cc21b64-114e-498c-8a35-6d026eed9855",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0224",
+          "eventId": "b62e332c-5c00-472a-a004-cf1c1de5e3b6",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0225",
+          "eventId": "10c71364-0714-4fe4-9034-decfb9d36b62",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0226",
+          "eventId": "12d3a135-60e6-4c4b-ae7a-4c45f55f9472",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0227",
+          "eventId": "3c56305e-1dce-4f7f-8a68-7aa496d03a29",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0228",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0229",
+          "eventId": "c1043331-27e1-4edf-a9cb-c5ba3e0250ff",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0230",
+          "eventId": "6453129b-cc8b-4522-9e3b-aff0d80d898c",
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "queryId": "avoid-techno",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "8de7fa30-6b7e-400f-8b21-3f61d1f865e0",
+        "3f6e22ec-9b97-4dc9-baf2-109726fa2d93",
+        "7f8d11ba-febc-444c-ae7f-88dbbbf8157b",
+        "1df772e5-3867-4fef-a33c-8862c378342f",
+        "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4"
+      ],
+      "fused2Top5": [
+        "dd963564-86ac-49c1-b0a7-140b213d7464",
+        "8de7fa30-6b7e-400f-8b21-3f61d1f865e0",
+        "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4",
+        "3f6e22ec-9b97-4dc9-baf2-109726fa2d93",
+        "7f8d11ba-febc-444c-ae7f-88dbbbf8157b"
+      ],
+      "facetTop5": [
+        "dd963564-86ac-49c1-b0a7-140b213d7464",
+        "8982a751-f0b2-4ff7-9257-f53a393039fc",
+        "7b1ab962-91de-4910-9367-4d88c0f7cfc4",
+        "53b1d6db-1364-4d32-8fd0-7d055aaefc9c",
+        "87015e33-ee6b-4229-b990-5e114b542d9b"
+      ],
+      "options": [
+        {
+          "optionId": "op-0231",
+          "eventId": "1df772e5-3867-4fef-a33c-8862c378342f",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0232",
+          "eventId": "b7b8fa84-3d81-487d-a8d9-31f1bebe31f4",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0233",
+          "eventId": "8de7fa30-6b7e-400f-8b21-3f61d1f865e0",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0234",
+          "eventId": "dd963564-86ac-49c1-b0a7-140b213d7464",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0235",
+          "eventId": "3f6e22ec-9b97-4dc9-baf2-109726fa2d93",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0236",
+          "eventId": "7f8d11ba-febc-444c-ae7f-88dbbbf8157b",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "avoid-joda",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "401d71ea-c0cd-4107-a57f-f98f75da1369",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "8a955768-4625-4a75-ad64-385601709025",
+        "7c7641e9-4d03-4172-aa8c-eb92c0ec080f",
+        "bf4c8251-7e07-404f-a19b-26f6620f657b"
+      ],
+      "fused2Top5": [
+        "8a955768-4625-4a75-ad64-385601709025",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "7c7641e9-4d03-4172-aa8c-eb92c0ec080f",
+        "f6b90f90-785c-4678-a9f6-e7ac66e0475d",
+        "401d71ea-c0cd-4107-a57f-f98f75da1369"
+      ],
+      "facetTop5": [
+        "c4665b91-618c-46ea-8e62-5d118887927a",
+        "532ccd73-c93b-450b-8102-3d34bb22dc64",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "401d71ea-c0cd-4107-a57f-f98f75da1369",
+        "f7c857e7-5dab-4926-9675-486d4d738ea0"
+      ],
+      "options": [
+        {
+          "optionId": "op-0237",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0238",
+          "eventId": "401d71ea-c0cd-4107-a57f-f98f75da1369",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0239",
+          "eventId": "bf4c8251-7e07-404f-a19b-26f6620f657b",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0240",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0241",
+          "eventId": "7c7641e9-4d03-4172-aa8c-eb92c0ec080f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0242",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-familiar",
+      "reasons": [
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "8e041344-be8e-4e0f-9d3f-d45fc86ec1ab",
+        "426f0015-2d2b-4380-9049-8b2f8025300c",
+        "280a18d8-85d6-4ec9-a0d6-2b9787482af0",
+        "7dbfe7c5-0d94-4278-906e-510b80e78e88",
+        "1e0907a8-d372-4d83-902a-f015c25d7ff1"
+      ],
+      "fused2Top5": [
+        "8e041344-be8e-4e0f-9d3f-d45fc86ec1ab",
+        "1e0907a8-d372-4d83-902a-f015c25d7ff1",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "280a18d8-85d6-4ec9-a0d6-2b9787482af0"
+      ],
+      "facetTop5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "31ba29ae-47fe-4c8b-aa25-cd9adb9778d9",
+        "07775378-ea91-42a1-93ee-737c3c69b814",
+        "48e58171-645d-4101-9b0b-a100f3759d2f",
+        "67519117-ba9c-4b6c-845b-f2d27b259829"
+      ],
+      "options": [
+        {
+          "optionId": "op-0243",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0244",
+          "eventId": "426f0015-2d2b-4380-9049-8b2f8025300c",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0245",
+          "eventId": "280a18d8-85d6-4ec9-a0d6-2b9787482af0",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0246",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0247",
+          "eventId": "8e041344-be8e-4e0f-9d3f-d45fc86ec1ab",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0248",
+          "eventId": "1e0907a8-d372-4d83-902a-f015c25d7ff1",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0249",
+          "eventId": "7dbfe7c5-0d94-4278-906e-510b80e78e88",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "must-menor",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "87d94277-e181-46e9-bc42-94d9d20f9153",
+        "187d5dc5-6363-43b8-9e9f-2bf82a209acf",
+        "c2edbf34-f98f-4f8e-b7bb-a5cb282f70d8",
+        "ba5aca80-b685-4f35-9a46-d8313bec761b",
+        "cdaeb0ff-5237-41b2-9e32-219d06dfa14b"
+      ],
+      "fused2Top5": [
+        "c2edbf34-f98f-4f8e-b7bb-a5cb282f70d8",
+        "87d94277-e181-46e9-bc42-94d9d20f9153",
+        "cdaeb0ff-5237-41b2-9e32-219d06dfa14b",
+        "3b902f5e-20bc-4bff-b635-9817013d3de0",
+        "187d5dc5-6363-43b8-9e9f-2bf82a209acf"
+      ],
+      "facetTop5": [
+        "a4aec56a-aacd-4f8b-903b-ea774c6cecb6",
+        "c2edbf34-f98f-4f8e-b7bb-a5cb282f70d8",
+        "cdaeb0ff-5237-41b2-9e32-219d06dfa14b",
+        "3b902f5e-20bc-4bff-b635-9817013d3de0",
+        "4ee29353-b2f0-48c3-996f-2d8cebc9bff2"
+      ],
+      "options": [
+        {
+          "optionId": "op-0250",
+          "eventId": "ba5aca80-b685-4f35-9a46-d8313bec761b",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0251",
+          "eventId": "3b902f5e-20bc-4bff-b635-9817013d3de0",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0252",
+          "eventId": "c2edbf34-f98f-4f8e-b7bb-a5cb282f70d8",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0253",
+          "eventId": "cdaeb0ff-5237-41b2-9e32-219d06dfa14b",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0254",
+          "eventId": "187d5dc5-6363-43b8-9e9f-2bf82a209acf",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0255",
+          "eventId": "87d94277-e181-46e9-bc42-94d9d20f9153",
+          "existingGrade": 0
+        }
+      ]
+    },
+    {
+      "queryId": "must-semana",
+      "reasons": [
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "394f6533-261e-417d-a9d7-7de17631a39c",
+        "f798d76d-5c92-4ad6-86a3-6d54765225f3",
+        "aaea5e5e-d359-49d0-b8e3-97c337c7d744",
+        "63fd64cb-c41c-42d2-8f34-f7b3189a9cc2",
+        "3382358b-ce7d-4624-807a-1dc7e6ab9a98"
+      ],
+      "fused2Top5": [
+        "394f6533-261e-417d-a9d7-7de17631a39c",
+        "63fd64cb-c41c-42d2-8f34-f7b3189a9cc2",
+        "735a72e0-6167-4bb2-b53b-4153dd8ced23",
+        "4c5639b8-7235-42bd-a125-aff578cb41ab",
+        "f798d76d-5c92-4ad6-86a3-6d54765225f3"
+      ],
+      "facetTop5": [
+        "7f1e80ff-a8e6-4f93-8b8c-8e7df994d86d",
+        "324e9c49-db37-4888-b425-2565e6b44f85",
+        "f6b90f90-785c-4678-a9f6-e7ac66e0475d",
+        "7b9f7c5e-f194-4dd5-bb1a-b6a00c9072cd",
+        "c6f2a51e-a354-44e9-8bad-97842b753b96"
+      ],
+      "options": [
+        {
+          "optionId": "op-0256",
+          "eventId": "f798d76d-5c92-4ad6-86a3-6d54765225f3",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0257",
+          "eventId": "394f6533-261e-417d-a9d7-7de17631a39c",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0258",
+          "eventId": "4c5639b8-7235-42bd-a125-aff578cb41ab",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0259",
+          "eventId": "735a72e0-6167-4bb2-b53b-4153dd8ced23",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0260",
+          "eventId": "63fd64cb-c41c-42d2-8f34-f7b3189a9cc2",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0261",
+          "eventId": "aaea5e5e-d359-49d0-b8e3-97c337c7d744",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0262",
+          "eventId": "3382358b-ce7d-4624-807a-1dc7e6ab9a98",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "slang-cachengue",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "93157aca-1c33-464a-8980-f54c667b1344",
+        "ed78f6e6-2da5-4fec-b347-b06858eb484f",
+        "c5beefdc-4afd-44d2-85e1-c92eadf08533",
+        "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+        "6ee8a93f-c429-4275-8b1d-d434cf221a96"
+      ],
+      "fused2Top5": [
+        "c5beefdc-4afd-44d2-85e1-c92eadf08533",
+        "ed78f6e6-2da5-4fec-b347-b06858eb484f",
+        "93157aca-1c33-464a-8980-f54c667b1344",
+        "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+        "29703e3d-5007-4ed6-87c0-d0896161c353"
+      ],
+      "facetTop5": [
+        "c5beefdc-4afd-44d2-85e1-c92eadf08533",
+        "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+        "ed78f6e6-2da5-4fec-b347-b06858eb484f",
+        "29703e3d-5007-4ed6-87c0-d0896161c353",
+        "cd7de46d-77ff-4f11-981a-33bfb23b352d"
+      ],
+      "options": [
+        {
+          "optionId": "op-0263",
+          "eventId": "93157aca-1c33-464a-8980-f54c667b1344",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0264",
+          "eventId": "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0265",
+          "eventId": "29703e3d-5007-4ed6-87c0-d0896161c353",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0266",
+          "eventId": "6ee8a93f-c429-4275-8b1d-d434cf221a96",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0267",
+          "eventId": "c5beefdc-4afd-44d2-85e1-c92eadf08533",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0268",
+          "eventId": "ed78f6e6-2da5-4fec-b347-b06858eb484f",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-chill-sunday",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "7dbfe7c5-0d94-4278-906e-510b80e78e88",
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "280a18d8-85d6-4ec9-a0d6-2b9787482af0",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+      ],
+      "fused2Top5": [
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "7151b3c7-0f76-430a-b0ea-1eacae4af755",
+        "7dbfe7c5-0d94-4278-906e-510b80e78e88",
+        "280a18d8-85d6-4ec9-a0d6-2b9787482af0"
+      ],
+      "facetTop5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "25422ab4-a181-4e40-8ea1-3d50bfcddcac",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "280a18d8-85d6-4ec9-a0d6-2b9787482af0",
+        "7dbfe7c5-0d94-4278-906e-510b80e78e88"
+      ],
+      "options": [
+        {
+          "optionId": "op-0269",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0270",
+          "eventId": "7dbfe7c5-0d94-4278-906e-510b80e78e88",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0271",
+          "eventId": "280a18d8-85d6-4ec9-a0d6-2b9787482af0",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0272",
+          "eventId": "7151b3c7-0f76-430a-b0ea-1eacae4af755",
+          "existingGrade": 0
+        },
+        {
+          "optionId": "op-0273",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0274",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "slang-cita-piola",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "10bf4397-8907-469e-a71f-31f0f15ab10e",
+        "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+        "532ccd73-c93b-450b-8102-3d34bb22dc64",
+        "a9b3074b-760d-498f-8e68-3f7d074daf67",
+        "c4665b91-618c-46ea-8e62-5d118887927a"
+      ],
+      "fused2Top5": [
+        "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+        "73e7e095-d508-4a15-8afc-013bdddaa85d",
+        "a9b3074b-760d-498f-8e68-3f7d074daf67",
+        "91aca093-e3ed-4b86-9a6e-ae3322c6e818",
+        "434c6218-9bc6-4ba8-9292-110fbb1619fb"
+      ],
+      "facetTop5": [
+        "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+        "10bf4397-8907-469e-a71f-31f0f15ab10e",
+        "0c5dc895-72e2-4c2b-956e-56496f89569b",
+        "73e7e095-d508-4a15-8afc-013bdddaa85d",
+        "434c6218-9bc6-4ba8-9292-110fbb1619fb"
+      ],
+      "options": [
+        {
+          "optionId": "op-0275",
+          "eventId": "c4665b91-618c-46ea-8e62-5d118887927a",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0276",
+          "eventId": "10bf4397-8907-469e-a71f-31f0f15ab10e",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0277",
+          "eventId": "73e7e095-d508-4a15-8afc-013bdddaa85d",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0278",
+          "eventId": "91aca093-e3ed-4b86-9a6e-ae3322c6e818",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0279",
+          "eventId": "a9b3074b-760d-498f-8e68-3f7d074daf67",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0280",
+          "eventId": "dcbd4025-c8c1-4e5d-af12-5ac87841a32e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0281",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0282",
+          "eventId": "434c6218-9bc6-4ba8-9292-110fbb1619fb",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-fiesta-suave",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "f48f808d-567a-4e4b-9ddf-7aa8db53819d",
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "6267c5f4-0758-41d8-9193-85d4ed047d67",
+        "0106efa9-010e-4cc7-913d-2eb50ad93795",
+        "8ec3e337-005e-4d37-af4d-5b927606080e"
+      ],
+      "fused2Top5": [
+        "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+        "1ce9501b-0715-4713-ab08-b5905796b411",
+        "0106efa9-010e-4cc7-913d-2eb50ad93795",
+        "4acb4582-2771-4d9a-a32a-9b8d0d28842e",
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf"
+      ],
+      "facetTop5": [
+        "4acb4582-2771-4d9a-a32a-9b8d0d28842e",
+        "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+        "1ce9501b-0715-4713-ab08-b5905796b411",
+        "a552f373-164d-407a-863a-501f1ef4d686",
+        "164cf7a8-bdb2-44c5-a9d1-c43a8d34f646"
+      ],
+      "options": [
+        {
+          "optionId": "op-0283",
+          "eventId": "f48f808d-567a-4e4b-9ddf-7aa8db53819d",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0284",
+          "eventId": "4acb4582-2771-4d9a-a32a-9b8d0d28842e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0285",
+          "eventId": "8ec3e337-005e-4d37-af4d-5b927606080e",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0286",
+          "eventId": "cc2ec4bd-b5cc-4e04-8827-83e0bbd3f6a5",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0287",
+          "eventId": "0106efa9-010e-4cc7-913d-2eb50ad93795",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0288",
+          "eventId": "1ce9501b-0715-4713-ab08-b5905796b411",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0289",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0290",
+          "eventId": "6267c5f4-0758-41d8-9193-85d4ed047d67",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-en-relaxed-afternoon",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "9238bf9e-8f18-448c-acad-4e04e7416816",
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+        "d691d021-5d1f-48db-bcd9-b37703a194b4",
+        "c32234a1-9d17-4138-bd8c-476d21a59ccb",
+        "45b4fdfc-21c7-4835-9424-622908ce2c7f"
+      ],
+      "fused2Top5": [
+        "d691d021-5d1f-48db-bcd9-b37703a194b4",
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+        "9238bf9e-8f18-448c-acad-4e04e7416816",
+        "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+      ],
+      "facetTop5": [
+        "d3100db2-0ccc-4e2a-a815-92ebd70886bc",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "9238bf9e-8f18-448c-acad-4e04e7416816",
+        "10b20b74-734d-4539-bfcd-cf8551dfcb7b",
+        "c32234a1-9d17-4138-bd8c-476d21a59ccb"
+      ],
+      "options": [
+        {
+          "optionId": "op-0291",
+          "eventId": "d691d021-5d1f-48db-bcd9-b37703a194b4",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0292",
+          "eventId": "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0293",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0294",
+          "eventId": "9238bf9e-8f18-448c-acad-4e04e7416816",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0295",
+          "eventId": "45b4fdfc-21c7-4835-9424-622908ce2c7f",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0296",
+          "eventId": "c32234a1-9d17-4138-bd8c-476d21a59ccb",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0297",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "vibe-chill-amigos",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "7dbfe7c5-0d94-4278-906e-510b80e78e88",
+        "5ee16380-c2e4-45a6-ad41-441a0f1ae7b4",
+        "214ca213-628d-4e35-9f05-a267881ed29d",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef"
+      ],
+      "fused2Top5": [
+        "214ca213-628d-4e35-9f05-a267881ed29d",
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+        "61974b87-9d19-4640-90d4-2560d9cbed0b",
+        "7dbfe7c5-0d94-4278-906e-510b80e78e88"
+      ],
+      "facetTop5": [
+        "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+        "18750704-d655-40c4-b247-cb4dc9f8b981",
+        "e49e9331-5e37-4488-8b80-8436b8cfbefc",
+        "9238bf9e-8f18-448c-acad-4e04e7416816",
+        "005c68b5-1611-4395-b31d-018aee75bf82"
+      ],
+      "options": [
+        {
+          "optionId": "op-0298",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0299",
+          "eventId": "5ee16380-c2e4-45a6-ad41-441a0f1ae7b4",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0300",
+          "eventId": "214ca213-628d-4e35-9f05-a267881ed29d",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0301",
+          "eventId": "7dbfe7c5-0d94-4278-906e-510b80e78e88",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0302",
+          "eventId": "61974b87-9d19-4640-90d4-2560d9cbed0b",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0303",
+          "eventId": "af0dcfab-73fd-42a2-808d-c11a9da5e0ef",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "must-barato",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "a2c8e3fd-4043-4d27-ad72-55d79b30ec03",
+        "f6bc7d3c-5616-4653-a2a2-290d1a8cabcf",
+        "fd70761b-9160-4042-99e5-d72bcb8e16e9",
+        "36770607-9f7e-4a4f-97fb-ade01c1de042"
+      ],
+      "fused2Top5": [
+        "33b88195-fbe1-4dab-9785-264026ab5d08",
+        "4e7c5a15-803e-48c4-b60e-164c146917b8",
+        "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+        "7b1ab962-91de-4910-9367-4d88c0f7cfc4",
+        "f6bc7d3c-5616-4653-a2a2-290d1a8cabcf"
+      ],
+      "facetTop5": [
+        "33b88195-fbe1-4dab-9785-264026ab5d08",
+        "4e7c5a15-803e-48c4-b60e-164c146917b8",
+        "7b1ab962-91de-4910-9367-4d88c0f7cfc4",
+        "cc4400c2-efde-442f-8755-5330b91d8a80",
+        "a29ad3f5-27d8-4c87-9bb8-51fa0a591e00"
+      ],
+      "options": [
+        {
+          "optionId": "op-0304",
+          "eventId": "33b88195-fbe1-4dab-9785-264026ab5d08",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0305",
+          "eventId": "36770607-9f7e-4a4f-97fb-ade01c1de042",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0306",
+          "eventId": "4e7c5a15-803e-48c4-b60e-164c146917b8",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0307",
+          "eventId": "7b1ab962-91de-4910-9367-4d88c0f7cfc4",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0308",
+          "eventId": "f6bc7d3c-5616-4653-a2a2-290d1a8cabcf",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0309",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0310",
+          "eventId": "a2c8e3fd-4043-4d27-ad72-55d79b30ec03",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0311",
+          "eventId": "fd70761b-9160-4042-99e5-d72bcb8e16e9",
+          "existingGrade": 3
+        }
+      ]
+    },
+    {
+      "queryId": "lit-en-house",
+      "reasons": [
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "8a955768-4625-4a75-ad64-385601709025",
+        "8f82c0a2-deb7-48ac-b742-b5718b4ce44c",
+        "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+        "607a8d63-ac95-4567-b721-ba48e35a5271",
+        "7d8dda73-ef4a-4fe7-924b-17c0e6501191"
+      ],
+      "fused2Top5": [
+        "8a955768-4625-4a75-ad64-385601709025",
+        "8f82c0a2-deb7-48ac-b742-b5718b4ce44c",
+        "7d8dda73-ef4a-4fe7-924b-17c0e6501191",
+        "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+        "8c4d5b7e-d66c-42d8-a671-b046a804aeb3"
+      ],
+      "facetTop5": [
+        "8a955768-4625-4a75-ad64-385601709025",
+        "0d0f6414-9007-4eb9-8515-567c7979216a",
+        "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+        "8e501c39-92d5-4f1d-b23a-774b90d993e7",
+        "607a8d63-ac95-4567-b721-ba48e35a5271"
+      ],
+      "options": [
+        {
+          "optionId": "op-0312",
+          "eventId": "607a8d63-ac95-4567-b721-ba48e35a5271",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0313",
+          "eventId": "8f82c0a2-deb7-48ac-b742-b5718b4ce44c",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0314",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0315",
+          "eventId": "e5dade99-f59b-49f5-968e-38f1b1b56a65",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0316",
+          "eventId": "8c4d5b7e-d66c-42d8-a671-b046a804aeb3",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0317",
+          "eventId": "7d8dda73-ef4a-4fe7-924b-17c0e6501191",
+          "existingGrade": 1
+        }
+      ]
+    },
+    {
+      "queryId": "must-san-telmo",
+      "reasons": [
+        "rank1-differs",
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "9128e2f2-0ac3-4e28-8a85-629296cc1a54",
+        "7f1e80ff-a8e6-4f93-8b8c-8e7df994d86d",
+        "458b783c-56fa-449f-b4eb-ed0c8f0f3425",
+        "ac4aaa9b-44de-4a56-ae19-24231cf44a8d",
+        "ffadafdb-b38c-40e0-805d-639147562253"
+      ],
+      "fused2Top5": [
+        "f3622004-b3dd-4ce9-97fc-02590c8bbcff",
+        "458b783c-56fa-449f-b4eb-ed0c8f0f3425",
+        "ffadafdb-b38c-40e0-805d-639147562253",
+        "9128e2f2-0ac3-4e28-8a85-629296cc1a54",
+        "ac4aaa9b-44de-4a56-ae19-24231cf44a8d"
+      ],
+      "facetTop5": [
+        "f3622004-b3dd-4ce9-97fc-02590c8bbcff",
+        "20a71a1c-e57e-4844-82d7-3888d65cf082",
+        "10b20b74-734d-4539-bfcd-cf8551dfcb7b",
+        "ffadafdb-b38c-40e0-805d-639147562253",
+        "8838c826-78b6-4ba2-98cb-785d74f13950"
+      ],
+      "options": [
+        {
+          "optionId": "op-0318",
+          "eventId": "ac4aaa9b-44de-4a56-ae19-24231cf44a8d",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0319",
+          "eventId": "7f1e80ff-a8e6-4f93-8b8c-8e7df994d86d",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0320",
+          "eventId": "458b783c-56fa-449f-b4eb-ed0c8f0f3425",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0321",
+          "eventId": "9128e2f2-0ac3-4e28-8a85-629296cc1a54",
+          "existingGrade": 3
+        },
+        {
+          "optionId": "op-0322",
+          "eventId": "ffadafdb-b38c-40e0-805d-639147562253",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0323",
+          "eventId": "f3622004-b3dd-4ce9-97fc-02590c8bbcff",
+          "existingGrade": 2
+        }
+      ]
+    },
+    {
+      "queryId": "mix-piola-hoy",
+      "reasons": [
+        "top5-material-differs"
+      ],
+      "voyageTop5": [
+        "0c5dc895-72e2-4c2b-956e-56496f89569b",
+        "c91a0a54-d937-438a-84bd-26f434e3b646",
+        "9ca50eef-d338-4c25-8b0b-f862236a5815",
+        "207d942b-f186-4af6-92e5-1426ac9b65f4",
+        "6fec2d69-2481-4613-a36f-8b8ee724990e"
+      ],
+      "fused2Top5": [
+        "0c5dc895-72e2-4c2b-956e-56496f89569b",
+        "c91a0a54-d937-438a-84bd-26f434e3b646",
+        "207d942b-f186-4af6-92e5-1426ac9b65f4",
+        "a83f58d4-e616-4105-85ef-97d398174964",
+        "4e14b677-1bb3-422d-b832-e49167431fd3"
+      ],
+      "facetTop5": [
+        "0c5dc895-72e2-4c2b-956e-56496f89569b",
+        "300a3eb3-40f1-41e0-8930-d669bb6cb6d1",
+        "f2343078-9363-4729-8bb4-9a8c0b3711e4",
+        "87d94277-e181-46e9-bc42-94d9d20f9153",
+        "c48a4ecc-34f4-4a54-b5ff-9e742b07257a"
+      ],
+      "options": [
+        {
+          "optionId": "op-0324",
+          "eventId": "207d942b-f186-4af6-92e5-1426ac9b65f4",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0325",
+          "eventId": "9ca50eef-d338-4c25-8b0b-f862236a5815",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0326",
+          "eventId": "4e14b677-1bb3-422d-b832-e49167431fd3",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0327",
+          "eventId": "a83f58d4-e616-4105-85ef-97d398174964",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0328",
+          "eventId": "6fec2d69-2481-4613-a36f-8b8ee724990e",
+          "existingGrade": 2
+        },
+        {
+          "optionId": "op-0329",
+          "eventId": "c91a0a54-d937-438a-84bd-26f434e3b646",
+          "existingGrade": 1
+        },
+        {
+          "optionId": "op-0330",
+          "eventId": "0c5dc895-72e2-4c2b-956e-56496f89569b",
+          "existingGrade": 2
+        }
+      ]
+    }
+  ]
+}

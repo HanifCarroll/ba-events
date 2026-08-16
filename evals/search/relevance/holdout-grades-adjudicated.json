@@ -1,0 +1,2196 @@
+{
+  "provenance": "5.6-sol-high: two independent blinded passes plus blinded adjudication of 74 disagreements",
+  "captureContext": {
+    "utc": "2026-08-16T04:06:08.458Z",
+    "buenosAiresLocal": "2026-08-16T01:06:08-03:00"
+  },
+  "rubric": {
+    "0": "Irrelevant or contradicts the ask",
+    "1": "Marginal or tangential",
+    "2": "Good and relevant; satisfies the ask",
+    "3": "Excellent/perfect match and an ideal recommendation"
+  },
+  "interPass": {
+    "exactAgreement": 0.8639705882352942,
+    "meanAbsoluteGradeDifference": 0.13970588235294118,
+    "disputedOptions": 74
+  },
+  "grades": {
+    "op-0001": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Permite bailar en un marco íntimo, pero es una experiencia introspectiva y de interacción social baja, poco propicia para charlar."
+    },
+    "op-0002": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Combina clase, baile social, comida y bebida; satisface baile y sociabilidad, aunque la energía alta y el ambiente vibrante restan tranquilidad."
+    },
+    "op-0003": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Propone explícitamente conversar y bailar en un ambiente cálido, distendido y tipo lounge, alineado con evitar un lugar demasiado explotado."
+    },
+    "op-0004": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. La cena y las dinámicas dejan espacio para charlar antes del baile, pero el formato festival y la energía alta pueden sentirse intensos."
+    },
+    "op-0005": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un encuentro de reflexión y charla sin actividad de baile."
+    },
+    "op-0006": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Incluye danza, charlas y networking, pero es un festival intensivo y energético orientado a bailarines, no una salida distendida para bailar y conversar."
+    },
+    "op-0007": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Clase de tango íntima y relajada con interacción moderada; sirve para bailar sin clima de boliche, aunque la charla no es central."
+    },
+    "op-0008": {
+      "grade": 3,
+      "rationale": "Adjudicated after independent grades 3/2. Combina explícitamente una primera parte de tragos y conversación con un cierre de baile, y el recorrido por bares escondidos y «menos obvios» responde además a evitar algo demasiado explotado; la energía alta no desplaza ese ajuste directo."
+    },
+    "op-0009": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Ofrece rompehielos para conversar y conectar, clase de baile y un ambiente expresamente relajado, con formato guiado de solo dos horas."
+    },
+    "op-0010": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/2. Cumple con el baile y menciona conectar, pero su formato de festival de energía alta no ofrece evidencia de un espacio cómodo para charlar ni poco concurrido; por eso queda como coincidencia parcial, no buena."
+    },
+    "op-0011": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es una fiesta estilo boliche, bailable y de energía alta; la consigna de chapar prima sobre una charla tranquila."
+    },
+    "op-0012": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Juegos para conocerse y cena favorecen la charla, con bailongo posterior posible; es buen plan mixto, aunque el baile no está garantizado."
+    },
+    "op-0013": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Está enfocada en cantar, bailar y perrear con energía alta, sin señales de un espacio tranquilo para conversar."
+    },
+    "op-0014": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. La biodanza ofrece movimiento, conexión social alta y marco íntimo, con comida y tragos; aun así, enfatiza la conexión corporal más que la conversación."
+    },
+    "op-0015": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una gala para observar ballet sentado, no una salida donde el usuario pueda bailar."
+    },
+    "op-0016": {
+      "grade": 3,
+      "rationale": "Adjudicated after independent grades 3/2. El set acústico, la energía baja y el clima explícitamente íntimo y cálido forman una propuesta tranquila e ideal para una cita; el formato y la sede respaldan el carácter bajo techo aunque la faceta no lo detalle."
+    },
+    "op-0017": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto íntimo, sentado y de energía baja, con cena y bebidas en un espacio de capacidad limitada; excelente para una cita tranquila."
+    },
+    "op-0018": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. El formato acústico, bajo techo y con bebidas funciona para una cita, aunque el rock y la energía media lo hacen menos sereno que las mejores opciones."
+    },
+    "op-0019": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es muy tranquilo y bajo techo, pero una clase de meditación de interacción baja y orientada a asistentes solos resulta un plan de cita poco natural."
+    },
+    "op-0020": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto acústico íntimo y de energía baja, con cena y tragos, ideal para compartir una cita tranquila bajo techo."
+    },
+    "op-0021": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Piano, violín, luces bajas, asientos y una copa de vino crean una experiencia íntima y explícitamente apta para parejas."
+    },
+    "op-0022": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. El stand up se presenta como relajado y apto para parejas, aunque el espectáculo dinámico y la interacción alta no son del todo tranquilos."
+    },
+    "op-0023": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. El jazz, el vino, el entorno interior y las señales románticas e íntimas encajan bien con una cita, pero la modalidad de pie y la descripción vibrante impiden considerarlo un plan tranquilo ideal."
+    },
+    "op-0024": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Comedia en ambiente relajado y cercano, adecuada para parejas, pero de energía media y menos serena que un concierto íntimo."
+    },
+    "op-0025": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Encuentro sentado, íntimo y de energía baja con piano, cena y bebidas; encaja plenamente con una cita tranquila bajo techo."
+    },
+    "op-0026": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Show de comedia relajado e indicado para parejas, aunque su formato dinámico y de alta interacción reduce la sensación de calma."
+    },
+    "op-0027": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. Es un concierto íntimo de jazz bajo techo con bebidas, claramente apropiado para una cita, aunque la energía media y la caracterización de la noche como vibrante lo dejan en buen match y no en uno perfecto para «tranquilo»."
+    },
+    "op-0028": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. El stand up ofrece un ambiente relajado, cercano y apto para parejas, aunque conserva energía media y formato dinámico."
+    },
+    "op-0029": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Una noche íntima de covers acústicos funciona bien para una cita, pero la energía media y la escasa descripción impiden considerarla ideal."
+    },
+    "op-0030": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto sentado de energía baja para solo doce personas, con recepción, comida y bebida; es una cita bajo techo especialmente íntima y original."
+    },
+    "op-0031": {
+      "grade": 3,
+      "rationale": "Adjudicated after independent grades 3/2. El formato de piano solo y la experiencia expresamente íntima, cercana y hogareña constituyen un plan sereno y especialmente adecuado para una cita bajo techo."
+    },
+    "op-0032": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Obra teatral íntima, emocional, sentada y de energía baja, señalada expresamente como ideal para parejas."
+    },
+    "op-0033": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Stand up relajado con bebidas y público de parejas, aunque el ritmo dinámico y la energía media lo vuelven menos tranquilo."
+    },
+    "op-0034": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Comedia bajo techo, cercana y apta para ir en pareja; es un buen plan, pero más dinámico que verdaderamente sereno."
+    },
+    "op-0035": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. La obra combina una historia familiar intergeneracional con música en vivo y puede ser linda para compartir, aunque no hay evidencia fuerte sobre bajo ruido."
+    },
+    "op-0036": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto sentado, íntimo y de energía baja con clásicos emotivos y arreglos cuidados; excelente para disfrutar con los padres sin estridencias."
+    },
+    "op-0037": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta nostálgica pensada como regreso al boliche, incompatible con pedir poco ruido."
+    },
+    "op-0038": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. Aunque se presenta como familiar, su composición de energía alta basada en hits, canto y baile contradice directamente el requisito decisivo de evitar mucho ruido."
+    },
+    "op-0039": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Homenaje íntimo, conmovedor y de energía baja a Chico Novarro, con canciones y anécdotas especialmente aptas para compartir con los padres."
+    },
+    "op-0040": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Un concierto de rock en Niceto para revivir clásicos no ofrece el ambiente de poco ruido solicitado."
+    },
+    "op-0041": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Experiencia sentada, familiar, íntima y de energía baja con piano, violín y vino; muy linda para compartir sin demasiado ruido."
+    },
+    "op-0042": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto sentado, íntimo y de energía baja con piano, cena y bebidas, ideal para una salida agradable y tranquila con los padres."
+    },
+    "op-0043": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Show íntimo de historias y canciones con sensibilidad y humor; resulta agradable, aunque su energía media no asegura máxima calma."
+    },
+    "op-0044": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Merienda íntima, relajada y de energía baja con una actividad mística; es silenciosa y compartible, aunque su temática es de gusto específico."
+    },
+    "op-0045": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/2. Es una propuesta linda y familiar, pero una Big Band de diez músicos con interacción, canto y baile no satisface bien «sin mucho ruido»; conserva valor sólo como coincidencia parcial por el componente familiar."
+    },
+    "op-0046": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Velada íntima de rock suave y formato acústico, una opción agradable y moderada, aunque no está especialmente orientada a familias."
+    },
+    "op-0047": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto sentado, íntimo y de energía baja con piano, cena y bebidas; encaja muy bien con una salida tranquila junto a los padres."
+    },
+    "op-0048": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Ópera y canzonettas en escenario íntimo, acústico y sentado, apto para todas las edades; una propuesta cultural ideal para compartir."
+    },
+    "op-0049": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto acústico íntimo y de energía baja, con historias, cena y bebidas, muy adecuado para disfrutar con los padres sin estridencias."
+    },
+    "op-0050": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. Es relajado y explícitamente apto para ir solo, por lo que cubre el núcleo del pedido; el horario cercano a medianoche y el carácter dinámico hacen que no sea una opción ideal de salida inmediata del trabajo."
+    },
+    "op-0051": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es apto para ir solo y conocer gente, pero el bar crawl con reggaetón y energía alta contradice el pedido de un plan relajado."
+    },
+    "op-0052": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es relajada, de energía baja y apta para ir solo, pero comienza un domingo por la mañana y funciona como retiro, no como plan poslaburo."
+    },
+    "op-0053": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Meditación en horario vespertino, de energía baja y pensada para asistentes solos, en un espacio descrito como un oasis; encaje ideal."
+    },
+    "op-0054": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/2. El horario puede funcionar después del trabajo y admite asistentes solos, pero es un encuentro de alta interacción centrado nuevamente en emprendimiento, métricas y ansiedad laboral, sin evidencia suficiente de un plan realmente relajado."
+    },
+    "op-0055": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Encuentro vespertino íntimo y de energía baja con café y humor; puede servir al salir solo del trabajo, aunque exige networking intenso y ser emprendedor."
+    },
+    "op-0056": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. Es sentado, nocturno y pensado para personas que llegan solas, pero las rondas de speed dating individuales y grupales exigen alta interacción y contradicen la idea central de desconectar con un plan relajado."
+    },
+    "op-0057": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta estilo boliche, muy tardía y de energía alta; aunque acepta asistentes solos, contradice directamente el tono relajado."
+    },
+    "op-0058": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. La comedia se presenta como relajada y apta para asistir solo, pero ocurre tarde en fin de semana y se describe también como dinámica, de modo que es un buen plan nocturno más que un match poslaboral ideal."
+    },
+    "op-0059": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/2. Declara un ambiente relajado y admite asistentes solos, pero la experiencia guiada de citas, rompehielos, baile e interacción alta —además en domingo por la tarde— se aleja bastante de una salida tranquila después del trabajo."
+    },
+    "op-0060": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 1/3. La merienda es íntima, de energía baja, relajada y apta para ir solo, así que satisface muy bien el tipo de experiencia; el horario de domingo por la tarde debilita el contexto poslaboral y evita la nota ideal."
+    },
+    "op-0061": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una jornada intensiva de negocios un sábado por la mañana, no un plan relajado para después del trabajo."
+    },
+    "op-0062": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Velada nocturna íntima de rock suave y acústico, adecuada para bajar un cambio, aunque no hay evidencia directa de que esté pensada para ir solo."
+    },
+    "op-0063": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. El stand up es explícitamente relajado, cercano y apropiado para ir solo, pero su horario tardío de fin de semana, energía media e interacción alta lo hacen un buen match, no una salida poslaburo ideal."
+    },
+    "op-0064": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. El horario y la orientación a asistentes solos encajan, pero recorrer bares y terminar bailando con energía alta no es realmente relajado."
+    },
+    "op-0065": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 1/0. La cena inicial y la admisión de asistentes solos no compensan que sea un festival de energía alta con dinámicas y baile hasta las cuatro de la mañana, composición directamente opuesta a un plan relajado."
+    },
+    "op-0066": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Empieza el viernes a las 19, está pensado para asistentes solos y ofrece mate y conversación sin presión en un ambiente relajado y de energía baja."
+    },
+    "op-0067": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. Es una salida bajo techo, relajada y expresamente apta para asistentes solos, pero el comienzo muy tardío y el show dinámico de energía media impiden considerarla la opción poslaboral ideal."
+    },
+    "op-0068": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Comedia teatral con contenido sobre identidad y paso del tiempo; es artística y no presenta formato de boliche, aunque no especialmente inusual."
+    },
+    "op-0069": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Cruza tango, burlesque, cabaret, humor y sensualidad en una propuesta provocadora, artística y claramente distinta de un boliche."
+    },
+    "op-0070": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Trío instrumental que fusiona funk, blues, rock y jazz; ofrece una salida artística fuera del boliche, aunque el formato concierto es convencional."
+    },
+    "op-0071": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Espectáculo escénico singular que mezcla cabaret, humor y emoción; encaja muy bien con algo artístico, distinto y no bolichero."
+    },
+    "op-0072": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Stand-up ácido e inteligente con reflexión sobre autoaceptación; es una salida artística sin boliche, pero el formato no resulta tan novedoso."
+    },
+    "op-0073": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Unipersonal íntimo de humor inteligente y reflexivo; cumple lo artístico y no bolichero, aunque solo moderadamente lo distinto."
+    },
+    "op-0074": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Jazz en vivo con improvisación y diálogo musical; es artístico y ajeno al boliche, pero una sesión de standards no es especialmente diferente."
+    },
+    "op-0075": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. El bingo musical reversionado es diferente y no se presenta como boliche, pero su eje es jugar, cantar y bailar con energía alta; el componente artístico resulta secundario y sólo alcanza una coincidencia tangencial."
+    },
+    "op-0076": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Batalla de pintura en vivo con artistas, votación del público, feria y música: propuesta muy artística, participativa y original, sin formato de boliche."
+    },
+    "op-0077": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 1/2. Es un concierto, por lo que ofrece una salida artística y no bolichera, y la fusión de rock, pop y folklore aporta cierta diferencia; la propuesta escueta y convencional evita que sea una recomendación ideal."
+    },
+    "op-0078": {
+      "grade": 3,
+      "rationale": "Adjudicated after independent grades 3/2. La combinación escénica de cabaret, humor, sensualidad y drama es explícitamente singular, intensa y artística; aunque incluya baile y figure una faceta de fiesta, el núcleo es un espectáculo teatral, no una noche de boliche."
+    },
+    "op-0079": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Espectáculo de cabaret con repertorio singular, humor y sensualidad; fuerte ajuste a una salida artística, distinta y no bolichera."
+    },
+    "op-0080": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Dos proyectos independientes singulares combinan post-punk, indie y universo queer; es una alternativa artística y distintiva al boliche."
+    },
+    "op-0081": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Gala de danza clásica y contemporánea, claramente artística y no bolichera; resulta elegante, aunque no particularmente fuera de lo común."
+    },
+    "op-0082": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Fusiona percusión afrovenezolana con electrónica en un ritual sonoro vanguardista; propuesta artística, híbrida y muy diferente de un boliche."
+    },
+    "op-0083": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Stand-up astrológico con recursos teatrales, carta natal y tarot; combinación artística e inusual que evita por completo el formato boliche."
+    },
+    "op-0084": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Set acústico íntimo de indie, soul y pop con cercanía emocional; artístico y no bolichero, aunque su formato no es demasiado novedoso."
+    },
+    "op-0085": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una gala para observar ballet en un auditorio sentado, no una opción para que el asistente salga a bailar."
+    },
+    "op-0086": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. Aunque es bailable, se centra explícitamente en dembow y reggaetón, géneros que integran o se solapan directamente con el cachengue excluido; esa contradicción impide una valoración parcial."
+    },
+    "op-0087": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Permite bailar toda la noche, pero la propuesta tropical con DJs no demuestra que se aparte del cachengue."
+    },
+    "op-0088": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una proyección de la película Dirty Dancing con comida y bebida, no un evento para bailar."
+    },
+    "op-0089": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Baile libre de tres horas con electrónica, meditación activa y experiencia sensorial; alternativa clara y excelente al cachengue."
+    },
+    "op-0090": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un after dedicado expresamente a cumbias de todas las épocas, contrario al pedido de evitar cachengue."
+    },
+    "op-0091": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 1/2. Cantar y bailar son premisas expresas del bingo musical, y el formato lúdico ofrece una alternativa clara al cachengue. No llega a 3 porque el baile comparte protagonismo con el juego y los “hits de los 2000” no precisan del todo la musicalización."
+    },
+    "op-0092": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/1. La grilla encabezada por Ben Klock y Setaoc Mass identifica suficientemente una fecha de electrónica/techno, bailable y ajena al cachengue. Queda en 2 porque la descripción es mínima y no desarrolla expresamente la experiencia de baile."
+    },
+    "op-0093": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Clase, baile social de swing, DJ y banda de jazz en vivo: opción explícita para bailar y claramente alejada del cachengue."
+    },
+    "op-0094": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. La clase para principiantes y el baile guiado constituyen una opción concreta para bailar fuera del formato típico de cachengue. No es ideal porque el objetivo central también es conocer gente y no se especifica el estilo de baile."
+    },
+    "op-0095": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. El quinteto de tango que versiona a Los Redondos y la fiesta posterior conforman una propuesta bailable y claramente alternativa. No alcanza 3 porque el género del DJ no está indicado y parte del evento funciona como concierto."
+    },
+    "op-0096": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es una fiesta bailable estilo boliche, pero no informa el género musical y por eso no permite asegurar que evite el cachengue."
+    },
+    "op-0097": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. La grilla está compuesta por referentes de cumbia y música tropical, terreno central del cachengue que se pidió excluir; que el evento sea bailable no compensa esa contradicción."
+    },
+    "op-0098": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Solo consta que es un concierto; no hay evidencia de ambiente íntimo ni de posibilidad de acompañarlo con una copa."
+    },
+    "op-0099": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Sesión en vivo en un living con sillones, luces suaves, escucha cercana y cócteles: coincide de forma directa con todo el pedido."
+    },
+    "op-0100": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Concierto en vivo, íntimo, emotivo y sentado; cumple música y clima, pero no hay evidencia de copa o bebidas."
+    },
+    "op-0101": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Show en vivo explícitamente íntimo y minimalista; buen ajuste, aunque no se menciona una copa ni servicio de bebidas."
+    },
+    "op-0102": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Hay música en vivo, pero el club nocturno energético y festivo se aleja del ambiente íntimo buscado y tampoco se acredita una copa."
+    },
+    "op-0103": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Set acústico en vivo, cálido, cercano e íntimo; falta evidencia expresa de que pueda disfrutarse con una copa."
+    },
+    "op-0104": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Ofrece electrónica, baile y bebidas, pero en formato de fiesta hasta la madrugada, sin el ambiente íntimo solicitado."
+    },
+    "op-0105": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Show en vivo cálido, de capacidad limitada y muy cerca del público; excelente clima íntimo, aunque no consta la copa."
+    },
+    "op-0106": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. La experiencia reproduce música mediante parlantes holofónicos, por lo que no ofrece música interpretada en vivo, y tampoco hay una copa indicada. El ambiente íntimo por sí solo no salva dos componentes centrales incumplidos."
+    },
+    "op-0107": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Muestra de canto en vivo con acompañamiento de guitarra y ambiente íntimo; no se menciona servicio de bebidas."
+    },
+    "op-0108": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Banda en vivo, ambiente íntimo y una consumición expresamente incluida; satisface de manera directa los tres componentes."
+    },
+    "op-0109": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Homenaje en vivo a Vinicius de Moraes descrito como una noche íntima; falta evidencia específica de copa o bebidas."
+    },
+    "op-0110": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Concierto en un entorno cercano al artista y descrito como íntimo, aunque también energético y sin mención de copa."
+    },
+    "op-0111": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Noche íntima y casual con tres artistas en vivo; cumple música y ambiente, pero no acredita bebidas."
+    },
+    "op-0112": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. House bailable al aire libre con energía alta; hay música, pero el formato festivo y de pie no responde al clima íntimo con copa."
+    },
+    "op-0113": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Velada íntima y romántica de rock suave con formato acústico; buen ajuste musical y ambiental, sin evidencia de copa."
+    },
+    "op-0114": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Piano y violín en vivo, luces bajas, ambiente casi secreto y una copa de vino: coincidencia exacta con el pedido."
+    },
+    "op-0115": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Noche íntima de bossa, indie, folk, poesía y guitarra en vivo; falta únicamente evidencia de una copa."
+    },
+    "op-0116": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Show en vivo explícitamente íntimo, cálido y personal; no se menciona bebida o copa."
+    },
+    "op-0117": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Hay tres cantautores y música en vivo, pero no se acredita ni un ambiente íntimo ni la posibilidad de tomar una copa."
+    },
+    "op-0118": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Homenaje con nueve músicos en vivo, pero no ofrece evidencia de intimidad ni de bebidas."
+    },
+    "op-0119": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Experiencia íntima y circular con piano, cello y violín sin amplificación; gran ajuste ambiental y musical, pero sin copa acreditada."
+    },
+    "op-0120": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Stand-up dinámico y relajado fuera del boliche; ofrece energía moderada sin dinámica de pista apretada, aunque no hay prueba directa de amplitud."
+    },
+    "op-0121": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El plan consiste expresamente en recorrer bares y boliches, contrario a querer evitar estar apretado en uno."
+    },
+    "op-0122": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Tour de bares y boliches con fiesta y baile; contradice de manera directa la preferencia de evitar el boliche."
+    },
+    "op-0123": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Festival de arte, cultura y rock descrito como vibrante; brinda energía en un formato alternativo al boliche, aunque no acredita espacio amplio."
+    },
+    "op-0124": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Se define explícitamente como fiesta bailable estilo boliche, justo el entorno que se quiere evitar."
+    },
+    "op-0125": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Tiene mucha energía y baile, pero es una fiesta social de formato bolichero y no aporta ninguna garantía de no estar apretado."
+    },
+    "op-0126": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. La experiencia astrológica evita el boliche, pero casi no hay contenido que demuestre la energía buscada."
+    },
+    "op-0127": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un tour orientado expresamente a bares y boliches con fiesta, incompatible con la restricción principal."
+    },
+    "op-0128": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Comedia dinámica con improvisación y risas, sin formato de boliche; aporta energía media, aunque no hay evidencia sobre amplitud."
+    },
+    "op-0129": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. Ofrece energía y movimiento mediante dinámicas y una clase de baile en un encuentro guiado y relajado, claramente distinto de un boliche. No llega a 3 porque no hay evidencia expresa de amplitud, aforo o ausencia de aglomeración."
+    },
+    "op-0130": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. El título sugiere un concierto de boleros, pero la información es escasa y el resumen incluso lo describe como boliche; no garantiza el entorno pedido."
+    },
+    "op-0131": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Stand-up dinámico, cercano y con improvisación; ofrece energía sin ser boliche, aunque no acredita condiciones de espacio."
+    },
+    "op-0132": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. Es una salida animada de stand-up con elementos teatrales, fuera del formato boliche y por ello compatible con buscar energía sin pista apretada. No es ideal porque la holgura del espacio y las condiciones del público no están documentadas."
+    },
+    "op-0133": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. La propuesta es recorrer bares y boliches para salir de fiesta, contradiciendo el deseo de evitarlos."
+    },
+    "op-0134": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Stand-up de energía alta, dinámico y cercano, fuera del formato boliche; al ser de pie, no garantiza que no haya aglomeración."
+    },
+    "op-0135": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Un círculo de mujeres evita el boliche, pero la descripción no demuestra una experiencia energética ni aporta detalles suficientes."
+    },
+    "op-0136": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Concierto descrito como lleno de energía y buena vibra, sin evidencia de formato boliche; falta confirmación de que sea espacioso."
+    },
+    "op-0137": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Evento guiado con juegos, cena y baile opcional, de energía alta y más estructurado que un boliche; no confirma amplitud del lugar."
+    },
+    "op-0138": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. El bingo musical propone una experiencia de alta energía para cantar, jugar y bailar, como alternativa clara al boliche. Se queda en 2 porque no confirma aforo, distribución ni espacio suficiente para garantizar que no haya aglomeración."
+    },
+    "op-0139": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta nocturna de trap y reggaetón centrada en perrear; contradice claramente la calma buscada."
+    },
+    "op-0140": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Propuesta de club cerca de medianoche, sin evidencia de un comienzo de domingo tranquilo."
+    },
+    "op-0141": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Merienda íntima, relajada y de baja energía; encaja muy bien con la calma, aunque ocurre por la tarde."
+    },
+    "op-0142": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Festival de alta energía con watch party y música en vivo, opuesto a un arranque calmo."
+    },
+    "op-0143": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. El yoga con perritos es una actividad amable y bastante tranquila, aunque la sesión es avanzada la tarde."
+    },
+    "op-0144": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un plan dominical, pero el concierto de samba figura como de alta energía y no prioriza la calma."
+    },
+    "op-0145": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Mega propuesta nocturna de tres pistas, baile y alta interacción; contradice el tono tranquilo."
+    },
+    "op-0146": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Una batalla de lucha libre de alta energía no satisface el pedido de arrancar con calma."
+    },
+    "op-0147": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Café, conversaciones profundas y formato acogedor ofrecen un plan sereno, aunque recién por la tarde."
+    },
+    "op-0148": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Yoga de baja energía y poca interacción con perritos es claramente relajante, pero sucede al anochecer."
+    },
+    "op-0149": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Karaoke, tragos, baile y alta energía conforman una fiesta, no un plan calmo."
+    },
+    "op-0150": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. El show promete humor y buena vibra relajada, pero es nocturno y de energía media."
+    },
+    "op-0151": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Concierto de alta energía sin rasgos tranquilos que respondan al pedido."
+    },
+    "op-0152": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. La sesión de yoga con perritos se describe expresamente como relajante y divertida, aunque es vespertina."
+    },
+    "op-0153": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Plan matutino ideal: yoga, meditación, alimentación consciente y arteterapia en un ambiente relajado y de baja energía."
+    },
+    "op-0154": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Concierto nocturno de energía media; es un plan posible, pero la evidencia de calma es escasa."
+    },
+    "op-0155": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Show alternativo vibrante a última hora de la noche, incompatible con arrancar el domingo serenamente."
+    },
+    "op-0156": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta gótica de alta energía con dos pistas, baile y tragos; contradice directamente la calma."
+    },
+    "op-0157": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Velada explícitamente íntima y romántica de rock suave, con arte y feria, por solo $8.000."
+    },
+    "op-0158": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es económico e incluye consumición, pero el show genérico no aporta evidencia fuerte de una cita memorable."
+    },
+    "op-0159": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Visita privada al Teatro Colón, brindis, vinos y música clásica en un marco elegante: una cita excepcional para impresionar."
+    },
+    "op-0160": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/0. Respeta el tope de veinte mil pesos y puede ser una salida entretenida, pero está diseñada principalmente para que personas solas conozcan gente, no para impresionar en una cita de a dos; por eso es apenas una adaptación posible."
+    },
+    "op-0161": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Teatro interactivo con humor, improvisación y sorpresas por $16.000; una cita original y memorable."
+    },
+    "op-0162": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Recital de piano íntimo y cercano por $15.000, una buena cita aunque sin evidencia romántica directa."
+    },
+    "op-0163": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Está dentro del presupuesto, pero es una fiesta intensa hasta el amanecer y no una cita especialmente cuidada."
+    },
+    "op-0164": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Ballet elegante y sofisticado, con ambiente íntimo y romántico señalado como ideal para parejas."
+    },
+    "op-0165": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Recorrer el singular castillo de Sandro por $6.000 puede impresionar, especialmente a quien valore su historia musical."
+    },
+    "op-0166": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto gratuito, íntimo y emotivo con piano, cena, tragos y sorpresas en un espacio acogedor."
+    },
+    "op-0167": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Presentación íntima con gala, firma, torta y champagne por $6.000; original y elegante, aunque de interés más específico."
+    },
+    "op-0168": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Noche electrónica económica y potente, pero sin rasgos íntimos o románticos que la destaquen como cita."
+    },
+    "op-0169": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Electrónica en un ambiente íntimo y artístico por $15.000; buena opción para una pareja afín al género."
+    },
+    "op-0170": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Jazz vocal elegante e íntimo en un hotel, con sexteto en vivo y entrada de $13.000: cita sofisticada y accesible."
+    },
+    "op-0171": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Ópera y canzonettas con orquesta en un escenario íntimo por exactamente $20.000; impactante sin superar el tope."
+    },
+    "op-0172": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Fiesta barata y divertida, pero el perreo nostálgico y el obsequio promocional no sostienen una cita para impresionar."
+    },
+    "op-0173": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. El título identifica directamente una celebración queer en Casa Brandon y la energía media no sugiere una mega fiesta."
+    },
+    "op-0174": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 1/0. La inclusión mencionada es específicamente asiática y no acredita afinidad queer; además, el formato de fiesta/festival de alta energía hasta las 6:00 contradice la preferencia por evitar una mega fiesta."
+    },
+    "op-0175": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta de perreo toda la noche sin ninguna evidencia de orientación queer friendly."
+    },
+    "op-0176": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Noche drag con lenguaje inclusivo, DJs y performers; claramente queer, aunque mantiene un marcado formato de club."
+    },
+    "op-0177": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Conferencia LGBTIQ+ inclusiva y profesional, sin formato de mega fiesta; relevante aunque menos recreativa como salida."
+    },
+    "op-0178": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Encuentro de citas con juegos, pero no ofrece evidencia explícita de ser queer friendly."
+    },
+    "op-0179": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Se anuncia expresamente como mega festival y no aporta ninguna señal queer, contradiciendo el pedido."
+    },
+    "op-0180": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Festival bailable de alta energía sin evidencia de inclusión queer."
+    },
+    "op-0181": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 0/1. El lenguaje inclusivo aporta una señal débil de apertura, pero no demuestra que el espacio sea queer friendly. Además sigue siendo una fiesta de pista, aunque no hay evidencia suficiente para calificarla específicamente como mega fiesta."
+    },
+    "op-0182": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Fiesta explícitamente queer en un sótano de club; encaja bien, aunque sigue siendo una salida de baile intensa."
+    },
+    "op-0183": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Previa inclusiva de escala moderada, pero no hay evidencia directa de que sea queer friendly."
+    },
+    "op-0184": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta de solteros y solteras centrada en chapar, sin respaldo de inclusión queer y con alta energía."
+    },
+    "op-0185": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta intensa de dancehall, dembow y reggaetón sin evidencia queer friendly."
+    },
+    "op-0186": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Conferencia de negocios y turismo LGBTIQ+, inclusiva y ajena al formato de mega fiesta, aunque de perfil profesional."
+    },
+    "op-0187": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Festival de citas con cupos binarios 50% hombres y 50% mujeres, sin evidencia queer friendly."
+    },
+    "op-0188": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Shows de drag king, drag quing y criaturas, cena y comunidad diversa en Casa Brandon: salida queer clara y no masiva."
+    },
+    "op-0189": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. El karaoke aporta diversión, pero la propuesta está explícitamente centrada en un bar y en tragos 2x1, por lo que solo es una coincidencia parcial para adolescentes de 15 años."
+    },
+    "op-0190": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El evento restringe expresamente la participación a personas de 25 a 55 años."
+    },
+    "op-0191": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. La entrada es explícitamente para mayores de 18 años, incompatible con adolescentes de 15."
+    },
+    "op-0192": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Fiesta temática de Disney y One Direction diseñada para cantar y bailar: propuesta muy atractiva para adolescentes."
+    },
+    "op-0193": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 1/2. El concierto tributo seguido de DJ ofrece música y baile, un plan claramente divertido; queda en 2 porque el repertorio y el formato nocturno no muestran una adecuación especial para chicos de 15 años."
+    },
+    "op-0194": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Solo admite desde los 16 años acompañados por madre o padre; los adolescentes de 15 quedan excluidos."
+    },
+    "op-0195": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. La propuesta está expresamente dirigida a mayores de 30 años."
+    },
+    "op-0196": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. Karaoke y baile son afines al pedido, pero el eje explícito en el bar y los tragos impide considerarlo un buen plan para menores de 15 años."
+    },
+    "op-0197": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. Cantar en grupo puede entretener, aunque la temática de despecho y la promoción de tragos 2x1 orientan el evento a adultos; por eso la coincidencia es débil."
+    },
+    "op-0198": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. La música y el karaoke son pertinentes, pero el foco explícito en tragos dentro de un bar reduce la opción a una coincidencia parcial para adolescentes."
+    },
+    "op-0199": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Speed dating restringido explícitamente a personas de 25 a 34 años."
+    },
+    "op-0200": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Speed dating exclusivo para el rango de 45 a 54 años."
+    },
+    "op-0201": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. El karaoke podría resultar divertido, pero el ambiente de bar, el despecho y los tragos 2x1 son señales adultas incompatibles con una recomendación sólida para chicos de 15 años."
+    },
+    "op-0202": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. Karaoke y baile coinciden parcialmente con la diversión buscada, pero la centralidad de los tragos y del bar vuelve débil su adecuación para menores."
+    },
+    "op-0203": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El concierto indica de forma explícita que es únicamente para mayores de 18 años."
+    },
+    "op-0204": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. La actividad está restringida expresamente a personas de 55 a 70 años."
+    },
+    "op-0205": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Karaoke, torneo relámpago de fútbol, baile y juegos, además de una vibra familiar, ofrecen diversión variada para los tres."
+    },
+    "op-0206": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El recital es explícitamente para mayores de 18 años, por lo que los adolescentes de 15 no pueden asistir."
+    },
+    "op-0207": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Ofrece 59 milongas y clases abiertas para todos los niveles, con mención explícita de principiantes y sin exigir saber bailar."
+    },
+    "op-0208": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto de tango, milonga y folklore, no una milonga de baile para principiantes."
+    },
+    "op-0209": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto íntimo de música argentina y latinoamericana, sin milonga para bailar ni propuesta inicial."
+    },
+    "op-0210": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un show sentado de tangos y bandoneón, no una milonga orientada a principiantes."
+    },
+    "op-0211": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es una clase introductoria de tango sin experiencia ni pareja, pero no se presenta como milonga."
+    },
+    "op-0212": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El título solo indica un quinteto de tango y no aporta evidencia de una milonga ni de nivel principiante."
+    },
+    "op-0213": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un espectáculo de flamenco, género distinto del tango y la milonga solicitados."
+    },
+    "op-0214": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una peña folklórica con clase de baile, no una milonga de tango."
+    },
+    "op-0215": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un espectáculo de tango burlesque inspirado en la noche milonguera, no una milonga para aprender o bailar."
+    },
+    "op-0216": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una presentación de orquesta con tangos y milongas musicales, sin baile social ni enfoque principiante."
+    },
+    "op-0217": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un encuentro de intercambio de idiomas y no tiene relación con tango o milonga."
+    },
+    "op-0218": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. El título evidencia una propuesta para aprender tango, pero no que sea una milonga para principiantes."
+    },
+    "op-0219": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. Es una experiencia de citas con una clase genérica de baile para principiantes; no hay evidencia de tango ni de milonga, que constituyen el núcleo del pedido."
+    },
+    "op-0220": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un show en vivo, pero no hay evidencia de que el repertorio sea blues."
+    },
+    "op-0221": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Concierto en vivo dedicado al jazz de New Orleans cuyo repertorio incluye explícitamente swing y blues."
+    },
+    "op-0222": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un show en vivo de country y line dance, no de blues."
+    },
+    "op-0223": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El espectáculo está dedicado a la bossa nova y la música popular brasileña, no al blues."
+    },
+    "op-0224": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto de standards de jazz, bebop y hard bop sin evidencia de blues."
+    },
+    "op-0225": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Show en vivo explícitamente dedicado a clásicos del blues, interpretados por una cantante y banda."
+    },
+    "op-0226": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/0. Sí es música en vivo y pertenece a géneros cercanos, pero se anuncia como homenaje de jazz, soul y American Songbook, no como show de blues."
+    },
+    "op-0227": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Espectáculo en vivo centrado directamente en las raíces del blues y sus variantes afroamericanas."
+    },
+    "op-0228": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Anuncia un show en vivo, pero no identifica blues ni ningún repertorio relacionado."
+    },
+    "op-0229": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Anuncia un show en vivo, pero no aporta evidencia de que sea de blues."
+    },
+    "op-0230": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un show de versiones de los Beatles fusionadas con jazz, no un espectáculo de blues."
+    },
+    "op-0231": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Confirma una banda en vivo, pero no ofrece ninguna señal de blues."
+    },
+    "op-0232": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una actuación de rock en vivo, no un show de blues."
+    },
+    "op-0233": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto de canciones románticas de Baglietto y Vitale, sin vínculo directo con el blues."
+    },
+    "op-0234": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. El resumen y la descripción presentan explícitamente un concierto en vivo dedicado al blues, pero la inconsistencia con el título y los artistas impide otorgarle el 3 de coincidencia ideal."
+    },
+    "op-0235": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un taller artesanal de decoración de jabones en Almagro, no teatro independiente."
+    },
+    "op-0236": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una velada de emprendimiento y networking en Almagro, sin propuesta teatral."
+    },
+    "op-0237": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un festival nocturno de música en Almagro, no una función de teatro independiente."
+    },
+    "op-0238": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una charla tecnológica sobre transición climática en Almagro, no teatro."
+    },
+    "op-0239": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una noche extensa de música y baile en Almagro, sin componente teatral independiente."
+    },
+    "op-0240": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una visita guiada y degustación sobre la historia del mate, no un taller de cerámica."
+    },
+    "op-0241": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una clase de canto con karaoke, no un taller de cerámica."
+    },
+    "op-0242": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una degustación de vinos con música, sin actividad de cerámica."
+    },
+    "op-0243": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. La información solo describe una experiencia nocturna con código de vestimenta, no cerámica."
+    },
+    "op-0244": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. No aporta ninguna evidencia de taller ni de trabajo con cerámica."
+    },
+    "op-0245": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un festival de cortometrajes con exposición artística y música, no un taller de cerámica."
+    },
+    "op-0246": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un festival gastronómico de parrillas, sin actividad cerámica."
+    },
+    "op-0247": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una feria de libros con demostraciones de creación editorial artesanal, no cerámica."
+    },
+    "op-0248": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta con DJs y arte, sin taller de cerámica."
+    },
+    "op-0249": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una experiencia de yoga, meditación y arteterapia, no un taller cerámico."
+    },
+    "op-0250": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un espectáculo de comedia en vivo, no un taller de cerámica."
+    },
+    "op-0251": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. No contiene evidencia de cerámica ni de una actividad tipo taller."
+    },
+    "op-0252": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una comedia policial interactiva en un museo, no un taller de cerámica."
+    },
+    "op-0253": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un festival de retrogaming con torneos y exhibiciones, sin relación con cerámica."
+    },
+    "op-0254": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un festival en parques, no un museo ni una muestra."
+    },
+    "op-0255": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un evento musical, sin relación con museos o muestras."
+    },
+    "op-0256": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una kermesse social, no una visita museística ni exposición."
+    },
+    "op-0257": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta temática de casino, no un museo o muestra."
+    },
+    "op-0258": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto de música electrónica, ajeno a la búsqueda."
+    },
+    "op-0259": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/2. Es una visita cultural gratuita y dentro de la semana, pero se trata de un recorrido por un edificio histórico, no de un museo ni de una muestra propiamente dicha."
+    },
+    "op-0260": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. El título sugiere una actividad de cerámica y vino, sin evidencia de museo o exposición; la categoría artística por sí sola no satisface el pedido."
+    },
+    "op-0261": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto, no una propuesta de museo o exposición."
+    },
+    "op-0262": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un evento musical, sin evidencia de museo o muestra."
+    },
+    "op-0263": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una noche de juegos de mesa, no una muestra cultural."
+    },
+    "op-0264": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una salida para buscar música en vivo, no una visita a museo o muestra."
+    },
+    "op-0265": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto íntimo, no una exposición o actividad museística."
+    },
+    "op-0266": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es una propuesta vinculada al diseño, pero no hay evidencia directa de que sea una muestra."
+    },
+    "op-0267": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un evento musical, no un museo ni una muestra."
+    },
+    "op-0268": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. La información solo indica un evento social genérico, sin vínculo con museos o muestras."
+    },
+    "op-0269": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un show de stand up, no una visita cultural del tipo solicitado."
+    },
+    "op-0270": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta musical, no una feria gastronómica."
+    },
+    "op-0271": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es una feria gastronómica dominical explícita, con 35 parrillas, food trucks, bebidas y postres."
+    },
+    "op-0272": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una feria de libros, no gastronómica."
+    },
+    "op-0273": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta bailable, sin componente de feria gastronómica."
+    },
+    "op-0274": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una celebración temática con música y proyección, no una feria de comida."
+    },
+    "op-0275": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. La propuesta incluye hamburguesas libres, pero es karaoke y fiesta, no una feria gastronómica."
+    },
+    "op-0276": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta de música electrónica, no una feria gastronómica."
+    },
+    "op-0277": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una noche de club, sin evidencia de feria o propuesta gastronómica."
+    },
+    "op-0278": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una noche con DJs, no una feria gastronómica."
+    },
+    "op-0279": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 1/2. Se realiza el domingo y reúne varias bodegas, degustación y tapeo, por lo que funciona claramente como propuesta gastronómica tipo feria; no llega a 3 porque se presenta como una degustación, no formalmente como feria."
+    },
+    "op-0280": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta para jóvenes, sin componente de feria gastronómica."
+    },
+    "op-0281": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto y fiesta musical, no una feria de comida."
+    },
+    "op-0282": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Hay tres bandas en vivo, pero no se acredita que hagan rock indie."
+    },
+    "op-0283": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un recital de clásicos de pop y rock, sin rasgos de indie."
+    },
+    "op-0284": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Ofrece rock en vivo, pero no hay evidencia de indie y se presenta como festival."
+    },
+    "op-0285": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un homenaje de rock nacional a Charly García, no un recital de rock indie."
+    },
+    "op-0286": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es una fiesta de glam y hard rock ochentero, no un recital de indie rock."
+    },
+    "op-0287": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es una jam de clásicos del rock argentino, sin componente indie."
+    },
+    "op-0288": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un set acústico indie con soul y pop, pero no hay evidencia de rock indie."
+    },
+    "op-0289": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Los shows en vivo de rock alternativo y grunge son una coincidencia cercana y relevante con indie rock."
+    },
+    "op-0290": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Es un recital de bandas actuales con rock instrumental y psicodelia, cercano a la escena indie rock."
+    },
+    "op-0291": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Es un show explícitamente de indie porteño y escena independiente, aunque no se confirma el componente rock."
+    },
+    "op-0292": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Es un concierto de una banda indie y alternativa presentando disco, una buena coincidencia con la búsqueda."
+    },
+    "op-0293": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Recital explícito de rock alternativo e indie, con shoegaze y post-punk, dentro de la semana."
+    },
+    "op-0294": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un recital tributo de rock clásico, sin relación directa con el indie."
+    },
+    "op-0295": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un desfile y fiesta de géneros variados, no un recital de rock indie."
+    },
+    "op-0296": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Es un concierto en vivo categorizado como indie, aunque el rock no está explicitado."
+    },
+    "op-0297": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es un concierto explícitamente de rock e indie, con artistas actuales y formato íntimo."
+    },
+    "op-0298": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es una presentación de disco de rock, pero no hay evidencia directa de indie."
+    },
+    "op-0299": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es stand up explícito de humor negro a la gorra, con precio sugerido de $5.000."
+    },
+    "op-0300": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta de trap y reggaetón, no stand up."
+    },
+    "op-0301": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es un show explícito de stand up y cuesta $5.000, claramente menos de $15.000."
+    },
+    "op-0302": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es stand up explícito y figura con entrada gratuita."
+    },
+    "op-0303": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es un show de stand up grabado en vivo por $10.000."
+    },
+    "op-0304": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es stand up irreverente a la gorra, con precio sugerido de $5.000."
+    },
+    "op-0305": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Solo se describe como show en vivo y no hay evidencia de que sea stand up."
+    },
+    "op-0306": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es stand up explícito y figura con entrada gratuita."
+    },
+    "op-0307": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es un show de stand up claramente identificado y cuesta $6.000."
+    },
+    "op-0308": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es una noche de stand up explícita con entrada gratuita."
+    },
+    "op-0309": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Es stand up de comedia picante a la gorra, con precio sugerido de $5.000."
+    },
+    "op-0310": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un concierto teatral sobre Charly García, no una función de cine."
+    },
+    "op-0311": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un evento social genérico y no hay evidencia de que sea cine."
+    },
+    "op-0312": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un espectáculo de lucha libre, no una función cinematográfica."
+    },
+    "op-0313": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Evento en Palermo mañana por $8.700, claramente por debajo de $20.000."
+    },
+    "op-0314": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Meetup en Palermo mañana y gratuito; cumple plenamente fecha, zona y presupuesto."
+    },
+    "op-0315": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Evento en Palermo mañana por $8.700, dentro del presupuesto solicitado."
+    },
+    "op-0316": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es gratis y en Recoleta, pero la información genérica no demuestra un contenido cultural."
+    },
+    "op-0317": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto gratuito de salsa y orquesta en Recoleta; plan cultural directo."
+    },
+    "op-0318": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. Free festival with music in Recoleta is a clear cultural-plan match, but the generic listing lacks enough program detail to make it an ideal recommendation."
+    },
+    "op-0319": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. A free concert in Recoleta directly satisfies the core request, though the absence of performer, genre, or program details keeps it below excellent."
+    },
+    "op-0320": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Actividad artística de cerámica, gratuita y en Recoleta; coincidencia cultural muy directa."
+    },
+    "op-0321": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. This free Recoleta language exchange has genuine intercultural value, but its primary format is a drinks-and-networking social meetup rather than a dedicated cultural program."
+    },
+    "op-0322": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. Free language practice and international exchange in Recoleta make it relevant, while the strong socializing focus prevents an ideal cultural-plan grade."
+    },
+    "op-0323": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. The free electronic-music event in Recoleta clearly qualifies as a cultural outing, but its generic club-oriented listing is not strong enough for an excellent recommendation."
+    },
+    "op-0324": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Salsa con música en vivo y baile, gratis en Recoleta; excelente plan cultural."
+    },
+    "op-0325": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Festival gratuito en Recoleta, pero sin información concreta sobre su propuesta cultural."
+    },
+    "op-0326": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto gratuito de samba en Recoleta; plan musical y cultural plenamente relevante."
+    },
+    "op-0327": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The warm dinner-lounge setting helps, but dancing and meeting new people make it neither quiet nor clearly couple-focused."
+    },
+    "op-0328": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. It is relaxed and couple-friendly, but a dynamic stand-up show with guaranteed laughter is not a quiet date-night option."
+    },
+    "op-0329": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. This high-interaction speed-dating meetup is for finding dates, not sharing a warm, quiet night with a date."
+    },
+    "op-0330": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. The high-interaction speed-dating format is aimed at solo attendees and conflicts with a quiet date night."
+    },
+    "op-0331": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. Intimate seated jazz and cocktails make this a strong date-night option, but a medium-energy live concert is not expressly quiet, so it falls short of the full three-part fit."
+    },
+    "op-0332": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. This vibrant, high-interaction speed-dating event is intended for solo networking, not a quiet night with a date."
+    },
+    "op-0333": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. The intimate acoustic concert format suits a calm date night, although warmth and quietness are only indirectly supported."
+    },
+    "op-0334": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Ceramics, wine, and a relaxed couple-friendly atmosphere make a good creative date, but the high social interaction may not be quiet."
+    },
+    "op-0335": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. This intimate, elegant couples experience with tapas and vermouth is an excellent date concept, though live flamenco may not be quiet."
+    },
+    "op-0336": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Low-energy, intimate ceramics with wine, food, and an explicitly cozy atmosphere is an ideal warm, quiet date."
+    },
+    "op-0337": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. The low-energy seated concert is explicitly intimate, close, emotive, and hosted in a cozy space—excellent for a quiet date."
+    },
+    "op-0338": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. It welcomes couples and feels relaxed, but the dynamic comedy-party format is not a quiet date-night experience."
+    },
+    "op-0339": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The show is close and couple-friendly, but energetic stand-up and laughter do not fit the requested quiet mood."
+    },
+    "op-0340": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. It is intimate, relaxed, and cozy, but it is an afternoon mystical snack meetup rather than a date-night event."
+    },
+    "op-0341": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A high-energy ladies' party with a DJ, happy hour, and heavy social interaction directly misses the quiet date-night mood."
+    },
+    "op-0342": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Low lights, wine, seated piano and violin, low energy, and an explicitly intimate couples setting make this an ideal match."
+    },
+    "op-0343": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. The event explicitly promises a warm, intimate, low-energy seated concert close to the musicians—excellent for date night."
+    },
+    "op-0344": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A hidden-bar tour is nighttime entertainment, but there is no evidence that it is warm, quiet, or designed for couples."
+    },
+    "op-0345": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Trivia can work as a casual date activity, but the listing supplies no evidence of a warm or quiet atmosphere."
+    },
+    "op-0346": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Board games are a plausible low-pressure date, but no supplied details establish a warm, quiet date-night setting."
+    },
+    "op-0347": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Low-energy, intimate, seated cool jazz in an elegant atmosphere is an excellent quiet date-night recommendation."
+    },
+    "op-0348": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/2. It strongly supports lively dancing, but five hard electronic sets and nonstop club dancing provide no evidence for the specifically requested smaller, unpacked atmosphere."
+    },
+    "op-0349": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. A guided beginner dance class in a relaxed bar provides lively dancing without the feel of a huge conventional club."
+    },
+    "op-0350": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. A relaxed yet festive house night on a bar terrace is ideal for lively dancing outside a huge packed indoor club."
+    },
+    "op-0351": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. The secret house-party format offers energetic dancing outside a conventional club, though two floors and ten-plus DJs could still feel busy."
+    },
+    "op-0352": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. It is a high-energy electronic party, but dancing is not directly supported and there is no evidence about crowd or venue scale."
+    },
+    "op-0353": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. It clearly offers energetic indie and electronic dancing, but the listing gives no reassurance that the venue is small or uncrowded."
+    },
+    "op-0354": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Disco, house, pop, and nonstop dancing strongly fit the lively goal, though crowd size and spaciousness are unspecified."
+    },
+    "op-0355": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Three underground electronic acts make this a vibrant dance option, but there is no direct evidence that it avoids a packed-club atmosphere."
+    },
+    "op-0356": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. An intimate three-hour free-dance session is energetic and dance-centered while clearly avoiding the huge social-club format."
+    },
+    "op-0357": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. A tour of hidden bars offers lively nightlife outside one huge club and eventually includes dancing, but dancing is only one portion of the plan rather than its central activity."
+    },
+    "op-0358": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. A swing class, social dance, and live band create a lively dedicated dance night rather than a massive nightclub experience."
+    },
+    "op-0359": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Live musicians, dancers, and a DJ provide lively all-night dancing, but the venue size and likely crowd density are not stated."
+    },
+    "op-0360": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 2/1. The energetic standing concert is dance-friendly, but the Niceto Club format gives no support for the key requirement that it not feel like a large packed club."
+    },
+    "op-0361": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The two-floor, 1–7 a.m. club party is excellent for nonstop dancing but leans toward the conventional large-club experience being avoided."
+    },
+    "op-0362": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. This relaxed, low-energy afternoon of animation and art presentations is culturally engaging, though geared more toward artist networking."
+    },
+    "op-0363": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The family Big Band show is cultural, but it starts around 6 p.m. locally and emphasizes high-energy singing and dancing rather than relaxation."
+    },
+    "op-0364": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 1/2. At 17:00 local time, this is a low-energy, relaxed late-afternoon café activity with clear intercultural content; its networking-heavy format keeps it from being an ideal parents outing."
+    },
+    "op-0365": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. Although relaxed and artistic, it starts at 20:30 local time, directly contradicting the requested afternoon composition."
+    },
+    "op-0366": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. Its 19:00 local start makes it an evening cocktails-and-networking mixer, not the requested cultural afternoon with parents."
+    },
+    "op-0367": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. The standing language-social begins around 8 p.m. locally, so it directly misses the relaxed afternoon request."
+    },
+    "op-0368": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. A themed lunch, guided Art Deco exhibition, architecture show, and elegant nostalgic atmosphere make an ideal cultural outing with parents."
+    },
+    "op-0369": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The timing works and it has ceremonial elements, but ecstatic dancing and medium energy are a weak fit for a relaxed parental cultural afternoon."
+    },
+    "op-0370": {
+      "grade": 1,
+      "rationale": "Adjudicated after independent grades 1/2. The 16:00 intimate merienda is relaxed and has culturally flavored divination activities, but it is only a weak match for a broadly cultural outing with parents."
+    },
+    "op-0371": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The family jazz show is culturally relevant, but its 6 p.m. local start and participatory dancing make it less like a relaxed afternoon."
+    },
+    "op-0372": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. The intimate concert is culturally relevant and relaxed, but its 20:00 local start directly misses the required afternoon."
+    },
+    "op-0373": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Coffee and deep conversation suggest a low-pressure late afternoon, but no supplied evidence establishes a substantive cultural activity."
+    },
+    "op-0374": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The late-afternoon international social has some cultural relevance, but it is primarily a friend-making meetup rather than a parent-oriented outing."
+    },
+    "op-0375": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. A low-energy, intimate afternoon visit to an artist's studio exploring art and ecology is an ideal relaxed cultural plan with parents."
+    },
+    "op-0376": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. This high-energy three-floor late-night party contradicts the relaxed cultural afternoon request."
+    },
+    "op-0377": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The intimate relaxed tango lesson is culturally strong and parent-compatible, but it begins around 7 p.m. locally rather than in the afternoon."
+    },
+    "op-0378": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. An intimate, seated, low-energy Japanese tea ceremony at 2 p.m. is an ideal immersive cultural afternoon with parents."
+    },
+    "op-0379": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. This relaxed 3 p.m. English immersion includes art, music, travel, and coffee, though its high-interaction social format is less restful."
+    },
+    "op-0380": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The daytime family festival includes cultural entertainment, but its child-focused, high-energy shows and games are not a relaxed parents outing."
+    },
+    "op-0381": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. The wellness retreat is calm, but it starts around 9 a.m. locally and is not primarily a cultural afternoon activity."
+    },
+    "op-0382": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Live concert this week, but no evidence that the music is blues."
+    },
+    "op-0383": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A live music event this week, though its genre is unspecified and blues is not established."
+    },
+    "op-0384": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Live jazz is related but does not satisfy the specific request for blues."
+    },
+    "op-0385": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Karaoke is not a live blues show."
+    },
+    "op-0386": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Features several live bands this week, but none is identified as blues."
+    },
+    "op-0387": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A live New Orleans-style jazz and swing party, adjacent to blues but not presented as blues."
+    },
+    "op-0388": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Live bands and jam sessions fit the show format, but there is no blues evidence."
+    },
+    "op-0389": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A multi-band live concert this week with no stated blues genre."
+    },
+    "op-0390": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Explicitly an alternative-music concert rather than a blues show."
+    },
+    "op-0391": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A live contemporary-jazz concert, not a stated blues performance."
+    },
+    "op-0392": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. The lineup is explicitly alternative rock and grunge, not blues."
+    },
+    "op-0393": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Live swing and jazz are blues-adjacent, but the advertised repertoire is not blues."
+    },
+    "op-0394": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A singing, dancing, and perreo night with no blues content."
+    },
+    "op-0395": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A rock/electronic live-music party rather than a blues show."
+    },
+    "op-0396": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Live funk, R&B, and soul are somewhat adjacent, but blues is not part of the stated program."
+    },
+    "op-0397": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. It is live music this week, but the generic listing provides no evidence of blues."
+    },
+    "op-0398": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Exact match: a live show explicitly centered on blues classics, with additional soul and jazz."
+    },
+    "op-0399": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A live concert within the period, but its genre is unspecified and not demonstrably blues."
+    },
+    "op-0400": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A live soul, funk, and acid-jazz show, related in style but not advertised as blues."
+    },
+    "op-0401": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A live concert this week with no supplied evidence that either act performs blues."
+    },
+    "op-0402": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A free alternative-music concert, not an art workshop."
+    },
+    "op-0403": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Free theater is an arts event, but this is a performance rather than a workshop."
+    },
+    "op-0404": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A free music event with no workshop or art-instruction component."
+    },
+    "op-0405": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. A free weekend workshop-style wellness retreat that explicitly includes integrative art therapy, though art is only one component."
+    },
+    "op-0406": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A free music event, not an art workshop."
+    },
+    "op-0407": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A generic free social event with no evidence of art instruction or workshop activity."
+    },
+    "op-0408": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A free club party, not an art workshop."
+    },
+    "op-0409": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. A free weekend participatory class/workshop teaching tango, a performing art."
+    },
+    "op-0410": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A free house and techno party, not a workshop."
+    },
+    "op-0411": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. A free weekend singing class with karaoke offers direct instruction in a performing art."
+    },
+    "op-0412": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A free electronic-music event with no workshop component."
+    },
+    "op-0413": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A generic free social event with no evidence of either art instruction or a workshop."
+    },
+    "op-0414": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A Palermo music concert, not comedy."
+    },
+    "op-0415": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A show in Palermo, but nothing identifies the dinner entertainment as comedy."
+    },
+    "op-0416": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A Palermo dinner show with no evidence that the show is comedic."
+    },
+    "op-0417": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A Palermo language-exchange meetup, not a comedy show."
+    },
+    "op-0418": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. The Palermo location and show format fit partially, but comedy is unsupported."
+    },
+    "op-0419": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A dinner show in Palermo, though no supplied detail establishes comedy."
+    },
+    "op-0420": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Trivia in Palermo is a social game event, not a comedy show."
+    },
+    "op-0421": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. A screening of The Rocky Horror Picture Show has comedic entertainment value, but it is not presented as a live comedy show."
+    },
+    "op-0422": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A live music concert in Palermo, not comedy."
+    },
+    "op-0423": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A Palermo concert with no comedy component."
+    },
+    "op-0424": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Exact match: an explicitly advertised live stand-up show in Palermo."
+    },
+    "op-0425": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A bands-and-DJ music night in Palermo, not a comedy show."
+    },
+    "op-0426": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. An explicitly comedic interactive theater experience in Palermo and an excellent alternative to stand-up."
+    },
+    "op-0427": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Direct match: an interactive police comedy in Palermo with clear humor and audience participation."
+    },
+    "op-0428": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. A nighttime bar-and-nightclub crawl is directly unsuitable as a daytime family plan for a 12-year-old."
+    },
+    "op-0429": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. The stand-up begins at 20:30 local time, so it is not a daytime plan, and family suitability is unsupported."
+    },
+    "op-0430": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. Despite occurring tomorrow at 16:00 local time, this high-energy rooftop DJ party centered on cocktails and friends is not supported as family-friendly for a 12-year-old."
+    },
+    "op-0431": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. It is daytime, but an infertility support meetup for prospective parents is not an appropriate family activity for a 12-year-old."
+    },
+    "op-0432": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 1/0. It begins at 20:00 local time, contradicting the daytime requirement, and the listing provides no evidence that the class-party format accepts 12-year-olds."
+    },
+    "op-0433": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto de solo 12 personas, íntimo, sentado y de baja energía, con comida, bebida y brindis: excelente para una cita tranquila."
+    },
+    "op-0434": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 1/0. Contradice el requisito central: figura como de alta energía, orientado al matcheo grupal y puede terminar en baile; no es un plan cozy para una cita sin ambiente de fiesta."
+    },
+    "op-0435": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Acústico minimalista e íntimo, enfocado en emoción y conexión sin sobreestimulación; muy buen ambiente para una cita."
+    },
+    "op-0436": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Festival de alta energía con dinámicas y baile hasta las 4 a. m.; contradice claramente «no loud party»."
+    },
+    "op-0437": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Show íntimo, emotivo, sentado y de baja energía, con piano, capacidad limitada, comida y bebidas."
+    },
+    "op-0438": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Noche cálida, íntima, sentada y de baja energía, con capacidad limitada y música cerca del público."
+    },
+    "op-0439": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta electrónica inmersiva de alta energía y formato de pie; contradice el pedido de evitar una fiesta ruidosa."
+    },
+    "op-0440": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Está identificado como party y no aporta evidencia de intimidad, calma o ambiente cozy para una cita."
+    },
+    "op-0441": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. El ambiente relajado permite conversar, pero es un meetup grupal de práctica de inglés con alta interacción, no especialmente íntimo ni romántico."
+    },
+    "op-0442": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto acogedor, íntimo, emotivo, sentado y de baja energía, con piano, comida y bebidas."
+    },
+    "op-0443": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Un tour de bares puede servir como cita, pero el título solo no demuestra un ambiente cozy ni tranquilo."
+    },
+    "op-0444": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Karaoke de alta energía para cantar a todo pulmón y beber; es lo opuesto a una cita tranquila sin ruido."
+    },
+    "op-0445": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es speed dating para conocer nuevas personas, no un plan cozy para disfrutar con una cita existente."
+    },
+    "op-0446": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una dinámica de speed dating de alta interacción, no una salida íntima y tranquila en pareja."
+    },
+    "op-0447": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Evento de citas rápidas y grupales para conocer gente; no responde al plan cozy con una cita."
+    },
+    "op-0448": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Velada explícitamente íntima y romántica, con rock suave y formato acústico; encaja de forma ideal sin ser una fiesta ruidosa."
+    },
+    "op-0449": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta house de alta energía con DJs y baile; contradice directamente «no loud party»."
+    },
+    "op-0450": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Luces bajas, ambiente casi secreto, piano, violín y vino, con baja energía y público de parejas: cita cozy ideal."
+    },
+    "op-0451": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Plan gratuito en Palermo durante el fin de semana indicado; cumple directamente todos los filtros explícitos."
+    },
+    "op-0452": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Evento gratuito en Palermo el domingo de este fin de semana; coincide plenamente con fecha, costo y zona."
+    },
+    "op-0453": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Karaoke gratuito en Palermo el domingo; es un plan concreto que satisface todos los requisitos explícitos."
+    },
+    "op-0454": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Plan musical gratuito en Palermo el domingo de este fin de semana; ajuste directo a la búsqueda."
+    },
+    "op-0455": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto gratuito en Palermo durante el domingo del fin de semana consultado; cumple los filtros centrales."
+    },
+    "op-0456": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Tres bandas en vivo, entrada gratuita, ubicación en Palermo y fecha del domingo actual: coincidencia completa."
+    },
+    "op-0457": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Fiesta gratuita en Palermo el domingo y víspera de feriado; satisface directamente el pedido."
+    },
+    "op-0458": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 1/0. Aunque los campos estructurados indican gratis, Palermo y este domingo, el título afirma explícitamente «16 de julio», en conflicto directo con la fecha actual de agosto; esa contradicción temporal impide considerarlo un plan válido."
+    },
+    "op-0459": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Actividad comunitaria gratuita en Palermo el domingo por la mañana; es un plan válido y plenamente alineado con los filtros."
+    },
+    "op-0460": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Combina danza, clases, networking y charlas, por lo que ofrece tanto baile como oportunidades claras para conversar, aunque en formato de festival intenso."
+    },
+    "op-0461": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. La clase permite bailar en un entorno íntimo, relajado y de baja energía, por lo que encaja bien; queda en 2 porque conversar no es una actividad explícita ni central durante una clase guiada."
+    },
+    "op-0462": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Favorece la expresión y la conversación grupal, pero no ofrece baile como actividad."
+    },
+    "op-0463": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una gala para observar ballet en un entorno sentado y de baja interacción, no para bailar ni conversar."
+    },
+    "op-0464": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Biodanza íntima con alta interacción, además de comida y bebidas; permite socializar, aunque la conexión propuesta es principalmente corporal y no verbal."
+    },
+    "op-0465": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. El recorrido empieza con cócteles y mezcla social para conversar y termina bailando, cubriendo idealmente ambas partes del pedido."
+    },
+    "op-0466": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Meetup bilingüe centrado en conocer y hablar con gente, con juegos, bebidas, música y baile; excelente combinación."
+    },
+    "op-0467": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Ofrece mucho baile, pero la fiesta de alta energía con dos pistas hasta el amanecer no resulta adecuada para conversar."
+    },
+    "op-0468": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Primero propone juegos y dinámicas, luego cena y finalmente baile opcional, creando espacios claros tanto para hablar como para bailar."
+    },
+    "op-0469": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una proyección de la película Dirty Dancing con comida y bebida, no una actividad donde el público baile."
+    },
+    "op-0470": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Incluye rompehielos para conversar, consumiciones y una clase de baile principiante en ambiente relajado; ajuste directo e ideal."
+    },
+    "op-0471": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es excelente para conversar y conocer gente, pero no incluye baile."
+    },
+    "op-0472": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. La descripción promete explícitamente conversar y bailar en un ambiente cálido y distendido; coincide perfectamente."
+    },
+    "op-0473": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es un encuentro de reflexión y charla, sin ningún componente de baile."
+    },
+    "op-0474": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. La clase, el baile social y la banda en vivo cubren muy bien el baile, pero el ambiente festivo de alta energía no demuestra que se pueda conversar cómodamente."
+    },
+    "op-0475": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es jazz en vivo e íntimo, pero figura con alta energía y no hay evidencia visible de que sea barato; solo cumple parcialmente."
+    },
+    "op-0476": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. Es jazz en vivo y ofrece un ambiente íntimo por $13.000, cubriendo claramente el núcleo; no llega a ideal porque la energía es media y el precio no está demostrado como especialmente barato."
+    },
+    "op-0477": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Jazz en vivo y gratuito, por lo que cumple muy bien lo barato; falta evidencia directa de un ambiente tranqui."
+    },
+    "op-0478": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Jazz en vivo por $10.000, con promo 2x1, entorno relajado y sentado; excelente coincidencia."
+    },
+    "op-0479": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. El precio es accesible y hay jazz en vivo, pero es una fiesta de alta energía con baile e interacción intensa, no tranqui."
+    },
+    "op-0480": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Cool jazz en vivo por $10.000, íntimo, sentado y de baja energía; encaja de manera ideal."
+    },
+    "op-0481": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. Aunque es íntimo, tranquilo y relativamente económico, está identificado explícitamente como folk; al faltar el género principal solicitado, no es una recomendación de live jazz."
+    },
+    "op-0482": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El show es de disco, soul y funk bailable y enérgico, no jazz tranquilo."
+    },
+    "op-0483": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/1. El repertorio es electrónico adaptado a formato acústico, sin evidencia de jazz; el clima íntimo y el precio no compensensan la contradicción con el género central pedido."
+    },
+    "op-0484": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Jazz en vivo por $11.000 en formato sentado, con cena y bebidas; buen ajuste, aunque el clima se describe como lúdico más que particularmente tranquilo."
+    },
+    "op-0485": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Es gratuito, íntimo y de baja energía, pero no hay evidencia de que el repertorio sea jazz."
+    },
+    "op-0486": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Jazz en vivo por $11.000, pero la propuesta de noneto figura con alta energía e inmersión sonora, alejándose de «tranqui»."
+    },
+    "op-0487": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Jazz en vivo por $10.000 y energía media; cumple jazz y precio, aunque no acredita claramente un ambiente relajado."
+    },
+    "op-0488": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Jazz en vivo gratuito, una coincidencia fuerte para «barato»; no se aporta evidencia suficiente sobre el clima tranquilo."
+    },
+    "op-0489": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Cuesta $10.000 y es jazz en vivo sentado, pero una big band potente y de alta energía contradice la preferencia tranqui."
+    },
+    "op-0490": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Jazz vocal en vivo por $10.000, íntimo, sentado y explícitamente cool, con promo de tragos; excelente ajuste."
+    },
+    "op-0491": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Concierto de jazz de piano y voz por $11.000, íntimo y sentado; es buen plan, aunque su tono apasionado y energía media no son plenamente tranqui."
+    },
+    "op-0492": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Recorrido cultural de museo, en interior y de baja energía: combina arte y un ritmo tranquilo."
+    },
+    "op-0493": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Clase de tango íntima, relajada y de baja energía; es un plan artístico y chill."
+    },
+    "op-0494": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. La merienda es íntima y relajada, pero no presenta un componente artístico claro."
+    },
+    "op-0495": {
+      "grade": 3,
+      "rationale": "Adjudicated after independent grades 3/2. Es un plan artístico dominical especialmente chill: concierto sentado, íntimo y de baja energía. La música es una forma de arte y no hay ningún desajuste relevante con la consulta amplia."
+    },
+    "op-0496": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 3/2. Es un plan dominical relajado que incluye arteterapia de manera explícita, así que satisface bien la búsqueda; queda en 2 porque el arte es solo un componente de una experiencia wellness centrada también en yoga y meditación."
+    },
+    "op-0497": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Tiene música en vivo, pero su energía alta contradice la preferencia por un plan chill."
+    },
+    "op-0498": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Show relajado de música y humor, con una propuesta artística fresca y accesible."
+    },
+    "op-0499": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. La comedia en vivo aporta arte y se describe como cercana y relajada, aunque de energía media."
+    },
+    "op-0500": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Fusiona teatro, juego y un museo de arte, pero la interacción alta lo hace menos chill."
+    },
+    "op-0501": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Concierto de guitarras íntimo, sentado y de baja energía; encaja plenamente con arte y calma."
+    },
+    "op-0502": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta de energía e interacción altas, sin una propuesta artística tranquila."
+    },
+    "op-0503": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta electrónica nocturna, energética y centrada en baile; contradice el plan chill."
+    },
+    "op-0504": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. After de psytrance con energía alta, baile y tragos; no es una salida tranquila con arte."
+    },
+    "op-0505": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. Menciona DJs y una fusión con arte, pero la noche vibrante no ofrece evidencia de clima chill."
+    },
+    "op-0506": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta gótica de alta energía con dos pistas de baile; contradice claramente lo chill."
+    },
+    "op-0507": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Está categorizado como música y no hay evidencia de que sea un tributo, aunque faltan detalles."
+    },
+    "op-0508": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es explícitamente una noche de tributos a Los Redondos e Intoxicados."
+    },
+    "op-0509": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Se presenta explícitamente como homenaje a Aretha Franklin, contrario a la exclusión."
+    },
+    "op-0510": {
+      "grade": 3,
+      "rationale": "Adjudicated after independent grades 2/3. Es una experiencia explícitamente musical y no hay ningún indicio de homenaje o tributo; cumple de forma directa y completa."
+    },
+    "op-0511": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Propuesta musical propia de Choosey, con mezcla de samples y referencias, sin carácter de tributo."
+    },
+    "op-0512": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es explícitamente un homenaje a Natalie Cole y Nat King Cole."
+    },
+    "op-0513": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El título y la descripción lo identifican expresamente como tributo a Elvis."
+    },
+    "op-0514": {
+      "grade": 2,
+      "rationale": "Independent passes agreed. Show de variedades con performance y música en vivo ligado a un disco propio, no a un tributo."
+    },
+    "op-0515": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es explícitamente un tributo a Marco Antonio Solís."
+    },
+    "op-0516": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es un homenaje a Charly García interpretado por otra cantante y ensamble."
+    },
+    "op-0517": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Anuncia de forma explícita un tributo a Marco Antonio Solís."
+    },
+    "op-0518": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una noche de bandas tributo a artistas de rock de los 90 y 2000."
+    },
+    "op-0519": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 0/2. Presenta en 2026 un show basado en Arjona y Camilo Sesto —fallecido en 2019—, por lo que la composición evidencia un espectáculo de homenaje o imitación y contradice el requisito de que no sea tributo."
+    },
+    "op-0520": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El título lo define inequívocamente como tributo a Camilo Sesto."
+    },
+    "op-0521": {
+      "grade": 0,
+      "rationale": "Adjudicated after independent grades 1/0. Solo consta una noche de DJs en un local; no hay evidencia visible de un espacio o actividad al aire libre, que es el requisito central."
+    },
+    "op-0522": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Experiencia de música electrónica explícitamente al aire libre en una azotea."
+    },
+    "op-0523": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. No aporta ninguna evidencia de actividad o espacio al aire libre."
+    },
+    "op-0524": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Plan en plazas y parques de Costanera Sur, claramente orientado al aire libre."
+    },
+    "op-0525": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El concierto está expresamente marcado como realizado en interior."
+    },
+    "op-0526": {
+      "grade": 1,
+      "rationale": "Independent passes agreed. El nombre sugiere playa, pero no hay evidencia suficiente de que el evento sea al aire libre."
+    },
+    "op-0527": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Fiesta de house explícitamente al aire libre en una terraza, bajo las estrellas."
+    },
+    "op-0528": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Un paseo social en bicicleta es un plan directamente orientado al aire libre."
+    },
+    "op-0529": {
+      "grade": 2,
+      "rationale": "Adjudicated after independent grades 2/3. Tiene marcación explícita outdoor e incluye recorrer la ciudad y la posibilidad de ir a un parque, así que satisface el núcleo; no llega a ideal porque el destino al aire libre es contingente y también podría terminar en un sitio de música en directo."
+    },
+    "op-0530": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. No ofrece evidencia de que el festival se desarrolle al aire libre."
+    },
+    "op-0531": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Torneo de fútbol y actividades señaladas explícitamente como al aire libre."
+    },
+    "op-0532": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Celebración familiar explícitamente al aire libre en la Plaza de las Naciones Unidas."
+    },
+    "op-0533": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es explícitamente una fiesta y cierra con fiesta funky disco."
+    },
+    "op-0534": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta retro con pistas de baile, excluida de manera directa por la consulta."
+    },
+    "op-0535": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. El evento se denomina explícitamente Fiesta REGINA."
+    },
+    "op-0536": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta nostálgica centrada en cantar y bailar en la pista."
+    },
+    "op-0537": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es explícitamente una fiesta de trap y reggaetón."
+    },
+    "op-0538": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta dedicada por completo al reggaetón old school y al perreo."
+    },
+    "op-0539": {
+      "grade": 3,
+      "rationale": "Independent passes agreed. Festival musical de trap sin evidencia de formato fiesta ni de reggaetón; cumple ambas exclusiones."
+    },
+    "op-0540": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta urbana que incluye explícitamente reggaetón."
+    },
+    "op-0541": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Aunque comienza con música en vivo, continúa explícitamente con una fiesta de DJ."
+    },
+    "op-0542": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es una fiesta electrónica nocturna diseñada para bailar."
+    },
+    "op-0543": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Es explícitamente una fiesta con DJ sets y baile."
+    },
+    "op-0544": {
+      "grade": 0,
+      "rationale": "Independent passes agreed. Fiesta centrada en dancehall, dembow y reggaetón; contradice ambas exclusiones."
+    }
+  }
+}

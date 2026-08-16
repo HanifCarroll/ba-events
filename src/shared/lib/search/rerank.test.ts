@@ -112,35 +112,38 @@ describe('buildRerankDocument', () => {
 // ============================================================================
 
 describe('rerankEvents', () => {
-  it('fuses reranker and base rank by the weighted formula', async () => {
+  it('orders by pure Voyage rank, not the legacy weighted fusion', async () => {
     vi.stubEnv('VOYAGE_API_KEY', 'test-key')
     const fetchMock = vi.fn().mockResolvedValue(
       voyageResponse([
-        { index: 2, relevance_score: 0.9 },
-        { index: 0, relevance_score: 0.5 },
-        { index: 1, relevance_score: 0.2 },
+        { index: 3, relevance_score: 0.95 },
+        { index: 0, relevance_score: 0.6 },
+        { index: 1, relevance_score: 0.4 },
+        { index: 2, relevance_score: 0.2 },
       ])
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const candidates = [mkEvent('a'), mkEvent('b'), mkEvent('c')]
+    const candidates = [mkEvent('a'), mkEvent('b'), mkEvent('c'), mkEvent('d')]
     const { ordered, meta } = await rerankEvents(candidates, {
       semanticQuery: 'jazz',
       prefer: {},
       avoid: [],
     })
 
-    // base ranks: a=1, b=2, c=3. reranker ranks: c=1, a=2, b=3.
-    //   a: 2/62 + 1/61 ≈ 0.0486515
-    //   b: 2/63 + 1/62 ≈ 0.0478750
-    //   c: 2/61 + 1/63 ≈ 0.0486599  → c beats a despite base rank 3.
-    expect(ordered.map((e) => e.id)).toEqual(['c', 'a', 'b'])
+    // base ranks: a=1, b=2, c=3, d=4. Voyage returns input indexes [3,0,1,2],
+    // so reranker ranks: d=1, a=2, b=3, c=4 — pure Voyage puts d first.
+    // The legacy 2/(60+rerankerRank)+1/(60+baseRank) fusion would instead put
+    // a first (0.0487 vs d's 0.0484), so this test fails against that formula.
+    expect(ordered.map((e) => e.id)).toEqual(['d', 'a', 'b', 'c'])
     expect(meta.status).toBe('applied')
-    expect(meta.ranks?.get('c')?.finalRank).toBe(1)
+    // d is the reranker's #1 despite being the worst base rank.
+    expect(meta.ranks?.get('d')?.baseRank).toBe(4)
+    expect(meta.ranks?.get('d')?.rerankerRank).toBe(1)
+    expect(meta.ranks?.get('d')?.finalRank).toBe(1)
+    // a is base rank 1 but only reranker/final rank 2.
+    expect(meta.ranks?.get('a')?.rerankerRank).toBe(2)
     expect(meta.ranks?.get('a')?.finalRank).toBe(2)
-    expect(meta.ranks?.get('b')?.finalRank).toBe(3)
-    expect(meta.ranks?.get('c')?.rerankerRank).toBe(1)
-    expect(meta.ranks?.get('c')?.baseRank).toBe(3)
   })
 
   it('never drops or duplicates candidates', async () => {

@@ -1,0 +1,2191 @@
+{
+  "provenance": "5.6-sol-high second blinded independent holdout judgment in live session",
+  "captureContext": {
+    "utc": "2026-08-16T04:06:08.458Z",
+    "buenosAiresLocal": "2026-08-16T01:06:08-03:00"
+  },
+  "rubric": {
+    "0": "Irrelevant or contradicts the ask",
+    "1": "Marginal or tangential",
+    "2": "Good and relevant; satisfies the ask",
+    "3": "Excellent/perfect match and an ideal recommendation"
+  },
+  "grades": {
+    "op-0001": {
+      "grade": 1,
+      "rationale": "Permite bailar en un entorno íntimo, pero la experiencia es introspectiva y la interacción social figura como baja."
+    },
+    "op-0002": {
+      "grade": 2,
+      "rationale": "Combina clase, baile social, comida y bebida; es sociable, aunque la energía alta y el ambiente festivo restan tranquilidad."
+    },
+    "op-0003": {
+      "grade": 3,
+      "rationale": "La propuesta menciona expresamente conversar y bailar en un ambiente cálido y distendido."
+    },
+    "op-0004": {
+      "grade": 2,
+      "rationale": "La cena y las dinámicas permiten charlar antes del baile, pero es un festival de energía alta."
+    },
+    "op-0005": {
+      "grade": 0,
+      "rationale": "Es un encuentro de reflexión y charla, sin actividad de baile."
+    },
+    "op-0006": {
+      "grade": 1,
+      "rationale": "Incluye danza, charlas y networking, pero es un festival intensivo, energético y orientado a bailarines."
+    },
+    "op-0007": {
+      "grade": 2,
+      "rationale": "Clase de tango íntima y relajada con interacción media, aunque no se destaca un espacio para conversar."
+    },
+    "op-0008": {
+      "grade": 2,
+      "rationale": "Empieza con tragos en bares menos obvios y termina bailando, aunque el recorrido tiene energía alta."
+    },
+    "op-0009": {
+      "grade": 3,
+      "rationale": "Ofrece dinámicas para conversar y conectar, clase de baile y un ambiente explícitamente relajado."
+    },
+    "op-0010": {
+      "grade": 2,
+      "rationale": "Propone bailar, conectar y reírse, pero su energía alta no asegura un entorno poco concurrido o tranquilo."
+    },
+    "op-0011": {
+      "grade": 1,
+      "rationale": "Es una fiesta estilo boliche enfocada en bailar y chapar, demasiado intensa para conversar con comodidad."
+    },
+    "op-0012": {
+      "grade": 2,
+      "rationale": "Los juegos y la cena favorecen la charla, pero el baile es solamente opcional si surge."
+    },
+    "op-0013": {
+      "grade": 1,
+      "rationale": "Está centrada en cantar, bailar y perrear con energía alta, sin evidencia de un ámbito apto para charlar."
+    },
+    "op-0014": {
+      "grade": 2,
+      "rationale": "Es íntima, social y combina movimiento con comida y tragos, aunque la conexión propuesta es principalmente corporal."
+    },
+    "op-0015": {
+      "grade": 0,
+      "rationale": "Es una gala para observar ballet, sin baile participativo ni interacción social."
+    },
+    "op-0016": {
+      "grade": 2,
+      "rationale": "El set acústico es íntimo y de energía baja, adecuado para una cita tranquila, aunque el espacio interior no está explicitado."
+    },
+    "op-0017": {
+      "grade": 3,
+      "rationale": "Concierto íntimo, sentado y bajo techo, con energía baja y opciones de comida y bebida."
+    },
+    "op-0018": {
+      "grade": 2,
+      "rationale": "Plan acústico bajo techo con bebidas, pero el rock y la energía media lo hacen menos tranquilo."
+    },
+    "op-0019": {
+      "grade": 1,
+      "rationale": "Es relajado, íntimo y bajo techo, pero está orientado a una práctica individual con interacción baja."
+    },
+    "op-0020": {
+      "grade": 3,
+      "rationale": "Concierto acústico íntimo y de energía baja, bajo techo y con cena y bebidas."
+    },
+    "op-0021": {
+      "grade": 3,
+      "rationale": "Experiencia íntima, sentada y bajo techo con piano, violín y vino, explícitamente apta para parejas."
+    },
+    "op-0022": {
+      "grade": 2,
+      "rationale": "El stand up se presenta como relajado y apto para parejas, aunque es un show dinámico de energía media."
+    },
+    "op-0023": {
+      "grade": 2,
+      "rationale": "Jazz, vino y atmósfera romántica bajo techo encajan con una cita, pero es una experiencia de pie y algo vibrante."
+    },
+    "op-0024": {
+      "grade": 2,
+      "rationale": "Comedia relajada bajo techo y apta para parejas, aunque el espectáculo es dinámico y de energía media."
+    },
+    "op-0025": {
+      "grade": 3,
+      "rationale": "Concierto íntimo, sentado y bajo techo, con energía baja, cena y bebidas."
+    },
+    "op-0026": {
+      "grade": 2,
+      "rationale": "Stand up bajo techo, relajado y recomendado para parejas, pero más dinámico que un plan plenamente tranquilo."
+    },
+    "op-0027": {
+      "grade": 2,
+      "rationale": "Concierto íntimo de jazz bajo techo con bebidas, aunque se describe también como una noche vibrante."
+    },
+    "op-0028": {
+      "grade": 2,
+      "rationale": "Es una propuesta relajada, bajo techo y apta para parejas, pero conserva formato de show dinámico o fiesta."
+    },
+    "op-0029": {
+      "grade": 2,
+      "rationale": "La noche de covers acústicos es íntima, aunque la energía es media y el entorno interior no está explicitado."
+    },
+    "op-0030": {
+      "grade": 3,
+      "rationale": "Concierto sentado de energía baja para solo doce personas, con comida, bebida y gran cercanía artística."
+    },
+    "op-0031": {
+      "grade": 2,
+      "rationale": "El formato de piano se describe como íntimo y cercano, pero faltan datos directos sobre energía y disposición del espacio."
+    },
+    "op-0032": {
+      "grade": 3,
+      "rationale": "Obra íntima y emocional, bajo techo y sentada, señalada expresamente como ideal para parejas."
+    },
+    "op-0033": {
+      "grade": 2,
+      "rationale": "Stand up relajado, interior y apto para parejas, aunque mantiene energía media y formato de fiesta."
+    },
+    "op-0034": {
+      "grade": 2,
+      "rationale": "Comedia bajo techo, cercana y apta para parejas, pero dinámica y de energía media."
+    },
+    "op-0035": {
+      "grade": 2,
+      "rationale": "La historia familiar y teatral resulta apropiada para compartir con padres, aunque incluye música en vivo sin evidencia clara sobre el volumen."
+    },
+    "op-0036": {
+      "grade": 3,
+      "rationale": "Concierto sentado, íntimo y de energía baja, con clásicos emotivos y arreglos cuidados."
+    },
+    "op-0037": {
+      "grade": 0,
+      "rationale": "Es una fiesta nostálgica, formato poco compatible con la condición de evitar mucho ruido."
+    },
+    "op-0038": {
+      "grade": 1,
+      "rationale": "Es familiar y divertido, pero tiene energía alta y se centra en cantar y bailar hits."
+    },
+    "op-0039": {
+      "grade": 3,
+      "rationale": "Homenaje íntimo, conmovedor y de energía baja, con canciones y anécdotas personales."
+    },
+    "op-0040": {
+      "grade": 0,
+      "rationale": "Es un recital de rock en Niceto Club, incompatible con la preferencia por poco ruido."
+    },
+    "op-0041": {
+      "grade": 3,
+      "rationale": "Concierto íntimo, sentado y de energía baja, apto para familias y acompañado con vino."
+    },
+    "op-0042": {
+      "grade": 3,
+      "rationale": "Encuentro sentado, íntimo y emotivo de energía baja, con piano, comida y bebidas."
+    },
+    "op-0043": {
+      "grade": 2,
+      "rationale": "Show íntimo de historias, canciones y humor, aunque su energía media ofrece menos garantía de calma."
+    },
+    "op-0044": {
+      "grade": 2,
+      "rationale": "Merienda íntima, relajada y de energía baja, aunque la lectura mística es una propuesta de interés específico."
+    },
+    "op-0045": {
+      "grade": 2,
+      "rationale": "Está diseñado para familias y ofrece jazz de forma divertida, pero la Big Band, el canto y el baile pueden generar bastante sonido."
+    },
+    "op-0046": {
+      "grade": 2,
+      "rationale": "Velada íntima de rock suave y formato acústico, aunque mantiene energía media."
+    },
+    "op-0047": {
+      "grade": 3,
+      "rationale": "Concierto íntimo, sentado y de energía baja, con piano, cena y bebidas."
+    },
+    "op-0048": {
+      "grade": 3,
+      "rationale": "Concierto clásico íntimo, acústico y sentado, expresamente apto para todas las edades y familias."
+    },
+    "op-0049": {
+      "grade": 3,
+      "rationale": "Concierto acústico íntimo y de energía baja, con formato cercano, comida y bebidas."
+    },
+    "op-0050": {
+      "grade": 3,
+      "rationale": "Stand up relajado, bajo techo y explícitamente apto para asistir solo."
+    },
+    "op-0051": {
+      "grade": 1,
+      "rationale": "Puede facilitar conocer gente, pero el bar crawl con reggaetón tiene una vibra explícitamente enérgica."
+    },
+    "op-0052": {
+      "grade": 1,
+      "rationale": "Es relajada, de energía baja y apta para ir solo, pero funciona como retiro matutino extenso, no como salida poslaburo."
+    },
+    "op-0053": {
+      "grade": 3,
+      "rationale": "Meditación vespertina, relajada y de energía baja, bajo techo y orientada a asistentes solos."
+    },
+    "op-0054": {
+      "grade": 2,
+      "rationale": "Encuentro vespertino apto para ir solo, con café y humor, aunque exige interacción alta y sigue centrado en temas laborales."
+    },
+    "op-0055": {
+      "grade": 2,
+      "rationale": "Espacio íntimo de energía baja con café y humor, pero orientado al networking y con interacción alta."
+    },
+    "op-0056": {
+      "grade": 1,
+      "rationale": "Está pensado para asistentes solos y es sentado, pero el speed dating exige interacción alta y no se presenta como relajado."
+    },
+    "op-0057": {
+      "grade": 0,
+      "rationale": "Fiesta estilo boliche de energía alta centrada en bailar y chapar, contraria al plan relajado."
+    },
+    "op-0058": {
+      "grade": 3,
+      "rationale": "Comedia relajada bajo techo, con bebidas y apta para asistir solo."
+    },
+    "op-0059": {
+      "grade": 2,
+      "rationale": "Admite asistentes solos y declara un ambiente relajado, aunque suma baile, citas e interacción social alta."
+    },
+    "op-0060": {
+      "grade": 3,
+      "rationale": "Merienda íntima, relajada y de energía baja, expresamente adecuada para asistentes solos."
+    },
+    "op-0061": {
+      "grade": 0,
+      "rationale": "Es una jornada intensiva de negocios, marketing y desarrollo personal, no una salida relajada después del trabajo."
+    },
+    "op-0062": {
+      "grade": 2,
+      "rationale": "Velada íntima de rock suave y acústico, buena para bajar un cambio, aunque no se indica expresamente que sea para ir solo."
+    },
+    "op-0063": {
+      "grade": 3,
+      "rationale": "Stand up relajado y cercano, expresamente apropiado para asistir solo."
+    },
+    "op-0064": {
+      "grade": 1,
+      "rationale": "Es apto para ir solo y empieza con tragos, pero el recorrido tiene energía alta y termina bailando."
+    },
+    "op-0065": {
+      "grade": 0,
+      "rationale": "Festival de energía alta con dinámicas y baile hasta la madrugada, opuesto a un plan relajado."
+    },
+    "op-0066": {
+      "grade": 3,
+      "rationale": "Encuentro de viernes a las 19, relajado y de energía baja, pensado para ir solo y conversar sin presión."
+    },
+    "op-0067": {
+      "grade": 3,
+      "rationale": "Stand up relajado, bajo techo y explícitamente apto para asistentes solos."
+    },
+    "op-0068": {
+      "grade": 2,
+      "rationale": "Comedia teatral con una trama particular; es artística y no tiene perfil de boliche, aunque no resulta especialmente experimental."
+    },
+    "op-0069": {
+      "grade": 3,
+      "rationale": "Cabaret de tango y burlesque con humor, música y sensualidad; propuesta artística, provocadora y claramente distinta de un boliche."
+    },
+    "op-0070": {
+      "grade": 2,
+      "rationale": "Trío instrumental con fusión de funk, blues, rock y jazz; artístico y fuera del formato boliche, aunque sigue siendo un concierto convencional."
+    },
+    "op-0071": {
+      "grade": 3,
+      "rationale": "Show escénico que mezcla cabaret, humor y emoción; ofrece una propuesta singular y artística sin plantearse como boliche."
+    },
+    "op-0072": {
+      "grade": 2,
+      "rationale": "Unipersonal de humor ácido y reflexivo, claramente no bailable; artístico, aunque el formato de stand-up no es tan inusual."
+    },
+    "op-0073": {
+      "grade": 2,
+      "rationale": "Stand-up íntimo, ácido e inteligente; cumple con lo artístico y no bolichero, pero solo moderadamente con lo distinto."
+    },
+    "op-0074": {
+      "grade": 2,
+      "rationale": "Concierto de jazz centrado en improvisación y diálogo musical; artístico y no boliche, aunque los standards son una propuesta bastante clásica."
+    },
+    "op-0075": {
+      "grade": 1,
+      "rationale": "El bingo musical es diferente y no necesariamente boliche, pero su eje es lúdico y social más que artístico."
+    },
+    "op-0076": {
+      "grade": 3,
+      "rationale": "Batalla de pintura en vivo con artistas, votación, feria y música; experiencia artística muy original y ajena al boliche tradicional."
+    },
+    "op-0077": {
+      "grade": 2,
+      "rationale": "Concierto que fusiona rock, pop y folklore; encaja como salida artística no bolichera, pero no se evidencia una puesta especialmente distinta."
+    },
+    "op-0078": {
+      "grade": 2,
+      "rationale": "La mezcla de cabaret, humor, sensualidad y drama es artística y singular, aunque las facetas de fiesta y baile la acercan parcialmente a una salida bolichera."
+    },
+    "op-0079": {
+      "grade": 3,
+      "rationale": "Espectáculo escénico explosivo que combina cabaret, humor y sensualidad; alternativa artística y distinta sin evidencia de formato boliche."
+    },
+    "op-0080": {
+      "grade": 3,
+      "rationale": "Cruce singular de post-punk, indie y universo queer dentro de la escena independiente; propuesta artística distintiva y no bolichera."
+    },
+    "op-0081": {
+      "grade": 2,
+      "rationale": "Gala de danza clásica y contemporánea de fuerte perfil artístico y sentado; cumple bien, aunque el formato ballet no es particularmente inusual."
+    },
+    "op-0082": {
+      "grade": 3,
+      "rationale": "Fusiona percusión afrovenezolana y electrónica como ritual sonoro vanguardista; experiencia artística muy distinta y no presentada como boliche."
+    },
+    "op-0083": {
+      "grade": 3,
+      "rationale": "Stand-up astrológico con recursos teatrales, carta natal y tarot; explícitamente diferente, artístico y alejado del boliche."
+    },
+    "op-0084": {
+      "grade": 2,
+      "rationale": "Set acústico íntimo de indie, soul y pop; buena opción artística sin boliche, aunque el concierto acústico es un formato bastante habitual."
+    },
+    "op-0085": {
+      "grade": 0,
+      "rationale": "Es una gala para observar ballet desde una sala sentada, no una actividad donde el público vaya a bailar."
+    },
+    "op-0086": {
+      "grade": 1,
+      "rationale": "Está diseñada para bailar, pero incluye dembow y reggaetón, estilos que pueden solaparse fuertemente con una musicalización de cachengue."
+    },
+    "op-0087": {
+      "grade": 1,
+      "rationale": "Ofrece baile toda la noche, pero la descripción tropical no permite confirmar que la selección musical evite el cachengue."
+    },
+    "op-0088": {
+      "grade": 0,
+      "rationale": "Es una proyección de la película Dirty Dancing con comida y bebida, no una propuesta para que los asistentes bailen."
+    },
+    "op-0089": {
+      "grade": 3,
+      "rationale": "Tres horas de baile libre con electrónica en formato de meditación activa; opción clara para bailar y totalmente distinta del cachengue."
+    },
+    "op-0090": {
+      "grade": 0,
+      "rationale": "El eje es una fiesta de cumbias de todas las épocas, demasiado cercano al universo musical que la negación de cachengue busca evitar."
+    },
+    "op-0091": {
+      "grade": 2,
+      "rationale": "Bingo musical con hits de los 2000 cuya premisa incluye cantar y bailar; alternativa lúdica, aunque bailar no es su único foco."
+    },
+    "op-0092": {
+      "grade": 1,
+      "rationale": "Parece una fecha musical nocturna, pero la evidencia no especifica baile ni género suficiente para asegurar que no sea cachengue."
+    },
+    "op-0093": {
+      "grade": 3,
+      "rationale": "Clase, baile social de swing, DJ y banda de jazz en vivo; opción ideal para bailar con un estilo inequívocamente ajeno al cachengue."
+    },
+    "op-0094": {
+      "grade": 3,
+      "rationale": "Incluye clase para principiantes y baile dentro de una experiencia social guiada; alternativa clara para bailar fuera del formato cachengue."
+    },
+    "op-0095": {
+      "grade": 2,
+      "rationale": "Combina quinteto de tango-rock y fiesta posterior con DJ; hay baile y un concepto alternativo, aunque el estilo del DJ no está especificado."
+    },
+    "op-0096": {
+      "grade": 1,
+      "rationale": "Es una fiesta bailable estilo boliche, pero no informa género musical y por eso no permite comprobar la exclusión de cachengue."
+    },
+    "op-0097": {
+      "grade": 1,
+      "rationale": "Se presenta como una noche para bailar, pero la información suministrada no identifica un género que garantice una propuesta sin cachengue."
+    },
+    "op-0098": {
+      "grade": 1,
+      "rationale": "Hay concierto en vivo, pero no se aporta evidencia de copa, servicio de bebidas ni un ambiente íntimo."
+    },
+    "op-0099": {
+      "grade": 3,
+      "rationale": "Sesión en vivo en un living con sillones, luces suaves y cócteles; coincide de forma directa con música, copa y ambiente íntimo."
+    },
+    "op-0100": {
+      "grade": 2,
+      "rationale": "Concierto en vivo, sentado, íntimo y emotivo; encaja muy bien salvo porque no se menciona disponibilidad de una copa."
+    },
+    "op-0101": {
+      "grade": 2,
+      "rationale": "Show en vivo explícitamente íntimo y minimalista; falta evidencia sobre copa o bebidas."
+    },
+    "op-0102": {
+      "grade": 1,
+      "rationale": "Es música en vivo y se lo describe como cercano, pero predomina un clima energético de club nocturno y no se menciona una copa."
+    },
+    "op-0103": {
+      "grade": 2,
+      "rationale": "Set acústico cálido, cercano e íntimo con música en vivo; no consta que incluya o facilite una copa."
+    },
+    "op-0104": {
+      "grade": 1,
+      "rationale": "Ofrece electrónica, baile y bebidas, pero es una fiesta vibrante de madrugada, no un ambiente íntimo para escuchar con una copa."
+    },
+    "op-0105": {
+      "grade": 2,
+      "rationale": "Show cálido, de capacidad limitada y muy cerca del público; cumple música e intimidad, pero las bebidas no están confirmadas."
+    },
+    "op-0106": {
+      "grade": 1,
+      "rationale": "La escucha a oscuras puede ser íntima, pero la descripción plantea reproducción holofónica y no músicos tocando en vivo ni una copa."
+    },
+    "op-0107": {
+      "grade": 2,
+      "rationale": "Muestra de canto con guitarra en un ambiente íntimo de encuentro; falta evidencia de bebidas o copa."
+    },
+    "op-0108": {
+      "grade": 3,
+      "rationale": "Banda en vivo, ambiente íntimo y una consumición incluida; satisface de manera muy directa los tres componentes solicitados."
+    },
+    "op-0109": {
+      "grade": 2,
+      "rationale": "Noche íntima con cantante y banda interpretando a Vinicius de Moraes; excelente clima musical, aunque no se confirma una copa."
+    },
+    "op-0110": {
+      "grade": 2,
+      "rationale": "Concierto en vivo en un entorno cercano e íntimo, pero también energético y sin mención de bebidas."
+    },
+    "op-0111": {
+      "grade": 2,
+      "rationale": "Noche gratuita de música en vivo descrita como íntima y casual; no hay evidencia de copa o consumición."
+    },
+    "op-0112": {
+      "grade": 1,
+      "rationale": "Hay música de DJs en terraza, pero el foco es una fiesta energética para bailar y no se acredita un ambiente íntimo ni copa."
+    },
+    "op-0113": {
+      "grade": 2,
+      "rationale": "Velada íntima y romántica de rock suave en formato acústico; encaja salvo por la ausencia de información sobre bebidas."
+    },
+    "op-0114": {
+      "grade": 3,
+      "rationale": "Éxitos de Coldplay tocados en vivo con piano y violín, luces bajas y una copa de vino; coincidencia exacta con la búsqueda."
+    },
+    "op-0115": {
+      "grade": 2,
+      "rationale": "Noche íntima de bossa, indie, folk, poesía y guitarra; buena escucha cercana, aunque no se menciona copa."
+    },
+    "op-0116": {
+      "grade": 2,
+      "rationale": "Show en vivo íntimo, personal y cálido, con atmósfera emocional; falta el componente de bebida."
+    },
+    "op-0117": {
+      "grade": 1,
+      "rationale": "La propuesta de tres cantautores en un jazz club es musicalmente pertinente, pero no hay evidencia explícita de intimidad ni copa."
+    },
+    "op-0118": {
+      "grade": 1,
+      "rationale": "Tiene nueve músicos en vivo y repertorio brasileño, pero no se describe como íntimo ni se mencionan bebidas."
+    },
+    "op-0119": {
+      "grade": 2,
+      "rationale": "Piano, cello y violín sin amplificación en una sala íntima y circular; gran ajuste musical, salvo por no incluir una copa."
+    },
+    "op-0120": {
+      "grade": 2,
+      "rationale": "Stand-up dinámico y cercano en ambiente relajado; ofrece actividad sin boliche, aunque su energía está indicada como media."
+    },
+    "op-0121": {
+      "grade": 0,
+      "rationale": "La propuesta consiste explícitamente en recorrer bares y boliches, contradiciendo el requisito de evitar ese entorno."
+    },
+    "op-0122": {
+      "grade": 0,
+      "rationale": "Tour energético con fiesta, baile y boliches; contradice de forma directa la parte negativa de la búsqueda."
+    },
+    "op-0123": {
+      "grade": 2,
+      "rationale": "Evento de arte, cultura y rock con energía media; alternativa activa fuera del boliche, aunque la descripción es muy escasa."
+    },
+    "op-0124": {
+      "grade": 0,
+      "rationale": "Se define expresamente como una fiesta bailable estilo boliche, justo el tipo de experiencia que se quiere evitar."
+    },
+    "op-0125": {
+      "grade": 1,
+      "rationale": "Tiene mucha energía y baile, pero es una fiesta social y no existe evidencia de que evite el amontonamiento propio de un boliche."
+    },
+    "op-0126": {
+      "grade": 1,
+      "rationale": "No parece boliche, pero la ficha es genérica y solo acredita energía media, sin una dinámica claramente vibrante."
+    },
+    "op-0127": {
+      "grade": 0,
+      "rationale": "Es un tour de bares y boliches con fiesta y baile, en contradicción explícita con la búsqueda."
+    },
+    "op-0128": {
+      "grade": 2,
+      "rationale": "Comedia dinámica con improvisación y risas en vez de boliche; buena alternativa, aunque la energía declarada es media."
+    },
+    "op-0129": {
+      "grade": 3,
+      "rationale": "Combina baile, dinámicas guiadas y socialización en un ambiente relajado y energético; brinda movimiento sin plantearse como boliche."
+    },
+    "op-0130": {
+      "grade": 1,
+      "rationale": "El concierto de boleros podría ser una salida moderadamente activa, pero la propia ficha lo llama una noche de boliche y genera contradicción."
+    },
+    "op-0131": {
+      "grade": 2,
+      "rationale": "Stand-up dinámico con humor e improvisación, de vibra energética pero intensidad media; evita el formato boliche."
+    },
+    "op-0132": {
+      "grade": 3,
+      "rationale": "Stand-up astrológico de energía alta y pinceladas teatrales; ofrece una experiencia animada sin boliche ni pista apretada."
+    },
+    "op-0133": {
+      "grade": 0,
+      "rationale": "La actividad es explícitamente un tour de bares y boliches, por lo que contradice el requisito central."
+    },
+    "op-0134": {
+      "grade": 2,
+      "rationale": "Comedia de energía alta, fresca y cercana sin formato de boliche; el espacio de pie impide asegurar que no haya cierta estrechez."
+    },
+    "op-0135": {
+      "grade": 1,
+      "rationale": "El círculo de mujeres no es un boliche, pero la descripción mínima no respalda una experiencia especialmente energética."
+    },
+    "op-0136": {
+      "grade": 2,
+      "rationale": "Concierto con energía y buena vibra, sin evidencia de formato boliche; la ficha, sin embargo, solo marca intensidad media y aporta pocos detalles."
+    },
+    "op-0137": {
+      "grade": 2,
+      "rationale": "Juegos, dinámicas, cena y baile opcional generan energía social sin ser un boliche convencional, aunque no se garantiza amplitud física."
+    },
+    "op-0138": {
+      "grade": 3,
+      "rationale": "Bingo musical de energía alta para cantar, bailar y jugar; alternativa activa y social claramente distinta de un boliche apretado."
+    },
+    "op-0139": {
+      "grade": 0,
+      "rationale": "Fiesta nocturna de trap, reggaetón y perreo; contradice un comienzo de domingo calmo."
+    },
+    "op-0140": {
+      "grade": 0,
+      "rationale": "Propuesta de club cerca de medianoche, sin evidencia de una experiencia tranquila para arrancar el día."
+    },
+    "op-0141": {
+      "grade": 2,
+      "rationale": "Merienda íntima y relajada con infusiones y lecturas; muy calma, aunque recién por la tarde."
+    },
+    "op-0142": {
+      "grade": 0,
+      "rationale": "Festival de energía alta con watch party, música y stands; no encaja con la calma pedida."
+    },
+    "op-0143": {
+      "grade": 2,
+      "rationale": "Yoga con perritos es un plan amable y moderado, aunque ocurre avanzada la tarde."
+    },
+    "op-0144": {
+      "grade": 1,
+      "rationale": "El samba en vivo puede ser agradable, pero figura con energía alta y no especialmente calmo."
+    },
+    "op-0145": {
+      "grade": 0,
+      "rationale": "Mega salida nocturna de energía alta, tres pistas y baile; opuesta a empezar el domingo con calma."
+    },
+    "op-0146": {
+      "grade": 0,
+      "rationale": "Batalla de lucha libre de treinta participantes y energía alta; contradice el tono tranquilo."
+    },
+    "op-0147": {
+      "grade": 2,
+      "rationale": "Café acogedor y conversaciones profundas ofrecen un plan sereno, aunque social y a última hora de la tarde."
+    },
+    "op-0148": {
+      "grade": 2,
+      "rationale": "Sesión de yoga con perritos, energía baja e interacción baja; calma clara, pero ya al anochecer."
+    },
+    "op-0149": {
+      "grade": 0,
+      "rationale": "Karaoke, tragos, baile y alta energía son lo contrario de un arranque tranquilo."
+    },
+    "op-0150": {
+      "grade": 1,
+      "rationale": "Show relajado de música y humor, pero es nocturno y de energía media, no para arrancar el domingo."
+    },
+    "op-0151": {
+      "grade": 0,
+      "rationale": "Concierto de energía alta por la noche, sin rasgos que sostengan una salida calma."
+    },
+    "op-0152": {
+      "grade": 2,
+      "rationale": "Yoga con perritos se describe como relajante y divertido; buen tono, aunque empieza a media tarde."
+    },
+    "op-0153": {
+      "grade": 3,
+      "rationale": "Plan matutino de energía baja con yoga, meditación y alimentación consciente; ideal para comenzar el domingo despacio."
+    },
+    "op-0154": {
+      "grade": 1,
+      "rationale": "Concierto de energía media por la noche; sólo coincide débilmente con la calma buscada."
+    },
+    "op-0155": {
+      "grade": 0,
+      "rationale": "Noche vibrante de música alternativa a las 23:30; no sirve para arrancar el domingo con calma."
+    },
+    "op-0156": {
+      "grade": 0,
+      "rationale": "Fiesta gótica energética con dos pistas, baile y tragos; contradice directamente el pedido."
+    },
+    "op-0157": {
+      "grade": 3,
+      "rationale": "Velada íntima y romántica de rock suave, arte y feria por $8.000; cita distintiva dentro del presupuesto."
+    },
+    "op-0158": {
+      "grade": 1,
+      "rationale": "Es barato e incluye consumición, pero la descripción genérica del show no demuestra una cita especialmente impactante."
+    },
+    "op-0159": {
+      "grade": 3,
+      "rationale": "Visita privada al Teatro Colón con Salón Dorado, vinos y música clásica; experiencia elegante e impresionante."
+    },
+    "op-0160": {
+      "grade": 0,
+      "rationale": "Es una previa diseñada para conocer gente y bailar, no una experiencia enfocada en una cita."
+    },
+    "op-0161": {
+      "grade": 2,
+      "rationale": "Teatro interactivo con humor, juegos y sorpresas por $16.000; cita original, aunque de alta participación."
+    },
+    "op-0162": {
+      "grade": 2,
+      "rationale": "Recital íntimo de piano y cercanía por $15.000; muy buen plan de cita, aunque menos excepcional."
+    },
+    "op-0163": {
+      "grade": 1,
+      "rationale": "Fiesta futurista por $12.000 que puede impactar, pero es una salida grupal y bailable más que una cita."
+    },
+    "op-0164": {
+      "grade": 3,
+      "rationale": "Gala de ballet romántica, elegante y sofisticada, explícitamente indicada para parejas."
+    },
+    "op-0165": {
+      "grade": 2,
+      "rationale": "Recorrido íntimo y singular por el Castillo de Sandro por $6.000; memorable, aunque especialmente atractivo para fans."
+    },
+    "op-0166": {
+      "grade": 3,
+      "rationale": "Concierto gratuito, íntimo y emotivo con piano, cena y bebidas; excelente combinación para una cita."
+    },
+    "op-0167": {
+      "grade": 2,
+      "rationale": "Presentación íntima con gala, champagne y celebración por $6.000; original y elegante, aunque bastante de nicho."
+    },
+    "op-0168": {
+      "grade": 1,
+      "rationale": "Noche electrónica intensa por $10.000; cumple el presupuesto, pero no aporta ambiente romántico ni de cita."
+    },
+    "op-0169": {
+      "grade": 2,
+      "rationale": "Música electrónica en ambiente íntimo y artístico por $15.000; buena cita para quienes disfrutan DJs."
+    },
+    "op-0170": {
+      "grade": 3,
+      "rationale": "Jazz vocal íntimo y elegante en hotel por $13.000; opción sofisticada e ideal para impresionar."
+    },
+    "op-0171": {
+      "grade": 3,
+      "rationale": "Ópera y canzonettas con orquesta en un escenario íntimo por exactamente $20.000; cita memorable y refinada."
+    },
+    "op-0172": {
+      "grade": 1,
+      "rationale": "Fiesta nostálgica económica, pero el perreo y los remixes no sostienen una cita particularmente impresionante."
+    },
+    "op-0173": {
+      "grade": 3,
+      "rationale": "El nombre explicita una propuesta queer y la energía es media; celebración adecuada sin evidencia de mega fiesta."
+    },
+    "op-0174": {
+      "grade": 0,
+      "rationale": "Fiesta y festival de energía alta hasta las 6:00; la inclusión asiática no demuestra afinidad queer."
+    },
+    "op-0175": {
+      "grade": 0,
+      "rationale": "Fiesta de perreo toda la noche, sin evidencia de enfoque queer y con formato contrario al pedido."
+    },
+    "op-0176": {
+      "grade": 2,
+      "rationale": "Noche drag con lenguaje inclusivo, DJs y performers; claramente queer, aunque sigue siendo una salida de club intensa."
+    },
+    "op-0177": {
+      "grade": 2,
+      "rationale": "Conferencia LGBTIQ+ inclusiva y profesional, sin formato de mega fiesta; relevante aunque menos recreativa."
+    },
+    "op-0178": {
+      "grade": 0,
+      "rationale": "Encuentro de citas de 25 a 40 años sin evidencia de orientación queer."
+    },
+    "op-0179": {
+      "grade": 0,
+      "rationale": "Se anuncia explícitamente como mega festival de alta energía y no aporta evidencia queer."
+    },
+    "op-0180": {
+      "grade": 0,
+      "rationale": "Festival bailable de energía alta, sin ninguna señal explícita de ser queer friendly."
+    },
+    "op-0181": {
+      "grade": 1,
+      "rationale": "Fiesta indie con lenguaje inclusivo, pero no hay evidencia suficiente de enfoque queer y sigue siendo una fiesta."
+    },
+    "op-0182": {
+      "grade": 2,
+      "rationale": "Fiesta explícitamente queer con house, disco y techno; afinidad directa, aunque el formato de club es intenso."
+    },
+    "op-0183": {
+      "grade": 1,
+      "rationale": "Previa inclusiva y de escala intermedia, pero no existe evidencia explícita de orientación queer."
+    },
+    "op-0184": {
+      "grade": 0,
+      "rationale": "Fiesta de solteros planteada en términos binarios, sin evidencia queer y con energía alta."
+    },
+    "op-0185": {
+      "grade": 0,
+      "rationale": "Noche de baile intenso con dancehall y reggaetón, sin evidencia de ser queer friendly."
+    },
+    "op-0186": {
+      "grade": 2,
+      "rationale": "Conferencia centrada explícitamente en negocios y turismo LGBTIQ+; inclusiva y no festiva, aunque profesional."
+    },
+    "op-0187": {
+      "grade": 0,
+      "rationale": "Festival de citas con cupos binarios de hombres y mujeres, sin evidencia queer y de energía alta."
+    },
+    "op-0188": {
+      "grade": 3,
+      "rationale": "Shows de drag king, drag quing y criaturas, cena y comunidad diversa; salida queer clara más orientada a performances que a mega fiesta."
+    },
+    "op-0189": {
+      "grade": 1,
+      "rationale": "El karaoke puede divertir, pero el bar y los tragos 2x1 dan una propuesta adulta poco adecuada para chicos de 15."
+    },
+    "op-0190": {
+      "grade": 0,
+      "rationale": "Evento de citas restringido explícitamente a personas de 25 a 55 años."
+    },
+    "op-0191": {
+      "grade": 0,
+      "rationale": "La fiesta indica explícitamente ingreso sólo para mayores de 18 años."
+    },
+    "op-0192": {
+      "grade": 3,
+      "rationale": "Fiesta temática de Disney y One Direction para cantar y bailar; propuesta muy divertida y afín a adolescentes."
+    },
+    "op-0193": {
+      "grade": 2,
+      "rationale": "Concierto homenaje y fiesta con DJ ofrecen música y baile; divertido, aunque el repertorio puede ser más adulto."
+    },
+    "op-0194": {
+      "grade": 0,
+      "rationale": "Sólo admite a mayores de 16 acompañados por madre o padre; los adolescentes tienen 15."
+    },
+    "op-0195": {
+      "grade": 0,
+      "rationale": "La previa está dirigida explícitamente a mayores de 30 años."
+    },
+    "op-0196": {
+      "grade": 1,
+      "rationale": "Karaoke y baile podrían entretener, pero el eje en tragos y bar resulta poco apropiado para 15 años."
+    },
+    "op-0197": {
+      "grade": 1,
+      "rationale": "El karaoke es divertido, aunque la propuesta de despecho y tragos 2x1 está orientada a adultos."
+    },
+    "op-0198": {
+      "grade": 1,
+      "rationale": "Ofrece karaoke y música, pero el foco en tragos dentro de un bar limita su adecuación para adolescentes."
+    },
+    "op-0199": {
+      "grade": 0,
+      "rationale": "Speed dating restringido explícitamente a personas de 25 a 34 años."
+    },
+    "op-0200": {
+      "grade": 0,
+      "rationale": "Speed dating exclusivo para personas de 45 a 54 años."
+    },
+    "op-0201": {
+      "grade": 1,
+      "rationale": "Cantar puede resultar divertido, pero el ambiente de bar y tragos 2x1 es claramente adulto."
+    },
+    "op-0202": {
+      "grade": 1,
+      "rationale": "Karaoke y baile son atractivos, aunque el eje alcohólico del bar lo vuelve una opción débil para menores."
+    },
+    "op-0203": {
+      "grade": 0,
+      "rationale": "El concierto especifica entrada sólo para mayores de 18 años."
+    },
+    "op-0204": {
+      "grade": 0,
+      "rationale": "Evento de citas restringido explícitamente al rango de 55 a 70 años."
+    },
+    "op-0205": {
+      "grade": 3,
+      "rationale": "Combina fútbol, karaoke, baile y juegos, además de figurar con ambiente familiar; plan variado y divertido para adolescentes."
+    },
+    "op-0206": {
+      "grade": 0,
+      "rationale": "El concierto está indicado explícitamente para mayores de 18 años."
+    },
+    "op-0207": {
+      "grade": 3,
+      "rationale": "Ofrece 59 milongas y clases abiertas para todos los niveles; declara explícitamente que es ideal para principiantes y que no hace falta saber bailar."
+    },
+    "op-0208": {
+      "grade": 0,
+      "rationale": "Es un concierto cuyo repertorio incluye la milonga como género musical, no una milonga bailable para principiantes."
+    },
+    "op-0209": {
+      "grade": 0,
+      "rationale": "Es un concierto íntimo de música argentina y latinoamericana; no consta una milonga ni propuesta para principiantes."
+    },
+    "op-0210": {
+      "grade": 0,
+      "rationale": "Es un concierto sentado de tangos y bandoneón, no una milonga para bailar."
+    },
+    "op-0211": {
+      "grade": 1,
+      "rationale": "Es una clase de tango claramente apta para personas sin experiencia ni pareja, pero no se presenta como milonga."
+    },
+    "op-0212": {
+      "grade": 0,
+      "rationale": "Solo consta un evento llamado TANGO QUINTETO; no hay evidencia de milonga bailable ni de nivel principiante."
+    },
+    "op-0213": {
+      "grade": 0,
+      "rationale": "Es un espectáculo de flamenco, ajeno a una milonga de tango para principiantes."
+    },
+    "op-0214": {
+      "grade": 0,
+      "rationale": "Incluye clases y baile, pero corresponde a una peña folklórica y no a una milonga de tango."
+    },
+    "op-0215": {
+      "grade": 1,
+      "rationale": "Es un espectáculo de tango burlesque inspirado en la noche milonguera, no una milonga participativa ni orientada a principiantes."
+    },
+    "op-0216": {
+      "grade": 0,
+      "rationale": "Es un show de orquesta con milongas dentro del repertorio musical, sin baile social ni propuesta para principiantes."
+    },
+    "op-0217": {
+      "grade": 0,
+      "rationale": "Es un encuentro para practicar idiomas y socializar; no tiene relación con tango o milonga."
+    },
+    "op-0218": {
+      "grade": 1,
+      "rationale": "El título indica una propuesta para aprender y descubrir tango, pero no aporta evidencia de que sea una milonga."
+    },
+    "op-0219": {
+      "grade": 1,
+      "rationale": "Incluye una clase de baile de nivel principiante, pero es una experiencia de citas y no especifica tango ni milonga."
+    },
+    "op-0220": {
+      "grade": 1,
+      "rationale": "Es un show musical en vivo, pero no se identifica el género como blues."
+    },
+    "op-0221": {
+      "grade": 2,
+      "rationale": "Concierto en vivo de jazz de New Orleans cuyo repertorio atraviesa swing y blues; relevante, aunque el foco principal es Louis Armstrong y el jazz."
+    },
+    "op-0222": {
+      "grade": 0,
+      "rationale": "Es un show en vivo de música country y line dance, no de blues."
+    },
+    "op-0223": {
+      "grade": 0,
+      "rationale": "El espectáculo está dedicado a la bossa nova y la música popular brasileña, no al blues."
+    },
+    "op-0224": {
+      "grade": 0,
+      "rationale": "Es un concierto de standards, bebop y hard bop; no hay evidencia de repertorio de blues."
+    },
+    "op-0225": {
+      "grade": 3,
+      "rationale": "Show en vivo explícitamente dedicado a clásicos del blues, interpretados por cantante y banda, con elementos adicionales de soul y jazz."
+    },
+    "op-0226": {
+      "grade": 0,
+      "rationale": "Es un homenaje en vivo a Natalie y Nat King Cole centrado en jazz, soul y songbook; no se presenta como show de blues."
+    },
+    "op-0227": {
+      "grade": 3,
+      "rationale": "Es un espectáculo en vivo directamente centrado en las raíces del blues y sus variantes afroamericanas, interpretado por un dúo con músicos invitados."
+    },
+    "op-0228": {
+      "grade": 1,
+      "rationale": "Consta como show en vivo, pero no se aporta ninguna evidencia de que el repertorio sea blues."
+    },
+    "op-0229": {
+      "grade": 1,
+      "rationale": "Es un concierto en vivo, aunque el género y repertorio no están especificados como blues."
+    },
+    "op-0230": {
+      "grade": 0,
+      "rationale": "Fusiona jazz con canciones de The Beatles; no hay evidencia de un show de blues."
+    },
+    "op-0231": {
+      "grade": 1,
+      "rationale": "Se anuncia una banda en vivo, pero sin información que permita confirmar blues."
+    },
+    "op-0232": {
+      "grade": 0,
+      "rationale": "Es una actuación de rock en vivo, no un show de blues."
+    },
+    "op-0233": {
+      "grade": 0,
+      "rationale": "Concierto de canciones románticas clásicas de Baglietto y Vitale, sin vínculo visible con el blues."
+    },
+    "op-0234": {
+      "grade": 2,
+      "rationale": "El resumen y la descripción presentan un concierto en vivo especialmente dedicado al blues, aunque el nombre del evento y los artistas son internamente inconsistentes."
+    },
+    "op-0235": {
+      "grade": 0,
+      "rationale": "Está en Almagro, pero es un taller artesanal de decoración de jabones, no teatro independiente."
+    },
+    "op-0236": {
+      "grade": 0,
+      "rationale": "Evento de networking y presentaciones para emprendedores en Almagro, sin contenido teatral."
+    },
+    "op-0237": {
+      "grade": 0,
+      "rationale": "Festival nocturno de música en Almagro, no una obra ni función de teatro independiente."
+    },
+    "op-0238": {
+      "grade": 0,
+      "rationale": "Es una charla tecnológica sobre transición climática en Almagro, no teatro."
+    },
+    "op-0239": {
+      "grade": 0,
+      "rationale": "Es una extensa sesión musical y de baile nocturno en Almagro, sin evidencia de teatro independiente."
+    },
+    "op-0240": {
+      "grade": 0,
+      "rationale": "Es una visita guiada sobre la historia del mate; no incluye un taller de cerámica."
+    },
+    "op-0241": {
+      "grade": 0,
+      "rationale": "Es una clase de canto con karaoke, no un taller de cerámica."
+    },
+    "op-0242": {
+      "grade": 0,
+      "rationale": "Es una degustación de vinos con música, sin actividad de cerámica."
+    },
+    "op-0243": {
+      "grade": 0,
+      "rationale": "No se describe ningún taller ni actividad de cerámica."
+    },
+    "op-0244": {
+      "grade": 0,
+      "rationale": "La información solo anuncia un evento llamado CALADIUM Indoor y no aporta evidencia de cerámica o taller."
+    },
+    "op-0245": {
+      "grade": 0,
+      "rationale": "Es un festival de cortometrajes con exposición de arte y música, no un taller de cerámica."
+    },
+    "op-0246": {
+      "grade": 0,
+      "rationale": "Es un festival gastronómico de parrillas, sin relación con cerámica."
+    },
+    "op-0247": {
+      "grade": 0,
+      "rationale": "Feria de libros raros y artesanales con demostraciones de creación editorial manual, no de cerámica."
+    },
+    "op-0248": {
+      "grade": 0,
+      "rationale": "Es una fiesta con DJs, no un taller de cerámica."
+    },
+    "op-0249": {
+      "grade": 0,
+      "rationale": "Experiencia de bienestar con yoga, meditación y arteterapia; no consta trabajo en cerámica."
+    },
+    "op-0250": {
+      "grade": 0,
+      "rationale": "Es un espectáculo de stand-up, no un taller de cerámica."
+    },
+    "op-0251": {
+      "grade": 0,
+      "rationale": "No se aporta contenido relacionado con cerámica ni con un taller."
+    },
+    "op-0252": {
+      "grade": 0,
+      "rationale": "Es una comedia policial interactiva en un museo, no una actividad de cerámica."
+    },
+    "op-0253": {
+      "grade": 0,
+      "rationale": "Festival de retrogaming con arcades, torneos y coleccionismo, sin taller de cerámica."
+    },
+    "op-0254": {
+      "grade": 0,
+      "rationale": "Festival en plazas y parques; no es museo ni muestra."
+    },
+    "op-0255": {
+      "grade": 0,
+      "rationale": "Evento musical, sin vínculo con museos o exposiciones."
+    },
+    "op-0256": {
+      "grade": 0,
+      "rationale": "Kermesse social; no corresponde a museo ni muestra."
+    },
+    "op-0257": {
+      "grade": 0,
+      "rationale": "Fiesta temática de casino, ajena a la búsqueda cultural."
+    },
+    "op-0258": {
+      "grade": 0,
+      "rationale": "Concierto de música electrónica, no museo ni exposición."
+    },
+    "op-0259": {
+      "grade": 2,
+      "rationale": "Visita cultural gratuita a un edificio histórico con foco en Art Déco; muy afín, aunque no es propiamente museo o muestra."
+    },
+    "op-0260": {
+      "grade": 1,
+      "rationale": "Actividad artística de cerámica, pero no hay evidencia de museo o exposición."
+    },
+    "op-0261": {
+      "grade": 0,
+      "rationale": "Concierto, sin relación con museos o muestras."
+    },
+    "op-0262": {
+      "grade": 0,
+      "rationale": "Evento musical, no museo ni exposición."
+    },
+    "op-0263": {
+      "grade": 0,
+      "rationale": "Encuentro de juegos de mesa, no una propuesta museística."
+    },
+    "op-0264": {
+      "grade": 0,
+      "rationale": "Encuentro para explorar música en vivo, ajeno a museos y muestras."
+    },
+    "op-0265": {
+      "grade": 0,
+      "rationale": "Concierto íntimo, no museo ni exposición."
+    },
+    "op-0266": {
+      "grade": 1,
+      "rationale": "Propuesta vinculada al diseño, pero no se acredita que sea museo o muestra."
+    },
+    "op-0267": {
+      "grade": 0,
+      "rationale": "Evento musical, sin relación con la categoría solicitada."
+    },
+    "op-0268": {
+      "grade": 0,
+      "rationale": "Evento social de contenido impreciso; no evidencia museo o muestra."
+    },
+    "op-0269": {
+      "grade": 0,
+      "rationale": "Show de stand up, no museo ni exposición."
+    },
+    "op-0270": {
+      "grade": 0,
+      "rationale": "Fiesta musical del domingo, no una feria gastronómica."
+    },
+    "op-0271": {
+      "grade": 3,
+      "rationale": "Festival gastronómico dominical con 35 parrillas y food trucks; coincidencia directa e ideal."
+    },
+    "op-0272": {
+      "grade": 0,
+      "rationale": "Es una feria de libros, no gastronómica."
+    },
+    "op-0273": {
+      "grade": 0,
+      "rationale": "Fiesta bailable, sin componente de feria gastronómica."
+    },
+    "op-0274": {
+      "grade": 0,
+      "rationale": "Festival temático con música y proyección, no gastronómico."
+    },
+    "op-0275": {
+      "grade": 1,
+      "rationale": "Incluye hamburguesas el domingo, pero es una propuesta de karaoke y no una feria."
+    },
+    "op-0276": {
+      "grade": 0,
+      "rationale": "Fiesta nocturna electrónica, no feria gastronómica."
+    },
+    "op-0277": {
+      "grade": 0,
+      "rationale": "Evento de club, sin evidencia de feria o propuesta gastronómica."
+    },
+    "op-0278": {
+      "grade": 0,
+      "rationale": "Noche de DJs, no una feria gastronómica."
+    },
+    "op-0279": {
+      "grade": 2,
+      "rationale": "Degustación dominical con varias bodegas y tapeo; buena alternativa gastronómica, aunque no se presenta como feria."
+    },
+    "op-0280": {
+      "grade": 0,
+      "rationale": "Fiesta urbana para jóvenes, sin componente de feria gastronómica."
+    },
+    "op-0281": {
+      "grade": 0,
+      "rationale": "Concierto y fiesta musical, no feria gastronómica."
+    },
+    "op-0282": {
+      "grade": 1,
+      "rationale": "Recital con tres bandas esta semana, pero el género indie rock no está respaldado."
+    },
+    "op-0283": {
+      "grade": 1,
+      "rationale": "Recital de clásicos de pop y rock, sin perfil indie."
+    },
+    "op-0284": {
+      "grade": 1,
+      "rationale": "Rock en vivo esta semana, pero no hay evidencia de indie y figura como festival."
+    },
+    "op-0285": {
+      "grade": 1,
+      "rationale": "Concierto de rock nacional dedicado a Charly García, pero no indie."
+    },
+    "op-0286": {
+      "grade": 1,
+      "rationale": "Fiesta de glam y hard rock con vivo; subgénero y formato alejados del recital indie."
+    },
+    "op-0287": {
+      "grade": 1,
+      "rationale": "Zapada de rock argentino en vivo, sin componente indie acreditado."
+    },
+    "op-0288": {
+      "grade": 1,
+      "rationale": "Recital indie acústico, pero la propuesta explícita mezcla soul y pop, no rock."
+    },
+    "op-0289": {
+      "grade": 2,
+      "rationale": "Recital de rock alternativo y grunge, muy cercano al pedido aunque basado en tributos y sin etiqueta indie."
+    },
+    "op-0290": {
+      "grade": 2,
+      "rationale": "Recital de rock instrumental contemporáneo y psicodélico; buena afinidad, aunque indie no está explícito."
+    },
+    "op-0291": {
+      "grade": 2,
+      "rationale": "Show de dos bandas de la escena indie porteña esta semana; falta respaldo explícito del componente rock."
+    },
+    "op-0292": {
+      "grade": 2,
+      "rationale": "Concierto indie y alternativo con presentación de disco; relevante, aunque no se especifica rock."
+    },
+    "op-0293": {
+      "grade": 3,
+      "rationale": "Recital esta semana explícitamente de rock e indie, además de alternativo, shoegaze y post-punk."
+    },
+    "op-0294": {
+      "grade": 1,
+      "rationale": "Recital tributo de rock clásico, sin rasgos indie."
+    },
+    "op-0295": {
+      "grade": 0,
+      "rationale": "Fiesta y desfile multigénero; no es un recital de rock indie."
+    },
+    "op-0296": {
+      "grade": 2,
+      "rationale": "Concierto indie en vivo esta semana; buen ajuste, aunque el rock no está explícito."
+    },
+    "op-0297": {
+      "grade": 3,
+      "rationale": "Concierto de géneros rock e indie dentro de la semana; coincidencia directa."
+    },
+    "op-0298": {
+      "grade": 1,
+      "rationale": "Presentación de disco con rock en vivo, pero no se acredita el componente indie."
+    },
+    "op-0299": {
+      "grade": 3,
+      "rationale": "Show explícito de stand up a $5.000, claramente por debajo de $15.000."
+    },
+    "op-0300": {
+      "grade": 0,
+      "rationale": "Fiesta de trap y reggaetón; no es stand up."
+    },
+    "op-0301": {
+      "grade": 3,
+      "rationale": "Stand up de comedia picante a $5.000; cumple plenamente el presupuesto."
+    },
+    "op-0302": {
+      "grade": 3,
+      "rationale": "Show explícito de stand up con entrada gratuita; ajuste ideal al límite pedido."
+    },
+    "op-0303": {
+      "grade": 3,
+      "rationale": "Show de stand up grabado en vivo por $10.000; cumple directamente."
+    },
+    "op-0304": {
+      "grade": 3,
+      "rationale": "Stand up de comedia irreverente a $5.000; coincidencia completa."
+    },
+    "op-0305": {
+      "grade": 0,
+      "rationale": "Show de talentos de contenido impreciso; no hay evidencia de stand up."
+    },
+    "op-0306": {
+      "grade": 3,
+      "rationale": "Show explícito de stand up gratuito; cumple de forma ideal."
+    },
+    "op-0307": {
+      "grade": 3,
+      "rationale": "Show de stand up con comediantes identificados por $6.000; coincidencia directa."
+    },
+    "op-0308": {
+      "grade": 3,
+      "rationale": "Noche explícita de stand up con entrada gratuita; cumple plenamente."
+    },
+    "op-0309": {
+      "grade": 3,
+      "rationale": "Stand up de comedia picante a $5.000; claramente dentro del presupuesto."
+    },
+    "op-0310": {
+      "grade": 0,
+      "rationale": "Es un concierto teatral de Charly García, no una función de cine."
+    },
+    "op-0311": {
+      "grade": 0,
+      "rationale": "Se presenta como evento social y no hay evidencia de una proyección cinematográfica."
+    },
+    "op-0312": {
+      "grade": 0,
+      "rationale": "Es un espectáculo de lucha libre, no una función de cine."
+    },
+    "op-0313": {
+      "grade": 3,
+      "rationale": "Evento en Palermo mañana y con entrada de $8.700, claramente dentro del presupuesto."
+    },
+    "op-0314": {
+      "grade": 3,
+      "rationale": "Encuentro en Palermo mañana y gratuito, por lo que cumple ubicación, fecha y precio."
+    },
+    "op-0315": {
+      "grade": 3,
+      "rationale": "Proyección en Palermo mañana por $8.700; cumple plenamente los filtros solicitados."
+    },
+    "op-0316": {
+      "grade": 1,
+      "rationale": "Es gratis y en Recoleta, pero la información genérica no demuestra que sea un plan cultural."
+    },
+    "op-0317": {
+      "grade": 3,
+      "rationale": "Concierto gratuito de salsa y orquesta en Recoleta, un plan cultural directo."
+    },
+    "op-0318": {
+      "grade": 3,
+      "rationale": "Festival gratuito con música en Recoleta, claramente pertinente como plan cultural."
+    },
+    "op-0319": {
+      "grade": 3,
+      "rationale": "Concierto gratuito en Recoleta, coincidencia directa con la búsqueda cultural."
+    },
+    "op-0320": {
+      "grade": 3,
+      "rationale": "Actividad artística de cerámica, gratuita y en Recoleta; encaja plenamente como plan cultural."
+    },
+    "op-0321": {
+      "grade": 2,
+      "rationale": "Encuentro gratuito de idiomas e intercambio internacional en Recoleta, culturalmente relevante aunque principalmente social."
+    },
+    "op-0322": {
+      "grade": 2,
+      "rationale": "Intercambio gratuito de idiomas en Recoleta; buen plan cultural, aunque su foco principal es socializar."
+    },
+    "op-0323": {
+      "grade": 3,
+      "rationale": "Evento gratuito de música electrónica en Recoleta, una propuesta cultural clara."
+    },
+    "op-0324": {
+      "grade": 3,
+      "rationale": "Salsa con música en vivo y baile, gratis en Recoleta; excelente ajuste cultural."
+    },
+    "op-0325": {
+      "grade": 2,
+      "rationale": "Es un festival gratuito en Recoleta, pero la descripción no aporta contenido cultural concreto."
+    },
+    "op-0326": {
+      "grade": 3,
+      "rationale": "Concierto gratuito de samba en Recoleta, coincidencia cultural directa."
+    },
+    "op-0327": {
+      "grade": 1,
+      "rationale": "Explicitly warm and conversational, but it is a social mixer with dancing rather than a quiet date setting."
+    },
+    "op-0328": {
+      "grade": 1,
+      "rationale": "Relaxed and suitable for couples, but a dynamic stand-up show is not especially quiet or warmly intimate."
+    },
+    "op-0329": {
+      "grade": 0,
+      "rationale": "High-interaction speed dating for solo attendees contradicts a quiet date night with a partner."
+    },
+    "op-0330": {
+      "grade": 0,
+      "rationale": "A high-interaction speed-dating meetup for solo attendees is not a quiet couples' date."
+    },
+    "op-0331": {
+      "grade": 3,
+      "rationale": "Intimate, seated jazz with cocktails in a sophisticated hotel club is an excellent quiet date-night fit."
+    },
+    "op-0332": {
+      "grade": 0,
+      "rationale": "This vibrant, high-interaction speed-dating event targets solo attendees, not a quiet date night."
+    },
+    "op-0333": {
+      "grade": 2,
+      "rationale": "An intimate acoustic concert offers a warm date-night atmosphere, though quietness and couples suitability are not explicit."
+    },
+    "op-0334": {
+      "grade": 2,
+      "rationale": "A relaxed couples-friendly ceramics-and-wine workshop is a good date, but its high social interaction makes it less quiet."
+    },
+    "op-0335": {
+      "grade": 2,
+      "rationale": "The intimate, elegant flamenco dinner for two is highly date-friendly, but live dancing and music make it less quiet."
+    },
+    "op-0336": {
+      "grade": 3,
+      "rationale": "Low-energy, intimate ceramics with wine and a shared table in a cozy atelier is ideal for a warm, quiet date."
+    },
+    "op-0337": {
+      "grade": 3,
+      "rationale": "A low-energy seated concert with piano, food, drinks, limited capacity, and an explicitly cozy intimate setting is ideal."
+    },
+    "op-0338": {
+      "grade": 1,
+      "rationale": "It welcomes couples and is relaxed, but the dynamic stand-up party format does not fit a quiet, intimate date."
+    },
+    "op-0339": {
+      "grade": 1,
+      "rationale": "Couples can attend, but a dynamic comedy party centered on laughter and improvisation is not especially quiet."
+    },
+    "op-0340": {
+      "grade": 1,
+      "rationale": "The intimate, relaxed, low-energy café experience feels warm and quiet, but it is an afternoon friends-oriented meetup rather than date night."
+    },
+    "op-0341": {
+      "grade": 0,
+      "rationale": "A high-energy ladies' party with DJ music and heavy social interaction directly conflicts with a quiet date night."
+    },
+    "op-0342": {
+      "grade": 3,
+      "rationale": "Low lights, wine, seated piano and violin, low energy, and explicit couples appeal make this an ideal intimate date night."
+    },
+    "op-0343": {
+      "grade": 3,
+      "rationale": "This low-energy, seated, limited-capacity concert is explicitly intimate, warm, special, and close to the performers."
+    },
+    "op-0344": {
+      "grade": 1,
+      "rationale": "A hidden-bar night could work as a date, but no evidence supports a warm or quiet atmosphere."
+    },
+    "op-0345": {
+      "grade": 1,
+      "rationale": "Trivia can be a casual date activity, but the listing provides no evidence of warmth, quietness, or intimacy."
+    },
+    "op-0346": {
+      "grade": 1,
+      "rationale": "Board games offer some date potential, but no supplied details establish a warm, quiet date-night setting."
+    },
+    "op-0347": {
+      "grade": 3,
+      "rationale": "Low-energy seated cool jazz in an elegant, intimate, sophisticated setting is an excellent quiet date-night choice."
+    },
+    "op-0348": {
+      "grade": 2,
+      "rationale": "Five energetic electronic sets strongly satisfy lively dancing, but the nonstop club format does not establish a smaller, unpacked atmosphere."
+    },
+    "op-0349": {
+      "grade": 3,
+      "rationale": "A relaxed but energetic guided dance experience at a bar offers lively dancing without a large-club format."
+    },
+    "op-0350": {
+      "grade": 3,
+      "rationale": "Relaxed, festive house music and dancing on a bar terrace provide a lively alternative to a huge indoor club."
+    },
+    "op-0351": {
+      "grade": 2,
+      "rationale": "The house setting avoids a conventional huge club and promises plenty of dancing, though two floors and ten-plus DJs may feel intense."
+    },
+    "op-0352": {
+      "grade": 1,
+      "rationale": "It is a high-energy electronic experience, but dancing is not actually listed and its size or crowd feel is unsupported."
+    },
+    "op-0353": {
+      "grade": 2,
+      "rationale": "The event is explicitly energetic and designed for indie-electronic dancing, but there is no evidence about venue size or crowding."
+    },
+    "op-0354": {
+      "grade": 2,
+      "rationale": "Disco, house, pop, and nonstop dancing strongly fit the lively side, though the listing does not establish an uncrowded scale."
+    },
+    "op-0355": {
+      "grade": 2,
+      "rationale": "A vibrant underground event with three DJs is clearly suited to dancing, but venue scale and crowd density are unspecified."
+    },
+    "op-0356": {
+      "grade": 3,
+      "rationale": "An intimate wellness-space dance session offers three hours of energetic free movement without a conventional packed-club environment."
+    },
+    "op-0357": {
+      "grade": 2,
+      "rationale": "A lively tour of smaller hidden bars that finishes with dancing avoids one huge club, but dancing is only part of the plan."
+    },
+    "op-0358": {
+      "grade": 3,
+      "rationale": "A swing class, social dancing, and a live band create a lively dance night in a dedicated social setting rather than a huge club."
+    },
+    "op-0359": {
+      "grade": 2,
+      "rationale": "The live jam, dancer crew, DJ, and all-night party clearly support dancing, but the Lucille setting's size and crowding are not established."
+    },
+    "op-0360": {
+      "grade": 1,
+      "rationale": "It is energetic and dance-friendly, but the standing concert is explicitly at Niceto Club and gives no reassurance against a large packed feel."
+    },
+    "op-0361": {
+      "grade": 1,
+      "rationale": "Two dance floors, dancing until dawn, and an explicit club venue fit lively dancing but conflict with the requested non-huge-club feel."
+    },
+    "op-0362": {
+      "grade": 2,
+      "rationale": "This low-energy afternoon gathering offers relaxed engagement with animation and art, though its artist-networking focus is less parent-oriented."
+    },
+    "op-0363": {
+      "grade": 1,
+      "rationale": "The family jazz performance is cultural, but its high-energy singing and dancing format and early-evening time are not a relaxed afternoon."
+    },
+    "op-0364": {
+      "grade": 2,
+      "rationale": "A low-energy late-afternoon café centered on language and international conversation is relaxed and cultural, though oriented toward networking rather than families."
+    },
+    "op-0365": {
+      "grade": 1,
+      "rationale": "The relaxed ceramics workshop is cultural and creative, but it begins at night and emphasizes socializing over a parents' afternoon."
+    },
+    "op-0366": {
+      "grade": 1,
+      "rationale": "It offers international exchange in a relaxed setting, but it is an evening social mixer rather than a cultural afternoon with parents."
+    },
+    "op-0367": {
+      "grade": 0,
+      "rationale": "A nighttime standing mixer with hundreds of people and high social interaction contradicts a relaxed parents' afternoon."
+    },
+    "op-0368": {
+      "grade": 3,
+      "rationale": "A daytime Art Deco lunch with guided period art, architecture, history, and an audiovisual show is an ideal cultural outing with parents."
+    },
+    "op-0369": {
+      "grade": 1,
+      "rationale": "The afternoon cacao ceremony has cultural elements and a chill space, but ecstatic dancing and its niche wellness-party focus weaken the parents fit."
+    },
+    "op-0370": {
+      "grade": 2,
+      "rationale": "An intimate, low-energy afternoon tea with traditional palm and coffee-ground readings is relaxed and culturally flavored, though not explicitly family-oriented."
+    },
+    "op-0371": {
+      "grade": 1,
+      "rationale": "This family jazz show is cultural, but its participatory singing and dancing and early-evening timing make it less relaxed and less clearly afternoon."
+    },
+    "op-0372": {
+      "grade": 1,
+      "rationale": "The intimate low-energy concert is a relaxed cultural activity, but it takes place at night rather than in the afternoon."
+    },
+    "op-0373": {
+      "grade": 1,
+      "rationale": "Coffee and deep talks suggest a low-pressure afternoon, but no supplied evidence establishes meaningful cultural content or suitability for parents."
+    },
+    "op-0374": {
+      "grade": 1,
+      "rationale": "An afternoon international-friends meetup has some cultural potential, but the sparse listing does not support a relaxed parent outing."
+    },
+    "op-0375": {
+      "grade": 3,
+      "rationale": "A low-energy early-afternoon visit to an artist's studio exploring art, ecology, and legacy is an excellent relaxed cultural plan."
+    },
+    "op-0376": {
+      "grade": 0,
+      "rationale": "A late-night, high-energy party with three dance floors directly contradicts the relaxed cultural-afternoon request."
+    },
+    "op-0377": {
+      "grade": 1,
+      "rationale": "Tango is culturally relevant and the class is intimate and relaxed, but it starts in the evening and requires active participation."
+    },
+    "op-0378": {
+      "grade": 3,
+      "rationale": "This intimate, low-energy, seated Japanese tea ceremony occurs in the afternoon, welcomes families, and offers an immersive traditional experience."
+    },
+    "op-0379": {
+      "grade": 2,
+      "rationale": "The afternoon English immersion event is relaxed and includes art, music, and travel discussion, though its high-interaction social format is less parent-focused."
+    },
+    "op-0380": {
+      "grade": 1,
+      "rationale": "The daytime family festival has cultural entertainment, but it is high-energy and designed around children's activities rather than a relaxed outing with one's parents."
+    },
+    "op-0381": {
+      "grade": 0,
+      "rationale": "This solo-oriented wellness retreat is relaxed, but it occurs in the morning and is neither a cultural afternoon nor a parents-focused activity."
+    },
+    "op-0382": {
+      "grade": 1,
+      "rationale": "Live concert this week, but no blues genre is supported."
+    },
+    "op-0383": {
+      "grade": 1,
+      "rationale": "Live concert in the requested week, but the genre is unspecified."
+    },
+    "op-0384": {
+      "grade": 1,
+      "rationale": "Live this week and blues-adjacent, but explicitly a contemporary jazz concert."
+    },
+    "op-0385": {
+      "grade": 0,
+      "rationale": "Karaoke is not a blues show."
+    },
+    "op-0386": {
+      "grade": 1,
+      "rationale": "Multiple live bands this week, but no evidence that any plays blues."
+    },
+    "op-0387": {
+      "grade": 1,
+      "rationale": "Live New Orleans jazz and swing this week, but not identified as blues."
+    },
+    "op-0388": {
+      "grade": 1,
+      "rationale": "Live bands and jam sessions this week, with no blues genre evidence."
+    },
+    "op-0389": {
+      "grade": 1,
+      "rationale": "Live multi-artist concert this week, but its genre is unspecified."
+    },
+    "op-0390": {
+      "grade": 0,
+      "rationale": "The show is explicitly alternative music rather than blues."
+    },
+    "op-0391": {
+      "grade": 1,
+      "rationale": "Live concert this week, but explicitly contemporary jazz rather than blues."
+    },
+    "op-0392": {
+      "grade": 0,
+      "rationale": "A live rock, grunge, and alternative tribute, not blues."
+    },
+    "op-0393": {
+      "grade": 1,
+      "rationale": "Live jazz and swing with fusion elements, but no blues is stated."
+    },
+    "op-0394": {
+      "grade": 0,
+      "rationale": "A dance and perreo night with no blues evidence."
+    },
+    "op-0395": {
+      "grade": 0,
+      "rationale": "Live rock and electronic party programming, not blues."
+    },
+    "op-0396": {
+      "grade": 1,
+      "rationale": "Live jam featuring adjacent soul and R&B, but blues is not listed."
+    },
+    "op-0397": {
+      "grade": 1,
+      "rationale": "Live music this week, but no genre evidence establishes blues."
+    },
+    "op-0398": {
+      "grade": 3,
+      "rationale": "Direct match: a live blues-focused show this week featuring blues classics."
+    },
+    "op-0399": {
+      "grade": 1,
+      "rationale": "A live music event within the week, but the genre is unsupported."
+    },
+    "op-0400": {
+      "grade": 1,
+      "rationale": "Live soul, funk, and acid jazz this week, but not a blues show."
+    },
+    "op-0401": {
+      "grade": 1,
+      "rationale": "Live concert this week, but no blues genre is supported."
+    },
+    "op-0402": {
+      "grade": 0,
+      "rationale": "Free alternative-music concert, not an art workshop."
+    },
+    "op-0403": {
+      "grade": 1,
+      "rationale": "Free arts event this weekend, but it is a theater performance rather than a workshop."
+    },
+    "op-0404": {
+      "grade": 0,
+      "rationale": "Free electronic-music event, not an art workshop."
+    },
+    "op-0405": {
+      "grade": 2,
+      "rationale": "Free weekend workshop including art therapy, though it is primarily a broader wellness retreat."
+    },
+    "op-0406": {
+      "grade": 0,
+      "rationale": "Free music event with no art-workshop component."
+    },
+    "op-0407": {
+      "grade": 0,
+      "rationale": "Free social event with no supported workshop or art activity."
+    },
+    "op-0408": {
+      "grade": 0,
+      "rationale": "Free club party, not an art workshop."
+    },
+    "op-0409": {
+      "grade": 2,
+      "rationale": "Free weekend tango workshop and class, a relevant performing-arts learning activity."
+    },
+    "op-0410": {
+      "grade": 0,
+      "rationale": "Free house and techno party, not an art workshop."
+    },
+    "op-0411": {
+      "grade": 2,
+      "rationale": "Free weekend singing class with karaoke, relevant as a performing-arts workshop."
+    },
+    "op-0412": {
+      "grade": 0,
+      "rationale": "Free electronic event, not an art workshop."
+    },
+    "op-0413": {
+      "grade": 0,
+      "rationale": "No evidence of either an art activity or a workshop."
+    },
+    "op-0414": {
+      "grade": 0,
+      "rationale": "Palermo concert, not a comedy show."
+    },
+    "op-0415": {
+      "grade": 1,
+      "rationale": "A Palermo dinner show, but there is no evidence that it is comedy."
+    },
+    "op-0416": {
+      "grade": 1,
+      "rationale": "A Palermo dinner show, but its content is unspecified and not supported as comedy."
+    },
+    "op-0417": {
+      "grade": 0,
+      "rationale": "Language-exchange social event, not a comedy show."
+    },
+    "op-0418": {
+      "grade": 1,
+      "rationale": "A Palermo dinner show with no evidence of comedy content."
+    },
+    "op-0419": {
+      "grade": 1,
+      "rationale": "A Palermo dinner show, but comedy is unsupported."
+    },
+    "op-0420": {
+      "grade": 0,
+      "rationale": "Trivia night is not a comedy show."
+    },
+    "op-0421": {
+      "grade": 1,
+      "rationale": "A Palermo screening of a comedy-horror film, not clearly a live comedy show."
+    },
+    "op-0422": {
+      "grade": 0,
+      "rationale": "Palermo music concert, not comedy."
+    },
+    "op-0423": {
+      "grade": 0,
+      "rationale": "Palermo music concert, not comedy."
+    },
+    "op-0424": {
+      "grade": 3,
+      "rationale": "Direct match: an explicitly identified stand-up comedy show in Palermo."
+    },
+    "op-0425": {
+      "grade": 0,
+      "rationale": "Free Palermo music and DJ event, not comedy."
+    },
+    "op-0426": {
+      "grade": 3,
+      "rationale": "Direct match: an interactive police comedy staged in Palermo."
+    },
+    "op-0427": {
+      "grade": 3,
+      "rationale": "Direct match: a Palermo interactive comedy combining theater, humor, and mystery."
+    },
+    "op-0428": {
+      "grade": 0,
+      "rationale": "Nighttime bar-and-club tour centered on drinks and dancing, unsuitable for a 12-year-old."
+    },
+    "op-0429": {
+      "grade": 0,
+      "rationale": "Tomorrow's stand-up begins at 20:30 local time and has no family-friendly support."
+    },
+    "op-0430": {
+      "grade": 1,
+      "rationale": "Tomorrow afternoon, but it is a high-energy DJ and cocktail event aimed at friends, not families."
+    },
+    "op-0431": {
+      "grade": 0,
+      "rationale": "Daytime tomorrow, but specifically an infertility support meetup rather than a family plan for a child."
+    },
+    "op-0432": {
+      "grade": 0,
+      "rationale": "The karaoke class starts at 20:00 local time and has no evidence of suitability for a 12-year-old."
+    },
+    "op-0433": {
+      "grade": 3,
+      "rationale": "Concierto de baja energía para solo 12 personas, íntimo y sentado, con comida y brindis: excelente para una cita tranquila."
+    },
+    "op-0434": {
+      "grade": 0,
+      "rationale": "Es un encuentro de matcheo de alta energía que termina en baile, no un plan cozy para una cita sin fiesta."
+    },
+    "op-0435": {
+      "grade": 3,
+      "rationale": "Formato acústico minimalista e íntimo, pensado para conectar lejos de la sobreestimulación; encaja muy bien con una cita tranquila."
+    },
+    "op-0436": {
+      "grade": 0,
+      "rationale": "Festival de alta energía con dinámicas y baile hasta las 4 a. m.; contradice explícitamente el pedido de evitar una fiesta ruidosa."
+    },
+    "op-0437": {
+      "grade": 3,
+      "rationale": "Concierto íntimo, emotivo, sentado y de baja energía, con capacidad limitada y opciones de cena y bebida."
+    },
+    "op-0438": {
+      "grade": 3,
+      "rationale": "Show cálido, íntimo, sentado y de baja energía, con capacidad limitada y cercanía a los músicos."
+    },
+    "op-0439": {
+      "grade": 0,
+      "rationale": "Fiesta electrónica inmersiva de alta energía, de pie y con interacción alta; no es un plan tranquilo."
+    },
+    "op-0440": {
+      "grade": 0,
+      "rationale": "Está identificado como party y no aporta evidencia de un entorno íntimo, cozy o apto para conversar en una cita."
+    },
+    "op-0441": {
+      "grade": 1,
+      "rationale": "Es relajado y bajo techo, pero se centra en networking, juegos y conversación grupal, no en una experiencia cozy de pareja."
+    },
+    "op-0442": {
+      "grade": 3,
+      "rationale": "Concierto íntimo y emotivo con piano, sentado, de baja energía y descrito expresamente como acogedor."
+    },
+    "op-0443": {
+      "grade": 1,
+      "rationale": "El título sugiere un recorrido social por bares, pero no hay evidencia de ambiente cozy ni de bajo volumen."
+    },
+    "op-0444": {
+      "grade": 0,
+      "rationale": "Karaoke de alta energía para cantar a todo pulmón, con formato de fiesta; contradice el pedido de evitar ruido."
+    },
+    "op-0445": {
+      "grade": 0,
+      "rationale": "Es speed dating para personas solas de 55 a 70 años, no un plan tranquilo para disfrutar con una cita existente."
+    },
+    "op-0446": {
+      "grade": 0,
+      "rationale": "Es speed dating de alta interacción para personas solas, no una salida cozy en pareja."
+    },
+    "op-0447": {
+      "grade": 0,
+      "rationale": "Es una noche de speed dating y networking, no una experiencia íntima para una cita existente."
+    },
+    "op-0448": {
+      "grade": 3,
+      "rationale": "Velada explícitamente íntima y romántica de rock suave y acústico; coincide directamente con una cita sin fiesta ruidosa."
+    },
+    "op-0449": {
+      "grade": 0,
+      "rationale": "Fiesta house de alta energía, de pie y orientada a bailar; contradice el plan tranquilo solicitado."
+    },
+    "op-0450": {
+      "grade": 3,
+      "rationale": "Luces bajas, ambiente casi secreto, piano y violín, asientos y una copa de vino; es una opción ideal para una cita cozy."
+    },
+    "op-0451": {
+      "grade": 3,
+      "rationale": "Figura gratis, en Palermo y programado para la noche del domingo 16 de agosto, dentro del fin de semana vigente."
+    },
+    "op-0452": {
+      "grade": 3,
+      "rationale": "Plan gratuito en Palermo para la noche del domingo 16 de agosto; satisface directamente ubicación, costo y fecha."
+    },
+    "op-0453": {
+      "grade": 3,
+      "rationale": "Karaoke gratuito en Palermo programado para el domingo 16 por la noche, dentro de este fin de semana."
+    },
+    "op-0454": {
+      "grade": 3,
+      "rationale": "Evento gratuito de música en Palermo para la noche del domingo 16 de agosto; cumple todos los filtros solicitados."
+    },
+    "op-0455": {
+      "grade": 3,
+      "rationale": "Concierto gratuito en Palermo el domingo 16 por la noche, una coincidencia directa con la búsqueda."
+    },
+    "op-0456": {
+      "grade": 3,
+      "rationale": "Música alternativa en vivo, gratis, en Niceto Bar de Palermo y el domingo 16 por la noche."
+    },
+    "op-0457": {
+      "grade": 3,
+      "rationale": "Fiesta con entrada gratuita en Palermo durante la noche del domingo 16, víspera de feriado."
+    },
+    "op-0458": {
+      "grade": 0,
+      "rationale": "Aunque el timestamp cae este domingo en Palermo, el nombre dice explícitamente “16 de julio”, contradiciendo la fecha actual de agosto."
+    },
+    "op-0459": {
+      "grade": 3,
+      "rationale": "Actividad gratuita en Palermo durante la mañana del domingo 16, claramente dentro del fin de semana actual."
+    },
+    "op-0460": {
+      "grade": 2,
+      "rationale": "Incluye danza, talleres, charlas y networking, por lo que ofrece ambas actividades, aunque su formato festivalero es de alta energía."
+    },
+    "op-0461": {
+      "grade": 3,
+      "rationale": "Clase de tango en un entorno íntimo, privado, relajado y de baja energía, favorable tanto para bailar como para comunicarse."
+    },
+    "op-0462": {
+      "grade": 1,
+      "rationale": "Ofrece trabajo corporal y conversación grupal, pero no aparece como una actividad de baile."
+    },
+    "op-0463": {
+      "grade": 0,
+      "rationale": "Es una gala para observar ballet, sentados y con interacción social baja; los asistentes no van a bailar."
+    },
+    "op-0464": {
+      "grade": 2,
+      "rationale": "Combina movimiento, conexión social, cena y bebidas en un entorno íntimo, aunque el foco está más en conectar corporalmente que en conversar."
+    },
+    "op-0465": {
+      "grade": 3,
+      "rationale": "El recorrido comienza con cócteles y socialización en bares y termina bailando, separando bien los momentos para hablar y bailar."
+    },
+    "op-0466": {
+      "grade": 3,
+      "rationale": "Meetup bilingüe de alta interacción con juegos, bebidas, música y baile; permite conversar y luego bailar."
+    },
+    "op-0467": {
+      "grade": 1,
+      "rationale": "Cumple claramente con bailar, pero es una fiesta de alta energía con dos pistas hasta el amanecer, poco favorable para conversar."
+    },
+    "op-0468": {
+      "grade": 3,
+      "rationale": "Primero propone juegos y cena para conocerse y hablar, y después baile opcional; coincide de forma directa con ambas necesidades."
+    },
+    "op-0469": {
+      "grade": 0,
+      "rationale": "Es una proyección de la película Dirty Dancing con comida y bebida, no un evento donde el público baile."
+    },
+    "op-0470": {
+      "grade": 3,
+      "rationale": "Experiencia guiada con rompehielos, dos consumiciones y clase de baile en un ambiente relajado; combina conversación y baile explícitamente."
+    },
+    "op-0471": {
+      "grade": 1,
+      "rationale": "Es ideal para conversar, pero no ofrece baile ni una pista de danza."
+    },
+    "op-0472": {
+      "grade": 3,
+      "rationale": "La descripción promete expresamente conversar, bailar y conocer personas en un ambiente cálido y distendido."
+    },
+    "op-0473": {
+      "grade": 1,
+      "rationale": "Es un encuentro de reflexión y charla, sin ninguna actividad de baile."
+    },
+    "op-0474": {
+      "grade": 1,
+      "rationale": "Ofrece clase y baile social, pero la alta energía, el DJ y la banda en vivo no respaldan un espacio cómodo para hablar."
+    },
+    "op-0475": {
+      "grade": 1,
+      "rationale": "Es jazz en vivo e íntimo, pero figura con alta energía y no tiene precio informado, así que barato y tranqui quedan débiles."
+    },
+    "op-0476": {
+      "grade": 2,
+      "rationale": "Jazz vocal en vivo, íntimo y de energía media por $13.000; relevante, aunque no es la opción más barata ni más tranquila."
+    },
+    "op-0477": {
+      "grade": 2,
+      "rationale": "Es jazz en vivo gratuito, lo que satisface muy bien “barato”, pero no aporta evidencia clara de un ambiente tranqui."
+    },
+    "op-0478": {
+      "grade": 3,
+      "rationale": "Jazz en vivo por $10.000 con promoción 2x1, ambiente relajado y formato sentado; cumple de manera excelente."
+    },
+    "op-0479": {
+      "grade": 1,
+      "rationale": "Jazz en vivo a precio moderado, pero se presenta como fiesta de trasnoche, energética, bailable y de interacción alta."
+    },
+    "op-0480": {
+      "grade": 3,
+      "rationale": "Cool jazz en vivo por $10.000, sentado, íntimo y de baja energía; coincidencia ideal con barato y tranqui."
+    },
+    "op-0481": {
+      "grade": 1,
+      "rationale": "Es un concierto acústico económico, íntimo y tranquilo, pero el género indicado es folk, no jazz."
+    },
+    "op-0482": {
+      "grade": 0,
+      "rationale": "El show es de disco, soul y funk, con energía para encender la pista; no es jazz ni una propuesta tranquila."
+    },
+    "op-0483": {
+      "grade": 1,
+      "rationale": "Es acústico, íntimo y relativamente económico, pero transforma repertorio electrónico y no ofrece jazz."
+    },
+    "op-0484": {
+      "grade": 2,
+      "rationale": "Jazz en vivo y sentado por $11.000, aunque la energía media y atmósfera lúdica lo hacen menos claramente tranqui."
+    },
+    "op-0485": {
+      "grade": 1,
+      "rationale": "Es gratis, íntimo, sentado y de baja energía, pero no hay evidencia de que el repertorio sea jazz."
+    },
+    "op-0486": {
+      "grade": 1,
+      "rationale": "Ofrece jazz en vivo por $11.000, pero el noneto está marcado como de alta energía y experiencia inmersiva, no tranqui."
+    },
+    "op-0487": {
+      "grade": 2,
+      "rationale": "Jazz en vivo por $10.000 y energía media; cumple precio y género, aunque faltan señales claras de ambiente relajado."
+    },
+    "op-0488": {
+      "grade": 2,
+      "rationale": "Jazz en vivo gratuito, excelente para el criterio económico, pero sin información que confirme una vibra tranquila."
+    },
+    "op-0489": {
+      "grade": 1,
+      "rationale": "Jazz en vivo por $10.000 y formato sentado, pero la big band se describe como potente, vibrante y de alta energía."
+    },
+    "op-0490": {
+      "grade": 3,
+      "rationale": "Jazz vocal en vivo por $10.000, íntimo, sentado y explícitamente cool, además de promoción 2x1 en martinis."
+    },
+    "op-0491": {
+      "grade": 2,
+      "rationale": "Concierto íntimo y sentado de piano y voz jazz por $11.000, aunque su tono pasional y de energía media no es plenamente tranqui."
+    },
+    "op-0492": {
+      "grade": 3,
+      "rationale": "Museo y exposición de artes, con recorrido guiado de baja energía: plan cultural y tranquilo para el domingo."
+    },
+    "op-0493": {
+      "grade": 2,
+      "rationale": "Clase de tango íntima, relajada y de baja energía; encaja como arte escénico, aunque no es un plan artístico contemplativo."
+    },
+    "op-0494": {
+      "grade": 1,
+      "rationale": "La merienda es íntima y relajada, pero la lectura de manos y café no aporta evidencia clara de arte."
+    },
+    "op-0495": {
+      "grade": 2,
+      "rationale": "Concierto sentado, íntimo y de baja energía; buen plan artístico y tranquilo, aunque centrado en música."
+    },
+    "op-0496": {
+      "grade": 2,
+      "rationale": "Experiencia relajada de yoga y meditación que incluye arteterapia; el arte es solo una parte del retiro."
+    },
+    "op-0497": {
+      "grade": 1,
+      "rationale": "Es música en vivo, pero la energía alta contradice el tono chill solicitado."
+    },
+    "op-0498": {
+      "grade": 2,
+      "rationale": "Show dominical de música y humor con ambiente relajado; buen plan artístico, aunque de energía media."
+    },
+    "op-0499": {
+      "grade": 2,
+      "rationale": "Comedia en vivo con vibra relajada; funciona como salida artística, aunque no es especialmente contemplativa."
+    },
+    "op-0500": {
+      "grade": 2,
+      "rationale": "Fusiona teatro y juego dentro del Museo de Arte Decorativo, pero la interacción alta y el suspenso reducen el carácter chill."
+    },
+    "op-0501": {
+      "grade": 3,
+      "rationale": "Concierto de guitarras íntimo, sentado y de baja energía: combinación ideal de arte y plan tranquilo dominical."
+    },
+    "op-0502": {
+      "grade": 0,
+      "rationale": "Fiesta de alta energía con varias pistas de baile; no es chill ni presenta una propuesta artística clara."
+    },
+    "op-0503": {
+      "grade": 0,
+      "rationale": "Fiesta electrónica nocturna de alta energía, baile y socialización; contradice el plan chill con arte."
+    },
+    "op-0504": {
+      "grade": 0,
+      "rationale": "After de psytrance, baile y alta energía; contradice directamente el tono tranquilo pedido."
+    },
+    "op-0505": {
+      "grade": 1,
+      "rationale": "Menciona DJs y una fusión de música y arte, pero la noche se describe como vibrante y no hay evidencia de una vibra chill."
+    },
+    "op-0506": {
+      "grade": 0,
+      "rationale": "Fiesta gótica de alta energía con dos pistas de baile; no coincide con un plan tranquilo."
+    },
+    "op-0507": {
+      "grade": 2,
+      "rationale": "Está categorizado como música y el nombre indica rock, sin evidencia visible de tributo; la información es muy escasa."
+    },
+    "op-0508": {
+      "grade": 0,
+      "rationale": "Es explícitamente una noche de tributos a Los Redondos e Intoxicados."
+    },
+    "op-0509": {
+      "grade": 0,
+      "rationale": "El título y el resumen la presentan como homenaje a Aretha Franklin."
+    },
+    "op-0510": {
+      "grade": 3,
+      "rationale": "Experiencia musical inmersiva con sonido de alta fidelidad y sin indicios de repertorio tributo."
+    },
+    "op-0511": {
+      "grade": 3,
+      "rationale": "Propuesta musical de Choosey con sonido propio, samples y referencias diversas; no se describe como tributo."
+    },
+    "op-0512": {
+      "grade": 0,
+      "rationale": "Es explícitamente un homenaje a Natalie Cole y Nat King Cole."
+    },
+    "op-0513": {
+      "grade": 0,
+      "rationale": "Tributo declarado a Elvis Presley, contrario a la exclusión solicitada."
+    },
+    "op-0514": {
+      "grade": 2,
+      "rationale": "Show de variedades con performance y música en vivo original, sin indicios de tributo; no es exclusivamente musical."
+    },
+    "op-0515": {
+      "grade": 0,
+      "rationale": "El título y la descripción indican un tributo a Marco Antonio Solís."
+    },
+    "op-0516": {
+      "grade": 0,
+      "rationale": "Se presenta expresamente como homenaje a Charly García mediante versiones de sus canciones."
+    },
+    "op-0517": {
+      "grade": 0,
+      "rationale": "Incluye explícitamente un tributo a Marco Antonio Solís, además de karaoke."
+    },
+    "op-0518": {
+      "grade": 0,
+      "rationale": "Noche de bandas tributo a artistas de rock alternativo y grunge."
+    },
+    "op-0519": {
+      "grade": 2,
+      "rationale": "Se describe como concierto de Arjona y Camilo Sesto sin llamarlo tributo, aunque la propuesta resulta poco detallada y ambigua."
+    },
+    "op-0520": {
+      "grade": 0,
+      "rationale": "Tributo explícito a Camilo Sesto."
+    },
+    "op-0521": {
+      "grade": 0,
+      "rationale": "Noche con DJs en La Fernetería, sin evidencia visible de que se desarrolle al aire libre."
+    },
+    "op-0522": {
+      "grade": 3,
+      "rationale": "Evento de música electrónica en una azotea, marcado explícitamente como outdoor."
+    },
+    "op-0523": {
+      "grade": 0,
+      "rationale": "No ofrece ninguna evidencia de entorno o actividad al aire libre."
+    },
+    "op-0524": {
+      "grade": 3,
+      "rationale": "Plan en plazas y parques de Costanera Sur, directamente compatible con una salida al aire libre."
+    },
+    "op-0525": {
+      "grade": 0,
+      "rationale": "Concierto acústico marcado explícitamente como indoor."
+    },
+    "op-0526": {
+      "grade": 1,
+      "rationale": "El nombre menciona una playa privada, pero no hay evidencia de setting exterior ni actividad al aire libre."
+    },
+    "op-0527": {
+      "grade": 3,
+      "rationale": "Fiesta de house en una terraza al aire libre, descrita como baile bajo las estrellas."
+    },
+    "op-0528": {
+      "grade": 3,
+      "rationale": "Un paseo social en bicicleta es un plan directamente al aire libre, aunque falten detalles adicionales."
+    },
+    "op-0529": {
+      "grade": 3,
+      "rationale": "Está marcado como outdoor e incluye explorar la ciudad y la posibilidad de tocar música en un parque."
+    },
+    "op-0530": {
+      "grade": 0,
+      "rationale": "Festival sin setting ni descripción que indiquen que sea al aire libre."
+    },
+    "op-0531": {
+      "grade": 3,
+      "rationale": "Torneo de fútbol y actividades benéficas con setting explícitamente outdoor."
+    },
+    "op-0532": {
+      "grade": 3,
+      "rationale": "Festival familiar celebrado explícitamente al aire libre en la Plaza de las Naciones Unidas."
+    },
+    "op-0533": {
+      "grade": 0,
+      "rationale": "Es explícitamente una fiesta y termina con una fiesta funky disco."
+    },
+    "op-0534": {
+      "grade": 0,
+      "rationale": "Fiesta retro con DJs y pistas de baile; contradice la exclusión de fiestas."
+    },
+    "op-0535": {
+      "grade": 0,
+      "rationale": "El evento se presenta expresamente como Fiesta REGINA."
+    },
+    "op-0536": {
+      "grade": 0,
+      "rationale": "Fiesta nostálgica centrada en cantar y bailar en la pista."
+    },
+    "op-0537": {
+      "grade": 0,
+      "rationale": "Fiesta de trap y reggaetón, por lo que viola ambas exclusiones."
+    },
+    "op-0538": {
+      "grade": 0,
+      "rationale": "Fiesta de perreo dedicada explícitamente al reggaetón old school."
+    },
+    "op-0539": {
+      "grade": 3,
+      "rationale": "Festival musical de trap; no se describe como fiesta ni como reggaetón, por lo que respeta las exclusiones."
+    },
+    "op-0540": {
+      "grade": 0,
+      "rationale": "Fiesta de música urbana que incluye explícitamente reggaetón."
+    },
+    "op-0541": {
+      "grade": 0,
+      "rationale": "Combina un concierto homenaje con una fiesta de DJ; la presencia de fiesta contradice el pedido."
+    },
+    "op-0542": {
+      "grade": 0,
+      "rationale": "Fiesta electrónica diseñada para bailar durante toda la noche."
+    },
+    "op-0543": {
+      "grade": 0,
+      "rationale": "Fiesta con disfraces y sets de DJs, expresamente excluida por la consulta."
+    },
+    "op-0544": {
+      "grade": 0,
+      "rationale": "Fiesta centrada en dancehall, dembow y reggaetón; contradice de forma directa la solicitud."
+    }
+  }
+}

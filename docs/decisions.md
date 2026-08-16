@@ -26,6 +26,68 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Pure Voyage ordering; RRF only for ties and failures
+
+**Date:** 2026-08-16
+
+**Decision:** Production `rerankEvents` uses the hosted Voyage order directly.
+The incoming RRF/retrieval rank is retained only as a deterministic tie-break
+and as the unchanged fail-closed order when Voyage is disabled, has no ranking
+signal, times out, errors, or returns malformed data. Continue reranking all 50
+candidates. Do not add intent-specific ranker branches.
+
+Related Decisions: "Validate hosted Voyage reranking on frozen production
+candidates" (2026-08-16) and "Hosted Voyage rerank replaces facet-overlap
+rerank" (2026-08-15).
+
+**Alternatives Considered (if applicable):**
+- Keep `2/(60+rerankerRank) + 1/(60+baseRank)` fusion: rejected — the
+  pre-registered holdout found no aggregate top-result safety benefit. Pure
+  Voyage and fusion each had two exclusive bad-at-rank-1 cases, while pure
+  Voyage led NDCG at the requested display limit (`0.705` vs `0.665`).
+- Route subjective and literal queries differently: rejected — the 21/17-query
+  slices are too small for another policy, and each ranker caused a different
+  class of visible failure. A conditional branch would tune against a consumed
+  holdout.
+- Increase the fusion weight or tune another score transform: rejected — the
+  89-query set is a development set and the new holdout has now been used once
+  for the final decision. Further parameter search would overfit both.
+- Reduce Voyage depth to 20 or 30 candidates: rejected — the frozen holdout
+  showed no stable quality win. Depth 20 matched full-depth NDCG@3 (`0.692`) but
+  trailed NDCG@5 (`0.681` vs `0.698`) and display-limit NDCG (`0.690` vs
+  `0.705`); no live latency or cost reduction was measured.
+- Restore facet/chill reranking: rejected — it remained below hosted Voyage and
+  is not a reliable fallback.
+
+**Rationale:** After restoring explicit grades for every measured top-five
+event, the 88-query development replay still favored pure Voyage over current
+fusion on NDCG@5 (`0.823` vs `0.811`). A targeted blinded audit then selected
+50 queries where the systems disagreed and graded 330 options with two
+independent 5.6 Sol passes; exact inter-pass agreement was `83.0%`, and 56
+adjacent-grade disagreements were adjudicated without ranker identity. On this
+deliberately difficult subset, pure Voyage scored NDCG@5 `0.840` vs `0.762`,
+with 28 wins, 10 ties, 12 losses, and slightly fewer bad top results (`0.180`
+vs `0.200`).
+
+The final evidence came from 40 production-style queries pre-registered in
+commit `c2f76ae` before capture or rank inspection. Thirty-eight queries
+returned candidates; 544 query-event pairs received two independent blinded
+5.6 Sol grades (`86.4%` exact agreement) plus adjudication. Pure Voyage led
+fusion on NDCG@3 (`0.692` vs `0.672`), NDCG@5 (`0.698` vs `0.688`), and NDCG at
+the frozen requested display limit (`0.705` vs `0.665`). Relevant@1 (`0.737`)
+and Bad@1 (`0.211`) were identical. Every paired 95% bootstrap interval included
+zero, and exact McNemar tests found no top-one difference, so the holdout says
+the two methods are statistically unresolved rather than proving a large pure
+Voyage gain. In that effective tie, fusion needs positive evidence because it
+systematically pulls a stronger cross-encoder toward weaker retrieval order;
+none remained. RRF already provides operational fallback.
+
+The audit is model-judged, not human-labeled; the two-pass agreement and
+adjudication reduce but do not remove that caveat. The zero-result
+`planes en Recoleta` case is a separate first-stage retrieval failure: the
+hybrid path returned zero while the same filters returned 47 upcoming events.
+This ranking decision does not mask or special-case that issue.
+
 ### Validate hosted Voyage reranking on frozen production candidates
 
 **Date:** 2026-08-16

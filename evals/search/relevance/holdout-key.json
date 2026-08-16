@@ -1,0 +1,2384 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-16T04:45:31.453Z",
+    "seed": 20260816,
+    "worksheet": "evals/search/relevance/holdout-labeling-worksheet.json",
+    "note": "Restores identity for the blinded worksheet: optionId -> queryId / eventId."
+  },
+  "queries": [
+    {
+      "queryId": "hold-es-bailar-charlar",
+      "options": [
+        {
+          "optionId": "op-0001",
+          "eventId": "9089d173-0ef3-40a5-9419-e12381470bbd"
+        },
+        {
+          "optionId": "op-0002",
+          "eventId": "c1043331-27e1-4edf-a9cb-c5ba3e0250ff"
+        },
+        {
+          "optionId": "op-0003",
+          "eventId": "eb9fe5fb-4ec6-459b-8727-d627f68ea7be"
+        },
+        {
+          "optionId": "op-0004",
+          "eventId": "91aca093-e3ed-4b86-9a6e-ae3322c6e818"
+        },
+        {
+          "optionId": "op-0005",
+          "eventId": "1e204112-8e2a-4453-bcc3-80bf4c9816a2"
+        },
+        {
+          "optionId": "op-0006",
+          "eventId": "d7a98eed-e83f-476b-9081-fd3497b39c6d"
+        },
+        {
+          "optionId": "op-0007",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+        },
+        {
+          "optionId": "op-0008",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff"
+        },
+        {
+          "optionId": "op-0009",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        },
+        {
+          "optionId": "op-0010",
+          "eventId": "c85ca91a-9765-4558-87f1-dfee47d513f3"
+        },
+        {
+          "optionId": "op-0011",
+          "eventId": "f48f808d-567a-4e4b-9ddf-7aa8db53819d"
+        },
+        {
+          "optionId": "op-0012",
+          "eventId": "96817b93-ad2b-42a2-a521-b8c9a3200303"
+        },
+        {
+          "optionId": "op-0013",
+          "eventId": "7f1e80ff-a8e6-4f93-8b8c-8e7df994d86d"
+        },
+        {
+          "optionId": "op-0014",
+          "eventId": "6103fe25-9948-4a40-98d1-b99870a47c34"
+        },
+        {
+          "optionId": "op-0015",
+          "eventId": "221dc4cc-5cbd-41e4-af6e-96cac608e2ca"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-cita-bajo-techo",
+      "options": [
+        {
+          "optionId": "op-0016",
+          "eventId": "551f4911-1207-4707-ad66-efb93c2a6c7b"
+        },
+        {
+          "optionId": "op-0017",
+          "eventId": "c4665b91-618c-46ea-8e62-5d118887927a"
+        },
+        {
+          "optionId": "op-0018",
+          "eventId": "a83f58d4-e616-4105-85ef-97d398174964"
+        },
+        {
+          "optionId": "op-0019",
+          "eventId": "c3308d1b-8819-4aba-980c-ac90ed191ca6"
+        },
+        {
+          "optionId": "op-0020",
+          "eventId": "f7c857e7-5dab-4926-9675-486d4d738ea0"
+        },
+        {
+          "optionId": "op-0021",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc"
+        },
+        {
+          "optionId": "op-0022",
+          "eventId": "95a49ba9-11ae-491a-bb0c-b5440142a39e"
+        },
+        {
+          "optionId": "op-0023",
+          "eventId": "aa1d015f-9f32-4cdb-a320-590d909ceaf6"
+        },
+        {
+          "optionId": "op-0024",
+          "eventId": "7d26d792-d9f9-48ed-b571-785ae966fc7e"
+        },
+        {
+          "optionId": "op-0025",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64"
+        },
+        {
+          "optionId": "op-0026",
+          "eventId": "6c569fbf-c702-4c41-a3cf-f2578ef4bb26"
+        },
+        {
+          "optionId": "op-0027",
+          "eventId": "cdbc210e-ab71-4889-825c-285de85bf615"
+        },
+        {
+          "optionId": "op-0028",
+          "eventId": "b7445890-5d20-4a76-85b1-328d970bab5a"
+        },
+        {
+          "optionId": "op-0029",
+          "eventId": "7c7641e9-4d03-4172-aa8c-eb92c0ec080f"
+        },
+        {
+          "optionId": "op-0030",
+          "eventId": "29a83015-b50c-4208-a35c-452e5b3d7356"
+        },
+        {
+          "optionId": "op-0031",
+          "eventId": "08e57f71-c65b-47ab-bb06-843eeeea78a2"
+        },
+        {
+          "optionId": "op-0032",
+          "eventId": "410ebe4e-fed0-495d-9aed-b54f108735cc"
+        },
+        {
+          "optionId": "op-0033",
+          "eventId": "2ab0c8d4-e203-4fd7-81cc-abc704d25b50"
+        },
+        {
+          "optionId": "op-0034",
+          "eventId": "280a18d8-85d6-4ec9-a0d6-2b9787482af0"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-padres-sin-ruido",
+      "options": [
+        {
+          "optionId": "op-0035",
+          "eventId": "c35759fc-1ac9-4936-bfe3-9b3eab3095dd"
+        },
+        {
+          "optionId": "op-0036",
+          "eventId": "bff3637b-a12d-40df-acca-880a30d8189f"
+        },
+        {
+          "optionId": "op-0037",
+          "eventId": "7a4f35c4-a688-4233-a2d7-22772d13536d"
+        },
+        {
+          "optionId": "op-0038",
+          "eventId": "8c41f343-f584-4237-a563-1aaa02126c6e"
+        },
+        {
+          "optionId": "op-0039",
+          "eventId": "20a71a1c-e57e-4844-82d7-3888d65cf082"
+        },
+        {
+          "optionId": "op-0040",
+          "eventId": "544d3b15-925f-41f0-bf35-26f2d0a4d719"
+        },
+        {
+          "optionId": "op-0041",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc"
+        },
+        {
+          "optionId": "op-0042",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64"
+        },
+        {
+          "optionId": "op-0043",
+          "eventId": "f6f2ecdb-23ed-4d94-8cc3-04330a3c8d8a"
+        },
+        {
+          "optionId": "op-0044",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+        },
+        {
+          "optionId": "op-0045",
+          "eventId": "5fd41f65-8e9a-45cc-826c-0096ea2b14ef"
+        },
+        {
+          "optionId": "op-0046",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d"
+        },
+        {
+          "optionId": "op-0047",
+          "eventId": "c4665b91-618c-46ea-8e62-5d118887927a"
+        },
+        {
+          "optionId": "op-0048",
+          "eventId": "58983910-e14e-44cd-8db5-f6951dc2d79b"
+        },
+        {
+          "optionId": "op-0049",
+          "eventId": "f7c857e7-5dab-4926-9675-486d4d738ea0"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-solo-post-laburo",
+      "options": [
+        {
+          "optionId": "op-0050",
+          "eventId": "7d26d792-d9f9-48ed-b571-785ae966fc7e"
+        },
+        {
+          "optionId": "op-0051",
+          "eventId": "f1aa9798-9f17-4d36-bc3d-dbd569cc3273"
+        },
+        {
+          "optionId": "op-0052",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+        },
+        {
+          "optionId": "op-0053",
+          "eventId": "c3308d1b-8819-4aba-980c-ac90ed191ca6"
+        },
+        {
+          "optionId": "op-0054",
+          "eventId": "aeefd4f3-92b5-4dac-8a31-f33db721873c"
+        },
+        {
+          "optionId": "op-0055",
+          "eventId": "2af5be04-6192-4aed-9658-54fe11ff00b8"
+        },
+        {
+          "optionId": "op-0056",
+          "eventId": "9804a41f-9ae2-44b9-87fd-8a1289b299f2"
+        },
+        {
+          "optionId": "op-0057",
+          "eventId": "f48f808d-567a-4e4b-9ddf-7aa8db53819d"
+        },
+        {
+          "optionId": "op-0058",
+          "eventId": "2ab0c8d4-e203-4fd7-81cc-abc704d25b50"
+        },
+        {
+          "optionId": "op-0059",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        },
+        {
+          "optionId": "op-0060",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+        },
+        {
+          "optionId": "op-0061",
+          "eventId": "3828e9fc-d789-4a67-9bfd-3846a0c1ebc3"
+        },
+        {
+          "optionId": "op-0062",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d"
+        },
+        {
+          "optionId": "op-0063",
+          "eventId": "95a49ba9-11ae-491a-bb0c-b5440142a39e"
+        },
+        {
+          "optionId": "op-0064",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff"
+        },
+        {
+          "optionId": "op-0065",
+          "eventId": "91aca093-e3ed-4b86-9a6e-ae3322c6e818"
+        },
+        {
+          "optionId": "op-0066",
+          "eventId": "9238bf9e-8f18-448c-acad-4e04e7416816"
+        },
+        {
+          "optionId": "op-0067",
+          "eventId": "b7445890-5d20-4a76-85b1-328d970bab5a"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-artistico-no-boliche",
+      "options": [
+        {
+          "optionId": "op-0068",
+          "eventId": "980179b7-daee-4b1b-a26a-7b9d4eff85fe"
+        },
+        {
+          "optionId": "op-0069",
+          "eventId": "6a262dbf-be1b-42c4-a07b-4b799cd82210"
+        },
+        {
+          "optionId": "op-0070",
+          "eventId": "ed94045b-b86b-46ca-b22b-f1b000a3aa5d"
+        },
+        {
+          "optionId": "op-0071",
+          "eventId": "ac4aaa9b-44de-4a56-ae19-24231cf44a8d"
+        },
+        {
+          "optionId": "op-0072",
+          "eventId": "07775378-ea91-42a1-93ee-737c3c69b814"
+        },
+        {
+          "optionId": "op-0073",
+          "eventId": "4209e5fe-21f3-4c89-84d5-755172b48660"
+        },
+        {
+          "optionId": "op-0074",
+          "eventId": "de1fca92-c97d-4359-929a-9d04525caa9f"
+        },
+        {
+          "optionId": "op-0075",
+          "eventId": "8c41f343-f584-4237-a563-1aaa02126c6e"
+        },
+        {
+          "optionId": "op-0076",
+          "eventId": "cd865517-cbea-4648-bd15-c2d6608d07f1"
+        },
+        {
+          "optionId": "op-0077",
+          "eventId": "7c6eb662-cb0b-45f8-8ee4-c9651b6ecf3b"
+        },
+        {
+          "optionId": "op-0078",
+          "eventId": "0c6116e4-8f5f-412d-85dd-12197fe7f281"
+        },
+        {
+          "optionId": "op-0079",
+          "eventId": "8c5b47f5-4219-4526-ba85-1479fd17547c"
+        },
+        {
+          "optionId": "op-0080",
+          "eventId": "5abaea5d-bc05-4784-bfaf-84939664b631"
+        },
+        {
+          "optionId": "op-0081",
+          "eventId": "221dc4cc-5cbd-41e4-af6e-96cac608e2ca"
+        },
+        {
+          "optionId": "op-0082",
+          "eventId": "2ce92377-30db-4d2b-9906-c23a24ec4e50"
+        },
+        {
+          "optionId": "op-0083",
+          "eventId": "978137b0-f244-4237-a02d-f60465f6817e"
+        },
+        {
+          "optionId": "op-0084",
+          "eventId": "551f4911-1207-4707-ad66-efb93c2a6c7b"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-bailar-no-cachengue",
+      "options": [
+        {
+          "optionId": "op-0085",
+          "eventId": "221dc4cc-5cbd-41e4-af6e-96cac608e2ca"
+        },
+        {
+          "optionId": "op-0086",
+          "eventId": "e8d7dc75-8e4d-4adc-af27-ade1b8fbb315"
+        },
+        {
+          "optionId": "op-0087",
+          "eventId": "4772ff91-63b5-4816-a90d-fea5f39a8676"
+        },
+        {
+          "optionId": "op-0088",
+          "eventId": "abb7aaf1-a62c-4f3d-9ee0-7853978b0f70"
+        },
+        {
+          "optionId": "op-0089",
+          "eventId": "9089d173-0ef3-40a5-9419-e12381470bbd"
+        },
+        {
+          "optionId": "op-0090",
+          "eventId": "40957e84-0713-40bd-9c20-2df44555e802"
+        },
+        {
+          "optionId": "op-0091",
+          "eventId": "8c41f343-f584-4237-a563-1aaa02126c6e"
+        },
+        {
+          "optionId": "op-0092",
+          "eventId": "2946e3ad-0f5a-4235-829d-afbb5ee9ed93"
+        },
+        {
+          "optionId": "op-0093",
+          "eventId": "c1043331-27e1-4edf-a9cb-c5ba3e0250ff"
+        },
+        {
+          "optionId": "op-0094",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        },
+        {
+          "optionId": "op-0095",
+          "eventId": "7cbd3016-bf3e-4fdd-aa07-01349767f85c"
+        },
+        {
+          "optionId": "op-0096",
+          "eventId": "f48f808d-567a-4e4b-9ddf-7aa8db53819d"
+        },
+        {
+          "optionId": "op-0097",
+          "eventId": "9e6ea4e8-652a-43cd-b31e-8c0c45eb5b50"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-musica-copa-intimo",
+      "options": [
+        {
+          "optionId": "op-0098",
+          "eventId": "892ceb84-03bc-47ae-b833-147001f54f0c"
+        },
+        {
+          "optionId": "op-0099",
+          "eventId": "db800cfa-adf0-49cc-82a0-78577813598d"
+        },
+        {
+          "optionId": "op-0100",
+          "eventId": "bff3637b-a12d-40df-acca-880a30d8189f"
+        },
+        {
+          "optionId": "op-0101",
+          "eventId": "0c6a1619-f371-437f-bd21-37c4d6987a6b"
+        },
+        {
+          "optionId": "op-0102",
+          "eventId": "9b9b289b-3c41-472c-92df-fde279870dc4"
+        },
+        {
+          "optionId": "op-0103",
+          "eventId": "551f4911-1207-4707-ad66-efb93c2a6c7b"
+        },
+        {
+          "optionId": "op-0104",
+          "eventId": "fbab53cc-f7f2-4c4e-95d6-05a563235c82"
+        },
+        {
+          "optionId": "op-0105",
+          "eventId": "18750704-d655-40c4-b247-cb4dc9f8b981"
+        },
+        {
+          "optionId": "op-0106",
+          "eventId": "a2a284e7-2a4e-4127-8888-62cca892ca50"
+        },
+        {
+          "optionId": "op-0107",
+          "eventId": "a477e04a-bac2-4baa-879b-f49959fdec6e"
+        },
+        {
+          "optionId": "op-0108",
+          "eventId": "2fd9521f-ebdf-4869-9dc8-ab40688d6ca3"
+        },
+        {
+          "optionId": "op-0109",
+          "eventId": "7e7324ca-a59e-42cf-a818-bb222c7d7083"
+        },
+        {
+          "optionId": "op-0110",
+          "eventId": "6bcead4e-54f4-4c44-9fe3-d9b7ad9f56b4"
+        },
+        {
+          "optionId": "op-0111",
+          "eventId": "8a9367ea-7917-400f-b96d-fdb3b3797ce3"
+        },
+        {
+          "optionId": "op-0112",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025"
+        },
+        {
+          "optionId": "op-0113",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d"
+        },
+        {
+          "optionId": "op-0114",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc"
+        },
+        {
+          "optionId": "op-0115",
+          "eventId": "c910c348-8ae7-43f9-936b-3bf5f0b1e24e"
+        },
+        {
+          "optionId": "op-0116",
+          "eventId": "dbbd76a1-c821-47d7-bd7e-292af6b431cc"
+        },
+        {
+          "optionId": "op-0117",
+          "eventId": "ff9b4840-6fd1-41d7-b56d-e75b70a3d253"
+        },
+        {
+          "optionId": "op-0118",
+          "eventId": "a0b297ef-8db4-4125-8761-60a9bf92a43a"
+        },
+        {
+          "optionId": "op-0119",
+          "eventId": "b14fd4eb-0b58-431a-93bd-f4c566616244"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-energia-no-apretado",
+      "options": [
+        {
+          "optionId": "op-0120",
+          "eventId": "7d26d792-d9f9-48ed-b571-785ae966fc7e"
+        },
+        {
+          "optionId": "op-0121",
+          "eventId": "92bfff98-f10b-48fd-9e03-8c4657226349"
+        },
+        {
+          "optionId": "op-0122",
+          "eventId": "7ee4dd4c-cd94-4e0c-9a56-edb986d58c28"
+        },
+        {
+          "optionId": "op-0123",
+          "eventId": "f466b478-dc8a-421b-b53d-970063ce2c82"
+        },
+        {
+          "optionId": "op-0124",
+          "eventId": "f48f808d-567a-4e4b-9ddf-7aa8db53819d"
+        },
+        {
+          "optionId": "op-0125",
+          "eventId": "0106efa9-010e-4cc7-913d-2eb50ad93795"
+        },
+        {
+          "optionId": "op-0126",
+          "eventId": "af0c1702-3f48-4c61-ba72-cdddb52928a9"
+        },
+        {
+          "optionId": "op-0127",
+          "eventId": "cab0ae58-afff-41fb-b784-bb8f687d028c"
+        },
+        {
+          "optionId": "op-0128",
+          "eventId": "5647ec95-02f3-4ce7-8b52-759c84054844"
+        },
+        {
+          "optionId": "op-0129",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        },
+        {
+          "optionId": "op-0130",
+          "eventId": "c0359146-fb0b-4cef-9b31-2aa02950fdb5"
+        },
+        {
+          "optionId": "op-0131",
+          "eventId": "193ac214-c72b-439b-b514-d19d08e87773"
+        },
+        {
+          "optionId": "op-0132",
+          "eventId": "978137b0-f244-4237-a02d-f60465f6817e"
+        },
+        {
+          "optionId": "op-0133",
+          "eventId": "764bba3a-cb14-4939-ad34-da64d681e4bf"
+        },
+        {
+          "optionId": "op-0134",
+          "eventId": "d65ada2a-35b4-4571-b5ae-6f969b1e6e96"
+        },
+        {
+          "optionId": "op-0135",
+          "eventId": "606e2d98-53a3-48fd-86d1-885d0d981a73"
+        },
+        {
+          "optionId": "op-0136",
+          "eventId": "44c321de-c6f4-4dfa-839f-462b9b0f6efc"
+        },
+        {
+          "optionId": "op-0137",
+          "eventId": "96817b93-ad2b-42a2-a521-b8c9a3200303"
+        },
+        {
+          "optionId": "op-0138",
+          "eventId": "8c41f343-f584-4237-a563-1aaa02126c6e"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-domingo-calma",
+      "options": [
+        {
+          "optionId": "op-0139",
+          "eventId": "33b88195-fbe1-4dab-9785-264026ab5d08"
+        },
+        {
+          "optionId": "op-0140",
+          "eventId": "ae63afaf-6e94-4904-a9f5-010675899b39"
+        },
+        {
+          "optionId": "op-0141",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+        },
+        {
+          "optionId": "op-0142",
+          "eventId": "31ba29ae-47fe-4c8b-aa25-cd9adb9778d9"
+        },
+        {
+          "optionId": "op-0143",
+          "eventId": "9bcb2636-9952-4d02-818b-f1a0c0abf6e9"
+        },
+        {
+          "optionId": "op-0144",
+          "eventId": "6453129b-cc8b-4522-9e3b-aff0d80d898c"
+        },
+        {
+          "optionId": "op-0145",
+          "eventId": "cf32326c-7907-4188-ae9b-19d00cf5ba02"
+        },
+        {
+          "optionId": "op-0146",
+          "eventId": "3e815330-3ce6-415b-bafe-a02ae6b12fbc"
+        },
+        {
+          "optionId": "op-0147",
+          "eventId": "06dc5301-15ef-4727-8fbd-b071d1548d38"
+        },
+        {
+          "optionId": "op-0148",
+          "eventId": "eb83ecd5-d475-4d0a-926b-ca68d90ba676"
+        },
+        {
+          "optionId": "op-0149",
+          "eventId": "f6d9f995-dcd0-4715-a17c-054f98dbea18"
+        },
+        {
+          "optionId": "op-0150",
+          "eventId": "7dbfe7c5-0d94-4278-906e-510b80e78e88"
+        },
+        {
+          "optionId": "op-0151",
+          "eventId": "394f6533-261e-417d-a9d7-7de17631a39c"
+        },
+        {
+          "optionId": "op-0152",
+          "eventId": "f58285b2-b9d4-4fc3-b41e-88141b0115ad"
+        },
+        {
+          "optionId": "op-0153",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+        },
+        {
+          "optionId": "op-0154",
+          "eventId": "892ceb84-03bc-47ae-b833-147001f54f0c"
+        },
+        {
+          "optionId": "op-0155",
+          "eventId": "efcf1319-bbeb-402e-9abc-21577ab5ae51"
+        },
+        {
+          "optionId": "op-0156",
+          "eventId": "2d418e28-f636-4636-8582-9e06488a03bf"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-cita-impresionar-barata",
+      "options": [
+        {
+          "optionId": "op-0157",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d"
+        },
+        {
+          "optionId": "op-0158",
+          "eventId": "f6bc7d3c-5616-4653-a2a2-290d1a8cabcf"
+        },
+        {
+          "optionId": "op-0159",
+          "eventId": "9e282f83-221c-482a-a50b-3b0e536a9108"
+        },
+        {
+          "optionId": "op-0160",
+          "eventId": "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf"
+        },
+        {
+          "optionId": "op-0161",
+          "eventId": "2ead3659-e802-46da-be06-b4ba8989e788"
+        },
+        {
+          "optionId": "op-0162",
+          "eventId": "08e57f71-c65b-47ab-bb06-843eeeea78a2"
+        },
+        {
+          "optionId": "op-0163",
+          "eventId": "52c710d4-f691-4871-b02a-e15114cc3575"
+        },
+        {
+          "optionId": "op-0164",
+          "eventId": "221dc4cc-5cbd-41e4-af6e-96cac608e2ca"
+        },
+        {
+          "optionId": "op-0165",
+          "eventId": "ffbd2462-eb0d-4483-a2f2-dd986d715b76"
+        },
+        {
+          "optionId": "op-0166",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64"
+        },
+        {
+          "optionId": "op-0167",
+          "eventId": "a0833012-18b4-4995-846c-81636cc8fa8c"
+        },
+        {
+          "optionId": "op-0168",
+          "eventId": "7a5ec006-9f8b-4212-b52f-24d77889b0bf"
+        },
+        {
+          "optionId": "op-0169",
+          "eventId": "7b9f7c5e-f194-4dd5-bb1a-b6a00c9072cd"
+        },
+        {
+          "optionId": "op-0170",
+          "eventId": "51bf09aa-1011-4af5-8bb2-043ce6c0f07b"
+        },
+        {
+          "optionId": "op-0171",
+          "eventId": "58983910-e14e-44cd-8db5-f6951dc2d79b"
+        },
+        {
+          "optionId": "op-0172",
+          "eventId": "33b88195-fbe1-4dab-9785-264026ab5d08"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-queer-no-megafiesta",
+      "options": [
+        {
+          "optionId": "op-0173",
+          "eventId": "7e1c463c-e835-46e4-8d19-3082492d534a"
+        },
+        {
+          "optionId": "op-0174",
+          "eventId": "28112c74-905e-40ec-9eb2-72f61a9e0277"
+        },
+        {
+          "optionId": "op-0175",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf"
+        },
+        {
+          "optionId": "op-0176",
+          "eventId": "3e58c3a1-9fac-46ce-8262-fffe0baaead9"
+        },
+        {
+          "optionId": "op-0177",
+          "eventId": "4493ed51-d296-4239-b442-7fb6d5ce3e3c"
+        },
+        {
+          "optionId": "op-0178",
+          "eventId": "827cd6e3-4a1f-4ff1-b0cd-1493c517d6ff"
+        },
+        {
+          "optionId": "op-0179",
+          "eventId": "6208a78a-15aa-4e4d-b3d4-a9581bda7148"
+        },
+        {
+          "optionId": "op-0180",
+          "eventId": "1ce9501b-0715-4713-ab08-b5905796b411"
+        },
+        {
+          "optionId": "op-0181",
+          "eventId": "107df7a8-4a7e-4718-8369-f49f37cf5c3a"
+        },
+        {
+          "optionId": "op-0182",
+          "eventId": "8c4d5b7e-d66c-42d8-a671-b046a804aeb3"
+        },
+        {
+          "optionId": "op-0183",
+          "eventId": "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf"
+        },
+        {
+          "optionId": "op-0184",
+          "eventId": "f48f808d-567a-4e4b-9ddf-7aa8db53819d"
+        },
+        {
+          "optionId": "op-0185",
+          "eventId": "e8d7dc75-8e4d-4adc-af27-ade1b8fbb315"
+        },
+        {
+          "optionId": "op-0186",
+          "eventId": "7f0a5173-0385-40c4-823b-6ac0bc33d364"
+        },
+        {
+          "optionId": "op-0187",
+          "eventId": "91aca093-e3ed-4b86-9a6e-ae3322c6e818"
+        },
+        {
+          "optionId": "op-0188",
+          "eventId": "1197a4f1-acce-475b-9fdb-f93415807d2d"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-adolescentes",
+      "options": [
+        {
+          "optionId": "op-0189",
+          "eventId": "93ba61f1-8299-4ecf-adfd-edefac82ba06"
+        },
+        {
+          "optionId": "op-0190",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        },
+        {
+          "optionId": "op-0191",
+          "eventId": "206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6"
+        },
+        {
+          "optionId": "op-0192",
+          "eventId": "71ac1db4-d275-4f27-9870-be6bc31bad16"
+        },
+        {
+          "optionId": "op-0193",
+          "eventId": "7cbd3016-bf3e-4fdd-aa07-01349767f85c"
+        },
+        {
+          "optionId": "op-0194",
+          "eventId": "a4aec56a-aacd-4f8b-903b-ea774c6cecb6"
+        },
+        {
+          "optionId": "op-0195",
+          "eventId": "c2d62fde-fa0f-46e8-b9af-98f7ea3e8baf"
+        },
+        {
+          "optionId": "op-0196",
+          "eventId": "f6d9f995-dcd0-4715-a17c-054f98dbea18"
+        },
+        {
+          "optionId": "op-0197",
+          "eventId": "8bad24e8-1cec-4545-a055-539a45c8b975"
+        },
+        {
+          "optionId": "op-0198",
+          "eventId": "0118b60e-ce2c-424b-979d-08ef4e4f756b"
+        },
+        {
+          "optionId": "op-0199",
+          "eventId": "3ae1cbf2-f1d6-4b20-b0e8-8a18d147c8db"
+        },
+        {
+          "optionId": "op-0200",
+          "eventId": "920d6ab1-daf8-4476-b841-6f5008fbfa5e"
+        },
+        {
+          "optionId": "op-0201",
+          "eventId": "d4d83e39-c2b9-4baa-b49d-65c88e791c77"
+        },
+        {
+          "optionId": "op-0202",
+          "eventId": "04b72518-c46a-4c33-a51a-72b33d99d4f3"
+        },
+        {
+          "optionId": "op-0203",
+          "eventId": "2f7966a8-6cde-486b-8d37-f00731f60c6b"
+        },
+        {
+          "optionId": "op-0204",
+          "eventId": "9804a41f-9ae2-44b9-87fd-8a1289b299f2"
+        },
+        {
+          "optionId": "op-0205",
+          "eventId": "f8ec7149-322e-4393-a72b-36ac3c5481c2"
+        },
+        {
+          "optionId": "op-0206",
+          "eventId": "4ee29353-b2f0-48c3-996f-2d8cebc9bff2"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-milonga-principiantes",
+      "options": [
+        {
+          "optionId": "op-0207",
+          "eventId": "03303cb3-ea59-497f-94eb-c89d8303e847"
+        },
+        {
+          "optionId": "op-0208",
+          "eventId": "1321c00f-24fc-4274-9343-fd7b8318948a"
+        },
+        {
+          "optionId": "op-0209",
+          "eventId": "b35403b0-43d4-4d67-a658-9cb1c4f8368f"
+        },
+        {
+          "optionId": "op-0210",
+          "eventId": "2751358f-0e99-460a-9212-3e0ec4535729"
+        },
+        {
+          "optionId": "op-0211",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+        },
+        {
+          "optionId": "op-0212",
+          "eventId": "73e7e095-d508-4a15-8afc-013bdddaa85d"
+        },
+        {
+          "optionId": "op-0213",
+          "eventId": "708059c8-4b95-4c4c-b902-3ce7dbbe2583"
+        },
+        {
+          "optionId": "op-0214",
+          "eventId": "4cd006c9-7475-4b3d-8668-87de8fecdccf"
+        },
+        {
+          "optionId": "op-0215",
+          "eventId": "e7c631a1-17a1-45f5-9513-4ff7de3be31f"
+        },
+        {
+          "optionId": "op-0216",
+          "eventId": "f6c138be-40fc-4230-ac87-33ab1c8e449e"
+        },
+        {
+          "optionId": "op-0217",
+          "eventId": "21ba1637-d86b-4f74-b14c-e655b9c9f307"
+        },
+        {
+          "optionId": "op-0218",
+          "eventId": "b62e332c-5c00-472a-a004-cf1c1de5e3b6"
+        },
+        {
+          "optionId": "op-0219",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-blues-vivo",
+      "options": [
+        {
+          "optionId": "op-0220",
+          "eventId": "b064ecff-1844-443f-94f7-45f7047b4ee9"
+        },
+        {
+          "optionId": "op-0221",
+          "eventId": "2374526a-1d02-49b3-ab4d-ece5a2e61340"
+        },
+        {
+          "optionId": "op-0222",
+          "eventId": "1f7e27fb-5746-479b-aced-c51dfdb3d00e"
+        },
+        {
+          "optionId": "op-0223",
+          "eventId": "abc49487-f540-4cb2-90b3-2559c3976f2c"
+        },
+        {
+          "optionId": "op-0224",
+          "eventId": "de1fca92-c97d-4359-929a-9d04525caa9f"
+        },
+        {
+          "optionId": "op-0225",
+          "eventId": "5870f2ef-df85-480a-bba9-e8b3fafaa145"
+        },
+        {
+          "optionId": "op-0226",
+          "eventId": "51bf09aa-1011-4af5-8bb2-043ce6c0f07b"
+        },
+        {
+          "optionId": "op-0227",
+          "eventId": "ba68bdbf-a153-43b9-9c61-f2c2772f4f8a"
+        },
+        {
+          "optionId": "op-0228",
+          "eventId": "9311006e-a708-4f71-b679-06045900b7ce"
+        },
+        {
+          "optionId": "op-0229",
+          "eventId": "9ae2ee45-34a3-4b33-a154-d489e594d81c"
+        },
+        {
+          "optionId": "op-0230",
+          "eventId": "08251525-9844-4c41-9842-a623e16e601e"
+        },
+        {
+          "optionId": "op-0231",
+          "eventId": "086a46cd-abd8-4544-a334-bddaf42c8042"
+        },
+        {
+          "optionId": "op-0232",
+          "eventId": "c39d244e-96b9-4e41-aa70-92237cbab0cd"
+        },
+        {
+          "optionId": "op-0233",
+          "eventId": "bff3637b-a12d-40df-acca-880a30d8189f"
+        },
+        {
+          "optionId": "op-0234",
+          "eventId": "105c3210-91ae-46ac-a95f-7a0a65ca0e76"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-teatro-almagro",
+      "options": [
+        {
+          "optionId": "op-0235",
+          "eventId": "82e6724e-880c-438b-affa-0304c406059a"
+        },
+        {
+          "optionId": "op-0236",
+          "eventId": "c587b4df-d3fd-4bf4-afc2-97bc19f665c7"
+        },
+        {
+          "optionId": "op-0237",
+          "eventId": "2946e3ad-0f5a-4235-829d-afbb5ee9ed93"
+        },
+        {
+          "optionId": "op-0238",
+          "eventId": "cb26fb08-d75f-4959-b24b-55f2d5a0ffc2"
+        },
+        {
+          "optionId": "op-0239",
+          "eventId": "6fab8bf4-90a0-4dd7-827e-8270dfb91756"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-taller-ceramica",
+      "options": [
+        {
+          "optionId": "op-0240",
+          "eventId": "9d360c34-01a8-4155-aedd-b5e03461fb24"
+        },
+        {
+          "optionId": "op-0241",
+          "eventId": "65db7eea-6677-4ae9-ac68-a92a9b9bffad"
+        },
+        {
+          "optionId": "op-0242",
+          "eventId": "d6c129f6-c073-4134-97a4-a8114747c952"
+        },
+        {
+          "optionId": "op-0243",
+          "eventId": "5034ba2f-a39b-4424-8873-2f39c57cca27"
+        },
+        {
+          "optionId": "op-0244",
+          "eventId": "2e16fbe3-56b9-42fb-bea6-e06b18fbf32d"
+        },
+        {
+          "optionId": "op-0245",
+          "eventId": "acf71f8c-2455-4fad-9aee-ba4166e6e51f"
+        },
+        {
+          "optionId": "op-0246",
+          "eventId": "7b4b101d-08df-4c2f-b2ca-a1161e73b6ba"
+        },
+        {
+          "optionId": "op-0247",
+          "eventId": "ccfb0877-7ae2-4ae9-897f-8f2018ad4f61"
+        },
+        {
+          "optionId": "op-0248",
+          "eventId": "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7"
+        },
+        {
+          "optionId": "op-0249",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+        },
+        {
+          "optionId": "op-0250",
+          "eventId": "280a18d8-85d6-4ec9-a0d6-2b9787482af0"
+        },
+        {
+          "optionId": "op-0251",
+          "eventId": "3e45b1e5-fccf-4e48-9718-17c352c401e1"
+        },
+        {
+          "optionId": "op-0252",
+          "eventId": "23f7d601-4f8e-4d3f-a816-0192fd58a6f3"
+        },
+        {
+          "optionId": "op-0253",
+          "eventId": "0646ee85-c3be-4a00-b595-3140291f8589"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-museo-gratis",
+      "options": [
+        {
+          "optionId": "op-0254",
+          "eventId": "b0259d79-e122-4269-a164-3dcb49dc498c"
+        },
+        {
+          "optionId": "op-0255",
+          "eventId": "017c4ec6-1b54-423b-9a3a-870601811130"
+        },
+        {
+          "optionId": "op-0256",
+          "eventId": "e6ae6b09-1867-46ca-95ed-14f989142889"
+        },
+        {
+          "optionId": "op-0257",
+          "eventId": "c19d4f32-9483-4033-9cd8-a5a4042dcbd2"
+        },
+        {
+          "optionId": "op-0258",
+          "eventId": "21f43631-0765-49f6-9d17-d9561b217b63"
+        },
+        {
+          "optionId": "op-0259",
+          "eventId": "c2505aee-9a89-4443-9ab0-c516d09823eb"
+        },
+        {
+          "optionId": "op-0260",
+          "eventId": "cfb52731-0d97-42c0-b703-ab6c52adcfd7"
+        },
+        {
+          "optionId": "op-0261",
+          "eventId": "324e9c49-db37-4888-b425-2565e6b44f85"
+        },
+        {
+          "optionId": "op-0262",
+          "eventId": "df2caebe-d5c2-479b-96cb-ec08550b016b"
+        },
+        {
+          "optionId": "op-0263",
+          "eventId": "cbc66003-cf8c-4b93-ba28-39692a5cea53"
+        },
+        {
+          "optionId": "op-0264",
+          "eventId": "10a242e9-f596-436c-bdd3-ef2b472df67d"
+        },
+        {
+          "optionId": "op-0265",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64"
+        },
+        {
+          "optionId": "op-0266",
+          "eventId": "e197177c-3b21-47fd-9ed7-d78ab52a5259"
+        },
+        {
+          "optionId": "op-0267",
+          "eventId": "c4d99b15-6183-4860-9e71-746f416b38d8"
+        },
+        {
+          "optionId": "op-0268",
+          "eventId": "7276f996-051c-4116-a7c2-7d7aa75dd5be"
+        },
+        {
+          "optionId": "op-0269",
+          "eventId": "fc4a06e4-1e3b-4f0e-8ce1-7e867085b10a"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-feria-comida",
+      "options": [
+        {
+          "optionId": "op-0270",
+          "eventId": "d36ef87a-7722-4222-bf7d-b050c2293951"
+        },
+        {
+          "optionId": "op-0271",
+          "eventId": "7b4b101d-08df-4c2f-b2ca-a1161e73b6ba"
+        },
+        {
+          "optionId": "op-0272",
+          "eventId": "ccfb0877-7ae2-4ae9-897f-8f2018ad4f61"
+        },
+        {
+          "optionId": "op-0273",
+          "eventId": "206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6"
+        },
+        {
+          "optionId": "op-0274",
+          "eventId": "31ba29ae-47fe-4c8b-aa25-cd9adb9778d9"
+        },
+        {
+          "optionId": "op-0275",
+          "eventId": "1e0907a8-d372-4d83-902a-f015c25d7ff1"
+        },
+        {
+          "optionId": "op-0276",
+          "eventId": "2cef14bd-e517-4ec8-bc10-ca03eeb4545c"
+        },
+        {
+          "optionId": "op-0277",
+          "eventId": "207d942b-f186-4af6-92e5-1426ac9b65f4"
+        },
+        {
+          "optionId": "op-0278",
+          "eventId": "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7"
+        },
+        {
+          "optionId": "op-0279",
+          "eventId": "d6c129f6-c073-4134-97a4-a8114747c952"
+        },
+        {
+          "optionId": "op-0280",
+          "eventId": "08f7be30-cbe4-4f5e-add9-d29ac1df3a47"
+        },
+        {
+          "optionId": "op-0281",
+          "eventId": "df023ebd-b3ce-477b-9b3c-a14d84dc4d71"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-rock-indie",
+      "options": [
+        {
+          "optionId": "op-0282",
+          "eventId": "3382358b-ce7d-4624-807a-1dc7e6ab9a98"
+        },
+        {
+          "optionId": "op-0283",
+          "eventId": "d51acd6f-b64d-4406-8aed-e7156a156272"
+        },
+        {
+          "optionId": "op-0284",
+          "eventId": "d123e53f-aea7-490e-8710-298b27cd0f5a"
+        },
+        {
+          "optionId": "op-0285",
+          "eventId": "1b497e80-b0b0-4c87-ab3a-67b34e56cd9b"
+        },
+        {
+          "optionId": "op-0286",
+          "eventId": "aaea5e5e-d359-49d0-b8e3-97c337c7d744"
+        },
+        {
+          "optionId": "op-0287",
+          "eventId": "54f7fa86-434f-4414-b472-02bd6b70e8c6"
+        },
+        {
+          "optionId": "op-0288",
+          "eventId": "551f4911-1207-4707-ad66-efb93c2a6c7b"
+        },
+        {
+          "optionId": "op-0289",
+          "eventId": "0bc33d63-074c-43a2-ac28-a4d73868170f"
+        },
+        {
+          "optionId": "op-0290",
+          "eventId": "fae256a0-5150-4be6-99f2-b2a59d44d6a5"
+        },
+        {
+          "optionId": "op-0291",
+          "eventId": "a66cc397-ea8d-4d0f-8284-bf411e16abd2"
+        },
+        {
+          "optionId": "op-0292",
+          "eventId": "bf852673-040a-4b7e-bcb7-d868ab4960fb"
+        },
+        {
+          "optionId": "op-0293",
+          "eventId": "8fc32de8-74d7-4e74-bf12-b9cbfa1abad3"
+        },
+        {
+          "optionId": "op-0294",
+          "eventId": "f2e2ba71-cdce-48ae-b1b4-6ead9cce8253"
+        },
+        {
+          "optionId": "op-0295",
+          "eventId": "bc33ef30-747a-475f-ace6-19f49adabdb3"
+        },
+        {
+          "optionId": "op-0296",
+          "eventId": "f51f05e6-7522-492e-8ab7-fda79ee953f9"
+        },
+        {
+          "optionId": "op-0297",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d"
+        },
+        {
+          "optionId": "op-0298",
+          "eventId": "f7c79f78-eca2-4410-941b-ba16de7d5488"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-standup-barato",
+      "options": [
+        {
+          "optionId": "op-0299",
+          "eventId": "b2fb24a0-03d2-411b-8a4d-10a3918f0002"
+        },
+        {
+          "optionId": "op-0300",
+          "eventId": "33b88195-fbe1-4dab-9785-264026ab5d08"
+        },
+        {
+          "optionId": "op-0301",
+          "eventId": "e5a8f22c-a234-4779-afa9-940427e900d8"
+        },
+        {
+          "optionId": "op-0302",
+          "eventId": "fc4a06e4-1e3b-4f0e-8ce1-7e867085b10a"
+        },
+        {
+          "optionId": "op-0303",
+          "eventId": "cb58127f-74cf-407c-ab3b-1eaf696ad67d"
+        },
+        {
+          "optionId": "op-0304",
+          "eventId": "e7ad3a34-e55e-4def-b338-ea8c46baa021"
+        },
+        {
+          "optionId": "op-0305",
+          "eventId": "f6bc7d3c-5616-4653-a2a2-290d1a8cabcf"
+        },
+        {
+          "optionId": "op-0306",
+          "eventId": "715362cf-4266-499a-a6e4-d034dae344cd"
+        },
+        {
+          "optionId": "op-0307",
+          "eventId": "043f86c9-7b2d-4738-ad8e-4c0f8e578913"
+        },
+        {
+          "optionId": "op-0308",
+          "eventId": "889fae20-f2b8-45cf-a928-103bc7a00346"
+        },
+        {
+          "optionId": "op-0309",
+          "eventId": "fd70761b-9160-4042-99e5-d72bcb8e16e9"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-cine-hoy",
+      "options": [
+        {
+          "optionId": "op-0310",
+          "eventId": "15520a2a-ff8f-45b4-a57c-2fee0623d604"
+        },
+        {
+          "optionId": "op-0311",
+          "eventId": "3e45b1e5-fccf-4e48-9718-17c352c401e1"
+        },
+        {
+          "optionId": "op-0312",
+          "eventId": "3e815330-3ce6-415b-bafe-a02ae6b12fbc"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-palermo-manana-precio",
+      "options": [
+        {
+          "optionId": "op-0313",
+          "eventId": "59baa37b-0eec-444a-b2d1-71e7df2755ed"
+        },
+        {
+          "optionId": "op-0314",
+          "eventId": "981174e8-d77a-4eb8-9d5a-db1a5ab1b395"
+        },
+        {
+          "optionId": "op-0315",
+          "eventId": "abb7aaf1-a62c-4f3d-9ee0-7853978b0f70"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-recoleta-cultural-gratis",
+      "options": [
+        {
+          "optionId": "op-0316",
+          "eventId": "0a4faf38-01be-447b-9f0c-1ecdde933083"
+        },
+        {
+          "optionId": "op-0317",
+          "eventId": "10c71364-0714-4fe4-9034-decfb9d36b62"
+        },
+        {
+          "optionId": "op-0318",
+          "eventId": "927bfc75-044c-4a9d-abe3-0f660f753efc"
+        },
+        {
+          "optionId": "op-0319",
+          "eventId": "324e9c49-db37-4888-b425-2565e6b44f85"
+        },
+        {
+          "optionId": "op-0320",
+          "eventId": "cfb52731-0d97-42c0-b703-ab6c52adcfd7"
+        },
+        {
+          "optionId": "op-0321",
+          "eventId": "1bf8782c-c4cf-451f-8e1c-04a496295c66"
+        },
+        {
+          "optionId": "op-0322",
+          "eventId": "21ba1637-d86b-4f74-b14c-e655b9c9f307"
+        },
+        {
+          "optionId": "op-0323",
+          "eventId": "21f43631-0765-49f6-9d17-d9561b217b63"
+        },
+        {
+          "optionId": "op-0324",
+          "eventId": "12d3a135-60e6-4c4b-ae7a-4c45f55f9472"
+        },
+        {
+          "optionId": "op-0325",
+          "eventId": "475befcf-a971-4aff-9bb2-da8015ad807b"
+        },
+        {
+          "optionId": "op-0326",
+          "eventId": "6453129b-cc8b-4522-9e3b-aff0d80d898c"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-tango-san-telmo-hoy",
+      "options": []
+    },
+    {
+      "queryId": "hold-en-warm-quiet-date",
+      "options": [
+        {
+          "optionId": "op-0327",
+          "eventId": "eb9fe5fb-4ec6-459b-8727-d627f68ea7be"
+        },
+        {
+          "optionId": "op-0328",
+          "eventId": "7d26d792-d9f9-48ed-b571-785ae966fc7e"
+        },
+        {
+          "optionId": "op-0329",
+          "eventId": "9804a41f-9ae2-44b9-87fd-8a1289b299f2"
+        },
+        {
+          "optionId": "op-0330",
+          "eventId": "920d6ab1-daf8-4476-b841-6f5008fbfa5e"
+        },
+        {
+          "optionId": "op-0331",
+          "eventId": "4df71035-976e-4625-88b6-ef6e6c9088e1"
+        },
+        {
+          "optionId": "op-0332",
+          "eventId": "3ae1cbf2-f1d6-4b20-b0e8-8a18d147c8db"
+        },
+        {
+          "optionId": "op-0333",
+          "eventId": "7c7641e9-4d03-4172-aa8c-eb92c0ec080f"
+        },
+        {
+          "optionId": "op-0334",
+          "eventId": "45b4fdfc-21c7-4835-9424-622908ce2c7f"
+        },
+        {
+          "optionId": "op-0335",
+          "eventId": "779ae65f-6084-4787-92e0-39c7a6f14b0c"
+        },
+        {
+          "optionId": "op-0336",
+          "eventId": "e747b584-e5d5-4343-8d2d-a35718141498"
+        },
+        {
+          "optionId": "op-0337",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64"
+        },
+        {
+          "optionId": "op-0338",
+          "eventId": "2ab0c8d4-e203-4fd7-81cc-abc704d25b50"
+        },
+        {
+          "optionId": "op-0339",
+          "eventId": "b7445890-5d20-4a76-85b1-328d970bab5a"
+        },
+        {
+          "optionId": "op-0340",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+        },
+        {
+          "optionId": "op-0341",
+          "eventId": "61974b87-9d19-4640-90d4-2560d9cbed0b"
+        },
+        {
+          "optionId": "op-0342",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc"
+        },
+        {
+          "optionId": "op-0343",
+          "eventId": "18750704-d655-40c4-b247-cb4dc9f8b981"
+        },
+        {
+          "optionId": "op-0344",
+          "eventId": "1b5f3aa3-e3c7-4e13-b617-bbe6c43dbe9e"
+        },
+        {
+          "optionId": "op-0345",
+          "eventId": "9b2d6e07-db5d-4dc9-b94a-d9001c9707a9"
+        },
+        {
+          "optionId": "op-0346",
+          "eventId": "156cdfb8-90c0-40f2-bd23-333e1500a623"
+        },
+        {
+          "optionId": "op-0347",
+          "eventId": "59edf8d4-333a-4014-9d1a-327fd702d817"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-en-dance-not-huge-club",
+      "options": [
+        {
+          "optionId": "op-0348",
+          "eventId": "889341eb-4dce-4d23-bef4-a2aa70a3b71d"
+        },
+        {
+          "optionId": "op-0349",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        },
+        {
+          "optionId": "op-0350",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025"
+        },
+        {
+          "optionId": "op-0351",
+          "eventId": "7d8dda73-ef4a-4fe7-924b-17c0e6501191"
+        },
+        {
+          "optionId": "op-0352",
+          "eventId": "6a15afa5-7af4-4f0c-8a37-ee8db8571c12"
+        },
+        {
+          "optionId": "op-0353",
+          "eventId": "e0621f8e-1f64-41c3-8672-3d23d69135b6"
+        },
+        {
+          "optionId": "op-0354",
+          "eventId": "6fec2d69-2481-4613-a36f-8b8ee724990e"
+        },
+        {
+          "optionId": "op-0355",
+          "eventId": "5a013ee7-87bd-4484-aad3-fe30680ff27c"
+        },
+        {
+          "optionId": "op-0356",
+          "eventId": "9089d173-0ef3-40a5-9419-e12381470bbd"
+        },
+        {
+          "optionId": "op-0357",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff"
+        },
+        {
+          "optionId": "op-0358",
+          "eventId": "c1043331-27e1-4edf-a9cb-c5ba3e0250ff"
+        },
+        {
+          "optionId": "op-0359",
+          "eventId": "993d47e6-79c2-4992-94e4-9c94024d774b"
+        },
+        {
+          "optionId": "op-0360",
+          "eventId": "4ee29353-b2f0-48c3-996f-2d8cebc9bff2"
+        },
+        {
+          "optionId": "op-0361",
+          "eventId": "99b88664-2c1c-4931-ab6c-24603f6161ee"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-en-parents-afternoon",
+      "options": [
+        {
+          "optionId": "op-0362",
+          "eventId": "10b20b74-734d-4539-bfcd-cf8551dfcb7b"
+        },
+        {
+          "optionId": "op-0363",
+          "eventId": "4304e1a5-1d08-4095-b2c4-0c4bdc496878"
+        },
+        {
+          "optionId": "op-0364",
+          "eventId": "c7625df8-5fff-4862-9f2c-8c4c3e3c698c"
+        },
+        {
+          "optionId": "op-0365",
+          "eventId": "45b4fdfc-21c7-4835-9424-622908ce2c7f"
+        },
+        {
+          "optionId": "op-0366",
+          "eventId": "214ca213-628d-4e35-9f05-a267881ed29d"
+        },
+        {
+          "optionId": "op-0367",
+          "eventId": "00411076-7bc2-47d6-9493-78e3e5253a92"
+        },
+        {
+          "optionId": "op-0368",
+          "eventId": "d3a67f2b-6159-4ffe-9a12-2691ba1d1702"
+        },
+        {
+          "optionId": "op-0369",
+          "eventId": "e3d14290-5abd-4dc6-890c-9ef71853b140"
+        },
+        {
+          "optionId": "op-0370",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+        },
+        {
+          "optionId": "op-0371",
+          "eventId": "5fd41f65-8e9a-45cc-826c-0096ea2b14ef"
+        },
+        {
+          "optionId": "op-0372",
+          "eventId": "18750704-d655-40c4-b247-cb4dc9f8b981"
+        },
+        {
+          "optionId": "op-0373",
+          "eventId": "cf87229a-d90f-4361-b791-32baabcfaeb1"
+        },
+        {
+          "optionId": "op-0374",
+          "eventId": "f3bcb0c1-145a-4db7-bbc7-ecfefc7d18ee"
+        },
+        {
+          "optionId": "op-0375",
+          "eventId": "292190b2-d693-464d-9d69-26fa87256f4b"
+        },
+        {
+          "optionId": "op-0376",
+          "eventId": "cf32326c-7907-4188-ae9b-19d00cf5ba02"
+        },
+        {
+          "optionId": "op-0377",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+        },
+        {
+          "optionId": "op-0378",
+          "eventId": "c26c48c9-bcfe-4e1e-a7ef-21fa5e247932"
+        },
+        {
+          "optionId": "op-0379",
+          "eventId": "d691d021-5d1f-48db-bcd9-b37703a194b4"
+        },
+        {
+          "optionId": "op-0380",
+          "eventId": "8e041344-be8e-4e0f-9d3f-d45fc86ec1ab"
+        },
+        {
+          "optionId": "op-0381",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-en-solo-tonight",
+      "options": []
+    },
+    {
+      "queryId": "hold-en-live-blues-week",
+      "options": [
+        {
+          "optionId": "op-0382",
+          "eventId": "b064ecff-1844-443f-94f7-45f7047b4ee9"
+        },
+        {
+          "optionId": "op-0383",
+          "eventId": "892ceb84-03bc-47ae-b833-147001f54f0c"
+        },
+        {
+          "optionId": "op-0384",
+          "eventId": "beda1315-8efc-46d9-9a7f-5eb6443b7eb8"
+        },
+        {
+          "optionId": "op-0385",
+          "eventId": "32e88530-4eb2-420b-b84b-5adfd0fc5603"
+        },
+        {
+          "optionId": "op-0386",
+          "eventId": "300a3eb3-40f1-41e0-8930-d669bb6cb6d1"
+        },
+        {
+          "optionId": "op-0387",
+          "eventId": "bfe3e8db-4135-423a-84a0-888743789c38"
+        },
+        {
+          "optionId": "op-0388",
+          "eventId": "ee243048-6d30-49f9-910b-29101387e305"
+        },
+        {
+          "optionId": "op-0389",
+          "eventId": "2c2633ed-4b7d-43ad-bb9f-a7236cc6e0af"
+        },
+        {
+          "optionId": "op-0390",
+          "eventId": "efcf1319-bbeb-402e-9abc-21577ab5ae51"
+        },
+        {
+          "optionId": "op-0391",
+          "eventId": "22205bb7-8ddb-4b93-992c-d56a1016658d"
+        },
+        {
+          "optionId": "op-0392",
+          "eventId": "0bc33d63-074c-43a2-ac28-a4d73868170f"
+        },
+        {
+          "optionId": "op-0393",
+          "eventId": "d504e5d3-7cb0-4e6d-bd78-aff05f3bc7b8"
+        },
+        {
+          "optionId": "op-0394",
+          "eventId": "7f1e80ff-a8e6-4f93-8b8c-8e7df994d86d"
+        },
+        {
+          "optionId": "op-0395",
+          "eventId": "bdcad403-8e05-4e51-b2bc-1b8b734ded12"
+        },
+        {
+          "optionId": "op-0396",
+          "eventId": "8cc21b64-114e-498c-8a35-6d026eed9855"
+        },
+        {
+          "optionId": "op-0397",
+          "eventId": "593c3a14-5fbc-43bc-9d3c-ad2d3da95a8a"
+        },
+        {
+          "optionId": "op-0398",
+          "eventId": "5870f2ef-df85-480a-bba9-e8b3fafaa145"
+        },
+        {
+          "optionId": "op-0399",
+          "eventId": "f4d53443-d3fc-4318-bfb6-e9bf02d7586e"
+        },
+        {
+          "optionId": "op-0400",
+          "eventId": "343937e9-5d9f-431f-adc9-c46347a1810f"
+        },
+        {
+          "optionId": "op-0401",
+          "eventId": "7a598b0e-be18-4e6a-b4a3-f734dd1f37ff"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-en-free-art-weekend",
+      "options": [
+        {
+          "optionId": "op-0402",
+          "eventId": "efcf1319-bbeb-402e-9abc-21577ab5ae51"
+        },
+        {
+          "optionId": "op-0403",
+          "eventId": "48e58171-645d-4101-9b0b-a100f3759d2f"
+        },
+        {
+          "optionId": "op-0404",
+          "eventId": "ddc8c5a2-d74f-467f-bd60-77a91ac0b8cf"
+        },
+        {
+          "optionId": "op-0405",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+        },
+        {
+          "optionId": "op-0406",
+          "eventId": "d0c7689f-82b9-4f42-bd5c-c714c0acf2b4"
+        },
+        {
+          "optionId": "op-0407",
+          "eventId": "67fb6652-955b-427e-9117-4ce07210300a"
+        },
+        {
+          "optionId": "op-0408",
+          "eventId": "207d942b-f186-4af6-92e5-1426ac9b65f4"
+        },
+        {
+          "optionId": "op-0409",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+        },
+        {
+          "optionId": "op-0410",
+          "eventId": "9f824c01-c9ef-42b7-8eb5-af5c59afd4c2"
+        },
+        {
+          "optionId": "op-0411",
+          "eventId": "65db7eea-6677-4ae9-ac68-a92a9b9bffad"
+        },
+        {
+          "optionId": "op-0412",
+          "eventId": "4c5639b8-7235-42bd-a125-aff578cb41ab"
+        },
+        {
+          "optionId": "op-0413",
+          "eventId": "3e45b1e5-fccf-4e48-9718-17c352c401e1"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-en-comedy-palermo",
+      "options": [
+        {
+          "optionId": "op-0414",
+          "eventId": "86a184de-043c-474f-8083-408325c2b845"
+        },
+        {
+          "optionId": "op-0415",
+          "eventId": "391997bc-ec60-4e6c-bdf2-1b41b44e0167"
+        },
+        {
+          "optionId": "op-0416",
+          "eventId": "c7f0b9c3-f59b-4787-b221-763cf92b22e3"
+        },
+        {
+          "optionId": "op-0417",
+          "eventId": "43cfc086-ee80-44ab-88d0-1e434b003df1"
+        },
+        {
+          "optionId": "op-0418",
+          "eventId": "76156e99-9f17-45ed-9e9f-bdafc1b95bba"
+        },
+        {
+          "optionId": "op-0419",
+          "eventId": "6226c60c-e34b-4baa-a570-863e28264176"
+        },
+        {
+          "optionId": "op-0420",
+          "eventId": "9b2d6e07-db5d-4dc9-b94a-d9001c9707a9"
+        },
+        {
+          "optionId": "op-0421",
+          "eventId": "ca6eca28-938e-41e9-aad0-b8a34a418e32"
+        },
+        {
+          "optionId": "op-0422",
+          "eventId": "87f1b56d-98c6-4758-83d1-4333929ddf6d"
+        },
+        {
+          "optionId": "op-0423",
+          "eventId": "1187a81a-fa94-42dc-86e6-56586489d91f"
+        },
+        {
+          "optionId": "op-0424",
+          "eventId": "cb58127f-74cf-407c-ab3b-1eaf696ad67d"
+        },
+        {
+          "optionId": "op-0425",
+          "eventId": "aa867462-ff07-4006-9a90-3d43e483e64a"
+        },
+        {
+          "optionId": "op-0426",
+          "eventId": "8f9be0b5-d61f-42b4-b031-d98dfbb5b7b9"
+        },
+        {
+          "optionId": "op-0427",
+          "eventId": "23f7d601-4f8e-4d3f-a816-0192fd58a6f3"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-en-family-tomorrow",
+      "options": [
+        {
+          "optionId": "op-0428",
+          "eventId": "7ee4dd4c-cd94-4e0c-9a56-edb986d58c28"
+        },
+        {
+          "optionId": "op-0429",
+          "eventId": "fc4a06e4-1e3b-4f0e-8ce1-7e867085b10a"
+        },
+        {
+          "optionId": "op-0430",
+          "eventId": "f8594bc0-5d50-4eb0-aec4-1958af05ce50"
+        },
+        {
+          "optionId": "op-0431",
+          "eventId": "981174e8-d77a-4eb8-9d5a-db1a5ab1b395"
+        },
+        {
+          "optionId": "op-0432",
+          "eventId": "1df4ad6f-dc28-415d-ba57-6deef5bc23e0"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-mix-cozy-date",
+      "options": [
+        {
+          "optionId": "op-0433",
+          "eventId": "29a83015-b50c-4208-a35c-452e5b3d7356"
+        },
+        {
+          "optionId": "op-0434",
+          "eventId": "96817b93-ad2b-42a2-a521-b8c9a3200303"
+        },
+        {
+          "optionId": "op-0435",
+          "eventId": "342262c6-4974-4095-b836-63dd20df0462"
+        },
+        {
+          "optionId": "op-0436",
+          "eventId": "91aca093-e3ed-4b86-9a6e-ae3322c6e818"
+        },
+        {
+          "optionId": "op-0437",
+          "eventId": "c4665b91-618c-46ea-8e62-5d118887927a"
+        },
+        {
+          "optionId": "op-0438",
+          "eventId": "18750704-d655-40c4-b247-cb4dc9f8b981"
+        },
+        {
+          "optionId": "op-0439",
+          "eventId": "6a15afa5-7af4-4f0c-8a37-ee8db8571c12"
+        },
+        {
+          "optionId": "op-0440",
+          "eventId": "c10e4d48-1604-4e41-9d3b-2fea03858640"
+        },
+        {
+          "optionId": "op-0441",
+          "eventId": "d691d021-5d1f-48db-bcd9-b37703a194b4"
+        },
+        {
+          "optionId": "op-0442",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64"
+        },
+        {
+          "optionId": "op-0443",
+          "eventId": "1b5f3aa3-e3c7-4e13-b617-bbe6c43dbe9e"
+        },
+        {
+          "optionId": "op-0444",
+          "eventId": "93ba61f1-8299-4ecf-adfd-edefac82ba06"
+        },
+        {
+          "optionId": "op-0445",
+          "eventId": "9804a41f-9ae2-44b9-87fd-8a1289b299f2"
+        },
+        {
+          "optionId": "op-0446",
+          "eventId": "920d6ab1-daf8-4476-b841-6f5008fbfa5e"
+        },
+        {
+          "optionId": "op-0447",
+          "eventId": "3ae1cbf2-f1d6-4b20-b0e8-8a18d147c8db"
+        },
+        {
+          "optionId": "op-0448",
+          "eventId": "f6b90f90-785c-4678-a9f6-e7ac66e0475d"
+        },
+        {
+          "optionId": "op-0449",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025"
+        },
+        {
+          "optionId": "op-0450",
+          "eventId": "e49e9331-5e37-4488-8b80-8436b8cfbefc"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-mix-free-palermo-weekend",
+      "options": [
+        {
+          "optionId": "op-0451",
+          "eventId": "df60d986-b5bd-4f87-b78e-2af5744abef4"
+        },
+        {
+          "optionId": "op-0452",
+          "eventId": "67fb6652-955b-427e-9117-4ce07210300a"
+        },
+        {
+          "optionId": "op-0453",
+          "eventId": "f6d9f995-dcd0-4715-a17c-054f98dbea18"
+        },
+        {
+          "optionId": "op-0454",
+          "eventId": "ddc8c5a2-d74f-467f-bd60-77a91ac0b8cf"
+        },
+        {
+          "optionId": "op-0455",
+          "eventId": "d0c7689f-82b9-4f42-bd5c-c714c0acf2b4"
+        },
+        {
+          "optionId": "op-0456",
+          "eventId": "efcf1319-bbeb-402e-9abc-21577ab5ae51"
+        },
+        {
+          "optionId": "op-0457",
+          "eventId": "207d942b-f186-4af6-92e5-1426ac9b65f4"
+        },
+        {
+          "optionId": "op-0458",
+          "eventId": "c91a0a54-d937-438a-84bd-26f434e3b646"
+        },
+        {
+          "optionId": "op-0459",
+          "eventId": "967925c7-0e9e-4cd4-beb0-592fdf07092a"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-mix-dance-talk",
+      "options": [
+        {
+          "optionId": "op-0460",
+          "eventId": "d7a98eed-e83f-476b-9081-fd3497b39c6d"
+        },
+        {
+          "optionId": "op-0461",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+        },
+        {
+          "optionId": "op-0462",
+          "eventId": "3638c2a4-7475-43c5-8e55-04b0787c228c"
+        },
+        {
+          "optionId": "op-0463",
+          "eventId": "221dc4cc-5cbd-41e4-af6e-96cac608e2ca"
+        },
+        {
+          "optionId": "op-0464",
+          "eventId": "6103fe25-9948-4a40-98d1-b99870a47c34"
+        },
+        {
+          "optionId": "op-0465",
+          "eventId": "48b4f854-c7f4-43d4-ac5d-5b354edd50ff"
+        },
+        {
+          "optionId": "op-0466",
+          "eventId": "5631a93d-6096-4a06-b849-b2b662f7e2ef"
+        },
+        {
+          "optionId": "op-0467",
+          "eventId": "6267c5f4-0758-41d8-9193-85d4ed047d67"
+        },
+        {
+          "optionId": "op-0468",
+          "eventId": "96817b93-ad2b-42a2-a521-b8c9a3200303"
+        },
+        {
+          "optionId": "op-0469",
+          "eventId": "abb7aaf1-a62c-4f3d-9ee0-7853978b0f70"
+        },
+        {
+          "optionId": "op-0470",
+          "eventId": "9e372006-6e9f-4b7f-9765-a9f3da0d2556"
+        },
+        {
+          "optionId": "op-0471",
+          "eventId": "ee916329-2d55-453f-9e92-cc99b7f85a51"
+        },
+        {
+          "optionId": "op-0472",
+          "eventId": "eb9fe5fb-4ec6-459b-8727-d627f68ea7be"
+        },
+        {
+          "optionId": "op-0473",
+          "eventId": "1e204112-8e2a-4453-bcc3-80bf4c9816a2"
+        },
+        {
+          "optionId": "op-0474",
+          "eventId": "c1043331-27e1-4edf-a9cb-c5ba3e0250ff"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-mix-jazz-cheap-chill",
+      "options": [
+        {
+          "optionId": "op-0475",
+          "eventId": "beda1315-8efc-46d9-9a7f-5eb6443b7eb8"
+        },
+        {
+          "optionId": "op-0476",
+          "eventId": "51bf09aa-1011-4af5-8bb2-043ce6c0f07b"
+        },
+        {
+          "optionId": "op-0477",
+          "eventId": "3f373854-348b-4433-8ba0-a528f34be097"
+        },
+        {
+          "optionId": "op-0478",
+          "eventId": "0d6e4c06-576f-4935-8a71-a30b29c27b94"
+        },
+        {
+          "optionId": "op-0479",
+          "eventId": "bfe3e8db-4135-423a-84a0-888743789c38"
+        },
+        {
+          "optionId": "op-0480",
+          "eventId": "59edf8d4-333a-4014-9d1a-327fd702d817"
+        },
+        {
+          "optionId": "op-0481",
+          "eventId": "f7c857e7-5dab-4926-9675-486d4d738ea0"
+        },
+        {
+          "optionId": "op-0482",
+          "eventId": "35c26892-6932-417d-b845-ae0d9644660c"
+        },
+        {
+          "optionId": "op-0483",
+          "eventId": "342262c6-4974-4095-b836-63dd20df0462"
+        },
+        {
+          "optionId": "op-0484",
+          "eventId": "08251525-9844-4c41-9842-a623e16e601e"
+        },
+        {
+          "optionId": "op-0485",
+          "eventId": "532ccd73-c93b-450b-8102-3d34bb22dc64"
+        },
+        {
+          "optionId": "op-0486",
+          "eventId": "30f04fe9-a84b-455d-975e-4774fb130a24"
+        },
+        {
+          "optionId": "op-0487",
+          "eventId": "57281bff-302d-4f13-b231-d4bb03e4b0e5"
+        },
+        {
+          "optionId": "op-0488",
+          "eventId": "a754fcb3-51c3-42a3-97eb-64b55cdb984e"
+        },
+        {
+          "optionId": "op-0489",
+          "eventId": "6bbccf0c-539a-4b97-9175-0ac560e4f366"
+        },
+        {
+          "optionId": "op-0490",
+          "eventId": "4df71035-976e-4625-88b6-ef6e6c9088e1"
+        },
+        {
+          "optionId": "op-0491",
+          "eventId": "10bf4397-8907-469e-a71f-31f0f15ab10e"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-mix-art-sunday",
+      "options": [
+        {
+          "optionId": "op-0492",
+          "eventId": "9d360c34-01a8-4155-aedd-b5e03461fb24"
+        },
+        {
+          "optionId": "op-0493",
+          "eventId": "25422ab4-a181-4e40-8ea1-3d50bfcddcac"
+        },
+        {
+          "optionId": "op-0494",
+          "eventId": "18a63344-05a5-49e9-bd25-6b4bb2fda758"
+        },
+        {
+          "optionId": "op-0495",
+          "eventId": "bff3637b-a12d-40df-acca-880a30d8189f"
+        },
+        {
+          "optionId": "op-0496",
+          "eventId": "d3100db2-0ccc-4e2a-a815-92ebd70886bc"
+        },
+        {
+          "optionId": "op-0497",
+          "eventId": "394f6533-261e-417d-a9d7-7de17631a39c"
+        },
+        {
+          "optionId": "op-0498",
+          "eventId": "7dbfe7c5-0d94-4278-906e-510b80e78e88"
+        },
+        {
+          "optionId": "op-0499",
+          "eventId": "280a18d8-85d6-4ec9-a0d6-2b9787482af0"
+        },
+        {
+          "optionId": "op-0500",
+          "eventId": "23f7d601-4f8e-4d3f-a816-0192fd58a6f3"
+        },
+        {
+          "optionId": "op-0501",
+          "eventId": "288a32e7-2205-455b-905e-767708f38ad5"
+        },
+        {
+          "optionId": "op-0502",
+          "eventId": "cf32326c-7907-4188-ae9b-19d00cf5ba02"
+        },
+        {
+          "optionId": "op-0503",
+          "eventId": "2cef14bd-e517-4ec8-bc10-ca03eeb4545c"
+        },
+        {
+          "optionId": "op-0504",
+          "eventId": "7151b3c7-0f76-430a-b0ea-1eacae4af755"
+        },
+        {
+          "optionId": "op-0505",
+          "eventId": "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7"
+        },
+        {
+          "optionId": "op-0506",
+          "eventId": "2d418e28-f636-4636-8582-9e06488a03bf"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-musica-no-tributo",
+      "options": [
+        {
+          "optionId": "op-0507",
+          "eventId": "ab9b28a7-1c7b-4859-9218-41cd85553294"
+        },
+        {
+          "optionId": "op-0508",
+          "eventId": "21f98620-9a73-4d95-afda-6313c44e739e"
+        },
+        {
+          "optionId": "op-0509",
+          "eventId": "92b0c84e-d57e-4a3c-a328-11e37a622762"
+        },
+        {
+          "optionId": "op-0510",
+          "eventId": "ae63afaf-6e94-4904-a9f5-010675899b39"
+        },
+        {
+          "optionId": "op-0511",
+          "eventId": "87015e33-ee6b-4229-b990-5e114b542d9b"
+        },
+        {
+          "optionId": "op-0512",
+          "eventId": "51bf09aa-1011-4af5-8bb2-043ce6c0f07b"
+        },
+        {
+          "optionId": "op-0513",
+          "eventId": "70cfa8f5-8f99-4b29-91b6-7963c8197054"
+        },
+        {
+          "optionId": "op-0514",
+          "eventId": "8c36b0f4-0427-451e-b824-ed7f186a9192"
+        },
+        {
+          "optionId": "op-0515",
+          "eventId": "cb011eeb-8476-421b-baf9-1c99780fb4de"
+        },
+        {
+          "optionId": "op-0516",
+          "eventId": "1b497e80-b0b0-4c87-ab3a-67b34e56cd9b"
+        },
+        {
+          "optionId": "op-0517",
+          "eventId": "333c3c37-bd00-4f89-8e3f-6af235850944"
+        },
+        {
+          "optionId": "op-0518",
+          "eventId": "0bc33d63-074c-43a2-ac28-a4d73868170f"
+        },
+        {
+          "optionId": "op-0519",
+          "eventId": "948b399e-a118-45d8-a598-1048a06c8f58"
+        },
+        {
+          "optionId": "op-0520",
+          "eventId": "42e57737-f128-4629-9f6b-ddbf97236b11"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-aire-libre-lluvia",
+      "options": [
+        {
+          "optionId": "op-0521",
+          "eventId": "7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7"
+        },
+        {
+          "optionId": "op-0522",
+          "eventId": "5e119a36-a84f-450c-bab5-a439f65e7dab"
+        },
+        {
+          "optionId": "op-0523",
+          "eventId": "5034ba2f-a39b-4424-8873-2f39c57cca27"
+        },
+        {
+          "optionId": "op-0524",
+          "eventId": "b0259d79-e122-4269-a164-3dcb49dc498c"
+        },
+        {
+          "optionId": "op-0525",
+          "eventId": "a83f58d4-e616-4105-85ef-97d398174964"
+        },
+        {
+          "optionId": "op-0526",
+          "eventId": "56e87a5a-082c-4645-8bda-c9467d080083"
+        },
+        {
+          "optionId": "op-0527",
+          "eventId": "8a955768-4625-4a75-ad64-385601709025"
+        },
+        {
+          "optionId": "op-0528",
+          "eventId": "a9aeeb6a-6c66-41ca-94f3-aa3608e273f2"
+        },
+        {
+          "optionId": "op-0529",
+          "eventId": "10a242e9-f596-436c-bdd3-ef2b472df67d"
+        },
+        {
+          "optionId": "op-0530",
+          "eventId": "927bfc75-044c-4a9d-abe3-0f660f753efc"
+        },
+        {
+          "optionId": "op-0531",
+          "eventId": "f8ec7149-322e-4393-a72b-36ac3c5481c2"
+        },
+        {
+          "optionId": "op-0532",
+          "eventId": "8e041344-be8e-4e0f-9d3f-d45fc86ec1ab"
+        }
+      ]
+    },
+    {
+      "queryId": "hold-es-no-fiesta-reggaeton",
+      "options": [
+        {
+          "optionId": "op-0533",
+          "eventId": "9cb58bdf-b0da-4fa4-b3c5-8dd7ff04c929"
+        },
+        {
+          "optionId": "op-0534",
+          "eventId": "99b88664-2c1c-4931-ab6c-24603f6161ee"
+        },
+        {
+          "optionId": "op-0535",
+          "eventId": "051cdf6f-2727-4411-a3d4-ecc5e5e4e08e"
+        },
+        {
+          "optionId": "op-0536",
+          "eventId": "206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6"
+        },
+        {
+          "optionId": "op-0537",
+          "eventId": "33b88195-fbe1-4dab-9785-264026ab5d08"
+        },
+        {
+          "optionId": "op-0538",
+          "eventId": "ac3c40a1-4010-4f14-8c69-a3f6fad2f4cf"
+        },
+        {
+          "optionId": "op-0539",
+          "eventId": "7b1ab962-91de-4910-9367-4d88c0f7cfc4"
+        },
+        {
+          "optionId": "op-0540",
+          "eventId": "ba5aca80-b685-4f35-9a46-d8313bec761b"
+        },
+        {
+          "optionId": "op-0541",
+          "eventId": "7cbd3016-bf3e-4fdd-aa07-01349767f85c"
+        },
+        {
+          "optionId": "op-0542",
+          "eventId": "a552f373-164d-407a-863a-501f1ef4d686"
+        },
+        {
+          "optionId": "op-0543",
+          "eventId": "4acb4582-2771-4d9a-a32a-9b8d0d28842e"
+        },
+        {
+          "optionId": "op-0544",
+          "eventId": "e8d7dc75-8e4d-4adc-af27-ade1b8fbb315"
+        }
+      ]
+    }
+  ]
+}

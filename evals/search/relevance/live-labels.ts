@@ -16,6 +16,9 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'b7445890-5d20-4a76-85b1-328d970bab5a': 2,
     '603f9903-fc1e-4196-96e9-c27dbf20af1e': 2,
     '48b4f854-c7f4-43d4-ac5d-5b354edd50ff': 1,
+    '18a63344-05a5-49e9-bd25-6b4bb2fda758': 2,
+    '342262c6-4974-4095-b836-63dd20df0462': 0,
+    '18750704-d655-40c4-b247-cb4dc9f8b981': 0,
   },
   'vibe-cita-romantica': {
     '91aca093-e3ed-4b86-9a6e-ae3322c6e818': 1,
@@ -32,6 +35,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'dcbd4025-c8c1-4e5d-af12-5ac87841a32e': 2,
     '532ccd73-c93b-450b-8102-3d34bb22dc64': 2,
     'a9b3074b-760d-498f-8e68-3f7d074daf67': 2,
+    '45b4fdfc-21c7-4835-9424-622908ce2c7f': 3,
+    '64e42274-9d35-4595-a6bb-de2d03b4f714': 0,
   },
   'vibe-chill-amigos': {
     '214ca213-628d-4e35-9f05-a267881ed29d': 2,
@@ -47,6 +52,10 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '8a955768-4625-4a75-ad64-385601709025': 1,
     '9238bf9e-8f18-448c-acad-4e04e7416816': 2,
     '10b20b74-734d-4539-bfcd-cf8551dfcb7b': 2,
+    '2af5be04-6192-4aed-9658-54fe11ff00b8': 1,
+    '18750704-d655-40c4-b247-cb4dc9f8b981': 2,
+    '005c68b5-1611-4395-b31d-018aee75bf82': 3,
+    'e49e9331-5e37-4488-8b80-8436b8cfbefc': 3,
   },
   'vibe-bailar-tarde': {
     '9e372006-6e9f-4b7f-9765-a9f3da0d2556': 2,
@@ -75,6 +84,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '3c5efc4d-0f02-465e-8b76-8d08498c4045': 2,
     '959bd31a-985a-44df-b5bb-310bcd250c1e': 2,
     '544d3b15-925f-41f0-bf35-26f2d0a4d719': 1,
+    'f48f808d-567a-4e4b-9ddf-7aa8db53819d': 0,
   },
   'vibe-cultural-relajado': {
     'f6b90f90-785c-4678-a9f6-e7ac66e0475d': 3,
@@ -93,6 +103,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '9e372006-6e9f-4b7f-9765-a9f3da0d2556': 1,
     'e747b584-e5d5-4343-8d2d-a35718141498': 3,
     '214ca213-628d-4e35-9f05-a267881ed29d': 1,
+    '292190b2-d693-464d-9d69-26fa87256f4b': 3,
   },
   'vibe-jazz-cita': {
     '0d6e4c06-576f-4935-8a71-a30b29c27b94': 3,
@@ -107,6 +118,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '10bf4397-8907-469e-a71f-31f0f15ab10e': 3,
     '4df71035-976e-4625-88b6-ef6e6c9088e1': 3,
     '2374526a-1d02-49b3-ab4d-ece5a2e61340': 3,
+    '8a6c5f62-9fc1-4a63-8da7-8baaf68ac094': 3,
+    '18750704-d655-40c4-b247-cb4dc9f8b981': 1,
   },
   'vibe-desconectar': {
     '1e204112-8e2a-4453-bcc3-80bf4c9816a2': 2,
@@ -138,6 +151,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'c4665b91-618c-46ea-8e62-5d118887927a': 2,
     '532ccd73-c93b-450b-8102-3d34bb22dc64': 2,
     '9238bf9e-8f18-448c-acad-4e04e7416816': 2,
+    'f48f808d-567a-4e4b-9ddf-7aa8db53819d': 0,
   },
   'vibe-fiesta-suave': {
     '4acb4582-2771-4d9a-a32a-9b8d0d28842e': 2,
@@ -154,6 +168,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '0106efa9-010e-4cc7-913d-2eb50ad93795': 1,
     '8ec3e337-005e-4d37-af4d-5b927606080e': 1,
     '107df7a8-4a7e-4718-8369-f49f37cf5c3a': 2,
+    '206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6': 1,
   },
   'vibe-distinto': {
     '6cb02028-576b-429a-87f0-5c6e34102619': 1,
@@ -171,6 +186,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '9089d173-0ef3-40a5-9419-e12381470bbd': 2,
     'f57a0897-9e6e-4ba5-8177-774bd9e37042': 1,
     'ae81111a-6cf7-4598-bab9-ef5f14583153': 1,
+    'f6f2ecdb-23ed-4d94-8cc3-04330a3c8d8a': 3,
   },
   'vibe-impresionar': {
     '2255a2a6-3e15-466b-ac88-a37c29f4c3ba': 2,
@@ -188,6 +204,9 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '532ccd73-c93b-450b-8102-3d34bb22dc64': 2,
     '5dbd0b5e-bd3c-4257-8f65-01dedf46db96': 2,
     '06dc5301-15ef-4727-8fbd-b071d1548d38': 0,
+    '23f7d601-4f8e-4d3f-a816-0192fd58a6f3': 3,
+    'a21ce450-925c-4c7e-9abd-599a4af2e943': 1,
+    '45b4fdfc-21c7-4835-9424-622908ce2c7f': 2,
   },
   'vibe-wellness': {
     'd3100db2-0ccc-4e2a-a815-92ebd70886bc': 3,
@@ -203,6 +222,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '25422ab4-a181-4e40-8ea1-3d50bfcddcac': 1,
     '67fb6652-955b-427e-9117-4ce07210300a': 0,
     'cf32326c-7907-4188-ae9b-19d00cf5ba02': 0,
+    '06dc5301-15ef-4727-8fbd-b071d1548d38': 0,
   },
   'vibe-reir': {
     'c4819624-42e6-4cf7-8329-3adcedccf5fc': 3,
@@ -255,6 +275,11 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '9b2d6e07-db5d-4dc9-b94a-d9001c9707a9': 1,
     '156cdfb8-90c0-40f2-bd23-333e1500a623': 2,
     '7c7641e9-4d03-4172-aa8c-eb92c0ec080f': 3,
+    'c4665b91-618c-46ea-8e62-5d118887927a': 0,
+    '532ccd73-c93b-450b-8102-3d34bb22dc64': 0,
+    'f7c857e7-5dab-4926-9675-486d4d738ea0': 0,
+    '29a83015-b50c-4208-a35c-452e5b3d7356': 0,
+    'e49e9331-5e37-4488-8b80-8436b8cfbefc': 0,
   },
   'vibe-en-date-night': {
     '9804a41f-9ae2-44b9-87fd-8a1289b299f2': 1,
@@ -275,6 +300,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '45b4fdfc-21c7-4835-9424-622908ce2c7f': 3,
     '535162af-4480-41ae-aecc-ebb0f0a9bcb4': 1,
     '2ab0c8d4-e203-4fd7-81cc-abc704d25b50': 2,
+    '18750704-d655-40c4-b247-cb4dc9f8b981': 2,
+    '9b2d6e07-db5d-4dc9-b94a-d9001c9707a9': 3,
   },
   'vibe-en-underground-techno': {
     '9f824c01-c9ef-42b7-8eb5-af5c59afd4c2': 3,
@@ -289,6 +316,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'd78926f0-2f89-414c-804e-0f40c2b5f3fc': 3,
     '1df772e5-3867-4fef-a33c-8862c378342f': 3,
     '23b67de5-cd99-42b8-87a0-0cd40267cf18': 2,
+    '2d418e28-f636-4636-8582-9e06488a03bf': 3,
   },
   'vibe-en-chill-sunday': {
     '2cef14bd-e517-4ec8-bc10-ca03eeb4545c': 0,
@@ -305,6 +333,9 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '25422ab4-a181-4e40-8ea1-3d50bfcddcac': 2,
     'f6d9f995-dcd0-4715-a17c-054f98dbea18': 0,
     '06dc5301-15ef-4727-8fbd-b071d1548d38': 2,
+    '892ceb84-03bc-47ae-b833-147001f54f0c': 1,
+    '65db7eea-6677-4ae9-ac68-a92a9b9bffad': 1,
+    '24cbb257-e39f-4dc7-be36-d8005ff9399c': 1,
   },
   'vibe-en-talk': {
     'c7625df8-5fff-4862-9f2c-8c4c3e3c698c': 3,
@@ -337,6 +368,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '120fb5da-da7d-46dc-9889-96a6435ad8e7': 3,
     'aaea5e5e-d359-49d0-b8e3-97c337c7d744': 3,
     '96817b93-ad2b-42a2-a521-b8c9a3200303': 2,
+    '7151b3c7-0f76-430a-b0ea-1eacae4af755': 3,
+    '214ca213-628d-4e35-9f05-a267881ed29d': 1,
   },
   'vibe-en-cultural': {
     '6103fe25-9948-4a40-98d1-b99870a47c34': 2,
@@ -355,6 +388,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '03303cb3-ea59-497f-94eb-c89d8303e847': 3,
     'b5234665-5d8c-497e-9268-131b3088c4c6': 3,
     '779ae65f-6084-4787-92e0-39c7a6f14b0c': 3,
+    '18e1f80d-261c-4e36-a134-393cd3745c78': 2,
   },
   'vibe-en-cozy-jazz': {
     'beda1315-8efc-46d9-9a7f-5eb6443b7eb8': 3,
@@ -373,6 +407,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '8f4a1ba9-1e5b-454e-8a88-cd451e21e6fc': 3,
     'cdbc210e-ab71-4889-825c-285de85bf615': 3,
     '1953d7fe-ec4c-4dee-b077-79cd1531231e': 3,
+    '6e3a4484-a87c-4f72-b880-22173ff280ab': 2,
   },
   'vibe-en-dancing': {
     '03303cb3-ea59-497f-94eb-c89d8303e847': 3,
@@ -392,6 +427,9 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'a21b489d-0875-4732-85e6-41e64920043e': 3,
     '99b88664-2c1c-4931-ab6c-24603f6161ee': 3,
     'c1043331-27e1-4edf-a9cb-c5ba3e0250ff': 3,
+    '7d8dda73-ef4a-4fe7-924b-17c0e6501191': 3,
+    '120fb5da-da7d-46dc-9889-96a6435ad8e7': 0,
+    '5a013ee7-87bd-4484-aad3-fe30680ff27c': 3,
   },
   'vibe-en-relaxed-afternoon': {
     '18a63344-05a5-49e9-bd25-6b4bb2fda758': 3,
@@ -407,6 +445,9 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '45b4fdfc-21c7-4835-9424-622908ce2c7f': 3,
     '10b20b74-734d-4539-bfcd-cf8551dfcb7b': 2,
     'e3d14290-5abd-4dc6-890c-9ef71853b140': 2,
+    '401d71ea-c0cd-4107-a57f-f98f75da1369': 1,
+    '18750704-d655-40c4-b247-cb4dc9f8b981': 1,
+    '2af5be04-6192-4aed-9658-54fe11ff00b8': 1,
   },
   'lit-rock': {
     'c084ddfc-39d0-430d-aae1-3a17981e76ed': 3,
@@ -424,6 +465,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '28bd9fd4-a0bc-404f-8e84-f2c8dd75c12c': 3,
     'cd02cd1c-5aba-4005-8f84-d956e7528bac': 3,
     'c39d244e-96b9-4e41-aa70-92237cbab0cd': 3,
+    'a83f58d4-e616-4105-85ef-97d398174964': 3,
   },
   'lit-techno-finde': {
     'c802a85b-4768-450e-967b-3f7e0b920628': 2,
@@ -438,6 +480,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'eff033f1-6aaa-401b-b49d-4b2ad8213c3a': 1,
     'ddc8c5a2-d74f-467f-bd60-77a91ac0b8cf': 1,
     'ab08abb2-37f0-400b-8140-41b8d8cec04d': 1,
+    '3f6e22ec-9b97-4dc9-baf2-109726fa2d93': 1,
   },
   'lit-reggaeton': {
     'a21b489d-0875-4732-85e6-41e64920043e': 3,
@@ -465,6 +508,9 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '434c6218-9bc6-4ba8-9292-110fbb1619fb': 3,
     '0e3a1d4e-0a5d-4173-8cc0-bd30c65de566': 3,
     '20c458a3-ef51-4b74-ab1e-14f03fa8f16c': 3,
+    '288a32e7-2205-455b-905e-767708f38ad5': 3,
+    '66d293ab-1996-4e67-9b8c-d738e7386770': 3,
+    '1321c00f-24fc-4274-9343-fd7b8318948a': 2,
   },
   'lit-cumbia': {
     'd3a99efe-3cd3-4a67-9c35-511ea1733493': 3,
@@ -490,6 +536,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'b7445890-5d20-4a76-85b1-328d970bab5a': 3,
     '1165d373-afa4-45f1-8ded-4d3e09275282': 3,
     '715362cf-4266-499a-a6e4-d034dae344cd': 3,
+    '2ab0c8d4-e203-4fd7-81cc-abc704d25b50': 3,
   },
   'lit-folklore': {
     'cb1c6fc1-f91c-44c5-b5cc-b9478767ee31': 1,
@@ -533,6 +580,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '60cbc454-6747-4165-9327-fc91e7968a16': 2,
     'ba5aca80-b685-4f35-9a46-d8313bec761b': 2,
     '2697ec58-d4a8-4721-aacd-9c7e733ed6cd': 3,
+    '2ce92377-30db-4d2b-9906-c23a24ec4e50': 2,
   },
   'lit-retro': {
     '6267c5f4-0758-41d8-9193-85d4ed047d67': 3,
@@ -579,6 +627,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '6fec2d69-2481-4613-a36f-8b8ee724990e': 2,
     '0d0f6414-9007-4eb9-8515-567c7979216a': 1,
     '8c4d5b7e-d66c-42d8-a671-b046a804aeb3': 2,
+    '8e501c39-92d5-4f1d-b23a-774b90d993e7': 2,
+    '1e98afff-4958-4f4d-bb0c-4d2ad1e44f91': 1,
   },
   'lit-en-art': {
     '292190b2-d693-464d-9d69-26fa87256f4b': 2,
@@ -645,6 +695,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '3e815330-3ce6-415b-bafe-a02ae6b12fbc': 2,
     '3e45b1e5-fccf-4e48-9718-17c352c401e1': 0,
     '2e16fbe3-56b9-42fb-bea6-e06b18fbf32d': 0,
+    '67fb6652-955b-427e-9117-4ce07210300a': 0,
   },
   'lit-en-theater': {
     '03240788-be6c-42bd-b6e1-b289aa41bc75': 3,
@@ -658,6 +709,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '05b31140-6e64-48a1-b3b6-56f1ced7786f': 2,
     'a649ad70-ec62-4611-b314-a5d5445487cb': 2,
     '794f7ce1-ca12-4e8d-8571-98ca54e5dd6b': 2,
+    'ff80fe4b-8e83-4131-af43-c0e3c6fb6743': 3,
   },
   'lit-en-film': {
     'ff6130cd-0a8a-4aa6-839c-cdaaf565c917': 1,
@@ -675,6 +727,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '18d95eda-70f6-4c31-97a2-ca42cf9d0f7d': 3,
     '0f5db0ea-46f5-47f6-ae9a-4a5f7959fd89': 3,
     '4230e287-436c-42e4-ac99-ce0d880e63f3': 3,
+    '4e1d7691-8b51-4138-a847-36edbb8359d2': 3,
   },
   'lit-en-workshop': {
     'b3cb4530-4dd2-4cfa-b0c7-a8bc7cc2331b': 2,
@@ -721,6 +774,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '4c5639b8-7235-42bd-a125-aff578cb41ab': 2,
     '207d942b-f186-4af6-92e5-1426ac9b65f4': 2,
     '61974b87-9d19-4640-90d4-2560d9cbed0b': 3,
+    'cfb52731-0d97-42c0-b703-ab6c52adcfd7': 0,
+    '25422ab4-a181-4e40-8ea1-3d50bfcddcac': 3,
   },
   'must-palermo-fiesta': {
     '206d9dfb-9e86-40fc-8c8d-d237ec1ef0e6': 3,
@@ -775,6 +830,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '613b5f29-41c6-488e-836d-e18e000a493f': 3,
     'c03ecd50-6e8f-4aab-b600-8b788c3ba25c': 3,
     '7cc85fb9-6cac-4669-b7aa-c05c82dd5190': 3,
+    '1e9bf0db-e1a6-4813-ac47-c44fbab079b3': 3,
   },
   'must-gratis-palermo': {
     '5a3c90f9-479e-4d09-8bb7-e0b7e225268e': 2,
@@ -792,6 +848,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'aa867462-ff07-4006-9a90-3d43e483e64a': 3,
     'f6d9f995-dcd0-4715-a17c-054f98dbea18': 2,
     'efcf1319-bbeb-402e-9abc-21577ab5ae51': 3,
+    'c91a0a54-d937-438a-84bd-26f434e3b646': 2,
+    '0118b60e-ce2c-424b-979d-08ef4e4f756b': 3,
   },
   'must-barato': {
     '33b88195-fbe1-4dab-9785-264026ab5d08': 2,
@@ -810,6 +868,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'e5a8f22c-a234-4779-afa9-940427e900d8': 3,
     '4dc23d40-6005-48ae-8e5d-207082fb9282': 2,
     'c587b4df-d3fd-4bf4-afc2-97bc19f665c7': 1,
+    '5034ba2f-a39b-4424-8873-2f39c57cca27': 0,
   },
   'must-manana': {
     '8a19c723-a81e-4893-89ac-d53491ccb381': 2,
@@ -844,6 +903,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'fcf0360f-6be7-4693-9fb6-2f41aa8c957e': 3,
     'dd2111e6-0a52-4920-b2f1-c2312b5c1613': 2,
     '5ec0ab87-93a6-430d-9ab7-c839c5f36e70': 3,
+    '0d958129-adea-48b8-bd33-c196aa8e1b2c': 3,
   },
   'must-menor': {
     'a4aec56a-aacd-4f8b-903b-ea774c6cecb6': 1,
@@ -876,6 +936,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'd7a1d7e1-4184-47f8-99c7-6a3948de15a1': 3,
     'e5321496-9f9b-4d3e-9df9-aab0795bd22e': 3,
     'cf32326c-7907-4188-ae9b-19d00cf5ba02': 2,
+    '973c565f-03d1-48d1-a4c8-c961502cf5d6': 0,
+    'f8ec7149-322e-4393-a72b-36ac3c5481c2': 3,
   },
   'must-chacarita': {
     'c4d99b15-6183-4860-9e71-746f416b38d8': 2,
@@ -922,6 +984,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '3603b6fb-b272-45b0-a2d7-155634f28d57': 2,
     'fa7f68a3-82fa-4b0f-9c43-ea72c41a7a3a': 3,
     'f434d95c-cefb-4567-9d92-6214ec44a1b1': 3,
+    '551f4911-1207-4707-ad66-efb93c2a6c7b': 3,
   },
   'avoid-cachengue': {
     '4acb4582-2771-4d9a-a32a-9b8d0d28842e': 3,
@@ -956,6 +1019,10 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'ab9b28a7-1c7b-4859-9218-41cd85553294': 2,
     'bc33ef30-747a-475f-ace6-19f49adabdb3': 2,
     '2d418e28-f636-4636-8582-9e06488a03bf': 2,
+    'ea52caf9-b18e-423c-9095-4d5cfddc67c1': 0,
+    'cacdfd48-032b-46fd-9ca9-85bd52f93c64': 2,
+    'c74b9376-c721-4098-b615-cdf713af3d48': 3,
+    '8f82c0a2-deb7-48ac-b742-b5718b4ce44c': 3,
   },
   'avoid-tributos': {
     'c084ddfc-39d0-430d-aae1-3a17981e76ed': 3,
@@ -973,6 +1040,10 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '28bd9fd4-a0bc-404f-8e84-f2c8dd75c12c': 3,
     'd51acd6f-b64d-4406-8aed-e7156a156272': 1,
     '3d6bd72b-546c-43ab-a8dc-49d1d19dc429': 3,
+    'aaea5e5e-d359-49d0-b8e3-97c337c7d744': 3,
+    'aba04563-ffbc-4167-beba-fdc2dcec1cc7': 0,
+    '1b497e80-b0b0-4c87-ab3a-67b34e56cd9b': 0,
+    '70cfa8f5-8f99-4b29-91b6-7963c8197054': 0,
   },
   'avoid-joda': {
     '7b1ab962-91de-4910-9367-4d88c0f7cfc4': 0,
@@ -1008,6 +1079,12 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '95a49ba9-11ae-491a-bb0c-b5440142a39e': 2,
     '2ab0c8d4-e203-4fd7-81cc-abc704d25b50': 2,
     '603f9903-fc1e-4196-96e9-c27dbf20af1e': 2,
+    '48b4f854-c7f4-43d4-ac5d-5b354edd50ff': 1,
+    'f7c857e7-5dab-4926-9675-486d4d738ea0': 0,
+    '532ccd73-c93b-450b-8102-3d34bb22dc64': 3,
+    'c4665b91-618c-46ea-8e62-5d118887927a': 0,
+    'b3fb3905-12c8-457b-836c-43c689aa2290': 0,
+    '551f4911-1207-4707-ad66-efb93c2a6c7b': 0,
   },
   'mix-fiesta-not-crazy': {
     '4acb4582-2771-4d9a-a32a-9b8d0d28842e': 2,
@@ -1026,6 +1103,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'd36ef87a-7722-4222-bf7d-b050c2293951': 2,
     '99b88664-2c1c-4931-ab6c-24603f6161ee': 1,
     '9cb58bdf-b0da-4fa4-b3c5-8dd7ff04c929': 2,
+    '2cdd3dca-9427-440d-8968-298c24f50215': 1,
+    '0106efa9-010e-4cc7-913d-2eb50ad93795': 1,
   },
   'mix-free-finde': {
     '3e45b1e5-fccf-4e48-9718-17c352c401e1': 2,
@@ -1051,6 +1130,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '401d71ea-c0cd-4107-a57f-f98f75da1369': 3,
     '1e9bf0db-e1a6-4813-ac47-c44fbab079b3': 3,
     '7cc85fb9-6cac-4669-b7aa-c05c82dd5190': 3,
+    '8d4adcdc-eec2-4c08-b3d4-e700cd3c7556': 2,
+    'c03ecd50-6e8f-4aab-b600-8b788c3ba25c': 3,
   },
   'mix-piola-hoy': {
     '0c5dc895-72e2-4c2b-956e-56496f89569b': 2,
@@ -1070,6 +1151,8 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'a83f58d4-e616-4105-85ef-97d398174964': 2,
     '4e14b677-1bb3-422d-b832-e49167431fd3': 1,
     '6e98c7d2-c30f-47fe-8346-947651ea9a4e': 1,
+    'f1aa9798-9f17-4d36-bc3d-dbd569cc3273': 3,
+    '0a4faf38-01be-447b-9f0c-1ecdde933083': 0,
   },
   'slang-joda': {
     '7ad9a3ee-6f8b-43c5-bf49-9835bcd7d6b7': 2,
@@ -1083,6 +1166,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'b838e3e1-72ea-4931-ab44-60ea4a6bb296': 2,
     '3e45b1e5-fccf-4e48-9718-17c352c401e1': 1,
     '9ca50eef-d338-4c25-8b0b-f862236a5815': 3,
+    'cf32326c-7907-4188-ae9b-19d00cf5ba02': 3,
   },
   'slang-cachengue': {
     'c5beefdc-4afd-44d2-85e1-c92eadf08533': 3,
@@ -1112,6 +1196,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     'c4665b91-618c-46ea-8e62-5d118887927a': 2,
     '920d6ab1-daf8-4476-b841-6f5008fbfa5e': 1,
     'bf4c8251-7e07-404f-a19b-26f6620f657b': 3,
+    '3ae1cbf2-f1d6-4b20-b0e8-8a18d147c8db': 1,
   },
   'slang-musica-vivo': {
     '086a46cd-abd8-4544-a334-bddaf42c8042': 2,
@@ -1250,6 +1335,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '8cc21b64-114e-498c-8a35-6d026eed9855': 2,
     '9e372006-6e9f-4b7f-9765-a9f3da0d2556': 0,
     'd62b160c-323c-4262-9270-05d537ea16ef': 0,
+    '0d1a4019-43a1-43ef-9224-15320dd995be': 0,
   },
   'sparse-metal': {
     'aaea5e5e-d359-49d0-b8e3-97c337c7d744': 2,
@@ -1344,6 +1430,7 @@ export const LIVE_LABELS: Record<string, Record<string, 0 | 1 | 2 | 3>> = {
     '300a3eb3-40f1-41e0-8930-d669bb6cb6d1': 2,
     '324e9c49-db37-4888-b425-2565e6b44f85': 2,
     '7f1e80ff-a8e6-4f93-8b8c-8e7df994d86d': 2,
+    'f6c5d8f2-7128-459b-ab61-7dbbae194366': 0,
   },
   'disc-en-this-weekend': {
     '08f7be30-cbe4-4f5e-add9-d29ac1df3a47': 2,

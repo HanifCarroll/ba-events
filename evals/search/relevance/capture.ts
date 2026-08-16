@@ -95,7 +95,7 @@ function freezeEvent(e: ChatEventPayload): FrozenEvent {
 
 /**
  * Production `rerankEvents` is fail-closed and does NOT retry. Eval-only retry
- * on free-tier 429s (backoff 5s / 15s / 30s), same pattern as run.ts.
+ * on free-tier 429s (backoff 2s / 5s), same pattern as run.ts.
  */
 async function rerankWithRetry(
   candidates: ChatEventPayload[],
