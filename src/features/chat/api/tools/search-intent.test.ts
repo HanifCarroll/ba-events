@@ -149,6 +149,17 @@ describe('canonicalizeSearchIntent — date intent', () => {
     expect(intent.semanticQuery).toBe('')
   })
 
+  it('consumes redundant weekday-range syntax while keeping the named-day window', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { query: 'Monday during the week' },
+      SUNDAY
+    )
+    expect(intent.must.startsAfter).toBe(baToUTC(MONDAY))
+    expect(intent.must.startsBefore).toBe(baToUTC(TUESDAY))
+    expect(intent.semanticQuery).toBe('')
+    expect(intent.objective).toBe('search')
+  })
+
   it('maps "during the week" on a Wednesday to a now → Saturday weekday window (not week)', async () => {
     const intent = await canonicalizeSearchIntent({ query: 'during the week' }, WEDNESDAY_NOON)
     expect(intent.must.startsAfter).toBe(baToUTC(WEDNESDAY_NOON))

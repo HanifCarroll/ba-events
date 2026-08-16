@@ -5,12 +5,9 @@
  * `must` constraints (dates, neighborhoods, venues, price, free), subjective
  * `prefer`/`avoid` hints, and a leftover `semanticQuery` passed to retrieval.
  *
- * String matching is allowed ONLY here, for alias canonicalization:
- *   - neighborhood aliases → canonical NEIGHBORHOODS names
- *   - venueName → venue ids (via searchVenuesByName)
- *   - free-language → must.isFree
- *   - named weekdays (single or multiple) / weekday phrasing ("during the week", "entre semana") → BA date range
- *   - dateFrom/dateTo vs timeFilter intersection
+ * Deterministic query syntax lives in search-query-rules.ts and is resolved
+ * here into neighborhoods, free constraints, named weekdays, date windows,
+ * and the semantic residue used for retrieval.
  *
  * It never scores "romantic"/"chill", never classifies genre by regex, and
  * never awards quality points. Those are retrieval/rerank concerns.
@@ -18,7 +15,6 @@
 
 import { getDay, addDays, startOfDay, setHours } from 'date-fns'
 import type { Neighborhood, EventFilters } from '#shared/lib/types.ts'
-import { NEIGHBORHOODS } from '#shared/lib/types.ts'
 import { searchVenuesByName } from '#shared/lib/db/client.server.ts'
 import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
 import {
@@ -31,9 +27,13 @@ import {
 import { baToUTC } from './utils.ts'
 import {
   annotateQuery,
-  type QueryRule,
   type QueryAnnotationTrace,
 } from './search-query-annotations.ts'
+import {
+  buildQueryAnnotationRules,
+  NORMALIZED_NEIGHBORHOODS,
+  type SearchTimeFilter,
+} from './search-query-rules.ts'
 
 // ============================================================================
 // INTENT CONTRACTS (plan §2.1)
@@ -96,7 +96,7 @@ export interface CanonicalizeInput {
   isFree?: boolean
   maxPrice?: number
   minAge?: number
-  timeFilter?: 'now' | 'tonight' | 'tomorrow' | 'weekend' | 'week' | 'future'
+  timeFilter?: SearchTimeFilter
   limit?: number
   /** Explicit objective hint ("surprise me" → 'surprise'). Derivation: see objectFromInput. */
   objective?: 'search' | 'surprise'
@@ -109,216 +109,6 @@ export interface CanonicalizeInput {
 const DISPLAY_LIMIT_DEFAULT = 1
 const DISPLAY_LIMIT_MAX = 5
 const CANDIDATE_LIMIT = 50
-
-// ============================================================================
-// ALIAS TABLES (token-boundary aware, operate on normalized text)
-// ============================================================================
-
-/** Abbreviated filler/stopword tokens not worth embedding on their own. */
-const SEMANTIC_FILLER = new Set([
-  'el', 'la', 'los', 'las', 'lo', 'un', 'una', 'unos', 'unas',
-  'de', 'del', 'en', 'a', 'y', 'o', 'que', 'para', 'por', 'con', 'al',
-  // English glue once structured constraints have been resolved.
-  'in', 'and', 'or',
-])
-
-/** Whole-word tokens that mark a query as free (never a substring). */
-const FREE_SINGLE_TOKENS = ['gratis', 'gratuito', 'free']
-
-/** Multi-word free phrases, matched as exact contiguous token spans. */
-const FREE_PHRASES: string[][] = [
-  ['sin', 'costo'],
-  ['sin', 'cargo'],
-  ['a', 'la', 'gorra'],
-]
-
-/** Normalized weekday → target weekday index (0=Sunday..6=Saturday). */
-const WEEKDAY_TOKENS: Record<string, number> = {
-  lunes: 1, monday: 1,
-  martes: 2, tuesday: 2,
-  miercoles: 3, wednesday: 3,
-  jueves: 4, thursday: 4,
-  viernes: 5, friday: 5,
-  sabado: 6, saturday: 6,
-  domingo: 0, sunday: 0,
-}
-
-/**
- * Weekday-only phrasing meaning Monday–Friday ("during the week", "on
- * weekdays", "entre semana") — NOT `timeFilter: "week"` (the next 7 days).
- * Whole-phrase matched on normalized tokens.
- */
-const WEEKDAY_PHRASES: string[][] = [
-  ['weekday'],
-  ['weekdays'],
-  ['on', 'weekdays'],
-  ['during', 'the', 'week'],
-  ['during', 'week'],
-  ['entre', 'semana'],
-  ['durante', 'la', 'semana'],
-  ['durante', 'semana'],
-  ['dia', 'de', 'semana'],
-  ['dias', 'de', 'semana'],
-]
-
-/**
- * Generic discovery phrases — "what's on?" / "qué hay?" / "things to do" —
- * that name the ask itself rather than a subject. Matched as exact contiguous
- * token spans on the normalized query (never substring). Removing them turns a
- * pure discovery ask into filter-only search instead of embedding meaningless
- * tokens.
- */
-const GENERIC_DISCOVERY_PHRASES: string[][] = [
-  // Spanish
-  ['planes'],
-  ['eventos'],
-  ['actividades'],
-  ['cosas', 'para', 'hacer'],
-  ['algo', 'para', 'hacer'],
-  ['que', 'hay'], // "qué hay"
-  ['hay', 'eventos'], // "hay eventos"
-  ['hay', 'algun', 'evento'], // "hay algún evento"
-  // English
-  ['what', 's', 'on'], // "what's on"
-  ['what', 'is', 'on'],
-  ['whats', 'on'],
-  ['things', 'to', 'do'],
-  ['thing', 'to', 'do'],
-  ['something', 'to', 'do'],
-  ['events'],
-  ['activities'],
-  ['any', 'events', 'on'],
-  ['are', 'there', 'any', 'events', 'on'],
-  ['are', 'there', 'events', 'on'],
-  ['any', 'events'],
-  ['are', 'there', 'any', 'events'],
-  ['are', 'there', 'events'],
-]
-
-/**
- * Temporal phrases keyed by the structured `timeFilter`, so only the phrase
- * matching the *active* filter is stripped from semantic residue. This avoids
- * globally deleting "night" / "week" / "now" when no structured filter exists.
- */
-const TEMPORAL_PHRASES_BY_FILTER: Record<
-  NonNullable<CanonicalizeInput['timeFilter']>,
-  string[][]
-> = {
-  now: [['now'], ['right', 'now'], ['ahora'], ['en', 'este', 'momento']],
-  tonight: [
-    ['tonight'],
-    ['this', 'evening'],
-    ['esta', 'noche'],
-    ['hoy', 'a', 'la', 'noche'],
-  ],
-  tomorrow: [['tomorrow'], ['manana']], // "mañana"
-  weekend: [
-    ['weekend'],
-    ['this', 'weekend'],
-    ['este', 'fin', 'de', 'semana'],
-    ['fin', 'de', 'semana'],
-    ['este', 'finde'],
-    ['finde'],
-  ],
-  week: [['this', 'week'], ['esta', 'semana']],
-  future: [['in', 'the', 'future'], ['en', 'el', 'futuro']],
-}
-
-const NORMALIZED_NEIGHBORHOODS: Array<{ name: Neighborhood; tokens: string[] }> =
-  NEIGHBORHOODS.map((name) => ({
-    name,
-    tokens: normalizeText(name).split(' ').filter(Boolean),
-  }))
-
-// ============================================================================
-// QUERY-ANNOTATION RULES (declarative; consumed by annotateQuery)
-// ============================================================================
-//
-// Each rule is an exact contiguous token-span match on the normalized query.
-// Semantic residue is computed from the resolved consuming spans' token
-// indexes — never by token value. See search-query-annotations.ts for the
-// overlap policy and the QueryRule contract.
-
-/** Abbreviated filler/stopword tokens not worth embedding on their own. */
-const FILLER_RULES: QueryRule[] = [...SEMANTIC_FILLER].map((token) => ({
-  phrase: [token],
-  kind: 'filler' as const,
-}))
-
-/** Whole-token + phrase free markers → the isFree constraint. */
-const FREE_RULES: QueryRule[] = [
-  ...FREE_SINGLE_TOKENS.map((token) => ({
-    phrase: [token],
-    kind: 'free' as const,
-    value: 'free',
-  })),
-  ...FREE_PHRASES.map((phrase) => ({
-    phrase,
-    kind: 'free' as const,
-    value: 'free',
-  })),
-]
-
-/** Normalized weekday token → target weekday index (0=Sunday..6=Saturday). */
-const WEEKDAY_RULES: QueryRule[] = Object.entries(WEEKDAY_TOKENS).map(
-  ([token, day]) => ({
-    phrase: [token],
-    kind: 'weekday' as const,
-    value: day,
-  })
-)
-
-/**
- * Weekday-only phrasing meaning Monday–Friday. Suppressed by a named weekday
- * so a named day always wins over the generic phrasing (behavior unchanged).
- */
-const WEEKDAY_RANGE_RULES: QueryRule[] = WEEKDAY_PHRASES.map((phrase) => ({
-  phrase,
-  kind: 'weekday_range' as const,
-  suppressedBy: ['weekday'],
-}))
-
-/** Generic discovery phrases — "what's on?" / "qué hay?" / "things to do". */
-const GENERIC_RULES: QueryRule[] = GENERIC_DISCOVERY_PHRASES.map((phrase) => ({
-  phrase,
-  kind: 'generic_discovery' as const,
-}))
-
-/** Query neighborhoods — matched as exact contiguous token spans. */
-const NEIGHBORHOOD_RULES: QueryRule[] = NORMALIZED_NEIGHBORHOODS.map((nb) => ({
-  phrase: nb.tokens,
-  kind: 'neighborhood' as const,
-  value: nb.name,
-}))
-
-/** Active temporal phrases for the structured `timeFilter`, if any. */
-function temporalRules(timeFilter: NonNullable<CanonicalizeInput['timeFilter']> | undefined): QueryRule[] {
-  if (!timeFilter) return []
-  return TEMPORAL_PHRASES_BY_FILTER[timeFilter].map((phrase) => ({
-    phrase,
-    kind: 'temporal' as const,
-    value: timeFilter,
-  }))
-}
-
-/**
- * Build the full rule set for annotation. Temporal rules are active only for
- * the matching structured `timeFilter`; everything else is unconditional.
- * Exported for annotation-level tests.
- */
-export function buildQueryAnnotationRules(
-  timeFilter: NonNullable<CanonicalizeInput['timeFilter']> | undefined
-): QueryRule[] {
-  return [
-    ...GENERIC_RULES,
-    ...WEEKDAY_RULES,
-    ...WEEKDAY_RANGE_RULES,
-    ...NEIGHBORHOOD_RULES,
-    ...FREE_RULES,
-    ...FILLER_RULES,
-    ...temporalRules(timeFilter),
-  ]
-}
 
 // ============================================================================
 // PREFER FACET EXTRACTION (soft hints — never filters)
@@ -751,8 +541,9 @@ export async function canonicalizeSearchIntent(
 
   // --- weekday / weekday-range / timeFilter / dateFrom-dateTo ---
   // Named weekdays ("lunes o martes" → both days) win over weekday-only
-  // phrasing, which wins over the structured timeFilter. The weekday-range
-  // span is already suppressed when a named weekday is present.
+  // phrasing, which wins over the structured timeFilter. Both spans may remain
+  // annotated so redundant date syntax is consumed; this branch order gives
+  // the named weekday precedence.
   if (weekdays.size > 0) {
     const windows = weekdayWindows(nowBA, [...weekdays])
     if (windows.length === 1) {

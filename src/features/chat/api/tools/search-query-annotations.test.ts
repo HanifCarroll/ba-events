@@ -1,17 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   annotateQuery,
   type AnnotatedQuery,
   type QuerySpan,
   type QuerySpanKind,
 } from './search-query-annotations.ts'
-import { buildQueryAnnotationRules } from './search-intent.ts'
-
-// search-intent.ts pulls in the DB client module; stub it so the annotation
-// tests never touch supabase/embeddings (lazy-init, but keep it out entirely).
-vi.mock('#shared/lib/db/client.server.ts', () => ({
-  searchVenuesByName: vi.fn(),
-}))
+import { buildQueryAnnotationRules } from './search-query-rules.ts'
 
 function annotate(
   query: string,
@@ -233,13 +227,11 @@ describe('annotateQuery — weekday wording', () => {
     checkInvariants(res)
   })
 
-  it('a named weekday suppresses weekday-only phrasing ("Monday during the week")', () => {
+  it('consumes weekday-range syntax while the named weekday retains precedence', () => {
     const res = annotate('Monday during the week')
-    // "monday" wins; the weekday_range phrase is dropped (not consumed).
-    expect(spansOfKind(res, 'weekday')).toHaveLength(1)
-    expect(spansOfKind(res, 'weekday_range')).toHaveLength(0)
-    // "during the week" remains semantic (exact current behavior).
-    expect(res.semanticQuery).toBe('during the week')
+    expectSpan(res, 'weekday', 0, 1, 'monday', 1)
+    expectSpan(res, 'weekday_range', 1, 4, 'during the week')
+    expect(res.semanticQuery).toBe('')
     checkInvariants(res)
   })
 
