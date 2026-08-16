@@ -29,6 +29,11 @@ import {
   SETTING_VALUES,
 } from '#shared/lib/search-facets.ts'
 import { baToUTC } from './utils.ts'
+import {
+  annotateQuery,
+  type QueryRule,
+  type QueryAnnotationTrace,
+} from './search-query-annotations.ts'
 
 // ============================================================================
 // INTENT CONTRACTS (plan §2.1)
@@ -72,6 +77,8 @@ export interface EventSearchIntent {
   displayLimit: number
   candidateLimit: number
   objective: 'search' | 'surprise'
+  /** Compact query-annotation trace (debug/tests only; never user-visible). */
+  annotation?: QueryAnnotationTrace
 }
 
 // The tool input as seen by canonicalize. Structurally compatible with
@@ -118,7 +125,7 @@ const SEMANTIC_FILLER = new Set([
 /** Whole-word tokens that mark a query as free (never a substring). */
 const FREE_SINGLE_TOKENS = ['gratis', 'gratuito', 'free']
 
-/** Multi-word free phrases; all words present (as whole tokens) counts. */
+/** Multi-word free phrases, matched as exact contiguous token spans. */
 const FREE_PHRASES: string[][] = [
   ['sin', 'costo'],
   ['sin', 'cargo'],
@@ -224,6 +231,96 @@ const NORMALIZED_NEIGHBORHOODS: Array<{ name: Neighborhood; tokens: string[] }> 
   }))
 
 // ============================================================================
+// QUERY-ANNOTATION RULES (declarative; consumed by annotateQuery)
+// ============================================================================
+//
+// Each rule is an exact contiguous token-span match on the normalized query.
+// Semantic residue is computed from the resolved consuming spans' token
+// indexes — never by token value. See search-query-annotations.ts for the
+// overlap policy and the QueryRule contract.
+
+/** Abbreviated filler/stopword tokens not worth embedding on their own. */
+const FILLER_RULES: QueryRule[] = [...SEMANTIC_FILLER].map((token) => ({
+  phrase: [token],
+  kind: 'filler' as const,
+}))
+
+/** Whole-token + phrase free markers → the isFree constraint. */
+const FREE_RULES: QueryRule[] = [
+  ...FREE_SINGLE_TOKENS.map((token) => ({
+    phrase: [token],
+    kind: 'free' as const,
+    value: 'free',
+  })),
+  ...FREE_PHRASES.map((phrase) => ({
+    phrase,
+    kind: 'free' as const,
+    value: 'free',
+  })),
+]
+
+/** Normalized weekday token → target weekday index (0=Sunday..6=Saturday). */
+const WEEKDAY_RULES: QueryRule[] = Object.entries(WEEKDAY_TOKENS).map(
+  ([token, day]) => ({
+    phrase: [token],
+    kind: 'weekday' as const,
+    value: day,
+  })
+)
+
+/**
+ * Weekday-only phrasing meaning Monday–Friday. Suppressed by a named weekday
+ * so a named day always wins over the generic phrasing (behavior unchanged).
+ */
+const WEEKDAY_RANGE_RULES: QueryRule[] = WEEKDAY_PHRASES.map((phrase) => ({
+  phrase,
+  kind: 'weekday_range' as const,
+  suppressedBy: ['weekday'],
+}))
+
+/** Generic discovery phrases — "what's on?" / "qué hay?" / "things to do". */
+const GENERIC_RULES: QueryRule[] = GENERIC_DISCOVERY_PHRASES.map((phrase) => ({
+  phrase,
+  kind: 'generic_discovery' as const,
+}))
+
+/** Query neighborhoods — matched as exact contiguous token spans. */
+const NEIGHBORHOOD_RULES: QueryRule[] = NORMALIZED_NEIGHBORHOODS.map((nb) => ({
+  phrase: nb.tokens,
+  kind: 'neighborhood' as const,
+  value: nb.name,
+}))
+
+/** Active temporal phrases for the structured `timeFilter`, if any. */
+function temporalRules(timeFilter: NonNullable<CanonicalizeInput['timeFilter']> | undefined): QueryRule[] {
+  if (!timeFilter) return []
+  return TEMPORAL_PHRASES_BY_FILTER[timeFilter].map((phrase) => ({
+    phrase,
+    kind: 'temporal' as const,
+    value: timeFilter,
+  }))
+}
+
+/**
+ * Build the full rule set for annotation. Temporal rules are active only for
+ * the matching structured `timeFilter`; everything else is unconditional.
+ * Exported for annotation-level tests.
+ */
+export function buildQueryAnnotationRules(
+  timeFilter: NonNullable<CanonicalizeInput['timeFilter']> | undefined
+): QueryRule[] {
+  return [
+    ...GENERIC_RULES,
+    ...WEEKDAY_RULES,
+    ...WEEKDAY_RANGE_RULES,
+    ...NEIGHBORHOOD_RULES,
+    ...FREE_RULES,
+    ...FILLER_RULES,
+    ...temporalRules(timeFilter),
+  ]
+}
+
+// ============================================================================
 // PREFER FACET EXTRACTION (soft hints — never filters)
 // ============================================================================
 
@@ -325,45 +422,6 @@ function phraseMatches(
   return false
 }
 
-/**
- * Return the union of token indexes covered by any phrase in `phrases`,
- * matching exact contiguous token spans (whole tokens, never substrings).
- * Empty when nothing matches. Indexes — not values — are tracked so a title
- * occurrence ("Stranger Things") survives while only the generic phrase is
- * removed.
- */
-function matchPhraseIndexes(tokens: string[], phrases: string[][]): Set<number> {
-  const matched = new Set<number>()
-  for (const phrase of phrases) {
-    const n = phrase.length
-    if (n === 0) continue
-    for (let i = 0; i + n <= tokens.length; i++) {
-      let ok = true
-      for (let j = 0; j < n; j++) {
-        if (tokens[i + j] !== phrase[j]) {
-          ok = false
-          break
-        }
-      }
-      if (ok) {
-        for (let j = 0; j < n; j++) matched.add(i + j)
-      }
-    }
-  }
-  return matched
-}
-
-/**
- * Return the weekday-phrase tokens present in the query (to strip from
- * semanticQuery), or null when the query has no weekday-only phrasing.
- */
-function matchWeekdayPhrase(tokens: string[]): string[] | null {
-  for (const phrase of WEEKDAY_PHRASES) {
-    if (phraseMatches(tokens, phrase, new Set())) return phrase
-  }
-  return null
-}
-
 /** Extract soft `prefer` hints from free-text query tokens (never filters). */
 function extractPreferFromQuery(normalizedQuery: string): EventSearchPrefer {
   const tokens = normalizedQuery ? normalizedQuery.split(' ').filter(Boolean) : []
@@ -413,30 +471,24 @@ export function preferIsEmpty(prefer: EventSearchPrefer | undefined | null): boo
 // ============================================================================
 
 /**
- * Resolve the neighborhoods named in the explicit `neighborhoods` input and/or
- * the free-text `query`, using token-boundary whole-word matching against the
- * canonical NEIGHBORHOODS names. "Palermo Soho"/"Palermo Hollywood" both map to
- * "Palermo" because the canonical name's tokens must each appear as a word.
+ * Resolve the neighborhoods named in the explicit `neighborhoods` input and
+ * the contiguous query-neighborhood spans. Explicit input is matched exactly as
+ * before (token-boundary whole-word: "Palermo Soho" → "Palermo"); query
+ * neighborhoods arrive already resolved as exact contiguous spans.
  */
-function resolveNeighborhoods(input: string[], queryTokens: Set<string>): Neighborhood[] {
-  const resolved = new Set<Neighborhood>()
-
+function resolveNeighborhoods(
+  input: string[],
+  queryNeighborhoods: Neighborhood[]
+): Neighborhood[] {
+  const resolved = new Set<Neighborhood>(queryNeighborhoods)
   for (const raw of input) {
     const tokens = normalizeText(raw).split(' ').filter(Boolean)
     for (const nb of NORMALIZED_NEIGHBORHOODS) {
-      if (nb.tokens.every((t) => tokens.includes(t))) resolved.add(nb.name)
+      if (nb.tokens.length > 0 && nb.tokens.every((t) => tokens.includes(t))) {
+        resolved.add(nb.name)
+      }
     }
   }
-
-  const tokens = new Set(input.flatMap((raw) => normalizeText(raw).split(' ').filter(Boolean)))
-  queryTokens.forEach((t) => tokens.add(t))
-
-  for (const nb of NORMALIZED_NEIGHBORHOODS) {
-    if (nb.tokens.length > 0 && nb.tokens.every((t) => tokens.has(t))) {
-      resolved.add(nb.name)
-    }
-  }
-
   return [...resolved]
 }
 
@@ -655,18 +707,20 @@ export async function canonicalizeSearchIntent(
   nowBA: Date
 ): Promise<EventSearchIntent> {
   const query = input.query?.trim() ?? ''
-  const normalizedQuery = normalizeText(query)
-  const queryTokenList = normalizedQuery ? normalizedQuery.split(' ').filter(Boolean) : []
-  const queryTokens = new Set(queryTokenList)
 
-  // --- phrase-aware generic discovery + active temporal stripping ---
-  // Matched by token index (not value) so a title occurrence like "Stranger
-  // Things" is preserved while only the generic phrase is removed.
-  const genericIndexes = matchPhraseIndexes(queryTokenList, GENERIC_DISCOVERY_PHRASES)
-  const hadGenericDiscoveryIntent = genericIndexes.size > 0
-  const temporalIndexes = input.timeFilter
-    ? matchPhraseIndexes(queryTokenList, TEMPORAL_PHRASES_BY_FILTER[input.timeFilter])
-    : new Set<number>()
+  // --- annotate once: normalize → tokenize → match → resolve → residue ---
+  const annotated = annotateQuery(query, buildQueryAnnotationRules(input.timeFilter))
+  const spans = annotated.spans
+
+  // Derived from resolved spans — never by re-scanning token values.
+  const hadGenericDiscoveryIntent = spans.some((s) => s.kind === 'generic_discovery')
+  const weekdays = new Set(
+    spans.filter((s) => s.kind === 'weekday').map((s) => s.value as number)
+  )
+  const hasWeekdayRange = spans.some((s) => s.kind === 'weekday_range')
+  const queryNeighborhoods = spans
+    .filter((s) => s.kind === 'neighborhood')
+    .map((s) => s.value as Neighborhood)
 
   const must: EventSearchMust = {}
   const avoid: EventSearchAvoid = {}
@@ -678,33 +732,14 @@ export async function canonicalizeSearchIntent(
   const explicitLimit = input.limit !== undefined
   let displayLimit = Math.max(1, Math.min(input.limit ?? DISPLAY_LIMIT_DEFAULT, DISPLAY_LIMIT_MAX))
 
-  // --- isFree from explicit input or free-language ---
-  const strippedTokens = new Set<string>()
+  // --- isFree from explicit input or free-language spans ---
   let isFree = input.isFree ?? false
-  if (FREE_SINGLE_TOKENS.some((t) => queryTokens.has(t))) {
-    isFree = true
-    FREE_SINGLE_TOKENS.forEach((t) => {
-      if (queryTokens.has(t)) strippedTokens.add(t)
-    })
-  }
-  for (const phrase of FREE_PHRASES) {
-    if (phrase.every((t) => queryTokens.has(t))) {
-      isFree = true
-      phrase.forEach((t) => strippedTokens.add(t))
-    }
-  }
+  if (spans.some((s) => s.kind === 'free')) isFree = true
   if (isFree) must.isFree = true
 
-  // --- neighborhoods (explicit + query) ---
-  const neighborhoods = resolveNeighborhoods(input.neighborhoods ?? [], queryTokens)
-  if (neighborhoods.length > 0) {
-    must.neighborhoodIds = neighborhoods
-    neighborhoods.forEach((n) => {
-      NORMALIZED_NEIGHBORHOODS.find((nb) => nb.name === n)?.tokens.forEach((t) =>
-        strippedTokens.add(t)
-      )
-    })
-  }
+  // --- neighborhoods (explicit + contiguous query spans) ---
+  const neighborhoods = resolveNeighborhoods(input.neighborhoods ?? [], queryNeighborhoods)
+  if (neighborhoods.length > 0) must.neighborhoodIds = neighborhoods
 
   // --- venues ---
   if (input.venueIds?.length) {
@@ -714,20 +749,10 @@ export async function canonicalizeSearchIntent(
     must.venueIds = venues.map((v) => v.id)
   }
 
-  // --- weekday / timeFilter / dateFrom-dateTo ---
-  // Every named weekday present in the query ("lunes o martes" → both days).
-  const weekdays = new Set<number>()
-  for (const token of queryTokens) {
-    const day = WEEKDAY_TOKENS[token]
-    if (day !== undefined) weekdays.add(day)
-  }
-
-  // Weekday-only phrasing ("during the week", "on weekdays", "entre semana")
-  // means Monday–Friday — NOT timeFilter "week" (the next 7 days). Only when
-  // no named weekday is present (a named day wins over the generic phrasing).
-  const weekdayPhrase =
-    weekdays.size === 0 ? matchWeekdayPhrase(queryTokenList) : null
-
+  // --- weekday / weekday-range / timeFilter / dateFrom-dateTo ---
+  // Named weekdays ("lunes o martes" → both days) win over weekday-only
+  // phrasing, which wins over the structured timeFilter. The weekday-range
+  // span is already suppressed when a named weekday is present.
   if (weekdays.size > 0) {
     const windows = weekdayWindows(nowBA, [...weekdays])
     if (windows.length === 1) {
@@ -739,15 +764,10 @@ export async function canonicalizeSearchIntent(
         startsBefore: baToUTC(w.before),
       }))
     }
-    // Strip every named-weekday token.
-    for (const [key, value] of Object.entries(WEEKDAY_TOKENS)) {
-      if (weekdays.has(value) && queryTokens.has(key)) strippedTokens.add(key)
-    }
-  } else if (weekdayPhrase) {
+  } else if (hasWeekdayRange) {
     const w = weekdaysWindow(nowBA)
     must.startsAfter = baToUTC(w.after)
     must.startsBefore = baToUTC(w.before)
-    for (const token of weekdayPhrase) strippedTokens.add(token)
   } else {
     applyTimeFilter(must, input.timeFilter, nowBA)
   }
@@ -778,26 +798,14 @@ export async function canonicalizeSearchIntent(
   const avoidGenres = mapAvoidGenres(input.avoid)
   if (avoidGenres.length > 0) avoid.genres = avoidGenres
 
-  // --- semanticQuery = query minus resolved constraint tokens + filler +
-  // generic-discovery + active-temporal phrases ---
-  let semanticQuery = ''
-  if (normalizedQuery) {
-    const remaining = queryTokenList.filter(
-      (t, i) =>
-        t &&
-        !strippedTokens.has(t) &&
-        !SEMANTIC_FILLER.has(t) &&
-        !genericIndexes.has(i) &&
-        !temporalIndexes.has(i)
-    )
-    semanticQuery = remaining.join(' ')
-  }
+  // --- semanticQuery: ordered unconsumed tokens (the annotator's residue) ---
+  let semanticQuery = annotated.semanticQuery
 
   // Prefer is retrieval text only — never a filter. It merges explicit
   // `input.prefer` with soft hints extracted from the free-text query tokens.
   // When the user-facing semanticQuery is empty but prefer terms exist, append
   // them so the hybrid retriever still has something to embed / lexically match.
-  const prefer = mergePrefer(input.prefer, extractPreferFromQuery(normalizedQuery))
+  const prefer = mergePrefer(input.prefer, extractPreferFromQuery(annotated.normalizedQuery))
   if (!semanticQuery) {
     semanticQuery = joinPreferIntoQuery(prefer)
   }
@@ -821,6 +829,7 @@ export async function canonicalizeSearchIntent(
     displayLimit,
     candidateLimit: CANDIDATE_LIMIT,
     objective,
+    annotation: annotated.trace,
   }
 }
 
