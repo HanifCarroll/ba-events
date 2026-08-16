@@ -211,6 +211,7 @@ describe('recordGuestRequestTerminal', () => {
 
     await recordGuestRequestTerminal({
       requestId: 'req-1',
+      conversationId: 'conv-1',
       status: 'completed',
       providerRequestId: 'provider-1',
     })
@@ -222,6 +223,7 @@ describe('recordGuestRequestTerminal', () => {
 
     const payload = upsertMock.mock.calls[0][0] as Record<string, unknown>
     expect(payload.request_id).toBe('req-1')
+    expect(payload.conversation_id).toBe('conv-1')
     expect(payload.status).toBe('completed')
     expect(payload.ended_at).toBeTypeOf('string')
     expect(payload.error_type).toBeNull()
@@ -236,6 +238,7 @@ describe('recordGuestRequestTerminal', () => {
 
     await recordGuestRequestTerminal({
       requestId: 'req-1',
+      conversationId: 'conv-1',
       status: 'errored',
       errorType: 'APICallError',
     })
@@ -252,6 +255,7 @@ describe('recordGuestRequestTerminal', () => {
 
     await recordGuestRequestTerminal({
       requestId: 'req-1',
+      conversationId: 'conv-1',
       status: 'completed',
     })
 
@@ -264,6 +268,7 @@ describe('recordGuestRequestTerminal', () => {
 
     await recordGuestRequestTerminal({
       requestId: 'req-1',
+      conversationId: 'conv-1',
       status: 'errored',
       errorType: 'APICallError',
     })
@@ -276,6 +281,7 @@ describe('recordGuestRequestTerminal', () => {
     // column DEFAULT now() so the existing start time survives a conflict.
     const payload = upsertMock.mock.calls[0][0] as Record<string, unknown>
     expect(payload.request_id).toBe('req-1')
+    expect(payload.conversation_id).toBe('conv-1')
     expect(payload.status).toBe('errored')
     expect(payload.ended_at).toBeTypeOf('string')
     expect(payload.error_type).toBe('APICallError')
@@ -307,6 +313,7 @@ describe('request lifecycle timeout fail-open', () => {
 
       const promise = recordGuestRequestTerminal({
         requestId: 'req-1',
+        conversationId: 'conv-1',
         status: 'completed',
       })
       await vi.advanceTimersByTimeAsync(2000)

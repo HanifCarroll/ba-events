@@ -30,7 +30,7 @@ export const guestLifecycleRetention = schedules.task({
 
     if (error) {
       console.error('[guest-lifecycle-retention] Purge failed', error.message)
-      return { purged: 0, error: error.message }
+      throw new Error(`Guest lifecycle retention failed: ${error.message}`)
     }
 
     console.log(

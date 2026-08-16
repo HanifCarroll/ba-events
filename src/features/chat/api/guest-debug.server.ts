@@ -163,6 +163,7 @@ export async function recordGuestRequestStarted(input: {
  */
 export async function recordGuestRequestTerminal(input: {
   requestId: string
+  conversationId: string | null
   status: 'completed' | 'errored'
   errorType?: string | null
   providerRequestId?: string | null
@@ -180,6 +181,7 @@ export async function recordGuestRequestTerminal(input: {
         .upsert(
           {
             request_id: input.requestId,
+            conversation_id: input.conversationId,
             status: input.status,
             ended_at: new Date().toISOString(),
             error_type: input.errorType ?? null,

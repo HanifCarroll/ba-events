@@ -531,6 +531,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
             }),
             recordGuestRequestTerminal({
               requestId,
+              conversationId,
               status: 'completed',
               providerRequestId,
             }),
@@ -568,6 +569,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
             }),
             recordGuestRequestTerminal({
               requestId,
+              conversationId,
               status: 'errored',
               errorType: error instanceof Error ? error.name : 'unknown',
               providerRequestId,
