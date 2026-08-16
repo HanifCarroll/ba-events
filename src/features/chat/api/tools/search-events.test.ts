@@ -22,16 +22,16 @@ vi.mock('#shared/lib/db/client.server.ts', () => ({
   searchVenuesByName: vi.fn(),
 }))
 
-// Mock the reranker but keep the real implementation as the default, so the
-// "no VOYAGE_API_KEY → disabled → retrieval order" behavior is still exercised;
-// individual tests override the implementation to inject a reranked order.
-vi.mock('#shared/lib/search/rerank.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('#shared/lib/search/rerank.ts')>()
-  return {
-    ...actual,
-    rerankEvents: vi.fn(actual.rerankEvents),
-  }
-})
+// Mock the hosted reranker as a deterministic no-op (disabled) so search_events
+// tests never depend on VOYAGE_API_KEY or hit the network. Rerank behavior is
+// unit-tested separately in shared/lib/search/rerank.test.ts; the single test
+// that needs an applied order opts in below via mockImplementation.
+vi.mock('#shared/lib/search/rerank.ts', () => ({
+  rerankEvents: vi.fn(async (candidates: Array<{ id: string }>) => ({
+    ordered: [...candidates],
+    meta: { status: 'disabled' as const },
+  })),
+}))
 
 // The mocked module exports ARE the mock fns; cast only for typing
 // (bun test does not provide vi.mocked).
@@ -436,10 +436,63 @@ describe('search_events generic discovery + temporal routing', () => {
   })
 })
 
+describe('search_events exact multi-weekday retrieval', () => {
+  const event = (id: string, startsAt: string) => ({
+    id,
+    name: id,
+    starts_at: startsAt,
+    image_url: null,
+    venue_id: null,
+    venue_name: null,
+    venue_neighborhood: null,
+    venue_address: null,
+    location_tba: false,
+    description_unavailable: false,
+    categories: ['music'],
+    is_free: false,
+    price: null,
+  })
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-16T15:00:00.000Z')) // Sunday noon BA
+    vi.resetAllMocks()
+    mockedCountEventsWithFilters.mockResolvedValue(1)
+    mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00.000Z')
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('queries Monday and Friday separately, then merges before one rerank pass', async () => {
+    mockedHybridEventSearch
+      .mockResolvedValueOnce([event('monday', '2026-08-17T18:00:00.000Z')])
+      .mockResolvedValueOnce([event('friday', '2026-08-21T18:00:00.000Z')])
+
+    const result = await searchEventsTool.execute(
+      { query: 'chill Monday or Friday', limit: 5 },
+      context
+    )
+
+    expect(mockedHybridEventSearch).toHaveBeenCalledTimes(2)
+    expect(mockedHybridEventSearch.mock.calls[0][1]).toMatchObject({
+      startsAfter: '2026-08-17T03:00:00.000Z',
+      startsBefore: '2026-08-18T03:00:00.000Z',
+    })
+    expect(mockedHybridEventSearch.mock.calls[1][1]).toMatchObject({
+      startsAfter: '2026-08-21T03:00:00.000Z',
+      startsBefore: '2026-08-22T03:00:00.000Z',
+    })
+    expect(mockedRerankEvents).toHaveBeenCalledTimes(1)
+    expect(result.events?.map((candidate) => candidate.id)).toEqual(['monday', 'friday'])
+  })
+})
+
 // ============================================================================
-// Hosted rerank (disabled) — with no VOYAGE_API_KEY the reranker no-ops and
-// the retrieval order is preserved. The real rerankEvents is mocked through to
-// its actual implementation, so "disabled" behavior is still exercised.
+// Hosted rerank disabled — the deterministic module mock preserves retrieval
+// order regardless of local VOYAGE_API_KEY configuration.
 // ============================================================================
 
 describe('search_events chill rerank disabled', () => {

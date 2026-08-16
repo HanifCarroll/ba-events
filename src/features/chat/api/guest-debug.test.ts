@@ -9,6 +9,8 @@ import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import {
   buildGuestDebugTranscript,
   persistGuestChatDebug,
+  recordGuestRequestStarted,
+  recordGuestRequestTerminal,
   upsertGuestChatDebug,
 } from './guest-debug.server.ts'
 
@@ -16,12 +18,20 @@ import {
 // (bun test does not provide vi.mocked).
 const getClientMock = getSupabaseServiceRoleClient as unknown as Mock
 let upsertMock: Mock
+let insertMock: Mock
+let updateMock: Mock
+let eqMock: Mock
 
 beforeEach(() => {
   vi.resetAllMocks()
   upsertMock = vi.fn()
+  insertMock = vi.fn()
+  eqMock = vi.fn()
+  updateMock = vi.fn().mockReturnValue({ eq: eqMock })
   getClientMock.mockReturnValue({
-    from: vi.fn().mockReturnValue({ upsert: upsertMock }),
+    from: vi
+      .fn()
+      .mockReturnValue({ upsert: upsertMock, insert: insertMock, update: updateMock }),
   })
 })
 
@@ -123,6 +133,24 @@ describe('persistGuestChatDebug', () => {
     await persistPromise
     expect(persisted).toBe(true)
   })
+
+  it('fails open when the transcript write never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      upsertMock.mockReturnValue(Promise.withResolvers<never>().promise)
+      const promise = persistGuestChatDebug({
+        conversationId: 'guest-nanoid-123',
+        locale: 'en',
+        ip: '203.0.113.7',
+        messages: [],
+        lastUserText: null,
+      })
+      await vi.advanceTimersByTimeAsync(2000)
+      await expect(promise).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('buildGuestDebugTranscript', () => {
@@ -144,5 +172,112 @@ describe('buildGuestDebugTranscript', () => {
       role: 'assistant',
       parts: [{ type: 'text', text: 'Hello' }],
     })
+  })
+})
+
+describe('recordGuestRequestStarted', () => {
+  it('inserts a started row keyed by request id', async () => {
+    insertMock.mockResolvedValue({ error: null })
+
+    await recordGuestRequestStarted({
+      requestId: 'req-1',
+      conversationId: 'conv-1',
+    })
+
+    expect(getClientMock).toHaveBeenCalledTimes(1)
+    expect(getClientMock.mock.results[0].value.from).toHaveBeenCalledWith(
+      'guest_request_lifecycle'
+    )
+    expect(insertMock).toHaveBeenCalledTimes(1)
+
+    const payload = insertMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.request_id).toBe('req-1')
+    expect(payload.conversation_id).toBe('conv-1')
+    expect(payload.status).toBe('started')
+    expect(payload.started_at).toBeTypeOf('string')
+  })
+
+  it('is a no-op when requestId is missing', async () => {
+    await recordGuestRequestStarted({ requestId: '', conversationId: 'conv-1' })
+
+    expect(getClientMock).not.toHaveBeenCalled()
+    expect(insertMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('recordGuestRequestTerminal', () => {
+  it('updates the same row to completed with an ended_at', async () => {
+    eqMock.mockResolvedValue({ error: null })
+
+    await recordGuestRequestTerminal({
+      requestId: 'req-1',
+      status: 'completed',
+      providerRequestId: 'provider-1',
+    })
+
+    expect(getClientMock.mock.results[0].value.from).toHaveBeenCalledWith(
+      'guest_request_lifecycle'
+    )
+    expect(updateMock).toHaveBeenCalledTimes(1)
+
+    const payload = updateMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.status).toBe('completed')
+    expect(payload.ended_at).toBeTypeOf('string')
+    expect(payload.error_type).toBeNull()
+    expect(payload.provider_request_id).toBe('provider-1')
+    expect(eqMock).toHaveBeenCalledWith('request_id', 'req-1')
+  })
+
+  it('updates the same row to errored with an error type', async () => {
+    eqMock.mockResolvedValue({ error: null })
+
+    await recordGuestRequestTerminal({
+      requestId: 'req-1',
+      status: 'errored',
+      errorType: 'APICallError',
+    })
+
+    const payload = updateMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.status).toBe('errored')
+    expect(payload.ended_at).toBeTypeOf('string')
+    expect(payload.error_type).toBe('APICallError')
+    expect(payload.provider_request_id).toBeNull()
+    expect(eqMock).toHaveBeenCalledWith('request_id', 'req-1')
+  })
+})
+
+describe('request lifecycle timeout fail-open', () => {
+  it('resolves when the started write never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      insertMock.mockReturnValue(Promise.withResolvers<never>().promise)
+
+      const promise = recordGuestRequestStarted({
+        requestId: 'req-1',
+        conversationId: 'conv-1',
+      })
+      await vi.advanceTimersByTimeAsync(2000)
+
+      await expect(promise).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resolves when the terminal write never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      eqMock.mockReturnValue(Promise.withResolvers<never>().promise)
+
+      const promise = recordGuestRequestTerminal({
+        requestId: 'req-1',
+        status: 'completed',
+      })
+      await vi.advanceTimersByTimeAsync(2000)
+
+      await expect(promise).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

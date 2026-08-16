@@ -37,6 +37,10 @@ import { baToUTC } from './utils.ts'
 export interface EventSearchMust {
   startsAfter?: string
   startsBefore?: string
+  /** Exact per-day windows for a multi-weekday ask ("Monday or Friday").
+   *  Disjoint days are queried separately — never a spanning hull, which would
+   *  admit unrequested weekdays in between. */
+  weekdayWindows?: Array<{ startsAfter: string; startsBefore: string }>
   neighborhoodIds?: Neighborhood[]
   venueIds?: string[]
   categories?: string[]
@@ -107,9 +111,8 @@ const CANDIDATE_LIMIT = 50
 const SEMANTIC_FILLER = new Set([
   'el', 'la', 'los', 'las', 'lo', 'un', 'una', 'unos', 'unas',
   'de', 'del', 'en', 'a', 'y', 'o', 'que', 'para', 'por', 'con', 'al',
-  // English preposition glue for discovery/location asks ("things to do in
-  // Belgrano" — "in" carries no semantic signal once the location resolves).
-  'in',
+  // English glue once structured constraints have been resolved.
+  'in', 'and', 'or',
 ])
 
 /** Whole-word tokens that mark a query as free (never a substring). */
@@ -461,22 +464,25 @@ function weekendWindow(now: Date): { after: Date; before: Date } {
 }
 
 /**
- * Next occurrence(s) of one or more named weekdays as a window spanning the
- * earliest to the latest occurrence (00:00 → 00:00). A single weekday yields
- * the same single-day window as before; "lunes o martes" spans both days.
+ * Next occurrence of each named weekday as its own exact window, ordered
+ * chronologically. A requested day that is today starts at `now`; future days
+ * start at midnight. Days are never collapsed into a spanning hull.
  */
-function weekdayWindow(now: Date, targetWeekdays: number[]): { after: Date; before: Date } {
+function weekdayWindows(
+  now: Date,
+  targetWeekdays: number[]
+): Array<{ after: Date; before: Date }> {
   const nowWeekday = getDay(now)
-  let after: Date | null = null
-  let before: Date | null = null
-  for (const targetWeekday of targetWeekdays) {
-    const daysUntil = (targetWeekday - nowWeekday + 7) % 7
-    const day = startOfDay(addDays(now, daysUntil))
-    if (after === null || day < after) after = day
-    const dayEnd = startOfDay(addDays(day, 1))
-    if (before === null || dayEnd > before) before = dayEnd
-  }
-  return { after: after!, before: before! }
+  return targetWeekdays
+    .map((targetWeekday) => {
+      const daysUntil = (targetWeekday - nowWeekday + 7) % 7
+      const day = startOfDay(addDays(now, daysUntil))
+      return {
+        after: daysUntil === 0 ? now : day,
+        before: startOfDay(addDays(day, 1)),
+      }
+    })
+    .sort((a, b) => a.after.getTime() - b.after.getTime())
 }
 
 /**
@@ -715,9 +721,16 @@ export async function canonicalizeSearchIntent(
     weekdays.size === 0 ? matchWeekdayPhrase(queryTokenList) : null
 
   if (weekdays.size > 0) {
-    const w = weekdayWindow(nowBA, [...weekdays])
-    must.startsAfter = baToUTC(w.after)
-    must.startsBefore = baToUTC(w.before)
+    const windows = weekdayWindows(nowBA, [...weekdays])
+    if (windows.length === 1) {
+      must.startsAfter = baToUTC(windows[0].after)
+      must.startsBefore = baToUTC(windows[0].before)
+    } else {
+      must.weekdayWindows = windows.map((w) => ({
+        startsAfter: baToUTC(w.after),
+        startsBefore: baToUTC(w.before),
+      }))
+    }
     // Strip every named-weekday token.
     for (const [key, value] of Object.entries(WEEKDAY_TOKENS)) {
       if (weekdays.has(value) && queryTokens.has(key)) strippedTokens.add(key)
@@ -737,8 +750,15 @@ export async function canonicalizeSearchIntent(
   // preserved so SQL returns no rows.
   if (input.dateFrom || input.dateTo) {
     const explicit = dateRangeBounds(input.dateFrom, input.dateTo)
-    must.startsAfter = latest(must.startsAfter, explicit.after)
-    must.startsBefore = earliest(must.startsBefore, explicit.before)
+    if (must.weekdayWindows) {
+      must.weekdayWindows = must.weekdayWindows.map((w) => ({
+        startsAfter: latest(w.startsAfter, explicit.after)!,
+        startsBefore: earliest(w.startsBefore, explicit.before)!,
+      }))
+    } else {
+      must.startsAfter = latest(must.startsAfter, explicit.after)
+      must.startsBefore = earliest(must.startsBefore, explicit.before)
+    }
   }
 
   // --- categorical / price / age pass-through ---

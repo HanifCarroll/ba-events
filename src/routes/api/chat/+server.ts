@@ -50,6 +50,8 @@ import type { SearchEventsInput } from '#features/chat/api/tools/search-events.t
 import {
   buildGuestDebugTranscript,
   persistGuestChatDebug,
+  recordGuestRequestStarted,
+  recordGuestRequestTerminal,
 } from '#features/chat/api/guest-debug.server.ts'
 
 /**
@@ -144,6 +146,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   // Get user context for authenticated actions
   const userContext = await getUserToolContext(event)
   console.log(`[DEBUG] User context: authenticated=${userContext.isAuthenticated}, userId=${userContext.userId?.slice(0, 8) ?? 'none'}`)
+  const requestId = generateId()
 
   // Server-side debug copy for GUEST chats only. Authenticated chats already
   // have a server record in `conversations` and are deliberately skipped.
@@ -203,9 +206,9 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       let wroteStart = false
-      const requestId = generateId()
       let assistantMessageId: string | undefined
       let stepIndex = -1
+      let providerRequestId: string | null = null
 
       const writeStatus = (
         phase: ChatStreamStatusData['phase'],
@@ -243,6 +246,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         let streamedReasoning = ''
         let textBlockId: string | undefined
         let streamedAnswer = ''
+
+        // Durable started marker keyed by requestId, awaited before the model
+        // runs. If the process dies during execution the row stays `started`.
+        if (!userContext.isAuthenticated) {
+          await recordGuestRequestStarted({ requestId, conversationId })
+        }
 
         const result = streamText({
           model: textModel,
@@ -372,6 +381,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
         const [steps, generatedText] = await Promise.all([result.steps, result.text])
         const typedSteps = steps as StepResultLike[]
+        providerRequestId = steps.at(-1)?.response.id ?? null
         const executionTrace = buildExecutionTrace(typedSteps)
         if (streamedReasoning && executionTrace[0] && !executionTrace[0].reasoning) {
           executionTrace[0].reasoning = streamedReasoning
@@ -517,6 +527,11 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
             }),
             lastUserText: lastOriginalQuery || null,
           })
+          await recordGuestRequestTerminal({
+            requestId,
+            status: 'completed',
+            providerRequestId,
+          })
         }
       } catch (error) {
         console.error('[Chat API] Error:', error)
@@ -546,6 +561,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
               error: error instanceof Error ? error.message : 'An error occurred',
             }),
             lastUserText: lastOriginalQuery || null,
+          })
+          await recordGuestRequestTerminal({
+            requestId,
+            status: 'errored',
+            errorType: error instanceof Error ? error.name : 'unknown',
+            providerRequestId,
           })
         }
       }

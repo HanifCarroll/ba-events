@@ -10,7 +10,7 @@
 import { z } from 'zod'
 import { defineTool } from './types.ts'
 import { searchEventsWithFilters, countEventsWithFilters, getFurthestEventDate, hybridEventSearch, getEventsHappeningNow } from '#shared/lib/db/client.server.ts'
-import { CATEGORIES } from '#shared/lib/types.ts'
+import { CATEGORIES, type EventFilters } from '#shared/lib/types.ts'
 import { getNowInBA, ensureChatEventPayloads, formatEventsToolResult } from './utils.ts'
 import {
   canonicalizeSearchIntent,
@@ -180,6 +180,10 @@ The result includes coverage metadata: the window you searched, total matches, a
       const intent = await canonicalizeSearchIntent(input, getNowInBA())
       // must -> hard filters, plus avoid genres as hard facet excludes.
       const filters = applyPreferAvoid(intent)
+      // Multi-weekday asks carry disjoint per-day windows (never a spanning
+      // hull — a continuous range would admit unrequested weekdays). Each is
+      // retrieved separately and unioned before the single rerank pass.
+      const weekdayWindows = intent.must.weekdayWindows
       const displayLimit = intent.displayLimit
       const query = intent.semanticQuery
       const objective = intent.objective
@@ -315,7 +319,20 @@ The result includes coverage metadata: the window you searched, total matches, a
       } else {
         // Coverage count reflects the full window (ignores semantic ranking and
         // limit) so the model can see how much exists vs. how much it got back.
-        totalMatches = await countEventsWithFilters(filters)
+        // Disjoint weekday windows are counted separately (disjoint → sum).
+        totalMatches = weekdayWindows
+          ? (
+              await Promise.all(
+                weekdayWindows.map((w) =>
+                  countEventsWithFilters({
+                    ...filters,
+                    startsAfter: w.startsAfter,
+                    startsBefore: w.startsBefore,
+                  })
+                )
+              )
+            ).reduce((sum, n) => sum + n, 0)
+          : await countEventsWithFilters(filters)
         if (objective === 'surprise') {
           // Surprise: no query, no hard must. Rank the filtered upcoming set by
           // quality + near-term decay (NOT chronological "soonest"), return one.
@@ -337,7 +354,11 @@ The result includes coverage metadata: the window you searched, total matches, a
           // them with the hosted reranker (input order = fused retrieval order
           // = baseRank) before the diversity pass. Ranking only — never drops
           // events, and never applies to the surprise path.
-          const candidates = await hybridEventSearch(query, filters, CANDIDATE_LIMIT)
+          const candidates = weekdayWindows
+            ? await fetchAcrossWeekdayWindows(weekdayWindows, filters, (f) =>
+                hybridEventSearch(query, f, CANDIDATE_LIMIT)
+              )
+            : await hybridEventSearch(query, filters, CANDIDATE_LIMIT)
           const { ordered: reranked, meta } = await rerankEvents(candidates, {
             semanticQuery: query,
             prefer: intent.prefer,
@@ -355,7 +376,11 @@ The result includes coverage metadata: the window you searched, total matches, a
           // applied when displaying >1. Nothing subjective → no-op, stays
           // chronological.
           logger.debug('[search_events] Using filter-only search')
-          const candidates = await searchEventsWithFilters(filters, CANDIDATE_LIMIT)
+          const candidates = weekdayWindows
+            ? await fetchAcrossWeekdayWindows(weekdayWindows, filters, (f) =>
+                searchEventsWithFilters(f, CANDIDATE_LIMIT)
+              )
+            : await searchEventsWithFilters(filters, CANDIDATE_LIMIT)
           const { ordered: reranked, meta } = await rerankEvents(candidates, {
             semanticQuery: query,
             prefer: intent.prefer,
@@ -455,8 +480,41 @@ function hasMustConstraints(must: EventSearchMust): boolean {
       (must.categories && must.categories.length > 0) ||
       !!must.startsAfter ||
       !!must.startsBefore ||
+      !!(must.weekdayWindows && must.weekdayWindows.length > 0) ||
       must.isFree !== undefined ||
       must.maxPrice !== undefined ||
       must.attendeeAge !== undefined)
   )
+}
+
+/**
+ * Run `fetch` once per weekday window and union the results by event id,
+ * preserving first-seen (chronological) order. Disjoint windows are queried
+ * separately because a continuous hull would admit unrequested weekdays.
+ */
+async function fetchAcrossWeekdayWindows<T extends { id: string }>(
+  windows: Array<{ startsAfter: string; startsBefore: string }>,
+  filters: EventFilters,
+  fetch: (filters: EventFilters) => Promise<T[]>
+): Promise<T[]> {
+  const batches = await Promise.all(
+    windows.map((window) =>
+      fetch({
+        ...filters,
+        startsAfter: window.startsAfter,
+        startsBefore: window.startsBefore,
+      })
+    )
+  )
+  const seen = new Set<string>()
+  const merged: T[] = []
+  for (const rows of batches) {
+    for (const row of rows) {
+      if (!seen.has(row.id)) {
+        seen.add(row.id)
+        merged.push(row)
+      }
+    }
+  }
+  return merged
 }

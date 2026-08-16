@@ -23,8 +23,12 @@ const WEDNESDAY_NOON = new Date(2026, 7, 12, 12, 0, 0) // Wed, Aug 12 2026 12:00
 const SATURDAY = new Date(2026, 7, 15, 0, 0, 0) // Aug 15 00:00 BA
 const SUNDAY = new Date(2026, 7, 16, 0, 0, 0) // Aug 16 00:00 BA
 const MONDAY = new Date(2026, 7, 17, 0, 0, 0) // Aug 17 00:00 BA
+const TUESDAY = new Date(2026, 7, 18, 0, 0, 0) // Aug 18 00:00 BA
 const WEDNESDAY_AUG19 = new Date(2026, 7, 19, 0, 0, 0) // Aug 19 00:00 BA
+const FRIDAY = new Date(2026, 7, 21, 0, 0, 0) // Aug 21 00:00 BA
 const SATURDAY_AUG22 = new Date(2026, 7, 22, 0, 0, 0) // Aug 22 00:00 BA
+const NEXT_MONDAY = new Date(2026, 7, 24, 0, 0, 0) // Aug 24 00:00 BA
+const NEXT_TUESDAY = new Date(2026, 7, 25, 0, 0, 0) // Aug 25 00:00 BA
 const NEXT_WEEK_NOON = new Date(2026, 7, 19, 12, 0, 0) // Aug 19 12:00 BA (Wed + 7d)
 
 afterEach(() => {
@@ -103,12 +107,32 @@ describe('canonicalizeSearchIntent — date intent', () => {
     expect(intent.must.startsBefore! < intent.must.startsAfter!).toBe(true)
   })
 
-  it('maps "lunes o martes" to a Monday → Wednesday window spanning both named days', async () => {
-    const intent = await canonicalizeSearchIntent({ query: 'lunes o martes' }, WEDNESDAY_NOON)
-    expect(intent.must.startsAfter).toBe(baToUTC(MONDAY))
-    expect(intent.must.startsBefore).toBe(baToUTC(WEDNESDAY_AUG19))
-    expect(intent.semanticQuery).not.toContain('lunes')
-    expect(intent.semanticQuery).not.toContain('martes')
+  it('keeps adjacent "Monday or Tuesday" as two exact day windows', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'Monday or Tuesday' }, SUNDAY)
+    expect(intent.must.weekdayWindows).toEqual([
+      { startsAfter: baToUTC(MONDAY), startsBefore: baToUTC(TUESDAY) },
+      { startsAfter: baToUTC(TUESDAY), startsBefore: baToUTC(WEDNESDAY_AUG19) },
+    ])
+    expect(intent.must.startsAfter).toBeUndefined()
+    expect(intent.must.startsBefore).toBeUndefined()
+    expect(intent.semanticQuery).toBe('')
+  })
+
+  it('keeps nonconsecutive "Monday or Friday" as disjoint day windows', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'Monday or Friday' }, SUNDAY)
+    expect(intent.must.weekdayWindows).toEqual([
+      { startsAfter: baToUTC(MONDAY), startsBefore: baToUTC(TUESDAY) },
+      { startsAfter: baToUTC(FRIDAY), startsBefore: baToUTC(SATURDAY_AUG22) },
+    ])
+  })
+
+  it('handles a week boundary without spanning Tuesday through next Monday', async () => {
+    const tuesdayNoon = new Date(2026, 7, 18, 12, 0, 0)
+    const intent = await canonicalizeSearchIntent({ query: 'Monday or Tuesday' }, tuesdayNoon)
+    expect(intent.must.weekdayWindows).toEqual([
+      { startsAfter: baToUTC(tuesdayNoon), startsBefore: baToUTC(WEDNESDAY_AUG19) },
+      { startsAfter: baToUTC(NEXT_MONDAY), startsBefore: baToUTC(NEXT_TUESDAY) },
+    ])
   })
 
   it('maps "during the week" on a Wednesday to a now → Saturday weekday window (not week)', async () => {
