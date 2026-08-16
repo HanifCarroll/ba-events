@@ -157,8 +157,9 @@ export async function recordGuestRequestStarted(input: {
 }
 
 /**
- * Terminal `completed`/`errored` update for the same row. Fail-open: never
- * throws to the caller.
+ * Terminal `completed`/`errored` write for the same row. Upsert (not update)
+ * so a terminal state is durable even when the `started` insert never landed
+ * or was lost. Fail-open: never throws to the caller.
  */
 export async function recordGuestRequestTerminal(input: {
   requestId: string
@@ -171,15 +172,21 @@ export async function recordGuestRequestTerminal(input: {
   try {
     const client = getSupabaseServiceRoleClient()
     await runWithTimeout(async () => {
+      // `started_at` is intentionally omitted: on conflict the original start
+      // time is preserved, and on insert the column's `DEFAULT now()` supplies
+      // a defensible timestamp for the terminal-only row.
       const { error } = await client
         .from('guest_request_lifecycle')
-        .update({
-          status: input.status,
-          ended_at: new Date().toISOString(),
-          error_type: input.errorType ?? null,
-          provider_request_id: input.providerRequestId ?? null,
-        })
-        .eq('request_id', input.requestId)
+        .upsert(
+          {
+            request_id: input.requestId,
+            status: input.status,
+            ended_at: new Date().toISOString(),
+            error_type: input.errorType ?? null,
+            provider_request_id: input.providerRequestId ?? null,
+          },
+          { onConflict: 'request_id' }
+        )
       if (error) throw error
     })
   } catch (error) {

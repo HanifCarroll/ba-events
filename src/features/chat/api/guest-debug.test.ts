@@ -206,8 +206,8 @@ describe('recordGuestRequestStarted', () => {
 })
 
 describe('recordGuestRequestTerminal', () => {
-  it('updates the same row to completed with an ended_at', async () => {
-    eqMock.mockResolvedValue({ error: null })
+  it('upserts the same row to completed with an ended_at', async () => {
+    upsertMock.mockResolvedValue({ error: null })
 
     await recordGuestRequestTerminal({
       requestId: 'req-1',
@@ -218,18 +218,21 @@ describe('recordGuestRequestTerminal', () => {
     expect(getClientMock.mock.results[0].value.from).toHaveBeenCalledWith(
       'guest_request_lifecycle'
     )
-    expect(updateMock).toHaveBeenCalledTimes(1)
+    expect(upsertMock).toHaveBeenCalledTimes(1)
 
-    const payload = updateMock.mock.calls[0][0] as Record<string, unknown>
+    const payload = upsertMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.request_id).toBe('req-1')
     expect(payload.status).toBe('completed')
     expect(payload.ended_at).toBeTypeOf('string')
     expect(payload.error_type).toBeNull()
     expect(payload.provider_request_id).toBe('provider-1')
-    expect(eqMock).toHaveBeenCalledWith('request_id', 'req-1')
+
+    const options = upsertMock.mock.calls[0][1] as { onConflict?: string }
+    expect(options.onConflict).toBe('request_id')
   })
 
-  it('updates the same row to errored with an error type', async () => {
-    eqMock.mockResolvedValue({ error: null })
+  it('upserts the same row to errored with an error type', async () => {
+    upsertMock.mockResolvedValue({ error: null })
 
     await recordGuestRequestTerminal({
       requestId: 'req-1',
@@ -237,12 +240,45 @@ describe('recordGuestRequestTerminal', () => {
       errorType: 'APICallError',
     })
 
-    const payload = updateMock.mock.calls[0][0] as Record<string, unknown>
+    const payload = upsertMock.mock.calls[0][0] as Record<string, unknown>
     expect(payload.status).toBe('errored')
     expect(payload.ended_at).toBeTypeOf('string')
     expect(payload.error_type).toBe('APICallError')
     expect(payload.provider_request_id).toBeNull()
-    expect(eqMock).toHaveBeenCalledWith('request_id', 'req-1')
+  })
+
+  it('does not clobber started_at on an existing row', async () => {
+    upsertMock.mockResolvedValue({ error: null })
+
+    await recordGuestRequestTerminal({
+      requestId: 'req-1',
+      status: 'completed',
+    })
+
+    const payload = upsertMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.started_at).toBeUndefined()
+  })
+
+  it('creates a terminal row when the started insert never landed', async () => {
+    upsertMock.mockResolvedValue({ error: null })
+
+    await recordGuestRequestTerminal({
+      requestId: 'req-1',
+      status: 'errored',
+      errorType: 'APICallError',
+    })
+
+    expect(upsertMock).toHaveBeenCalledTimes(1)
+    const options = upsertMock.mock.calls[0][1] as { onConflict?: string }
+    expect(options.onConflict).toBe('request_id')
+
+    // Full required fields for the insert path; started_at is supplied by the
+    // column DEFAULT now() so the existing start time survives a conflict.
+    const payload = upsertMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.request_id).toBe('req-1')
+    expect(payload.status).toBe('errored')
+    expect(payload.ended_at).toBeTypeOf('string')
+    expect(payload.error_type).toBe('APICallError')
   })
 })
 
@@ -267,7 +303,7 @@ describe('request lifecycle timeout fail-open', () => {
   it('resolves when the terminal write never settles', async () => {
     vi.useFakeTimers()
     try {
-      eqMock.mockReturnValue(Promise.withResolvers<never>().promise)
+      upsertMock.mockReturnValue(Promise.withResolvers<never>().promise)
 
       const promise = recordGuestRequestTerminal({
         requestId: 'req-1',

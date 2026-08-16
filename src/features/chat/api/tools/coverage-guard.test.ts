@@ -62,4 +62,43 @@ describe('guardCoverageClaims', () => {
     expect(guardCoverageClaims('Some answer.', 'en', {})).toBe('Some answer.')
     expect(guardCoverageClaims('', 'en', coverage)).toBe('')
   })
+
+  it('fires for disjoint windows when the scalar searchedTo is null', () => {
+    const disjoint: CoverageInfo = {
+      searchedTo: null,
+      searchedWindows: [
+        { searchedFrom: '2026-08-17T03:00:00.000Z', searchedTo: '2026-08-18T03:00:00.000Z' },
+        { searchedFrom: '2026-08-21T03:00:00.000Z', searchedTo: '2026-08-22T03:00:00.000Z' },
+      ],
+      maxEventDate: '2026-09-05T12:00:00.000Z',
+    }
+    const out = guardCoverageClaims("That's the furthest one out I've got.", 'en', disjoint)
+    expect(out).toContain('actually lists events through')
+  })
+
+  it('uses the latest disjoint window end for the ceiling comparison', () => {
+    // First window ends well short of the horizon; the latest one reaches past
+    // it, so no false correction may fire (a first-end comparison would).
+    const disjoint: CoverageInfo = {
+      searchedWindows: [
+        { searchedFrom: '2026-08-17T03:00:00.000Z', searchedTo: '2026-08-18T03:00:00.000Z' },
+        { searchedFrom: '2026-09-04T03:00:00.000Z', searchedTo: '2026-09-06T03:00:00.000Z' },
+      ],
+      maxEventDate: '2026-09-05T12:00:00.000Z',
+    }
+    const out = guardCoverageClaims("That's the furthest one out I've got.", 'en', disjoint)
+    expect(out).toBe("That's the furthest one out I've got.")
+  })
+
+  it('ignores disjoint windows when there is no ceiling claim', () => {
+    const disjoint: CoverageInfo = {
+      searchedWindows: [
+        { searchedFrom: '2026-08-17T03:00:00.000Z', searchedTo: '2026-08-18T03:00:00.000Z' },
+        { searchedFrom: '2026-08-21T03:00:00.000Z', searchedTo: '2026-08-22T03:00:00.000Z' },
+      ],
+      maxEventDate: '2026-09-05T12:00:00.000Z',
+    }
+    const out = guardCoverageClaims('Here are the best options for Monday or Friday.', 'en', disjoint)
+    expect(out).toBe('Here are the best options for Monday or Friday.')
+  })
 })

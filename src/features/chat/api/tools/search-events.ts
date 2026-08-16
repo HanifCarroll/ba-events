@@ -184,6 +184,14 @@ The result includes coverage metadata: the window you searched, total matches, a
       // hull — a continuous range would admit unrequested weekdays). Each is
       // retrieved separately and unioned before the single rerank pass.
       const weekdayWindows = intent.must.weekdayWindows
+      // Disjoint windows are surfaced verbatim in coverage; the scalar
+      // searchedFrom/searchedTo stay null there so a hull never pretends the
+      // gaps between days were searched.
+      const searchedWindows =
+        weekdayWindows?.map((window) => ({
+          searchedFrom: window.startsAfter,
+          searchedTo: window.startsBefore,
+        })) ?? null
       const displayLimit = intent.displayLimit
       const query = intent.semanticQuery
       const objective = intent.objective
@@ -223,8 +231,9 @@ The result includes coverage metadata: the window you searched, total matches, a
             hasFilters: true,
             searchMode: 'filter_only',
             coverage: {
-              searchedFrom: filters.startsAfter ?? null,
-              searchedTo: filters.startsBefore ?? null,
+              searchedFrom: searchedWindows ? null : (filters.startsAfter ?? null),
+              searchedTo: searchedWindows ? null : (filters.startsBefore ?? null),
+              searchedWindows,
               totalMatches: 0,
               returned: 0,
               maxEventDate,
@@ -449,8 +458,9 @@ The result includes coverage metadata: the window you searched, total matches, a
           // that explicit so it says "I only searched up to X" instead of
           // "there are no events past X".
           coverage: {
-            searchedFrom: filters.startsAfter ?? null,
-            searchedTo: filters.startsBefore ?? null,
+            searchedFrom: searchedWindows ? null : (filters.startsAfter ?? null),
+            searchedTo: searchedWindows ? null : (filters.startsBefore ?? null),
+            searchedWindows,
             totalMatches,
             returned: results.length,
             maxEventDate,
@@ -489,10 +499,13 @@ function hasMustConstraints(must: EventSearchMust): boolean {
 
 /**
  * Run `fetch` once per weekday window and union the results by event id,
- * preserving first-seen (chronological) order. Disjoint windows are queried
- * separately because a continuous hull would admit unrequested weekdays.
+ * round-robin across windows so no single day starves the others. Disjoint
+ * windows are queried separately because a continuous hull would admit
+ * unrequested weekdays. Each per-window fetch already limits to
+ * CANDIDATE_LIMIT; the global cap here bounds the merged union to the same
+ * limit regardless of window count.
  */
-async function fetchAcrossWeekdayWindows<T extends { id: string }>(
+export async function fetchAcrossWeekdayWindows<T extends { id: string }>(
   windows: Array<{ startsAfter: string; startsBefore: string }>,
   filters: EventFilters,
   fetch: (filters: EventFilters) => Promise<T[]>
@@ -508,9 +521,15 @@ async function fetchAcrossWeekdayWindows<T extends { id: string }>(
   )
   const seen = new Set<string>()
   const merged: T[] = []
-  for (const rows of batches) {
-    for (const row of rows) {
-      if (!seen.has(row.id)) {
+  const longest = batches.reduce((max, rows) => (rows.length > max ? rows.length : max), 0)
+  // Round-robin: take index i from every window before advancing to i+1. An
+  // exhausted window yields its slot to the others (fair fallback), and the
+  // global cap bounds the union.
+  for (let i = 0; i < longest && merged.length < CANDIDATE_LIMIT; i++) {
+    for (const rows of batches) {
+      if (merged.length >= CANDIDATE_LIMIT) break
+      const row = rows[i]
+      if (row !== undefined && !seen.has(row.id)) {
         seen.add(row.id)
         merged.push(row)
       }

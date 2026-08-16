@@ -152,7 +152,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   // have a server record in `conversations` and are deliberately skipped.
   // Written at request start (user turn) and again after the reply exists.
   // Request-start capture is fire-and-forget so it can never delay the stream;
-  // the terminal writes are awaited so a completed execute cannot lose them.
+  // the terminal transcript and lifecycle writes run concurrently and are
+  // awaited so a completed execute cannot lose them.
   if (!userContext.isAuthenticated) {
     void persistGuestChatDebug({
       conversationId,
@@ -515,23 +516,25 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           finishReason: 'stop',
         })
         if (!userContext.isAuthenticated) {
-          await persistGuestChatDebug({
-            conversationId,
-            locale,
-            ip,
-            messages: buildGuestDebugTranscript(uiMessages, {
-              id: messageId,
-              role: 'assistant',
-              parts: [{ type: 'text', text: finalText }],
-              executionTrace,
+          await Promise.all([
+            persistGuestChatDebug({
+              conversationId,
+              locale,
+              ip,
+              messages: buildGuestDebugTranscript(uiMessages, {
+                id: messageId,
+                role: 'assistant',
+                parts: [{ type: 'text', text: finalText }],
+                executionTrace,
+              }),
+              lastUserText: lastOriginalQuery || null,
             }),
-            lastUserText: lastOriginalQuery || null,
-          })
-          await recordGuestRequestTerminal({
-            requestId,
-            status: 'completed',
-            providerRequestId,
-          })
+            recordGuestRequestTerminal({
+              requestId,
+              status: 'completed',
+              providerRequestId,
+            }),
+          ])
         }
       } catch (error) {
         console.error('[Chat API] Error:', error)
@@ -550,24 +553,26 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           })
         }
         if (!userContext.isAuthenticated) {
-          await persistGuestChatDebug({
-            conversationId,
-            locale,
-            ip,
-            messages: buildGuestDebugTranscript(uiMessages, {
-              id: assistantMessageId ?? generateId(),
-              role: 'assistant',
-              parts: [{ type: 'text', text: '' }],
-              error: error instanceof Error ? error.message : 'An error occurred',
+          await Promise.all([
+            persistGuestChatDebug({
+              conversationId,
+              locale,
+              ip,
+              messages: buildGuestDebugTranscript(uiMessages, {
+                id: assistantMessageId ?? generateId(),
+                role: 'assistant',
+                parts: [{ type: 'text', text: '' }],
+                error: error instanceof Error ? error.message : 'An error occurred',
+              }),
+              lastUserText: lastOriginalQuery || null,
             }),
-            lastUserText: lastOriginalQuery || null,
-          })
-          await recordGuestRequestTerminal({
-            requestId,
-            status: 'errored',
-            errorType: error instanceof Error ? error.name : 'unknown',
-            providerRequestId,
-          })
+            recordGuestRequestTerminal({
+              requestId,
+              status: 'errored',
+              errorType: error instanceof Error ? error.name : 'unknown',
+              providerRequestId,
+            }),
+          ])
         }
       }
     },

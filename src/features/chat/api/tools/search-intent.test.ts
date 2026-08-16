@@ -116,6 +116,7 @@ describe('canonicalizeSearchIntent — date intent', () => {
     expect(intent.must.startsAfter).toBeUndefined()
     expect(intent.must.startsBefore).toBeUndefined()
     expect(intent.semanticQuery).toBe('')
+    expect(intent.objective).toBe('search')
   })
 
   it('keeps nonconsecutive "Monday or Friday" as disjoint day windows', async () => {
@@ -133,6 +134,19 @@ describe('canonicalizeSearchIntent — date intent', () => {
       { startsAfter: baToUTC(tuesdayNoon), startsBefore: baToUTC(WEDNESDAY_AUG19) },
       { startsAfter: baToUTC(NEXT_MONDAY), startsBefore: baToUTC(NEXT_TUESDAY) },
     ])
+  })
+
+  it('explicit surprise cannot override a multi-weekday constraint', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { query: 'Monday or Tuesday', objective: 'surprise' },
+      SUNDAY
+    )
+    expect(intent.objective).toBe('search')
+    expect(intent.must.weekdayWindows).toEqual([
+      { startsAfter: baToUTC(MONDAY), startsBefore: baToUTC(TUESDAY) },
+      { startsAfter: baToUTC(TUESDAY), startsBefore: baToUTC(WEDNESDAY_AUG19) },
+    ])
+    expect(intent.semanticQuery).toBe('')
   })
 
   it('maps "during the week" on a Wednesday to a now → Saturday weekday window (not week)', async () => {
@@ -335,6 +349,19 @@ describe('canonicalizeSearchIntent — generic discovery + temporal stripping', 
       expect(intent.semanticQuery).toBe('')
       expect(intent.objective).toBe('search')
       expect(intent.displayLimit).toBe(3)
+    }
+  )
+
+  it.each(['Any events on Monday or Tuesday?', '¿Hay eventos el lunes o martes?'])(
+    '%s canonicalizes to filter-only search with exact day windows',
+    async (query) => {
+      const intent = await canonicalizeSearchIntent({ query }, SUNDAY)
+      expect(intent.semanticQuery).toBe('')
+      expect(intent.objective).toBe('search')
+      expect(intent.must.weekdayWindows).toEqual([
+        { startsAfter: baToUTC(MONDAY), startsBefore: baToUTC(TUESDAY) },
+        { startsAfter: baToUTC(TUESDAY), startsBefore: baToUTC(WEDNESDAY_AUG19) },
+      ])
     }
   )
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { ToolDefinition } from './types.ts'
-import { searchEventsTool } from './search-events.ts'
+import { searchEventsTool, fetchAcrossWeekdayWindows, CANDIDATE_LIMIT } from './search-events.ts'
 import { applyDiversity } from './quality-diversity.ts'
 import {
   getEventsHappeningNow,
@@ -1020,5 +1020,124 @@ describe('applyDiversity counters — rejected candidates must not consume capac
     ]
     const out = applyDiversity(ranked, 5)
     expect(out.map((e) => e.id)).toEqual(['m-0', 'm-1', 'm-2', 'm-4'])
+  })
+})
+
+// ============================================================================
+// Disjoint-window candidate merge: round-robin interleaving with a global
+// CANDIDATE_LIMIT cap and id dedupe.
+// ============================================================================
+
+describe('fetchAcrossWeekdayWindows round-robin merge', () => {
+  const win = (startsAfter: string) => ({ startsAfter, startsBefore: startsAfter })
+
+  it('caps the merged list at CANDIDATE_LIMIT even when every window returns 50', async () => {
+    const windows = [
+      '2026-08-17T03:00:00.000Z',
+      '2026-08-21T03:00:00.000Z',
+      '2026-08-28T03:00:00.000Z',
+    ].map(win)
+    const merged = await fetchAcrossWeekdayWindows(windows, {}, async (f) =>
+      Array.from({ length: 50 }, (_, i) => ({ id: `${f.startsAfter}-${i}` }))
+    )
+    expect(merged).toHaveLength(CANDIDATE_LIMIT)
+    expect(new Set(merged.map((r) => r.id)).size).toBe(CANDIDATE_LIMIT)
+  })
+
+  it('interleaves windows round-robin and falls back when one is exhausted', async () => {
+    const windows = ['w1', 'w2', 'w3'].map(win)
+    const byWindow: Record<string, Array<{ id: string }>> = {
+      w1: [{ id: 'a0' }, { id: 'a1' }, { id: 'a2' }],
+      w2: [{ id: 'b0' }],
+      w3: [{ id: 'c0' }, { id: 'c1' }],
+    }
+    const merged = await fetchAcrossWeekdayWindows(
+      windows,
+      {},
+      async (f) => byWindow[f.startsAfter!]
+    )
+    expect(merged.map((r) => r.id)).toEqual(['a0', 'b0', 'c0', 'a1', 'c1', 'a2'])
+  })
+
+  it('dedupes by id across windows', async () => {
+    const windows = ['w1', 'w2'].map(win)
+    const byWindow: Record<string, Array<{ id: string }>> = {
+      w1: [{ id: 'x' }, { id: 'y' }],
+      w2: [{ id: 'x' }, { id: 'z' }],
+    }
+    const merged = await fetchAcrossWeekdayWindows(
+      windows,
+      {},
+      async (f) => byWindow[f.startsAfter!]
+    )
+    expect(merged.map((r) => r.id)).toEqual(['x', 'y', 'z'])
+  })
+})
+
+// ============================================================================
+// Plain weekday asks: filter-only retrieval and exact disjoint coverage.
+// ============================================================================
+
+describe('search_events plain weekday filter-only + coverage', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-16T15:00:00.000Z')) // Sunday noon BA
+    vi.resetAllMocks()
+    mockedCountEventsWithFilters.mockResolvedValue(1)
+    mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00.000Z')
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    'Monday or Tuesday',
+    'Any events on Monday or Tuesday?',
+    '¿Hay eventos el lunes o martes?',
+  ])('runs two filter-only searches for "%s"', async (query) => {
+    mockedSearchEventsWithFilters.mockResolvedValue([])
+    const result = await searchEventsTool.execute({ query }, context)
+    expect(mockedSearchEventsWithFilters).toHaveBeenCalledTimes(2)
+    expect(mockedHybridEventSearch).not.toHaveBeenCalled()
+    expect(result.metadata?.searchMode).toBe('filter_only')
+    expect(mockedSearchEventsWithFilters.mock.calls[0][0]).toMatchObject({
+      startsAfter: '2026-08-17T03:00:00.000Z',
+      startsBefore: '2026-08-18T03:00:00.000Z',
+    })
+    expect(mockedSearchEventsWithFilters.mock.calls[1][0]).toMatchObject({
+      startsAfter: '2026-08-18T03:00:00.000Z',
+      startsBefore: '2026-08-19T03:00:00.000Z',
+    })
+  })
+
+  it('hard weekday windows override an explicit surprise objective', async () => {
+    mockedSearchEventsWithFilters.mockResolvedValue([])
+    const result = await searchEventsTool.execute(
+      { query: 'Monday or Tuesday', objective: 'surprise' },
+      context
+    )
+    expect(mockedSearchEventsWithFilters).toHaveBeenCalledTimes(2)
+    expect(mockedHybridEventSearch).not.toHaveBeenCalled()
+    expect(result.metadata?.searchMode).toBe('filter_only')
+  })
+
+  it('reports exact disjoint searchedWindows without a spanning hull', async () => {
+    mockedSearchEventsWithFilters.mockResolvedValue([])
+    const result = await searchEventsTool.execute({ query: 'Monday or Friday', limit: 5 }, context)
+    // Test fixture: narrow the known tool-output coverage shape for assertions.
+    type CoverageMeta = {
+      searchedFrom?: string | null
+      searchedTo?: string | null
+      searchedWindows?: Array<{ searchedFrom: string; searchedTo: string }> | null
+    }
+    const coverage = result.metadata?.coverage as CoverageMeta | undefined
+    expect(coverage?.searchedWindows).toEqual([
+      { searchedFrom: '2026-08-17T03:00:00.000Z', searchedTo: '2026-08-18T03:00:00.000Z' },
+      { searchedFrom: '2026-08-21T03:00:00.000Z', searchedTo: '2026-08-22T03:00:00.000Z' },
+    ])
+    expect(coverage?.searchedFrom).toBeNull()
+    expect(coverage?.searchedTo).toBeNull()
   })
 })

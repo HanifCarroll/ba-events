@@ -21,3 +21,9 @@ CREATE TABLE guest_request_lifecycle (
 
 ALTER TABLE guest_request_lifecycle ENABLE ROW LEVEL SECURITY;
 -- no policies → anon/authenticated cannot read or write
+
+-- Find rows stuck in `started` (process died mid-request) and support bounded
+-- retention. Partial index covers only the in-flight rows that matter.
+CREATE INDEX guest_request_lifecycle_started_idx
+  ON guest_request_lifecycle (started_at)
+  WHERE status = 'started';

@@ -169,6 +169,8 @@ const GENERIC_DISCOVERY_PHRASES: string[][] = [
   ['cosas', 'para', 'hacer'],
   ['algo', 'para', 'hacer'],
   ['que', 'hay'], // "qué hay"
+  ['hay', 'eventos'], // "hay eventos"
+  ['hay', 'algun', 'evento'], // "hay algún evento"
   // English
   ['what', 's', 'on'], // "what's on"
   ['what', 'is', 'on'],
@@ -178,6 +180,12 @@ const GENERIC_DISCOVERY_PHRASES: string[][] = [
   ['something', 'to', 'do'],
   ['events'],
   ['activities'],
+  ['any', 'events', 'on'],
+  ['are', 'there', 'any', 'events', 'on'],
+  ['are', 'there', 'events', 'on'],
+  ['any', 'events'],
+  ['are', 'there', 'any', 'events'],
+  ['are', 'there', 'events'],
 ]
 
 /**
@@ -859,6 +867,9 @@ function isDefaultWindowOnly(input: CanonicalizeInput, must: EventSearchMust): b
   if (must.isFree !== undefined) return false
   if (must.maxPrice !== undefined) return false
   if (must.attendeeAge !== undefined) return false
+  // A multi-weekday ask ("Monday or Friday") is an exact-window constraint,
+  // not the default upcoming window — never surprise.
+  if (must.weekdayWindows && must.weekdayWindows.length > 0) return false
   // An explicit end/date bound is a directed range, not the default window.
   if (must.startsBefore) return false
   // A shifted/special time window is also a directed search.

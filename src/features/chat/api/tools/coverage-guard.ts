@@ -20,6 +20,9 @@ import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 export interface CoverageInfo {
   /** UTC ISO upper bound of the window the model actually searched (null = unbounded). */
   searchedTo?: string | null
+  /** Exact disjoint per-day windows searched (multi-weekday asks). When present,
+   *  these — not the scalar searchedTo — describe the searched horizon. */
+  searchedWindows?: Array<{ searchedFrom: string; searchedTo: string }> | null
   /** UTC ISO of the furthest scheduled event date on record (source of truth). */
   maxEventDate?: string | null
 }
@@ -52,10 +55,15 @@ export function guardCoverageClaims(
   locale: 'en' | 'es',
   coverage?: CoverageInfo | null
 ): string {
-  // Fail open: no text, no coverage, or a missing horizon → leave unchanged.
-  if (!text || !coverage?.maxEventDate || !coverage.searchedTo) return text
+  if (!text || !coverage?.maxEventDate) return text
 
-  const searched = new Date(coverage.searchedTo).getTime()
+  // Effective searched horizon. For a disjoint multi-window search the scalar
+  // searchedTo is null (so no hull spans the gaps); the furthest the model
+  // actually searched is the latest window end. Otherwise the scalar governs.
+  const searchedTo = latestSearchedTo(coverage)
+  if (!searchedTo) return text
+
+  const searched = new Date(searchedTo).getTime()
   const horizon = new Date(coverage.maxEventDate).getTime()
   if (!Number.isFinite(searched) || !Number.isFinite(horizon)) return text
 
@@ -65,7 +73,20 @@ export function guardCoverageClaims(
   if (!CEILING_CLAIM_RE.test(text)) return text
 
   const horizonFmt = formatInTimeZone(coverage.maxEventDate, BA_TIMEZONE, 'MMM d, yyyy')
-  const searchedFmt = formatInTimeZone(coverage.searchedTo, BA_TIMEZONE, 'MMM d, yyyy')
+  const searchedFmt = formatInTimeZone(searchedTo, BA_TIMEZONE, 'MMM d, yyyy')
 
   return text + buildNote(locale, horizonFmt, searchedFmt)
+}
+
+/** Furthest ISO end the model actually searched: latest disjoint window end, or
+ *  the scalar searchedTo when there is no disjoint-window coverage. */
+function latestSearchedTo(coverage: CoverageInfo): string | null {
+  if (coverage.searchedWindows?.length) {
+    const ends = coverage.searchedWindows
+      .map((window) => new Date(window.searchedTo).getTime())
+      .filter((t) => Number.isFinite(t))
+    if (ends.length === 0) return null
+    return new Date(Math.max(...ends)).toISOString()
+  }
+  return coverage.searchedTo ?? null
 }
