@@ -1,5 +1,5 @@
 /**
- * v3 server-side assistant persistence.
+ * v4 server-side assistant persistence.
  *
  * The server-produced canonical response is authoritative: for authenticated
  * users the assistant message is written here (idempotently keyed by the
@@ -11,7 +11,7 @@
 import type { RequestEvent } from '@sveltejs/kit'
 import { addMessage } from '../messages.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
-import type { CanonicalChatResponse, MessageExecutionStep } from '#shared/lib/types.ts'
+import { CHAT_CONTRACT_VERSION, type CanonicalChatResponse, type MessageExecutionStep } from '#shared/lib/types.ts'
 
 export interface PersistAssistantInput {
   event: RequestEvent
@@ -27,7 +27,7 @@ export interface PersistAssistantResult {
   messageId?: string
 }
 
-export async function persistAssistantMessageV3(
+export async function persistAssistantMessageV4(
   input: PersistAssistantInput
 ): Promise<PersistAssistantResult> {
   const supabase = createSupabaseServerClient(input.event)
@@ -65,7 +65,7 @@ export async function persistAssistantMessageV3(
       content: input.canonical.text,
       visibleContent: input.canonical.text,
       executionTrace: input.executionTrace,
-      responseContractVersion: 3,
+      responseContractVersion: CHAT_CONTRACT_VERSION,
       attachedData: { canonical: input.canonical },
     })
 

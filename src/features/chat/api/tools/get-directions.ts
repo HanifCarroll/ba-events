@@ -78,6 +78,8 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
       let venueAddress: string | null
       let venueNeighborhood: string | null
       let eventName: string | undefined
+      let eventId: string | undefined
+      let venueId: string | undefined
 
       // Get venue info from event or directly
       if (input.eventId) {
@@ -94,6 +96,8 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
         }
 
         eventName = event.name
+        eventId = event.id
+        venueId = event.venue_id ?? undefined
         venueName = event.venue_name || 'Unknown venue'
         venueAddress = event.venue_address
         venueNeighborhood = event.venue_neighborhood
@@ -110,6 +114,7 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
           }
         }
 
+        venueId = input.venueId
         venueName = venue.name
         venueAddress = venue.address
         venueNeighborhood = venue.neighborhood
@@ -149,6 +154,8 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
           address: fullAddress,
           mapsUrl,
           eventName,
+          eventId,
+          venueId,
         },
         formatted: JSON.stringify({
           success: true,

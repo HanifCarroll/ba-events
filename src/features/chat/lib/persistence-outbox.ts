@@ -6,6 +6,7 @@ import {
   updateOutboxItem,
 } from '#shared/lib/db/local-outbox.ts'
 import type { LocalOutboxItem } from '#shared/lib/db/local-outbox.ts'
+import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import type { MessageAttachedData, MessageExecutionStep, MessageRole } from '#shared/lib/types.ts'
 
 const BASE_RETRY_DELAY_MS = 2_000
@@ -71,7 +72,7 @@ async function ensureOutboxItem(payload: MessagePersistencePayload): Promise<voi
     content: payload.content,
     visible_content: payload.visibleContent ?? payload.content,
     execution_trace: payload.executionTrace ?? [],
-    response_contract_version: payload.responseContractVersion ?? 2,
+    response_contract_version: payload.responseContractVersion ?? CHAT_CONTRACT_VERSION,
     attached_data: payload.attachedData ?? {},
     attempt_count: 0,
     next_retry_at: new Date().toISOString(),

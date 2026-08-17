@@ -30,6 +30,12 @@
 	const directions = $derived(message.directions ?? null)
 	const venue = $derived(message.venue ?? null)
 	const operations = $derived(message.operations ?? [])
+	// Render only the fixed-template clarification labels NOT already present in
+	// content. New v4 clarification text includes the labels as its single text
+	// block; older v4 generic-text records keep them in this separate list.
+	const clarificationQuestions = $derived(
+		(message.clarificationQuestions ?? []).filter((q) => !message.content.includes(q.label))
+	)
 	// react-markdown → marked + DOMPurify (client-side only). The legacy
 	// react-markdown escaped raw HTML; DOMPurify sanitizes it the same way.
 	const renderedContent = $derived(
@@ -48,7 +54,7 @@
 	Don't render empty assistant messages that are still streaming (waiting for
 	tool results). The loading indicator in MessageList handles this state.
 -->
-{#if isUser || hasContent || events.length > 0 || directions || venue || operations.length > 0 || !message.isStreaming}
+{#if isUser || hasContent || events.length > 0 || directions || venue || operations.length > 0 || clarificationQuestions.length > 0 || !message.isStreaming}
 	<div
 		data-message-id={message.id}
 		class={cn(
@@ -136,6 +142,15 @@
 				</ul>
 			{/if}
 
+			<!-- Fixed-template clarification questions (labels already localized server-side) -->
+			{#if !isUser && clarificationQuestions.length > 0}
+				<ul class={hasContent || events.length > 0 || directions || venue || operations.length > 0 ? 'mt-3 space-y-1' : ''}>
+					{#each clarificationQuestions as question (question.key)}
+						<li class="text-sm text-muted-foreground">{question.label}</li>
+					{/each}
+				</ul>
+			{/if}
+
 			<!-- Refinement suggestions - show after events when not streaming -->
 			{#if !isUser && suggestions.length > 0 && !message.isStreaming && onSuggestionSelect}
 				<RefinementSuggestions
@@ -146,7 +161,7 @@
 			{/if}
 
 			<!-- Timestamp - only show when there's content or message is complete -->
-			{#if hasContent || events.length > 0 || directions || venue || operations.length > 0 || !message.isStreaming}
+			{#if hasContent || events.length > 0 || directions || venue || operations.length > 0 || clarificationQuestions.length > 0 || !message.isStreaming}
 				<p
 					class={cn(
 						'text-[11px] text-muted-foreground mt-2',

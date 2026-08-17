@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import {
   addGuestMessage,
   createGuestConversation,
@@ -64,22 +65,62 @@ describe('guest-conversations store', () => {
     expect(result?.messages[1].attached_data).toEqual({ events: [] })
   })
 
-  it('preserves response contract version 3 and canonical verbatim on reload', async () => {
+  it('preserves response contract v4 and canonical verbatim on reload', async () => {
     await createGuestConversation('conv-1')
-    const canonical = { contractVersion: 3, requestId: 'req-1', kind: 'recommendations', text: 'go' } as never
+    const canonical = {
+      contractVersion: 4,
+      requestId: 'req-1',
+      kind: 'recommendations',
+      messageKey: 'recommendations',
+      text: 'Here are the best matches I found.',
+      events: [{ id: 'e1', name: 'Tango night', saved: null }],
+      directions: null,
+      venue: null,
+      operations: [],
+      suggestions: [],
+      clarificationQuestions: [],
+      provenance: {
+        sourceToolCallIds: ['src-1'],
+        directionToolCallIds: [],
+        venueToolCallIds: [],
+        mutationToolCallIds: [],
+        suggestionToolCallIds: [],
+        emptySourceToolCallIds: [],
+        retainedSourceToolCallIds: [],
+        stageIds: [],
+        searchAttemptToolCallIds: [],
+        origin: 'validated',
+        fallbackUsed: false,
+        fallbackReason: null,
+      },
+    }
     await addGuestMessage('conv-1', {
       id: 'm1',
       clientMessageId: 'm1',
       role: 'assistant',
-      content: 'go',
+      content: canonical.text,
       attachedData: { canonical },
-      responseContractVersion: 3,
+      responseContractVersion: 4,
     })
 
     const result = await getGuestConversationWithMessages('conv-1')
     const stored = result?.messages[0]
-    expect(stored?.response_contract_version).toBe(3)
+    expect(stored?.response_contract_version).toBe(4)
+    // The v4 canonical is stored verbatim (deep equality) and reloads unchanged.
     expect(stored?.attached_data.canonical).toEqual(canonical)
+  })
+
+  it('defaults response_contract_version to v4 when omitted', async () => {
+    await createGuestConversation('conv-1')
+    await addGuestMessage('conv-1', {
+      id: 'm1',
+      clientMessageId: 'm1',
+      role: 'user',
+      content: 'hi',
+    })
+
+    const result = await getGuestConversationWithMessages('conv-1')
+    expect(result?.messages[0].response_contract_version).toBe(CHAT_CONTRACT_VERSION)
   })
 
   it('returns null for a missing conversation', async () => {

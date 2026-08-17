@@ -1,5 +1,5 @@
 /**
- * Chat API Route (v3)
+ * Chat API Route (v4)
  *
  * Manual generateText work loop + no-tools DeepSeek finalizer + deterministic
  * validation/fallback, streamed through `createUIMessageStream`:
@@ -9,20 +9,29 @@
  *   - exactly one persistent `data-response` carrying the canonical response
  *   - sanitized `data-execution-trace` (tool calls/results only)
  *   - `finish`
+ *
+ * Trust boundary (v4):
+ *   - Client messages are UNTRUSTED. Only bounded user text feeds the model;
+ *     assistant/data/status/trace parts are dropped. Prior event ids are parsed
+ *     from a bounded Zod schema, re-fetched from the database, and reduced to
+ *     ids/order/saved facts in a separate application-context message.
+ *   - The system prompt is static except server-owned auth facts. Event/venue
+ *     names never reach the system prompt or the model application context.
+ *   - save_event/unsave_event are available only when the latest raw user
+ *     request has explicit save/unsave intent (structural mutation gating).
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
+import type { ModelMessage, UIMessage } from 'ai'
 import {
-  convertToModelMessages,
   generateId,
   createUIMessageStream,
   createUIMessageStreamResponse,
-  type UIMessage,
 } from 'ai'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
 import { getUserToolContext, listSavedEventsForUser } from '#features/chat/api/user-tools.server.ts'
 import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
-import { getEventWithVenue } from '#shared/lib/db/client.server.ts'
+import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
 import { trackServer } from '#shared/lib/analytics.server.ts'
 import { formatTime } from '#shared/lib/utils/formatting.ts'
 import * as m from '#paraglide/messages.js'
@@ -31,16 +40,23 @@ import type {
   ChatStreamStatusPhase,
   Message,
 } from '#shared/lib/types.ts'
+import { orchestrate } from '#features/chat/api/agent/orchestrate.ts'
+import { persistAssistantMessageV4 } from '#features/chat/api/agent/persist.ts'
 import {
-  orchestrate,
-} from '#features/chat/api/agent/orchestrate.ts'
-import { persistAssistantMessageV3 } from '#features/chat/api/agent/persist.ts'
-import {
-  priorEventsFromCanonical,
-  priorEventsFromUIMessages,
-  formatPriorEvents,
+  isDisplayableStatus,
+  hintsFromMessages,
+  hintsFromUIMessages,
+  rehydratePriorContext,
+  sanitizeText,
+  type PriorContext,
 } from '#features/chat/api/agent/follow-up.ts'
-import { adaptLegacyToCanonical } from '#features/chat/lib/canonical.ts'
+import {
+  buildApplicationContextMessage,
+  buildConversationModelMessages,
+  detectMutationIntent,
+  resolveReferences,
+  MAX_USER_TEXT,
+} from '#features/chat/api/agent/context.ts'
 import { getConversation } from '#features/chat/api/conversations.server.ts'
 import {
   buildGuestDebugTranscript,
@@ -49,6 +65,8 @@ import {
   recordGuestRequestTerminal,
 } from '#features/chat/api/guest-debug.server.ts'
 import { getLastUserQuery } from '#features/chat/lib/extract-visible-text.ts'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function getClientIP(event: RequestEvent): string {
   const clientAddress = event.getClientAddress()
@@ -83,17 +101,12 @@ function createRateLimitResponse(resetTimestamp: number): Response {
   )
 }
 
-function canonicalsFromMessages(messages: Message[]): CanonicalChatResponse[] {
-  return messages
-    .filter((msg) => msg.role === 'assistant')
-    .map((msg) => msg.attached_data?.canonical ?? adaptLegacyToCanonical(msg))
-}
+const EMPTY_PRIOR: PriorContext = { groups: [], venueByEventId: new Map() }
 
 export const POST = async (event: RequestEvent): Promise<Response> => {
   const { request } = event
 
   let uiMessages: UIMessage[]
-  let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   let locale: 'en' | 'es'
   let happeningSoonEventId: string | undefined
   let conversationId: string | null
@@ -116,7 +129,6 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     conversationId = body.conversationId ?? null
     userClientMessageId = body.userClientMessageId ?? null
     assistantClientMessageId = body.assistantClientMessageId ?? null
-    modelMessages = await convertToModelMessages(uiMessages)
   } catch {
     return createErrorStream('Invalid request body')
   }
@@ -130,7 +142,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
   const userContext = await getUserToolContext(event)
   const requestId = generateId()
-  const originalQuery = getLastUserQuery(uiMessages)
+  const originalQuery = sanitizeText(getLastUserQuery(uiMessages), MAX_USER_TEXT)
 
   if (!userContext.isAuthenticated) {
     void persistGuestChatDebug({
@@ -146,59 +158,70 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     ? ((await listSavedEventsForUser('all', userContext)).count ?? 0)
     : 0
 
-  let systemPrompt = getSystemPrompt({
+  // Static system prompt: server-owned auth facts only. No pinned/prior names.
+  const systemPrompt = getSystemPrompt({
     isAuthenticated: userContext.isAuthenticated,
     savedEventsCount,
   })
 
-  let pinnedEventName: string | undefined
-  if (happeningSoonEventId) {
+  // Pinned event: validate the hint as a UUID, rehydrate from the DB, and only
+  // pin when a displayable exact event exists. Never interpolate its name.
+  let pinnedEventId: string | undefined
+  if (happeningSoonEventId && UUID_RE.test(happeningSoonEventId)) {
     try {
-      const pinnedEvent = await getEventWithVenue(happeningSoonEventId)
-      if (pinnedEvent) {
-        pinnedEventName = pinnedEvent.name
-        systemPrompt =
-          `${systemPrompt}\n\n` +
-          `The user just tapped a specific event from the home screen: "${pinnedEvent.name}" ` +
-          `(id: ${pinnedEvent.id}). Answer about THIS exact event. ` +
-          `Call get_event_details with the exact id "${pinnedEvent.id}" and present that event. ` +
-          `Do not run a broad search or recommend a different set of events.`
-      }
+      const facts = await getEventFactsByIds([happeningSoonEventId])
+      const fact = facts.find((f) => f.id === happeningSoonEventId)
+      if (fact && isDisplayableStatus(fact.status)) pinnedEventId = fact.id
     } catch {
       // Event missing or unreadable — fall back to the normal flow.
     }
   }
 
-  // Trusted prior displayed-event context. Authenticated conversations load
-  // their canonical responses server-side; guests contribute their retained
-  // canonical data-response parts (ids remain untrusted downstream).
-  let priorDisplayedEvents: ReturnType<typeof priorEventsFromCanonical> = []
-  if (userContext.isAuthenticated && conversationId) {
-    try {
+  // Prior displayed-event context: guest and auth share the same parse +
+  // rehydrate pipeline; only the history source differs.
+  let priorContext: PriorContext = EMPTY_PRIOR
+  try {
+    if (userContext.isAuthenticated && conversationId) {
       const conversation = await getConversation(event, { id: conversationId })
       if (conversation) {
-        priorDisplayedEvents = priorEventsFromCanonical(
-          canonicalsFromMessages((conversation.messages ?? []) as Message[])
+        priorContext = await rehydratePriorContext(
+          hintsFromMessages((conversation.messages ?? []) as Message[]),
+          getEventFactsByIds
         )
       }
-    } catch (error) {
-      console.error('[chat] failed to load prior conversation:', error)
+    } else {
+      priorContext = await rehydratePriorContext(
+        hintsFromUIMessages(uiMessages),
+        getEventFactsByIds
+      )
     }
-  } else {
-    priorDisplayedEvents = priorEventsFromUIMessages(uiMessages)
+  } catch (error) {
+    console.error('[chat] failed to build prior context:', error)
   }
 
-  // Inject trusted prior displayed events (ids + order + saved state) so the
-  // work loop can resolve "save the second one", "tell me more", "other one",
-  // "closest", and directions without hidden client context.
-  if (priorDisplayedEvents.length > 0) {
-    systemPrompt =
-      `${systemPrompt}\n\n## Recently shown events (trusted)\n` +
-      `Each entry is an event you already displayed in this conversation, in display order: ` +
-      `"<id>: <name>" (saved when marked). Resolve follow-ups against these ids — e.g. ` +
-      `"save the second one" means the second event below, "tell me more" means the event just discussed.\n` +
-      formatPriorEvents(priorDisplayedEvents)
-  }
+  // Deterministic reference resolution for orchestrate relation validation.
+  const resolved = resolveReferences({
+    query: originalQuery,
+    groups: priorContext.groups,
+    venueByEventId: priorContext.venueByEventId,
+  })
+
+  // Bounded application-context message (ids/order/saved/resolved only).
+  const applicationContext = buildApplicationContextMessage({
+    pinnedEventId,
+    groups: priorContext.groups,
+    resolvedEventId: resolved.resolvedEventId,
+    resolvedVenueId: resolved.resolvedVenueId,
+  })
+
+  // Bounded user text only — assistant/data parts are dropped entirely.
+  const modelMessages: ModelMessage[] = buildConversationModelMessages({
+    messages: uiMessages,
+    applicationContext,
+  })
+
+  // Structural mutation gating from the latest raw user request.
+  const allowMutations = detectMutationIntent(originalQuery)
 
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
@@ -251,9 +274,11 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           locale,
           systemPrompt,
           originalQuery,
-          priorDisplayedEvents,
-          pinnedEventId: happeningSoonEventId,
-          pinnedEventName,
+          priorDisplayedEvents: priorContext.groups,
+          pinnedEventId,
+          resolvedEventId: resolved.resolvedEventId,
+          resolvedVenueId: resolved.resolvedVenueId,
+          allowMutations,
           hooks: {
             onStatus: (phase) => writeStatus(phase),
             onCallingTool: (toolName, _toolCallId, _input, stepIndex) =>
@@ -299,7 +324,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         // Server-side authoritative persistence for authenticated users.
         writeStatus('persisting')
         if (userContext.isAuthenticated && conversationId && assistantClientMessageId) {
-          await persistAssistantMessageV3({
+          await persistAssistantMessageV4({
             event,
             conversationId,
             assistantClientMessageId,

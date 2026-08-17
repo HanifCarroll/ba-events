@@ -8,6 +8,7 @@ import type {
   Event,
   EventInsert,
   EventWithVenue,
+  EventStatus,
   ChatEventPayload,
   EventFilters,
   Venue,
@@ -167,6 +168,49 @@ export async function getEventWithVenue(id: string) {
 
   if (error) throw error
   return data as EventWithVenue
+}
+
+// ============================================================================
+// BOUNDED REHYDRATION (chat follow-up context)
+// ============================================================================
+
+/**
+ * Re-fetch minimal event facts for follow-up context rehydration, in ONE
+ * bounded query. Callers pass untrusted ids (parsed from client/persisted
+ * canonicals); only id/name/venue/status facts are returned — never embedding
+ * or other internal columns. Non-displayable filtering (status) is the pure
+ * caller's responsibility (`isDisplayableStatus` in the agent follow-up module).
+ */
+export async function getEventFactsByIds(
+  ids: string[]
+): Promise<
+  Array<{
+    id: string
+    name: string
+    venue_id: string | null
+    venue_name: string | null
+    status: EventStatus
+  }>
+> {
+  const unique = [
+    ...new Set(ids.filter((id) => typeof id === 'string' && id.length > 0)),
+  ].slice(0, 100)
+  if (unique.length === 0) return []
+
+  const { data, error } = await getSupabase()
+    .from('events_with_venues')
+    .select('id, name, venue_id, venue_name, status')
+    .in('id', unique)
+    .limit(100)
+
+  if (error) throw error
+  return (data ?? []) as Array<{
+    id: string
+    name: string
+    venue_id: string | null
+    venue_name: string | null
+    status: EventStatus
+  }>
 }
 
 export async function createEvent(event: EventInsert, client?: SupabaseClient) {

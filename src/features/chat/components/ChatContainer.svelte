@@ -27,18 +27,23 @@
 		readHandoffMarkTime,
 		type HandoffPhase
 	} from '#features/chat/lib/handoff-marks.ts'
-	import { adaptLegacyToCanonical, canonicalToRender } from '#features/chat/lib/canonical.ts'
+	import {
+		adaptStoredMessageToCanonical,
+		canonicalFromDataResponse,
+		canonicalToRender
+	} from '#features/chat/lib/canonical.ts'
 	import MessageList from './MessageList.svelte'
 	import ChatInput from './ChatInput.svelte'
 	import SuggestedPrompts, { type HomeTimeContext } from './SuggestedPrompts.svelte'
-	import type {
-		CanonicalChatResponse,
-		ChatEventPayload,
-		ChatMessage,
-		ChatStreamStatusPhase,
-		ConversationWithMessages,
-		Message,
-		MessageExecutionStep
+	import {
+		CHAT_CONTRACT_VERSION,
+		type CanonicalChatResponse,
+		type ChatEventPayload,
+		type ChatMessage,
+		type ChatStreamStatusPhase,
+		type ConversationWithMessages,
+		type Message,
+		type MessageExecutionStep
 	} from '#shared/lib/types.ts'
 
 	interface ChatMessageMetadata {
@@ -142,8 +147,8 @@
 	): CanonicalChatResponse | null {
 		if (!parts) return null
 		for (const part of parts) {
-			if (part.type === 'data-response' && part.data && typeof part.data === 'object') {
-				return part.data as CanonicalChatResponse
+			if (part.type === 'data-response') {
+				return canonicalFromDataResponse(part.data)
 			}
 		}
 		return null
@@ -215,7 +220,7 @@
 			content: payload.content,
 			visibleContent: payload.visibleContent ?? payload.content,
 			executionTrace: payload.executionTrace,
-			responseContractVersion: payload.responseContractVersion ?? 3,
+			responseContractVersion: payload.responseContractVersion ?? CHAT_CONTRACT_VERSION,
 			attachedData: payload.attachedData
 		})
 
@@ -235,7 +240,7 @@
 				visibleContent: payload.visibleContent ?? payload.content,
 				executionTrace: payload.executionTrace,
 				attachedData: payload.attachedData,
-				responseContractVersion: payload.responseContractVersion ?? 3
+				responseContractVersion: payload.responseContractVersion ?? CHAT_CONTRACT_VERSION
 			})
 			chatState.invalidateGuestConversation(payload.conversationId)
 			return { status: 'persisted', messageId: payload.clientMessageId }
@@ -374,7 +379,7 @@
 					content: textContent,
 					visibleContent: textContent,
 					executionTrace,
-					responseContractVersion: 3,
+					responseContractVersion: CHAT_CONTRACT_VERSION,
 					attachedData: canonical ? { canonical } : {}
 				}
 
@@ -550,7 +555,7 @@
 				role: 'user',
 				content,
 				visibleContent: content,
-				responseContractVersion: 3
+				responseContractVersion: CHAT_CONTRACT_VERSION
 			}
 
 			const userPersistencePromise = persistMessageResiliently(userMessagePayload)
@@ -670,9 +675,7 @@
 			: [...sourceMessages].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
 
 		const uiMessages: ChatUIMessage[] = sortedMessages.map((storedMessage) => {
-			const canonical =
-				(storedMessage as Message).attached_data?.canonical ??
-				adaptLegacyToCanonical(storedMessage as Message)
+			const canonical = adaptStoredMessageToCanonical(storedMessage as Message)
 			const parts: Array<{ type: string; text?: string; data?: unknown }> = [
 				{
 					type: 'text',
@@ -820,7 +823,7 @@
 			const canonical = message.role === 'assistant' ? canonicalFromParts(parts) : null
 			const render = canonical
 				? canonicalToRender(canonical)
-				: { events: [], suggestions: [], directions: null, venue: null, operations: [] }
+				: { events: [], suggestions: [], directions: null, venue: null, operations: [], clarificationQuestions: [] }
 			if (canonical) {
 				eventsCountRef = canonical.events.length
 			}
@@ -835,7 +838,9 @@
 				suggestions: render.suggestions.length > 0 ? render.suggestions : undefined,
 				directions: render.directions ?? undefined,
 				venue: render.venue ?? undefined,
-				operations: render.operations.length > 0 ? render.operations : undefined
+				operations: render.operations.length > 0 ? render.operations : undefined,
+				clarificationQuestions:
+					render.clarificationQuestions.length > 0 ? render.clarificationQuestions : undefined
 			} satisfies ChatMessage
 		})
 	})

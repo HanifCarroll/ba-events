@@ -26,7 +26,101 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Chat response v4: closed canonical response (deterministic text, structural trust)
+
+**Date:** 2026-08-16
+
+**Decision:** The chat response contract moves from v3's semi-free-text canonical
+(`text` could be arbitrary model prose; provenance carried only event/direction/
+venue/mutation/suggestion source ids) to a **closed** v4 canonical. Server text is
+now materialized deterministically from a closed `messageKey` plus validated
+artifact facts — never model prose. The finalizer emits a schema-constrained plan
+with no free-text field; validation and fallback are the only places a canonical
+is produced, and both derive text from the same deterministic table. Search
+discovery is modeled as ordered `SearchStage`s with typed eligibility/outcome, and
+follow-up reference resolution, trust-boundary construction, and persistence
+adapters are all made structural rather than prompt-advisory.
+
+**Preserved two-phase foundation (from v3):** the manual `generateText` work loop
+(default 2 tool-capable generations, `stopWhen: () => true` single-step
+enforcement) followed by an always-separate no-tools DeepSeek finalizer, the typed
+artifact `Ledger` replacing the global `allEvents` map, deterministic validation
+against the ledger, deterministic typed fallback, and one authoritative
+`CanonicalChatResponse` serving streaming, rendering, persistence, reload,
+follow-up context, and analytics all carry forward unchanged. v4 tightens the
+surface, not the pipeline: it closes the text and schema, adds search stages and
+the two retention/rejection control tools, and makes every trust decision
+structural.
+
+**Contract (v4) — see `docs/canonical-response.md` for the full field-by-field
+schema:**
+- `contractVersion: 4`. New required fields on the canonical: `messageKey`
+  (closed 12-key enum; `recommendations_pick` is the second recommendations key
+  and `share_guidance` provides deterministic share-button help)
+  and `clarificationQuestions` (bounded fixed-template keys). `text` is no longer
+  free model prose — it is materialized server-side from `messageKey` + locale +
+  optional validated event/venue/directions name (see `materialize.ts`).
+- `provenance` gains `emptySourceToolCallIds`, `retainedSourceToolCallIds`,
+  `stageIds`, and `searchAttemptToolCallIds`. `origin` is
+  `validated` | `fallback` | `legacy_unknown`; `fallbackUsed` and `fallbackReason`
+  (closed 20-value union) are required.
+- Events carry a tri-state `saved` marker (`true` | `false` | `null`) on every
+  canonical event (`CanonicalChatEventPayload`). The plain DB/search
+  `ChatEventPayload` keeps `saved` optional because those records predate the
+  tri-state marker.
+- `EventSelection` binds every selected event to its exact `sourceToolCallId`;
+  the finalizer plan is `responsePlanSchema` (closed, no free text).
+- Operations are `OperationReceipt[]` with a deterministic localized `message`
+  and typed `MutationOutcome`; they are always siblings of the primary kind.
+
+**Search stages — see `docs/search-stage-lifecycle.md`:** every work generation
+that calls `search_events` creates ONE `SearchStage` (success, empty, or failed).
+A new stage supersedes earlier stages the moment it is created; a stage can be
+explicitly REJECTED (distinct from superseded) by `reject_search_results`, or an
+earlier source RETAINED (stage-scoped) by `retain_search_results`. Only ACTIVE and
+RETAINED sources are selectable; the finalizer receives event facts only for those
+sources. A failed/empty latest stage never resurrects earlier cards.
+
+**Trust boundary — see `docs/chat-trust-boundary.md`:** the system prompt is
+static except server-owned auth facts; prior/pinned context travels in a bounded
+normal model-context message carrying ids/order/saved/resolved facts only;
+external names never reach the system prompt or the application-context message;
+guest and auth canonical hints are bounded-Zod-parsed, DB-rehydrated, and reduced
+to ids; model history is user text only; save/unsave availability is a structural
+intent gate on the latest raw user query. Prompt wording is advisory, never an
+enforcement mechanism — validation and fallback are deterministic.
+
+**Fallback rules — see `docs/fallback-rules.md`:** pinned enforcement, search
+stage/retention/rejection, compound relation identity, operations-never-rerun,
+exact provenance, and localized non-empty text are all deterministic.
+
+**Persistence/migration — see `docs/chat-persistence-migration.md`:** v4 is the
+write default across auth/guest/outbox; v2/v3 rows are adapted read-only to the
+v4 render shape (never rewritten); `legacy_unknown` provenance and
+`saved: null` / absent identity cover what historical rows cannot prove; a minimal
+DB migration only changes the column default.
+
+**Eval coverage — see `evals/concierge/README.md` and `docs/concierge-evals.md`:**
+a deterministic no-model/no-DB regression suite pins the pure components with
+fixed adversarial ledgers, alongside the existing live model+DB concierge eval.
+
+**Rationale:** v3 already made the canonical the single source of truth, but it
+left `text` and the finalizer free-form enough that prompt wording was still doing
+trust work (e.g. the romantic-weekday failure class of prose naming the wrong
+card). Closing `text` to a deterministic `messageKey`, modeling search as typed
+stages with structural retention/rejection, and moving follow-up resolution and
+context construction into deterministic code removes the remaining places where a
+model string could silently cross a boundary or resurrect a stale result. The
+model now only selects ids and a closed key; everything user-visible is derived
+server-side from validated artifacts.
+
+
 ### Chat response v3: canonical response + phase separation
+
+**Status:** Superseded by [Chat response v4: closed canonical response](#chat-response-v4-closed-canonical-response-deterministic-text-structural-trust)
+(2026-08-16). Retained for history; the two-phase work-loop/finalizer foundation,
+the typed ledger, deterministic validation/fallback, and one-authoritative-
+response architecture are preserved in v4.
 
 **Date:** 2026-08-16
 

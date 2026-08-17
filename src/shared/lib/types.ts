@@ -158,7 +158,10 @@ export interface EventWithVenue extends Event {
 
 // Event payload safe to send to chat clients and persist in chat attachments.
 // Embeddings are internal search infrastructure and must not cross this boundary.
-export type ChatEventPayload = Omit<EventWithVenue, 'embedding'>
+export type ChatEventPayload = Omit<EventWithVenue, 'embedding'> & {
+  /** Tri-state saved marker applied by the agent turn (true|false|null). */
+  saved?: boolean | null
+}
 
 // For inserting new events
 export interface EventInsert {
@@ -329,6 +332,10 @@ export interface DirectionsData {
   address: string
   mapsUrl: string
   eventName?: string
+  /** Identity of the event the directions were resolved for (if any). */
+  eventId?: string
+  /** Identity of the venue the directions were resolved for (if any). */
+  venueId?: string
 }
 
 export type ChatStreamStatusPhase =
@@ -359,6 +366,8 @@ export interface ChatMessage {
   directions?: DirectionsData
   venue?: VenueDetailsData
   operations?: OperationReceipt[]
+  /** Bounded fixed-template clarification questions (clarification kind). */
+  clarificationQuestions?: ClarificationQuestion[]
   timestamp: Date
   isStreaming?: boolean
 }
@@ -591,11 +600,11 @@ export interface ConciergeMessage extends ChatMessage {
 }
 
 // =============================================================================
-// CANONICAL CHAT RESPONSE (v3)
+// CANONICAL CHAT RESPONSE (v4)
 // =============================================================================
 
-/** Response contract version. v3 = canonical structured response (single source of truth). */
-export const CHAT_CONTRACT_VERSION = 3 as const
+/** Response contract version. v4 = closed-message canonical response (single source of truth). */
+export const CHAT_CONTRACT_VERSION = 4 as const
 
 export type ResponseKind =
   | 'recommendations'
@@ -610,24 +619,88 @@ export type ResponseKind =
   | 'error'
 
 /**
+ * Closed set of deterministic text templates. Server text is materialized from
+ * one of these keys plus validated artifacts — never from arbitrary model prose.
+ */
+export const MESSAGE_KEYS = [
+  'recommendations',
+  'recommendations_pick',
+  'event_details',
+  'saved_events',
+  'directions',
+  'venue_details',
+  'mutation_result',
+  'clarification',
+  'no_results',
+  'out_of_scope',
+  'share_guidance',
+  'error',
+] as const
+export type MessageKey = (typeof MESSAGE_KEYS)[number]
+
+/** Closed set of clarification question templates (sanitized, no artifact facts). */
+export const CLARIFICATION_KEYS = [
+  'which_event',
+  'which_day',
+  'which_time',
+  'which_neighborhood',
+  'which_category',
+  'which_venue',
+  'budget',
+] as const
+export type ClarificationKey = (typeof CLARIFICATION_KEYS)[number]
+
+/** A bounded, fixed-template clarification question. */
+export interface ClarificationQuestion {
+  key: ClarificationKey
+  /** Localized label materialized server-side from the key. */
+  label: string
+}
+
+/**
+ * Tri-state saved marker. `true` = saved, `false` = not saved, `null` = unknown.
+ * Search/details default null; saved-list and successful save/unsave evidence
+ * set true/false; failed/denied/unauthenticated/not-found never overwrite.
+ */
+export type SavedState = boolean | null
+
+/**
+ * An event as carried in a canonical v4 response. `saved` is always an explicit
+ * tri-state marker. The ordinary DB/search `ChatEventPayload` keeps `saved`
+ * optional (absent) because those records predate the tri-state marker.
+ */
+export type CanonicalChatEventPayload = ChatEventPayload & {
+  saved: SavedState
+}
+
+/**
  * Exact reason the deterministic fallback was triggered. Each value maps to a
  * concrete validation/planning violation, never a free-form string.
  */
-export type FallbackReason =
-  | 'finalizer_error'
-  | 'invalid_schema'
-  | 'empty_text'
-  | 'unknown_event_id'
-  | 'invalid_source_tool_call'
-  | 'inconsistent_response_kind'
-  | 'missing_required_artifact'
-  | 'duplicate_event_id'
-  | 'over_limit'
-  | 'pinned_substitution'
-  | 'invalid_directions_ref'
-  | 'invalid_venue_ref'
-  | 'invalid_mutation_ref'
-  | 'no_results'
+export const FALLBACK_REASONS = [
+  'finalizer_error',
+  'invalid_schema',
+  'unknown_event_id',
+  'invalid_source_tool_call',
+  'inconsistent_response_kind',
+  'missing_required_artifact',
+  'duplicate_event_id',
+  'over_limit',
+  'pinned_substitution',
+  'invalid_directions_ref',
+  'invalid_venue_ref',
+  'invalid_mutation_ref',
+  'no_results',
+  'superseded_source',
+  'rejected_source',
+  'unrelated_directions_ref',
+  'unrelated_venue_ref',
+  'invalid_empty_source',
+  'invalid_message_key',
+  'invalid_clarification',
+] as const
+
+export type FallbackReason = (typeof FALLBACK_REASONS)[number]
 
 /** A model-selected event, bound to the exact tool call that produced it. */
 export interface EventSelection {
@@ -666,6 +739,14 @@ export interface CanonicalProvenance {
   mutationToolCallIds: string[]
   /** Tool calls that produced the selected suggestion source, deduped. */
   suggestionToolCallIds: string[]
+  /** Empty-source tool call ids that ground a no_results response, deduped. */
+  emptySourceToolCallIds: string[]
+  /** Earlier search sources explicitly retained (reactivated) this turn, deduped. */
+  retainedSourceToolCallIds: string[]
+  /** Search stage ids that contributed events to this response, in order. */
+  stageIds: string[]
+  /** Exact tool call ids of the LATEST search stage attempt (success, empty, or failed). */
+  searchAttemptToolCallIds: string[]
   origin: ProvenanceOrigin
   fallbackUsed: boolean
   fallbackReason: FallbackReason | null
@@ -682,20 +763,26 @@ export interface VenueDetailsData {
 }
 
 /**
- * The single authoritative assistant response for a chat turn (v3).
- * Used by streaming, rendering, persistence, reload, follow-up context and
- * analytics. Text and cards are siblings; embeddings are never included.
+ * The single authoritative assistant response for a chat turn (v4).
+ * Text is deterministic (closed messageKey + validated artifacts), never model
+ * prose. `messageKey`, `clarificationQuestions`, and every provenance array are
+ * required: the v4 producer always sets them, and the legacy v2/v3 adapters
+ * fill deterministic defaults.
  */
 export interface CanonicalChatResponse {
   contractVersion: typeof CHAT_CONTRACT_VERSION
   requestId: string
   kind: ResponseKind
+  /** Closed deterministic-text template used to materialize `text`. */
+  messageKey: MessageKey
   text: string
-  events: ChatEventPayload[]
+  events: CanonicalChatEventPayload[]
   directions: DirectionsData | null
   venue: VenueDetailsData | null
   operations: OperationReceipt[]
   suggestions: RefinementSuggestion[]
+  /** Bounded fixed-template clarification questions (clarification kind). */
+  clarificationQuestions: ClarificationQuestion[]
   provenance: CanonicalProvenance
 }
 
@@ -737,8 +824,15 @@ export interface MessageAttachedData {
   events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
-  /** v3 canonical response, persisted verbatim and authoritative on reload. */
-  canonical?: CanonicalChatResponse
+  /**
+   * Canonical response payload at the storage boundary. Stored verbatim and
+   * authoritative on reload, but its exact version/shape depends on when the
+   * row was written (v2 has no canonical; v3 and v4 store their own shapes).
+   * Kept `unknown` so the storage layer never lies that legacy JSON is v4 —
+   * use the version-aware adapters in `canonical.ts` to produce a strict v4
+   * render shape.
+   */
+  canonical?: unknown
 }
 
 /** Database record for a conversation */

@@ -1,5 +1,5 @@
 /**
- * Sanitized execution trace for v3 persistence/debugging.
+ * Sanitized execution trace for v4 persistence/debugging.
  *
  * Contains tool calls and results only — no raw reasoning and no work-phase
  * narration text. Embeddings are stripped recursively.

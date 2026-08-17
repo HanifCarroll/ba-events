@@ -5,6 +5,11 @@
  * output into the artifact payload the validator/fallback/finalizer consume.
  * Tool output is UNTRUSTED (model-navigable) — only structured fields are
  * trusted, and the mutation receipt is re-derived deterministically here.
+ *
+ * v4: mutation receipts come from structured tool/output fields only (the
+ * deterministic localized table) — never from `formatted` prose. `check_event_saved`
+ * becomes a typed `{eventId, isSaved}` artifact, and `retain_search_results` is
+ * recorded structurally (its validated earlier source ids), never parsed from text.
  */
 
 import type {
@@ -12,11 +17,12 @@ import type {
   DirectionsData,
   MutationOutcome,
   OperationReceipt,
+  SavedState,
   VenueDetailsData,
 } from '#shared/lib/types.ts'
 import type { CoverageInfo } from '../tools/coverage-guard.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
-import { emptyEntry, type LedgerArtifactKind, type LedgerEntry } from './ledger.ts'
+import { emptyEntry, type Ledger, type LedgerArtifactKind, type LedgerEntry, type CheckSavedState } from './ledger.ts'
 
 export type ToolOutput = Record<string, unknown>
 
@@ -79,7 +85,8 @@ function asVenue(output: ToolOutput): VenueDetailsData | null {
 }
 
 function asDirections(output: ToolOutput): DirectionsData | null {
-  // get_directions now returns a structured `directions` field.
+  // get_directions returns a structured `directions` field carrying identity
+  // (eventId / venueId) for compound relation validation.
   const d = output.directions
   if (d && typeof d === 'object' && typeof (d as { mapsUrl?: unknown }).mapsUrl === 'string') {
     return d as DirectionsData
@@ -94,6 +101,8 @@ function asDirections(output: ToolOutput): DirectionsData | null {
       address: asString(output.address) ?? '',
       mapsUrl: output.mapsUrl,
       eventName: asString(output.eventName) ?? undefined,
+      eventId: asString(output.eventId) ?? undefined,
+      venueId: asString(output.venueId) ?? undefined,
     }
   }
   return null
@@ -120,6 +129,10 @@ function kindFor(toolName: string): LedgerArtifactKind {
     case 'save_event':
     case 'unsave_event':
       return 'mutation'
+    case 'retain_search_results':
+      return 'retention'
+    case 'reject_search_results':
+      return 'rejection'
     default:
       return 'tool-error'
   }
@@ -202,6 +215,21 @@ export function mutationMessage(
   return table[outcome][toolName]
 }
 
+/**
+ * Tri-state saved contribution of a mutation outcome. Successful save/already_saved
+ * → true; successful unsave/not_saved → false; failed/denied/unauthenticated/not_found
+ * → null (do not overwrite prior known value).
+ */
+export function mutationSavedState(
+  toolName: 'save_event' | 'unsave_event',
+  outcome: MutationOutcome
+): boolean | null {
+  if (outcome === 'applied' || outcome === 'already_applied') {
+    return toolName === 'save_event' ? true : false
+  }
+  return null
+}
+
 function asReceipt(
   toolName: string,
   input: unknown,
@@ -211,20 +239,8 @@ function asReceipt(
   if (toolName !== 'save_event' && toolName !== 'unsave_event') return null
   const eventId = asString((input as { eventId?: unknown })?.eventId) ?? ''
   const outcome = normalizeMutationOutcome(toolName, output)
-  // Prefer the server's own message when available (it carries the event name),
-  // else fall back to the deterministic normalized message.
-  let message = ''
-  if (typeof output.formatted === 'string') {
-    try {
-      const parsed = JSON.parse(output.formatted) as { message?: unknown }
-      if (typeof parsed.message === 'string' && parsed.message.trim()) {
-        message = parsed.message
-      }
-    } catch {
-      /* formatted is not JSON — use deterministic message */
-    }
-  }
-  if (!message.trim()) message = mutationMessage(toolName as 'save_event' | 'unsave_event', outcome, locale)
+  // Structured, deterministic localized message only — never `formatted` prose.
+  const message = mutationMessage(toolName as 'save_event' | 'unsave_event', outcome, locale)
 
   return {
     toolCallId: '',
@@ -233,6 +249,59 @@ function asReceipt(
     outcome,
     message,
   }
+}
+
+/**
+ * Tri-state saved resolution for a displayed event, respecting ledger
+ * chronology. The LATEST successful check-saved / save / unsave evidence wins
+ * by (stepIndex, callIndex); failed/denied/unauthenticated/not-found never
+ * overwrite the prior known value. Absent any evidence, the prior known value
+ * (or null) stands.
+ */
+export function resolveSavedState(
+  eventId: string,
+  ledger: Ledger,
+  requestId: string,
+  priorSaved?: Record<string, boolean>
+): SavedState {
+  let result: SavedState =
+    priorSaved && typeof priorSaved[eventId] === 'boolean' ? priorSaved[eventId] : null
+  for (const e of ledger.all()) {
+    if (e.requestId !== requestId) continue
+    if (e.kind === 'check-saved' && e.success && e.checkSaved?.eventId === eventId) {
+      result = e.checkSaved.isSaved
+      continue
+    }
+    if (e.kind === 'mutation' && e.receipt && e.receipt.eventId === eventId) {
+      const s = mutationSavedState(e.receipt.toolName, e.receipt.outcome)
+      if (s !== null) result = s
+    }
+  }
+  return result
+}
+
+function asCheckSaved(toolName: string, input: unknown, output: ToolOutput): CheckSavedState | null {
+  if (toolName !== 'check_event_saved') return null
+  const eventId = asString((input as { eventId?: unknown })?.eventId) ?? ''
+  const metadata = output.metadata as { isSaved?: unknown } | undefined
+  const isSaved = typeof metadata?.isSaved === 'boolean' ? metadata.isSaved : false
+  return { eventId, isSaved }
+}
+
+function asRetained(input: unknown, output: ToolOutput): string[] {
+  const retained = output.retained
+  if (Array.isArray(retained)) return retained.filter((x): x is string => typeof x === 'string')
+  const ids = (input as { sourceToolCallIds?: unknown })?.sourceToolCallIds
+  if (Array.isArray(ids)) return ids.filter((x): x is string => typeof x === 'string')
+  return []
+}
+
+function asRejected(input: unknown, output: ToolOutput): string[] {
+  const rejected = output.rejected
+  if (Array.isArray(rejected)) return rejected.filter((x): x is string => typeof x === 'string')
+  const ids = (input as { sourceToolCallIds?: unknown })?.sourceToolCallIds
+  if (Array.isArray(ids)) return ids.filter((x): x is string => typeof x === 'string')
+  return []
 }
 
 /**
@@ -284,6 +353,9 @@ export function recordToolResult(
       directions: kind === 'directions' ? asDirections(output) : null,
       venue: kind === 'venue-details' ? asVenue(output) : null,
       receipt,
+      checkSaved: kind === 'check-saved' ? asCheckSaved(toolName, input, output) : null,
+      retainedToolCallIds: kind === 'retention' && result.success ? asRetained(input, output) : [],
+      rejectedToolCallIds: kind === 'rejection' && result.success ? asRejected(input, output) : [],
       authRequired: isAuthBlocked,
       error: kind === 'tool-error' || !result.success ? code ?? 'execution_error' : null,
     }),

@@ -1,38 +1,62 @@
 /**
- * Deterministic validation of the finalizer plan against the artifact ledger.
+ * Deterministic validation of the v4 finalizer plan against the artifact ledger.
  *
  * The model plan is UNTRUSTED. Cards are materialized server-side from
  * validated ids only — never from prose or event-name matching. Any violation
  * yields a typed `FallbackReason` consumed by the deterministic fallback.
  *
- * Mutation receipts are acknowledged exactly once: the complete deduped set of
- * current-request mutation receipts is materialized here, never trusted from
- * the model's `operationToolCallIds`.
+ * v4 changes:
+ * - Search sources are validated by stage eligibility: only ACTIVE (latest
+ *   stage) or RETAINED (reactivated by the active stage) sources are
+ *   selectable; REJECTED and SUPERSEDED sources are rejected with distinct
+ *   typed reasons.
+ * - Compound siblings (events + related directions + related venue + operations)
+ *   are permitted; unrelated directions/venue refs are rejected by identity.
+ * - no_results is grounded on exact empty-source ids and rejected when any
+ *   selectable search source (active or retained) has events, or a failed-only
+ *   stage is the sole grounding.
+ * - pinnedEventId is enforced unconditionally.
+ * - Tri-state saved (true|false|null) is applied chronologically (latest
+ *   check/save/unsave wins).
+ * - Mutation receipts are always acknowledged as siblings, even for
+ *   clarification/out_of_scope/error primaries.
  */
 
 import type {
-  ChatEventPayload,
+  CanonicalChatEventPayload,
+  ClarificationKey,
+  ClarificationQuestion,
   DirectionsData,
   FallbackReason,
+  MessageKey,
   OperationReceipt,
   ResponseKind,
   VenueDetailsData,
 } from '#shared/lib/types.ts'
 import type { Ledger, LedgerArtifactKind } from './ledger.ts'
 import type { FinalizerPlan } from './finalizer.ts'
+import { materializeClarificationQuestions, MESSAGE_KEY_KIND } from './materialize.ts'
+import { resolveSavedState } from './record.ts'
 
 export interface ValidateOptions {
   requestId: string
+  locale: 'en' | 'es'
   pinnedEventId?: string
+  /** Explicit prior resolved target ids (compound relation fallback). */
+  resolvedEventId?: string
+  resolvedVenueId?: string
   /** The display limit requested by the search (clamped 1..5). */
   requestedCount: number
+  /** Prior known saved state per event id (tri-state; absent = unknown). */
+  priorSaved?: Record<string, boolean>
 }
 
 export interface ValidatedPlan {
   ok: boolean
   reason?: FallbackReason
   kind: ResponseKind
-  events: ChatEventPayload[]
+  messageKey: MessageKey
+  events: CanonicalChatEventPayload[]
   sourceToolCallIds: string[]
   directions: DirectionsData | null
   venue: VenueDetailsData | null
@@ -42,6 +66,11 @@ export interface ValidatedPlan {
   venueToolCallIds: string[]
   mutationToolCallIds: string[]
   suggestionToolCallIds: string[]
+  emptySourceToolCallIds: string[]
+  retainedSourceToolCallIds: string[]
+  stageIds: string[]
+  searchAttemptToolCallIds: string[]
+  clarificationQuestions: ClarificationQuestion[]
 }
 
 /** Kinds whose selections come from successful search artifacts. */
@@ -58,14 +87,15 @@ function expectedSourceKind(kind: ResponseKind): LedgerArtifactKind | null {
   return null
 }
 
-/** Kinds that must never carry events/directions/venue or operations. */
+/** Kinds that must never carry events/directions/venue (operations are allowed). */
 const EMPTY_KINDS: ResponseKind[] = ['clarification', 'out_of_scope', 'error']
 
-function fail(reason: FallbackReason, kind: ResponseKind): ValidatedPlan {
+function fail(reason: FallbackReason, kind: ResponseKind, messageKey: MessageKey): ValidatedPlan {
   return {
     ok: false,
     reason,
     kind,
+    messageKey,
     events: [],
     sourceToolCallIds: [],
     directions: null,
@@ -76,7 +106,20 @@ function fail(reason: FallbackReason, kind: ResponseKind): ValidatedPlan {
     venueToolCallIds: [],
     mutationToolCallIds: [],
     suggestionToolCallIds: [],
+    emptySourceToolCallIds: [],
+    retainedSourceToolCallIds: [],
+    stageIds: [],
+    searchAttemptToolCallIds: [],
+    clarificationQuestions: [],
   }
+}
+
+function contributingStageIds(ledger: Ledger, requestId: string, toolCallIds: string[]): string[] {
+  const set = new Set(toolCallIds)
+  return ledger
+    .searchStages(requestId)
+    .filter((s) => s.toolCallIds.some((id) => set.has(id)))
+    .map((s) => s.stageId)
 }
 
 export function validatePlan(
@@ -84,38 +127,87 @@ export function validatePlan(
   ledger: Ledger,
   options: ValidateOptions
 ): ValidatedPlan {
-  const { requestId, pinnedEventId, requestedCount } = options
+  const { requestId, pinnedEventId, requestedCount, locale, priorSaved } = options
+  const kind = plan.primaryKind
+  const messageKey = plan.messageKey
 
-  if (!plan.text || !plan.text.trim()) {
-    return fail('empty_text', plan.kind)
+  // Closed messageKey must match the primary kind.
+  if (MESSAGE_KEY_KIND[messageKey] !== kind) {
+    return fail('invalid_message_key', kind, messageKey)
   }
 
+  // Clarification questions: bounded (max 2, schema-enforced) and only for
+  // the clarification kind. A clarification response must carry at least one
+  // fixed question; default to a safe vague-discovery question when the
+  // finalizer supplies none (never free prose).
+  const clarificationKeys = (plan.clarificationQuestions ?? []).map((q) => q.key)
+  if (clarificationKeys.length > 2) return fail('invalid_clarification', kind, messageKey)
+  if (kind !== 'clarification' && clarificationKeys.length > 0) {
+    return fail('inconsistent_response_kind', kind, messageKey)
+  }
+  const effectiveKeys: ClarificationKey[] =
+    kind === 'clarification' && clarificationKeys.length === 0
+      ? ['which_category']
+      : clarificationKeys
+  const clarificationQuestions =
+    kind === 'clarification' ? materializeClarificationQuestions(effectiveKeys, locale) : []
+
+  // Dedupe selections.
   const selections = plan.eventSelections ?? []
   const seen = new Set<string>()
   for (const sel of selections) {
-    if (seen.has(sel.eventId)) {
-      return fail('duplicate_event_id', plan.kind)
-    }
+    if (seen.has(sel.eventId)) return fail('duplicate_event_id', kind, messageKey)
     seen.add(sel.eventId)
   }
 
+  // Pinned enforcement (unconditional).
+  if (pinnedEventId) {
+    if (selections.length === 0) {
+      // fall through — directions/venue/clarification/no_results/error allowed.
+    } else if (
+      selections.length === 1 &&
+      selections[0].eventId === pinnedEventId &&
+      kind === 'event_details'
+    ) {
+      const src = ledger.find(selections[0].sourceToolCallId)
+      if (
+        !src ||
+        src.requestId !== requestId ||
+        src.kind !== 'event-details' ||
+        !src.success ||
+        !src.events.some((e) => e.id === pinnedEventId)
+      ) {
+        return fail('pinned_substitution', kind, messageKey)
+      }
+    } else {
+      return fail('pinned_substitution', kind, messageKey)
+    }
+  }
+
   // Resolve each selection against the exact source artifact.
-  const events: ChatEventPayload[] = []
+  const events: CanonicalChatEventPayload[] = []
   const sourceToolCallIds: string[] = []
-  const sourceKind = expectedSourceKind(plan.kind)
+  const sourceKind = expectedSourceKind(kind)
   for (const sel of selections) {
     const source = ledger.find(sel.sourceToolCallId)
     if (!source || source.requestId !== requestId || !source.success) {
-      return fail('invalid_source_tool_call', plan.kind)
+      return fail('invalid_source_tool_call', kind, messageKey)
     }
     if (sourceKind && source.kind !== sourceKind) {
-      return fail('inconsistent_response_kind', plan.kind)
+      return fail('inconsistent_response_kind', kind, messageKey)
+    }
+    if (source.kind === 'search') {
+      const status = ledger.searchSourceStatus(source.toolCallId, requestId)
+      if (status === 'rejected') return fail('rejected_source', kind, messageKey)
+      if (status !== 'active' && status !== 'retained') {
+        return fail('superseded_source', kind, messageKey)
+      }
     }
     const event = source.events.find((e) => e.id === sel.eventId)
-    if (!event) {
-      return fail('unknown_event_id', plan.kind)
-    }
-    events.push(event)
+    if (!event) return fail('unknown_event_id', kind, messageKey)
+
+    const saved = source.kind === 'saved-events' ? true : resolveSavedState(event.id, ledger, requestId, priorSaved)
+    events.push({ ...event, saved })
     if (!sourceToolCallIds.includes(sel.sourceToolCallId)) {
       sourceToolCallIds.push(sel.sourceToolCallId)
     }
@@ -123,45 +215,52 @@ export function validatePlan(
 
   const limit = Math.max(1, Math.min(requestedCount, 5))
   if (events.length > limit) {
-    return fail('over_limit', plan.kind)
+    return fail('over_limit', kind, messageKey)
   }
 
-  // Pinned event can never be substituted. If a pinned successful details
-  // artifact exists, a plan that omits/replaces it is invalid.
-  if (pinnedEventId && ledger.eventDetailsFor(pinnedEventId, requestId)) {
-    if (!events.some((e) => e.id === pinnedEventId)) {
-      return fail('pinned_substitution', plan.kind)
-    }
-  }
+  // Relation context for compound siblings: allowed event/venue identities.
+  const pinnedDetails = pinnedEventId ? ledger.eventDetailsFor(pinnedEventId, requestId) : null
+  const pinnedVenueId = pinnedDetails?.events[0]?.venue_id ?? null
+  const allowedEventIds = new Set<string>(events.map((e) => e.id))
+  if (pinnedEventId) allowedEventIds.add(pinnedEventId)
+  if (options.resolvedEventId) allowedEventIds.add(options.resolvedEventId)
+  const allowedVenueIds = new Set<string>()
+  for (const e of events) if (typeof e.venue_id === 'string' && e.venue_id) allowedVenueIds.add(e.venue_id)
+  if (typeof pinnedVenueId === 'string' && pinnedVenueId) allowedVenueIds.add(pinnedVenueId)
+  if (options.resolvedVenueId) allowedVenueIds.add(options.resolvedVenueId)
 
-  // Directions reference.
+  // Directions reference (compound sibling).
   let directions: DirectionsData | null = null
   const directionToolCallIds: string[] = []
   if (plan.directionsToolCallId != null) {
     const dir = ledger.find(plan.directionsToolCallId)
-    if (!dir || dir.requestId !== requestId || !dir.success || !dir.directions) {
-      return fail('invalid_directions_ref', plan.kind)
+    if (!dir || dir.requestId !== requestId || dir.kind !== 'directions' || !dir.success || !dir.directions) {
+      return fail('invalid_directions_ref', kind, messageKey)
     }
-    directions = dir.directions
+    const d = dir.directions
+    const related =
+      (typeof d.eventId === 'string' && d.eventId && allowedEventIds.has(d.eventId)) ||
+      (typeof d.venueId === 'string' && d.venueId && allowedVenueIds.has(d.venueId))
+    if (!related) return fail('unrelated_directions_ref', kind, messageKey)
+    directions = d
     directionToolCallIds.push(dir.toolCallId)
   }
 
-  // Venue reference.
+  // Venue reference (compound sibling).
   let venue: VenueDetailsData | null = null
   const venueToolCallIds: string[] = []
   if (plan.venueToolCallId != null) {
     const v = ledger.find(plan.venueToolCallId)
-    if (!v || v.requestId !== requestId || !v.success || !v.venue) {
-      return fail('invalid_venue_ref', plan.kind)
+    if (!v || v.requestId !== requestId || v.kind !== 'venue-details' || !v.success || !v.venue) {
+      return fail('invalid_venue_ref', kind, messageKey)
     }
+    const related = typeof v.venue.venueId === 'string' && !!v.venue.venueId && allowedVenueIds.has(v.venue.venueId)
+    if (!related) return fail('unrelated_venue_ref', kind, messageKey)
     venue = v.venue
     venueToolCallIds.push(v.toolCallId)
   }
 
-  // Mutation receipts: validate the model's refs are real, belong to this
-  // request, and carry a typed receipt — but materialize the COMPLETE deduped
-  // set so no receipt (including failed/unauthenticated ones) is ever silently
-  // omitted.
+  // Mutation receipts: validate refs, materialize the COMPLETE deduped set.
   for (const toolCallId of plan.operationToolCallIds ?? []) {
     const entry = ledger.find(toolCallId)
     if (
@@ -170,71 +269,113 @@ export function validatePlan(
       !entry.receipt ||
       entry.requestId !== requestId
     ) {
-      return fail('invalid_mutation_ref', plan.kind)
+      return fail('invalid_mutation_ref', kind, messageKey)
     }
   }
   const operations = ledger.mutationReceipts(requestId)
   const mutationToolCallIds = ledger.mutationToolCallIds(requestId)
 
-  // Suggestion source: must be a successful current-request search artifact AND
-  // relevant to the displayed events (or the no_results source). An unrelated
-  // ref is a model violation, not something to silently neutralize.
+  // Suggestion source: a search source that actually produced a selected event.
   let suggestionSourceToolCallId: string | null = null
   if (plan.suggestionSourceToolCallId != null) {
     const src = ledger.find(plan.suggestionSourceToolCallId)
     if (!src || src.requestId !== requestId || !src.success || src.kind !== 'search') {
-      return fail('invalid_source_tool_call', plan.kind)
+      return fail('invalid_source_tool_call', kind, messageKey)
     }
-    const relevant =
-      events.some((e) => src.eventIds.includes(e.id)) ||
-      (plan.kind === 'no_results' && src.zeroResults)
-    if (!relevant) return fail('invalid_source_tool_call', plan.kind)
+    const status = ledger.searchSourceStatus(src.toolCallId, requestId)
+    if (status === 'rejected') return fail('rejected_source', kind, messageKey)
+    if (status !== 'active' && status !== 'retained') {
+      return fail('superseded_source', kind, messageKey)
+    }
+    const relevant = events.some((e) => src.eventIds.includes(e.id))
+    if (!relevant) return fail('invalid_source_tool_call', kind, messageKey)
     suggestionSourceToolCallId = src.toolCallId
   }
 
-  // Kind / artifact consistency.
-  const kind = plan.kind
-  const carriesDisplayArtifacts =
-    events.length > 0 || directions !== null || venue !== null
+  // no_results grounding: exact empty-source ids only; reject when any
+  // selectable search source (active or retained) has events.
+  const emptySourceToolCallIds: string[] = []
+  if (kind === 'no_results') {
+    const emptyIds = plan.emptySourceToolCallIds ?? []
+    if (emptyIds.length === 0) return fail('invalid_empty_source', kind, messageKey)
 
-  if (EMPTY_KINDS.includes(kind) && (carriesDisplayArtifacts || operations.length > 0)) {
-    return fail('inconsistent_response_kind', kind)
+    const active = ledger.activeStage(requestId)
+    if (active && active.eligibility === 'active' && active.outcome === 'success') {
+      return fail('no_results', kind, messageKey)
+    }
+    for (const id of ledger.retainedSearchToolCallIds(requestId)) {
+      const r = ledger.find(id)
+      if (r && r.success && r.events.length > 0) {
+        return fail('no_results', kind, messageKey)
+      }
+    }
+
+    for (const id of emptyIds) {
+      const entry = ledger.find(id)
+      if (!entry || entry.requestId !== requestId || !entry.success) {
+        return fail('invalid_empty_source', kind, messageKey)
+      }
+      const emptySearch =
+        entry.kind === 'search' &&
+        entry.zeroResults &&
+        ledger.searchSourceStatus(entry.toolCallId, requestId) === 'active'
+      const emptySaved = entry.kind === 'saved-events' && entry.zeroResults
+      if (!emptySearch && !emptySaved) {
+        return fail('invalid_empty_source', kind, messageKey)
+      }
+      if (!emptySourceToolCallIds.includes(id)) emptySourceToolCallIds.push(id)
+    }
   }
 
-  // no_results may carry operation receipts (a compound empty-search + save),
-  // but never events/directions/venue.
-  if (kind === 'no_results' && carriesDisplayArtifacts) {
-    return fail('inconsistent_response_kind', kind)
+  // Kind / artifact consistency (compound-aware; operations always allowed as
+  // siblings, including on clarification/out_of_scope/error).
+  const carriesDisplayArtifacts = events.length > 0 || directions !== null || venue !== null
+
+  if (EMPTY_KINDS.includes(kind) && carriesDisplayArtifacts) {
+    return fail('inconsistent_response_kind', kind, messageKey)
+  }
+
+  if (kind === 'no_results' && (events.length > 0 || directions !== null || venue !== null)) {
+    return fail('inconsistent_response_kind', kind, messageKey)
   }
 
   if (SEARCH_KINDS.includes(kind) || SAVED_KINDS.includes(kind)) {
-    if (events.length === 0) return fail('missing_required_artifact', kind)
-    if (directions !== null || venue !== null) return fail('inconsistent_response_kind', kind)
+    if (events.length === 0) return fail('missing_required_artifact', kind, messageKey)
   }
 
   if (DETAILS_KINDS.includes(kind)) {
-    if (events.length !== 1) return fail('inconsistent_response_kind', kind)
-    if (directions !== null || venue !== null) return fail('inconsistent_response_kind', kind)
+    if (events.length !== 1) return fail('inconsistent_response_kind', kind, messageKey)
   }
 
   if (kind === 'directions') {
-    if (!directions) return fail('missing_required_artifact', kind)
-    if (events.length > 0 || venue !== null) return fail('inconsistent_response_kind', kind)
+    if (!directions) return fail('missing_required_artifact', kind, messageKey)
+    if (events.length > 0 || venue !== null) return fail('inconsistent_response_kind', kind, messageKey)
   }
 
   if (kind === 'venue_details') {
-    if (!venue) return fail('missing_required_artifact', kind)
-    if (events.length > 0 || directions !== null) return fail('inconsistent_response_kind', kind)
+    if (!venue) return fail('missing_required_artifact', kind, messageKey)
+    if (events.length > 0 || directions !== null) return fail('inconsistent_response_kind', kind, messageKey)
   }
 
   if (kind === 'mutation_result') {
-    if (operations.length === 0) return fail('missing_required_artifact', kind)
-    if (carriesDisplayArtifacts) return fail('inconsistent_response_kind', kind)
+    if (operations.length === 0) return fail('missing_required_artifact', kind, messageKey)
+    if (carriesDisplayArtifacts) return fail('inconsistent_response_kind', kind, messageKey)
   }
+
+  // Provenance: retained sources that contributed, plus their stage ids and the
+  // latest search-attempt tool call ids (success, empty, or failed).
+  const retainedSet = new Set(ledger.retainedSearchToolCallIds(requestId))
+  const retainedSourceToolCallIds = sourceToolCallIds.filter((id) => retainedSet.has(id))
+  const stageIds = contributingStageIds(ledger, requestId, [
+    ...sourceToolCallIds,
+    ...emptySourceToolCallIds,
+  ])
+  const searchAttemptToolCallIds = ledger.activeStage(requestId)?.toolCallIds ?? []
 
   return {
     ok: true,
     kind,
+    messageKey,
     events,
     sourceToolCallIds,
     directions,
@@ -245,5 +386,10 @@ export function validatePlan(
     venueToolCallIds,
     mutationToolCallIds,
     suggestionToolCallIds: suggestionSourceToolCallId ? [suggestionSourceToolCallId] : [],
+    emptySourceToolCallIds,
+    retainedSourceToolCallIds,
+    stageIds,
+    searchAttemptToolCallIds,
+    clarificationQuestions,
   }
 }

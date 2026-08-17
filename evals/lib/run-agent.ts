@@ -9,6 +9,7 @@
 import { generateId } from 'ai'
 import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
 import { orchestrate } from '#features/chat/api/agent/orchestrate.ts'
+import { detectMutationIntent } from '#features/chat/api/agent/context.ts'
 import type { UserToolContext } from '#features/chat/api/user-tools.server.ts'
 import type { CanonicalChatResponse } from '#shared/lib/types.ts'
 
@@ -44,6 +45,7 @@ export async function runConcierge(message: string, locale: 'en' | 'es'): Promis
     systemPrompt: getSystemPrompt({ isAuthenticated: false, savedEventsCount: 0 }),
     originalQuery: message,
     priorDisplayedEvents: [],
+    allowMutations: detectMutationIntent(message),
   })
 
   const toolCalls: AgentToolCall[] = result.ledger

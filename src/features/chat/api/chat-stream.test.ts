@@ -39,25 +39,39 @@ const canonical: CanonicalChatResponse = {
 	contractVersion: CHAT_CONTRACT_VERSION,
 	requestId: 'request-1',
 	kind: 'recommendations',
+	messageKey: 'recommendations',
 	text: 'Go to Tango night.',
-	events: [{ id: 'e1', name: 'Tango night' } as never],
+	events: [{ id: 'e1', name: 'Tango night', saved: null } as never],
 	directions: null,
 	venue: null,
-	operations: [],
+	operations: [
+		{
+			toolCallId: 'op-1',
+			toolName: 'save_event',
+			eventId: 'e1',
+			outcome: 'applied',
+			message: 'Saved it to your list.'
+		}
+	],
 	suggestions: [],
+	clarificationQuestions: [{ key: 'which_day', label: 'Which day are you interested in?' }],
 	provenance: {
 		sourceToolCallIds: ['s1'],
 		directionToolCallIds: [],
 		venueToolCallIds: [],
-		mutationToolCallIds: [],
+		mutationToolCallIds: ['op-1'],
 		suggestionToolCallIds: [],
+		emptySourceToolCallIds: [],
+		retainedSourceToolCallIds: [],
+		stageIds: [],
+		searchAttemptToolCallIds: [],
 		origin: 'validated',
 		fallbackUsed: false,
-		fallbackReason: null,
-	},
+		fallbackReason: null
+	}
 }
 
-describe('v3 chat stream client correlation', () => {
+describe('v4 chat stream client correlation', () => {
 	it('correlates into exactly one assistant message with one text part and a persistent data-response part', async () => {
 		const messageId = 'assistant-server-1'
 		const requestId = 'request-1'
@@ -72,13 +86,13 @@ describe('v3 chat stream client correlation', () => {
 			{ type: 'text-end', id: textId },
 			{ type: 'data-response', data: canonical },
 			{ type: 'data-execution-trace', id: `trace:${requestId}`, transient: true, data: { requestId, assistantMessageId: messageId, steps: [] } },
-			{ type: 'finish', finishReason: 'stop' },
+			{ type: 'finish', finishReason: 'stop' }
 		]
 
 		const { Chat } = await loadChatModule()
 		const chat = new Chat<UIMessage>({
-			id: 'v3-stream-regression',
-			transport: transport(chunks),
+			id: 'v4-stream-regression',
+			transport: transport(chunks)
 		})
 
 		await chat.sendMessage({ text: 'romantic night' })
@@ -93,7 +107,19 @@ describe('v3 chat stream client correlation', () => {
 
 		const responseParts = assistants[0]?.parts?.filter((p) => p.type === 'data-response')
 		expect(responseParts).toHaveLength(1)
-		expect((responseParts?.[0] as { data: CanonicalChatResponse }).data.requestId).toBe('request-1')
+		const responseData = (responseParts?.[0] as { data: CanonicalChatResponse }).data
+		expect(responseData.requestId).toBe('request-1')
+		expect(responseData.contractVersion).toBe(CHAT_CONTRACT_VERSION)
+
+		// Clarification questions are v4 canonical data, not a second text block.
+		expect(responseData.clarificationQuestions).toHaveLength(1)
+		expect(textParts).toHaveLength(1)
+
+		// Deterministic contract: canonical.text never duplicates the
+		// separately-rendered operation receipt message.
+		for (const op of responseData.operations) {
+			expect(responseData.text).not.toContain(op.message)
+		}
 
 		// Transient status parts must never enter the persisted message history.
 		const statusParts = assistants[0]?.parts?.filter((p) => p.type === 'data-status')

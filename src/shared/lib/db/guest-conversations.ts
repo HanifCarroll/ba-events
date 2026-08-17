@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import type {
   MessageAttachedData,
   MessageExecutionStep,
@@ -126,7 +127,7 @@ export async function addGuestMessage(
     visible_content: message.visibleContent ?? message.content,
     execution_trace: message.executionTrace ?? [],
     attached_data: message.attachedData ?? {},
-    response_contract_version: message.responseContractVersion ?? 3,
+    response_contract_version: message.responseContractVersion ?? CHAT_CONTRACT_VERSION,
     created_at: now,
   })
   await touchGuestConversation(conversationId)

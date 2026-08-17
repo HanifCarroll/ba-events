@@ -1,7 +1,11 @@
 import type { ChatEventPayload } from '#shared/lib/types.ts'
 import { Ledger, emptyEntry, type LedgerEntry } from './ledger.ts'
 
-export function event(id: string, name: string): ChatEventPayload {
+export function event(
+  id: string,
+  name: string,
+  overrides: Partial<ChatEventPayload> = {}
+): ChatEventPayload {
   return {
     id,
     name,
@@ -9,6 +13,9 @@ export function event(id: string, name: string): ChatEventPayload {
     venue_neighborhood: null,
     price: null,
     is_free: false,
+    venue_id: null,
+    venue_name: null,
+    ...overrides,
   } as unknown as ChatEventPayload
 }
 
@@ -79,6 +86,8 @@ export function directionsEntry(opts: {
   venueName?: string
   stepIndex?: number
   callIndex?: number
+  eventId?: string
+  venueId?: string
 }): LedgerEntry {
   return emptyEntry({
     requestId: 'req-1',
@@ -92,6 +101,8 @@ export function directionsEntry(opts: {
       venueName: opts.venueName ?? 'Niceto',
       address: 'Niceto Vega 5510',
       mapsUrl: 'https://maps',
+      eventId: opts.eventId,
+      venueId: opts.venueId,
     },
     error: null,
   })
@@ -103,6 +114,7 @@ export function eventDetailsEntry(opts: {
   name: string
   stepIndex?: number
   callIndex?: number
+  venueId?: string
 }): LedgerEntry {
   return emptyEntry({
     requestId: 'req-1',
@@ -112,7 +124,7 @@ export function eventDetailsEntry(opts: {
     toolName: 'get_event_details',
     success: true,
     kind: 'event-details',
-    events: [event(opts.eventId, opts.name)],
+    events: [event(opts.eventId, opts.name, { venue_id: opts.venueId ?? null })],
     eventIds: [opts.eventId],
     error: null,
   })
@@ -136,6 +148,7 @@ export function savedEventsEntry(opts: {
     events,
     eventIds: events.map((e) => e.id),
     count: events.length,
+    zeroResults: events.length === 0,
     error: null,
   })
 }
@@ -145,6 +158,7 @@ export function venueDetailsEntry(opts: {
   venueName?: string
   stepIndex?: number
   callIndex?: number
+  venueId?: string
 }): LedgerEntry {
   return emptyEntry({
     requestId: 'req-1',
@@ -155,13 +169,71 @@ export function venueDetailsEntry(opts: {
     success: true,
     kind: 'venue-details',
     venue: {
-      venueId: null,
+      venueId: opts.venueId ?? null,
       venueName: opts.venueName ?? 'Niceto',
       neighborhood: 'Palermo',
       address: 'Niceto Vega 5510',
       website: 'https://niceto.com',
       instagram: null,
     },
+    error: null,
+  })
+}
+
+export function checkSavedEntry(opts: {
+  toolCallId: string
+  eventId: string
+  isSaved: boolean
+  stepIndex?: number
+  callIndex?: number
+}): LedgerEntry {
+  return emptyEntry({
+    requestId: 'req-1',
+    stepIndex: opts.stepIndex ?? 0,
+    callIndex: opts.callIndex ?? 0,
+    toolCallId: opts.toolCallId,
+    toolName: 'check_event_saved',
+    success: true,
+    kind: 'check-saved',
+    checkSaved: { eventId: opts.eventId, isSaved: opts.isSaved },
+    error: null,
+  })
+}
+
+export function retentionEntry(opts: {
+  toolCallId: string
+  retainedToolCallIds: string[]
+  stepIndex?: number
+  callIndex?: number
+}): LedgerEntry {
+  return emptyEntry({
+    requestId: 'req-1',
+    stepIndex: opts.stepIndex ?? 0,
+    callIndex: opts.callIndex ?? 0,
+    toolCallId: opts.toolCallId,
+    toolName: 'retain_search_results',
+    success: true,
+    kind: 'retention',
+    retainedToolCallIds: opts.retainedToolCallIds,
+    error: null,
+  })
+}
+
+export function rejectionEntry(opts: {
+  toolCallId: string
+  rejectedToolCallIds: string[]
+  stepIndex?: number
+  callIndex?: number
+}): LedgerEntry {
+  return emptyEntry({
+    requestId: 'req-1',
+    stepIndex: opts.stepIndex ?? 0,
+    callIndex: opts.callIndex ?? 0,
+    toolCallId: opts.toolCallId,
+    toolName: 'reject_search_results',
+    success: true,
+    kind: 'rejection',
+    rejectedToolCallIds: opts.rejectedToolCallIds,
     error: null,
   })
 }

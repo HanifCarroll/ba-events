@@ -8,6 +8,7 @@ import type { RequestEvent } from '@sveltejs/kit'
 import type { Message, MessageAttachedData, MessageExecutionStep } from '#shared/lib/types.ts'
 import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
+import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 
 type AddMessageInput = {
   conversationId: string
@@ -30,7 +31,7 @@ function buildMessageRpcPayload(data: AddMessageInput) {
     p_content: data.content,
     p_visible_content: data.visibleContent ?? data.content,
     p_execution_trace: data.executionTrace ?? [],
-    p_response_contract_version: data.responseContractVersion ?? 2,
+    p_response_contract_version: data.responseContractVersion ?? CHAT_CONTRACT_VERSION,
     p_attached_data: data.attachedData ?? {},
   }
 }

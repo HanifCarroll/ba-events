@@ -1,11 +1,15 @@
 /**
- * v3 agent-turn orchestration.
+ * v4 agent-turn orchestration.
  *
  * Ties together the manual work loop, no-tools finalizer, deterministic
- * validation, deterministic fallback, suggestions, and coverage/off-topic
- * guards into a single `CanonicalChatResponse`. This module is streaming-free
- * so it can run in the API route (streamed) and in the concierge eval
- * (batch) identically.
+ * validation, deterministic fallback, and suggestions into a single
+ * `CanonicalChatResponse`. This module is streaming-free so it can run in the
+ * API route (streamed) and in the concierge eval (batch) identically.
+ *
+ * v4: server text is materialized deterministically from the validated closed
+ * messageKey (never model prose); the post-validation topic/coverage guards are
+ * gone — a validated canonical is never mutated into a semantically different
+ * response. Tri-state saved evidence is applied to displayed events.
  */
 
 import type { ModelMessage } from 'ai'
@@ -19,12 +23,11 @@ import { runWorkLoop, type WorkLoopHooks, type WorkLoopResult } from './work-loo
 import { runFinalizer, type FinalizerPlan } from './finalizer.ts'
 import { validatePlan, type ValidatedPlan } from './validate.ts'
 import { buildFallback } from './fallback.ts'
+import { materializeText, materializeClarificationText } from './materialize.ts'
 import { buildSanitizedTrace } from './trace.ts'
 import type { Ledger, LedgerEntry } from './ledger.ts'
 import { generateSuggestions } from '../suggestions.ts'
-import { guardForOffTopic } from '../topic-guard.ts'
-import { guardCoverageClaims, type CoverageInfo } from '../tools/coverage-guard.ts'
-import type { PriorEventContext } from './follow-up.ts'
+import type { PriorDisplayGroup } from './follow-up.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
 
 export interface OrchestrateInput {
@@ -34,9 +37,18 @@ export interface OrchestrateInput {
   locale: 'en' | 'es'
   systemPrompt: string
   originalQuery: string
-  priorDisplayedEvents: PriorEventContext[]
+  priorDisplayedEvents: PriorDisplayGroup[]
   pinnedEventId?: string
-  pinnedEventName?: string
+  /** Prior known saved state per event id (tri-state; absent = unknown). */
+  priorSaved?: Record<string, boolean>
+  /** Explicit prior resolved target ids for compound relation validation. */
+  resolvedEventId?: string
+  resolvedVenueId?: string
+  /**
+   * True only when the latest raw user query has explicit save/unsave intent.
+   * Omitted defaults fail closed: mutation tools are unavailable.
+   */
+  allowMutations?: boolean
   maxWorkGenerations?: number
   hooks?: WorkLoopHooks & { onStatus?: (phase: import('#shared/lib/types.ts').ChatStreamStatusPhase) => void }
 }
@@ -55,36 +67,45 @@ type Mode = 'pick' | 'discovery' | 'enumeration' | 'other'
 
 /**
  * The display count the finalizer/validator should allow, derived from the
- * FINAL relevant read — not the last search. A final list_saved_events read
- * allows up to min(returned events, 5) even when no search ran or an earlier
- * search was limit-1; details/directions/venue stay count 1; a final search
- * uses its actual displayLimit.
+ * LATEST events-bearing read (not directions/venue). A final list_saved_events
+ * read allows up to min(returned events, 5); details stay count 1; a final
+ * search uses its active stage's actual displayLimit.
  */
-function deriveRequestedCount(ledger: Ledger): number {
-  const finalRead = ledger.finalRelevantRead()
-  if (!finalRead) return 1
-  switch (finalRead.kind) {
-    case 'search':
-      return finalRead.displayLimit ?? finalRead.searchInput?.limit ?? 1
-    case 'saved-events':
-      return Math.min(finalRead.events.length, 5)
-    case 'event-details':
-    case 'directions':
-    case 'venue-details':
+function deriveRequestedCount(ledger: Ledger, requestId: string): number {
+  const reads = ledger.successfulEventReads(requestId)
+  if (reads.length === 0) return 1
+  const latest = reads.reduce((best, e) =>
+    e.stepIndex > best.stepIndex ||
+    (e.stepIndex === best.stepIndex && e.callIndex > best.callIndex)
+      ? e
+      : best
+  )
+  switch (latest.kind) {
+    case 'search': {
+      const active = ledger.activeStage(requestId)
+      if (active) {
+        const searches = ledger.searchesInStep(active.stepIndex, requestId)
+        const last = searches.at(-1)
+        return last?.displayLimit ?? last?.searchInput?.limit ?? 1
+      }
       return 1
+    }
+    case 'saved-events':
+      return Math.min(latest.events.length, 5)
+    case 'event-details':
     default:
       return 1
   }
 }
 
-function deriveSearchContext(ledger: Ledger): {
+function deriveSearchContext(ledger: Ledger, requestId: string): {
   requestedCount: number
   mode: Mode
   searchInput: SearchEventsInput | null
 } {
   const searches = ledger.successfulSearches()
   const last = searches.at(-1)
-  const requestedCount = deriveRequestedCount(ledger)
+  const requestedCount = deriveRequestedCount(ledger, requestId)
   const mode: Mode =
     last?.searchInput?.objective === 'surprise'
       ? 'pick'
@@ -94,35 +115,42 @@ function deriveSearchContext(ledger: Ledger): {
   return { requestedCount, mode, searchInput: last?.searchInput ?? null }
 }
 
-/** Coverage from the exact selected search provenance only (never later unrelated searches). */
-function deriveCoverage(ledger: Ledger, sourceToolCallIds: string[]): CoverageInfo | null {
-  const selected = new Set(sourceToolCallIds)
-  const searches = ledger.successfulSearches().filter((s) => selected.has(s.toolCallId))
-  const source = searches.at(-1)
-  return source?.coverage ?? null
-}
-
 function materializeCanonical(
   input: OrchestrateInput,
-  plan: FinalizerPlan,
   validated: ValidatedPlan
 ): CanonicalChatResponse {
+  const text =
+    validated.kind === 'clarification'
+      ? materializeClarificationText(validated.clarificationQuestions)
+      : materializeText({
+          messageKey: validated.messageKey,
+          locale: input.locale,
+          eventName: validated.events[0]?.name,
+          directionsVenueName: validated.directions?.venueName,
+          venueName: validated.venue?.venueName,
+        })
   return {
     contractVersion: CHAT_CONTRACT_VERSION,
     requestId: input.requestId,
     kind: validated.kind,
-    text: plan.text.trim(),
+    messageKey: validated.messageKey,
+    text,
     events: validated.events,
     directions: validated.directions,
     venue: validated.venue,
     operations: validated.operations,
     suggestions: [],
+    clarificationQuestions: validated.clarificationQuestions,
     provenance: {
       sourceToolCallIds: validated.sourceToolCallIds,
       directionToolCallIds: validated.directionToolCallIds,
       venueToolCallIds: validated.venueToolCallIds,
       mutationToolCallIds: validated.mutationToolCallIds,
       suggestionToolCallIds: validated.suggestionToolCallIds,
+      emptySourceToolCallIds: validated.emptySourceToolCallIds,
+      retainedSourceToolCallIds: validated.retainedSourceToolCallIds,
+      stageIds: validated.stageIds,
+      searchAttemptToolCallIds: validated.searchAttemptToolCallIds,
       origin: 'validated',
       fallbackUsed: false,
       fallbackReason: null,
@@ -142,6 +170,16 @@ function findSuggestionSource(
   return entry
 }
 
+function priorSavedFrom(prior: PriorDisplayGroup[]): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  for (const g of prior) {
+    for (const e of g.events) {
+      if (typeof e.saved === 'boolean') out[e.eventId] = e.saved
+    }
+  }
+  return out
+}
+
 export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateResult> {
   const work = await runWorkLoop({
     requestId: input.requestId,
@@ -150,10 +188,13 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     userContext: input.userContext,
     locale: input.locale,
     maxWorkGenerations: input.maxWorkGenerations,
+    pinnedEventId: input.pinnedEventId,
+    allowMutations: input.allowMutations,
     hooks: input.hooks,
   })
 
-  const { requestedCount, mode } = deriveSearchContext(work.ledger)
+  const { requestedCount, mode } = deriveSearchContext(work.ledger, input.requestId)
+  const priorSaved = input.priorSaved ?? priorSavedFrom(input.priorDisplayedEvents)
 
   // Finalization is ALWAYS a separate generation, even when the last work
   // generation called tools.
@@ -166,7 +207,6 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     workNotes: work.workNotes,
     ledger: work.ledger,
     pinnedEventId: input.pinnedEventId,
-    pinnedEventName: input.pinnedEventName,
     requestedCount,
     mode,
   })
@@ -179,12 +219,16 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     const plan = finalizerResult.plan
     validated = validatePlan(plan, work.ledger, {
       requestId: input.requestId,
+      locale: input.locale,
       pinnedEventId: input.pinnedEventId,
+      resolvedEventId: input.resolvedEventId,
+      resolvedVenueId: input.resolvedVenueId,
       requestedCount,
+      priorSaved,
     })
 
     if (validated.ok) {
-      canonical = materializeCanonical(input, plan, validated)
+      canonical = materializeCanonical(input, validated)
     } else {
       canonical = buildFallback({
         requestId: input.requestId,
@@ -193,6 +237,9 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
         ledger: work.ledger,
         requestedCount,
         pinnedEventId: input.pinnedEventId,
+        resolvedEventId: input.resolvedEventId,
+        resolvedVenueId: input.resolvedVenueId,
+        priorSaved,
       })
     }
   } else {
@@ -203,6 +250,9 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       ledger: work.ledger,
       requestedCount,
       pinnedEventId: input.pinnedEventId,
+      resolvedEventId: input.resolvedEventId,
+      resolvedVenueId: input.resolvedVenueId,
+      priorSaved,
     })
   }
 
@@ -224,43 +274,6 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     // fallback where the finalizer supplied no suggestion source), record that
     // exact tool call in provenance — not the finalizer's null.
     canonical.provenance.suggestionToolCallIds = [suggestionSource.toolCallId]
-  }
-
-  // Off-topic / coverage guards run on the finalized canonical response only.
-  // Mutation receipts must never be erased by the off-topic classifier: skip
-  // the replacement whenever the turn already acknowledged an operation.
-  if (canonical.text && !input.pinnedEventId && canonical.operations.length === 0) {
-    const guarded = await guardForOffTopic(canonical.text, input.locale, {
-      query: input.originalQuery,
-      eventNames: canonical.events.map((e) => e.name),
-    })
-    if (guarded) {
-      canonical = {
-        ...canonical,
-        kind: 'out_of_scope',
-        text: guarded,
-        events: [],
-        directions: null,
-        venue: null,
-        operations: [],
-        suggestions: [],
-        provenance: {
-          ...canonical.provenance,
-          sourceToolCallIds: [],
-          directionToolCallIds: [],
-          venueToolCallIds: [],
-          mutationToolCallIds: [],
-          suggestionToolCallIds: [],
-        },
-      }
-    }
-  }
-  if (canonical.text) {
-    canonical.text = guardCoverageClaims(
-      canonical.text,
-      input.locale,
-      deriveCoverage(work.ledger, canonical.provenance.sourceToolCallIds)
-    )
   }
 
   const executionTrace = buildSanitizedTrace(work.steps)

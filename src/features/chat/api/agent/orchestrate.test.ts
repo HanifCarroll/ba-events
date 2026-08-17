@@ -2,24 +2,18 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 vi.mock('./work-loop.ts', () => ({ runWorkLoop: vi.fn() }))
 vi.mock('./finalizer.ts', () => ({ runFinalizer: vi.fn() }))
-vi.mock('../topic-guard.ts', () => ({ guardForOffTopic: vi.fn(async () => null) }))
-vi.mock('../tools/coverage-guard.ts', () => ({ guardCoverageClaims: vi.fn((text: string) => text) }))
 
 import { orchestrate } from './orchestrate.ts'
 import { runWorkLoop } from './work-loop.ts'
 import { runFinalizer } from './finalizer.ts'
-import { guardCoverageClaims } from '../tools/coverage-guard.ts'
-import { guardForOffTopic } from '../topic-guard.ts'
 import type { WorkLoopResult } from './work-loop.ts'
 import { Ledger } from './ledger.ts'
-import { searchEntry, savedEventsEntry, mutationEntry, event, ledgerFrom } from './_test-helpers.ts'
+import { searchEntry, savedEventsEntry, mutationEntry, retentionEntry, event, ledgerFrom } from './_test-helpers.ts'
 import type { FinalizerPlan } from './finalizer.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
 
 const mockedRunWorkLoop = vi.mocked(runWorkLoop)
 const mockedRunFinalizer = vi.mocked(runFinalizer)
-const mockedGuardCoverage = vi.mocked(guardCoverageClaims)
-const mockedGuardForOffTopic = vi.mocked(guardForOffTopic)
 
 function workResult(ledger: Ledger, steps: WorkLoopResult['steps'] = [], finalWorkCalledTools = false): WorkLoopResult {
   return {
@@ -34,14 +28,17 @@ function workResult(ledger: Ledger, steps: WorkLoopResult['steps'] = [], finalWo
 
 function validPlan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
   return {
-    contractVersion: 3,
-    kind: 'recommendations',
-    text: 'Go to Tango night.',
+    contractVersion: 4,
+    primaryKind: 'recommendations',
+    messageKey: 'recommendations',
     eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }],
     directionsToolCallId: null,
     venueToolCallId: null,
     suggestionSourceToolCallId: null,
     operationToolCallIds: [],
+    emptySourceToolCallIds: [],
+    clarificationQuestions: [],
+    reason: null,
     ...overrides,
   }
 }
@@ -56,7 +53,7 @@ const baseInput = {
   priorDisplayedEvents: [],
 }
 
-describe('orchestrate (romantic weekday regression)', () => {
+describe('orchestrate (v4)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -71,7 +68,7 @@ describe('orchestrate (romantic weekday regression)', () => {
     mockedRunWorkLoop.mockResolvedValue(workResult(ledger, [], true))
     mockedRunFinalizer.mockResolvedValue({
       ok: true,
-      plan: validPlan({ eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }] }),
+      plan: validPlan({ eventSelections: [{ eventId: 'tango', sourceToolCallId: 's2' }] }),
     })
 
     const result = await orchestrate(baseInput)
@@ -86,6 +83,80 @@ describe('orchestrate (romantic weekday regression)', () => {
     for (const step of result.executionTrace) {
       expect(step.text).toBe('')
     }
+  })
+
+  it('materializes text deterministically from the closed messageKey — no model prose', async () => {
+    const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 })])
+    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockedRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({ eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }] }),
+    })
+
+    const result = await orchestrate(baseInput)
+    // The finalizer plan carries no text field; the server writes the template.
+    expect(result.canonical.text).toBe('Here are the best matches I found.')
+    expect(result.canonical.messageKey).toBe('recommendations')
+    expect(result.canonical.text).not.toContain('Tango night')
+  })
+
+  it('materializes a clarification as one text block containing the question labels (EN)', async () => {
+    mockedRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockedRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'clarification',
+        messageKey: 'clarification',
+        eventSelections: [],
+        clarificationQuestions: [{ key: 'which_day' }],
+      }),
+    })
+
+    const result = await orchestrate(baseInput)
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.text).toBe('Which day are you interested in?')
+    expect(result.canonical.text).toContain('?')
+    expect(result.canonical.clarificationQuestions).toEqual([
+      { key: 'which_day', label: 'Which day are you interested in?' },
+    ])
+  })
+
+  it('materializes a clarification as one text block with the default question (ES)', async () => {
+    mockedRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockedRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'clarification',
+        messageKey: 'clarification',
+        eventSelections: [],
+        clarificationQuestions: [],
+      }),
+    })
+
+    const result = await orchestrate({ ...baseInput, locale: 'es' })
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.text).toBe('¿Qué tipo de evento buscás?')
+    expect(result.canonical.text).toContain('?')
+    expect(result.canonical.clarificationQuestions).toEqual([
+      { key: 'which_category', label: '¿Qué tipo de evento buscás?' },
+    ])
+  })
+
+  it('materializes share_guidance text under the out_of_scope kind', async () => {
+    mockedRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockedRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'out_of_scope',
+        messageKey: 'share_guidance',
+        eventSelections: [],
+      }),
+    })
+
+    const result = await orchestrate(baseInput)
+    expect(result.canonical.kind).toBe('out_of_scope')
+    expect(result.canonical.messageKey).toBe('share_guidance')
+    expect(result.canonical.text).toContain('share button')
   })
 
   it('falls back deterministically when the finalizer plan is invalid, never showing rejected cards', async () => {
@@ -128,6 +199,48 @@ describe('orchestrate (romantic weekday regression)', () => {
     expect(result.canonical.provenance.fallbackReason).toBe('finalizer_error')
   })
 
+  it('falls back to a localized error with zero cards and exact provenance after a provider failure on a failed refinement', async () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('speed1', 'Speed dating')], limit: 1 }),
+      searchEntry({ stepIndex: 1, callIndex: 0, toolCallId: 's1', events: [], limit: 3, success: false }),
+    ])
+    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'finalizer_error' })
+
+    const result = await orchestrate(baseInput)
+
+    expect(result.canonical.provenance.fallbackUsed).toBe(true)
+    expect(result.canonical.provenance.fallbackReason).toBe('finalizer_error')
+    expect(result.canonical.kind).toBe('error')
+    expect(result.canonical.events).toEqual([])
+    // The earlier successful speed-dating card is never resurrected.
+    expect(result.canonical.events.map((e) => e.id)).not.toContain('speed1')
+    expect(result.canonical.text).toBe('Something went wrong. Please try again.')
+    // Exact provenance: the failed latest stage is the active attempt.
+    expect(result.canonical.provenance.searchAttemptToolCallIds).toEqual(['s1'])
+    expect(result.canonical.provenance.stageIds).toEqual(['stage-1'])
+  })
+
+  it('falls back to a localized error with zero cards after a schema failure on a failed refinement', async () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('speed1', 'Speed dating')], limit: 1 }),
+      searchEntry({ stepIndex: 1, callIndex: 0, toolCallId: 's1', events: [], limit: 3, success: false }),
+    ])
+    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
+
+    const result = await orchestrate(baseInput)
+
+    expect(result.canonical.provenance.fallbackUsed).toBe(true)
+    expect(result.canonical.provenance.fallbackReason).toBe('invalid_schema')
+    expect(result.canonical.kind).toBe('error')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.events.map((e) => e.id)).not.toContain('speed1')
+    expect(result.canonical.text.length).toBeGreaterThan(0)
+    expect(result.canonical.provenance.searchAttemptToolCallIds).toEqual(['s1'])
+    expect(result.canonical.provenance.stageIds).toEqual(['stage-1'])
+  })
+
   it('preserves mutation receipts when finalization fails', async () => {
     const ledger = ledgerFrom([
       searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 }),
@@ -141,45 +254,12 @@ describe('orchestrate (romantic weekday regression)', () => {
     expect(result.canonical.kind).toBe('recommendations')
   })
 
-  it('permits generic final text that names no event', async () => {
-    const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 })])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
-      ok: true,
-      plan: validPlan({ text: 'Here you go.', eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }] }),
-    })
-
-    const result = await orchestrate(baseInput)
-    expect(result.canonical.text).toBe('Here you go.')
-    expect(result.canonical.events.map((e) => e.id)).toEqual(['tango'])
-    expect(result.canonical.provenance.fallbackUsed).toBe(false)
-  })
-
-  it('permits text mentioning the rejected speed-dating artifact while cards select tango', async () => {
-    const ledger = ledgerFrom([
-      searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('speed1', 'Speed dating')], limit: 1 }),
-      searchEntry({ stepIndex: 1, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 }),
-    ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
-      ok: true,
-      plan: validPlan({
-        text: 'Speed dating was unsuitable, so here is a tango night instead.',
-        eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }],
-      }),
-    })
-
-    const result = await orchestrate(baseInput)
-    expect(result.canonical.events.map((e) => e.id)).toEqual(['tango'])
-    expect(result.canonical.text.toLowerCase()).toContain('speed dating')
-    expect(result.canonical.provenance.fallbackUsed).toBe(false)
-  })
-
   it('drives suggestions from the earlier selected search, not the later rejected one', async () => {
     const s0 = searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('tango', 'Tango night'), event('music', 'Live music')], limit: 2 })
     const s1 = searchEntry({ stepIndex: 1, callIndex: 0, toolCallId: 's1', events: [event('rejected', 'Rejected')], limit: 3 })
     s1.searchInput = { ...s1.searchInput, timeFilter: 'tonight' } as SearchEventsInput
-    const ledger = ledgerFrom([s0, s1])
+    const ret = retentionEntry({ toolCallId: 'r0', retainedToolCallIds: ['s0'], stepIndex: 1, callIndex: 1 })
+    const ledger = ledgerFrom([s0, s1, ret])
     mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
     mockedRunFinalizer.mockResolvedValue({
       ok: true,
@@ -194,43 +274,7 @@ describe('orchestrate (romantic weekday regression)', () => {
 
     const result = await orchestrate(baseInput)
     expect(result.canonical.events.map((e) => e.id)).toEqual(['tango', 'music'])
-    // s0 has no timeFilter → a "tonight" refinement is produced; s1 (timeFilter
-    // tonight) would NOT produce one, proving s0 drove suggestions.
     expect(result.canonical.suggestions.some((s) => s.id === 'tonight')).toBe(true)
-  })
-
-  it('derives coverage from the exact selected search provenance only', async () => {
-    const s0 = searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('tango', 'Tango night')], limit: 1 })
-    s0.coverage = { searchedTo: '2026-08-20', maxEventDate: '2026-08-30', totalMatches: 3, returned: 1 }
-    const s1 = searchEntry({ stepIndex: 1, toolCallId: 's1', events: [event('other', 'Other')], limit: 1 })
-    s1.coverage = { searchedTo: '2026-08-10', maxEventDate: '2026-08-11', totalMatches: 1, returned: 1 }
-    const ledger = ledgerFrom([s0, s1])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
-      ok: true,
-      plan: validPlan({
-        text: 'Go to tango.',
-        eventSelections: [{ eventId: 'tango', sourceToolCallId: 's0' }],
-        suggestionSourceToolCallId: 's0',
-      }),
-    })
-
-    await orchestrate(baseInput)
-    expect(mockedGuardCoverage).toHaveBeenCalledWith(expect.any(String), 'en', s0.coverage)
-  })
-
-  it('emits no suggestions when no selected search source exists', async () => {
-    const ledger = ledgerFrom([
-      searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 }),
-      mutationEntry({ stepIndex: 1, callIndex: 0, toolCallId: 'm1', toolName: 'save_event', eventId: 'a', outcome: 'applied' }),
-    ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
-
-    const result = await orchestrate(baseInput)
-    // Fallback recommendations derive suggestions from their selected search
-    // provenance; assert the fallback still carries the mutation sibling.
-    expect(result.canonical.operations).toHaveLength(1)
   })
 
   it('derives requestedCount from the final saved-events read when no search exists', async () => {
@@ -246,7 +290,8 @@ describe('orchestrate (romantic weekday regression)', () => {
     mockedRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
-        kind: 'saved_events',
+        primaryKind: 'saved_events',
+        messageKey: 'saved_events',
         eventSelections: [
           { eventId: 'a', sourceToolCallId: 'sv0' },
           { eventId: 'b', sourceToolCallId: 'sv0' },
@@ -273,7 +318,8 @@ describe('orchestrate (romantic weekday regression)', () => {
     mockedRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
-        kind: 'saved_events',
+        primaryKind: 'saved_events',
+        messageKey: 'saved_events',
         eventSelections: [
           { eventId: 'a', sourceToolCallId: 'sv0' },
           { eventId: 'b', sourceToolCallId: 'sv0' },
@@ -289,9 +335,7 @@ describe('orchestrate (romantic weekday regression)', () => {
   })
 
   it('records fallback-derived suggestion provenance on the exact search artifact', async () => {
-    const ledger = ledgerFrom([
-      searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 }),
-    ])
+    const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 })])
     mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
     mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
 
@@ -301,20 +345,24 @@ describe('orchestrate (romantic weekday regression)', () => {
     expect(result.canonical.suggestions.length).toBeGreaterThan(0)
   })
 
-  it('preserves mutation receipts when the off-topic classifier fires after a fallback mutation', async () => {
-    const ledger = ledgerFrom([
-      searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 }),
-      mutationEntry({ stepIndex: 1, callIndex: 0, toolCallId: 'm1', toolName: 'save_event', eventId: 'a', outcome: 'applied' }),
-    ])
+  it('plumbs pinnedEventId through to the work loop (restricts broad discovery)', async () => {
+    const ledger = ledgerFrom([eventDetailsEntryLike()])
     mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
-    mockedGuardForOffTopic.mockResolvedValueOnce('off-topic refusal')
+    mockedRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'event_details',
+        messageKey: 'event_details',
+        eventSelections: [{ eventId: 'pin', sourceToolCallId: 'd0' }],
+      }),
+    })
 
-    const result = await orchestrate(baseInput)
-    // The off-topic replacement is skipped because an operation was acknowledged.
-    expect(result.canonical.kind).toBe('recommendations')
-    expect(result.canonical.text).not.toBe('off-topic refusal')
-    expect(result.canonical.operations).toHaveLength(1)
-    expect(result.canonical.operations[0].eventId).toBe('a')
+    await orchestrate({ ...baseInput, pinnedEventId: 'pin' })
+    expect(mockedRunWorkLoop.mock.calls[0][0].pinnedEventId).toBe('pin')
   })
 })
+
+// A minimal pinned details ledger entry for the pinned-plumbing test.
+function eventDetailsEntryLike() {
+  return searchEntry({ stepIndex: 0, toolCallId: 'd0', events: [event('pin', 'Pinned')], limit: 1 })
+}

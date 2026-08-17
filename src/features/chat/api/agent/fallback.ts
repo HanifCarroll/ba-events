@@ -1,27 +1,32 @@
 /**
- * Deterministic typed fallbacks.
+ * Deterministic typed fallbacks (v4).
  *
  * When the finalizer plan fails validation (or the finalizer errors), the
- * fallback derives a safe canonical response directly from the artifact
- * ledger. The final relevant successful read is determined by
- * `(stepIndex, callIndex)`; if it is a search, only the successful search
- * calls in that (highest relevant) step contribute (call order → result
- * order → dedupe → cap). Saved/details/directions/venue each use only their
- * own final artifact — unrelated read types are never unioned. Mutation
- * receipts are preserved as siblings and never retried.
+ * fallback derives a safe canonical response directly from the artifact ledger.
+ * Text is materialized deterministically from a closed messageKey — never from
+ * model prose. The primary events source is the latest events-bearing read
+ * (search stage semantics for discovery, saved-events, or event-details);
+ * directions/venue/operations are compound SIBLINGS attached only when their
+ * identity ties to a selected/pinned/resolved target — never a last-read-wins
+ * primary replacement and never a union of unrelated reads. Mutation receipts
+ * are preserved as siblings and never retried.
  */
 
 import type {
+  CanonicalChatEventPayload,
   CanonicalChatResponse,
   ChatEventPayload,
   DirectionsData,
   FallbackReason,
+  MessageKey,
   OperationReceipt,
   ResponseKind,
   VenueDetailsData,
 } from '#shared/lib/types.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
-import type { Ledger } from './ledger.ts'
+import type { Ledger, LedgerEntry } from './ledger.ts'
+import { materializeText } from './materialize.ts'
+import { resolveSavedState } from './record.ts'
 
 export interface FallbackInput {
   requestId: string
@@ -30,40 +35,44 @@ export interface FallbackInput {
   ledger: Ledger
   requestedCount: number
   pinnedEventId?: string
+  resolvedEventId?: string
+  resolvedVenueId?: string
+  priorSaved?: Record<string, boolean>
+}
+
+interface PrimaryContent {
+  kind: ResponseKind
+  messageKey: MessageKey
+  events: CanonicalChatEventPayload[]
+  sourceToolCallIds: string[]
+  emptySourceToolCallIds: string[]
+  retainedSourceToolCallIds: string[]
+  stageIds: string[]
 }
 
 interface DerivedContent {
   kind: ResponseKind
-  events: ChatEventPayload[]
+  messageKey: MessageKey
+  events: CanonicalChatEventPayload[]
   directions: DirectionsData | null
   venue: VenueDetailsData | null
   operations: OperationReceipt[]
   sourceToolCallIds: string[]
   directionToolCallIds: string[]
   venueToolCallIds: string[]
+  emptySourceToolCallIds: string[]
+  retainedSourceToolCallIds: string[]
+  stageIds: string[]
+  searchAttemptToolCallIds: string[]
 }
 
 function clampCap(requestedCount: number): number {
   return Math.max(1, Math.min(requestedCount, 5))
 }
 
-/** Deterministic empty result: no card, primary kind depends on mutation siblings. */
-function noCardContent(operations: OperationReceipt[]): DerivedContent {
-  return {
-    kind: operations.length > 0 ? 'mutation_result' : 'error',
-    events: [],
-    directions: null,
-    venue: null,
-    operations,
-    sourceToolCallIds: [],
-    directionToolCallIds: [],
-    venueToolCallIds: [],
-  }
-}
-
-function dedupeInOrder(items: ChatEventPayload[], cap: number): ChatEventPayload[] {
+function dedupeInOrder(items: CanonicalChatEventPayload[], cap: number): CanonicalChatEventPayload[] {
   const seen = new Set<string>()
-  const out: ChatEventPayload[] = []
+  const out: CanonicalChatEventPayload[] = []
   for (const item of items) {
     if (seen.has(item.id)) continue
     if (out.length >= cap) break
@@ -73,29 +82,284 @@ function dedupeInOrder(items: ChatEventPayload[], cap: number): ChatEventPayload
   return out
 }
 
+function latestEventRead(ledger: Ledger, requestId: string): LedgerEntry | null {
+  const reads = ledger.successfulEventReads(requestId)
+  if (reads.length === 0) return null
+  return reads.reduce((best, e) =>
+    e.stepIndex > best.stepIndex ||
+    (e.stepIndex === best.stepIndex && e.callIndex > best.callIndex)
+      ? e
+      : best
+  )
+}
+
+function contributingStageIds(ledger: Ledger, requestId: string, toolCallIds: string[]): string[] {
+  const set = new Set(toolCallIds)
+  return ledger
+    .searchStages(requestId)
+    .filter((s) => s.toolCallIds.some((id) => set.has(id)))
+    .map((s) => s.stageId)
+}
+
+function withSaved(
+  event: ChatEventPayload,
+  ledger: Ledger,
+  requestId: string,
+  priorSaved: Record<string, boolean> | undefined,
+  force?: boolean
+): CanonicalChatEventPayload {
+  const saved = force === true ? true : resolveSavedState(event.id, ledger, requestId, priorSaved)
+  return { ...event, saved }
+}
+
+/** Search-primary content: active stage + explicitly retained sources. */
+function searchPrimary(
+  ledger: Ledger,
+  requestId: string,
+  cap: number,
+  priorSaved: Record<string, boolean> | undefined
+): PrimaryContent {
+  const active = ledger.activeStage(requestId)
+  // A rejected latest stage is not eligible: zero cards, no no_results grounding.
+  if (active && active.eligibility === 'rejected') {
+    return {
+      kind: 'error',
+      messageKey: 'error',
+      events: [],
+      sourceToolCallIds: [],
+      emptySourceToolCallIds: [],
+      retainedSourceToolCallIds: [],
+      stageIds: [active.stageId],
+    }
+  }
+  const retainedIds = ledger.retainedSearchToolCallIds(requestId)
+  const activeEntries = active ? ledger.searchesInStep(active.stepIndex, requestId) : []
+  const retainedEntries = retainedIds
+    .map((id) => ledger.find(id))
+    .filter((e): e is LedgerEntry => !!e && e.kind === 'search' && e.success)
+  const entries = [...activeEntries, ...retainedEntries]
+
+  const events = dedupeInOrder(
+    entries.flatMap((e) => e.events.map((ev) => withSaved(ev, ledger, requestId, priorSaved))),
+    cap
+  )
+
+  if (events.length > 0) {
+    const sourceEntries = entries.filter((e) => e.events.length > 0)
+    const pick = events.length === 1 && sourceEntries.some((e) => e.searchInput?.objective === 'surprise')
+    return {
+      kind: 'recommendations',
+      messageKey: pick ? 'recommendations_pick' : 'recommendations',
+      events,
+      sourceToolCallIds: sourceEntries.map((e) => e.toolCallId),
+      emptySourceToolCallIds: [],
+      retainedSourceToolCallIds: retainedIds.filter((id) =>
+        sourceEntries.some((e) => e.toolCallId === id)
+      ),
+      stageIds: contributingStageIds(ledger, requestId, sourceEntries.map((e) => e.toolCallId)),
+    }
+  }
+
+  // No events: an empty active stage grounds no_results; a failed-only stage
+  // cannot, and must not resurrect earlier cards.
+  if (active && active.outcome === 'empty') {
+    const emptyIds = activeEntries.map((e) => e.toolCallId)
+    return {
+      kind: 'no_results',
+      messageKey: 'no_results',
+      events: [],
+      sourceToolCallIds: [],
+      emptySourceToolCallIds: emptyIds,
+      retainedSourceToolCallIds: [],
+      stageIds: contributingStageIds(ledger, requestId, emptyIds),
+    }
+  }
+  return {
+    kind: 'error',
+    messageKey: 'error',
+    events: [],
+    sourceToolCallIds: [],
+    emptySourceToolCallIds: [],
+    retainedSourceToolCallIds: [],
+    stageIds: active ? [active.stageId] : [],
+  }
+}
+
 function deriveContent(input: FallbackInput): DerivedContent {
-  const { ledger, requestedCount, pinnedEventId } = input
-  const operations = ledger.mutationReceipts(input.requestId)
+  const { ledger, requestId, requestedCount, pinnedEventId, resolvedEventId, resolvedVenueId, priorSaved } = input
+  const operations = ledger.mutationReceipts(requestId)
   const cap = clampCap(requestedCount)
 
-  // Pinned fallback prefers ONLY the exact pinned get_event_details artifact.
-  // If it is missing, show no alternate event.
+  const pinnedDetails = pinnedEventId ? ledger.eventDetailsFor(pinnedEventId, requestId) : null
+  const pinnedVenueId = pinnedDetails?.events[0]?.venue_id ?? null
+  const latest = pinnedEventId ? null : latestEventRead(ledger, requestId)
+
+  // --- Primary events source ---
+  let primary: PrimaryContent | null = null
+
   if (pinnedEventId) {
-    const pinned = ledger.eventDetailsFor(pinnedEventId, input.requestId)
-    if (pinned && pinned.events.length > 0) {
-      return {
+    if (pinnedDetails && pinnedDetails.events.length > 0) {
+      primary = {
         kind: 'event_details',
-        events: pinned.events.slice(0, 1),
-        directions: null,
-        venue: null,
-        operations,
-        sourceToolCallIds: [pinned.toolCallId],
-        directionToolCallIds: [],
-        venueToolCallIds: [],
+        messageKey: 'event_details',
+        events: [withSaved(pinnedDetails.events[0], ledger, requestId, priorSaved)],
+        sourceToolCallIds: [pinnedDetails.toolCallId],
+        emptySourceToolCallIds: [],
+        retainedSourceToolCallIds: [],
+        stageIds: [],
       }
     }
+  } else {
+    if (latest?.kind === 'search') {
+      primary = searchPrimary(ledger, requestId, cap, priorSaved)
+    } else if (latest?.kind === 'saved-events') {
+      const events = dedupeInOrder(
+        latest.events.map((ev) => withSaved(ev, ledger, requestId, priorSaved, true)),
+        cap
+      )
+      if (events.length > 0) {
+        primary = {
+          kind: 'saved_events',
+          messageKey: 'saved_events',
+          events,
+          sourceToolCallIds: [latest.toolCallId],
+          emptySourceToolCallIds: [],
+          retainedSourceToolCallIds: [],
+          stageIds: [],
+        }
+      } else {
+        primary = {
+          kind: 'no_results',
+          messageKey: 'no_results',
+          events: [],
+          sourceToolCallIds: [],
+          emptySourceToolCallIds: [latest.toolCallId],
+          retainedSourceToolCallIds: [],
+          stageIds: [],
+        }
+      }
+    } else if (latest?.kind === 'event-details') {
+      if (latest.events.length === 0) {
+        primary = {
+          kind: 'error',
+          messageKey: 'error',
+          events: [],
+          sourceToolCallIds: [],
+          emptySourceToolCallIds: [],
+          retainedSourceToolCallIds: [],
+          stageIds: [],
+        }
+      } else {
+        primary = {
+          kind: 'event_details',
+          messageKey: 'event_details',
+          events: [withSaved(latest.events[0], ledger, requestId, priorSaved)],
+          sourceToolCallIds: [latest.toolCallId],
+          emptySourceToolCallIds: [],
+          retainedSourceToolCallIds: [],
+          stageIds: [],
+        }
+      }
+    }
+  }
+
+  // --- Relation identity sets for compound siblings ---
+  const allowedEventIds = new Set<string>((primary?.events ?? []).map((e) => e.id))
+  if (pinnedEventId) allowedEventIds.add(pinnedEventId)
+  if (resolvedEventId) allowedEventIds.add(resolvedEventId)
+  const allowedVenueIds = new Set<string>()
+  for (const e of primary?.events ?? []) if (typeof e.venue_id === 'string' && e.venue_id) allowedVenueIds.add(e.venue_id)
+  if (typeof pinnedVenueId === 'string' && pinnedVenueId) allowedVenueIds.add(pinnedVenueId)
+  if (resolvedVenueId) allowedVenueIds.add(resolvedVenueId)
+
+  // --- Compound siblings (attached only when tied to a target identity) ---
+  let directions: DirectionsData | null = null
+  let directionToolCallIds: string[] = []
+  const dirArtifact = ledger.directionsArtifact(requestId)
+  if (dirArtifact?.directions) {
+    const d = dirArtifact.directions
+    const related =
+      (typeof d.eventId === 'string' && !!d.eventId && allowedEventIds.has(d.eventId)) ||
+      (typeof d.venueId === 'string' && !!d.venueId && allowedVenueIds.has(d.venueId))
+    if (related) {
+      directions = d
+      directionToolCallIds = [dirArtifact.toolCallId]
+    }
+  }
+
+  let venue: VenueDetailsData | null = null
+  let venueToolCallIds: string[] = []
+  const venueArtifact = ledger.venueDetailsArtifact(requestId)
+  if (venueArtifact?.venue) {
+    const v = venueArtifact.venue
+    const related = typeof v.venueId === 'string' && !!v.venueId && allowedVenueIds.has(v.venueId)
+    if (related) {
+      venue = v
+      venueToolCallIds = [venueArtifact.toolCallId]
+    }
+  }
+
+  const searchAttemptToolCallIds = ledger.activeStage(requestId)?.toolCallIds ?? []
+
+  // --- Assemble final kind ---
+  if (primary && (primary.events.length > 0 || primary.kind === 'no_results' || primary.kind === 'error')) {
     return {
-      kind: operations.length > 0 ? 'mutation_result' : 'error',
+      kind: primary.kind,
+      messageKey: primary.messageKey,
+      events: primary.events,
+      directions,
+      venue,
+      operations,
+      sourceToolCallIds: primary.sourceToolCallIds,
+      directionToolCallIds,
+      venueToolCallIds,
+      emptySourceToolCallIds: primary.emptySourceToolCallIds,
+      retainedSourceToolCallIds: primary.retainedSourceToolCallIds,
+      stageIds: primary.stageIds,
+      searchAttemptToolCallIds,
+    }
+  }
+
+  // No events source. A directions/venue artifact is a valid primary only when
+  // tied to a pinned/resolved target (there is no pureTurn bypass).
+  if (directions) {
+    return {
+      kind: 'directions',
+      messageKey: 'directions',
+      events: [],
+      directions,
+      venue: null,
+      operations,
+      sourceToolCallIds: [],
+      directionToolCallIds,
+      venueToolCallIds: [],
+      emptySourceToolCallIds: [],
+      retainedSourceToolCallIds: [],
+      stageIds: [],
+      searchAttemptToolCallIds,
+    }
+  }
+  if (venue) {
+    return {
+      kind: 'venue_details',
+      messageKey: 'venue_details',
+      events: [],
+      directions: null,
+      venue,
+      operations,
+      sourceToolCallIds: [],
+      directionToolCallIds: [],
+      venueToolCallIds,
+      emptySourceToolCallIds: [],
+      retainedSourceToolCallIds: [],
+      stageIds: [],
+      searchAttemptToolCallIds,
+    }
+  }
+  if (operations.length > 0) {
+    return {
+      kind: 'mutation_result',
+      messageKey: 'mutation_result',
       events: [],
       directions: null,
       venue: null,
@@ -103,150 +367,62 @@ function deriveContent(input: FallbackInput): DerivedContent {
       sourceToolCallIds: [],
       directionToolCallIds: [],
       venueToolCallIds: [],
+      emptySourceToolCallIds: [],
+      retainedSourceToolCallIds: [],
+      stageIds: [],
+      searchAttemptToolCallIds,
     }
   }
-
-  const finalRead = ledger.finalRelevantRead(input.requestId)
-  if (finalRead) {
-    switch (finalRead.kind) {
-      case 'search': {
-        // Only the successful search calls in the highest relevant search step
-        // contribute — never earlier steps.
-        const searches = ledger.searchesInStep(finalRead.stepIndex, input.requestId)
-        const events = dedupeInOrder(searches.flatMap((e) => e.events), cap)
-        return {
-          kind: events.length > 0 ? 'recommendations' : 'no_results',
-          events,
-          directions: null,
-          venue: null,
-          operations,
-          sourceToolCallIds: searches.map((e) => e.toolCallId),
-          directionToolCallIds: [],
-          venueToolCallIds: [],
-        }
-      }
-      case 'event-details':
-        // A "successful" details artifact that lost its payload must not become
-        // an event_details card with no event.
-        if (finalRead.events.length === 0) return noCardContent(operations)
-        return {
-          kind: 'event_details',
-          events: finalRead.events.slice(0, 1),
-          directions: null,
-          venue: null,
-          operations,
-          sourceToolCallIds: [finalRead.toolCallId],
-          directionToolCallIds: [],
-          venueToolCallIds: [],
-        }
-      case 'saved-events': {
-        const events = dedupeInOrder(finalRead.events, cap)
-        return {
-          kind: events.length > 0 ? 'saved_events' : 'no_results',
-          events,
-          directions: null,
-          venue: null,
-          operations,
-          sourceToolCallIds: [finalRead.toolCallId],
-          directionToolCallIds: [],
-          venueToolCallIds: [],
-        }
-      }
-      case 'directions':
-        if (!finalRead.directions) return noCardContent(operations)
-        return {
-          kind: 'directions',
-          events: [],
-          directions: finalRead.directions,
-          venue: null,
-          operations,
-          sourceToolCallIds: [],
-          directionToolCallIds: [finalRead.toolCallId],
-          venueToolCallIds: [],
-        }
-      case 'venue-details':
-        if (!finalRead.venue) return noCardContent(operations)
-        return {
-          kind: 'venue_details',
-          events: [],
-          directions: null,
-          venue: finalRead.venue,
-          operations,
-          sourceToolCallIds: [],
-          directionToolCallIds: [],
-          venueToolCallIds: [finalRead.toolCallId],
-        }
-      default:
-        break
-    }
-  }
-
-  // No successful read artifact.
-  return noCardContent(operations)
-}
-
-function textFor(input: FallbackInput, content: DerivedContent): string {
-  const es = input.locale === 'es'
-  const name = content.events[0]?.name
-  const dirName = content.directions?.venueName
-  const venueName = content.venue?.venueName
-
-  if (content.operations.length > 0) {
-    const opText = content.operations.map((o) => o.message).join(' ')
-    let lead = ''
-    if (content.kind === 'recommendations') {
-      lead = es
-        ? 'Estas son las mejores opciones que encontré.'
-        : 'Here are the best matches I found.'
-    } else if (content.kind === 'event_details' && name) {
-      lead = es ? `Acá están los detalles de ${name}.` : `Here are the details for ${name}.`
-    }
-    return [lead, opText].filter(Boolean).join(' ') || opText
-  }
-
-  switch (content.kind) {
-    case 'recommendations':
-      return es
-        ? 'Estas son las mejores opciones que encontré.'
-        : 'Here are the best matches I found.'
-    case 'event_details':
-      return es ? `Acá están los detalles de ${name}.` : `Here are the details for ${name}.`
-    case 'saved_events':
-      return es ? 'Estos son tus guardados.' : "Here's your saved list."
-    case 'directions':
-      return es ? `Acá tenés cómo llegar a ${dirName}.` : `Here's how to get to ${dirName}.`
-    case 'venue_details':
-      return es ? `Esto es lo que encontré de ${venueName}.` : `Here's what I found about ${venueName}.`
-    case 'no_results':
-      return es
-        ? 'No encontré nada que coincida. ¿Querés que amplíe la búsqueda?'
-        : "I couldn't find anything matching. Want me to widen the search?"
-    case 'mutation_result':
-      return content.operations.map((o) => o.message).join(' ')
-    default:
-      return es ? 'Algo salió mal. Probá de nuevo.' : 'Something went wrong. Please try again.'
+  return {
+    kind: 'error',
+    messageKey: 'error',
+    events: [],
+    directions: null,
+    venue: null,
+    operations,
+    sourceToolCallIds: [],
+    directionToolCallIds: [],
+    venueToolCallIds: [],
+    emptySourceToolCallIds: [],
+    retainedSourceToolCallIds: [],
+    stageIds: [],
+    searchAttemptToolCallIds,
   }
 }
 
 export function buildFallback(input: FallbackInput): CanonicalChatResponse {
   const content = deriveContent(input)
   const mutationToolCallIds = input.ledger.mutationToolCallIds(input.requestId)
+  const text = materializeText({
+    messageKey: content.messageKey,
+    locale: input.locale,
+    eventName: content.events[0]?.name,
+    directionsVenueName: content.directions?.venueName,
+    venueName: content.venue?.venueName,
+  })
+
   return {
     contractVersion: CHAT_CONTRACT_VERSION,
     requestId: input.requestId,
     kind: content.kind,
-    text: textFor(input, content),
+    messageKey: content.messageKey,
+    text,
     events: content.events,
     directions: content.directions,
     venue: content.venue,
     operations: content.operations,
     suggestions: [],
+    clarificationQuestions: [],
     provenance: {
       sourceToolCallIds: content.sourceToolCallIds,
       directionToolCallIds: content.directionToolCallIds,
       venueToolCallIds: content.venueToolCallIds,
       mutationToolCallIds,
       suggestionToolCallIds: [],
+      emptySourceToolCallIds: content.emptySourceToolCallIds,
+      retainedSourceToolCallIds: content.retainedSourceToolCallIds,
+      stageIds: content.stageIds,
+      searchAttemptToolCallIds: content.searchAttemptToolCallIds,
       origin: 'fallback',
       fallbackUsed: true,
       fallbackReason: input.reason,

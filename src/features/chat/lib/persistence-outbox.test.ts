@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { LocalOutboxItem } from '#shared/lib/db/local-outbox.ts'
+import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import {
   flushMessagePersistenceOutbox,
   MAX_OUTBOX_ATTEMPTS,
@@ -86,6 +87,22 @@ describe('persistence outbox', () => {
 
     expect(result.status).toBe('queued')
     expect(mockedAddOutboxItem).toHaveBeenCalledTimes(1)
+  })
+
+  it('defaults outbox response_contract_version to v4', async () => {
+    mockedGetOutboxItemByClientMessageId.mockResolvedValue(undefined)
+
+    const persistMessage = vi.fn().mockRejectedValue(new Error('network down'))
+    await persistMessageWithOutbox(persistMessage, {
+      conversationId: 'conv-1',
+      clientMessageId: 'client-1',
+      role: 'assistant',
+      content: 'Hi',
+    })
+
+    expect(mockedAddOutboxItem).toHaveBeenCalledWith(
+      expect.objectContaining({ response_contract_version: CHAT_CONTRACT_VERSION })
+    )
   })
 
   it('retries due outbox items with backoff on transient failure', async () => {
