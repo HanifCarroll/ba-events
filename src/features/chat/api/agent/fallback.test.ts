@@ -19,6 +19,7 @@ const base = {
   locale: 'en' as const,
   reason: 'invalid_schema' as const,
   requestedCount: 5,
+  turnTarget: { scope: 'none' } as const,
 }
 
 describe('buildFallback (v5)', () => {
@@ -179,7 +180,7 @@ describe('buildFallback (v5)', () => {
 
   it('uses the relevant directions artifact when tied to a resolved target', () => {
     const dir = directionsEntry({ toolCallId: 'd1', venueName: 'Niceto', venueId: 'v1' })
-    const canonical = buildFallback({ ...base, resolvedVenueId: 'v1', ledger: ledgerFrom([dir]) })
+    const canonical = buildFallback({ ...base, turnTarget: { scope: 'prior', eventId: null, venueId: 'v1' }, ledger: ledgerFrom([dir]) })
     expect(canonical.directions?.venueName).toBe('Niceto')
     expect(canonical.kind).toBe('directions')
     expect(canonical.provenance.directionToolCallIds).toEqual(['d1'])
@@ -195,7 +196,7 @@ describe('buildFallback (v5)', () => {
   it('uses the latest successful direction when multiple exist (tied to a resolved target)', () => {
     const d0 = directionsEntry({ toolCallId: 'd0', venueName: 'First', stepIndex: 0, callIndex: 0, venueId: 'v1' })
     const d1 = directionsEntry({ toolCallId: 'd1', venueName: 'Second', stepIndex: 1, callIndex: 0, venueId: 'v1' })
-    const canonical = buildFallback({ ...base, resolvedVenueId: 'v1', ledger: ledgerFrom([d0, d1]) })
+    const canonical = buildFallback({ ...base, turnTarget: { scope: 'prior', eventId: null, venueId: 'v1' }, ledger: ledgerFrom([d0, d1]) })
     expect(canonical.directions?.venueName).toBe('Second')
     expect(canonical.provenance.directionToolCallIds).toEqual(['d1'])
   })
@@ -246,7 +247,11 @@ describe('buildFallback (v5)', () => {
   it('attaches directions to a saved-list primary only when tied to a selected event', () => {
     const saved = savedEventsEntry({ stepIndex: 0, callIndex: 0, toolCallId: 'sv0', events: [event('a', 'A'), event('b', 'B')] })
     const dir = directionsEntry({ stepIndex: 1, callIndex: 0, toolCallId: 'dir0', eventId: 'a' })
-    const canonical = buildFallback({ ...base, ledger: ledgerFrom([saved, dir]) })
+    const canonical = buildFallback({
+      ...base,
+      turnTarget: { scope: 'current_selection', index: 0 },
+      ledger: ledgerFrom([saved, dir]),
+    })
     expect(canonical.kind).toBe('saved_events')
     expect(canonical.events.map((e) => e.id)).toEqual(['a', 'b'])
     expect(canonical.directions?.eventId).toBe('a')
@@ -259,9 +264,24 @@ describe('buildFallback (v5)', () => {
 
     const search0 = searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 3 })
     const details1 = eventDetailsEntry({ toolCallId: 'd1', eventId: 'x', name: 'X', stepIndex: 1, callIndex: 0 })
-    const canonical = buildFallback({ ...base, ledger: ledgerFrom([search0, details1]) })
+    const canonical = buildFallback({
+      ...base,
+      turnTarget: { scope: 'prior', eventId: 'x', venueId: null },
+      ledger: ledgerFrom([search0, details1]),
+    })
     expect(canonical.kind).toBe('event_details')
     expect(canonical.events.map((e) => e.id)).toEqual(['x'])
+  })
+
+  it('drops event details for the wrong prior target', () => {
+    const details = eventDetailsEntry({ toolCallId: 'd0', eventId: 'wrong', name: 'Wrong' })
+    const canonical = buildFallback({
+      ...base,
+      turnTarget: { scope: 'prior', eventId: 'expected', venueId: null },
+      ledger: ledgerFrom([details]),
+    })
+    expect(canonical.kind).toBe('error')
+    expect(canonical.events).toEqual([])
   })
 
   it('pinned fallback prefers only the exact pinned details artifact', () => {
@@ -280,7 +300,7 @@ describe('buildFallback (v5)', () => {
 
   it('pinned fallback shows directions to the pinned event when details are missing', () => {
     const dir = directionsEntry({ toolCallId: 'd0', eventId: 'pin' })
-    const canonical = buildFallback({ ...base, pinnedEventId: 'pin', ledger: ledgerFrom([dir]) })
+    const canonical = buildFallback({ ...base, pinnedEventId: 'pin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null }, ledger: ledgerFrom([dir]) })
     expect(canonical.kind).toBe('directions')
     expect(canonical.events).toEqual([])
     expect(canonical.directions?.eventId).toBe('pin')
@@ -288,7 +308,7 @@ describe('buildFallback (v5)', () => {
 
   it('pinned fallback drops an unrelated directions artifact when the pinned details are missing', () => {
     const dir = directionsEntry({ toolCallId: 'd0', eventId: 'other' })
-    const canonical = buildFallback({ ...base, pinnedEventId: 'pin', ledger: ledgerFrom([dir]) })
+    const canonical = buildFallback({ ...base, pinnedEventId: 'pin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null }, ledger: ledgerFrom([dir]) })
     expect(canonical.kind).toBe('error')
     expect(canonical.events).toEqual([])
     expect(canonical.directions).toBeNull()
@@ -299,7 +319,7 @@ describe('buildFallback (v5)', () => {
     const canonical = buildFallback({
       ...base,
       pinnedEventId: 'pin',
-      resolvedVenueId: 'v-prior',
+      turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null },
       ledger: ledgerFrom([venue]),
     })
     expect(canonical.kind).toBe('error')
@@ -312,6 +332,7 @@ describe('buildFallback (v5)', () => {
       ...base,
       pinnedEventId: 'pin',
       pinnedVenueId: 'vpin',
+      turnTarget: { scope: 'pinned', eventId: 'pin', venueId: 'vpin' },
       ledger: ledgerFrom([venue]),
     })
     expect(canonical.kind).toBe('venue_details')
@@ -320,7 +341,7 @@ describe('buildFallback (v5)', () => {
 
   it('venue-details fallback uses the final venue artifact tied to a resolved target', () => {
     const venue = venueDetailsEntry({ toolCallId: 'v0', venueName: 'Niceto', venueId: 'v1' })
-    const canonical = buildFallback({ ...base, resolvedVenueId: 'v1', ledger: ledgerFrom([venue]) })
+    const canonical = buildFallback({ ...base, turnTarget: { scope: 'prior', eventId: null, venueId: 'v1' }, ledger: ledgerFrom([venue]) })
     expect(canonical.kind).toBe('venue_details')
     expect(canonical.venue?.venueName).toBe('Niceto')
     expect(canonical.provenance.venueToolCallIds).toEqual(['v0'])
@@ -373,7 +394,11 @@ describe('buildFallback (v5)', () => {
     const dir = directionsEntry({ stepIndex: 1, callIndex: 0, toolCallId: 'dir0', eventId: 'a' })
     const venue = venueDetailsEntry({ stepIndex: 1, callIndex: 1, toolCallId: 'v0', venueId: 'v1' })
     const mutation = mutationEntry({ stepIndex: 1, callIndex: 2, toolCallId: 'm0', toolName: 'save_event', eventId: 'a', outcome: 'applied' })
-    const canonical = buildFallback({ ...base, ledger: ledgerFrom([search, dir, venue, mutation]) })
+    const canonical = buildFallback({
+      ...base,
+      turnTarget: { scope: 'current_selection', index: 0 },
+      ledger: ledgerFrom([search, dir, venue, mutation]),
+    })
     expect(canonical.kind).toBe('recommendations')
     expect(canonical.events.map((e) => e.id)).toEqual(['a'])
     expect(canonical.directions?.eventId).toBe('a')

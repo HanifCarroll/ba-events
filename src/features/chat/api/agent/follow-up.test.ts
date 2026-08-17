@@ -192,11 +192,21 @@ describe('buildPriorContext (grouping + saved state)', () => {
       resp({ assistantMessageId: 'a1', requestId: 'r1', events: [ev(E1), ev(E2)] }),
       resp({ assistantMessageId: 'a2', requestId: 'r2', events: [ev(E1), ev(E3)] }),
     ]
-    const ctx = buildPriorContext(responses, [fact(E1, 'One'), fact(E2, 'Two'), fact(E3, 'Three')], new Map([[E1, true]]))
+    const ctx = buildPriorContext(responses, [fact(E1, 'One'), fact(E2, 'Two'), fact(E3, 'Three')], { status: 'complete', savedIds: new Set([E1]) })
     expect(ctx.groups[0].events[0].saved).toBe(true)
-    expect(ctx.groups[0].events[1].saved).toBeNull()
+    // A complete membership is authoritative: absent ids are saved:false, never null.
+    expect(ctx.groups[0].events[1].saved).toBe(false)
     expect(ctx.groups[1].events[0].saved).toBe(true)
-    expect(ctx.groups[1].events[1].saved).toBeNull()
+    expect(ctx.groups[1].events[1].saved).toBe(false)
+  })
+
+  it('an unavailable membership leaves every occurrence unknown (null)', () => {
+    const responses: PriorResponseHint[] = [
+      resp({ assistantMessageId: 'a1', requestId: 'r1', events: [ev(E1), ev(E2)] }),
+    ]
+    const ctx = buildPriorContext(responses, [fact(E1, 'One'), fact(E2, 'Two')], { status: 'unavailable' })
+    expect(ctx.groups[0].events[0].saved).toBeNull()
+    expect(ctx.groups[0].events[1].saved).toBeNull()
   })
 
   it('guest history never trusts client saved markers or operation outcomes', () => {

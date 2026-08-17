@@ -178,6 +178,21 @@ describe('orchestrate (v5)', () => {
     expect(result.canonical.provenance.origin).toBe('fallback')
   })
 
+  it('recovers a no-tool missing-artifact plan to clarification', async () => {
+    mockRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({ eventSelections: [] }),
+    })
+
+    const result = await orchestrate(baseInput)
+
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.text).toContain('?')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.provenance.fallbackReason).toBe('missing_required_artifact')
+  })
+
   it('falls back on schema failure', async () => {
     const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 })])
     mockRunWorkLoop.mockResolvedValue(workResult(ledger))
@@ -392,6 +407,7 @@ describe('orchestrate (v5)', () => {
     const result = await orchestrate({
       ...baseInput,
       mutationIntent: { kind: 'save', targetReference: { kind: 'none' } },
+      turnTarget: { scope: 'current_selection', index: 0 },
     })
 
     expect(result.canonical.kind).toBe('recommendations')
@@ -434,6 +450,24 @@ describe('orchestrate (v5)', () => {
     expect(result.canonical.provenance.mutationToolCallIds).toEqual(['mutation:save_event:b'])
   })
 
+  it('an ambiguous event-relative target yields clarification with zero artifacts', async () => {
+    const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('a', 'A')], limit: 1 })])
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({ eventSelections: [{ eventId: 'a', sourceToolCallId: 's1' }] }),
+    })
+
+    const result = await orchestrate({ ...baseInput, turnTarget: { scope: 'ambiguous' } })
+
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.directions).toBeNull()
+    expect(result.canonical.venue).toBeNull()
+    expect(result.canonical.operations).toEqual([])
+    expect(result.canonical.provenance.fallbackReason).toBe('ambiguous_turn_target')
+  })
+
   it('an ambiguous mutation target yields a clarification with zero cards and no mutation', async () => {
     const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('a', 'A')], limit: 1 })])
     mockRunWorkLoop.mockResolvedValue(workResult(ledger))
@@ -473,7 +507,11 @@ describe('orchestrate (v5)', () => {
     expect(result.canonical.kind).toBe('clarification')
     expect(result.canonical.events).toEqual([])
     expect(result.canonical.operations).toEqual([])
-    expect(result.canonical.provenance.fallbackUsed).toBe(false)
+    // A finalizer mutation recovered to clarification is a deterministic
+    // fallback with the exact reason recorded — never a validated response.
+    expect(result.canonical.provenance.fallbackUsed).toBe(true)
+    expect(result.canonical.provenance.fallbackReason).toBe('ambiguous_mutation_target')
+    expect(result.canonical.provenance.origin).toBe('fallback')
   })
 
   it('an ordinal mutation while pinned clarifies instead of silently pinning', async () => {

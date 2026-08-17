@@ -3,6 +3,8 @@ import {
   parseMutationIntent,
   resolveReferences,
   resolveTargetReference,
+  resolveEventRelativeReference,
+  resolveTurnTarget,
   detectResponseLanguage,
   buildApplicationContextMessage,
   buildConversationModelMessages,
@@ -107,6 +109,10 @@ describe('parseMutationIntent (typed)', () => {
   })
 
   it('compound discovery + mutation targets the current selection, never a prior group', () => {
+    expect(parseMutationIntent('find one and save it')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'current_selection', index: 0 },
+    })
     expect(parseMutationIntent('find me a tango event and save it')).toEqual({
       kind: 'save',
       targetReference: { kind: 'current_selection', index: 0 },
@@ -136,6 +142,46 @@ describe('parseMutationIntent (typed)', () => {
     expect(parseMutationIntent('save the second one')).toEqual({
       kind: 'save',
       targetReference: { kind: 'ordinal', index: 1 },
+    })
+  })
+
+  it('mutation-first coordination keeps prior semantics even with trailing discovery', () => {
+    expect(parseMutationIntent('save it and show me more options')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('save it and find another one')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('save the second one, then find more options')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ordinal', index: 1 },
+    })
+  })
+
+  it('a target bracketed by discovery clauses is ambiguous (clarify, zero side effects)', () => {
+    expect(parseMutationIntent('find me jazz, save it, and find me techno')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ambiguous' },
+    })
+  })
+
+  it('Argentine Spanish mutation-first coordination keeps prior semantics', () => {
+    expect(parseMutationIntent('guardalo y buscame un evento de tango')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('guardá la segunda y buscame jazz')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ordinal', index: 1 },
+    })
+  })
+
+  it('Argentine Spanish bracketed target is ambiguous', () => {
+    expect(parseMutationIntent('buscame jazz, guardalo, y buscame techno')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ambiguous' },
     })
   })
 
@@ -208,6 +254,80 @@ describe('resolveTargetReference / resolveReferences', () => {
   it('returns empty when no groups or no query', () => {
     expect(resolveReferences({ query: 'save the second one', groups: [] })).toEqual({ reference: { kind: 'ordinal', index: 1 } })
     expect(resolveReferences({ query: '', groups: [group([[A, 'A']])] }).reference).toEqual({ kind: 'none' })
+  })
+})
+
+describe('clause-aware event-relative reference resolution', () => {
+  const groups = [group([[A, 'A'], [B, 'B']]), group([[C, 'C'], [D, 'D'], [E, 'E']])]
+
+  it('discovery-first directions maps the lead pronoun to the current selection', () => {
+    expect(
+      resolveEventRelativeReference('find me a tango event and give me directions to it', groups)
+    ).toEqual({ kind: 'current_selection', index: 0 })
+    const resolved = resolveReferences({ query: 'find me a tango event and give me directions to it', groups })
+    expect(resolved.reference).toEqual({ kind: 'current_selection', index: 0 })
+    // a current-selection target never leaks a prior event id
+    expect(resolved.resolvedEventId).toBeUndefined()
+  })
+
+  it('discovery-first directions maps an ordinal to the current-selection index', () => {
+    expect(
+      resolveEventRelativeReference('find three events and give me directions to the second one', groups)
+    ).toEqual({ kind: 'current_selection', index: 1 })
+    const resolved = resolveReferences({ query: 'find three events and give me directions to the second one', groups })
+    expect(resolveTurnTarget({ reference: resolved.reference })).toEqual({ scope: 'current_selection', index: 1 })
+  })
+
+  it('discovery-first venue maps lead and ordinal to the current selection', () => {
+    expect(
+      resolveEventRelativeReference('find me a tango event and give me venue details for it', groups)
+    ).toEqual({ kind: 'current_selection', index: 0 })
+    expect(
+      resolveEventRelativeReference('find three events and give me venue details for the second one', groups)
+    ).toEqual({ kind: 'current_selection', index: 1 })
+  })
+
+  it('discovery-first details maps the lead pronoun to the current selection', () => {
+    expect(
+      resolveEventRelativeReference('find me a tango event and tell me about it', groups)
+    ).toEqual({ kind: 'current_selection', index: 0 })
+  })
+
+  it('discovery-before event-relative action with no pronoun maps to the current lead (TurnTarget current_selection index 0)', () => {
+    expect(resolveEventRelativeReference('Find an event and show me its venue', groups)).toEqual({
+      kind: 'current_selection',
+      index: 0,
+    })
+    const resolved = resolveReferences({ query: 'Find an event and show me its venue', groups })
+    expect(resolved.reference).toEqual({ kind: 'current_selection', index: 0 })
+    expect(resolved.resolvedEventId).toBeUndefined()
+    expect(resolveTurnTarget({ reference: resolved.reference })).toEqual({
+      scope: 'current_selection',
+      index: 0,
+    })
+  })
+
+  it('standalone directions/details keep prior-history semantics', () => {
+    expect(resolveEventRelativeReference('give me directions to the second one', groups)).toEqual({
+      kind: 'ordinal',
+      index: 1,
+    })
+    expect(resolveEventRelativeReference('show me the second one', groups)).toEqual({ kind: 'ordinal', index: 1 })
+    expect(resolveEventRelativeReference('show me details on the first one', groups)).toEqual({
+      kind: 'ordinal',
+      index: 0,
+    })
+    expect(resolveEventRelativeReference('mostrame detalles del segundo', groups)).toEqual({
+      kind: 'ordinal',
+      index: 1,
+    })
+    expect(resolveReferences({ query: 'give me directions to the second one', groups }).resolvedEventId).toBe(D)
+  })
+
+  it('event-relative action before discovery keeps prior semantics', () => {
+    expect(
+      resolveEventRelativeReference('give me directions to the second one and find me jazz', groups)
+    ).toEqual({ kind: 'ordinal', index: 1 })
   })
 })
 

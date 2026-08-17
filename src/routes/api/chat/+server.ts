@@ -58,6 +58,7 @@ import {
   detectResponseLanguage,
   parseMutationIntent,
   resolveReferences,
+  resolveTurnTarget,
   MAX_USER_TEXT,
 } from '#features/chat/api/agent/context.ts'
 import { getConversation } from '#features/chat/api/conversations.server.ts'
@@ -217,33 +218,38 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     console.error('[chat] failed to build prior context:', error)
   }
 
-  // Deterministic reference resolution for orchestrate relation validation.
   const resolved = resolveReferences({
     query: originalQuery,
     groups: priorContext.groups,
     venueByEventId: priorContext.venueByEventId,
   })
-
-  // Bounded application-context message (ids/order/saved/resolved only).
-  const applicationContext = buildApplicationContextMessage({
-    pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
-    groups: priorContext.groups,
-    resolvedEventId: resolved.resolvedEventId,
-    resolvedVenueId: resolved.resolvedVenueId,
-  })
-
-  // Bounded user text only — assistant/data parts are dropped entirely.
-  const modelMessages: ModelMessage[] = buildConversationModelMessages({
-    messages: uiMessages,
-    applicationContext,
-  })
-
-  // Typed mutation intent from the latest raw user request.
   const mutationIntent = parseMutationIntent(
     originalQuery,
     priorContext.groups,
     priorContext.venueByEventId
   )
+  const turnTarget = resolveTurnTarget({
+    reference:
+      mutationIntent.kind !== 'none' ? mutationIntent.targetReference : resolved.reference,
+    pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
+    pinnedVenueId: pin.requested && pin.status === 'resolved' ? pin.venueId : undefined,
+    resolvedEventId: resolved.resolvedEventId,
+    resolvedVenueId: resolved.resolvedVenueId,
+  })
+
+  // The model sees only the one authorized prior target, never prior ids beside
+  // a current/pinned/ambiguous target.
+  const priorTarget = turnTarget.scope === 'prior' ? turnTarget : null
+  const applicationContext = buildApplicationContextMessage({
+    pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
+    groups: priorContext.groups,
+    resolvedEventId: priorTarget?.eventId ?? undefined,
+    resolvedVenueId: priorTarget?.venueId ?? undefined,
+  })
+  const modelMessages: ModelMessage[] = buildConversationModelMessages({
+    messages: uiMessages,
+    applicationContext,
+  })
 
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
@@ -298,9 +304,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           originalQuery,
           priorDisplayedEvents: priorContext.groups,
           pin,
-          resolvedEventId: resolved.resolvedEventId,
-          resolvedVenueId: resolved.resolvedVenueId,
           mutationIntent,
+          turnTarget,
           hooks: {
             onStatus: (phase) => writeStatus(phase),
             onCallingTool: (toolName, _toolCallId, _input, stepIndex) =>

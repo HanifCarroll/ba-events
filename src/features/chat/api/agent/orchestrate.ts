@@ -21,12 +21,14 @@ import type { ModelMessage } from 'ai'
 import type {
   CanonicalChatEventPayload,
   CanonicalChatResponse,
+  FallbackReason,
   MessageExecutionStep,
   MessageKey,
   MutationIntent,
   OperationReceipt,
   PinResolution,
   ResponseKind,
+  TurnTarget,
 } from '#shared/lib/types.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import type { UserToolContext } from '../user-tools.server.ts'
@@ -34,6 +36,7 @@ import { runWorkLoop, type WorkLoopHooks, type WorkLoopResult } from './work-loo
 import { runFinalizer, type FinalizerPlan } from './finalizer.ts'
 import { validatePlan, type ValidatedPlan } from './validate.ts'
 import { buildFallback } from './fallback.ts'
+import { resolveTurnTarget } from './context.ts'
 import {
   materializeText,
   materializeClarificationText,
@@ -64,6 +67,12 @@ export interface OrchestrateInput {
   resolvedVenueId?: string
   /** Typed mutation intent (parseMutationIntent result). */
   mutationIntent?: MutationIntent
+  /**
+   * Query-derived turn target (authoritative for every event-relative action).
+   * Resolved once by the caller (+server); when absent, orchestrate derives it
+   * from `mutationIntent` + pin + prior resolved ids.
+   */
+  turnTarget?: TurnTarget
   maxWorkGenerations?: number
   hooks?: WorkLoopHooks & { onStatus?: (phase: import('#shared/lib/types.ts').ChatStreamStatusPhase) => void }
   /** Injectable work-loop runner (test seam; defaults to `runWorkLoop`). */
@@ -132,6 +141,21 @@ function deriveSearchContext(ledger: Ledger, requestId: string): {
         ? 'discovery'
         : 'other'
   return { requestedCount, mode, searchInput: last?.searchInput ?? null }
+}
+
+function workTargetRule(target: TurnTarget): string {
+  switch (target.scope) {
+    case 'current_selection':
+      return `For every event-relative tool call, target zero-based result index ${target.index} from this turn's discovery. Never substitute another result or a prior event.`
+    case 'prior':
+      return 'For every event-relative tool call, target only the resolved prior event/venue in application context. Never substitute a current discovery result.'
+    case 'pinned':
+      return 'For every event-relative tool call, target only the pinned event/venue in application context.'
+    case 'none':
+      return 'There is no authorized event target. Do not call an event-relative tool unless discovery establishes an explicit target.'
+    case 'ambiguous':
+      return 'The event target is ambiguous. Ask which event; do not call an event-relative tool.'
+  }
 }
 
 function priorSavedFrom(prior: PriorDisplayGroup[]): Record<string, boolean> {
@@ -222,6 +246,42 @@ function materializeCanonical(
   }
 }
 
+function recoverAsClarification(
+  canonical: CanonicalChatResponse,
+  locale: 'en' | 'es',
+  fallbackReason: FallbackReason
+): CanonicalChatResponse {
+  const clarificationQuestions = materializeClarificationQuestions(['which_event'], locale)
+  return {
+    ...canonical,
+    kind: 'clarification',
+    messageKey: 'clarification',
+    text: materializeClarificationText(clarificationQuestions),
+    events: [],
+    directions: null,
+    venue: null,
+    operations: [],
+    suggestions: [],
+    clarificationQuestions,
+    provenance: {
+      ...canonical.provenance,
+      sourceToolCallIds: [],
+      directionToolCallIds: [],
+      venueToolCallIds: [],
+      mutationToolCallIds: [],
+      suggestionToolCallIds: [],
+      emptySourceToolCallIds: [],
+      retainedSourceToolCallIds: [],
+      stageIds: [],
+      searchAttemptToolCallIds: [],
+      searchIncomplete: false,
+      origin: 'fallback',
+      fallbackUsed: true,
+      fallbackReason: canonical.provenance.fallbackReason ?? fallbackReason,
+    },
+  }
+}
+
 /** Typed pinned-event failure: zero cards, no discovery, no mutation. */
 function buildPinnedFailure(
   input: OrchestrateInput,
@@ -281,6 +341,18 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   const pinnedEventId = pin.requested && pin.status === 'resolved' ? pin.eventId : undefined
   const pinnedVenueId =
     pin.requested && pin.status === 'resolved' ? pin.venueId ?? undefined : undefined
+  const turnTarget: TurnTarget =
+    input.turnTarget ??
+    resolveTurnTarget({
+      reference:
+        input.mutationIntent && input.mutationIntent.kind !== 'none'
+          ? input.mutationIntent.targetReference
+          : null,
+      pinnedEventId,
+      pinnedVenueId,
+      resolvedEventId: input.resolvedEventId,
+      resolvedVenueId: input.resolvedVenueId,
+    })
 
   const runWorkLoopImpl = input.runWorkLoopFn ?? runWorkLoop
   const runFinalizerImpl = input.runFinalizerFn ?? runFinalizer
@@ -288,7 +360,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   const work = await runWorkLoopImpl({
     requestId: input.requestId,
     modelMessages: input.modelMessages,
-    systemPrompt: input.systemPrompt,
+    systemPrompt: `${input.systemPrompt}\n\n## Deterministic turn target\n${workTargetRule(turnTarget)}`,
     userContext: input.userContext,
     locale: input.locale,
     maxWorkGenerations: input.maxWorkGenerations,
@@ -313,7 +385,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     requestedCount,
     mode,
     mutationIntent: input.mutationIntent,
-    resolvedEventId: input.resolvedEventId,
+    turnTarget,
   })
 
   let canonical: CanonicalChatResponse
@@ -326,10 +398,9 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     validated = validatePlan(plan, work.ledger, {
       requestId: input.requestId,
       locale: input.locale,
+      turnTarget,
       pinnedEventId,
       pinnedVenueId,
-      resolvedEventId: input.resolvedEventId,
-      resolvedVenueId: input.resolvedVenueId,
       requestedCount,
       priorSaved,
       mutationIntent: input.mutationIntent,
@@ -347,10 +418,9 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
         reason: validated.reason ?? 'invalid_schema',
         ledger: work.ledger,
         requestedCount,
+        turnTarget,
         pinnedEventId,
         pinnedVenueId,
-        resolvedEventId: input.resolvedEventId,
-        resolvedVenueId: input.resolvedVenueId,
         priorSaved,
       })
     }
@@ -361,12 +431,21 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       reason: finalizerResult.error === 'invalid_schema' ? 'invalid_schema' : 'finalizer_error',
       ledger: work.ledger,
       requestedCount,
+      turnTarget,
       pinnedEventId,
       pinnedVenueId,
-      resolvedEventId: input.resolvedEventId,
-      resolvedVenueId: input.resolvedVenueId,
       priorSaved,
     })
+  }
+
+  if (turnTarget.scope === 'ambiguous' && canonical.kind !== 'clarification') {
+    canonical = recoverAsClarification(canonical, input.locale, 'ambiguous_turn_target')
+  } else if (
+    canonical.kind === 'error' &&
+    canonical.provenance.fallbackReason === 'missing_required_artifact' &&
+    work.ledger.all().length === 0
+  ) {
+    canonical = recoverAsClarification(canonical, input.locale, 'missing_required_artifact')
   }
 
   // Suggestions operate on the exact validated/fallback search provenance and
@@ -468,7 +547,7 @@ async function assembleValidated(
     messageKey = 'partial_results'
   }
 
-  return materializeCanonical(
+  const canonical = materializeCanonical(
     {
       kind,
       messageKey,
@@ -492,4 +571,13 @@ async function assembleValidated(
     input.requestId,
     validated.suggestionSourceToolCallId
   )
+
+  // A finalizer mutation recovered to clarification (ambiguous target) is a
+  // deterministic fallback, never a validated response: record the exact reason.
+  if (validated.reason === 'ambiguous_mutation_target') {
+    canonical.provenance.origin = 'fallback'
+    canonical.provenance.fallbackUsed = true
+    canonical.provenance.fallbackReason = 'ambiguous_mutation_target'
+  }
+  return canonical
 }

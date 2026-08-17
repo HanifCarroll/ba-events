@@ -443,6 +443,18 @@ export interface SavedEventWithDetails extends EventWithVenue {
   saved_at: string
 }
 
+/**
+ * Result of the bounded saved-membership query. `complete` means the full
+ * membership for the requested ids is known — an absent id is `saved:false`,
+ * and an empty authenticated id set is `complete` with an empty `savedIds`
+ * (never `unavailable`). `unavailable` means the query could not run
+ * (unauthenticated or an error) and every requested id must be treated as
+ * unknown.
+ */
+export type SavedMembershipResult =
+  | { status: 'complete'; savedIds: Set<string> }
+  | { status: 'unavailable' }
+
 // Import blocklist types
 export const BLOCKLIST_TARGET_FIELDS = ['event_name', 'venue_name'] as const
 export type BlocklistTargetField = (typeof BLOCKLIST_TARGET_FIELDS)[number]
@@ -715,11 +727,13 @@ export const FALLBACK_REASONS = [
   'rejected_source',
   'unrelated_directions_ref',
   'unrelated_venue_ref',
+  'unrelated_event_details_ref',
   'invalid_empty_source',
   'invalid_message_key',
   'invalid_clarification',
   'mutation_target_mismatch',
   'ambiguous_mutation_target',
+  'ambiguous_turn_target',
 ] as const
 
 export type FallbackReason = (typeof FALLBACK_REASONS)[number]
@@ -768,6 +782,22 @@ export type TargetReference =
   | { kind: 'ambiguous' }
 
 export type MutationAction = 'save' | 'unsave'
+
+/**
+ * The single query-derived event-relative target for a turn. Abstract by
+ * design: it names the scope (`prior` / `current_selection` / `pinned` /
+ * `none` / `ambiguous`) and carries concrete ids only for `prior`/`pinned`,
+ * plus the current-turn selection index for `current_selection`; `none`
+ * authorizes no event-relative action. It NEVER carries selected-event arrays — the validator resolves a current index
+ * against its own validated selections, and mutation/directions/venue all
+ * authorize the SAME intended scope (never a union of prior + current ids).
+ */
+export type TurnTarget =
+  | { scope: 'none' }
+  | { scope: 'ambiguous' }
+  | { scope: 'pinned'; eventId: string; venueId: string | null }
+  | { scope: 'prior'; eventId: string | null; venueId: string | null }
+  | { scope: 'current_selection'; index: number }
 
 /**
  * Typed mutation intent, parsed deterministically from the latest raw user

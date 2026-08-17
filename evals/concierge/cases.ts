@@ -320,4 +320,74 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
     locale: 'es',
     expect: { noTools: true },
   },
+
+  // --- Compound discovery + event-relative/mutation actions ---
+  // Regression: the turn target must be clause-aware. A discovery-first
+  // directions/mutation request resolves against the CURRENT selection, never
+  // a prior event; a mutation-first command keeps prior semantics. A
+  // single-turn eval has no prior group, so a prior-only command must produce
+  // zero side effects (clarify), never a save against nothing.
+  {
+    id: 'compound-directions-lead',
+    message: 'Find me a tango event and give me directions to it.',
+    locale: 'en',
+    expect: {
+      anyToolOf: ['search_events'],
+      limitMax: 5,
+      custom: (run) => {
+        if (run.events.length === 0) return 'no event shown to take directions to'
+        const call = run.toolCalls.find((t) => t.toolName === 'get_directions')
+        if (!call) return 'get_directions was not called'
+        const lead = run.events[0]
+        const eventMatches = call.input.eventId === lead.id
+        const venueMatches =
+          typeof lead.venue_id === 'string' && call.input.venueId === lead.venue_id
+        if (!eventMatches && !venueMatches) {
+          return 'get_directions targeted neither the lead event nor its venue'
+        }
+        const d = run.canonical.directions
+        if (d && d.eventId !== lead.id && d.venueId !== lead.venue_id) {
+          return 'attached directions target neither the lead event nor its venue'
+        }
+        return null
+      },
+    },
+  },
+  {
+    id: 'compound-save-second',
+    message: 'Find three options and save the second one.',
+    locale: 'en',
+    expect: {
+      anyToolOf: ['search_events'],
+      limitMin: 3,
+      limitMax: 5,
+      custom: (run) => {
+        const save = run.canonical.operations.find((o) => o.toolName === 'save_event')
+        if (!save) return 'no save executed for the second option'
+        if (run.events.length < 2) return 'fewer than two options shown (no second option)'
+        if (save.eventId !== run.events[1].id) {
+          return `saved ${save.eventId}, expected the second option ${run.events[1].id}`
+        }
+        return null
+      },
+    },
+  },
+  {
+    id: 'compound-save-prior-then-find',
+    message: 'Save the second one, then find me something else.',
+    locale: 'en',
+    expect: {
+      custom: (run) => {
+        // Mutation-first "save the second one" has no prior group in a
+        // single-turn eval -> zero side effects (clarify), never a save.
+        if (run.canonical.operations.length > 0) {
+          return 'executed a mutation with no resolvable prior target'
+        }
+        if (run.canonical.kind !== 'clarification') {
+          return `expected clarification, got ${run.canonical.kind}`
+        }
+        return null
+      },
+    },
+  },
 ]

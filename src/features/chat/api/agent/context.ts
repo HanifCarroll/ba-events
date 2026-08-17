@@ -20,6 +20,7 @@ import type {
   MutationAction,
   MutationIntent,
   TargetReference,
+  TurnTarget,
 } from '#shared/lib/types.ts'
 import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract-visible-text.ts'
 import {
@@ -80,16 +81,24 @@ function normalizeForMatch(query: string): string {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
-function anyMatch(q: string, patterns: RegExp[]): boolean {
-  return patterns.some((re) => re.test(q))
+/** Earliest match index of any pattern, or -1 when none match. */
+function earliestMatchIndex(q: string, patterns: RegExp[]): number {
+  let best = -1
+  for (const re of patterns) {
+    const m = re.exec(q)
+    if (m && (best === -1 || m.index < best)) best = m.index
+  }
+  return best
 }
 
-/** Detect an explicit save/unsave action, or null when the query has none. */
-function detectAction(query: string): MutationAction | null {
+/** Detect an explicit save/unsave action with its position, or null. */
+function findAction(query: string): { action: MutationAction; index: number } | null {
   const q = normalizeForMatch(query)
   if (!q) return null
-  if (anyMatch(q, EN_SAVE_PHRASES) || anyMatch(q, ES_SAVE_PHRASES)) return 'save'
-  if (anyMatch(q, EN_UNSAVE_PHRASES) || anyMatch(q, ES_UNSAVE_PHRASES)) return 'unsave'
+  const saveIdx = earliestMatchIndex(q, [...EN_SAVE_PHRASES, ...ES_SAVE_PHRASES])
+  if (saveIdx >= 0) return { action: 'save', index: saveIdx }
+  const unsaveIdx = earliestMatchIndex(q, [...EN_UNSAVE_PHRASES, ...ES_UNSAVE_PHRASES])
+  if (unsaveIdx >= 0) return { action: 'unsave', index: unsaveIdx }
   return null
 }
 
@@ -100,7 +109,7 @@ function detectAction(query: string): MutationAction | null {
 const EN_DISCOVERY_PHRASES = [
   /\bfind\b/,
   /\bsearch\b/,
-  /\bshow (me|us)\b/,
+  /\bshow (me|us)\b(?=[^.]{0,40}\b(events?|options?|ideas?|something|anything|more|another)\b)/,
   /\brecommend\b/,
   /\bsuggest\b/,
   /\blook(ing)? for\b/,
@@ -113,28 +122,104 @@ const EN_DISCOVERY_PHRASES = [
 const ES_DISCOVERY_PHRASES = [
   /\bbusc/,
   /\bencontr/,
-  /\bmostr/,
+  /\bmostr[a-z]*\b(?=[^.]{0,40}\b(eventos?|opciones?|ideas?|algo|otr[oa]s?|mas)\b)/,
   /\brecomend/,
   /\bsuger/,
-  /\bdame\b/,
+  /\bdame\b(?=[^.]{0,40}\b(eventos?|opciones?|ideas?|algo|otr[oa]s?|mas)\b)/,
   /\bqué hay\b/,
   /\bque hay\b/,
   /\balgo (para|que hacer)\b/,
 ]
 
 /**
- * True when the query also requests event discovery (a search/find request),
- * distinguishing a compound discovery + mutation from a standalone follow-up
- * reference. Applied ONLY inside mutation-intent parsing: ordinary follow-up
- * references keep prior-history semantics.
+ * Match positions of every discovery phrase in the normalized query, ascending.
+ * Used for clause-aware ordering: discovery clauses before the target action
+ * reference the current-turn selection; discovery clauses after keep
+ * prior-history semantics; a target bracketed by discovery on both sides is
+ * ambiguous.
  */
-function detectDiscovery(query: string): boolean {
+function discoveryMatchPositions(query: string): number[] {
   const q = normalizeForMatch(query)
-  if (!q) return false
-  return (
-    EN_DISCOVERY_PHRASES.some((re) => re.test(q)) ||
-    ES_DISCOVERY_PHRASES.some((re) => re.test(q))
-  )
+  if (!q) return []
+  const positions: number[] = []
+  for (const re of [...EN_DISCOVERY_PHRASES, ...ES_DISCOVERY_PHRASES]) {
+    const global = new RegExp(re.source, 'g')
+    for (const m of q.matchAll(global)) {
+      if (m.index !== undefined) positions.push(m.index)
+    }
+  }
+  return positions.sort((a, b) => a - b)
+}
+
+/**
+ * Map a prior-reference kind to its current-selection counterpart. A `none`
+ * reference under a discovery-before clause means the event-relative action has
+ * no explicit pronoun ("Find an event and show me its venue") and defaults to
+ * the current-turn lead.
+ */
+function toCurrentSelection(ref: TargetReference): TargetReference {
+  if (ref.kind === 'lead' || ref.kind === 'none') return { kind: 'current_selection', index: 0 }
+  if (ref.kind === 'ordinal' || ref.kind === 'other') return { kind: 'current_selection', index: ref.index }
+  return ref
+}
+
+/**
+ * Apply clause-aware discovery coordination to a raw target reference. A
+ * discovery clause BEFORE the action references the current-turn selection
+ * (never a prior group); a discovery clause AFTER keeps prior-history
+ * semantics; a target bracketed by discovery on BOTH sides is ambiguous.
+ * Shared by mutation and non-mutation (directions/venue/details) actions.
+ */
+function coordinateReference(
+  reference: TargetReference,
+  discovery: number[],
+  actionIndex: number
+): TargetReference {
+  if (discovery.length === 0) return reference
+  const before = discovery.filter((p) => p < actionIndex)
+  const after = discovery.filter((p) => p > actionIndex)
+  if (before.length > 0 && after.length > 0) return { kind: 'ambiguous' }
+  if (before.length > 0) return toCurrentSelection(reference)
+  return reference
+}
+
+// ============================================================================
+// EVENT-RELATIVE ACTION DETECTION (directions / venue / details)
+// ============================================================================
+
+const EN_EVENT_RELATIVE_ACTIONS = [
+  /\bdirections?\b/,
+  /\bvenue\b/,
+  /\bdetails?\b/,
+  /\btell me (more )?about\b/,
+  /\bhow (do|can|could) i (get|reach)\b/,
+  /\bget (?:(?:me|us) )?there\b/,
+  /\bwhere is\b/,
+  /\b(location|map)\b/,
+]
+
+const ES_EVENT_RELATIVE_ACTIONS = [
+  /\bdirecciones\b/,
+  /\bindicaciones\b/,
+  /\blugar\b/,
+  /\bdetalles\b/,
+  /\bcontame (mas )?(sobre|acerca de)\b/,
+  /\bhablame (mas )?(sobre|acerca de)\b/,
+  /\bdonde (es|queda)\b/,
+  /\bcomo (llego|llegar|voy)\b/,
+  /\b(ubicacion|mapa)\b/,
+]
+
+/**
+ * Earliest match index of an event-relative action phrase (directions, venue,
+ * or details), or -1 when none. This is the non-mutation analogue of the
+ * save/unsave action anchor: it lets clause-aware discovery coordination know
+ * where the event-relative action sits relative to discovery clauses.
+ */
+function eventRelativeActionIndex(query: string): number {
+  const q = normalizeForMatch(query)
+  if (!q) return -1
+  return earliestMatchIndex(q, [...EN_EVENT_RELATIVE_ACTIONS, ...ES_EVENT_RELATIVE_ACTIONS])
 }
 
 // ============================================================================
@@ -299,6 +384,26 @@ export function resolveTargetReference(
   return { kind: 'none' }
 }
 
+/**
+ * Resolve the latest user query into a clause-aware event-relative reference
+ * for non-mutation actions (directions, venue, details). Raw resolution is
+ * identical to `resolveTargetReference`; then clause-aware discovery
+ * coordination is applied, anchored on the event-relative action phrase (not
+ * the save/unsave verb). Standalone references with no discovery clause keep
+ * prior-history semantics — "show me/give directions to the second one" never
+ * become a current selection.
+ */
+export function resolveEventRelativeReference(
+  query: string,
+  groups: PriorDisplayGroup[],
+  venueByEventId?: Map<string, VenueFact>
+): TargetReference {
+  const reference = resolveTargetReference(query, groups, venueByEventId)
+  const actionIndex = eventRelativeActionIndex(query)
+  if (actionIndex < 0) return reference
+  return coordinateReference(reference, discoveryMatchPositions(query), actionIndex)
+}
+
 // ============================================================================
 // MUTATION INTENT (TYPED)
 // ============================================================================
@@ -325,23 +430,19 @@ export function parseMutationIntent(
   groups: PriorDisplayGroup[] = [],
   venueByEventId?: Map<string, VenueFact>
 ): MutationIntent {
-  const action = detectAction(query)
-  if (!action) return { kind: 'none' }
+  const found = findAction(query)
+  if (!found) return { kind: 'none' }
+  const action = found.action
   let targetReference = resolveTargetReference(query, groups, venueByEventId)
   if (targetReference.kind === 'none' && hasObjectClitic(query)) {
     targetReference = { kind: 'lead' }
   }
-  // Compound discovery + mutation: a lead/ordinal/other pronoun refers to the
-  // current-turn selection, never a prior group. Applied here only (not in
-  // resolveTargetReference/resolveReferences) so ordinary follow-up references
-  // ("show me the second one") keep prior-history semantics.
-  if (detectDiscovery(query)) {
-    if (targetReference.kind === 'lead') {
-      targetReference = { kind: 'current_selection', index: 0 }
-    } else if (targetReference.kind === 'ordinal' || targetReference.kind === 'other') {
-      targetReference = { kind: 'current_selection', index: targetReference.index }
-    }
-  }
+  // Clause-aware discovery coordination anchored on the save/unsave verb.
+  targetReference = coordinateReference(
+    targetReference,
+    discoveryMatchPositions(query),
+    found.index
+  )
   return { kind: action, targetReference }
 }
 
@@ -368,11 +469,13 @@ function newestResultGroup(groups: PriorDisplayGroup[]): PriorDisplayGroup | nul
 /**
  * Resolve the latest user query against prior groups into concrete ids for
  * orchestrate relation validation and the mutation executor. The typed
- * `reference` drives mutation target planning; `resolvedEventId`/`resolvedVenueId`
- * are the concrete prior target ids.
+ * `reference` is clause-aware (discovery-before → current selection,
+ * discovery-after → prior) for directions/venue/details as well as mutation;
+ * `resolvedEventId`/`resolvedVenueId` are the concrete prior target ids (never
+ * set for a current-selection reference).
  */
 export function resolveReferences(input: ResolveReferencesInput): ResolveReferencesResult {
-  const reference = resolveTargetReference(
+  const reference = resolveEventRelativeReference(
     input.query,
     input.groups ?? [],
     input.venueByEventId
@@ -416,6 +519,104 @@ export function resolveReferences(input: ResolveReferencesInput): ResolveReferen
     if (venue?.venueId) result.resolvedVenueId = venue.venueId
   }
   return result
+}
+
+// ============================================================================
+// TURN TARGET RESOLUTION
+// ============================================================================
+
+export interface ResolveTurnTargetInput {
+  /**
+   * The query-derived reference: the mutation intent's target when there is a
+   * save/unsave action, otherwise the prior-resolution reference (resolveReferences).
+   */
+  reference: TargetReference | null
+  pinnedEventId?: string
+  pinnedVenueId?: string | null
+  resolvedEventId?: string
+  resolvedVenueId?: string
+}
+
+/**
+ * Resolve the single query-derived event-relative target for a turn. Pinned
+ * mode is exclusive: only a lead/reference-free command or an exact named
+ * reference to the pin targets it; any other reference while pinned is
+ * ambiguous. Otherwise prior references (ordinal/lead/other/named) map to the
+ * resolved prior id; a named venue maps to the resolved venue; a current
+ * selection keeps its index; `none`/null map to an unauthorized `none` scope.
+ */
+export function resolveTurnTarget(input: ResolveTurnTargetInput): TurnTarget {
+  const ref = input.reference
+  if (input.pinnedEventId) {
+    const targetsPin =
+      ref === null ||
+      ref.kind === 'lead' ||
+      ref.kind === 'none' ||
+      (ref.kind === 'named_event' && ref.eventId === input.pinnedEventId)
+    return targetsPin
+      ? { scope: 'pinned', eventId: input.pinnedEventId, venueId: input.pinnedVenueId ?? null }
+      : { scope: 'ambiguous' }
+  }
+  switch (ref?.kind) {
+    case 'ordinal':
+    case 'lead':
+    case 'other':
+    case 'named_event':
+      return { scope: 'prior', eventId: input.resolvedEventId ?? null, venueId: input.resolvedVenueId ?? null }
+    case 'named_venue':
+      return { scope: 'prior', eventId: null, venueId: input.resolvedVenueId ?? null }
+    case 'current_selection':
+      return { scope: 'current_selection', index: ref.index }
+    case 'ambiguous':
+      return { scope: 'ambiguous' }
+    case 'none':
+    case undefined:
+    case null:
+    default:
+      return { scope: 'none' }
+  }
+}
+
+export interface AuthorizedScope {
+  eventIds: Set<string>
+  venueIds: Set<string>
+}
+
+/**
+ * The single intended event/venue scope authorized by a turn target. A pinned
+ * target authorizes only the pin (+ its venue); a prior target only the
+ * resolved prior id (+ its venue); a current-selection target only the exact
+ * indexed validated selection (+ its venue); `none` and `ambiguous` authorize
+ * nothing. Never a union of prior
+ * and current ids.
+ */
+export function resolveAuthorizedScope(
+  turnTarget: TurnTarget,
+  events: Array<{ id: string; venue_id?: string | null }>,
+  pinnedVenueId: string | null
+): AuthorizedScope {
+  const lead = (index: number): AuthorizedScope => {
+    const ev = events[index]
+    const venueIds = new Set<string>()
+    if (ev && typeof ev.venue_id === 'string' && ev.venue_id) venueIds.add(ev.venue_id)
+    return { eventIds: ev ? new Set([ev.id]) : new Set<string>(), venueIds }
+  }
+  switch (turnTarget.scope) {
+    case 'pinned': {
+      const venue = turnTarget.venueId ?? pinnedVenueId
+      return { eventIds: new Set([turnTarget.eventId]), venueIds: venue ? new Set([venue]) : new Set() }
+    }
+    case 'prior':
+      return {
+        eventIds: turnTarget.eventId ? new Set([turnTarget.eventId]) : new Set(),
+        venueIds: turnTarget.venueId ? new Set([turnTarget.venueId]) : new Set(),
+      }
+    case 'current_selection':
+      return lead(turnTarget.index)
+    case 'none':
+    case 'ambiguous':
+      return { eventIds: new Set(), venueIds: new Set() }
+  }
 }
 
 // ============================================================================

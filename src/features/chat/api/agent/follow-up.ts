@@ -29,6 +29,7 @@ import type {
   Message,
   MutationOutcome,
   ResponseKind,
+  SavedMembershipResult,
 } from '#shared/lib/types.ts'
 import { adaptStoredMessageToCanonical } from '#features/chat/lib/canonical.ts'
 
@@ -323,14 +324,15 @@ export function collectEventIds(responses: PriorResponseHint[]): string[] {
  * Build grouped prior context from validated hints + rehydrated DB facts.
  * Pure and deterministic (no DB access).
  *
- * `savedMembership` (authenticated only) is the authoritative saved-state map;
- * when absent (guest), every rehydrated event defaults to `saved: null` and
- * client `saved`/operation outcomes are ignored.
+ * `savedMembership` (authenticated only) is the authoritative saved-state
+ * source: a `complete` result stamps absent ids as `saved:false`, while
+ * `unavailable` (guest or a failed query) leaves every event `saved:null` and
+ * ignores client `saved`/operation outcomes.
  */
 export function buildPriorContext(
   responses: PriorResponseHint[],
   facts: EventFact[],
-  savedMembership?: ReadonlyMap<string, boolean>
+  savedMembership?: SavedMembershipResult
 ): PriorContext {
   const factsById = new Map<string, EventFact>()
   const venueByEventId = new Map<string, VenueFact>()
@@ -343,12 +345,8 @@ export function buildPriorContext(
     })
   }
 
-  const savedByEventId = new Map<string, boolean>()
-  if (savedMembership) {
-    for (const [id, saved] of savedMembership) {
-      if (saved) savedByEventId.set(id, true)
-    }
-  }
+  const completeSavedIds: Set<string> | null =
+    savedMembership?.status === 'complete' ? savedMembership.savedIds : null
   const groups: PriorDisplayGroup[] = []
 
   for (const r of responses) {
@@ -392,9 +390,15 @@ export function buildPriorContext(
   }
 
   // Stamp the final chronological saved state onto every occurrence.
+  // A complete membership result is authoritative (absent => false); an
+  // unavailable result leaves saved unknown (null).
   for (const g of bounded) {
     for (const ev of g.events) {
-      ev.saved = savedByEventId.get(ev.eventId) ?? null
+      ev.saved = completeSavedIds
+        ? completeSavedIds.has(ev.eventId)
+          ? true
+          : false
+        : null
     }
   }
 
@@ -409,7 +413,7 @@ export function buildPriorContext(
 export async function rehydratePriorContext(
   responses: PriorResponseHint[],
   fetchByIds: FetchEventFacts,
-  savedMembership?: ReadonlyMap<string, boolean>
+  savedMembership?: SavedMembershipResult
 ): Promise<PriorContext> {
   const ids = collectEventIds(responses)
   if (ids.length === 0) return { groups: [], venueByEventId: new Map() }

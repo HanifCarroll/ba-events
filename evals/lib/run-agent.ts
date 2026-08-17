@@ -9,7 +9,11 @@
 import { generateId } from 'ai'
 import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
 import { orchestrate } from '#features/chat/api/agent/orchestrate.ts'
-import { parseMutationIntent } from '#features/chat/api/agent/context.ts'
+import {
+  parseMutationIntent,
+  resolveReferences,
+  resolveTurnTarget,
+} from '#features/chat/api/agent/context.ts'
 import type { UserToolContext } from '#features/chat/api/user-tools.server.ts'
 import type { CanonicalChatResponse } from '#shared/lib/types.ts'
 
@@ -37,6 +41,16 @@ export interface AgentRun {
 }
 
 export async function runConcierge(message: string, locale: 'en' | 'es'): Promise<AgentRun> {
+  const mutationIntent = parseMutationIntent(message)
+  const resolved = resolveReferences({ query: message, groups: [] })
+  // Mirror +server.ts: a single clause-aware turn target authoritative for
+  // mutation/directions/venue. No prior context in evals, so prior ids are absent.
+  const turnTarget = resolveTurnTarget({
+    reference: mutationIntent.kind !== 'none' ? mutationIntent.targetReference : resolved.reference,
+    resolvedEventId: resolved.resolvedEventId,
+    resolvedVenueId: resolved.resolvedVenueId,
+  })
+
   const result = await orchestrate({
     requestId: generateId(),
     modelMessages: [{ role: 'user', content: message }],
@@ -45,7 +59,8 @@ export async function runConcierge(message: string, locale: 'en' | 'es'): Promis
     systemPrompt: getSystemPrompt({ isAuthenticated: false, savedEventsCount: 0 }),
     originalQuery: message,
     priorDisplayedEvents: [],
-    mutationIntent: parseMutationIntent(message),
+    mutationIntent,
+    turnTarget,
   })
 
   const toolCalls: AgentToolCall[] = result.ledger

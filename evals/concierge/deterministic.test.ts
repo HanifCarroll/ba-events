@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { validatePlan, type ValidateOptions } from '#features/chat/api/agent/validate.ts'
 import { buildFallback } from '#features/chat/api/agent/fallback.ts'
-import { resolveReferences } from '#features/chat/api/agent/context.ts'
+import { resolveReferences, parseMutationIntent, resolveTurnTarget } from '#features/chat/api/agent/context.ts'
 import { buildPriorContext, parseDataResponseHint } from '#features/chat/api/agent/follow-up.ts'
 import { mutationMessage } from '#features/chat/api/agent/record.ts'
 import {
@@ -21,6 +21,7 @@ import {
   searchEntry,
   directionsEntry,
   eventDetailsEntry,
+  venueDetailsEntry,
   rejectionEntry,
 } from '#features/chat/api/agent/_test-helpers.ts'
 import type { FinalizerPlan } from '#features/chat/api/agent/finalizer.ts'
@@ -49,8 +50,8 @@ function plan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
 }
 
 const REQ = 'req-1'
-const OPTIONS: ValidateOptions = { requestId: REQ, locale: 'en', requestedCount: 3 }
-const BASE = { requestId: REQ, locale: 'en' as const, reason: 'invalid_schema' as const, requestedCount: 5 }
+const OPTIONS: ValidateOptions = { requestId: REQ, locale: 'en', requestedCount: 3, turnTarget: { scope: 'none' } }
+const BASE = { requestId: REQ, locale: 'en' as const, reason: 'invalid_schema' as const, requestedCount: 5, turnTarget: { scope: 'none' } as const }
 
 describe('deterministic concierge regressions', () => {
   it('romantic speed-dating stage is superseded by the final tango pick, never re-shown', () => {
@@ -128,7 +129,7 @@ describe('deterministic concierge regressions', () => {
         directionsToolCallId: 'dir0',
       }),
       ledger,
-      OPTIONS
+      { ...OPTIONS, turnTarget: { scope: 'current_selection', index: 0 } }
     )
     expect(result.ok).toBe(true)
     expect(result.events.map((e) => e.id)).toEqual(['e1'])
@@ -210,5 +211,129 @@ describe('deterministic concierge regressions', () => {
     expect(mutationMessage('save_event', 'applied', 'es')).toBe('Lo guardé en tu lista.')
     expect(mutationMessage('unsave_event', 'applied', 'es')).toBe('Lo saqué de tus guardados.')
     expect(mutationMessage('save_event', 'unauthenticated', 'es')).toBe('Tenés que iniciar sesión para guardar eventos.')
+  })
+})
+
+describe('deterministic clause-aware target binding', () => {
+  it('EN + ES discovery-first and mutation-first orders resolve distinctly', () => {
+    // discovery-first → current selection
+    expect(parseMutationIntent('find me a tango event and save it')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'current_selection', index: 0 },
+    })
+    expect(parseMutationIntent('buscame un evento de tango y guardalo')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'current_selection', index: 0 },
+    })
+    // mutation-first → prior semantics
+    expect(parseMutationIntent('save it and find me a tango event')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('guardalo y buscame un evento de tango')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    // a target bracketed by discovery on both sides → ambiguous (clarify)
+    expect(parseMutationIntent('find me jazz, save it, and find me techno')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ambiguous' },
+    })
+  })
+
+  it('resolveTurnTarget maps a reference to the single intended scope', () => {
+    expect(resolveTurnTarget({ reference: { kind: 'current_selection', index: 1 } })).toEqual({ scope: 'current_selection', index: 1 })
+    expect(resolveTurnTarget({ reference: { kind: 'ordinal', index: 1 }, resolvedEventId: 'D' })).toEqual({ scope: 'prior', eventId: 'D', venueId: null })
+    expect(resolveTurnTarget({ reference: { kind: 'none' } })).toEqual({ scope: 'none' })
+    expect(resolveTurnTarget({ reference: { kind: 'ambiguous' } })).toEqual({ scope: 'ambiguous' })
+    expect(resolveTurnTarget({ reference: { kind: 'lead' }, pinnedEventId: 'pin', pinnedVenueId: 'vp' })).toEqual({ scope: 'pinned', eventId: 'pin', venueId: 'vp' })
+    // an ordinal while pinned never targets the pin
+    expect(resolveTurnTarget({ reference: { kind: 'ordinal', index: 1 }, pinnedEventId: 'pin' })).toEqual({ scope: 'ambiguous' })
+  })
+
+  it('complete saved membership stamps absent ids false; unavailable leaves null', () => {
+    const E1 = uuid(1)
+    const E2 = uuid(2)
+    const responses: PriorResponseHint[] = [
+      { assistantMessageId: 'a1', createdAt: null, requestId: 'r1', events: [{ eventId: E1, saved: null }, { eventId: E2, saved: null }], operations: [] },
+    ]
+    const facts = [E1, E2].map((id) => ({ id, name: 'X', venue_id: null, venue_name: null, status: 'scheduled' as const }))
+    const complete = buildPriorContext(responses, facts, { status: 'complete', savedIds: new Set([E1]) })
+    expect(complete.groups[0].events.map((e) => e.saved)).toEqual([true, false])
+    const unavailable = buildPriorContext(responses, facts, { status: 'unavailable' })
+    expect(unavailable.groups[0].events.map((e) => e.saved)).toEqual([null, null])
+  })
+})
+
+describe('deterministic target-bound directions/venue validation', () => {
+  it('current-selection directions authorize exactly the indexed second event', () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('a', 'A'), event('b', 'B'), event('c', 'C')], limit: 3 }),
+      directionsEntry({ toolCallId: 'dir0', eventId: 'b' }),
+    ])
+    const result = validatePlan(
+      plan({
+        eventSelections: [
+          { eventId: 'a', sourceToolCallId: 's0' },
+          { eventId: 'b', sourceToolCallId: 's0' },
+          { eventId: 'c', sourceToolCallId: 's0' },
+        ],
+        directionsToolCallId: 'dir0',
+      }),
+      ledger,
+      { ...OPTIONS, turnTarget: { scope: 'current_selection', index: 1 } }
+    )
+    expect(result.ok).toBe(true)
+    expect(result.directions?.eventId).toBe('b')
+  })
+
+  it('current-selection venue details authorize the indexed event venue', () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('a', 'A', { venue_id: 'v0' }), event('b', 'B', { venue_id: 'v1' })], limit: 2 }),
+      venueDetailsEntry({ toolCallId: 'v0', venueId: 'v1' }),
+    ])
+    const result = validatePlan(
+      plan({
+        eventSelections: [
+          { eventId: 'a', sourceToolCallId: 's0' },
+          { eventId: 'b', sourceToolCallId: 's0' },
+        ],
+        venueToolCallId: 'v0',
+      }),
+      ledger,
+      { ...OPTIONS, turnTarget: { scope: 'current_selection', index: 1 } }
+    )
+    expect(result.ok).toBe(true)
+    expect(result.venue?.venueId).toBe('v1')
+  })
+
+  it('prior standalone directions authorize the resolved prior event', () => {
+    const ledger = ledgerFrom([directionsEntry({ toolCallId: 'dir0', eventId: 'prior' })])
+    const result = validatePlan(
+      plan({ primaryKind: 'directions', messageKey: 'directions', directionsToolCallId: 'dir0' }),
+      ledger,
+      { ...OPTIONS, turnTarget: { scope: 'prior', eventId: 'prior', venueId: null } }
+    )
+    expect(result.ok).toBe(true)
+    expect(result.directions?.eventId).toBe('prior')
+  })
+
+  it('pin-exclusive compound action targets only the pin (details + directions)', () => {
+    const details = eventDetailsEntry({ toolCallId: 'd0', eventId: 'pin', name: 'Pinned', venueId: 'vpin' })
+    const dir = directionsEntry({ toolCallId: 'dir0', eventId: 'pin' })
+    const ledger = ledgerFrom([details, dir])
+    const result = validatePlan(
+      plan({
+        primaryKind: 'event_details',
+        messageKey: 'event_details',
+        eventSelections: [{ eventId: 'pin', sourceToolCallId: 'd0' }],
+        directionsToolCallId: 'dir0',
+      }),
+      ledger,
+      { ...OPTIONS, pinnedEventId: 'pin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: 'vpin' } }
+    )
+    expect(result.ok).toBe(true)
+    expect(result.events.map((e) => e.id)).toEqual(['pin'])
+    expect(result.directions?.eventId).toBe('pin')
   })
 })

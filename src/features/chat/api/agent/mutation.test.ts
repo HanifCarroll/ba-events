@@ -11,13 +11,13 @@ const ANON = { userId: null, isAuthenticated: false }
 
 describe('planMutation (deterministic target authorization)', () => {
   it('returns none when there is no intent', () => {
-    expect(planMutation({ intent: { kind: 'none' } })).toEqual({ status: 'none' })
+    expect(planMutation({ intent: { kind: 'none' }, turnTarget: { scope: 'none' } })).toEqual({ status: 'none' })
   })
 
   it('resolves a prior-target mutation to the server-resolved event id', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'ordinal', index: 1 } },
-      resolvedEventId: 'D',
+      turnTarget: { scope: 'prior', eventId: 'D', venueId: null },
     })
     expect(result).toEqual({
       status: 'resolved',
@@ -28,6 +28,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('resolves a current-search mutation to the selected event bound to its source', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'none' } },
+      turnTarget: { scope: 'current_selection', index: 0 },
       selectedEventIds: ['tango'],
       selectedSourceToolCallIds: ['s1'],
     })
@@ -44,6 +45,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('resolves a current_selection reference to the indexed current event', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'current_selection', index: 1 } },
+      turnTarget: { scope: 'current_selection', index: 1 },
       selectedEventIds: ['a', 'b', 'c'],
       selectedSourceToolCallIds: ['s1', 's1', 's1'],
     })
@@ -60,9 +62,9 @@ describe('planMutation (deterministic target authorization)', () => {
   it('a current_selection index out of range is ambiguous (never prior group)', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'current_selection', index: 4 } },
+      turnTarget: { scope: 'current_selection', index: 4 },
       selectedEventIds: ['a', 'b', 'c'],
       selectedSourceToolCallIds: ['s1', 's1', 's1'],
-      resolvedEventId: 'PRIOR',
     })
     expect(result).toEqual({ status: 'ambiguous' })
   })
@@ -70,7 +72,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('resolves a pinned mutation to the pinned event id', () => {
     const result = planMutation({
       intent: { kind: 'unsave', targetReference: { kind: 'none' } },
-      pinnedEventId: 'pin',
+      turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null },
     })
     expect(result).toEqual({
       status: 'resolved',
@@ -81,7 +83,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('a lead pronoun while pinned targets the pin', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'lead' } },
-      pinnedEventId: 'pin',
+      turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null },
     })
     expect(result).toEqual({
       status: 'resolved',
@@ -92,7 +94,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('an exact named reference to the pin targets the pin', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'named_event', eventId: 'pin' } },
-      pinnedEventId: 'pin',
+      turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null },
     })
     expect(result).toEqual({
       status: 'resolved',
@@ -101,10 +103,10 @@ describe('planMutation (deterministic target authorization)', () => {
   })
 
   it('an ordinal reference to another event while pinned is never silently pinned', () => {
+    // resolveTurnTarget maps an ordinal while pinned to `ambiguous` — never pinned.
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'ordinal', index: 1 } },
-      pinnedEventId: 'pin',
-      resolvedEventId: 'OTHER',
+      turnTarget: { scope: 'ambiguous' },
     })
     expect(result).toEqual({ status: 'ambiguous' })
   })
@@ -112,7 +114,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('a named_event reference to another event while pinned is never silently pinned', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'named_event', eventId: 'OTHER' } },
-      pinnedEventId: 'pin',
+      turnTarget: { scope: 'ambiguous' },
     })
     expect(result).toEqual({ status: 'ambiguous' })
   })
@@ -120,6 +122,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('never authorizes a named-venue reference (a venue is not an event)', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'named_venue', venueId: 'v1' } },
+      turnTarget: { scope: 'prior', eventId: null, venueId: 'v1' },
     })
     expect(result).toEqual({ status: 'ambiguous' })
   })
@@ -127,7 +130,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('is ambiguous when an ordinal cannot resolve to a prior event', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'ordinal', index: 1 } },
-      // resolvedEventId missing: no prior group resolved the ordinal.
+      turnTarget: { scope: 'prior', eventId: null, venueId: null },
     })
     expect(result).toEqual({ status: 'ambiguous' })
   })
@@ -135,6 +138,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('is ambiguous when there is no selected current event for a reference-free mutation', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'none' } },
+      turnTarget: { scope: 'none' },
     })
     expect(result).toEqual({ status: 'ambiguous' })
   })
@@ -142,7 +146,7 @@ describe('planMutation (deterministic target authorization)', () => {
   it('is ambiguous for an explicitly ambiguous reference', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'ambiguous' } },
-      resolvedEventId: 'D',
+      turnTarget: { scope: 'ambiguous' },
     })
     expect(result).toEqual({ status: 'ambiguous' })
   })

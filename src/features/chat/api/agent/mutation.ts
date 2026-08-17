@@ -23,6 +23,7 @@ import type {
   MutationMessageKey,
   OperationReceipt,
   PlannedMutation,
+  TurnTarget,
 } from '#shared/lib/types.ts'
 import type { UserToolContext } from '../user-tools.server.ts'
 import { saveEventForUser, unsaveEventForUser } from '../user-tools.server.ts'
@@ -35,10 +36,8 @@ export type MutationPlanResult =
 
 export interface PlanMutationInput {
   intent: MutationIntent
-  /** Prior event id resolved deterministically from the typed reference. */
-  resolvedEventId?: string
-  /** Resolved pinned event id (only when pin mode resolved successfully). */
-  pinnedEventId?: string
+  /** Query-derived turn target (authoritative scope for the mutation). */
+  turnTarget: TurnTarget
   /** Ordered current-turn selected event ids (validated selections). */
   selectedEventIds?: string[]
   /**
@@ -49,45 +48,45 @@ export interface PlanMutationInput {
 }
 
 /**
- * Derive the single authorized mutation from typed intent + deterministic
- * resolution. Returns `none` (no intent), `ambiguous` (clarify, zero side
- * effects), or `resolved` with the validated plan.
+ * Derive the single authorized mutation from typed intent + the turn target.
+ * Returns `none` (no intent), `ambiguous` (clarify, zero side effects), or
+ * `resolved` with the validated plan. Only the intended scope is authorized —
+ * a pinned target never falls back to a prior id, a prior target never falls
+ * back to the current selection, and vice versa.
  */
 export function planMutation(input: PlanMutationInput): MutationPlanResult {
   if (input.intent.kind === 'none') return { status: 'none' }
   const action = input.intent.kind
-  const ref = input.intent.targetReference
+  const target = input.turnTarget
 
-  // Pinned mode: the mutation may target ONLY the pinned event, and only for
-  // a lead/reference-free command or an exact named reference to the pin.
-  // A reference to anything else must never be silently redirected to the pin.
-  if (input.pinnedEventId) {
-    const targetsPin =
-      ref.kind === 'lead' ||
-      ref.kind === 'none' ||
-      (ref.kind === 'named_event' && ref.eventId === input.pinnedEventId)
-    if (targetsPin) {
+  switch (target.scope) {
+    case 'pinned':
       return {
         status: 'resolved',
         planned: {
           action,
-          eventId: input.pinnedEventId,
+          eventId: target.eventId,
           source: { kind: 'pinned_event' },
         },
       }
+    case 'prior': {
+      // A prior scope with no concrete event (e.g. a named venue) can never
+      // authorize a mutation — a venue is not an event.
+      if (!target.eventId) return { status: 'ambiguous' }
+      return {
+        status: 'resolved',
+        planned: {
+          action,
+          eventId: target.eventId,
+          source: { kind: 'resolved_prior_target' },
+        },
+      }
     }
-    return { status: 'ambiguous' }
-  }
-
-  switch (ref.kind) {
-    case 'named_venue':
-      // A venue reference is not an event — it can never authorize a mutation.
-      return { status: 'ambiguous' }
     case 'current_selection': {
       // Compound discovery + mutation: target the current-turn selection at the
       // reference index. Never falls back to a prior group.
-      const id = input.selectedEventIds?.[ref.index]
-      const source = input.selectedSourceToolCallIds?.[ref.index]
+      const id = input.selectedEventIds?.[target.index]
+      const source = input.selectedSourceToolCallIds?.[target.index]
       if (id && source) {
         return {
           status: 'resolved',
@@ -100,41 +99,8 @@ export function planMutation(input: PlanMutationInput): MutationPlanResult {
       }
       return { status: 'ambiguous' }
     }
-    case 'ordinal':
-    case 'lead':
-    case 'other':
-    case 'named_event': {
-      if (input.resolvedEventId) {
-        return {
-          status: 'resolved',
-          planned: {
-            action,
-            eventId: input.resolvedEventId,
-            source: { kind: 'resolved_prior_target' },
-          },
-        }
-      }
+    case 'none':
       return { status: 'ambiguous' }
-    }
-    case 'none': {
-      // No prior reference: the target is the current search's lead selection.
-      const id = input.selectedEventIds?.[0]
-      const source = input.selectedSourceToolCallIds?.[0]
-      if (id && source) {
-        return {
-          status: 'resolved',
-          planned: {
-            action,
-            eventId: id,
-            source: {
-              kind: 'selected_current_event',
-              sourceToolCallId: source,
-            },
-          },
-        }
-      }
-      return { status: 'ambiguous' }
-    }
     case 'ambiguous':
       return { status: 'ambiguous' }
   }

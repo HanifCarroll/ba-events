@@ -15,7 +15,7 @@ import type { RequestEvent } from '@sveltejs/kit'
 import { getSessionUser } from '#features/auth/api/session.server.ts'
 import { getEventWithVenue } from '#shared/lib/db/client.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
-import type { ChatEventPayload, EventWithVenue } from '#shared/lib/types.ts'
+import type { ChatEventPayload, EventWithVenue, SavedMembershipResult } from '#shared/lib/types.ts'
 
 // ============================================================================
 // TYPES
@@ -67,15 +67,15 @@ export interface CheckEventSavedResult {
 
 /**
  * Bounded authoritative saved-membership query for a set of prior event ids.
- * Returns a map event_id -> true for events the user currently has saved.
+ * Returns a complete result (absent ids are saved:false) or unavailable.
  * Used by authenticated prior-context rehydration; never trusts client input.
  */
 export async function getSavedMembershipForIds(
   ctx: UserToolContext,
   ids: string[]
-): Promise<Map<string, boolean>> {
-  const out = new Map<string, boolean>()
-  if (!ctx.isAuthenticated || !ctx.userId || !ctx.event || ids.length === 0) return out
+): Promise<SavedMembershipResult> {
+  if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) return { status: 'unavailable' }
+  if (ids.length === 0) return { status: 'complete', savedIds: new Set<string>() }
   try {
     const client = createSupabaseServerClient(ctx.event)
     const { data, error } = await client
@@ -84,14 +84,15 @@ export async function getSavedMembershipForIds(
       .eq('user_id', ctx.userId)
       .in('event_id', ids)
       .limit(ids.length)
-    if (error) return out
-    for (const row of (data ?? []) as Array<{ event_id: string }>) {
-      out.set(row.event_id, true)
-    }
+    if (error) return { status: 'unavailable' }
+    const savedIds = new Set<string>(
+      (data ?? []).map((row: { event_id: string }) => row.event_id)
+    )
+    return { status: 'complete', savedIds }
   } catch (error) {
     console.error('[getSavedMembershipForIds] Error:', error)
+    return { status: 'unavailable' }
   }
-  return out
 }
 
 /**

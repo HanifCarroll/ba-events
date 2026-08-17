@@ -21,12 +21,14 @@ import type {
   MessageKey,
   OperationReceipt,
   ResponseKind,
+  TurnTarget,
   VenueDetailsData,
 } from '#shared/lib/types.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import type { Ledger, LedgerEntry } from './ledger.ts'
 import { materializeText } from './materialize.ts'
 import { resolveSavedState } from './record.ts'
+import { resolveAuthorizedScope } from './context.ts'
 
 export interface FallbackInput {
   requestId: string
@@ -34,11 +36,11 @@ export interface FallbackInput {
   reason: FallbackReason
   ledger: Ledger
   requestedCount: number
+  /** Query-derived turn target (authoritative for every event-relative artifact). */
+  turnTarget: TurnTarget
   pinnedEventId?: string
   /** The pin's known venue id (from PinResolution), authoritative without details. */
   pinnedVenueId?: string
-  resolvedEventId?: string
-  resolvedVenueId?: string
   priorSaved?: Record<string, boolean>
 }
 
@@ -195,7 +197,7 @@ function searchPrimary(
 }
 
 function deriveContent(input: FallbackInput): DerivedContent {
-  const { ledger, requestId, requestedCount, pinnedEventId, resolvedEventId, resolvedVenueId, priorSaved } = input
+  const { ledger, requestId, requestedCount, pinnedEventId, priorSaved, turnTarget } = input
   const operations = ledger.mutationReceipts(requestId)
   const cap = clampCap(requestedCount)
 
@@ -251,40 +253,39 @@ function deriveContent(input: FallbackInput): DerivedContent {
         }
       }
     } else if (latest?.kind === 'event-details') {
-      if (latest.events.length === 0) {
-        primary = {
-          kind: 'error',
-          messageKey: 'error',
-          events: [],
-          sourceToolCallIds: [],
-          emptySourceToolCallIds: [],
-          retainedSourceToolCallIds: [],
-          stageIds: [],
-          searchIncomplete: false,
-        }
-      } else {
-        primary = {
-          kind: 'event_details',
-          messageKey: 'event_details',
-          events: [withSaved(latest.events[0], ledger, requestId, priorSaved)],
-          sourceToolCallIds: [latest.toolCallId],
-          emptySourceToolCallIds: [],
-          retainedSourceToolCallIds: [],
-          stageIds: [],
-          searchIncomplete: false,
-        }
-      }
+      const event = latest.events[0]
+      const authorized =
+        event &&
+        resolveAuthorizedScope(turnTarget, [event], null).eventIds.has(event.id)
+      primary = authorized
+        ? {
+            kind: 'event_details',
+            messageKey: 'event_details',
+            events: [withSaved(event, ledger, requestId, priorSaved)],
+            sourceToolCallIds: [latest.toolCallId],
+            emptySourceToolCallIds: [],
+            retainedSourceToolCallIds: [],
+            stageIds: [],
+            searchIncomplete: false,
+          }
+        : {
+            kind: 'error',
+            messageKey: 'error',
+            events: [],
+            sourceToolCallIds: [],
+            emptySourceToolCallIds: [],
+            retainedSourceToolCallIds: [],
+            stageIds: [],
+            searchIncomplete: false,
+          }
     }
   }
 
-  // --- Relation identity sets for compound siblings (pinned-exclusive) ---
-  const allowedEventIds = new Set<string>((primary?.events ?? []).map((e) => e.id))
-  if (pinnedEventId) allowedEventIds.add(pinnedEventId)
-  else if (resolvedEventId) allowedEventIds.add(resolvedEventId)
-  const allowedVenueIds = new Set<string>()
-  for (const e of primary?.events ?? []) if (typeof e.venue_id === 'string' && e.venue_id) allowedVenueIds.add(e.venue_id)
-  if (typeof pinnedVenueId === 'string' && pinnedVenueId) allowedVenueIds.add(pinnedVenueId)
-  if (!pinnedEventId && resolvedVenueId) allowedVenueIds.add(resolvedVenueId)
+  // --- Relation identity sets for compound siblings (single turn target) ---
+  // Derived from the ONE turn target — never a union of prior + current ids.
+  const allowed = resolveAuthorizedScope(turnTarget, primary?.events ?? [], pinnedVenueId)
+  const allowedEventIds = allowed.eventIds
+  const allowedVenueIds = allowed.venueIds
 
   // --- Compound siblings (attached only when tied to a target identity) ---
   let directions: DirectionsData | null = null
