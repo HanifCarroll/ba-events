@@ -1,11 +1,11 @@
 /**
- * Deterministic validation of the v4 finalizer plan against the artifact ledger.
+ * Deterministic validation of the v5 finalizer plan against the artifact ledger.
  *
  * The model plan is UNTRUSTED. Cards are materialized server-side from
  * validated ids only — never from prose or event-name matching. Any violation
  * yields a typed `FallbackReason` consumed by the deterministic fallback.
  *
- * v4 changes:
+ * Core guarantees:
  * - Search sources are validated by stage eligibility: only ACTIVE (latest
  *   stage) or RETAINED (reactivated by the active stage) sources are
  *   selectable; REJECTED and SUPERSEDED sources are rejected with distinct
@@ -31,6 +31,7 @@ import type {
   MessageKey,
   MutationIntent,
   OperationReceipt,
+  PlannedMutation,
   ResponseKind,
   VenueDetailsData,
 } from '#shared/lib/types.ts'
@@ -44,6 +45,11 @@ export interface ValidateOptions {
   requestId: string
   locale: 'en' | 'es'
   pinnedEventId?: string
+  /**
+   * The pin's known venue id (from PinResolution), authoritative even when the
+   * ledger carries no get_event_details artifact for the pin.
+   */
+  pinnedVenueId?: string
   /** Explicit prior resolved target ids (compound relation fallback). */
   resolvedEventId?: string
   resolvedVenueId?: string
@@ -77,6 +83,10 @@ export interface ValidatedPlan {
   /** True when a parallel search call failed (partial_success / partial_failure). */
   searchIncomplete: boolean
   clarificationQuestions: ClarificationQuestion[]
+  /** Deterministic mutation resolution, derived exactly once here. */
+  mutationStatus: 'none' | 'ambiguous' | 'resolved'
+  /** The validated mutation to execute (only when mutationStatus === 'resolved'). */
+  plannedMutation: PlannedMutation | null
 }
 
 /** Kinds whose selections come from successful search artifacts. */
@@ -96,7 +106,12 @@ function expectedSourceKind(kind: ResponseKind): LedgerArtifactKind | null {
 /** Kinds that must never carry events/directions/venue (operations are allowed). */
 const EMPTY_KINDS: ResponseKind[] = ['clarification', 'out_of_scope', 'error']
 
-function fail(reason: FallbackReason, kind: ResponseKind, messageKey: MessageKey): ValidatedPlan {
+function fail(
+  reason: FallbackReason,
+  kind: ResponseKind,
+  messageKey: MessageKey,
+  mutationStatus: ValidatedPlan['mutationStatus'] = 'none'
+): ValidatedPlan {
   return {
     ok: false,
     reason,
@@ -118,6 +133,8 @@ function fail(reason: FallbackReason, kind: ResponseKind, messageKey: MessageKey
     searchAttemptToolCallIds: [],
     searchIncomplete: false,
     clarificationQuestions: [],
+    mutationStatus,
+    plannedMutation: null,
   }
 }
 
@@ -194,6 +211,9 @@ export function validatePlan(
   // Resolve each selection against the exact source artifact.
   const events: CanonicalChatEventPayload[] = []
   const sourceToolCallIds: string[] = []
+  // Index-aligned with `events`: the exact source that produced each selected
+  // event. The deduped `sourceToolCallIds` provenance array is NOT aligned.
+  const selectedEventSourceIds: string[] = []
   const sourceKind = expectedSourceKind(kind)
   for (const sel of selections) {
     const source = ledger.find(sel.sourceToolCallId)
@@ -215,6 +235,7 @@ export function validatePlan(
 
     const saved = resolveSavedState(event.id, ledger, requestId, priorSaved)
     events.push({ ...event, saved })
+    selectedEventSourceIds.push(sel.sourceToolCallId)
     if (!sourceToolCallIds.includes(sel.sourceToolCallId)) {
       sourceToolCallIds.push(sel.sourceToolCallId)
     }
@@ -226,15 +247,17 @@ export function validatePlan(
   }
 
   // Relation context for compound siblings: allowed event/venue identities.
+  // Pinned-exclusive: prior resolved ids are IGNORED while pinned; only the pin
+  // and its known venue authorize directions/venue.
   const pinnedDetails = pinnedEventId ? ledger.eventDetailsFor(pinnedEventId, requestId) : null
-  const pinnedVenueId = pinnedDetails?.events[0]?.venue_id ?? null
+  const pinnedVenueId = options.pinnedVenueId ?? (pinnedDetails?.events[0]?.venue_id ?? null)
   const allowedEventIds = new Set<string>(events.map((e) => e.id))
   if (pinnedEventId) allowedEventIds.add(pinnedEventId)
-  if (options.resolvedEventId) allowedEventIds.add(options.resolvedEventId)
+  else if (options.resolvedEventId) allowedEventIds.add(options.resolvedEventId)
   const allowedVenueIds = new Set<string>()
   for (const e of events) if (typeof e.venue_id === 'string' && e.venue_id) allowedVenueIds.add(e.venue_id)
   if (typeof pinnedVenueId === 'string' && pinnedVenueId) allowedVenueIds.add(pinnedVenueId)
-  if (options.resolvedVenueId) allowedVenueIds.add(options.resolvedVenueId)
+  if (!pinnedEventId && options.resolvedVenueId) allowedVenueIds.add(options.resolvedVenueId)
 
   // Directions reference (compound sibling).
   let directions: DirectionsData | null = null
@@ -267,22 +290,42 @@ export function validatePlan(
     venueToolCallIds.push(v.toolCallId)
   }
 
-  // Post-plan mutation proposal validation. The work loop never executes
-  // save/unsave; the finalizer proposes `plannedMutations`, and the server
-  // cross-checks it against the deterministic target (resolved prior target /
-  // pinned event / selected current event). A conflicting proposal is rejected
-  // before any side effect.
+  // Post-plan mutation planning (derived exactly once here; the assemble step
+  // executes the carried `plannedMutation` without re-planning). The finalizer
+  // proposal is cross-checked against the deterministic target; a conflicting or
+  // omitted proposal is rejected before any side effect.
   const proposedMutations = plan.plannedMutations ?? []
-  if (proposedMutations.length > 0) {
-    const intent = options.mutationIntent
-    const deterministic = planMutation({
-      intent: intent && intent.kind !== 'none' ? intent : { kind: 'none' },
-      resolvedEventId: options.resolvedEventId,
-      pinnedEventId,
-      selectedEventId: events[0]?.id,
-      selectedSourceToolCallId: sourceToolCallIds[0],
-    })
-    if (deterministic.status !== 'resolved') {
+  const intent =
+    options.mutationIntent && options.mutationIntent.kind !== 'none'
+      ? options.mutationIntent
+      : ({ kind: 'none' as const })
+  const deterministic = planMutation({
+    intent,
+    resolvedEventId: options.resolvedEventId,
+    pinnedEventId,
+    selectedEventIds: events.map((e) => e.id),
+    selectedSourceToolCallIds: selectedEventSourceIds,
+  })
+
+  let mutationStatus: 'none' | 'ambiguous' | 'resolved'
+  let plannedMutation: PlannedMutation | null = null
+
+  if (deterministic.status === 'none') {
+    // No mutation intent: plannedMutations must be exactly empty.
+    if (proposedMutations.length > 0) {
+      return fail('mutation_target_mismatch', kind, messageKey)
+    }
+    mutationStatus = 'none'
+  } else if (deterministic.status === 'ambiguous') {
+    // Ambiguous target: zero mutation (a clarification response is assembled
+    // downstream), never a side effect and never a proposed mutation.
+    if (proposedMutations.length > 0) {
+      return fail('ambiguous_mutation_target', kind, messageKey, 'ambiguous')
+    }
+    mutationStatus = 'ambiguous'
+  } else {
+    // Resolved: exactly one proposal exactly matching the deterministic plan.
+    if (proposedMutations.length !== 1) {
       return fail('mutation_target_mismatch', kind, messageKey)
     }
     const proposed = proposedMutations[0]
@@ -303,6 +346,8 @@ export function validatePlan(
     ) {
       return fail('mutation_target_mismatch', kind, messageKey)
     }
+    plannedMutation = decided
+    mutationStatus = 'resolved'
   }
 
   // Suggestion source: a search source that actually produced a selected event.
@@ -333,7 +378,9 @@ export function validatePlan(
     if (
       active &&
       active.eligibility === 'active' &&
-      (active.outcome === 'success' || active.outcome === 'partial_success')
+      (active.outcome === 'success' ||
+        active.outcome === 'partial_success' ||
+        active.outcome === 'partial_failure')
     ) {
       return fail('no_results', kind, messageKey)
     }
@@ -393,6 +440,10 @@ export function validatePlan(
 
   if (kind === 'mutation_result') {
     if (carriesDisplayArtifacts) return fail('inconsistent_response_kind', kind, messageKey)
+    // mutation_result is invalid unless a mutation is actually planned.
+    if (mutationStatus !== 'resolved') {
+      return fail('invalid_mutation_ref', kind, messageKey, mutationStatus)
+    }
   }
 
   // Provenance: retained sources that contributed, plus their stage ids and the
@@ -428,5 +479,7 @@ export function validatePlan(
     searchAttemptToolCallIds,
     searchIncomplete,
     clarificationQuestions,
+    mutationStatus,
+    plannedMutation,
   }
 }

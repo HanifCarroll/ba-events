@@ -1,5 +1,5 @@
 /**
- * Deterministic typed fallbacks (v4).
+ * Deterministic typed fallbacks (v5).
  *
  * When the finalizer plan fails validation (or the finalizer errors), the
  * fallback derives a safe canonical response directly from the artifact ledger.
@@ -35,6 +35,8 @@ export interface FallbackInput {
   ledger: Ledger
   requestedCount: number
   pinnedEventId?: string
+  /** The pin's known venue id (from PinResolution), authoritative without details. */
+  pinnedVenueId?: string
   resolvedEventId?: string
   resolvedVenueId?: string
   priorSaved?: Record<string, boolean>
@@ -198,7 +200,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
   const cap = clampCap(requestedCount)
 
   const pinnedDetails = pinnedEventId ? ledger.eventDetailsFor(pinnedEventId, requestId) : null
-  const pinnedVenueId = pinnedDetails?.events[0]?.venue_id ?? null
+  const pinnedVenueId = input.pinnedVenueId ?? (pinnedDetails?.events[0]?.venue_id ?? null)
   const latest = pinnedEventId ? null : latestEventRead(ledger, requestId)
 
   // --- Primary events source ---
@@ -275,14 +277,14 @@ function deriveContent(input: FallbackInput): DerivedContent {
     }
   }
 
-  // --- Relation identity sets for compound siblings ---
+  // --- Relation identity sets for compound siblings (pinned-exclusive) ---
   const allowedEventIds = new Set<string>((primary?.events ?? []).map((e) => e.id))
   if (pinnedEventId) allowedEventIds.add(pinnedEventId)
-  if (resolvedEventId) allowedEventIds.add(resolvedEventId)
+  else if (resolvedEventId) allowedEventIds.add(resolvedEventId)
   const allowedVenueIds = new Set<string>()
   for (const e of primary?.events ?? []) if (typeof e.venue_id === 'string' && e.venue_id) allowedVenueIds.add(e.venue_id)
   if (typeof pinnedVenueId === 'string' && pinnedVenueId) allowedVenueIds.add(pinnedVenueId)
-  if (resolvedVenueId) allowedVenueIds.add(resolvedVenueId)
+  if (!pinnedEventId && resolvedVenueId) allowedVenueIds.add(resolvedVenueId)
 
   // --- Compound siblings (attached only when tied to a target identity) ---
   let directions: DirectionsData | null = null

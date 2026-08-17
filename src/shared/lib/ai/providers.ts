@@ -5,7 +5,7 @@ import { AI_BASE_URL, AI_MODEL, EMBEDDING_MODEL } from './constants.ts'
 /**
  * AI SDK providers.
  *
- * Text generation runs on DeepSeek V4 Flash through its OpenAI-compatible
+ * Text generation runs on DeepSeek V4 Pro through its OpenAI-compatible
  * endpoint (@ai-sdk/deepseek). Embeddings stay on OpenAI (@ai-sdk/openai) —
  * DeepSeek has no embeddings API.
  */

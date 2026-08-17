@@ -21,7 +21,7 @@ const base = {
   requestedCount: 5,
 }
 
-describe('buildFallback (v4)', () => {
+describe('buildFallback (v5)', () => {
   it('uses only the highest search step, in call order then result order', () => {
     const step0 = searchEntry({
       stepIndex: 0,
@@ -292,6 +292,30 @@ describe('buildFallback (v4)', () => {
     expect(canonical.kind).toBe('error')
     expect(canonical.events).toEqual([])
     expect(canonical.directions).toBeNull()
+  })
+
+  it('pinned fallback ignores a prior resolved venue (only the pin venue authorizes)', () => {
+    const venue = venueDetailsEntry({ toolCallId: 'v0', venueId: 'v-prior' })
+    const canonical = buildFallback({
+      ...base,
+      pinnedEventId: 'pin',
+      resolvedVenueId: 'v-prior',
+      ledger: ledgerFrom([venue]),
+    })
+    expect(canonical.kind).toBe('error')
+    expect(canonical.venue).toBeNull()
+  })
+
+  it("pinned fallback authorizes the pin's known venue without details", () => {
+    const venue = venueDetailsEntry({ toolCallId: 'v0', venueId: 'vpin' })
+    const canonical = buildFallback({
+      ...base,
+      pinnedEventId: 'pin',
+      pinnedVenueId: 'vpin',
+      ledger: ledgerFrom([venue]),
+    })
+    expect(canonical.kind).toBe('venue_details')
+    expect(canonical.venue?.venueId).toBe('vpin')
   })
 
   it('venue-details fallback uses the final venue artifact tied to a resolved target', () => {

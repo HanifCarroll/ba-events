@@ -3,6 +3,7 @@ import {
   parseMutationIntent,
   resolveReferences,
   resolveTargetReference,
+  detectResponseLanguage,
   buildApplicationContextMessage,
   buildConversationModelMessages,
   MAX_APPLICATION_CONTEXT_CHARS,
@@ -105,6 +106,39 @@ describe('parseMutationIntent (typed)', () => {
     })
   })
 
+  it('compound discovery + mutation targets the current selection, never a prior group', () => {
+    expect(parseMutationIntent('find me a tango event and save it')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'current_selection', index: 0 },
+    })
+    expect(parseMutationIntent('find three options and save the second one')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'current_selection', index: 1 },
+    })
+  })
+
+  it('Argentine Spanish compound discovery + mutation targets the current selection', () => {
+    expect(parseMutationIntent('buscame un evento de tango y guardalo')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'current_selection', index: 0 },
+    })
+    expect(parseMutationIntent('encontrá tres opciones y guardá la segunda')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'current_selection', index: 1 },
+    })
+  })
+
+  it('standalone save references keep prior-history semantics (no discovery wording)', () => {
+    expect(parseMutationIntent('save it')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('save the second one')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ordinal', index: 1 },
+    })
+  })
+
   it('does not overmatch Spanish non-verb stems', () => {
     expect(parseMutationIntent('la guardia del museo').kind).toBe('none')
     expect(parseMutationIntent('guardarropa del teatro').kind).toBe('none')
@@ -151,6 +185,12 @@ describe('resolveTargetReference / resolveReferences', () => {
     expect(resolveReferences({ query: 'show me other events', groups }).resolvedEventId).toBeUndefined()
   })
 
+  it('non-mutation follow-ups keep prior-history semantics even with discovery wording', () => {
+    const groups = [group([[A, 'A'], [B, 'B']]), group([[C, 'C'], [D, 'D'], [E, 'E']])]
+    expect(resolveTargetReference('show me the second one', groups)).toEqual({ kind: 'ordinal', index: 1 })
+    expect(resolveReferences({ query: 'show me the second one', groups }).resolvedEventId).toBe(D)
+  })
+
   it('named references search older groups newest-first', () => {
     const groups = [group([[A, 'Tango Night']]), group([[C, 'Jazz Set']])]
     expect(resolveReferences({ query: 'tell me more about Tango Night', groups }).resolvedEventId).toBe(A)
@@ -168,6 +208,25 @@ describe('resolveTargetReference / resolveReferences', () => {
   it('returns empty when no groups or no query', () => {
     expect(resolveReferences({ query: 'save the second one', groups: [] })).toEqual({ reference: { kind: 'ordinal', index: 1 } })
     expect(resolveReferences({ query: '', groups: [group([[A, 'A']])] }).reference).toEqual({ kind: 'none' })
+  })
+})
+
+describe('detectResponseLanguage', () => {
+  it('detects Spanish from the latest message and overrides an EN UI locale', () => {
+    expect(detectResponseLanguage('Buscame un evento de tango', 'en')).toBe('es')
+    expect(detectResponseLanguage('Qué hay esta noche', 'en')).toBe('es')
+  })
+
+  it('detects English from the latest message and overrides an ES UI locale', () => {
+    expect(detectResponseLanguage('Find me a tango event', 'es')).toBe('en')
+    expect(detectResponseLanguage("What's on tonight?", 'es')).toBe('en')
+  })
+
+  it('falls back to the UI locale when the message is empty or language-neutral', () => {
+    expect(detectResponseLanguage('', 'en')).toBe('en')
+    expect(detectResponseLanguage('', 'es')).toBe('es')
+    expect(detectResponseLanguage('12345', 'es')).toBe('es')
+    expect(detectResponseLanguage('tango', 'en')).toBe('en')
   })
 })
 

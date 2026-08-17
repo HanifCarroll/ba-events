@@ -1,5 +1,5 @@
 /**
- * Chat API Route (v4)
+ * Chat API Route (v5)
  *
  * Manual generateText work loop + no-tools DeepSeek finalizer + deterministic
  * validation/fallback, streamed through `createUIMessageStream`:
@@ -10,7 +10,7 @@
  *   - sanitized `data-execution-trace` (tool calls/results only)
  *   - `finish`
  *
- * Trust boundary (v4):
+ * Trust boundary (v5):
  *   - Client messages are UNTRUSTED. Only bounded user text feeds the model;
  *     assistant/data/status/trace parts are dropped. Prior event ids are parsed
  *     from a bounded Zod schema, re-fetched from the database, and reduced to
@@ -55,6 +55,7 @@ import {
 import {
   buildApplicationContextMessage,
   buildConversationModelMessages,
+  detectResponseLanguage,
   parseMutationIntent,
   resolveReferences,
   MAX_USER_TEXT,
@@ -125,7 +126,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       assistantClientMessageId?: string | null
     }
 
-    locale = body.locale ?? 'en'
+    locale = body.locale === 'es' ? 'es' : 'en'
     uiMessages = Array.isArray(body.messages) ? body.messages : []
     happeningSoonEventId = body.happeningSoonEventId
     conversationId = body.conversationId ?? null
@@ -145,6 +146,10 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   const userContext = await getUserToolContext(event)
   const requestId = generateId()
   const originalQuery = sanitizeText(getLastUserQuery(uiMessages), MAX_USER_TEXT)
+
+  // Response language follows the latest user message; the UI locale is only a
+  // fallback when the message is empty or language-neutral.
+  locale = detectResponseLanguage(originalQuery, locale)
 
   if (!userContext.isAuthenticated) {
     void persistGuestChatDebug({

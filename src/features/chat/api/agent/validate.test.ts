@@ -45,7 +45,7 @@ function v(planInput: FinalizerPlan, entries: LedgerEntry[], opts: Partial<Valid
   })
 }
 
-describe('validatePlan (v4)', () => {
+describe('validatePlan (v5)', () => {
   const search = searchEntry({
     stepIndex: 0,
     toolCallId: 'call-search',
@@ -242,6 +242,29 @@ describe('validatePlan (v4)', () => {
       expect(result.ok).toBe(true)
       expect(result.directions?.eventId).toBe('pin')
     })
+
+    it('ignores prior resolved ids while pinned (unrelated prior directions ref is rejected)', () => {
+      const details = eventDetailsEntry({ toolCallId: 'd0', eventId: 'pin', name: 'Pinned', venueId: 'vpin' })
+      const dir = directionsEntry({ toolCallId: 'dir0', eventId: 'prior-other' })
+      const result = v(
+        plan({ primaryKind: 'directions', messageKey: 'directions', directionsToolCallId: 'dir0', eventSelections: [] }),
+        [details, dir],
+        { pinnedEventId: 'pin', resolvedEventId: 'prior-other', resolvedVenueId: 'v-prior' }
+      )
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('unrelated_directions_ref')
+    })
+
+    it("the pin's known venue authorizes a venue ref even without details", () => {
+      const venue = venueDetailsEntry({ toolCallId: 'v0', venueId: 'vpin' })
+      const result = v(
+        plan({ primaryKind: 'venue_details', messageKey: 'venue_details', venueToolCallId: 'v0' }),
+        [venue],
+        { pinnedEventId: 'pin', pinnedVenueId: 'vpin' }
+      )
+      expect(result.ok).toBe(true)
+      expect(result.venue?.venueId).toBe('vpin')
+    })
   })
 
   describe('compound siblings', () => {
@@ -389,6 +412,17 @@ describe('validatePlan (v4)', () => {
       )
       expect(result.ok).toBe(true)
     })
+
+    it('rejects no_results on a partial_failure stage (parallel one empty + one failed)', () => {
+      const empty = searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [], limit: 1 })
+      const failed = searchEntry({ stepIndex: 0, callIndex: 1, toolCallId: 's1', events: [], limit: 1, success: false })
+      const result = v(
+        plan({ primaryKind: 'no_results', messageKey: 'no_results', emptySourceToolCallIds: ['s0'] }),
+        [empty, failed]
+      )
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('no_results')
+    })
   })
 
   describe('planned mutations', () => {
@@ -461,6 +495,100 @@ describe('validatePlan (v4)', () => {
       )
       expect(result.ok).toBe(false)
       expect(result.reason).toBe('mutation_target_mismatch')
+    })
+
+    it('rejects an omitted proposal when a resolved mutation is required', () => {
+      const result = v(
+        plan({ primaryKind: 'mutation_result', messageKey: 'mutation_mixed' }),
+        [search],
+        {
+          mutationIntent: { kind: 'save', targetReference: { kind: 'ordinal', index: 0 } },
+          resolvedEventId: 'e1',
+        }
+      )
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('mutation_target_mismatch')
+    })
+
+    it('rejects a bogus mutation_result primary with no actually-planned mutation', () => {
+      const result = v(
+        plan({ primaryKind: 'mutation_result', messageKey: 'mutation_mixed' }),
+        [search]
+      )
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('invalid_mutation_ref')
+    })
+
+    it('rejects a proposal whose source kind differs from the deterministic plan', () => {
+      const result = v(
+        plan({
+          eventSelections: [{ eventId: 'e1', sourceToolCallId: 'call-search' }],
+          plannedMutations: [
+            { action: 'save', eventId: 'e1', source: { kind: 'resolved_prior_target' } },
+          ],
+        }),
+        [search],
+        {
+          // reference-free command → the current selection's lead, bound to its source.
+          mutationIntent: { kind: 'save', targetReference: { kind: 'none' } },
+        }
+      )
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('mutation_target_mismatch')
+    })
+
+    it('rejects a proposal when the mutation target is ambiguous', () => {
+      const result = v(
+        plan({
+          primaryKind: 'mutation_result',
+          messageKey: 'mutation_mixed',
+          plannedMutations: [
+            { action: 'save', eventId: 'e1', source: { kind: 'resolved_prior_target' } },
+          ],
+        }),
+        [search],
+        {
+          mutationIntent: { kind: 'save', targetReference: { kind: 'named_venue', venueId: 'v1' } },
+        }
+      )
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('ambiguous_mutation_target')
+      expect(result.mutationStatus).toBe('ambiguous')
+    })
+
+    it('an ambiguous target with no proposal validates as a clarification-ready plan', () => {
+      const result = v(
+        plan({ eventSelections: [{ eventId: 'e1', sourceToolCallId: 'call-search' }] }),
+        [search],
+        {
+          mutationIntent: { kind: 'save', targetReference: { kind: 'named_venue', venueId: 'v1' } },
+        }
+      )
+      expect(result.ok).toBe(true)
+      expect(result.mutationStatus).toBe('ambiguous')
+      expect(result.plannedMutation).toBeNull()
+    })
+
+    it('validates and carries a current_selection mutation bound to the selected event', () => {
+      const result = v(
+        plan({
+          eventSelections: [{ eventId: 'e1', sourceToolCallId: 'call-search' }],
+          plannedMutations: [
+            { action: 'save', eventId: 'e1', source: { kind: 'selected_current_event', sourceToolCallId: 'call-search' } },
+          ],
+        }),
+        [search],
+        {
+          mutationIntent: { kind: 'save', targetReference: { kind: 'current_selection', index: 0 } },
+        }
+      )
+      expect(result.ok).toBe(true)
+      expect(result.mutationStatus).toBe('resolved')
+      expect(result.plannedMutation).toEqual({
+        action: 'save',
+        eventId: 'e1',
+        source: { kind: 'selected_current_event', sourceToolCallId: 'call-search' },
+      })
     })
   })
 

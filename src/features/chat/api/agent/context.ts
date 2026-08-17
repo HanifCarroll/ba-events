@@ -94,6 +94,91 @@ function detectAction(query: string): MutationAction | null {
 }
 
 // ============================================================================
+// COMPOUND DISCOVERY DETECTION (current-turn selection vs prior reference)
+// ============================================================================
+
+const EN_DISCOVERY_PHRASES = [
+  /\bfind\b/,
+  /\bsearch\b/,
+  /\bshow (me|us)\b/,
+  /\brecommend\b/,
+  /\bsuggest\b/,
+  /\blook(ing)? for\b/,
+  /\bwhat'?s (on|happening|going on)\b/,
+  /\bwhat is (on|happening|going on)\b/,
+  /\b(going on|happening)\b/,
+  /\b(any|some) (good |cool |great )?(events?|options|ideas|something|anything)\b/,
+]
+
+const ES_DISCOVERY_PHRASES = [
+  /\bbusc/,
+  /\bencontr/,
+  /\bmostr/,
+  /\brecomend/,
+  /\bsuger/,
+  /\bdame\b/,
+  /\bqué hay\b/,
+  /\bque hay\b/,
+  /\balgo (para|que hacer)\b/,
+]
+
+/**
+ * True when the query also requests event discovery (a search/find request),
+ * distinguishing a compound discovery + mutation from a standalone follow-up
+ * reference. Applied ONLY inside mutation-intent parsing: ordinary follow-up
+ * references keep prior-history semantics.
+ */
+function detectDiscovery(query: string): boolean {
+  const q = normalizeForMatch(query)
+  if (!q) return false
+  return (
+    EN_DISCOVERY_PHRASES.some((re) => re.test(q)) ||
+    ES_DISCOVERY_PHRASES.some((re) => re.test(q))
+  )
+}
+
+// ============================================================================
+// RESPONSE LANGUAGE DETECTION (deterministic; UI locale is only a fallback)
+// ============================================================================
+
+const ES_LANGUAGE_WORDS = [
+  'que', 'como', 'donde', 'cuando', 'cual', 'quiero', 'busco', 'busca', 'buscame',
+  'encontra', 'dame', 'mostrame', 'evento', 'eventos', 'guardar', 'guarda', 'guardalo',
+  'saca', 'quita', 'para', 'gratis', 'hoy', 'manana', 'noche', 'opciones', 'recomendame',
+  'tenes', 'queres', 'alguna', 'algun', 'algo', 'este', 'esta', 'ese', 'esa', 'hay',
+  'lugares', 'barrio', 'fin', 'semana',
+]
+
+const EN_LANGUAGE_WORDS = [
+  'the', 'find', 'search', 'show', 'what', 'where', 'when', 'which', 'events', 'event',
+  'save', 'for', 'with', 'this', 'that', 'tonight', 'weekend', 'free', 'options',
+  'recommend', 'looking', 'anything', 'happening', 'some', 'night', 'you', 'want',
+]
+
+/**
+ * Derive the response language from the latest user message; the UI locale is
+ * only a fallback when the message is empty or language-neutral. Deterministic
+ * and cheap (no model call): accented/inverted-punctuation text is a strong
+ * Spanish signal, otherwise distinctive EN vs ES function/content words score.
+ */
+export function detectResponseLanguage(text: string, fallback: 'en' | 'es'): 'en' | 'es' {
+  const raw = sanitizeText(text, MAX_USER_TEXT).toLowerCase()
+  if (!raw) return fallback
+  const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  let es = 0
+  let en = 0
+  if (/[áéíóúñü¿¡]/.test(raw)) es += 3
+
+  for (const w of ES_LANGUAGE_WORDS) if (new RegExp(`\\b${w}\\b`).test(normalized)) es += 1
+  for (const w of EN_LANGUAGE_WORDS) if (new RegExp(`\\b${w}\\b`).test(normalized)) en += 1
+
+  if (es > en) return 'es'
+  if (en > es) return 'en'
+  return fallback
+}
+
+// ============================================================================
 // TARGET REFERENCE PARSING
 // ============================================================================
 
@@ -245,6 +330,17 @@ export function parseMutationIntent(
   let targetReference = resolveTargetReference(query, groups, venueByEventId)
   if (targetReference.kind === 'none' && hasObjectClitic(query)) {
     targetReference = { kind: 'lead' }
+  }
+  // Compound discovery + mutation: a lead/ordinal/other pronoun refers to the
+  // current-turn selection, never a prior group. Applied here only (not in
+  // resolveTargetReference/resolveReferences) so ordinary follow-up references
+  // ("show me the second one") keep prior-history semantics.
+  if (detectDiscovery(query)) {
+    if (targetReference.kind === 'lead') {
+      targetReference = { kind: 'current_selection', index: 0 }
+    } else if (targetReference.kind === 'ordinal' || targetReference.kind === 'other') {
+      targetReference = { kind: 'current_selection', index: targetReference.index }
+    }
   }
   return { kind: action, targetReference }
 }

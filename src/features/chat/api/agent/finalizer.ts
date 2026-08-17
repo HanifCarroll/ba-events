@@ -1,5 +1,5 @@
 /**
- * No-tools DeepSeek finalizer for the v4 agent turn.
+ * No-tools DeepSeek finalizer for the v5 agent turn.
  *
  * Produces a closed, schema-constrained plan via `generateText` +
  * `Output.object`. It never runs tools and never parses free-form JSON. There
@@ -17,7 +17,12 @@
 import { generateText, NoObjectGeneratedError, NoOutputGeneratedError, Output } from 'ai'
 import { z } from 'zod'
 import { textModel, NO_THINKING } from '#shared/lib/ai/providers.ts'
-import { CLARIFICATION_KEYS, MESSAGE_KEYS, type MutationIntent, type ResponseKind } from '#shared/lib/types.ts'
+import {
+  CLARIFICATION_KEYS,
+  type MutationIntent,
+  type ResponseKind,
+  type TargetReference,
+} from '#shared/lib/types.ts'
 import type { Ledger, LedgerEntry } from './ledger.ts'
 import type { PriorDisplayGroup } from './follow-up.ts'
 
@@ -138,20 +143,20 @@ const FINALIZER_SYSTEM = `You are the final-response planner for a Buenos Aires 
 
 ## Selection
 - primaryKind is exactly one of: recommendations, event_details, saved_events, directions, venue_details, mutation_result, clarification, no_results, out_of_scope, error.
-- messageKey is a closed key whose kind matches primaryKind (recommendations / recommendations_pick for recommendations; event_details, saved_events, directions, venue_details, mutation_result, clarification, no_results, out_of_scope / share_guidance for out_of_scope, error otherwise).
+- messageKey is a closed key whose kind matches primaryKind (recommendations / recommendations_pick for recommendations; mutation_mixed for mutation_result; event_details, saved_events, directions, venue_details, clarification, no_results, out_of_scope / share_guidance for out_of_scope, error otherwise).
 - recommendations: 1-5 eventSelections from active or retained search_events sources, in display order. Use messageKey "recommendations_pick" for a single surprise/decisive pick, else "recommendations".
 - event_details: exactly ONE eventSelection from a successful get_event_details call.
 - saved_events: 1-5 eventSelections from a successful list_saved_events call.
-- directions: directionsToolCallId must relate to a selected event, the pinned event, or an earlier resolved target (same event id or venue id).
-- venue_details: venueToolCallId must relate to a selected event's venue or the pinned event's venue.
-- mutation_result: the server has already decided to mutate saved events. Set primaryKind "mutation_result" and messageKey "mutation_mixed". Propose exactly ONE plannedMutation with the action and target given in the Mutation intent line below (the server validates it and executes it). Never invent a target: copy the action and target eventId/source from the Mutation intent line.
+- directions: directionsToolCallId must relate to a selected event or an earlier resolved target. While pinned, prior resolved ids are forbidden: only the pinned event or its known venue may authorize directions.
+- venue_details: venueToolCallId must relate to a selected event's venue. While pinned, only the pinned event's known venue may authorize it.
+- mutation_result: use only when mutation is the primary response (no read artifact). Set messageKey "mutation_mixed"; the server derives the truthful outcome-specific key after execution.
 - clarification: no selections; at most two clarificationQuestions chosen from the fixed keys.
-- no_results: no selections; set emptySourceToolCallIds to a successful EMPTY source (empty active search stage, empty saved-events, or a typed empty read). Never use a failed-only search, and never when any selectable search source has events.
+- no_results: no selections; set emptySourceToolCallIds to a successful empty source. A search-backed no_results requires active stage outcome exactly EMPTY — never PARTIAL_FAILURE, failed, partial-success, or success — and no selectable search source may have events. An empty saved-events read is also valid.
 - out_of_scope: no selections. For a request asking how to share an event, use messageKey "share_guidance"; otherwise use "out_of_scope". error: no selections.
-- Operations are siblings: any primary read kind may ALSO list operationToolCallIds (save/unsave receipts already executed are always acknowledged).
-- plannedMutations: only when the Mutation intent line below names a save/unsave; otherwise omit it. When present, carry the exact action + eventId + source kind from that line.
+- operationToolCallIds MUST be empty. Mutation receipts are created server-side only after this plan is validated.
+- plannedMutations: when Mutation intent is none or its deterministic target is ambiguous, it MUST be empty (use clarification for ambiguity). Otherwise carry exactly ONE entry matching the deterministic target line: action, eventId, source kind, and sourceToolCallId for selected_current_event. Never invent or substitute a target.
 - Never select the same eventId twice. Never exceed the requested count or 5.
-- The pinned event (if provided) MUST be the selected event (from its get_event_details) and can never be substituted or dropped.
+- While pinned, any eventSelection MUST be the pinned event from its get_event_details source; never select a substitute. Directions/venue/clarification/error primaries may have no eventSelection, but their artifacts still must target only the pin or its known venue.
 
 Return the structured object only.`
 
@@ -252,6 +257,32 @@ function compactLedger(ledger: Ledger, locale: 'en' | 'es'): string {
   return lines.join('\n')
 }
 
+function describeMutationTarget(
+  ref: TargetReference,
+  resolvedEventId: string | undefined,
+  pinnedEventId: string | undefined
+): string {
+  if (pinnedEventId) {
+    const targetsPin =
+      ref.kind === 'lead' ||
+      ref.kind === 'none' ||
+      (ref.kind === 'named_event' && ref.eventId === pinnedEventId)
+    return targetsPin
+      ? `pinned_event eventId=${pinnedEventId}`
+      : 'ambiguous (propose no mutation and use clarification)'
+  }
+  if (ref.kind === 'current_selection') {
+    return `selected_current_event index=${ref.index} (copy eventId and sourceToolCallId from that eventSelection; clarify if absent)`
+  }
+  if (ref.kind === 'none') {
+    return 'selected_current_event index=0 (copy eventId and sourceToolCallId from that eventSelection; clarify if absent)'
+  }
+  if (ref.kind === 'named_venue' || ref.kind === 'ambiguous' || !resolvedEventId) {
+    return 'ambiguous (propose no mutation and use clarification)'
+  }
+  return `resolved_prior_target eventId=${resolvedEventId}`
+}
+
 function buildPrompt(input: FinalizerInput): string {
   const prior =
     input.priorDisplayedEvents.length > 0
@@ -268,8 +299,8 @@ function buildPrompt(input: FinalizerInput): string {
   const ledger = compactLedger(input.ledger, input.locale) || '(empty)'
 
   const mutation = input.mutationIntent && input.mutationIntent.kind !== 'none'
-    ? `Mutation intent: ${input.mutationIntent.kind} (${input.mutationIntent.targetReference.kind}); resolved target: ${input.resolvedEventId ?? '(current selection)'}; pinned: ${pinned}`
-    : 'Mutation intent: none'
+    ? `Mutation intent: ${input.mutationIntent.kind}; deterministic target: ${describeMutationTarget(input.mutationIntent.targetReference, input.resolvedEventId, input.pinnedEventId)}`
+    : 'Mutation intent: none; plannedMutations MUST be empty'
 
   return `Latest request: ${JSON.stringify(input.originalQuery)}
 Locale: ${input.locale}

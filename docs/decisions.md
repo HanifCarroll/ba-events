@@ -2416,6 +2416,9 @@ DeepSeek has no embeddings API.
 **Related Decision:** DeepSeek's announced API price increase (2026-08-06) is expected to narrow but
 not eliminate the cost advantage; founder guidance puts the increase in the 2x-10x range.
 
+**Superseded:** On 2026-08-17, the default text model moved from
+`deepseek-v4-flash` to `deepseek-v4-pro`.
+
 Related Decision: none (this supersedes the implicit "Claude for AI" choice from the original stack).
 
 ---

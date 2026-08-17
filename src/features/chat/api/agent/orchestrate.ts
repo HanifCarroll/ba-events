@@ -10,10 +10,9 @@
  * v5:
  * - Pinned mode is typed (`PinResolution`); a requested-but-unresolved pin is a
  *   typed failure with zero cards and no discovery fallback.
- * - The work loop never executes save/unsave. After validation, the mutation
- *   planner derives the single authorized target (prior/pinned/selected) and
- *   the executor runs it exactly once; the mutation lead key is derived from
- *   the normalized receipts.
+ * - The work loop never executes save/unsave. Validation derives and verifies
+ *   the single authorized target (prior/pinned/selected); assembly executes that
+ *   carried plan exactly once and derives the mutation lead from its receipt.
  * - Search stages carry 5-state outcomes; a partial search marks the response
  *   incomplete and uses the `partial_results` lead.
  */
@@ -45,7 +44,7 @@ import { Ledger, type LedgerEntry } from './ledger.ts'
 import { generateSuggestions } from '../suggestions.ts'
 import type { PriorDisplayGroup } from './follow-up.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
-import { planMutation, executeMutations, deriveMutationMessageKey } from './mutation.ts'
+import { executeMutations, deriveMutationMessageKey } from './mutation.ts'
 import { resolveSavedState } from './record.ts'
 
 export interface OrchestrateInput {
@@ -280,6 +279,8 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     return buildPinnedFailure(input, pin)
   }
   const pinnedEventId = pin.requested && pin.status === 'resolved' ? pin.eventId : undefined
+  const pinnedVenueId =
+    pin.requested && pin.status === 'resolved' ? pin.venueId ?? undefined : undefined
 
   const runWorkLoopImpl = input.runWorkLoopFn ?? runWorkLoop
   const runFinalizerImpl = input.runFinalizerFn ?? runFinalizer
@@ -326,6 +327,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       requestId: input.requestId,
       locale: input.locale,
       pinnedEventId,
+      pinnedVenueId,
       resolvedEventId: input.resolvedEventId,
       resolvedVenueId: input.resolvedVenueId,
       requestedCount,
@@ -333,9 +335,11 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       mutationIntent: input.mutationIntent,
     })
 
-    if (validated.ok) {
+    if (validated.ok || validated.mutationStatus === 'ambiguous') {
+      // Even an invalid finalizer proposal cannot turn an ambiguous mutation
+      // into fallback content: the server emits a zero-side-effect clarification.
       suggestionSourceToolCallId = validated.suggestionSourceToolCallId
-      canonical = await assembleValidated(input, work.ledger, validated, priorSaved, pinnedEventId)
+      canonical = await assembleValidated(input, work.ledger, validated, priorSaved)
     } else {
       canonical = buildFallback({
         requestId: input.requestId,
@@ -344,6 +348,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
         ledger: work.ledger,
         requestedCount,
         pinnedEventId,
+        pinnedVenueId,
         resolvedEventId: input.resolvedEventId,
         resolvedVenueId: input.resolvedVenueId,
         priorSaved,
@@ -357,6 +362,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       ledger: work.ledger,
       requestedCount,
       pinnedEventId,
+      pinnedVenueId,
       resolvedEventId: input.resolvedEventId,
       resolvedVenueId: input.resolvedVenueId,
       priorSaved,
@@ -397,26 +403,16 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
 }
 
 /**
- * Assemble the canonical from a validated plan, then run the deterministic
- * post-plan mutation phase (plan + execute exactly once), re-resolving saved
- * state and deriving the mutation/partial lead keys.
+ * Assemble the canonical from a validated plan, then execute any carried
+ * mutation exactly once, re-resolving saved state and deriving the
+ * mutation/partial lead keys.
  */
 async function assembleValidated(
   input: OrchestrateInput,
   ledger: Ledger,
   validated: ValidatedPlan,
-  priorSaved: Record<string, boolean> | undefined,
-  pinnedEventId: string | undefined
+  priorSaved: Record<string, boolean> | undefined
 ): Promise<CanonicalChatResponse> {
-  const intent = input.mutationIntent ?? { kind: 'none' as const }
-  const decided = planMutation({
-    intent,
-    resolvedEventId: input.resolvedEventId,
-    pinnedEventId,
-    selectedEventId: validated.events[0]?.id,
-    selectedSourceToolCallId: validated.sourceToolCallIds[0],
-  })
-
   let kind: ResponseKind = validated.kind
   let messageKey: MessageKey = validated.messageKey
   let events = validated.events
@@ -434,7 +430,7 @@ async function assembleValidated(
   let searchIncomplete = validated.searchIncomplete
   let clarificationQuestions = validated.clarificationQuestions
 
-  if (decided.status === 'ambiguous') {
+  if (validated.mutationStatus === 'ambiguous') {
     // Ambiguous mutation target: clarify, zero side effects, no cards.
     kind = 'clarification'
     messageKey = 'clarification'
@@ -450,9 +446,9 @@ async function assembleValidated(
     searchAttemptToolCallIds = []
     searchIncomplete = false
     clarificationQuestions = materializeClarificationQuestions(['which_event'], input.locale)
-  } else if (decided.status === 'resolved') {
-    // Execute the single authorized mutation exactly once.
-    operations = await executeMutations([decided.planned], input.userContext, input.locale)
+  } else if (validated.mutationStatus === 'resolved') {
+    // Execute the single already-validated mutation exactly once.
+    operations = await executeMutations([validated.plannedMutation!], input.userContext, input.locale)
     mutationToolCallIds = operations.map((r) => r.toolCallId)
     for (const receipt of operations) {
       ledger.recordMutationReceipt(receipt, input.requestId)

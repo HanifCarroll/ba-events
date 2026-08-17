@@ -110,7 +110,7 @@ describe('guest-conversations store', () => {
     expect(stored?.attached_data.canonical).toEqual(canonical)
   })
 
-  it('defaults response_contract_version to v4 when omitted', async () => {
+  it('defaults response_contract_version to v5 when omitted', async () => {
     await createGuestConversation('conv-1')
     await addGuestMessage('conv-1', {
       id: 'm1',

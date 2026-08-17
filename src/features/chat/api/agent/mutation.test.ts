@@ -28,8 +28,8 @@ describe('planMutation (deterministic target authorization)', () => {
   it('resolves a current-search mutation to the selected event bound to its source', () => {
     const result = planMutation({
       intent: { kind: 'save', targetReference: { kind: 'none' } },
-      selectedEventId: 'tango',
-      selectedSourceToolCallId: 's1',
+      selectedEventIds: ['tango'],
+      selectedSourceToolCallIds: ['s1'],
     })
     expect(result).toEqual({
       status: 'resolved',
@@ -41,6 +41,32 @@ describe('planMutation (deterministic target authorization)', () => {
     })
   })
 
+  it('resolves a current_selection reference to the indexed current event', () => {
+    const result = planMutation({
+      intent: { kind: 'save', targetReference: { kind: 'current_selection', index: 1 } },
+      selectedEventIds: ['a', 'b', 'c'],
+      selectedSourceToolCallIds: ['s1', 's1', 's1'],
+    })
+    expect(result).toEqual({
+      status: 'resolved',
+      planned: {
+        action: 'save',
+        eventId: 'b',
+        source: { kind: 'selected_current_event', sourceToolCallId: 's1' },
+      },
+    })
+  })
+
+  it('a current_selection index out of range is ambiguous (never prior group)', () => {
+    const result = planMutation({
+      intent: { kind: 'save', targetReference: { kind: 'current_selection', index: 4 } },
+      selectedEventIds: ['a', 'b', 'c'],
+      selectedSourceToolCallIds: ['s1', 's1', 's1'],
+      resolvedEventId: 'PRIOR',
+    })
+    expect(result).toEqual({ status: 'ambiguous' })
+  })
+
   it('resolves a pinned mutation to the pinned event id', () => {
     const result = planMutation({
       intent: { kind: 'unsave', targetReference: { kind: 'none' } },
@@ -50,6 +76,45 @@ describe('planMutation (deterministic target authorization)', () => {
       status: 'resolved',
       planned: { action: 'unsave', eventId: 'pin', source: { kind: 'pinned_event' } },
     })
+  })
+
+  it('a lead pronoun while pinned targets the pin', () => {
+    const result = planMutation({
+      intent: { kind: 'save', targetReference: { kind: 'lead' } },
+      pinnedEventId: 'pin',
+    })
+    expect(result).toEqual({
+      status: 'resolved',
+      planned: { action: 'save', eventId: 'pin', source: { kind: 'pinned_event' } },
+    })
+  })
+
+  it('an exact named reference to the pin targets the pin', () => {
+    const result = planMutation({
+      intent: { kind: 'save', targetReference: { kind: 'named_event', eventId: 'pin' } },
+      pinnedEventId: 'pin',
+    })
+    expect(result).toEqual({
+      status: 'resolved',
+      planned: { action: 'save', eventId: 'pin', source: { kind: 'pinned_event' } },
+    })
+  })
+
+  it('an ordinal reference to another event while pinned is never silently pinned', () => {
+    const result = planMutation({
+      intent: { kind: 'save', targetReference: { kind: 'ordinal', index: 1 } },
+      pinnedEventId: 'pin',
+      resolvedEventId: 'OTHER',
+    })
+    expect(result).toEqual({ status: 'ambiguous' })
+  })
+
+  it('a named_event reference to another event while pinned is never silently pinned', () => {
+    const result = planMutation({
+      intent: { kind: 'save', targetReference: { kind: 'named_event', eventId: 'OTHER' } },
+      pinnedEventId: 'pin',
+    })
+    expect(result).toEqual({ status: 'ambiguous' })
   })
 
   it('never authorizes a named-venue reference (a venue is not an event)', () => {

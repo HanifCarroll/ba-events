@@ -600,7 +600,7 @@ export interface ConciergeMessage extends ChatMessage {
 }
 
 // =============================================================================
-// CANONICAL CHAT RESPONSE (v4)
+// CANONICAL CHAT RESPONSE (v5)
 // =============================================================================
 
 /**
@@ -685,7 +685,7 @@ export interface ClarificationQuestion {
 export type SavedState = boolean | null
 
 /**
- * An event as carried in a canonical v4 response. `saved` is always an explicit
+ * An event as carried in a canonical v5 response. `saved` is always an explicit
  * tri-state marker. The ordinary DB/search `ChatEventPayload` keeps `saved`
  * optional (absent) because those records predate the tri-state marker.
  */
@@ -751,13 +751,19 @@ export interface OperationReceipt {
 // TYPED MUTATION + REFERENCE INTENT (v5)
 // ============================================================================
 
-/** A deterministic reference to a prior displayed event (or none/ambiguous). */
+/**
+ * A deterministic reference to a prior displayed event (or the current-turn
+ * selection, none, or ambiguous). `current_selection` targets the validated
+ * selection of THIS turn (compound discovery + mutation); it never resolves
+ * against prior groups.
+ */
 export type TargetReference =
   | { kind: 'ordinal'; index: number }
   | { kind: 'lead' }
   | { kind: 'other'; index: number }
   | { kind: 'named_event'; eventId: string }
   | { kind: 'named_venue'; venueId: string }
+  | { kind: 'current_selection'; index: number }
   | { kind: 'none' }
   | { kind: 'ambiguous' }
 

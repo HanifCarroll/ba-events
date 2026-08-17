@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { orchestrate } from './orchestrate.ts'
 import type { WorkLoopResult } from './work-loop.ts'
 import { Ledger } from './ledger.ts'
-import { searchEntry, savedEventsEntry, mutationEntry, retentionEntry, event, ledgerFrom } from './_test-helpers.ts'
+import { searchEntry, savedEventsEntry, mutationEntry, retentionEntry, event, eventDetailsEntry, venueDetailsEntry, ledgerFrom } from './_test-helpers.ts'
 import type { FinalizerPlan } from './finalizer.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
 
@@ -53,7 +53,7 @@ const baseInput = {
   runFinalizerFn: mockRunFinalizer as never,
 }
 
-describe('orchestrate (v4)', () => {
+describe('orchestrate (v5)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -402,6 +402,124 @@ describe('orchestrate (v4)', () => {
     expect(result.canonical.operations[0].outcome).toBe('unauthenticated')
     expect(result.canonical.events[0].saved).toBeNull()
     expect(result.canonical.provenance.mutationToolCallIds).toEqual(['mutation:save_event:tango'])
+  })
+
+  it('executes a current_selection save against the indexed current event (compound)', async () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('a', 'A'), event('b', 'B'), event('c', 'C')], limit: 3 }),
+    ])
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        eventSelections: [
+          { eventId: 'a', sourceToolCallId: 's1' },
+          { eventId: 'b', sourceToolCallId: 's1' },
+          { eventId: 'c', sourceToolCallId: 's1' },
+        ],
+        plannedMutations: [
+          { action: 'save', eventId: 'b', source: { kind: 'selected_current_event', sourceToolCallId: 's1' } },
+        ],
+      }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      mutationIntent: { kind: 'save', targetReference: { kind: 'current_selection', index: 1 } },
+    })
+
+    expect(result.canonical.kind).toBe('recommendations')
+    expect(result.canonical.operations).toHaveLength(1)
+    expect(result.canonical.operations[0].eventId).toBe('b')
+    expect(result.canonical.provenance.mutationToolCallIds).toEqual(['mutation:save_event:b'])
+  })
+
+  it('an ambiguous mutation target yields a clarification with zero cards and no mutation', async () => {
+    const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('a', 'A')], limit: 1 })])
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({ eventSelections: [{ eventId: 'a', sourceToolCallId: 's1' }] }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      mutationIntent: { kind: 'save', targetReference: { kind: 'named_venue', venueId: 'v1' } },
+    })
+
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.operations).toEqual([])
+  })
+
+  it('an invalid mutation proposal for an ambiguous target still clarifies', async () => {
+    const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('a', 'A')], limit: 1 })])
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        eventSelections: [{ eventId: 'a', sourceToolCallId: 's1' }],
+        plannedMutations: [
+          { action: 'save', eventId: 'a', source: { kind: 'resolved_prior_target' } },
+        ],
+      }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      mutationIntent: { kind: 'save', targetReference: { kind: 'named_venue', venueId: 'v1' } },
+    })
+
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.operations).toEqual([])
+    expect(result.canonical.provenance.fallbackUsed).toBe(false)
+  })
+
+  it('an ordinal mutation while pinned clarifies instead of silently pinning', async () => {
+    const ledger = ledgerFrom([eventDetailsEntry({ toolCallId: 'd0', eventId: 'pin', name: 'Pinned' })])
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'event_details',
+        messageKey: 'event_details',
+        eventSelections: [{ eventId: 'pin', sourceToolCallId: 'd0' }],
+      }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      pin: { requested: true, status: 'resolved', eventId: 'pin', venueId: null },
+      mutationIntent: { kind: 'save', targetReference: { kind: 'ordinal', index: 1 } },
+      resolvedEventId: 'prior-other',
+    })
+
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.operations).toEqual([])
+  })
+
+  it("threads the pin's known venue so venue_details is authorized without details", async () => {
+    const ledger = ledgerFrom([venueDetailsEntry({ toolCallId: 'v0', venueId: 'vpin' })])
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'venue_details',
+        messageKey: 'venue_details',
+        eventSelections: [],
+        venueToolCallId: 'v0',
+      }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      pin: { requested: true, status: 'resolved', eventId: 'pin', venueId: 'vpin' },
+    })
+
+    expect(result.canonical.kind).toBe('venue_details')
+    expect(result.canonical.venue?.venueId).toBe('vpin')
   })
 })
 

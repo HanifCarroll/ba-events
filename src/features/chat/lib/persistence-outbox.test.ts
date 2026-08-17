@@ -89,7 +89,7 @@ describe('persistence outbox', () => {
     expect(mockedAddOutboxItem).toHaveBeenCalledTimes(1)
   })
 
-  it('defaults outbox response_contract_version to v4', async () => {
+  it('defaults outbox response_contract_version to v5', async () => {
     mockedGetOutboxItemByClientMessageId.mockResolvedValue(undefined)
 
     const persistMessage = vi.fn().mockRejectedValue(new Error('network down'))

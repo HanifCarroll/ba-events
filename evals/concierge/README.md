@@ -62,7 +62,7 @@ Additional provider/embedding caveats:
 - `search_events` embeds queries, so the live suite also needs `OPENAI_API_KEY`
   (embeddings stay on OpenAI, `text-embedding-3-small`) unless your
   `SUPABASE_ANON_KEY` environment is seeded to avoid embedding calls.
-- `AI_MODEL` defaults to `deepseek-v4-flash`; `AI_BASE_URL` defaults to
+- `AI_MODEL` defaults to `deepseek-v4-pro`; `AI_BASE_URL` defaults to
   `https://api.deepseek.com`. Override either to point at a proxy.
 
 Never commit secret values. In CI they are supplied as GitHub Actions secrets and

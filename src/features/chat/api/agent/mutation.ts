@@ -39,10 +39,13 @@ export interface PlanMutationInput {
   resolvedEventId?: string
   /** Resolved pinned event id (only when pin mode resolved successfully). */
   pinnedEventId?: string
-  /** Lead selected event id from the validated plan (current-search target). */
-  selectedEventId?: string
-  /** Exact source artifact of the lead selected event. */
-  selectedSourceToolCallId?: string
+  /** Ordered current-turn selected event ids (validated selections). */
+  selectedEventIds?: string[]
+  /**
+   * Exact source artifact per selected event, index-aligned with
+   * `selectedEventIds` (the deduped provenance array is NOT index-aligned).
+   */
+  selectedSourceToolCallIds?: string[]
 }
 
 /**
@@ -53,23 +56,50 @@ export interface PlanMutationInput {
 export function planMutation(input: PlanMutationInput): MutationPlanResult {
   if (input.intent.kind === 'none') return { status: 'none' }
   const action = input.intent.kind
+  const ref = input.intent.targetReference
 
-  // Pinned mode: the mutation may target only the pinned event.
+  // Pinned mode: the mutation may target ONLY the pinned event, and only for
+  // a lead/reference-free command or an exact named reference to the pin.
+  // A reference to anything else must never be silently redirected to the pin.
   if (input.pinnedEventId) {
-    return {
-      status: 'resolved',
-      planned: {
-        action,
-        eventId: input.pinnedEventId,
-        source: { kind: 'pinned_event' },
-      },
+    const targetsPin =
+      ref.kind === 'lead' ||
+      ref.kind === 'none' ||
+      (ref.kind === 'named_event' && ref.eventId === input.pinnedEventId)
+    if (targetsPin) {
+      return {
+        status: 'resolved',
+        planned: {
+          action,
+          eventId: input.pinnedEventId,
+          source: { kind: 'pinned_event' },
+        },
+      }
     }
+    return { status: 'ambiguous' }
   }
 
-  switch (input.intent.targetReference.kind) {
+  switch (ref.kind) {
     case 'named_venue':
       // A venue reference is not an event — it can never authorize a mutation.
       return { status: 'ambiguous' }
+    case 'current_selection': {
+      // Compound discovery + mutation: target the current-turn selection at the
+      // reference index. Never falls back to a prior group.
+      const id = input.selectedEventIds?.[ref.index]
+      const source = input.selectedSourceToolCallIds?.[ref.index]
+      if (id && source) {
+        return {
+          status: 'resolved',
+          planned: {
+            action,
+            eventId: id,
+            source: { kind: 'selected_current_event', sourceToolCallId: source },
+          },
+        }
+      }
+      return { status: 'ambiguous' }
+    }
     case 'ordinal':
     case 'lead':
     case 'other':
@@ -88,15 +118,17 @@ export function planMutation(input: PlanMutationInput): MutationPlanResult {
     }
     case 'none': {
       // No prior reference: the target is the current search's lead selection.
-      if (input.selectedEventId && input.selectedSourceToolCallId) {
+      const id = input.selectedEventIds?.[0]
+      const source = input.selectedSourceToolCallIds?.[0]
+      if (id && source) {
         return {
           status: 'resolved',
           planned: {
             action,
-            eventId: input.selectedEventId,
+            eventId: id,
             source: {
               kind: 'selected_current_event',
-              sourceToolCallId: input.selectedSourceToolCallId,
+              sourceToolCallId: source,
             },
           },
         }
