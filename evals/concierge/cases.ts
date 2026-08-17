@@ -2,9 +2,9 @@
 /**
  * Concierge eval cases.
  *
- * Each case encodes rules from the concierge system prompt
- * (src/features/chat/api/prompts/concierge.ts): decision rules (1 pick vs
- * short list vs max 5), tool selection, filter arguments, scope refusals.
+ * Each case encodes rules from the planner prompt
+ * (src/features/chat/api/agent/planner.ts): decision rules (1 pick vs
+ * short list vs max 5), search-field mapping, scope refusals.
  * Voice, locale, and grounding checks apply globally in run.ts.
  */
 import type { AgentRun } from '../lib/run-agent.ts'
@@ -296,11 +296,8 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
     id: 'scope-share-guidance',
     message: 'How can I share this event with a friend?',
     locale: 'en',
-    expect: {
-      noTools: true,
-      custom: (run) =>
-        /share button/i.test(run.text) ? null : 'did not point to the share button',
-    },
+    // Sharing is outside the concierge's finite plan: it redirects to events.
+    expect: { noTools: true, forbid: /```/ },
   },
   {
     id: 'scope-python',
@@ -322,11 +319,52 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
   },
 
   // --- Compound discovery + event-relative/mutation actions ---
-  // Regression: the turn target must be clause-aware. A discovery-first
-  // directions/mutation request resolves against the CURRENT selection, never
-  // a prior event; a mutation-first command keeps prior semantics. A
-  // single-turn eval has no prior group, so a prior-only command must produce
-  // zero side effects (clarify), never a save against nothing.
+  // Regression: a discovery-first follow-up resolves against the CURRENT
+  // search result (the planner emits search + followUp). No mutation is ever
+  // executed: save/unsave become show_for_save/show_for_unsave cards.
+  {
+    id: 'compound-details-second',
+    message: 'Find three jazz events and tell me more about the second.',
+    locale: 'en',
+    expect: {
+      anyToolOf: ['search_events'],
+      limitMin: 3,
+      limitMax: 3,
+      custom: (run) => {
+        const search = run.toolCalls.find((call) => call.toolName === 'search_events')
+        const details = run.toolCalls.find((call) => call.toolName === 'get_event_details')
+        const expected = search?.eventIds[1]
+        if (!expected) return 'search returned no second result'
+        if (!details) return 'get_event_details was not called'
+        if (details.input.eventId !== expected) return 'details did not target the second result'
+        if (run.canonical.events[0]?.id !== expected) return 'canonical did not show the second result'
+        return null
+      },
+    },
+  },
+  {
+    id: 'compound-directions-second',
+    message: 'Find three events and give me directions to the second.',
+    locale: 'en',
+    expect: {
+      anyToolOf: ['search_events'],
+      limitMin: 3,
+      limitMax: 3,
+      custom: (run) => {
+        const search = run.toolCalls.find((call) => call.toolName === 'search_events')
+        const directions = run.toolCalls.find((call) => call.toolName === 'get_directions')
+        const expected = search?.eventIds[1]
+        if (!expected) return 'search returned no second result'
+        if (!directions) return 'get_directions was not called'
+        if (directions.input.eventId !== expected) return 'directions did not target the second result'
+        // Some real events have no usable address. That read must fail
+        // deterministically, never retarget a different card.
+        if (run.canonical.kind === 'error' && run.canonical.directions === null) return null
+        if (run.canonical.directions?.eventId !== expected) return 'canonical directions target is wrong'
+        return null
+      },
+    },
+  },
   {
     id: 'compound-directions-lead',
     message: 'Find me a tango event and give me directions to it.',
@@ -335,20 +373,12 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
       anyToolOf: ['search_events'],
       limitMax: 5,
       custom: (run) => {
-        if (run.events.length === 0) return 'no event shown to take directions to'
         const call = run.toolCalls.find((t) => t.toolName === 'get_directions')
         if (!call) return 'get_directions was not called'
-        const lead = run.events[0]
-        const eventMatches = call.input.eventId === lead.id
-        const venueMatches =
-          typeof lead.venue_id === 'string' && call.input.venueId === lead.venue_id
-        if (!eventMatches && !venueMatches) {
-          return 'get_directions targeted neither the lead event nor its venue'
-        }
+        if (run.canonical.kind !== 'directions') return `expected directions, got ${run.canonical.kind}`
         const d = run.canonical.directions
-        if (d && d.eventId !== lead.id && d.venueId !== lead.venue_id) {
-          return 'attached directions target neither the lead event nor its venue'
-        }
+        if (!d) return 'no directions attached'
+        if (!d.eventId && !d.venueId) return 'directions target missing'
         return null
       },
     },
@@ -362,12 +392,17 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
       limitMin: 3,
       limitMax: 5,
       custom: (run) => {
-        const save = run.canonical.operations.find((o) => o.toolName === 'save_event')
-        if (!save) return 'no save executed for the second option'
-        if (run.events.length < 2) return 'fewer than two options shown (no second option)'
-        if (save.eventId !== run.events[1].id) {
-          return `saved ${save.eventId}, expected the second option ${run.events[1].id}`
+        // Zero mutation calls: the concierge shows the exact card + a
+        // deterministic "use the Save button" message instead of saving.
+        if (run.canonical.operations.length > 0) return 'executed a mutation (zero mutations required)'
+        if (run.canonical.kind !== 'event_details') return `expected event_details card, got ${run.canonical.kind}`
+        if (run.canonical.messageKey !== 'use_save_control' && run.canonical.messageKey !== 'use_unsave_control') {
+          return `expected save-control message, got ${run.canonical.messageKey}`
         }
+        if (run.canonical.events.length !== 1) return 'expected exactly one card for the second option'
+        const expected = run.toolCalls.find((call) => call.toolName === 'search_events')?.eventIds[1]
+        if (!expected) return 'search returned no second result'
+        if (run.canonical.events[0].id !== expected) return 'showed the wrong save-control card'
         return null
       },
     },
@@ -378,8 +413,8 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
     locale: 'en',
     expect: {
       custom: (run) => {
-        // Mutation-first "save the second one" has no prior group in a
-        // single-turn eval -> zero side effects (clarify), never a save.
+        // "save the second one" has no prior group in a single-turn eval ->
+        // clarification, zero side effects, never a save.
         if (run.canonical.operations.length > 0) {
           return 'executed a mutation with no resolvable prior target'
         }
@@ -391,43 +426,7 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
     },
   },
 
-  // --- Fails-closed mutation parsing: negation/interrogative/conflict never mutate ---
-  {
-    id: 'mutation-negated-dont-save',
-    message: "Don't save it—just show me directions",
-    locale: 'en',
-    expect: {
-      custom: (run) =>
-        run.canonical.operations.length > 0 ? 'executed a mutation despite negation' : null,
-    },
-  },
-  {
-    id: 'mutation-negated-do-not-save',
-    message: 'Do not save this event',
-    locale: 'en',
-    expect: {
-      custom: (run) =>
-        run.canonical.operations.length > 0 ? 'executed a mutation despite negation' : null,
-    },
-  },
-  {
-    id: 'mutation-interrogative-should-i-save',
-    message: 'Should I save it?',
-    locale: 'en',
-    expect: {
-      custom: (run) =>
-        run.canonical.operations.length > 0 ? 'executed a mutation for an interrogative' : null,
-    },
-  },
-  {
-    id: 'mutation-interrogative-save-or-unsave',
-    message: 'Should I save or unsave it?',
-    locale: 'en',
-    expect: {
-      custom: (run) =>
-        run.canonical.operations.length > 0 ? 'executed a mutation for an interrogative' : null,
-    },
-  },
+  // --- Conflicting commands clarify (zero side effects) ---
   {
     id: 'mutation-conflict-save-unsave',
     message: 'Save it? No, unsave it.',
@@ -438,15 +437,6 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
         if (run.canonical.kind !== 'clarification') return `expected clarification, got ${run.canonical.kind}`
         return null
       },
-    },
-  },
-  {
-    id: 'mutation-negated-es-no-guardes',
-    message: 'No guardes este evento, mostrame las direcciones',
-    locale: 'es',
-    expect: {
-      custom: (run) =>
-        run.canonical.operations.length > 0 ? 'ejecutó una mutación pese a la negación' : null,
     },
   },
 ]

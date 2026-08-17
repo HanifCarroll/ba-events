@@ -1,15 +1,13 @@
 /**
- * Grouped follow-up context + untrusted canonical rehydration (v4).
+ * Grouped follow-up context + untrusted canonical rehydration.
  *
- * Prior displayed events are represented as ordered `PriorDisplayGroup`s — one
- * per result-bearing assistant response — rather than a flat deduped list, so
- * "the second one" resolves against the newest response exactly as the user
- * saw it. Mutation-only responses create no group and never move the ordinal
- * window.
+ * Prior displayed events stay grouped by assistant response so the planner can
+ * interpret references against the newest displayed list. Historical
+ * mutation-only responses create no group and never move the ordinal window.
  *
  * Trust model:
  * - Client `data-response` parts and persisted canonical strings are UNTRUSTED.
- *   `parseDataResponseHint` applies a bounded Zod schema (v3/v4 only) and
+ *   `parseDataResponseHint` applies a bounded Zod schema (v3-v5) and
  *   yields event/operation IDs only — never names.
  * - Rehydration re-fetches those IDs from the database in one bounded query and
  *   discards missing/non-displayable events. Only DB names/venue facts survive.
@@ -56,9 +54,8 @@ export const MAX_NAME_STRING = 200
 /**
  * Event statuses eligible for rehydration. Cancelled/postponed/pending_review
  * events are discarded (they are no longer actionable and must not be offered
- * as follow-up targets). `scheduled` and `past` are allowed: past events can
- * still be referenced ("tell me about the one we discussed") but will never be
- * re-searched by the work loop.
+ * as follow-up targets). `scheduled` and `past` are allowed, so past events can
+ * still be referenced ("tell me about the one we discussed").
  */
 export const DISPLAYABLE_EVENT_STATUSES: ReadonlyArray<EventStatus> = [
   'scheduled',
@@ -75,8 +72,25 @@ export function isDisplayableStatus(status: unknown): status is EventStatus {
 
 export type PriorSaved = boolean | null
 
+// ============================================================================
+// STABLE HANDLES
+// ============================================================================
+
+/**
+ * Server-owned stable handle for a displayed event: `requestId:event_N`.
+ * Existing v5 ordered event IDs already persist this mapping (the canonical
+ * stores `requestId` + ordered `events`), so no wire bump is needed to address
+ * a prior event on a later turn. Handles are never exposed to the model as
+ * UUIDs — the planner only ever sees/returns these exact strings.
+ */
+export function handleFor(requestId: string, index: number): string {
+  return `${requestId}:event_${index}`
+}
+
 export interface PriorDisplayEvent {
   eventId: string
+  /** Original zero-based position in the persisted canonical response. */
+  displayIndex: number
   name: string
   saved: PriorSaved
 }
@@ -194,9 +208,11 @@ export const dataResponseHintSchema = z.object({
 export function parseDataResponseHint(data: unknown): DataResponseHint | null {
   const parsed = dataResponseHintSchema.safeParse(data)
   if (!parsed.success) return null
+  const requestId = sanitizeText(parsed.data.requestId, MAX_ID_STRING)
+  if (!requestId) return null
   return {
     contractVersion: parsed.data.contractVersion,
-    requestId: parsed.data.requestId,
+    requestId,
     kind: parsed.data.kind,
     events: parsed.data.events.map((e) => ({ eventId: e.id, saved: e.saved })),
     operations: parsed.data.operations,
@@ -354,11 +370,12 @@ export function buildPriorContext(
     if (r.events.length === 0) continue
 
     const events: PriorDisplayEvent[] = []
-    for (const hintEvent of r.events) {
+    for (const [displayIndex, hintEvent] of r.events.entries()) {
       const fact = factsById.get(hintEvent.eventId)
-      if (!fact) continue // discard missing / non-displayable
+      if (!fact) continue // discard missing / non-displayable without renumbering handles
       events.push({
         eventId: hintEvent.eventId,
+        displayIndex,
         name: sanitizeText(fact.name),
         saved: null, // stamped below from authoritative membership only
       })

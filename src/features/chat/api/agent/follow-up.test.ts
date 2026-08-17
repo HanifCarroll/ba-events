@@ -236,19 +236,20 @@ describe('buildPriorContext (grouping + saved state)', () => {
     expect(ctx.groups[0].events[0].name).toBe('DB Tango Night')
   })
 
-  it('discards missing and non-displayable events', () => {
+  it('discards missing and non-displayable events without renumbering stable handles', () => {
     const responses: PriorResponseHint[] = [
       resp({ events: [ev(E1), ev(E2), ev(E3), ev(E4), ev(E5), ev(E6)] }),
     ]
     const ctx = buildPriorContext(responses, [
-      fact(E1, 'Scheduled', { status: 'scheduled' }),
+      // E1 missing: E2 must keep its original event_1 position.
       fact(E2, 'Past', { status: 'past' }),
       fact(E3, 'Cancelled', { status: 'canceled' }),
       fact(E4, 'Postponed', { status: 'postponed' }),
       fact(E5, 'Pending', { status: 'pending_review' }),
       // E6 missing entirely.
     ])
-    expect(ctx.groups[0].events.map((e) => e.eventId)).toEqual([E1, E2])
+    expect(ctx.groups[0].events.map((e) => e.eventId)).toEqual([E2])
+    expect(ctx.groups[0].events[0].displayIndex).toBe(1)
   })
 
   it('bounds groups and total events, dropping oldest first', () => {

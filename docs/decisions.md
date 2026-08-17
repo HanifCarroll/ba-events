@@ -26,7 +26,33 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Bounded concierge MVP: single planner call, deterministic executor
+
+**Date:** 2026-08-17
+
+**Decision:** Replace the two-phase work-loop + finalizer + validation/fallback
+agent with a single bounded turn: latest user request + bounded server-
+rehydrated state -> ONE `generateText` call with `Output.object` against a
+closed Zod `TurnPlan` (NO tools, no free text) -> a deterministic executor that
+calls the existing search/details/directions/venue/list-saved implementations
+directly and builds the `CanonicalChatResponse` server-side. Prior events are
+addressed by server-owned handles (`requestId:event_N`). Chat save/unsave are
+zero-mutation `show_for_save`/`show_for_unsave` cards.
+
+**Alternatives Considered:**
+- Keep the tool-loop agent (rejected: unbounded tool churn, two model calls per
+  turn, complex stage/retention lifecycle for marginal gain).
+- A second "finalizer" generation to repair invalid planner output (rejected:
+  fail closed to deterministic clarification/error instead).
+
+**Rationale:** The finite plan (search / prior_event_action /
+pinned_event_action / list_saved / clarification / out_of_scope) covers the
+user-visible concierge surface; one model call is cheaper and easier to reason
+about, and the model never writes visible prose.
+
 ### Chat response v4: closed canonical response (deterministic text, structural trust)
+
+**Status:** Superseded by [Bounded concierge MVP](#bounded-concierge-mvp-single-planner-call-deterministic-executor); implementation details below are historical.
 
 **Date:** 2026-08-16
 
@@ -52,8 +78,7 @@ surface, not the pipeline: it closes the text and schema, adds search stages and
 the two retention/rejection control tools, and makes every trust decision
 structural.
 
-**Contract (v4) — see `docs/canonical-response.md` for the full field-by-field
-schema:**
+**Contract (v4, historical):**
 - `contractVersion: 4`. New required fields on the canonical: `messageKey`
   (closed 12-key enum; `recommendations_pick` is the second recommendations key
   and `share_guidance` provides deterministic share-button help)
@@ -73,7 +98,7 @@ schema:**
 - Operations are `OperationReceipt[]` with a deterministic localized `message`
   and typed `MutationOutcome`; they are always siblings of the primary kind.
 
-**Search stages — see `docs/search-stage-lifecycle.md`:** every work generation
+**Historical search stages (removed):** every work generation
 that calls `search_events` creates ONE `SearchStage` (success, empty, or failed).
 A new stage supersedes earlier stages the moment it is created; a stage can be
 explicitly REJECTED (distinct from superseded) by `reject_search_results`, or an
@@ -81,7 +106,7 @@ earlier source RETAINED (stage-scoped) by `retain_search_results`. Only ACTIVE a
 RETAINED sources are selectable; the finalizer receives event facts only for those
 sources. A failed/empty latest stage never resurrects earlier cards.
 
-**Trust boundary — see `docs/chat-trust-boundary.md`:** the system prompt is
+**Historical v4 trust boundary:** the system prompt is
 static except server-owned auth facts; prior/pinned context travels in a bounded
 normal model-context message carrying ids/order/saved/resolved facts only;
 external names never reach the system prompt or the application-context message;
@@ -90,7 +115,7 @@ to ids; model history is user text only; save/unsave availability is a structura
 intent gate on the latest raw user query. Prompt wording is advisory, never an
 enforcement mechanism — validation and fallback are deterministic.
 
-**Fallback rules — see `docs/fallback-rules.md`:** pinned enforcement, search
+**Historical fallback rules (removed):** pinned enforcement, search
 stage/retention/rejection, compound relation identity, operations-never-rerun,
 exact provenance, and localized non-empty text are all deterministic.
 
@@ -100,7 +125,7 @@ v4 render shape (never rewritten); `legacy_unknown` provenance and
 `saved: null` / absent identity cover what historical rows cannot prove; a minimal
 DB migration only changes the column default.
 
-**Eval coverage — see `evals/concierge/README.md` and `docs/concierge-evals.md`:**
+**Historical v4 eval coverage:**
 a deterministic no-model/no-DB regression suite pins the pure components with
 fixed adversarial ledgers, alongside the existing live model+DB concierge eval.
 

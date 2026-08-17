@@ -4,12 +4,11 @@ Two layers verify the concierge agent:
 
 1. **Deterministic** — `deterministic.test.ts`, a test suite with **no model
    and no database** (Vitest-style imports, discovered by `bun test`). It drives
-   the pure validation/fallback/reference/context components through fixed
-   adversarial ledgers so the trust, grounding, and compound rules are pinned
-   without a model in the loop.
-2. **Live** — `run.ts`, which runs each single-turn case through the real agent
-   (work loop + finalizer + validation/fallback) against the real DeepSeek model
-   and the dev database, then scores deterministically.
+   the strict plan schema, stable handles, rehydration, deterministic executor,
+   and canonical text with fixed inputs.
+2. **Live** — `run.ts`, which runs each single-turn case through the one-call
+   planner and deterministic executor against the real model and dev database,
+   then scores deterministically.
 
 ## Deterministic suite
 
@@ -20,17 +19,16 @@ bun test evals/concierge/deterministic.test.ts
 
 `bun run test` (Vitest) excludes `evals/` and does **not** run this file.
 
-Covers, via `validatePlan` / `buildFallback` / `resolveReferences` /
-`buildPriorContext` / `parseDataResponseHint` / `mutationMessage`:
+Covers, via `turnPlanSchema`, `handleFor`, `buildPriorContext`,
+`parseDataResponseHint`, `runExecutor`, and deterministic materialization:
 
-- superseded vs. rejected search stages
-- failed-refinement never resurrecting earlier cards
-- finalizer schema/provider failure → typed fallback
-- compound recommendation + directions relation
-- grouped ordinal resolution + saved-marker stamping
-- pinned substitution rejection
-- guest injection payload stripping + DB rehydration
-- Spanish mutation-receipt table
+- strict finite plans and invalid-output rejection;
+- stable original display positions and exact handle validation;
+- current-search details/directions by validated result index;
+- prior and pinned details/directions/venue reads;
+- save/unsave card selection with zero mutations;
+- guest injection stripping, DB rehydration, and authoritative saved state;
+- deterministic localized text.
 
 No secrets, no network, no DB. Runs in CI.
 
@@ -41,8 +39,9 @@ bun run eval:concierge            # all cases
 bun evals/concierge/run.ts <id>   # one case by id
 ```
 
-Scores tool choice, effective limits, filter args, voice rules, locale, and card
-grounding (`cardsGrounded`). A non-zero exit code means at least one case failed.
+Scores read choice, effective limits, filter args, locale, exact indexed
+follow-ups, zero chat mutations, and card grounding against canonical provenance
+(`cardsGrounded`). A non-zero exit code means at least one case failed.
 
 ## Live-suite secrets
 

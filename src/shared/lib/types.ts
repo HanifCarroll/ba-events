@@ -1,4 +1,3 @@
-import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
 import type { EventFacets } from '#shared/lib/search-facets.ts'
 
 // All 48 official CABA neighborhoods
@@ -216,116 +215,6 @@ export interface EventFilters {
   avoidGenres?: string[]
 }
 
-// Content block types for Claude API messages
-export type TextBlock = { type: 'text'; text: string }
-
-// Tool input types for the concierge chat tools exposed through /api/chat
-
-export interface GetVenueDetailsToolInput {
-  /** The venue ID (if known from a previous event search) */
-  venueId?: string
-  /** The name of the venue to search for */
-  venueName?: string
-}
-
-export interface SaveEventToolInput {
-  /** The event ID to save */
-  eventId: string
-}
-
-export interface UnsaveEventToolInput {
-  /** The event ID to remove from saved events */
-  eventId: string
-}
-
-export interface ListSavedEventsToolInput {
-  /** Filter saved events by time */
-  filter?: 'all' | 'upcoming' | 'past'
-}
-
-export interface GetEventDetailsToolInput {
-  /** The event ID to get details for */
-  eventId: string
-}
-
-export interface CheckEventSavedToolInput {
-  /** The event ID to check if saved */
-  eventId: string
-}
-
-// Discriminated union for type-safe tool use blocks
-export type SearchEventsToolUseBlock = {
-  type: 'tool_use'
-  id: string
-  name: 'search_events'
-  input: SearchEventsInput
-}
-
-export type GetVenueDetailsToolUseBlock = {
-  type: 'tool_use'
-  id: string
-  name: 'get_venue_details'
-  input: GetVenueDetailsToolInput
-}
-
-export type SaveEventToolUseBlock = {
-  type: 'tool_use'
-  id: string
-  name: 'save_event'
-  input: SaveEventToolInput
-}
-
-export type UnsaveEventToolUseBlock = {
-  type: 'tool_use'
-  id: string
-  name: 'unsave_event'
-  input: UnsaveEventToolInput
-}
-
-export type ListSavedEventsToolUseBlock = {
-  type: 'tool_use'
-  id: string
-  name: 'list_saved_events'
-  input: ListSavedEventsToolInput
-}
-
-export type GetEventDetailsToolUseBlock = {
-  type: 'tool_use'
-  id: string
-  name: 'get_event_details'
-  input: GetEventDetailsToolInput
-}
-
-export type CheckEventSavedToolUseBlock = {
-  type: 'tool_use'
-  id: string
-  name: 'check_event_saved'
-  input: CheckEventSavedToolInput
-}
-
-export type ToolUseBlock =
-  | SearchEventsToolUseBlock
-  | GetVenueDetailsToolUseBlock
-  | SaveEventToolUseBlock
-  | UnsaveEventToolUseBlock
-  | ListSavedEventsToolUseBlock
-  | GetEventDetailsToolUseBlock
-  | CheckEventSavedToolUseBlock
-
-export type ToolResultBlock = {
-  type: 'tool_result'
-  tool_use_id: string
-  content: string
-}
-
-export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
-
-// API message format (for sending to Claude)
-export interface APIMessage {
-  role: 'user' | 'assistant'
-  content: string | ContentBlock[]
-}
-
 // Directions data for Maps links
 export interface DirectionsData {
   venueName: string
@@ -340,17 +229,12 @@ export interface DirectionsData {
 
 export type ChatStreamStatusPhase =
   | 'thinking'
-  | 'calling_tool'
-  | 'finalizing'
-  | 'validating'
   | 'persisting'
   | 'done'
   | 'error'
 
 export interface ChatStreamStatusData {
   phase: ChatStreamStatusPhase
-  toolName?: string
-  stepIndex?: number
   requestId: string
   assistantMessageId?: string
   timestamp: string
@@ -374,7 +258,6 @@ export interface ChatMessage {
 
 export interface ChatState {
   messages: ChatMessage[]
-  apiHistory: APIMessage[] // Full API history for Claude
   isLoading: boolean
 }
 
@@ -385,12 +268,6 @@ export interface RefinementSuggestion {
   prompt: string
   icon?: string
   type: 'time' | 'price' | 'category' | 'neighborhood' | 'broader'
-}
-
-// Conversation history for API (legacy - use APIMessage instead)
-export interface ConversationMessage {
-  role: 'user' | 'assistant'
-  content: string
 }
 
 // Suggested prompts for empty state
@@ -616,10 +493,8 @@ export interface ConciergeMessage extends ChatMessage {
 // =============================================================================
 
 /**
- * Response contract version.
- * v5 = outcome-aware mutation leads, partial-search provenance, typed
- * pinned-event failures, and deterministic post-plan mutation execution.
- * v4 = closed-message canonical response (single source of truth).
+ * Response contract version. The bounded planner/executor keeps the v5 wire
+ * shape; mutation/stage fields remain only for non-destructive historical reads.
  */
 export const CHAT_CONTRACT_VERSION = 5 as const
 
@@ -638,11 +513,9 @@ export type ResponseKind =
 /**
  * Closed set of deterministic text templates. Server text is materialized from
  * one of these keys plus validated artifacts — never from arbitrary model prose.
- *
- * v5: the single `mutation_result` key is replaced by outcome-aware mutation
- * lead keys derived server-side from normalized receipts; `partial_results`
- * marks a search that returned events while another call failed; and
- * `pinned_event_unavailable` is the typed pinned-event failure lead.
+ * Mutation and partial-stage keys remain for historical v4/v5 rows. New turns
+ * use the bounded planner/executor keys, including the explicit card-control
+ * and pinned-event leads.
  */
 export const MESSAGE_KEYS = [
   'recommendations',
@@ -664,6 +537,9 @@ export const MESSAGE_KEYS = [
   'mutation_mixed',
   'partial_results',
   'pinned_event_unavailable',
+  'use_save_control',
+  'use_unsave_control',
+  'login_required',
 ] as const
 export type MessageKey = (typeof MESSAGE_KEYS)[number]
 
@@ -691,8 +567,8 @@ export interface ClarificationQuestion {
 
 /**
  * Tri-state saved marker. `true` = saved, `false` = not saved, `null` = unknown.
- * Search/details default null; saved-list and successful save/unsave evidence
- * set true/false; failed/denied/unauthenticated/not-found never overwrite.
+ * Search/details default null; saved-list and authoritative membership can set
+ * true/false. Historical adapters preserve old persisted values.
  */
 export type SavedState = boolean | null
 
@@ -706,10 +582,11 @@ export type CanonicalChatEventPayload = ChatEventPayload & {
 }
 
 /**
- * Exact reason the deterministic fallback was triggered. Each value maps to a
- * concrete validation/planning violation, never a free-form string.
+ * Typed fallback reasons. Most values are retained for historical v5 rows;
+ * bounded turns emit only planner_error or invalid_schema.
  */
 export const FALLBACK_REASONS = [
+  'planner_error',
   'finalizer_error',
   'invalid_schema',
   'unknown_event_id',
@@ -738,12 +615,6 @@ export const FALLBACK_REASONS = [
 
 export type FallbackReason = (typeof FALLBACK_REASONS)[number]
 
-/** A model-selected event, bound to the exact tool call that produced it. */
-export interface EventSelection {
-  eventId: string
-  sourceToolCallId: string
-}
-
 export type MutationOutcome =
   | 'applied'
   | 'already_applied'
@@ -752,7 +623,7 @@ export type MutationOutcome =
   | 'not_found'
   | 'failed'
 
-/** Normalized save/unsave receipt with a deterministic user-facing message. */
+/** Historical save/unsave receipt retained for persisted-response adapters. */
 export interface OperationReceipt {
   toolCallId: string
   toolName: 'save_event' | 'unsave_event'
@@ -760,105 +631,6 @@ export interface OperationReceipt {
   outcome: MutationOutcome
   message: string
 }
-
-// ============================================================================
-// TYPED MUTATION + REFERENCE INTENT (v5)
-// ============================================================================
-
-/**
- * A deterministic reference to a prior displayed event (or the current-turn
- * selection, none, or ambiguous). `current_selection` targets the validated
- * selection of THIS turn (compound discovery + mutation); it never resolves
- * against prior groups.
- */
-export type TargetReference =
-  | { kind: 'ordinal'; index: number }
-  | { kind: 'lead' }
-  | { kind: 'other'; index: number }
-  | { kind: 'named_event'; eventId: string }
-  | { kind: 'named_venue'; venueId: string }
-  | { kind: 'current_selection'; index: number }
-  | { kind: 'none' }
-  | { kind: 'ambiguous' }
-
-export type MutationAction = 'save' | 'unsave'
-
-/**
- * The single query-derived event-relative target for a turn. Abstract by
- * design: it names the scope (`prior` / `current_selection` / `pinned` /
- * `none` / `ambiguous`) and carries concrete ids only for `prior`/`pinned`,
- * plus the current-turn selection index for `current_selection`; `none`
- * authorizes no event-relative action. It NEVER carries selected-event arrays — the validator resolves a current index
- * against its own validated selections, and mutation/directions/venue all
- * authorize the SAME intended scope (never a union of prior + current ids).
- */
-export type TurnTarget =
-  | { scope: 'none' }
-  | { scope: 'ambiguous' }
-  | { scope: 'pinned'; eventId: string; venueId: string | null }
-  | { scope: 'prior'; eventId: string | null; venueId: string | null }
-  | { scope: 'current_selection'; index: number }
-
-/**
- * A turn target resolved to concrete identity against the artifact ledger
- * (v5). `current_selection` binds the exact event + source tool call + venue
- * resolved from ordered ACTIVE/RETAINED search artifacts — never the
- * finalizer's `eventSelections`, which are validated against this concrete
- * identity instead. `prior`/`pinned` carry their concrete ids; `none` and
- * `ambiguous` authorize nothing.
- */
-export type ResolvedTurnTarget =
-  | { scope: 'none' }
-  | { scope: 'ambiguous' }
-  | { scope: 'pinned'; eventId: string; venueId: string | null }
-  | { scope: 'prior'; eventId: string | null; venueId: string | null }
-  | {
-      scope: 'current_selection'
-      eventId: string
-      sourceToolCallId: string
-      venueId: string | null
-    }
-
-/**
- * Typed mutation intent, parsed deterministically from the latest raw user
- * request. `none` means no explicit save/unsave command (or a negated /
- * interrogative / quoted one); an explicit command carries the action plus its
- * target reference; `ambiguous` means conflicting save/unsave commands (never
- * a side effect). No broad boolean gate.
- */
-export type MutationIntent =
-  | { kind: 'save'; targetReference: TargetReference }
-  | { kind: 'unsave'; targetReference: TargetReference }
-  | { kind: 'ambiguous' }
-  | { kind: 'none' }
-
-/**
- * Where a validated mutation target came from. `selected_current_event` binds
- * the target to the exact source artifact that produced the selected event.
- */
-export type PlannedMutationSource =
-  | { kind: 'resolved_prior_target' }
-  | { kind: 'pinned_event' }
-  | { kind: 'selected_current_event'; sourceToolCallId: string }
-
-/** A single validated mutation, executed once by the deterministic executor. */
-export interface PlannedMutation {
-  action: MutationAction
-  eventId: string
-  source: PlannedMutationSource
-}
-
-/**
- * Outcome-aware mutation lead key derived server-side from normalized receipts.
- * Each key materializes a truthful localized lead (EN + ES).
- */
-export type MutationMessageKey =
-  | 'mutation_applied'
-  | 'mutation_already_applied'
-  | 'mutation_unauthenticated'
-  | 'mutation_not_found'
-  | 'mutation_failed'
-  | 'mutation_mixed'
 
 // ============================================================================
 // PINNED-EVENT MODE (v5)
@@ -887,23 +659,19 @@ export interface CanonicalProvenance {
   directionToolCallIds: string[]
   /** Tool calls that produced the attached venue reference, deduped. */
   venueToolCallIds: string[]
-  /** Tool calls behind the acknowledged mutation receipts, deduped. */
+  /** Compatibility-only: historical mutation receipts; always empty on new turns. */
   mutationToolCallIds: string[]
   /** Tool calls that produced the selected suggestion source, deduped. */
   suggestionToolCallIds: string[]
   /** Empty-source tool call ids that ground a no_results response, deduped. */
   emptySourceToolCallIds: string[]
-  /** Earlier search sources explicitly retained (reactivated) this turn, deduped. */
+  /** Compatibility-only retained-source ids; always empty on new turns. */
   retainedSourceToolCallIds: string[]
-  /** Search stage ids that contributed events to this response, in order. */
+  /** Compatibility-only stage ids; always empty on new turns. */
   stageIds: string[]
-  /** Exact tool call ids of the LATEST search stage attempt (success, empty, or failed). */
+  /** The bounded turn's single search call id, when it searched. */
   searchAttemptToolCallIds: string[]
-  /**
-   * True when a parallel search call failed but at least one event is shown
-   * (partial_success) or no events exist yet part of the search failed.
-   * Marks the response as incomplete.
-   */
+  /** Compatibility-only partial-stage marker; always false on new turns. */
   searchIncomplete: boolean
   origin: ProvenanceOrigin
   fallbackUsed: boolean
@@ -924,8 +692,8 @@ export interface VenueDetailsData {
  * The single authoritative assistant response for a chat turn (v5).
  * Text is deterministic (closed messageKey + validated artifacts), never model
  * prose. `messageKey`, `clarificationQuestions`, and every provenance array are
- * required: the v5 producer always sets them, and the legacy v2/v3/v4 adapters
- * fill deterministic defaults.
+ * required: the v5 producer always sets them, and legacy adapters fill
+ * deterministic defaults.
  */
 export interface CanonicalChatResponse {
   contractVersion: typeof CHAT_CONTRACT_VERSION
@@ -985,10 +753,9 @@ export interface MessageAttachedData {
   /**
    * Canonical response payload at the storage boundary. Stored verbatim and
    * authoritative on reload, but its exact version/shape depends on when the
-   * row was written (v2 has no canonical; v3 and v4 store their own shapes).
-   * Kept `unknown` so the storage layer never lies that legacy JSON is v4 —
-   * use the version-aware adapters in `canonical.ts` to produce a strict v4
-   * render shape.
+   * row was written (v2 has no canonical; v3-v5 store versioned shapes).
+   * Kept `unknown` so the storage layer never lies about legacy JSON — use the
+   * version-aware adapters in `canonical.ts` to produce a strict v5 render shape.
    */
   canonical?: unknown
 }

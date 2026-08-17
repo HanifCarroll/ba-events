@@ -56,8 +56,6 @@
 		| 'idle'
 		| 'preparing'
 		| 'thinking'
-		| 'running_tool'
-		| 'composing'
 		| 'persisting'
 		| 'error'
 
@@ -126,11 +124,6 @@
 		switch (phase) {
 			case 'thinking':
 				return 'thinking'
-			case 'calling_tool':
-				return 'running_tool'
-			case 'finalizing':
-			case 'validating':
-				return 'composing'
 			case 'persisting':
 				return 'persisting'
 			case 'done':
@@ -456,7 +449,7 @@
 				}
 				activeRequestIdRef = statusData.requestId
 
-				if (statusData.phase === 'finalizing' && !handoffMarksRef.first_response) {
+				if (statusData.phase === 'persisting' && !handoffMarksRef.first_response) {
 					markHandoffPhase('first_response')
 				}
 
@@ -897,10 +890,6 @@
 				return m.chat_status_preparing()
 			case 'thinking':
 				return m.chat_status_thinking()
-			case 'running_tool':
-				return m.chat_status_running_tool()
-			case 'composing':
-				return m.chat_status_composing()
 			case 'persisting':
 				return m.chat_status_persisting()
 			case 'error':

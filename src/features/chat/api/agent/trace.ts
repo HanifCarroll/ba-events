@@ -1,8 +1,8 @@
 /**
- * Sanitized execution trace for v4 persistence/debugging.
+ * Sanitized reads-only execution trace for persistence and debugging.
  *
- * Contains tool calls and results only — no raw reasoning and no work-phase
- * narration text. Embeddings are stripped recursively.
+ * Contains deterministic executor calls/results only. Embeddings are stripped
+ * recursively; there is no model reasoning or work-loop text.
  */
 
 import type { MessageExecutionStep, Json } from '#shared/lib/types.ts'

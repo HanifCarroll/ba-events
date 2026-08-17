@@ -1,22 +1,23 @@
-# Follow-up Display Groups (v4)
+# Follow-up Display Groups and Stable Handles
 
-Follow-up reference resolution ("the second one", "save that", "the Niceto one")
-is deterministic, built from grouped prior context. Source:
-`src/features/chat/api/agent/follow-up.ts` (grouping + rehydration) and
-`src/features/chat/api/agent/context.ts` (reference resolution).
+Follow-up reference resolution ("the second one", "that", "the Niceto one") is
+handled by the **planner** (a single model call interpreting EN/ES natural
+language) against bounded, server-rehydrated prior context. Source:
+`src/features/chat/api/agent/follow-up.ts` (grouping + rehydration + handles)
+and `src/features/chat/api/agent/planner.ts` (the interpretation).
 
 ## Group shape and bounds
 
 Prior displayed events are `PriorDisplayGroup[]` — one group per result-bearing
-assistant response — not a flat deduped list, so ordinals resolve against the
-newest response exactly as the user saw it.
+assistant response — not a flat deduped list, so "the second one" resolves
+against the newest response exactly as the user saw it.
 
 ```ts
 export interface PriorDisplayGroup {
   assistantMessageId: string
   requestId: string
   createdAt: string | null
-  events: PriorDisplayEvent[]   // { eventId, name, saved }
+  events: PriorDisplayEvent[]   // { eventId, displayIndex, name, saved }
 }
 ```
 
@@ -35,57 +36,34 @@ Bounds (all in `follow-up.ts`):
 `DISPLAYABLE_EVENT_STATUSES` is `['scheduled', 'past']` — cancelled/postponed/
 pending_review events are discarded and never offered as follow-up targets.
 
-## Ordinals use the newest card-bearing response
+## Stable handles
 
-`resolveReferences` detects EN ordinals (`first`…`fifth`) and ES ordinals
-(`primero`…`quinto`), then indexes `newest.events[ordinal]` where `newest` is the
-last (newest) group. An ordinal out of range for the newest group yields nothing
-— it does not fall through to older groups.
+Each displayed event gets a server-owned handle derived from the persisted
+canonical's `requestId` + original display position:
 
-## Mutation-only responses don't move the window
+```ts
+handleFor(requestId, index) => `${requestId}:event_${index}`
+```
 
-`buildPriorContext` skips a response whose `events` array is empty — even if it
-carried operations. A save/unsave-only turn therefore creates no group and never
-changes which response the ordinals/pronouns point at.
+Existing v5 ordered event IDs already persist this mapping (the canonical stores
+`requestId` + ordered `events`), so no wire bump is needed. The planner prompt
+lists `responseOrder`, `displayOrder`, handles, and facts; the planner returns the exact
+`targetHandle` for `prior_event_action`. The executor validates the handle
+against the exact server-issued map — an unknown handle fails closed to
+clarification. The model never sees or returns a raw event UUID.
 
-## Repeated events preserve order
+## Rehydration
 
-Groups are built in response order and each group's events keep their hint order.
-Deduping happens only at the id-collection stage (`collectEventIds`); within a
-group, an event repeated across responses keeps its per-group position, and the
-same event id can legitimately appear in multiple groups (each occurrence is
-stamped with the final saved state).
+`buildPriorContext` re-fetches event ids from the DB (one bounded query),
+discards non-displayable/missing events without renumbering surviving display
+positions, and stamps the final saved state. An
+empty-events response (e.g. a clarification) creates no group and never moves
+the ordinal window.
 
-## Pronouns: lead event first, "other" second
+## Saved evidence
 
-- `PRONOUNS` ("it", "this one", "that", "ese/esa/eso", …) → `newest.events[0]`
-  (the lead card).
-- `OTHER_PRONOUNS` ("other", "the other", "otro/otra") → `newest.events[1]` (the
-  second displayed / "other" card), when present.
-
-Both operate on the newest group only.
-
-## Named older references
-
-`resolveNamed` matches the query against event names, newest group first, then
-venue names, newest group first. A name match returns that event's id (and venue
-id when known). This is the only path that searches across older groups; ordinals
-and pronouns are newest-group-only. Names come from rehydrated DB facts, never
-from untrusted hint text.
-
-## Saved evidence chronology
-
-Tri-state saved is resolved chronologically across the turn:
-
-- `mutationSavedState`: `applied`/`already_applied` save → `true`; unsave →
-  `false`; `denied`/`unauthenticated`/`not_found`/`failed` → `null` (no overwrite).
-- In `buildPriorContext`, operations are applied first (chronologically), then
-  each hint event's non-null `saved` is applied, then the final state is stamped
-  onto every occurrence of that event across all groups.
-- Within a single request, `resolveSavedState` (`record.ts`) walks the ledger in
-  `(stepIndex, callIndex)` order; the latest successful `check_event_saved` /
-  save / unsave evidence wins; failed/denied/unauthenticated/not-found never
-  overwrite a prior known value.
-
-A successful save in a later mutation-only response therefore stamps `saved:
-true` onto the same event's earlier card group.
+Authenticated history is stamped from the authoritative saved-membership query
+(a `complete` result marks absent ids `saved:false`; `unavailable` leaves `null`).
+Guest history never trusts client `saved`/operation outcomes — rehydrated events
+default to `null`. The chat turn itself performs zero mutations, so there is no
+intra-turn saved chronology to reconcile.

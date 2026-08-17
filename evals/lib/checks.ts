@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /**
- * Deterministic scorers for concierge evals: voice rules from the concierge
- * prompt (src/features/chat/api/prompts/concierge.ts) and reply language.
+ * Deterministic scorers for concierge evals: voice rules and reply language.
+ * The concierge writes no model prose (server text is deterministic), so these
+ * mostly pin the deterministic EN/ES materialization.
  */
 
-// Single source of truth for voice-rule meta-narration detection. The v3
-// finalizer enforces this via prompt instruction; this regex is the eval's
-// deterministic mirror of that rule.
+// Voice regressions remain checked even though current visible prose comes only
+// from deterministic templates.
 export const META_NARRATION_PATTERN =
   /\b(?:let me\s+(?:check|search|look|try)|search(?:ing now| again)|still getting|different angle)\b/i
 

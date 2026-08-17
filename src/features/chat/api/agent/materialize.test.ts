@@ -5,20 +5,9 @@ import {
   materializeClarificationText,
   MESSAGE_KEY_KIND,
 } from './materialize.ts'
-import { responsePlanSchema } from './finalizer.ts'
 import type { MessageKey } from '#shared/lib/types.ts'
 
 describe('materializeText (deterministic server text)', () => {
-  it('finalizer schema carries no arbitrary text/prose field', () => {
-    const shape = responsePlanSchema.shape as Record<string, unknown>
-    expect('text' in shape).toBe(false)
-    expect('prose' in shape).toBe(false)
-    // The closed plan selects a kind + messageKey + artifact refs only.
-    expect(shape.contractVersion).toBeDefined()
-    expect(shape.primaryKind).toBeDefined()
-    expect(shape.messageKey).toBeDefined()
-  })
-
   it('interpolates only validated names into the three name templates', () => {
     expect(
       materializeText({ messageKey: 'event_details', locale: 'en', eventName: 'Tango night' })

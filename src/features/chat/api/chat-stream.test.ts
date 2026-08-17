@@ -72,7 +72,7 @@ const canonical: CanonicalChatResponse = {
 	}
 }
 
-describe('v4 chat stream client correlation', () => {
+describe('bounded chat stream client correlation', () => {
 	it('correlates into exactly one assistant message with one text part and a persistent data-response part', async () => {
 		const messageId = 'assistant-server-1'
 		const requestId = 'request-1'
@@ -81,7 +81,7 @@ describe('v4 chat stream client correlation', () => {
 		const chunks: UIMessageChunk[] = [
 			{ type: 'start', messageId },
 			{ type: 'data-status', id: `status:${requestId}`, transient: true, data: { phase: 'thinking', requestId } },
-			{ type: 'data-status', id: `status:${requestId}`, transient: true, data: { phase: 'calling_tool', requestId } },
+			{ type: 'data-status', id: `status:${requestId}`, transient: true, data: { phase: 'persisting', requestId } },
 			{ type: 'text-start', id: textId },
 			{ type: 'text-delta', id: textId, delta: 'Go to Tango night.' },
 			{ type: 'text-end', id: textId },

@@ -36,6 +36,9 @@ export const MESSAGE_KEY_KIND: Record<MessageKey, ResponseKind> = {
   mutation_mixed: 'mutation_result',
   partial_results: 'recommendations',
   pinned_event_unavailable: 'error',
+  use_save_control: 'event_details',
+  use_unsave_control: 'event_details',
+  login_required: 'saved_events',
 }
 
 export interface MaterializeTextInput {
@@ -127,6 +130,18 @@ const TEXTS: Record<MessageKey, { en: string; es: string }> = {
   pinned_event_unavailable: {
     en: "I couldn't load that event.",
     es: 'No pude cargar ese evento.',
+  },
+  use_save_control: {
+    en: 'Use the Save button on this card to add it to your list.',
+    es: 'Usá el botón Guardar de esta tarjeta para agregarlo a tu lista.',
+  },
+  use_unsave_control: {
+    en: 'Use the Remove from saved button on this card to take it off your list.',
+    es: 'Usá el botón Quitar de guardados de esta tarjeta para sacarlo de tu lista.',
+  },
+  login_required: {
+    en: 'Log in to see your saved events.',
+    es: 'Iniciá sesión para ver tus guardados.',
   },
 }
 function cleanName(value: string | undefined, max = 80): string | undefined {

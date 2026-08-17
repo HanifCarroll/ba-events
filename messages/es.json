@@ -29,8 +29,6 @@
   "chat_thinking": "Pensando",
   "chat_status_preparing": "Pensando…",
   "chat_status_thinking": "Pensando",
-  "chat_status_running_tool": "Buscando eventos",
-  "chat_status_composing": "Escribiendo…",
   "chat_status_persisting": "Casi listo…",
   "chat_status_error": "Algo salió mal",
   "chat_rate_limit": "Alcanzaste el límite de solicitudes ({count} por hora). Intentá de nuevo después de las {time}.",

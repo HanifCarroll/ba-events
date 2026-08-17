@@ -1,61 +1,70 @@
-# Concierge Eval Coverage (v4)
+# Concierge Eval Coverage
 
-Two complementary suites cover the concierge agent: a deterministic
+Two complementary suites cover the bounded concierge: a deterministic
 no-model/no-DB regression suite and a live model+DB suite. Both are runnable
 locally; the deterministic suite also runs in CI via the explicit `bun test`
 step (`bun run test`/Vitest excludes `evals/` and does not run it).
 
-## Deterministic mocked eval
+## Deterministic suite
 
-`evals/concierge/deterministic.test.ts` — a test file with no model and no
-database (Vitest-style imports, discovered by `bun test`). It drives the pure components through fixed, adversarial ledgers built
-with `evals/concierge/_test-helpers.ts` helpers (`ledgerFrom`, `searchEntry`,
-`directionsEntry`, `eventDetailsEntry`, `rejectionEntry`, …).
+`evals/concierge/deterministic.test.ts` — no model, no database (Vitest-style
+imports, discovered by `bun test`). It drives the pure components of the
+bounded MVP with fixed inputs:
 
-Components pinned (no model in the loop):
+- `handleFor` — stable handles preserve response identity and original display
+  position.
+- `turnPlanSchema` — strict closed schema; rejects bad kinds/counts/indices,
+  unknown fields, model prose, and event-ID fields.
+- `buildPlannerPrompt` — bounded handles + facts, never a raw UUID.
+- `runExecutor` — prior handle resolution, invalid handle/index → clarification,
+  search + details/directions second, show_for_save/show_for_unsave zero
+  mutation, pinned details/directions.
+- `buildPriorContext` / `parseDataResponseHint` — untrusted-payload stripping,
+  saved-membership stamping.
+- `materializeText` — save/unsave control + login-required leads.
 
-- `validatePlan` — stage eligibility (`superseded_source`, `rejected_source`),
-  pinned substitution, compound relation, no-results grounding.
-- `buildFallback` — latest-stage-wins, rejected-active-stage error, failed-stage
-  error with no resurrection, exact `searchAttemptToolCallIds`/`stageIds`
-  provenance, typed `fallbackReason`/`fallbackUsed`.
-- `resolveReferences` — grouped ordinal resolution, saved-marker stamping.
-- `buildPriorContext` — mutation-only group omission, chronological saved
-  stamping.
-- `parseDataResponseHint` — untrusted-payload stripping (names/prose dropped, ids
-  survive), then DB rehydration of names.
-- `mutationMessage` — deterministic Argentine-Spanish receipt table.
+The unit suite in `src/features/chat/api/agent/*.test.ts`
+(`planner.test.ts`, `executor.test.ts`, `orchestrate.test.ts`) pins the same
+components plus the single-planner-call / fail-closed guarantees.
 
-The scenarios mirror the live cases (romantic speed-dating regression, pinned
-substitution, guest injection) but assert on the deterministic layer rather than
-model output. Run with `bun test evals/concierge/deterministic.test.ts` (or the
-plain `bun test` step, which discovers it). `bun run test` (Vitest) excludes
-`evals/` and does not run it.
+## Live suite
 
-## Live model+DB concierge eval
+```bash
+bun run eval:concierge            # all cases
+bun evals/concierge/run.ts <id>   # one case by id
+```
 
-`evals/concierge/run.ts` runs each single-turn case through the real agent
-(`orchestrate` → work loop + finalizer + validation/fallback) against the real
-DeepSeek model and the dev database with an anonymous user context, then scores
-deterministically (tool choice, limits, filter args, voice, locale, grounding).
-It mirrors `src/routes/api/chat/+server.ts` without the HTTP/stream layer.
+Scores search-field selection, effective limits, scope refusals, voice rules,
+locale, and card grounding against each canonical source provenance id
+(`cardsGrounded`). Zero chat mutations are asserted
+on every save/unsave case. A non-zero exit code means at least one case failed.
 
-Files:
+## Live-suite secrets
 
-- `evals/concierge/cases.ts` — `CONCIERGE_CASES` (decision rules, discovery,
-  counts, filters, tool selection, vague asks, grounding, enumeration, scope).
-- `evals/concierge/run.ts` — runner + scorer, `bun evals/concierge/run.ts`.
-- `evals/lib/run-agent.ts` — `runConcierge` (orchestrate + grounding check).
-- `evals/lib/checks.ts` — voice-rule and language detection.
-- `evals/lib/report.ts` — per-case report, non-zero exit on failure.
+The live suite reads environment variables through the shared client
+(`src/shared/lib/db/client.server.ts`) and provider (`src/shared/lib/ai/providers.ts`).
+Required for the live suite (and the CI `concierge-eval` workflow):
 
-Run: `bun run eval:concierge` (or `bun evals/concierge/run.ts`; an optional case
-id filters to one case). `cardsGrounded` re-checks that every displayed card
-traces to a successful current-request ledger artifact credited by
-`provenance.sourceToolCallIds`.
+| Variable | Purpose |
+|---|---|
+| `AI_API_KEY` **or** `DEEPSEEK_API_KEY` | Text model auth (resolved `AI_API_KEY` > `DEEPSEEK_API_KEY` > `ANTHROPIC_API_KEY`) |
+| `SUPABASE_URL` | Supabase project URL (dev DB) |
+| `SUPABASE_ANON_KEY` | Supabase anon key (dev DB) |
+| `VOYAGE_API_KEY` *(optional)* | Hosted reranker; search falls back to retrieval order without it |
 
-## Secrets (live suite only)
+Additional provider/embedding caveats:
 
-The live suite needs real provider and database credentials; the deterministic
-suite needs none. See `evals/concierge/README.md` for the exact env vars and the
-CI `workflow_dispatch` job that supplies them as secrets.
+- `search_events` embeds queries, so the live suite also needs `OPENAI_API_KEY`
+  (embeddings stay on OpenAI, `text-embedding-3-small`).
+- `AI_MODEL` defaults to `deepseek-v4-pro`; `AI_BASE_URL` defaults to
+  `https://api.deepseek.com`.
+
+Never commit secret values.
+
+## CI wiring
+
+- `.github/workflows/ci.yml` runs `bun test` (discovers
+  `deterministic.test.ts`) and `bun run test` (Vitest, excludes `evals/`);
+  neither runs the live suite.
+- `.github/workflows/concierge-eval.yml` is a manual `workflow_dispatch` job
+  that runs the live suite against the secrets above.

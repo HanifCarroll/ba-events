@@ -1,310 +1,124 @@
 /**
- * v5 agent-turn orchestration.
+ * Bounded concierge turn orchestration (v5 replacement).
  *
- * Ties together the manual work loop, no-tools finalizer, deterministic
- * validation, the deterministic post-plan mutation executor, deterministic
- * fallback, and suggestions into a single `CanonicalChatResponse`. This module
- * is streaming-free so it can run in the API route (streamed) and in the
- * concierge eval (batch) identically.
- *
- * v5:
- * - Pinned mode is typed (`PinResolution`); a requested-but-unresolved pin is a
- *   typed failure with zero cards and no discovery fallback.
- * - The work loop never executes save/unsave. Validation derives and verifies
- *   the single authorized target (prior/pinned/selected); assembly executes that
- *   carried plan exactly once and derives the mutation lead from its receipt.
- * - Search stages carry 5-state outcomes; a partial search marks the response
- *   incomplete and uses the `partial_results` lead.
+ * The whole agent turn is: build bounded server-rehydrated state -> ONE planner
+ * `generateText` call (`Output.object`, closed `TurnPlan`, NO tools) -> one
+ * deterministic executor (`runExecutor`) -> a server-built
+ * `CanonicalChatResponse`. There is no work loop, no finalizer, no second model
+ * call, no ledger, and no mutation execution. Invalid planner output fails
+ * closed to a deterministic error (no repair model call).
  */
 
-import type { ModelMessage } from 'ai'
-import type {
-  CanonicalChatEventPayload,
-  CanonicalChatResponse,
-  FallbackReason,
-  MessageExecutionStep,
-  MessageKey,
-  MutationIntent,
-  OperationReceipt,
-  PinResolution,
-  ResponseKind,
-  TargetReference,
-  TurnTarget,
-} from '#shared/lib/types.ts'
+import type { CanonicalChatResponse, MessageExecutionStep, PinResolution } from '#shared/lib/types.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import type { UserToolContext } from '../user-tools.server.ts'
-import { runWorkLoop, type WorkLoopHooks, type WorkLoopResult } from './work-loop.ts'
-import { runFinalizer, type FinalizerPlan } from './finalizer.ts'
-import { validatePlan, type ValidatedPlan } from './validate.ts'
-import { buildFallback } from './fallback.ts'
-import { resolveResolvedTurnTarget, resolveTurnTarget } from './context.ts'
-import {
-  materializeText,
-  materializeClarificationText,
-  materializeClarificationQuestions,
-} from './materialize.ts'
-import { buildSanitizedTrace } from './trace.ts'
-import { Ledger, type LedgerEntry } from './ledger.ts'
-import { generateSuggestions } from '../suggestions.ts'
-import type { PriorDisplayGroup } from './follow-up.ts'
-import type { SearchEventsInput } from '../tools/search-events.ts'
-import { executeMutations, deriveMutationMessageKey } from './mutation.ts'
-import { resolveSavedState } from './record.ts'
+import type { ToolExecutionContext } from '../tools/types.ts'
+import { searchEventsTool } from '../tools/search-events.ts'
+import { getEventDetailsTool } from '../tools/get-event-details.ts'
+import { getDirectionsTool } from '../tools/get-directions.ts'
+import { getVenueDetailsTool } from '../tools/get-venue-details.ts'
+import { listSavedEventsTool } from '../tools/list-saved-events.ts'
+import { handleFor, type PriorDisplayGroup, type VenueFact } from './follow-up.ts'
+import { runPlanner, type PriorEventHint } from './planner.ts'
+import { runExecutor, type ExecutorTools, type PriorResolvedEvent, type ReadSummary } from './executor.ts'
+import { materializeText } from './materialize.ts'
 
 export interface OrchestrateInput {
   requestId: string
-  modelMessages: ModelMessage[]
   userContext: UserToolContext
   locale: 'en' | 'es'
-  systemPrompt: string
   originalQuery: string
   priorDisplayedEvents: PriorDisplayGroup[]
-  /** Typed pinned-event resolution (defaults to not requested). */
+  venueByEventId?: Map<string, VenueFact>
   pin?: PinResolution
-  /** Prior known saved state per event id (tri-state; absent = unknown). */
-  priorSaved?: Record<string, boolean>
-  /** Explicit prior resolved target ids for compound relation validation. */
-  resolvedEventId?: string
-  resolvedVenueId?: string
-  /** Typed mutation intent (parseMutationIntent result). */
-  mutationIntent?: MutationIntent
-  /**
-   * Query-derived turn target (authoritative for every event-relative action).
-   * Resolved once by the caller (+server); when absent, orchestrate derives it
-   * from `mutationIntent` + pin + prior resolved ids.
-   */
-  turnTarget?: TurnTarget
-  maxWorkGenerations?: number
-  hooks?: WorkLoopHooks & { onStatus?: (phase: import('#shared/lib/types.ts').ChatStreamStatusPhase) => void }
-  /** Injectable work-loop runner (test seam; defaults to `runWorkLoop`). */
-  runWorkLoopFn?: typeof runWorkLoop
-  /** Injectable finalizer runner (test seam; defaults to `runFinalizer`). */
-  runFinalizerFn?: typeof runFinalizer
+  /** Rehydrated pinned-event facts (server-owned, never client input). */
+  pinFacts?: { name: string; venueName: string | null } | null
+  // Test seams (default to the real planner/executor/tool wiring).
+  planFn?: typeof runPlanner
+  executeFn?: typeof runExecutor
+  buildToolsFn?: (ctx: ToolExecutionContext) => ExecutorTools
 }
 
 export interface OrchestrateResult {
   canonical: CanonicalChatResponse
   executionTrace: MessageExecutionStep[]
-  providerRequestIds: (string | null)[]
-  workNotes: string[]
-  ledger: Ledger
-  stopReason: WorkLoopResult['stopReason']
-  finalWorkCalledTools: boolean
+  reads: ReadonlyArray<ReadSummary>
+  providerRequestId: string | null
 }
 
-type Mode = 'pick' | 'discovery' | 'enumeration' | 'other'
-
-/**
- * The display count the finalizer/validator should allow, derived from the
- * LATEST events-bearing read (not directions/venue). A final list_saved_events
- * read allows up to min(returned events, 5); details stay count 1; a final
- * search uses its active stage's actual displayLimit.
- */
-function deriveRequestedCount(ledger: Ledger, requestId: string): number {
-  const reads = ledger.successfulEventReads(requestId)
-  if (reads.length === 0) return 1
-  const latest = reads.reduce((best, e) =>
-    e.stepIndex > best.stepIndex ||
-    (e.stepIndex === best.stepIndex && e.callIndex > best.callIndex)
-      ? e
-      : best
-  )
-  switch (latest.kind) {
-    case 'search': {
-      const active = ledger.activeStage(requestId)
-      if (active) {
-        const searches = ledger.searchesInStep(active.stepIndex, requestId)
-        const last = searches.at(-1)
-        return last?.displayLimit ?? last?.searchInput?.limit ?? 1
-      }
-      return 1
-    }
-    case 'saved-events':
-      return Math.min(latest.events.length, 5)
-    case 'event-details':
-    default:
-      return 1
+function buildTools(ctx: ToolExecutionContext): ExecutorTools {
+  return {
+    search: async (input) =>
+      (await searchEventsTool.execute(input, ctx)) as unknown as Awaited<
+        ReturnType<ExecutorTools['search']>
+      >,
+    eventDetails: async (input) =>
+      (await getEventDetailsTool.execute(input, ctx)) as unknown as Awaited<
+        ReturnType<ExecutorTools['eventDetails']>
+      >,
+    directions: async (input) =>
+      (await getDirectionsTool.execute(input, ctx)) as unknown as Awaited<
+        ReturnType<ExecutorTools['directions']>
+      >,
+    venueDetails: async (input) =>
+      (await getVenueDetailsTool.execute(input, ctx)) as unknown as Awaited<
+        ReturnType<ExecutorTools['venueDetails']>
+      >,
+    listSaved: async (input) =>
+      (await listSavedEventsTool.execute(input, ctx)) as unknown as Awaited<
+        ReturnType<ExecutorTools['listSaved']>
+      >,
   }
 }
 
-function deriveSearchContext(ledger: Ledger, requestId: string): {
-  requestedCount: number
-  mode: Mode
-  searchInput: SearchEventsInput | null
-} {
-  const searches = ledger.successfulSearches()
-  const last = searches.at(-1)
-  const requestedCount = deriveRequestedCount(ledger, requestId)
-  const mode: Mode =
-    last?.searchInput?.objective === 'surprise'
-      ? 'pick'
-      : requestedCount > 1
-        ? 'discovery'
-        : 'other'
-  return { requestedCount, mode, searchInput: last?.searchInput ?? null }
-}
-
-function workTargetRule(target: TurnTarget): string {
-  switch (target.scope) {
-    case 'current_selection':
-      return `For every event-relative tool call, target zero-based result index ${target.index} from this turn's discovery. Never substitute another result or a prior event.`
-    case 'prior':
-      return 'For every event-relative tool call, target only the resolved prior event/venue in application context. Never substitute a current discovery result.'
-    case 'pinned':
-      return 'For every event-relative tool call, target only the pinned event/venue in application context.'
-    case 'none':
-      return 'There is no authorized event target. Do not call an event-relative tool unless discovery establishes an explicit target.'
-    case 'ambiguous':
-      return 'The event target is ambiguous. Ask which event; do not call an event-relative tool.'
+function emptyProvenance(): CanonicalChatResponse['provenance'] {
+  return {
+    sourceToolCallIds: [],
+    directionToolCallIds: [],
+    venueToolCallIds: [],
+    mutationToolCallIds: [],
+    suggestionToolCallIds: [],
+    emptySourceToolCallIds: [],
+    retainedSourceToolCallIds: [],
+    stageIds: [],
+    searchAttemptToolCallIds: [],
+    searchIncomplete: false,
+    origin: 'validated',
+    fallbackUsed: false,
+    fallbackReason: null,
   }
 }
 
-function priorSavedFrom(prior: PriorDisplayGroup[]): Record<string, boolean> {
-  const out: Record<string, boolean> = {}
-  for (const g of prior) {
-    for (const e of g.events) {
-      if (typeof e.saved === 'boolean') out[e.eventId] = e.saved
-    }
-  }
-  return out
-}
-
-/** The reference a mutation intent carries (or ambiguous/null for none). */
-function mutationReference(intent: MutationIntent | undefined): TargetReference | null {
-  if (!intent || intent.kind === 'none') return null
-  if (intent.kind === 'ambiguous') return { kind: 'ambiguous' }
-  return intent.targetReference
-}
-
-function findSuggestionSource(
-  canonical: CanonicalChatResponse,
-  ledger: Ledger,
-  preferredId: string | null
-): LedgerEntry | null {
-  const id = preferredId ?? canonical.provenance.sourceToolCallIds.at(-1) ?? null
-  if (!id) return null
-  const entry = ledger.find(id)
-  if (!entry || entry.kind !== 'search' || !entry.success || !entry.searchInput) return null
-  return entry
-}
-
-interface AssembledPlan {
-  kind: ResponseKind
-  messageKey: MessageKey
-  events: CanonicalChatEventPayload[]
-  directions: ValidatedPlan['directions']
-  venue: ValidatedPlan['venue']
-  operations: OperationReceipt[]
-  mutationToolCallIds: string[]
-  sourceToolCallIds: string[]
-  directionToolCallIds: string[]
-  venueToolCallIds: string[]
-  suggestionToolCallIds: string[]
-  emptySourceToolCallIds: string[]
-  retainedSourceToolCallIds: string[]
-  stageIds: string[]
-  searchAttemptToolCallIds: string[]
-  searchIncomplete: boolean
-  clarificationQuestions: ValidatedPlan['clarificationQuestions']
-}
-
-function materializeCanonical(
-  assembled: AssembledPlan,
-  locale: 'en' | 'es',
-  requestId: string,
-  suggestionSourceToolCallId: string | null
-): CanonicalChatResponse {
-  const text =
-    assembled.kind === 'clarification'
-      ? materializeClarificationText(assembled.clarificationQuestions)
-      : materializeText({
-          messageKey: assembled.messageKey,
-          locale,
-          eventName: assembled.events[0]?.name,
-          directionsVenueName: assembled.directions?.venueName,
-          venueName: assembled.venue?.venueName,
-        })
+/** Typed pinned-event failure: zero cards, no planner call, no discovery. */
+function buildPinnedFailure(requestId: string, locale: 'en' | 'es'): CanonicalChatResponse {
   return {
     contractVersion: CHAT_CONTRACT_VERSION,
     requestId,
-    kind: assembled.kind,
-    messageKey: assembled.messageKey,
-    text,
-    events: assembled.events,
-    directions: assembled.directions,
-    venue: assembled.venue,
-    operations: assembled.operations,
-    suggestions: [],
-    clarificationQuestions: assembled.clarificationQuestions,
-    provenance: {
-      sourceToolCallIds: assembled.sourceToolCallIds,
-      directionToolCallIds: assembled.directionToolCallIds,
-      venueToolCallIds: assembled.venueToolCallIds,
-      mutationToolCallIds: assembled.mutationToolCallIds,
-      suggestionToolCallIds: suggestionSourceToolCallId ? [suggestionSourceToolCallId] : [],
-      emptySourceToolCallIds: assembled.emptySourceToolCallIds,
-      retainedSourceToolCallIds: assembled.retainedSourceToolCallIds,
-      stageIds: assembled.stageIds,
-      searchAttemptToolCallIds: assembled.searchAttemptToolCallIds,
-      searchIncomplete: assembled.searchIncomplete,
-      origin: 'validated',
-      fallbackUsed: false,
-      fallbackReason: null,
-    },
-  }
-}
-
-function recoverAsClarification(
-  canonical: CanonicalChatResponse,
-  locale: 'en' | 'es',
-  fallbackReason: FallbackReason
-): CanonicalChatResponse {
-  const clarificationQuestions = materializeClarificationQuestions(['which_event'], locale)
-  return {
-    ...canonical,
-    kind: 'clarification',
-    messageKey: 'clarification',
-    text: materializeClarificationText(clarificationQuestions),
+    kind: 'error',
+    messageKey: 'pinned_event_unavailable',
+    text: materializeText({ messageKey: 'pinned_event_unavailable', locale }),
     events: [],
     directions: null,
     venue: null,
     operations: [],
     suggestions: [],
-    clarificationQuestions,
-    provenance: {
-      ...canonical.provenance,
-      sourceToolCallIds: [],
-      directionToolCallIds: [],
-      venueToolCallIds: [],
-      mutationToolCallIds: [],
-      suggestionToolCallIds: [],
-      emptySourceToolCallIds: [],
-      retainedSourceToolCallIds: [],
-      stageIds: [],
-      searchAttemptToolCallIds: [],
-      searchIncomplete: false,
-      origin: 'fallback',
-      fallbackUsed: true,
-      fallbackReason: canonical.provenance.fallbackReason ?? fallbackReason,
-    },
+    clarificationQuestions: [],
+    provenance: emptyProvenance(),
   }
 }
 
-/** Typed pinned-event failure: zero cards, no discovery, no mutation. */
-function buildPinnedFailure(
-  input: OrchestrateInput,
-  pin: PinResolution & { requested: true }
-): OrchestrateResult {
-  const text = materializeText({
-    messageKey: 'pinned_event_unavailable',
-    locale: input.locale,
-  })
-  const canonical: CanonicalChatResponse = {
+/** Fail-closed deterministic error for planner/provider failure (no repair call). */
+function buildPlannerError(
+  requestId: string,
+  locale: 'en' | 'es',
+  reason: 'invalid_schema' | 'planner_error'
+): CanonicalChatResponse {
+  return {
     contractVersion: CHAT_CONTRACT_VERSION,
-    requestId: input.requestId,
+    requestId,
     kind: 'error',
-    messageKey: 'pinned_event_unavailable',
-    text,
+    messageKey: 'error',
+    text: materializeText({ messageKey: 'error', locale }),
     events: [],
     directions: null,
     venue: null,
@@ -312,284 +126,105 @@ function buildPinnedFailure(
     suggestions: [],
     clarificationQuestions: [],
     provenance: {
-      sourceToolCallIds: [],
-      directionToolCallIds: [],
-      venueToolCallIds: [],
-      mutationToolCallIds: [],
-      suggestionToolCallIds: [],
-      emptySourceToolCallIds: [],
-      retainedSourceToolCallIds: [],
-      stageIds: [],
-      searchAttemptToolCallIds: [],
-      searchIncomplete: false,
-      origin: 'validated',
-      fallbackUsed: false,
-      fallbackReason: null,
+      ...emptyProvenance(),
+      origin: 'fallback',
+      fallbackUsed: true,
+      fallbackReason: reason,
     },
   }
-  return {
-    canonical,
-    executionTrace: [],
-    providerRequestIds: [],
-    workNotes: [],
-    ledger: new Ledger(),
-    stopReason: 'no_tool_calls',
-    finalWorkCalledTools: false,
-  }
+}
+
+function buildPriorState(
+  groups: PriorDisplayGroup[],
+  venueByEventId: Map<string, VenueFact> | undefined
+): { hints: PriorEventHint[]; map: Map<string, PriorResolvedEvent> } {
+  const hints: PriorEventHint[] = []
+  const map = new Map<string, PriorResolvedEvent>()
+  groups.forEach((g, responseOrder) => {
+    for (const ev of g.events) {
+      const handle = handleFor(g.requestId, ev.displayIndex)
+      const venue = venueByEventId?.get(ev.eventId)
+      const resolved: PriorResolvedEvent = {
+        eventId: ev.eventId,
+        venueId: venue?.venueId ?? null,
+        venueName: venue?.venueName ?? null,
+        name: ev.name,
+        saved: ev.saved,
+      }
+      map.set(handle, resolved)
+      hints.push({
+        handle,
+        responseOrder,
+        displayOrder: ev.displayIndex,
+        name: ev.name,
+        venueName: venue?.venueName ?? null,
+        saved: ev.saved,
+      })
+    }
+  })
+  return { hints, map }
 }
 
 export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateResult> {
   const pin: PinResolution = input.pin ?? { requested: false }
 
-  // Pinned failure: a requested pin that did not resolve is a typed failure —
-  // never a silent fallback to discovery.
+  // A requested pin that did not resolve is a typed failure — never a silent
+  // fallback to discovery and never a planner call.
   if (pin.requested && pin.status !== 'resolved') {
-    return buildPinnedFailure(input, pin)
+    return {
+      canonical: buildPinnedFailure(input.requestId, input.locale),
+      executionTrace: [],
+      reads: [],
+      providerRequestId: null,
+    }
   }
-  const pinnedEventId = pin.requested && pin.status === 'resolved' ? pin.eventId : undefined
-  const pinnedVenueId =
-    pin.requested && pin.status === 'resolved' ? pin.venueId ?? undefined : undefined
-  const turnTarget: TurnTarget =
-    input.turnTarget ??
-    resolveTurnTarget({
-      reference: mutationReference(input.mutationIntent),
-      pinnedEventId,
-      pinnedVenueId,
-      resolvedEventId: input.resolvedEventId,
-      resolvedVenueId: input.resolvedVenueId,
-    })
 
-  const runWorkLoopImpl = input.runWorkLoopFn ?? runWorkLoop
-  const runFinalizerImpl = input.runFinalizerFn ?? runFinalizer
+  const { hints, map } = buildPriorState(input.priorDisplayedEvents, input.venueByEventId)
+  const pinned =
+    pin.requested && pin.status === 'resolved'
+      ? (input.pinFacts ?? null)
+      : null
 
-  const work = await runWorkLoopImpl({
-    requestId: input.requestId,
-    modelMessages: input.modelMessages,
-    systemPrompt: `${input.systemPrompt}\n\n## Deterministic turn target\n${workTargetRule(turnTarget)}`,
+  const planFn = input.planFn ?? runPlanner
+  const executeFn = input.executeFn ?? runExecutor
+  const tools = (input.buildToolsFn ?? buildTools)({
     userContext: input.userContext,
     locale: input.locale,
-    maxWorkGenerations: input.maxWorkGenerations,
-    pinnedEventId,
-    hooks: input.hooks,
   })
 
-  const { requestedCount, mode } = deriveSearchContext(work.ledger, input.requestId)
-  const priorSaved = input.priorSaved ?? priorSavedFrom(input.priorDisplayedEvents)
+  const plannerResult = await planFn({
+    originalQuery: input.originalQuery,
+    locale: input.locale,
+    prior: hints,
+    pinned,
+  })
 
-  // Concrete turn target, resolved against the ledger BEFORE finalizer
-  // validation (a current_selection index binds the exact event + source +
-  // venue from ordered ACTIVE/RETAINED search artifacts).
-  const resolvedTurnTarget = resolveResolvedTurnTarget(
-    turnTarget,
-    work.ledger,
-    input.requestId,
-    pinnedVenueId
-  )
+  if (!plannerResult.ok) {
+    return {
+      canonical: buildPlannerError(input.requestId, input.locale, plannerResult.error),
+      executionTrace: [],
+      reads: [],
+      providerRequestId: plannerResult.providerRequestId,
+    }
+  }
 
-  // Finalization is ALWAYS a separate generation, even when the last work
-  // generation called tools.
-  input.hooks?.onStatus?.('finalizing')
-  const finalizerResult = await runFinalizerImpl({
+  const executed = await executeFn({
+    plan: plannerResult.plan,
     requestId: input.requestId,
     locale: input.locale,
     originalQuery: input.originalQuery,
-    priorDisplayedEvents: input.priorDisplayedEvents,
-    workNotes: work.workNotes,
-    ledger: work.ledger,
-    pinnedEventId,
-    requestedCount,
-    mode,
-    mutationIntent: input.mutationIntent,
-    resolvedTurnTarget,
+    ctx: { userContext: input.userContext, locale: input.locale },
+    prior: map,
+    pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
+    pinnedVenueId: pin.requested && pin.status === 'resolved' ? pin.venueId : undefined,
+    pinnedVenueName: pinned?.venueName ?? undefined,
+    tools,
   })
 
-  let canonical: CanonicalChatResponse
-  let validated: ValidatedPlan | null = null
-  let suggestionSourceToolCallId: string | null = null
-
-  input.hooks?.onStatus?.('validating')
-  if (finalizerResult.ok && finalizerResult.plan) {
-    const plan: FinalizerPlan = finalizerResult.plan
-    validated = validatePlan(plan, work.ledger, {
-      requestId: input.requestId,
-      locale: input.locale,
-      resolvedTurnTarget,
-      pinnedEventId,
-      requestedCount,
-      priorSaved,
-      mutationIntent: input.mutationIntent,
-    })
-
-    if (validated.ok || validated.mutationStatus === 'ambiguous') {
-      // Even an invalid finalizer proposal cannot turn an ambiguous mutation
-      // into fallback content: the server emits a zero-side-effect clarification.
-      suggestionSourceToolCallId = validated.suggestionSourceToolCallId
-      canonical = await assembleValidated(input, work.ledger, validated, priorSaved)
-    } else {
-      canonical = buildFallback({
-        requestId: input.requestId,
-        locale: input.locale,
-        reason: validated.reason ?? 'invalid_schema',
-        ledger: work.ledger,
-        requestedCount,
-        resolvedTurnTarget,
-        pinnedEventId,
-        priorSaved,
-      })
-    }
-  } else {
-    canonical = buildFallback({
-      requestId: input.requestId,
-      locale: input.locale,
-      reason: finalizerResult.error === 'invalid_schema' ? 'invalid_schema' : 'finalizer_error',
-      ledger: work.ledger,
-      requestedCount,
-      resolvedTurnTarget,
-      pinnedEventId,
-      priorSaved,
-    })
-  }
-
-  if (resolvedTurnTarget.scope === 'ambiguous' && canonical.kind !== 'clarification') {
-    canonical = recoverAsClarification(canonical, input.locale, 'ambiguous_turn_target')
-  } else if (
-    canonical.kind === 'error' &&
-    canonical.provenance.fallbackReason === 'missing_required_artifact' &&
-    work.ledger.all().length === 0
-  ) {
-    canonical = recoverAsClarification(canonical, input.locale, 'missing_required_artifact')
-  }
-
-  // Suggestions operate on the exact validated/fallback search provenance and
-  // the actually displayed events — never last-write globals.
-  const suggestionSource = findSuggestionSource(
-    canonical,
-    work.ledger,
-    suggestionSourceToolCallId
-  )
-  if (suggestionSource && canonical.events.length > 0) {
-    canonical.suggestions = generateSuggestions({
-      originalQuery: input.originalQuery,
-      toolInput: suggestionSource.searchInput!,
-      results: canonical.events,
-      locale: input.locale,
-    })
-    // Whenever suggestions are generated from an exact search artifact (including
-    // fallback where the finalizer supplied no suggestion source), record that
-    // exact tool call in provenance — not the finalizer's null.
-    canonical.provenance.suggestionToolCallIds = [suggestionSource.toolCallId]
-  }
-
-  const executionTrace = buildSanitizedTrace(work.steps)
-
   return {
-    canonical,
-    executionTrace,
-    providerRequestIds: work.providerRequestIds,
-    workNotes: work.workNotes,
-    ledger: work.ledger,
-    stopReason: work.stopReason,
-    finalWorkCalledTools: work.finalWorkCalledTools,
+    canonical: executed.canonical,
+    executionTrace: executed.executionTrace,
+    reads: executed.reads,
+    providerRequestId: plannerResult.providerRequestId,
   }
-}
-
-/**
- * Assemble the canonical from a validated plan, then execute any carried
- * mutation exactly once, re-resolving saved state and deriving the
- * mutation/partial lead keys.
- */
-async function assembleValidated(
-  input: OrchestrateInput,
-  ledger: Ledger,
-  validated: ValidatedPlan,
-  priorSaved: Record<string, boolean> | undefined
-): Promise<CanonicalChatResponse> {
-  let kind: ResponseKind = validated.kind
-  let messageKey: MessageKey = validated.messageKey
-  let events = validated.events
-  let directions = validated.directions
-  let venue = validated.venue
-  let operations: OperationReceipt[] = []
-  let mutationToolCallIds: string[] = []
-  let directionToolCallIds = validated.directionToolCallIds
-  let venueToolCallIds = validated.venueToolCallIds
-  let sourceToolCallIds = validated.sourceToolCallIds
-  let emptySourceToolCallIds = validated.emptySourceToolCallIds
-  let retainedSourceToolCallIds = validated.retainedSourceToolCallIds
-  let stageIds = validated.stageIds
-  let searchAttemptToolCallIds = validated.searchAttemptToolCallIds
-  let searchIncomplete = validated.searchIncomplete
-  let clarificationQuestions = validated.clarificationQuestions
-
-  if (validated.mutationStatus === 'ambiguous') {
-    // Ambiguous mutation target: clarify, zero side effects, no cards.
-    kind = 'clarification'
-    messageKey = 'clarification'
-    events = []
-    directions = null
-    venue = null
-    directionToolCallIds = []
-    venueToolCallIds = []
-    sourceToolCallIds = []
-    emptySourceToolCallIds = []
-    retainedSourceToolCallIds = []
-    stageIds = []
-    searchAttemptToolCallIds = []
-    searchIncomplete = false
-    clarificationQuestions = materializeClarificationQuestions(['which_event'], input.locale)
-  } else if (validated.mutationStatus === 'resolved') {
-    // Execute the single already-validated mutation exactly once.
-    operations = await executeMutations([validated.plannedMutation!], input.userContext, input.locale)
-    mutationToolCallIds = operations.map((r) => r.toolCallId)
-    for (const receipt of operations) {
-      ledger.recordMutationReceipt(receipt, input.requestId)
-    }
-    // Re-resolve saved state for displayed events (a mutation may target one).
-    events = validated.events.map((ev) => ({
-      ...ev,
-      saved: resolveSavedState(ev.id, ledger, input.requestId, priorSaved),
-    }))
-    if (validated.kind === 'mutation_result') {
-      messageKey = deriveMutationMessageKey(operations)
-    }
-  }
-
-  // A partial search that returned events uses the incomplete lead.
-  if (kind === 'recommendations' && searchIncomplete) {
-    messageKey = 'partial_results'
-  }
-
-  const canonical = materializeCanonical(
-    {
-      kind,
-      messageKey,
-      events,
-      directions,
-      venue,
-      operations,
-      mutationToolCallIds,
-      sourceToolCallIds,
-      directionToolCallIds,
-      venueToolCallIds,
-      suggestionToolCallIds: validated.suggestionToolCallIds,
-      emptySourceToolCallIds,
-      retainedSourceToolCallIds,
-      stageIds,
-      searchAttemptToolCallIds,
-      searchIncomplete,
-      clarificationQuestions,
-    },
-    input.locale,
-    input.requestId,
-    validated.suggestionSourceToolCallId
-  )
-
-  // A finalizer mutation recovered to clarification (ambiguous target) is a
-  // deterministic fallback, never a validated response: record the exact reason.
-  if (validated.reason === 'ambiguous_mutation_target') {
-    canonical.provenance.origin = 'fallback'
-    canonical.provenance.fallbackUsed = true
-    canonical.provenance.fallbackReason = 'ambiguous_mutation_target'
-  }
-  return canonical
 }

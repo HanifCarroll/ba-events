@@ -14,8 +14,6 @@
 		| 'idle'
 		| 'preparing'
 		| 'thinking'
-		| 'running_tool'
-		| 'composing'
 		| 'persisting'
 		| 'error'
 

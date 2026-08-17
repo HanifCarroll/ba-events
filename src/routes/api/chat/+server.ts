@@ -1,36 +1,35 @@
 /**
- * Chat API Route (v5)
+ * Chat API Route (bounded concierge MVP).
  *
- * Manual generateText work loop + no-tools DeepSeek finalizer + deterministic
- * validation/fallback, streamed through `createUIMessageStream`:
+ * Latest user request + bounded server-rehydrated state -> ONE planner
+ * `generateText` call (`Output.object`, closed `TurnPlan`, NO tools) -> one
+ * deterministic executor -> a server-built `CanonicalChatResponse`, streamed
+ * through `createUIMessageStream`:
  *   - `start` first
  *   - one stable transient `data-status` id `status:${requestId}`
- *   - exactly one final text block (no work text/reasoning)
+ *   - exactly one final text block (deterministic server text — the model never
+ *     writes visible prose)
  *   - exactly one persistent `data-response` carrying the canonical response
- *   - sanitized `data-execution-trace` (tool calls/results only)
+ *   - sanitized `data-execution-trace` (reads only)
  *   - `finish`
  *
- * Trust boundary (v5):
- *   - Client messages are UNTRUSTED. Only bounded user text feeds the model;
+ * Trust boundary:
+ *   - Client messages are UNTRUSTED. Only bounded user text feeds the planner;
  *     assistant/data/status/trace parts are dropped. Prior event ids are parsed
  *     from a bounded Zod schema, re-fetched from the database, and reduced to
- *     ids/order/saved facts in a separate application-context message.
- *   - The system prompt is static except server-owned auth facts. Event/venue
- *     names never reach the system prompt or the model application context.
- *   - save_event/unsave_event are available only when the latest raw user
- *     request has explicit save/unsave intent (structural mutation gating).
+ *     server-owned handles + facts (name/venue/saved) in the planner prompt.
+ *   - The planner never sees or returns a raw event UUID: prior events are
+ *     addressed by server-owned handles (`requestId:event_N`).
+ *   - save/unsave are NEVER executed by the chat: the planner maps them to
+ *     show_for_save / show_for_unsave, which return the card + a deterministic
+ *     pointer to the card's own Save/Unsave control.
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
-import type { ModelMessage, UIMessage } from 'ai'
-import {
-  generateId,
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-} from 'ai'
+import type { UIMessage } from 'ai'
+import { generateId, createUIMessageStream, createUIMessageStreamResponse } from 'ai'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
-import { getUserToolContext, listSavedEventsForUser, getSavedMembershipForIds } from '#features/chat/api/user-tools.server.ts'
-import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
+import { getUserToolContext, getSavedMembershipForIds } from '#features/chat/api/user-tools.server.ts'
 import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
 import { trackServer } from '#shared/lib/analytics.server.ts'
 import { formatTime } from '#shared/lib/utils/formatting.ts'
@@ -52,13 +51,7 @@ import {
   sanitizeText,
   type PriorContext,
 } from '#features/chat/api/agent/follow-up.ts'
-import {
-  buildApplicationContextMessage,
-  buildConversationModelMessages,
-  detectResponseLanguage,
-  resolveTurnTargetFromQuery,
-  MAX_USER_TEXT,
-} from '#features/chat/api/agent/context.ts'
+import { detectResponseLanguage, MAX_USER_TEXT } from '#features/chat/api/agent/context.ts'
 import { getConversation } from '#features/chat/api/conversations.server.ts'
 import {
   buildGuestDebugTranscript,
@@ -160,20 +153,11 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     })
   }
 
-  const savedEventsCount = userContext.isAuthenticated
-    ? ((await listSavedEventsForUser('all', userContext)).count ?? 0)
-    : 0
-
-  // Static system prompt: server-owned auth facts only. No pinned/prior names.
-  const systemPrompt = getSystemPrompt({
-    isAuthenticated: userContext.isAuthenticated,
-    savedEventsCount,
-  })
-
   // Pinned event: validate the hint as a UUID, rehydrate from the DB, and
   // resolve a typed PinResolution. A requested-but-unresolved pin is a typed
   // failure (no discovery fallback); never interpolate its name.
   let pin: PinResolution = { requested: false }
+  let pinFacts: { name: string; venueName: string | null } | null = null
   if (happeningSoonEventId != null) {
     if (!UUID_RE.test(happeningSoonEventId)) {
       pin = { requested: true, status: 'invalid', eventIdHint: happeningSoonEventId.slice(0, 128) }
@@ -183,6 +167,10 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         const fact = facts.find((f) => f.id === happeningSoonEventId)
         if (fact && isDisplayableStatus(fact.status)) {
           pin = { requested: true, status: 'resolved', eventId: fact.id, venueId: fact.venue_id }
+          pinFacts = {
+            name: sanitizeText(fact.name),
+            venueName: fact.venue_name ? sanitizeText(fact.venue_name) : null,
+          }
         } else if (fact) {
           pin = { requested: true, status: 'unavailable', eventIdHint: happeningSoonEventId }
         } else {
@@ -216,46 +204,18 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     console.error('[chat] failed to build prior context:', error)
   }
 
-  const { turnTarget, mutationIntent } = resolveTurnTargetFromQuery({
-    query: originalQuery,
-    groups: priorContext.groups,
-    venueByEventId: priorContext.venueByEventId,
-    pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
-    pinnedVenueId: pin.requested && pin.status === 'resolved' ? pin.venueId : undefined,
-  })
-
-  // The model sees only the one authorized prior target, never prior ids beside
-  // a current/pinned/ambiguous target.
-  const priorTarget = turnTarget.scope === 'prior' ? turnTarget : null
-  const applicationContext = buildApplicationContextMessage({
-    pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
-    groups: priorContext.groups,
-    resolvedEventId: priorTarget?.eventId ?? undefined,
-    resolvedVenueId: priorTarget?.venueId ?? undefined,
-  })
-  const modelMessages: ModelMessage[] = buildConversationModelMessages({
-    messages: uiMessages,
-    applicationContext,
-  })
-
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       let assistantMessageId: string | undefined
       let providerRequestId: string | null = null
 
-      const writeStatus = (
-        phase: ChatStreamStatusPhase,
-        toolName?: string,
-        stepIndex?: number
-      ) => {
+      const writeStatus = (phase: ChatStreamStatusPhase) => {
         writer.write({
           type: 'data-status',
           id: `status:${requestId}`,
           transient: true,
           data: {
             phase,
-            toolName,
-            stepIndex,
             requestId,
             assistantMessageId,
             timestamp: new Date().toISOString(),
@@ -284,39 +244,31 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
         const result = await orchestrate({
           requestId,
-          modelMessages,
           userContext,
           locale,
-          systemPrompt,
           originalQuery,
           priorDisplayedEvents: priorContext.groups,
+          venueByEventId: priorContext.venueByEventId,
           pin,
-          mutationIntent,
-          turnTarget,
-          hooks: {
-            onStatus: (phase) => writeStatus(phase),
-            onCallingTool: (toolName, _toolCallId, _input, stepIndex) =>
-              writeStatus('calling_tool', toolName, stepIndex),
-            onToolError: (toolName, error) => {
-              console.error(`[chat] tool ${toolName} errored:`, error)
-            },
-          },
+          pinFacts,
         })
 
         const canonical = result.canonical
-        providerRequestId = result.providerRequestIds.at(-1) ?? null
+        providerRequestId = result.providerRequestId
 
-        // Track tool usage + fallback from the ledger-backed result.
-        for (const entry of result.ledger.all()) {
+        // Track the reads the executor actually performed (preserves the
+        // search/telemetry signal of the old tool ledger).
+        for (const read of result.reads) {
           trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-            tool: entry.toolName,
-            success: entry.success,
+            tool: read.toolName,
+            success: read.success,
           })
-          if (entry.kind === 'search') {
+          if (read.toolName === 'search_events') {
+            const input = read.input as { query?: string | null } | undefined
             trackServer('search:executed', userContext.userId ?? 'anonymous', {
-              query: entry.searchInput?.query ?? null,
-              result_count: entry.count,
-              success: entry.success,
+              query: input?.query ?? null,
+              result_count: read.eventIds.length,
+              success: read.success,
             })
           }
         }
@@ -356,7 +308,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
         writeResponse(canonical)
 
-        // Sanitized execution trace (tool calls/results only) — transient.
+        // Sanitized execution trace (reads only) — transient.
         writer.write({
           type: 'data-execution-trace',
           id: `trace:${requestId}`,
