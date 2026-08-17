@@ -2,18 +2,15 @@
 /**
  * Agent runner for evals.
  *
- * Mirrors src/routes/api/chat.ts model setup: same system prompt, same tools,
- * same CHAT_THINKING + step cap. Runs against the real dev database with an
- * anonymous user context (read-only search tools only).
+ * Mirrors src/routes/api/chat/+server.ts: the manual work loop + no-tools
+ * finalizer + deterministic validation/fallback, running against the real
+ * DeepSeek model and dev database with an anonymous user context.
  */
-import { generateText, stepCountIs } from 'ai'
+import { generateId } from 'ai'
 import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
-import { createTools } from '#features/chat/api/tools-ai-sdk.ts'
-import { CHAT_THINKING, textModel } from '#shared/lib/ai/providers.ts'
+import { orchestrate } from '#features/chat/api/agent/orchestrate.ts'
 import type { UserToolContext } from '#features/chat/api/user-tools.server.ts'
-import type { ChatEventPayload } from '#shared/lib/types.ts'
-
-const MAX_STEPS = 3 // mirrors src/routes/api/chat.ts
+import type { CanonicalChatResponse } from '#shared/lib/types.ts'
 
 const ANON_CONTEXT: UserToolContext = { userId: null, isAuthenticated: false }
 
@@ -25,43 +22,58 @@ export interface AgentToolCall {
 export interface AgentRun {
   text: string
   toolCalls: AgentToolCall[]
-  /** Union of events returned by any tool, keyed by id */
-  events: ChatEventPayload[]
+  /** Displayed events from the canonical response. */
+  events: CanonicalChatResponse['events']
   stepCount: number
+  canonical: CanonicalChatResponse
+  /**
+   * True when every canonical event appears in at least one successful
+   * current-request ledger artifact whose toolCallId is in
+   * `canonical.provenance.sourceToolCallIds`. Non-tautological grounding
+   * check (differs from comparing events against themselves).
+   */
+  cardsGrounded: boolean
 }
 
 export async function runConcierge(message: string, locale: 'en' | 'es'): Promise<AgentRun> {
-  const result = await generateText({
-    model: textModel,
-    system: getSystemPrompt({ isAuthenticated: false, savedEventsCount: 0 }),
-    messages: [{ role: 'user', content: message }],
-    tools: createTools(ANON_CONTEXT, locale),
-    ...CHAT_THINKING,
-    stopWhen: stepCountIs(MAX_STEPS),
+  const result = await orchestrate({
+    requestId: generateId(),
+    modelMessages: [{ role: 'user', content: message }],
+    userContext: ANON_CONTEXT,
+    locale,
+    systemPrompt: getSystemPrompt({ isAuthenticated: false, savedEventsCount: 0 }),
+    originalQuery: message,
+    priorDisplayedEvents: [],
   })
 
-  const toolCalls: AgentToolCall[] = []
-  const events = new Map<string, ChatEventPayload>()
+  const toolCalls: AgentToolCall[] = result.ledger
+    .all()
+    .filter((e) => e.kind !== 'tool-error')
+    .map((e) => ({
+      toolName: e.toolName,
+      input: (e.input ?? {}) as Record<string, unknown>,
+    }))
 
-  for (const step of result.steps) {
-    for (const call of step.toolCalls) {
-      toolCalls.push({
-        toolName: call.toolName,
-        input: (call.input ?? {}) as Record<string, unknown>,
-      })
-    }
-    for (const tr of step.toolResults) {
-      const output = tr.output as { events?: ChatEventPayload[] } | undefined
-      if (output?.events) {
-        for (const e of output.events) events.set(e.id, e)
-      }
-    }
-  }
+  const maxStep = result.ledger.all().reduce((m, e) => Math.max(m, e.stepIndex), -1)
+
+  // Grounding: every displayed card must trace to a successful current-request
+  // ledger artifact that the canonical provenance actually credits as its source.
+  const sourceIds = new Set(result.canonical.provenance.sourceToolCallIds)
+  const cardsGrounded = result.canonical.events.every((ev) =>
+    result.ledger.all().some(
+      (entry) =>
+        entry.success &&
+        sourceIds.has(entry.toolCallId) &&
+        entry.events.some((e) => e.id === ev.id)
+    )
+  )
 
   return {
-    text: result.text ?? '',
+    text: result.canonical.text ?? '',
     toolCalls,
-    events: [...events.values()],
-    stepCount: result.steps.length,
+    events: result.canonical.events,
+    stepCount: maxStep + 1,
+    canonical: result.canonical,
+    cardsGrounded,
   }
 }

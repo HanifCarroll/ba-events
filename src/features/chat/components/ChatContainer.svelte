@@ -27,22 +27,18 @@
 		readHandoffMarkTime,
 		type HandoffPhase
 	} from '#features/chat/lib/handoff-marks.ts'
+	import { adaptLegacyToCanonical, canonicalToRender } from '#features/chat/lib/canonical.ts'
 	import MessageList from './MessageList.svelte'
 	import ChatInput from './ChatInput.svelte'
 	import SuggestedPrompts, { type HomeTimeContext } from './SuggestedPrompts.svelte'
 	import type {
+		CanonicalChatResponse,
 		ChatEventPayload,
 		ChatMessage,
-		ChatStreamDataEnvelope,
-		ChatStreamStatusData,
 		ChatStreamStatusPhase,
 		ConversationWithMessages,
-		DirectionsData,
-		EventWithVenue,
 		Message,
-		MessageAttachedData,
-		MessageExecutionStep,
-		RefinementSuggestion
+		MessageExecutionStep
 	} from '#shared/lib/types.ts'
 
 	interface ChatMessageMetadata {
@@ -76,19 +72,19 @@
 	const isAuthenticated = $derived(!!auth.user)
 
 	// ==========================================================================
-	// Rendered state (legacy React useState → Svelte $state)
+	// Rendered state
 	// ==========================================================================
 	let error = $state<string | null>(null)
 	let homeTimeContext = $state<HomeTimeContext>(null)
-	let messageAttachedDataMap = $state<Map<string, MessageAttachedData>>(new Map())
 	let pendingFirstMessage = $state<PendingFirstMessage | null>(null)
 	let isHandoffPending = $state(false)
 	let requestPhase = $state<RequestPhase>('idle')
 	let guestConversation = $state<GuestConversationWithMessages | null>(null)
 	let isLoadingGuestConversation = $state(false)
 	let scrollContainerRef = $state<HTMLDivElement | null>(null)
+
 	// ==========================================================================
-	// Non-rendered refs (legacy useRef → plain let)
+	// Non-rendered refs
 	// ==========================================================================
 	let messageTimestampsById = new Map<string, Date>()
 	let startTimeRef = 0
@@ -102,8 +98,6 @@
 	let requestPhaseRef: RequestPhase = 'idle'
 
 	let activeRequestIdRef: string | null = null
-	let requestToAssistantMessageIdRef = new Map<string, string>()
-	let pendingAttachedDataByRequestIdRef = new Map<string, MessageAttachedData>()
 	let pendingExecutionTraceByRequestIdRef = new Map<string, MessageExecutionStep[]>()
 	let executionTraceByAssistantIdRef = new Map<string, MessageExecutionStep[]>()
 	let prevConversationIdRef: string | null | undefined = untrack(() => conversationId)
@@ -112,6 +106,7 @@
 	let pendingUserMessageRef: string | null = null
 	let pendingConversationIdRef: string | null = null
 	let pendingAssistantClientMessageIdRef: string | null = null
+	let pendingUserClientMessageIdRef: string | null = null
 	let pendingUserPersistencePromiseRef: Promise<MessagePersistenceResult> | null = null
 	let pendingUserPersistedMessageIdRef: string | null = null
 	let persistedAssistantMessageIdsRef = new Map<string, string>()
@@ -120,7 +115,7 @@
 	let restoredScrollConversationIdRef: string | null = null
 
 	// ==========================================================================
-	// Pure helpers (ported verbatim)
+	// Pure helpers
 	// ==========================================================================
 	function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): RequestPhase {
 		switch (phase) {
@@ -128,8 +123,11 @@
 				return 'thinking'
 			case 'calling_tool':
 				return 'running_tool'
-			case 'composing':
+			case 'finalizing':
+			case 'validating':
 				return 'composing'
+			case 'persisting':
+				return 'persisting'
 			case 'done':
 				return 'persisting'
 			case 'error':
@@ -139,7 +137,22 @@
 		}
 	}
 
-	type AssistantVisibilityMessage = Pick<ChatMessage, 'content' | 'events' | 'directions'>
+	function canonicalFromParts(
+		parts: Array<{ type?: string; data?: unknown }> | undefined
+	): CanonicalChatResponse | null {
+		if (!parts) return null
+		for (const part of parts) {
+			if (part.type === 'data-response' && part.data && typeof part.data === 'object') {
+				return part.data as CanonicalChatResponse
+			}
+		}
+		return null
+	}
+
+	type AssistantVisibilityMessage = Pick<
+		ChatMessage,
+		'content' | 'events' | 'directions' | 'venue' | 'operations'
+	>
 
 	function assistantMessageHasVisibleContent(
 		message: AssistantVisibilityMessage | null | undefined
@@ -148,7 +161,9 @@
 		return !!(
 			message.content.trim().length > 0 ||
 			(message.events && message.events.length > 0) ||
-			message.directions
+			message.directions ||
+			message.venue ||
+			(message.operations && message.operations.length > 0)
 		)
 	}
 
@@ -164,12 +179,6 @@
 		return status === 'submitted' || status === 'streaming'
 	}
 
-	function isDataEnvelope<T>(value: unknown): value is ChatStreamDataEnvelope<T> {
-		if (!value || typeof value !== 'object') return false
-		const candidate = value as { requestId?: unknown; data?: unknown }
-		return typeof candidate.requestId === 'string' && 'data' in candidate
-	}
-
 	// ==========================================================================
 	// Request lifecycle / correlations
 	// ==========================================================================
@@ -178,69 +187,9 @@
 		requestPhase = phase
 	}
 
-	function setAttachedDataMap(next: Map<string, MessageAttachedData>) {
-		messageAttachedDataMap = next
-	}
-
-	function upsertAttachedDataForAssistantMessage(
-		assistantMessageId: string,
-		updater: (current: MessageAttachedData) => MessageAttachedData
-	) {
-		const next = new Map(messageAttachedDataMap)
-		const current = next.get(assistantMessageId) ?? {}
-		next.set(assistantMessageId, updater(current))
-		setAttachedDataMap(next)
-	}
-
 	function resetRequestCorrelations() {
 		activeRequestIdRef = null
-		requestToAssistantMessageIdRef.clear()
-		pendingAttachedDataByRequestIdRef.clear()
 		pendingExecutionTraceByRequestIdRef.clear()
-	}
-
-	function mergePendingDataIntoAssistantMessage(requestId: string, assistantMessageId: string) {
-		const pendingData = pendingAttachedDataByRequestIdRef.get(requestId)
-		if (pendingData) {
-			upsertAttachedDataForAssistantMessage(assistantMessageId, (current) => ({
-				...current,
-				...pendingData
-			}))
-			pendingAttachedDataByRequestIdRef.delete(requestId)
-		}
-
-		const pendingTrace = pendingExecutionTraceByRequestIdRef.get(requestId)
-		if (pendingTrace) {
-			executionTraceByAssistantIdRef.set(assistantMessageId, pendingTrace)
-			pendingExecutionTraceByRequestIdRef.delete(requestId)
-		}
-	}
-
-	function applyAttachedDataFromEnvelope<T>(
-		envelope: ChatStreamDataEnvelope<T>,
-		update: (current: MessageAttachedData, value: T) => MessageAttachedData
-	) {
-		activeRequestIdRef = envelope.requestId
-
-		if (envelope.assistantMessageId) {
-			requestToAssistantMessageIdRef.set(envelope.requestId, envelope.assistantMessageId)
-			mergePendingDataIntoAssistantMessage(envelope.requestId, envelope.assistantMessageId)
-		}
-
-		const resolvedAssistantMessageId =
-			envelope.assistantMessageId ??
-			requestToAssistantMessageIdRef.get(envelope.requestId) ??
-			null
-
-		if (resolvedAssistantMessageId) {
-			upsertAttachedDataForAssistantMessage(resolvedAssistantMessageId, (current) =>
-				update(current, envelope.data)
-			)
-			return
-		}
-
-		const pendingCurrent = pendingAttachedDataByRequestIdRef.get(envelope.requestId) ?? {}
-		pendingAttachedDataByRequestIdRef.set(envelope.requestId, update(pendingCurrent, envelope.data))
 	}
 
 	function markHandoffPhase(phase: HandoffPhase, handoffId?: string) {
@@ -253,7 +202,7 @@
 	}
 
 	// ==========================================================================
-	// Persistence (absorbed from the legacy useConversations hooks)
+	// Persistence
 	// ==========================================================================
 	async function persistMessageToConversation(
 		payload: MessagePersistencePayload
@@ -266,7 +215,7 @@
 			content: payload.content,
 			visibleContent: payload.visibleContent ?? payload.content,
 			executionTrace: payload.executionTrace,
-			responseContractVersion: payload.responseContractVersion ?? 2,
+			responseContractVersion: payload.responseContractVersion ?? 3,
 			attachedData: payload.attachedData
 		})
 
@@ -277,8 +226,6 @@
 		payload: MessagePersistencePayload
 	): Promise<MessagePersistenceResult> {
 		if (!isAuthenticated) {
-			// Guests have no server record; persist to the local IndexedDB store so
-			// the conversation survives reload on the same browser.
 			await addGuestMessage(payload.conversationId, {
 				id: payload.clientMessageId,
 				clientMessageId: payload.clientMessageId,
@@ -287,10 +234,9 @@
 				content: payload.content,
 				visibleContent: payload.visibleContent ?? payload.content,
 				executionTrace: payload.executionTrace,
-				attachedData: payload.attachedData
+				attachedData: payload.attachedData,
+				responseContractVersion: payload.responseContractVersion ?? 3
 			})
-			// Drop the synchronous seed so a future mount reads the persisted
-			// conversation (with this message) from IndexedDB.
 			chatState.invalidateGuestConversation(payload.conversationId)
 			return { status: 'persisted', messageId: payload.clientMessageId }
 		}
@@ -323,10 +269,7 @@
 	}
 
 	// ==========================================================================
-	// Streaming client. `@ai-sdk/svelte`'s Chat class consumes the same AI SDK
-	// UI message stream protocol the legacy React chat hook used (including the
-	// `data-*` envelopes from /api/chat), so no hand-rolled fetch reader is
-	// needed — see the U1 evidence for the proof.
+	// Streaming client
 	// ==========================================================================
 	const chat = new Chat<ChatUIMessage>({
 		id: 'ba-events-chat',
@@ -338,6 +281,8 @@
 				return {
 					locale: getLocale() as 'en' | 'es',
 					conversationId: conversationId ?? pendingConversationIdRef ?? null,
+					userClientMessageId: pendingUserClientMessageIdRef,
+					assistantClientMessageId: pendingAssistantClientMessageIdRef,
 					...(happeningSoonEventId ? { happeningSoonEventId } : {})
 				}
 			}
@@ -348,10 +293,6 @@
 				events_returned: eventsCountRef
 			})
 
-			// First-message handoff phase breakdown (home submit → /chat/:id remount
-			// → stream). Fired once, in the instance that actually streamed. All
-			// marks are read by handoff id: a phase the CURRENT handoff never
-			// marked stays undefined and cannot borrow an earlier handoff's entry.
 			if (isHandoffRequestRef) {
 				const handoffId = activeHandoffIdRef
 				if (handoffId) {
@@ -400,18 +341,12 @@
 
 			setRequestLifecyclePhase('persisting')
 
-			const activeRequestId = activeRequestIdRef
-			if (activeRequestId) {
-				requestToAssistantMessageIdRef.set(activeRequestId, message.id)
-				mergePendingDataIntoAssistantMessage(activeRequestId, message.id)
-			}
+			const parts = message.parts as Array<{ type?: string; text?: string; data?: unknown }>
+			const canonical = canonicalFromParts(parts)
+			const textContent = canonical?.text?.trim() || extractVisibleTextFromUIMessageParts(parts)
 
 			const resolvedConversationId = pendingConversationIdRef ?? conversationId ?? null
 			if (resolvedConversationId) {
-				const textContent = extractVisibleTextFromUIMessageParts(
-					message.parts as Array<{ type?: string; text?: string }>
-				)
-
 				if (pendingUserPersistencePromiseRef) {
 					try {
 						const userPersistResult = await pendingUserPersistencePromiseRef
@@ -423,7 +358,7 @@
 					}
 				}
 
-				const attachedData = messageAttachedDataMap.get(message.id)
+				const activeRequestId = activeRequestIdRef
 				const executionTrace =
 					executionTraceByAssistantIdRef.get(message.id) ??
 					(activeRequestId
@@ -431,18 +366,20 @@
 						: [])
 				const assistantClientMessageId = pendingAssistantClientMessageIdRef ?? generateId()
 
+				const persistPayload: MessagePersistencePayload = {
+					conversationId: resolvedConversationId,
+					parentMessageId: pendingUserPersistedMessageIdRef,
+					clientMessageId: assistantClientMessageId,
+					role: 'assistant',
+					content: textContent,
+					visibleContent: textContent,
+					executionTrace,
+					responseContractVersion: 3,
+					attachedData: canonical ? { canonical } : {}
+				}
+
 				try {
-					const assistantPersistResult = await persistMessageResiliently({
-						conversationId: resolvedConversationId,
-						parentMessageId: pendingUserPersistedMessageIdRef,
-						clientMessageId: assistantClientMessageId,
-						role: 'assistant',
-						content: textContent,
-						visibleContent: textContent,
-						executionTrace,
-						responseContractVersion: 2,
-						attachedData
-					})
+					const assistantPersistResult = await persistMessageResiliently(persistPayload)
 					if (assistantPersistResult.messageId) {
 						persistedAssistantMessageIdsRef.set(message.id, assistantPersistResult.messageId)
 					}
@@ -461,31 +398,21 @@
 						description: 'Your conversation may not be saved properly',
 						action: {
 							label: 'Retry',
-							onClick: () =>
-								persistMessageResiliently({
-									conversationId: resolvedConversationId,
-									parentMessageId: pendingUserPersistedMessageIdRef,
-									clientMessageId: assistantClientMessageId,
-									role: 'assistant',
-									content: textContent,
-									visibleContent: textContent,
-									executionTrace,
-									responseContractVersion: 2,
-									attachedData
-								})
+							onClick: () => persistMessageResiliently(persistPayload)
 						}
 					})
 				}
 			}
 
-			if (activeRequestId) {
-				pendingExecutionTraceByRequestIdRef.delete(activeRequestId)
+			if (activeRequestIdRef) {
+				pendingExecutionTraceByRequestIdRef.delete(activeRequestIdRef)
 			}
 			executionTraceByAssistantIdRef.delete(message.id)
 
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
 			pendingAssistantClientMessageIdRef = null
+			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
 			pendingUserPersistedMessageIdRef = null
 			resetRequestCorrelations()
@@ -506,10 +433,9 @@
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
 			pendingAssistantClientMessageIdRef = null
+			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
 			pendingUserPersistedMessageIdRef = null
-			// A failed handoff stream never appends the real user message — clear
-			// the optimistic copy so the composer unlocks.
 			pendingFirstMessage = null
 			activeHandoffIdRef = null
 			isHandoffRequestRef = false
@@ -518,20 +444,14 @@
 		},
 		onData: (dataPart) => {
 			if (dataPart.type === 'data-status') {
-				const statusData = dataPart.data as ChatStreamStatusData
+				const statusData = dataPart.data as {
+					phase: ChatStreamStatusPhase
+					requestId: string
+					assistantMessageId?: string
+				}
 				activeRequestIdRef = statusData.requestId
 
-				if (statusData.assistantMessageId) {
-					requestToAssistantMessageIdRef.set(statusData.requestId, statusData.assistantMessageId)
-					mergePendingDataIntoAssistantMessage(
-						statusData.requestId,
-						statusData.assistantMessageId
-					)
-				}
-
-				// The server emits 'composing' right before writing the response
-				// text — the earliest reliable "first response" signal.
-				if (statusData.phase === 'composing' && !handoffMarksRef.first_response) {
+				if (statusData.phase === 'finalizing' && !handoffMarksRef.first_response) {
 					markHandoffPhase('first_response')
 				}
 
@@ -539,60 +459,24 @@
 				return
 			}
 
-			if (dataPart.type === 'data-events') {
-				if (isDataEnvelope<EventWithVenue[]>(dataPart.data)) {
-					applyAttachedDataFromEnvelope(dataPart.data, (current, eventsData) => {
-						eventsCountRef = eventsData.length
-						if (eventsData.length === 0) {
-							track('chat:no_results', {})
-						}
-						return {
-							...current,
-							events: eventsData.length > 0 ? eventsData : undefined
-						}
-					})
-				}
-				return
-			}
-
-			if (dataPart.type === 'data-suggestions') {
-				if (isDataEnvelope<RefinementSuggestion[]>(dataPart.data)) {
-					applyAttachedDataFromEnvelope(dataPart.data, (current, suggestionsData) => ({
-						...current,
-						suggestions: suggestionsData.length > 0 ? suggestionsData : undefined
-					}))
-				}
-				return
-			}
-
-			if (dataPart.type === 'data-directions') {
-				if (isDataEnvelope<DirectionsData>(dataPart.data)) {
-					applyAttachedDataFromEnvelope(dataPart.data, (current, directionsData) => ({
-						...current,
-						directions: directionsData
-					}))
-				}
-				return
-			}
-
 			if (dataPart.type === 'data-execution-trace') {
-				if (isDataEnvelope<MessageExecutionStep[]>(dataPart.data)) {
-					const envelope = dataPart.data
-					activeRequestIdRef = envelope.requestId
-
-					if (envelope.assistantMessageId) {
-						requestToAssistantMessageIdRef.set(envelope.requestId, envelope.assistantMessageId)
-						executionTraceByAssistantIdRef.set(envelope.assistantMessageId, envelope.data)
-					} else {
-						pendingExecutionTraceByRequestIdRef.set(envelope.requestId, envelope.data)
-					}
+				const traceData = dataPart.data as {
+					requestId: string
+					assistantMessageId?: string
+					steps: MessageExecutionStep[]
+				}
+				activeRequestIdRef = traceData.requestId
+				if (traceData.assistantMessageId) {
+					executionTraceByAssistantIdRef.set(traceData.assistantMessageId, traceData.steps)
+				} else {
+					pendingExecutionTraceByRequestIdRef.set(traceData.requestId, traceData.steps)
 				}
 			}
 		}
 	})
 
 	// ==========================================================================
-	// Send message (ports the legacy handleSendMessage useCallback)
+	// Send message
 	// ==========================================================================
 	async function handleSendMessage(content: string, options?: { eventId?: string }) {
 		pendingHappeningSoonEventIdRef = options?.eventId ?? null
@@ -606,9 +490,6 @@
 			has_history: chat.messages.length > 0
 		})
 
-		// No active conversation means this will be a first-message handoff:
-		// mint the unique id NOW so the submit mark and the parked message
-		// share it (the id travels through the remount).
 		const handoffId = !conversationId ? generateId() : null
 		if (handoffId) {
 			markHandoffPhase('submit', handoffId)
@@ -618,14 +499,12 @@
 		pendingUserPersistedMessageIdRef = null
 		const userClientMessageId = generateId()
 		const assistantClientMessageId = generateId()
+		pendingUserClientMessageIdRef = userClientMessageId
 		pendingAssistantClientMessageIdRef = assistantClientMessageId
 
 		try {
-			// Resolve an active conversation: reuse the URL id, or create one.
 			let currentConversationId = conversationId
 			if (!currentConversationId) {
-				// Invariant: this branch is only reachable when conversationId was
-				// null, which is exactly when handoffId was minted at the top.
 				if (!handoffId) {
 					throw new Error('[chat] invariant: first-message branch without handoff id')
 				}
@@ -634,10 +513,6 @@
 					currentConversationId = newConversation.id
 				} else {
 					currentConversationId = generateId()
-					// Persist the guest conversation WITHOUT blocking the navigation:
-					// fire-and-forget IndexedDB write (safe-failure), plus a
-					// synchronous seed so the remounted /chat/:id instance resolves
-					// the conversation instantly.
 					createGuestConversation(currentConversationId)
 						.then(() => markHandoffPhase('guest_conversation_written', handoffId))
 						.catch((persistError) => {
@@ -658,10 +533,6 @@
 						messages: []
 					})
 				}
-				// First message of a new conversation: navigating to /chat/{id}
-				// remounts this component, so sending here would stream the response
-				// into an unmounted instance. Park the message in the ChatState and
-				// let the instance that mounts at /chat/{id} send it.
 				isHandoffPending = true
 				markHandoffPhase('navigate', handoffId)
 				chatState.setPendingFirstMessage({ content, eventId: options?.eventId, handoffId })
@@ -679,7 +550,7 @@
 				role: 'user',
 				content,
 				visibleContent: content,
-				responseContractVersion: 2
+				responseContractVersion: 3
 			}
 
 			const userPersistencePromise = persistMessageResiliently(userMessagePayload)
@@ -696,6 +567,12 @@
 				})
 
 			pendingUserPersistencePromiseRef = userPersistencePromise
+
+			// Server-side assistant persistence resolves the parent by
+			// userClientMessageId — ensure the user message is persisted first.
+			if (isAuthenticated) {
+				await userPersistencePromise
+			}
 
 			markHandoffPhase('request_start')
 			await chat.sendMessage({
@@ -718,11 +595,10 @@
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
 			pendingAssistantClientMessageIdRef = null
+			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
 			pendingUserPersistedMessageIdRef = null
 			persistedAssistantMessageIdsRef.clear()
-			// A failed send never appends the user message, so the optimistic
-			// handoff copy would otherwise lock the composer forever.
 			pendingFirstMessage = null
 			activeHandoffIdRef = null
 			isHandoffRequestRef = false
@@ -732,15 +608,12 @@
 	}
 
 	// ==========================================================================
-	// Effects (legacy useEffect → $effect)
+	// Effects
 	// ==========================================================================
-	// Keep the active conversation id in the shared state (sidebar highlight).
 	$effect(() => {
 		chatState.setActiveConversationId(conversationId ?? null)
 	})
 
-	// Load the guest conversation from IndexedDB when the URL changes. Signed-in
-	// conversations arrive preloaded from the route's +page.server.ts load.
 	$effect(() => {
 		const id = conversationId ?? null
 		if (isAuthenticated) {
@@ -767,8 +640,6 @@
 		}
 	})
 
-	// Load conversation messages into the chat timeline when the URL id changes.
-	// Never overwrite the in-flight timeline while a request is active.
 	$effect(() => {
 		const prev = prevConversationIdRef
 		prevConversationIdRef = conversationId
@@ -776,11 +647,8 @@
 		const idle = requestPhaseRef === 'idle' || requestPhaseRef === 'error'
 		if (!idle) return
 
-		// No active conversation, or a deliberate navigation to a different one:
-		// start from a blank timeline.
 		if (!conversationId || conversationId !== prev) {
 			chat.messages = []
-			setAttachedDataMap(new Map())
 			messageTimestampsById.clear()
 			executionTraceByAssistantIdRef.clear()
 			persistedAssistantMessageIdsRef.clear()
@@ -801,42 +669,44 @@
 			? sortMessagesByTurnOrderAsc(sourceMessages as Message[])
 			: [...sourceMessages].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
 
-		const uiMessages: ChatUIMessage[] = sortedMessages.map((storedMessage) => ({
-			id: storedMessage.id,
-			role: storedMessage.role as 'user' | 'assistant',
-			metadata: { createdAt: storedMessage.created_at },
-			parts: [
+		const uiMessages: ChatUIMessage[] = sortedMessages.map((storedMessage) => {
+			const canonical =
+				(storedMessage as Message).attached_data?.canonical ??
+				adaptLegacyToCanonical(storedMessage as Message)
+			const parts: Array<{ type: string; text?: string; data?: unknown }> = [
 				{
-					type: 'text' as const,
-					text: storedMessage.visible_content ?? storedMessage.content
+					type: 'text',
+					text: (storedMessage as Message).visible_content ?? storedMessage.content
 				}
 			]
-		}))
+			if (storedMessage.role === 'assistant') {
+				parts.push({ type: 'data-response', data: canonical })
+			}
+			return {
+				id: storedMessage.id,
+				role: storedMessage.role as 'user' | 'assistant',
+				metadata: { createdAt: storedMessage.created_at },
+				parts
+			} as ChatUIMessage
+		})
 
 		chat.messages = uiMessages
 
-		const attachedDataMap = new Map<string, MessageAttachedData>()
 		const persistedAssistantIds = new Map<string, string>()
 		for (const storedMessage of sortedMessages) {
-			if (storedMessage.role === 'assistant' && storedMessage.attached_data) {
-				attachedDataMap.set(storedMessage.id, storedMessage.attached_data)
-			}
 			if (storedMessage.role === 'assistant') {
 				persistedAssistantIds.set(storedMessage.id, storedMessage.id)
 			}
 		}
-		setAttachedDataMap(attachedDataMap)
 		persistedAssistantMessageIdsRef = persistedAssistantIds
 
 		isFirstExchangeRef = sortedMessages.length > 0
 	})
 
-	// Flush any pending persistence retries on load.
 	$effect(() => {
 		void flushOutboxNow()
 	})
 
-	// Flush retries as soon as connectivity is restored.
 	$effect(() => {
 		if (!isAuthenticated) return
 
@@ -850,12 +720,10 @@
 		}
 	})
 
-	// Register the startNewChat handler (called from the sidebar via ChatState).
 	$effect(() => {
 		chatState.registerStartNewChatHandler(() => {
 			void chat.stop()
 			chat.messages = []
-			setAttachedDataMap(new Map())
 			messageTimestampsById.clear()
 			executionTraceByAssistantIdRef.clear()
 			setRequestLifecyclePhase('idle')
@@ -864,6 +732,7 @@
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
 			pendingAssistantClientMessageIdRef = null
+			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
 			pendingUserPersistedMessageIdRef = null
 			persistedAssistantMessageIdsRef.clear()
@@ -873,10 +742,7 @@
 		})
 	})
 
-	// Consume a first-message handoff from the home screen. One-shot:
-	// takePendingFirstMessage clears on read, so re-runs are no-ops.
 	$effect(() => {
-		// Only consume the handoff once a conversation id is present.
 		if (!conversationId) return
 		const pending = chatState.takePendingFirstMessage()
 		if (pending) {
@@ -889,8 +755,6 @@
 		}
 	})
 
-	// Drop the optimistic first-message copy once sendMessage has appended the
-	// real user message (same content), and re-enable the composer.
 	$effect(() => {
 		const optimistic = pendingFirstMessage
 		if (!optimistic) return
@@ -906,8 +770,6 @@
 		}
 	})
 
-	// Returning to the home screen (conversationId cleared) re-arms a composer
-	// that was locked while a handoff was in flight on this instance.
 	$effect(() => {
 		if (!conversationId) {
 			isHandoffPending = false
@@ -922,7 +784,6 @@
 		chatState.saveConversationScrollPosition(conversationId, target.scrollTop)
 	}
 
-	// Restore a remembered scroll position for this conversation.
 	$effect(() => {
 		if (
 			!conversationId ||
@@ -951,13 +812,18 @@
 	// ==========================================================================
 	const chatMessages = $derived.by(() => {
 		return chat.messages.map((message, index) => {
-			const parts = message.parts as Array<{ type?: string; text?: string }>
+			const parts = message.parts as Array<{ type?: string; text?: string; data?: unknown }>
 			const textContent = extractVisibleTextFromUIMessageParts(parts)
 			const isLastAssistant =
 				message.role === 'assistant' && index === chat.messages.length - 1
 			const isStreaming = isLastAssistant && chat.status === 'streaming'
-			const storedData =
-				message.role === 'assistant' ? messageAttachedDataMap.get(message.id) : undefined
+			const canonical = message.role === 'assistant' ? canonicalFromParts(parts) : null
+			const render = canonical
+				? canonicalToRender(canonical)
+				: { events: [], suggestions: [], directions: null, venue: null, operations: [] }
+			if (canonical) {
+				eventsCountRef = canonical.events.length
+			}
 
 			return {
 				id: message.id,
@@ -965,9 +831,11 @@
 				content: textContent,
 				timestamp: resolveMessageTimestamp(message, messageTimestampsById),
 				isStreaming,
-				events: storedData?.events,
-				suggestions: storedData?.suggestions,
-				directions: storedData?.directions
+				events: render.events.length > 0 ? render.events : undefined,
+				suggestions: render.suggestions.length > 0 ? render.suggestions : undefined,
+				directions: render.directions ?? undefined,
+				venue: render.venue ?? undefined,
+				operations: render.operations.length > 0 ? render.operations : undefined
 			} satisfies ChatMessage
 		})
 	})
@@ -978,12 +846,12 @@
 			const hasVisibleContent =
 				chatMessage.content.trim().length > 0 ||
 				(chatMessage.events && chatMessage.events.length > 0) ||
-				chatMessage.directions
+				chatMessage.directions ||
+				chatMessage.venue ||
+				(chatMessage.operations && chatMessage.operations.length > 0)
 			return hasVisibleContent || chatMessage.isStreaming
 		})
 
-		// Optimistic copy of the parked first message, rendered from the very
-		// first frame of the remounted instance.
 		if (!pendingFirstMessage) return visible
 		const optimistic = pendingFirstMessage
 		const alreadyRendered = chatMessages.some(

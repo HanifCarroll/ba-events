@@ -334,7 +334,9 @@ export interface DirectionsData {
 export type ChatStreamStatusPhase =
   | 'thinking'
   | 'calling_tool'
-  | 'composing'
+  | 'finalizing'
+  | 'validating'
+  | 'persisting'
   | 'done'
   | 'error'
 
@@ -347,12 +349,6 @@ export interface ChatStreamStatusData {
   timestamp: string
 }
 
-export interface ChatStreamDataEnvelope<T> {
-  requestId: string
-  assistantMessageId?: string
-  data: T
-}
-
 // Chat message types (for UI display)
 export interface ChatMessage {
   id: string
@@ -361,6 +357,8 @@ export interface ChatMessage {
   events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
+  venue?: VenueDetailsData
+  operations?: OperationReceipt[]
   timestamp: Date
   isStreaming?: boolean
 }
@@ -379,17 +377,6 @@ export interface RefinementSuggestion {
   icon?: string
   type: 'time' | 'price' | 'category' | 'neighborhood' | 'broader'
 }
-
-// Streaming event types
-export type StreamEvent =
-  | { type: 'text'; content: string }
-  | { type: 'events'; data: ChatStreamDataEnvelope<ChatEventPayload[]> }
-  | { type: 'suggestions'; data: ChatStreamDataEnvelope<RefinementSuggestion[]> }
-  | { type: 'status'; data: ChatStreamStatusData }
-  | { type: 'execution_trace'; data: ChatStreamDataEnvelope<MessageExecutionStep[]> }
-  | { type: 'history'; messages: APIMessage[] }
-  | { type: 'error'; message: string }
-  | { type: 'done' }
 
 // Conversation history for API (legacy - use APIMessage instead)
 export interface ConversationMessage {
@@ -604,6 +591,115 @@ export interface ConciergeMessage extends ChatMessage {
 }
 
 // =============================================================================
+// CANONICAL CHAT RESPONSE (v3)
+// =============================================================================
+
+/** Response contract version. v3 = canonical structured response (single source of truth). */
+export const CHAT_CONTRACT_VERSION = 3 as const
+
+export type ResponseKind =
+  | 'recommendations'
+  | 'event_details'
+  | 'saved_events'
+  | 'directions'
+  | 'venue_details'
+  | 'mutation_result'
+  | 'clarification'
+  | 'no_results'
+  | 'out_of_scope'
+  | 'error'
+
+/**
+ * Exact reason the deterministic fallback was triggered. Each value maps to a
+ * concrete validation/planning violation, never a free-form string.
+ */
+export type FallbackReason =
+  | 'finalizer_error'
+  | 'invalid_schema'
+  | 'empty_text'
+  | 'unknown_event_id'
+  | 'invalid_source_tool_call'
+  | 'inconsistent_response_kind'
+  | 'missing_required_artifact'
+  | 'duplicate_event_id'
+  | 'over_limit'
+  | 'pinned_substitution'
+  | 'invalid_directions_ref'
+  | 'invalid_venue_ref'
+  | 'invalid_mutation_ref'
+  | 'no_results'
+
+/** A model-selected event, bound to the exact tool call that produced it. */
+export interface EventSelection {
+  eventId: string
+  sourceToolCallId: string
+}
+
+export type MutationOutcome =
+  | 'applied'
+  | 'already_applied'
+  | 'denied'
+  | 'unauthenticated'
+  | 'not_found'
+  | 'failed'
+
+/** Normalized save/unsave receipt with a deterministic user-facing message. */
+export interface OperationReceipt {
+  toolCallId: string
+  toolName: 'save_event' | 'unsave_event'
+  eventId: string
+  outcome: MutationOutcome
+  message: string
+}
+
+/** Where a canonical response's provenance came from. */
+export type ProvenanceOrigin = 'validated' | 'fallback' | 'legacy_unknown'
+
+export interface CanonicalProvenance {
+  /** Tool calls that produced the selected events, deduped, in display order. */
+  sourceToolCallIds: string[]
+  /** Tool calls that produced the attached direction reference, deduped. */
+  directionToolCallIds: string[]
+  /** Tool calls that produced the attached venue reference, deduped. */
+  venueToolCallIds: string[]
+  /** Tool calls behind the acknowledged mutation receipts, deduped. */
+  mutationToolCallIds: string[]
+  /** Tool calls that produced the selected suggestion source, deduped. */
+  suggestionToolCallIds: string[]
+  origin: ProvenanceOrigin
+  fallbackUsed: boolean
+  fallbackReason: FallbackReason | null
+}
+
+/** Venue details materialized from a successful get_venue_details call. */
+export interface VenueDetailsData {
+  venueId: string | null
+  venueName: string
+  neighborhood: string | null
+  address: string | null
+  website: string | null
+  instagram: string | null
+}
+
+/**
+ * The single authoritative assistant response for a chat turn (v3).
+ * Used by streaming, rendering, persistence, reload, follow-up context and
+ * analytics. Text and cards are siblings; embeddings are never included.
+ */
+export interface CanonicalChatResponse {
+  contractVersion: typeof CHAT_CONTRACT_VERSION
+  requestId: string
+  kind: ResponseKind
+  text: string
+  events: ChatEventPayload[]
+  directions: DirectionsData | null
+  venue: VenueDetailsData | null
+  operations: OperationReceipt[]
+  suggestions: RefinementSuggestion[]
+  provenance: CanonicalProvenance
+}
+
+// =============================================================================
 // CONVERSATION HISTORY TYPES
 // =============================================================================
 
@@ -641,6 +737,8 @@ export interface MessageAttachedData {
   events?: ChatEventPayload[]
   suggestions?: RefinementSuggestion[]
   directions?: DirectionsData
+  /** v3 canonical response, persisted verbatim and authoritative on reload. */
+  canonical?: CanonicalChatResponse
 }
 
 /** Database record for a conversation */

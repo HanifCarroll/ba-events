@@ -24,7 +24,7 @@ export function getSystemPrompt(
 
   const block = userContext.isAuthenticated
     ? `\n\n## Current user\nThe user is logged in and has ${userContext.savedEventsCount} saved event${userContext.savedEventsCount === 1 ? '' : 's'}.`
-    : '\n\n## Current user\nThe user is not logged in. Saving events requires an account — if they try to save something, tell them to log in first.'
+    : '\n\n## Current user\nThe user is not logged in. If they clearly ask to save or unsave an event, still call the matching tool so its typed authentication receipt is recorded; never claim the mutation succeeded.'
 
   return base + block
 }

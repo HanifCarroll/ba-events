@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { defineTool } from './types.ts'
 import { listSavedEventsForUser } from '../user-tools.server.ts'
-import { formatSavedEventsForClaude } from './utils.ts'
+import { ensureChatEventPayloads, formatSavedEventsForClaude } from './utils.ts'
 
 // ============================================================================
 // INPUT SCHEMA
@@ -51,6 +51,8 @@ export const listSavedEventsTool = defineTool({
     const filter = input.filter ?? 'all'
     const result = await listSavedEventsForUser(filter, context.userContext)
 
+    const events = ensureChatEventPayloads(result.events ?? [])
+
     // Format the result for Claude
     const formattedResult = {
       success: result.success,
@@ -58,14 +60,14 @@ export const listSavedEventsTool = defineTool({
       count: result.count ?? 0,
       upcomingCount: result.upcomingCount ?? 0,
       pastCount: result.pastCount ?? 0,
-      events: formatSavedEventsForClaude(result.events ?? []),
+      events: formatSavedEventsForClaude(events),
     }
 
     console.log(`[DEBUG] list_saved_events: count=${result.count ?? 0}, filter=${filter}`)
 
     return {
       success: result.success,
-      events: result.events,
+      events,
       formatted: JSON.stringify(formattedResult),
       error: result.error,
       metadata: {

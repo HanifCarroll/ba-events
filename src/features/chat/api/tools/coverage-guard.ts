@@ -18,6 +18,8 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 
 export interface CoverageInfo {
+  /** UTC ISO lower bound of the window the model actually searched (null = unbounded). */
+  searchedFrom?: string | null
   /** UTC ISO upper bound of the window the model actually searched (null = unbounded). */
   searchedTo?: string | null
   /** Exact disjoint per-day windows searched (multi-weekday asks). When present,
@@ -25,6 +27,10 @@ export interface CoverageInfo {
   searchedWindows?: Array<{ searchedFrom: string; searchedTo: string }> | null
   /** UTC ISO of the furthest scheduled event date on record (source of truth). */
   maxEventDate?: string | null
+  /** Total events matching the window before ranking/limit. */
+  totalMatches?: number | null
+  /** Events returned by the search after ranking/limit. */
+  returned?: number | null
 }
 
 // Absolute ceiling / absence-of-events claims the model should not make when it

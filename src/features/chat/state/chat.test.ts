@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { ChatState } from './chat.svelte.ts'
+import { HandoffState } from './handoff-state.ts'
 
 // Logic-level port of the legacy `ChatProvider.test.tsx` and
 // `ChatProvider.handoff.test.tsx`. The React render hooks are gone — the
-// ChatState class exposes the same imperative surface directly.
+// `ChatState` class (which inherits these exact methods from HandoffState)
+// exposes the same imperative surface directly. The pure handoff/scroll state
+// lives in handoff-state.ts so it runs in any runner (Bun, Vitest) without the
+// Svelte runtime or SvelteKit virtual modules.
 
 describe('ChatState first-message handoff', () => {
 	it('peek is non-destructive and take is one-shot', () => {
-		const state = new ChatState()
+		const state = new HandoffState()
 
 		expect(state.peekPendingFirstMessage()).toBeNull()
 
@@ -27,7 +30,7 @@ describe('ChatState first-message handoff', () => {
 	})
 
 	it('a later park overwrites an earlier one', () => {
-		const state = new ChatState()
+		const state = new HandoffState()
 
 		state.setPendingFirstMessage({ content: 'first', handoffId: 'h-1' })
 		state.setPendingFirstMessage({ content: 'second', eventId: 'evt-1', handoffId: 'h-2' })
@@ -42,7 +45,7 @@ describe('ChatState first-message handoff', () => {
 
 describe('ChatState conversation scroll memory', () => {
 	it('keeps independent scroll positions per conversation', () => {
-		const state = new ChatState()
+		const state = new HandoffState()
 
 		state.saveConversationScrollPosition('conversation-a', 248)
 		state.saveConversationScrollPosition('conversation-b', 64)
@@ -52,7 +55,7 @@ describe('ChatState conversation scroll memory', () => {
 	})
 
 	it('returns null for a conversation that was never scrolled', () => {
-		const state = new ChatState()
+		const state = new HandoffState()
 		expect(state.getConversationScrollPosition('missing')).toBeNull()
 	})
 })

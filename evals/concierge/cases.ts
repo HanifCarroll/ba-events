@@ -232,6 +232,29 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
     expect: { anyToolOf: ['search_events'], limitMax: 5 },
   },
   {
+    // Romantic weekday regression: the model must not settle for a
+    // speed-dating/singles card, must emit a non-empty final reply, and every
+    // displayed card must be grounded in the validated canonical plan. Text
+    // and cards are siblings — prose is NOT required to name the events.
+    id: 'ground-romantic-weekday',
+    message: "I'm looking for something romantic to do with my girlfriend during the week.",
+    locale: 'en',
+    expect: {
+      anyToolOf: ['search_events'],
+      limitMax: 5,
+      custom: (run) => {
+        if (!run.text.trim()) return 'no final reply'
+        const singles = run.events.some((e) =>
+          /speed.?dating|singles|cita.?r[aá]pida|solter/i.test(e.name)
+        )
+        if (singles) return 'selected a singles/speed-dating card'
+        if (!run.cardsGrounded) return 'card not grounded in canonical provenance'
+        if (run.events.length === 0) return 'no cards for a recommendation request'
+        return null
+      },
+    },
+  },
+  {
     id: 'ground-absurd-query',
     message: 'Underwater basket weaving championship',
     locale: 'en',

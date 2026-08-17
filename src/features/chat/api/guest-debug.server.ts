@@ -20,10 +20,18 @@ import type { MessageExecutionStep } from '#shared/lib/types.ts'
 export type GuestDebugAssistantMessage = {
   id: string
   role: 'assistant'
-  parts: Array<{ type: 'text'; text: string }>
+  parts: Array<
+    | { type: 'text'; text: string }
+    | { type: 'data-response'; data: unknown }
+  >
   executionTrace?: MessageExecutionStep[]
   error?: string
 }
+
+export type GuestRequestTerminalStatus =
+  | 'completed'
+  | 'completed_with_fallback'
+  | 'errored'
 
 export async function persistGuestChatDebug(input: {
   conversationId: string | null
@@ -164,7 +172,7 @@ export async function recordGuestRequestStarted(input: {
 export async function recordGuestRequestTerminal(input: {
   requestId: string
   conversationId: string | null
-  status: 'completed' | 'errored'
+  status: GuestRequestTerminalStatus
   errorType?: string | null
   providerRequestId?: string | null
 }): Promise<void> {

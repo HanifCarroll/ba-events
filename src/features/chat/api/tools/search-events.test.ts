@@ -454,8 +454,7 @@ describe('search_events exact multi-weekday retrieval', () => {
   })
 
   beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-16T15:00:00.000Z')) // Sunday noon BA
+    vi.useFakeTimers({ now: new Date('2026-08-16T15:00:00.000Z') }) // Sunday noon BA
     vi.resetAllMocks()
     mockedCountEventsWithFilters.mockResolvedValue(1)
     mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00.000Z')
@@ -598,7 +597,7 @@ describe('search_events prefer rerank', () => {
   it('applies the reranked order and then diversity', async () => {
     // The reranker reorders (here: reverses), then diversity caps the same
     // venue at 2 — the tool must apply both, in that order.
-    mockedRerankEvents.mockImplementation(async (candidates: Array<{ id: string }>) => ({
+    mockedRerankEvents.mockImplementationOnce(async (candidates: Array<{ id: string }>) => ({
       ordered: [...candidates].reverse(),
       meta: { status: 'applied' },
     }))
@@ -1080,8 +1079,7 @@ describe('fetchAcrossWeekdayWindows round-robin merge', () => {
 
 describe('search_events plain weekday filter-only + coverage', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-16T15:00:00.000Z')) // Sunday noon BA
+    vi.useFakeTimers({ now: new Date('2026-08-16T15:00:00.000Z') }) // Sunday noon BA
     vi.resetAllMocks()
     mockedCountEventsWithFilters.mockResolvedValue(1)
     mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00.000Z')

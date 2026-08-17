@@ -32,6 +32,7 @@ export interface GuestMessage {
   visible_content: string
   execution_trace: MessageExecutionStep[]
   attached_data: MessageAttachedData
+  response_contract_version: number
   created_at: string
 }
 
@@ -111,6 +112,7 @@ export async function addGuestMessage(
     visibleContent?: string
     executionTrace?: MessageExecutionStep[]
     attachedData?: MessageAttachedData
+    responseContractVersion?: number
   }
 ): Promise<void> {
   const now = new Date().toISOString()
@@ -124,6 +126,7 @@ export async function addGuestMessage(
     visible_content: message.visibleContent ?? message.content,
     execution_trace: message.executionTrace ?? [],
     attached_data: message.attachedData ?? {},
+    response_contract_version: message.responseContractVersion ?? 3,
     created_at: now,
   })
   await touchGuestConversation(conversationId)

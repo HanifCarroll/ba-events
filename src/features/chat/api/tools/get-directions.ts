@@ -144,6 +144,12 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
         address: fullAddress,
         mapsUrl,
         eventName,
+        directions: {
+          venueName,
+          address: fullAddress,
+          mapsUrl,
+          eventName,
+        },
         formatted: JSON.stringify({
           success: true,
           venueName,

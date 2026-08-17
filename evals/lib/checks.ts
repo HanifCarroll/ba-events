@@ -4,11 +4,11 @@
  * prompt (src/features/chat/api/prompts/concierge.ts) and reply language.
  */
 
-// Keep in sync with META_NARRATION_PATTERN in src/routes/api/chat.ts
-// (single source of truth now lives in #features/chat/api/stream-helpers.ts).
-// Refined to genuine tool-work narration only — dropped the ambient "looking
-// for", "I'll look", "I'm trying" matches that flagged natural phrasing.
-import { META_NARRATION_PATTERN } from '#features/chat/api/stream-helpers.ts'
+// Single source of truth for voice-rule meta-narration detection. The v3
+// finalizer enforces this via prompt instruction; this regex is the eval's
+// deterministic mirror of that rule.
+export const META_NARRATION_PATTERN =
+  /\b(?:let me\s+(?:check|search|look|try)|search(?:ing now| again)|still getting|different angle)\b/i
 
 const EXCLAIM_OPENER =
   /^(great|perfect|absolutely|awesome|amazing|excellent|love it|genial|perfecto|buen[ií]simo|excelente|me encanta)[\s!,]/i
@@ -53,22 +53,6 @@ export function detectLanguage(text: string): 'en' | 'es' {
   const esWords = (text.match(ES_STOPWORDS) ?? []).length
   const enWords = (text.match(EN_STOPWORDS) ?? []).length
   return accents + esWords > enWords ? 'es' : 'en'
-}
-
-/**
- * Check the reply mentions at least one event the tools actually returned.
- * Matches on distinctive name tokens (>=5 chars) so paraphrases like
- * "Smoked" for "Smoked, Festival de Ahumados" count.
- */
-export function mentionsReturnedEvent(text: string, eventNames: string[]): boolean {
-  const lower = text.toLowerCase()
-  return eventNames.some((name) =>
-    name
-      .toLowerCase()
-      .split(/[^a-záéíóúñü0-9]+/i)
-      .filter((w) => w.length >= 5)
-      .some((word) => lower.includes(word))
-  )
 }
 
 /** Run async tasks with bounded concurrency. */

@@ -173,6 +173,23 @@ describe('buildGuestDebugTranscript', () => {
       parts: [{ type: 'text', text: 'Hello' }],
     })
   })
+
+  it('includes the canonical data-response part, not text alone', () => {
+    const canonical = { contractVersion: 3, requestId: 'req-1', kind: 'recommendations' }
+    const uiMessages = [
+      { id: 'u1', role: 'user' as const, parts: [{ type: 'text' as const, text: 'Hi' }] },
+    ]
+    const transcript = buildGuestDebugTranscript(uiMessages, {
+      id: 'a1',
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: 'Here' },
+        { type: 'data-response', data: canonical },
+      ],
+    })
+    const assistant = transcript[1] as { parts: Array<{ type?: string; data?: unknown }> }
+    expect(assistant.parts.some((p) => p.type === 'data-response' && p.data === canonical)).toBe(true)
+  })
 })
 
 describe('recordGuestRequestStarted', () => {
@@ -248,6 +265,21 @@ describe('recordGuestRequestTerminal', () => {
     expect(payload.ended_at).toBeTypeOf('string')
     expect(payload.error_type).toBe('APICallError')
     expect(payload.provider_request_id).toBeNull()
+  })
+
+  it('upserts completed_with_fallback with the exact fallback reason', async () => {
+    upsertMock.mockResolvedValue({ error: null })
+
+    await recordGuestRequestTerminal({
+      requestId: 'req-1',
+      conversationId: 'conv-1',
+      status: 'completed_with_fallback',
+      errorType: 'invalid_schema',
+    })
+
+    const payload = upsertMock.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.status).toBe('completed_with_fallback')
+    expect(payload.error_type).toBe('invalid_schema')
   })
 
   it('does not clobber started_at on an existing row', async () => {

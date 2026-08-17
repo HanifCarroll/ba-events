@@ -64,6 +64,24 @@ describe('guest-conversations store', () => {
     expect(result?.messages[1].attached_data).toEqual({ events: [] })
   })
 
+  it('preserves response contract version 3 and canonical verbatim on reload', async () => {
+    await createGuestConversation('conv-1')
+    const canonical = { contractVersion: 3, requestId: 'req-1', kind: 'recommendations', text: 'go' } as never
+    await addGuestMessage('conv-1', {
+      id: 'm1',
+      clientMessageId: 'm1',
+      role: 'assistant',
+      content: 'go',
+      attachedData: { canonical },
+      responseContractVersion: 3,
+    })
+
+    const result = await getGuestConversationWithMessages('conv-1')
+    const stored = result?.messages[0]
+    expect(stored?.response_contract_version).toBe(3)
+    expect(stored?.attached_data.canonical).toEqual(canonical)
+  })
+
   it('returns null for a missing conversation', async () => {
     expect(await getGuestConversationWithMessages('missing')).toBeNull()
   })

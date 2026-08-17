@@ -78,6 +78,16 @@ export const getVenueDetailsTool = defineTool({
     return {
       success: !!venue,
       formatted: formatVenueForClaude(venue),
+      venue: venue
+        ? {
+            venueId: venue.id ?? null,
+            venueName: venue.name,
+            neighborhood: venue.neighborhood ?? null,
+            address: venue.address ?? null,
+            website: venue.website ?? null,
+            instagram: venue.instagram_handle ?? null,
+          }
+        : null,
       metadata: {
         found: !!venue,
       },

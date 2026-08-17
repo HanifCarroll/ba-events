@@ -15,7 +15,6 @@ import { runConcierge, type AgentRun } from '../lib/run-agent.ts'
 import {
   detectLanguage,
   mapWithConcurrency,
-  mentionsReturnedEvent,
   voiceViolations,
 } from '../lib/checks.ts'
 import { printReport, type CaseResult } from '../lib/report.ts'
@@ -101,13 +100,6 @@ function scoreCase(c: ConciergeCase, run: AgentRun): CaseResult {
     failures.push(`locale: expected ${c.locale} reply, detected ${detectLanguage(run.text)}`)
   }
 
-  // Global: grounding — reply must reference an event the tools returned
-  if (!e.allowQuestionInstead && run.events.length > 0 && run.text.trim()) {
-    if (!mentionsReturnedEvent(run.text, run.events.map((ev) => ev.name))) {
-      failures.push('grounding: reply mentions none of the returned events')
-    }
-  }
-
   return {
     id: c.id,
     pass: failures.length === 0,
@@ -118,8 +110,18 @@ function scoreCase(c: ConciergeCase, run: AgentRun): CaseResult {
   }
 }
 
-console.log(`Running ${CONCIERGE_CASES.length} concierge cases (concurrency 4)...`)
-const results = await mapWithConcurrency(CONCIERGE_CASES, 4, async (c) => {
+const caseFilter = process.argv[2]
+const cases = caseFilter
+  ? CONCIERGE_CASES.filter((c) => c.id === caseFilter)
+  : CONCIERGE_CASES
+
+if (cases.length === 0) {
+  console.error(`No concierge case matches filter "${caseFilter}"`)
+  process.exit(2)
+}
+
+console.log(`Running ${cases.length} concierge case(s) (concurrency 4)...`)
+const results = await mapWithConcurrency(cases, 4, async (c) => {
   try {
     const run = await runConcierge(c.message, c.locale)
     return scoreCase(c, run)

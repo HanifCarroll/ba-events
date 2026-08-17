@@ -1,165 +1,107 @@
-# Chat Streaming State Machine
+# Chat Streaming and Response Contract
 
-This document describes the streaming state machine for the AI chat feature, documenting how the UI responds to different states during a chat interaction.
+The chat API uses response contract **v3**. Agent work and user-visible presentation are separate phases.
 
-## State Machine Diagram
+## Server phases
 
-```mermaid
-stateDiagram-v2
-    [*] --> idle: Initial state
+1. **Work loop** — up to two tool-capable `generateText` generations by default. Tool calls and results are appended to model history. Work text is kept only as an ephemeral finalizer note; reasoning is discarded.
+2. **Finalizer** — a separate, no-tools `generateText` call with `Output.object` produces a response plan.
+3. **Validation** — the server validates every selected ID and source tool-call ID against the current request's artifact ledger.
+4. **Materialization** — the server creates one `CanonicalChatResponse` from validated artifacts, or a deterministic typed fallback.
+5. **Persistence and stream** — the same canonical object is persisted and sent to the client.
 
-    idle --> submitted: User sends message
-    note right of submitted
-        Loading indicator: VISIBLE
-        User message: VISIBLE
-        Assistant message: NOT YET CREATED
-    end note
+A work-generation budget can never consume the finalizer generation.
 
-    submitted --> streaming: Server begins response
-    note right of streaming
-        Loading indicator: VISIBLE (until content arrives)
-        Tool calls: Processing in background
-        Text content: Streaming as it arrives
-    end note
+## Stream order
 
-    streaming --> streaming: Content arrives
-    note left of streaming
-        Once text/events/directions arrive:
-        Loading indicator: HIDDEN
-        Content: VISIBLE
-    end note
+A successful stream emits:
 
-    streaming --> ready: Stream completes
-    note right of ready
-        Loading indicator: HIDDEN
-        All content: VISIBLE
-        Suggestions: VISIBLE (if any)
-    end note
-
-    ready --> idle: Ready for next message
-
-    streaming --> error: Stream error
-    error --> idle: Error handled
+```text
+start
+transient data-status updates
+text-start
+text-delta              # exactly one final text block
+text-end
+data-response           # exactly one persistent canonical response
+transient data-execution-trace
+transient data-status(done)
+finish
 ```
 
-## Status Values
+No work-loop text or reasoning is emitted. `start` always precedes status or data chunks.
 
-The `useChat` hook from `@ai-sdk/react` provides a `status` value:
+All status updates use one stable part ID, `status:<requestId>`, and `transient: true`. Supported phases are:
 
-| Status | Description | UI State |
-|--------|-------------|----------|
-| `'ready'` | Idle, waiting for user input | Input enabled, no loading |
-| `'submitted'` | Message sent, waiting for server | Loading indicator visible |
-| `'streaming'` | Receiving streamed response | Loading visible until content arrives |
-| `'error'` | An error occurred | Error state, input re-enabled |
+- `thinking`
+- `calling_tool`
+- `finalizing`
+- `validating`
+- `persisting`
+- `done`
+- `error`
 
-## Loading Indicator Logic
+Transient status and trace parts are delivered to callbacks but do not enter message history.
 
-The loading indicator ("Thinking...") visibility is controlled by `showLoading`:
+## Canonical response
 
-```typescript
-const showLoading = status === 'submitted' || (status === 'streaming' && !hasVisibleAssistantContent)
-```
+`data-response` contains the single authoritative object:
 
-This means the loading indicator shows when:
-1. **Status is `'submitted'`**: Waiting for the server to start responding
-2. **Status is `'streaming'` but no visible content**: Claude is executing tool calls (e.g., `search_events`) but hasn't produced text, events, or directions yet
-
-The loading indicator hides as soon as ANY of these appear:
-- Text content (streamed response)
-- Events (from `data-events` custom data)
-- Directions (from `data-directions` custom data)
-
-## Message Filtering
-
-Empty assistant messages are filtered out to prevent showing just timestamps:
-
-```typescript
-const displayMessages = chatMessages.filter(m => {
-  if (m.role === 'user') return true
-  const hasVisibleContent = m.content.trim().length > 0 ||
-                           (m.events && m.events.length > 0) ||
-                           m.directions
-  return hasVisibleContent || m.isStreaming
-})
-```
-
-## Data Flow
-
-```
-┌─────────────────┐     POST /api/chat      ┌─────────────────┐
-│   ChatContainer │ ──────────────────────► │   API Route     │
-│   (useChat)     │                         │   (streamText)  │
-└────────┬────────┘                         └────────┬────────┘
-         │                                           │
-         │  ◄─────── UIMessageStream ───────────────┤
-         │           (text chunks)                   │
-         │                                           │
-         │  ◄─────── data-events ───────────────────┤
-         │           (accumulated events)            │
-         │                                           │
-         │  ◄─────── data-suggestions ──────────────┤
-         │           (refinement chips)              │
-         │                                           │
-         │  ◄─────── data-directions ───────────────┤
-         │           (maps link data)                │
-         ▼                                           │
-┌─────────────────┐                         ┌────────┴────────┐
-│   MessageList   │                         │   Tool Calls    │
-│   (renders)     │                         │   (onStepFinish)│
-└─────────────────┘                         └─────────────────┘
-```
-
-## Custom Data Parts
-
-The server sends custom data alongside the streamed text using `writer.write()`:
-
-| Type | Data | When Sent |
-|------|------|-----------|
-| `data-events` | `EventWithVenue[]` | After stream completes, if events found |
-| `data-suggestions` | `RefinementSuggestion[]` | After stream completes, if search was performed |
-| `data-directions` | `DirectionsData` | After stream completes, if directions requested |
-
-These are handled in the `onData` callback of `useChat`:
-
-```typescript
-onData: (dataPart) => {
-  if (dataPart.type === 'data-events') {
-    setEvents(dataPart.data as EventWithVenue[])
-  } else if (dataPart.type === 'data-suggestions') {
-    setSuggestions(dataPart.data as RefinementSuggestion[])
-  } else if (dataPart.type === 'data-directions') {
-    setDirections(dataPart.data as DirectionsData)
-  }
+```ts
+type CanonicalChatResponse = {
+  contractVersion: 3
+  requestId: string
+  kind:
+    | 'recommendations'
+    | 'event_details'
+    | 'saved_events'
+    | 'directions'
+    | 'venue_details'
+    | 'mutation_result'
+    | 'clarification'
+    | 'no_results'
+    | 'out_of_scope'
+    | 'error'
+  text: string
+  events: ChatEventPayload[]
+  directions: DirectionsData | null
+  venue: VenueDetailsData | null
+  operations: OperationReceipt[]
+  suggestions: RefinementSuggestion[]
+  provenance: CanonicalProvenance
 }
 ```
 
-## Timeline Example
+Text and cards are siblings. Cards are materialized from validated event IDs and exact source tool-call IDs; they are never inferred from prose.
 
-A typical "Find techno events tonight" interaction:
+The client renders text, events, directions, venue details, operation receipts, and suggestions directly from this object. It does not combine independent data callbacks.
 
-```
-Time    Status      Loading     Visible Content
-─────   ──────────  ─────────   ───────────────────────────────
-0ms     ready       hidden      (empty chat)
+## Loading state
 
-10ms    submitted   VISIBLE     User message: "Find techno..."
+`ChatContainer.svelte` maps server phases to UI states:
 
-200ms   streaming   VISIBLE     (model thinking / calling search_events)
+| Server phase | UI state |
+|---|---|
+| `thinking` | Thinking |
+| `calling_tool` | Running tool |
+| `finalizing`, `validating` | Composing |
+| `persisting`, `done` | Persisting |
+| `error` | Error |
 
-800ms   streaming   hidden      Live answer text-deltas as the model writes
-                                them. Event cards fade in after the answer.
+The loading indicator remains visible until the canonical response provides visible content or the request finishes. Visible content includes text, events, directions, venue details, or operation receipts.
 
-2000ms  ready       hidden      Text + Events + Suggestions
-```
+## Persistence and reload
 
-Answer tokens are forwarded from `streamText` as they arrive. Reasoning is
-kept on the server. Event cards cannot stream; they animate in after the
-answer. Guards may replace the bubble only if they rewrite the text.
+- Authenticated assistant turns are persisted server-side, idempotently keyed by client message ID. The client outbox retries the same canonical payload if server persistence did not land.
+- Guest turns persist the received canonical object verbatim in IndexedDB.
+- Version-2 messages are adapted at read time from `visible_content` and legacy attachments, with provenance origin `legacy_unknown`. Historical rows are not rewritten.
+- Reloaded assistant UI messages include the persisted `data-response`, preserving card order and follow-up references.
 
-## Related Files
+## Trust boundaries
 
-- `src/routes/-components/chat/ChatContainer.tsx` - Main chat state management
-- `src/routes/-components/chat/MessageList.tsx` - Message rendering + loading indicator
-- `src/routes/-components/chat/ChatMessage.tsx` - Individual message rendering
-- `src/routes/api/chat.ts` - Server-side streaming handler
+- User identity comes only from the server session.
+- Tool outputs and imported event content are untrusted data.
+- Event IDs, directions, venue data, mutation receipts, and suggestion sources are validated against the current request ledger.
+- Embeddings, work narration, and model reasoning never cross the client boundary.
+- Mutations execute only in the work phase and are never inferred or retried from final prose.
+
+See `docs/decisions.md` (“Chat response v3: canonical response + phase separation”) for fallback and migration rules.

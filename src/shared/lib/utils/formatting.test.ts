@@ -12,9 +12,15 @@ describe('formatEventTime', () => {
   it('does not pad English event hours with a leading zero', () => {
     localeState.value = 'en'
 
-    expect(formatEventTime('2026-08-16T19:00:00.000Z', '2026-08-16T23:00:00.000Z')).toBe(
-      'Sun, Aug 16, 4:00 PM - 8:00 PM',
+    // The date/time separator is ICU-dependent: V8 emits ", ", WebKit/JavaScriptCore
+    // (Bun) emits " at ". Normalize it so the exact assertion holds on both runtimes
+    // while still pinning the non-padded "4:00 PM" hour.
+    const formatted = formatEventTime('2026-08-16T19:00:00.000Z', '2026-08-16T23:00:00.000Z').replace(
+      ' at ',
+      ', '
     )
+
+    expect(formatted).toBe('Sun, Aug 16, 4:00 PM - 8:00 PM')
   })
 
   it('keeps two-digit hours in Spanish', () => {

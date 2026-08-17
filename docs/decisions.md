@@ -26,6 +26,101 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Chat response v3: canonical response + phase separation
+
+**Date:** 2026-08-16
+
+**Decision:** The chat API moves from `streamText`/`stepCountIs` automatic
+orchestration to a manual `generateText` work loop (default 2 tool-capable work
+generations) followed by an always-separate no-tools DeepSeek finalizer that
+emits one schema-constrained plan via `generateText` + `Output.object`. A typed
+artifact ledger replaces the global `allEvents` map and `events` sniffing. The
+plan is validated deterministically against the ledger and materialized
+server-side into exactly one `CanonicalChatResponse` v3 object; any violation
+(or finalizer error) triggers a deterministic typed fallback.
+
+**Contract (v3):**
+- `contractVersion: 3`; fields: `requestId`, `kind` (enum:
+  `recommendations`, `event_details`, `saved_events`, `directions`,
+  `venue_details`, `mutation_result`, `clarification`, `no_results`,
+  `out_of_scope`, `error`), non-empty `text` (≤1000 chars, trimmed),
+  `events`, `directions|null`, `venue|null`, `operations`, `suggestions`, and
+  `provenance`. Operations are siblings of the primary read kind — a compound
+  workflow uses its primary read kind plus `operations`, never a `compound`
+  kind. Embeddings never cross the boundary.
+- `provenance` carries `sourceToolCallIds` (events), `directionToolCallIds`,
+  `venueToolCallIds`, `mutationToolCallIds`, `suggestionToolCallIds` (all
+  deduped), an `origin` marker (`validated` | `fallback` | `legacy_unknown`),
+  `fallbackUsed`, and `fallbackReason`.
+- Streaming: `start` → one stable transient `data-status`
+  (id `status:${requestId}`) → exactly one text block → exactly one persistent
+  `data-response` (the canonical response) → sanitized `data-execution-trace`
+  (tool calls/results only, no reasoning/work text) → `finish`. Error streams
+  still emit `start` before their error chunk.
+- Fallback reason is a closed union (no free-form strings): `finalizer_error`,
+  `invalid_schema`, `empty_text`, `unknown_event_id`,
+  `invalid_source_tool_call`, `inconsistent_response_kind`,
+  `missing_required_artifact`, `duplicate_event_id`, `over_limit`,
+  `pinned_substitution`, `invalid_directions_ref`, `invalid_venue_ref`,
+  `invalid_mutation_ref`, `no_results`.
+
+**Phase separation & trust boundaries:**
+- Work text/reasoning is ephemeral — never streamed, never persisted as visible
+  text or raw reasoning. The sanitized trace keeps only tool calls/results.
+  Each work generation's own prose (`result.text`, never `reasoning`) is
+  captured as a BOUNDED ephemeral work note so the finalizer can see rejection/
+  refinement rationale ("speed-dating unsuitable") without it ever reaching the
+  client.
+- The instrumented tool set is created ONCE per request (before the loop) so its
+  mutation memo dedupes identical save/unsave(eventId) calls across parallel
+  calls and across work generations into a single base mutation.
+- The finalizer receives only bounded turn inputs: latest request, locale,
+  prior displayed-event ids/names, work notes, compact ledger (event facts,
+  exact search input/displayLimit/mode/coverage, directions/venue/operation
+  data), pinned event, and requested count/mode. Tool/event content and work
+  notes are UNTRUSTED data, never instructions.
+- The model plan is UNTRUSTED: validation re-checks every event id against the
+  exact successful source artifact (same requestId, succeeded, contains the id),
+  dedupes, caps at 5/requested, validates directions/venue/mutation references,
+  enforces kind/artifact consistency, and forbids pinned-event substitution.
+  Cards are materialized from validated ids only (no prose/event-name matching).
+  Guest ids remain untrusted and are revalidated by tools/validator before
+  reads/mutations.
+
+**Fallback rules:**
+- The final relevant successful read is determined by `(stepIndex, callIndex)`.
+  If it is a search, only the successful search calls in that (highest relevant)
+  step contribute (call order → result order → dedupe → cap); an empty latest
+  search step shows no cards and never resurrects earlier results.
+  Saved/details/directions/venue each use only their own final artifact —
+  unrelated read types are never unioned. Multiple directions => latest
+  successful. Mutation receipts are preserved as siblings (deduped, including
+  unauthenticated/failed outcomes) and never retried. Discovery fallback text is
+  fixed (EN "Here are the best matches I found." / ES "Estas son las mejores
+  opciones que encontré."). Pinned fallback prefers only the exact pinned
+  get_event_details artifact; if missing it shows no alternate event. Text is
+  localized and non-empty; the lifecycle is marked `completed_with_fallback`
+  with the exact violation reason stored in `error_type`.
+
+**Persistence/migration:**
+- `visible_content = canonical.text`; the canonical response is persisted
+  verbatim in `attached_data.canonical` (JSONB); validated provenance,
+  sanitized trace, and receipts are stored. `response_contract_version = 3`.
+- Authenticated turns persist the assistant message server-side (authoritative,
+  idempotent via `client_message_id`); the client retains its outbox retry
+  against the same idempotency key. Guests persist the received `data-response`
+  verbatim to IndexedDB (never reconstructed from callbacks).
+- v2 historical rows are adapted read-only via `adaptLegacyToCanonical`
+  (legacy/unknown provenance); no historical rewrite. v3 reload uses the
+  persisted canonical directly.
+
+**Rationale:** Removes global last-write state and heuristic event-name
+matching, which caused the romantic-weekday failure (speed-dating first,
+rejection note, later tango/music/jazz, final work generation calling another
+search). One authoritative response object now serves streaming, rendering,
+persistence, reload, follow-up context, and analytics.
+
+
 ### Pure Voyage ordering; RRF only for ties and failures
 
 **Date:** 2026-08-16

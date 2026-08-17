@@ -5,6 +5,8 @@
  * display the final step text and hide intermediate draft/search narration.
  */
 
+import type { UIMessage } from 'ai'
+
 type TextPartLike = {
   type?: string
   text?: string
@@ -72,4 +74,26 @@ export function extractVisibleTextFromUIMessageParts(parts: TextPartLike[] | und
 
   stepTexts.push(currentStepText)
   return extractVisibleTextFromStepTexts(stepTexts)
+}
+
+/**
+ * Return the most recent non-empty user message text from a UI message list.
+ */
+export function getLastUserQuery(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i] as {
+      role?: string
+      parts?: Array<{ type?: string; text?: string }>
+      content?: string
+    }
+    if (message.role !== 'user') continue
+    if (Array.isArray(message.parts)) {
+      const content = extractVisibleTextFromUIMessageParts(message.parts)
+      if (content.trim().length > 0) return content
+    }
+    if (typeof message.content === 'string' && message.content.trim().length > 0) {
+      return message.content
+    }
+  }
+  return ''
 }

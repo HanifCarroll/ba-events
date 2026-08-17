@@ -1,75 +1,62 @@
 /**
- * Chat API Route
+ * Chat API Route (v3)
  *
- * Handles AI chat requests using Vercel AI SDK with streaming.
- * Supports tool calling for event search and user actions.
+ * Manual generateText work loop + no-tools DeepSeek finalizer + deterministic
+ * validation/fallback, streamed through `createUIMessageStream`:
+ *   - `start` first
+ *   - one stable transient `data-status` id `status:${requestId}`
+ *   - exactly one final text block (no work text/reasoning)
+ *   - exactly one persistent `data-response` carrying the canonical response
+ *   - sanitized `data-execution-trace` (tool calls/results only)
+ *   - `finish`
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
 import {
   convertToModelMessages,
   generateId,
-  streamText,
-  stepCountIs,
   createUIMessageStream,
   createUIMessageStreamResponse,
   type UIMessage,
 } from 'ai'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
 import { getUserToolContext, listSavedEventsForUser } from '#features/chat/api/user-tools.server.ts'
-import { createTools } from '#features/chat/api/tools-ai-sdk.ts'
 import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
-import { generateSuggestions } from '#features/chat/api/suggestions.ts'
-import { guardForOffTopic } from '#features/chat/api/topic-guard.ts'
-import { guardCoverageClaims, type CoverageInfo } from '#features/chat/api/tools/coverage-guard.ts'
-import {
-  MAX_STEPS,
-  buildExecutionTrace,
-  getLastUserQuery,
-  getFinalVisibleTextFromSteps,
-  getNonEmptyStepTextCount,
-  sanitizeFinalAssistantText,
-  stripLeakedReasoning,
-  filterEventsMentionedInText,
-  buildStreamEnvelope,
-  buildStreamOpeningChunks,
-  inferToolResultSuccess,
-  type StepResultLike,
-} from '#features/chat/api/stream-helpers.ts'
-import { CHAT_THINKING, textModel } from '#shared/lib/ai/providers.ts'
 import { getEventWithVenue } from '#shared/lib/db/client.server.ts'
 import { trackServer } from '#shared/lib/analytics.server.ts'
 import { formatTime } from '#shared/lib/utils/formatting.ts'
 import * as m from '#paraglide/messages.js'
 import type {
-  ChatEventPayload,
-  DirectionsData,
-  ChatStreamStatusData,
+  CanonicalChatResponse,
+  ChatStreamStatusPhase,
+  Message,
 } from '#shared/lib/types.ts'
-import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
+import {
+  orchestrate,
+} from '#features/chat/api/agent/orchestrate.ts'
+import { persistAssistantMessageV3 } from '#features/chat/api/agent/persist.ts'
+import {
+  priorEventsFromCanonical,
+  priorEventsFromUIMessages,
+  formatPriorEvents,
+} from '#features/chat/api/agent/follow-up.ts'
+import { adaptLegacyToCanonical } from '#features/chat/lib/canonical.ts'
+import { getConversation } from '#features/chat/api/conversations.server.ts'
 import {
   buildGuestDebugTranscript,
   persistGuestChatDebug,
   recordGuestRequestStarted,
   recordGuestRequestTerminal,
 } from '#features/chat/api/guest-debug.server.ts'
+import { getLastUserQuery } from '#features/chat/lib/extract-visible-text.ts'
 
-/**
- * Get client IP for rate limiting.
- *
- * SvelteKit's `getClientAddress()` (set by the adapter, trusted when it is
- * configured to honor proxy headers) is the primary source. The legacy
- * header-parsing chain is preserved as a fallback, in its original order:
- * x-forwarded-for → x-real-ip → cf-connecting-ip → 'unknown'.
- */
 function getClientIP(event: RequestEvent): string {
   const clientAddress = event.getClientAddress()
   if (clientAddress) return clientAddress
 
   const forwarded = event.request.headers.get('x-forwarded-for')
-  if (forwarded) {
-    return forwarded.split(',')[0].trim()
-  }
+  if (forwarded) return forwarded.split(',')[0].trim()
+
   return (
     event.request.headers.get('x-real-ip') ??
     event.request.headers.get('cf-connecting-ip') ??
@@ -77,46 +64,41 @@ function getClientIP(event: RequestEvent): string {
   )
 }
 
-/**
- * Create a streaming error response (client expects streaming, not JSON)
- */
 function createErrorStream(errorMessage: string): Response {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
-      writer.write({
-        type: 'error',
-        errorText: errorMessage,
-      })
-      writer.write({
-        type: 'finish',
-        finishReason: 'error',
-      })
+      // `start` MUST precede any data/status chunk, even on error paths.
+      writer.write({ type: 'start', messageId: generateId() })
+      writer.write({ type: 'error', errorText: errorMessage })
+      writer.write({ type: 'finish', finishReason: 'error' })
     },
   })
   return createUIMessageStreamResponse({ stream })
 }
 
-/**
- * Create rate limit error response (as streaming)
- */
 function createRateLimitResponse(resetTimestamp: number): Response {
-  const resetDate = new Date(resetTimestamp)
-  const resetTimeStr = formatTime(resetDate)
-
+  const resetTimeStr = formatTime(new Date(resetTimestamp))
   return createErrorStream(
     m.chat_rate_limit({ count: RATE_LIMIT_REQUESTS, time: resetTimeStr })
   )
 }
 
+function canonicalsFromMessages(messages: Message[]): CanonicalChatResponse[] {
+  return messages
+    .filter((msg) => msg.role === 'assistant')
+    .map((msg) => msg.attached_data?.canonical ?? adaptLegacyToCanonical(msg))
+}
+
 export const POST = async (event: RequestEvent): Promise<Response> => {
   const { request } = event
 
-  // Parse request body
   let uiMessages: UIMessage[]
   let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>
   let locale: 'en' | 'es'
   let happeningSoonEventId: string | undefined
   let conversationId: string | null
+  let userClientMessageId: string | null
+  let assistantClientMessageId: string | null
 
   try {
     const body = (await request.json()) as {
@@ -124,18 +106,21 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       locale?: 'en' | 'es'
       happeningSoonEventId?: string
       conversationId?: string | null
+      userClientMessageId?: string | null
+      assistantClientMessageId?: string | null
     }
 
     locale = body.locale ?? 'en'
     uiMessages = Array.isArray(body.messages) ? body.messages : []
     happeningSoonEventId = body.happeningSoonEventId
     conversationId = body.conversationId ?? null
+    userClientMessageId = body.userClientMessageId ?? null
+    assistantClientMessageId = body.assistantClientMessageId ?? null
     modelMessages = await convertToModelMessages(uiMessages)
   } catch {
     return createErrorStream('Invalid request body')
   }
 
-  // Rate limiting
   const ip = getClientIP(event)
   const { success, reset } = await checkRateLimit(ip)
   if (!success) {
@@ -143,44 +128,35 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     return createRateLimitResponse(reset)
   }
 
-  // Get user context for authenticated actions
   const userContext = await getUserToolContext(event)
-  console.log(`[DEBUG] User context: authenticated=${userContext.isAuthenticated}, userId=${userContext.userId?.slice(0, 8) ?? 'none'}`)
   const requestId = generateId()
+  const originalQuery = getLastUserQuery(uiMessages)
 
-  // Server-side debug copy for GUEST chats only. Authenticated chats already
-  // have a server record in `conversations` and are deliberately skipped.
-  // Written at request start (user turn) and again after the reply exists.
-  // Request-start capture is fire-and-forget so it can never delay the stream;
-  // the terminal transcript and lifecycle writes run concurrently and are
-  // awaited so a completed execute cannot lose them.
   if (!userContext.isAuthenticated) {
     void persistGuestChatDebug({
       conversationId,
       locale,
       ip,
       messages: uiMessages,
-      lastUserText: getLastUserQuery(uiMessages) || null,
+      lastUserText: originalQuery || null,
     })
   }
 
-  // Inject auth state into the system prompt (replaces the old
-  // get_user_context tool - static info, not worth a model step)
   const savedEventsCount = userContext.isAuthenticated
     ? ((await listSavedEventsForUser('all', userContext)).count ?? 0)
     : 0
+
   let systemPrompt = getSystemPrompt({
     isAuthenticated: userContext.isAuthenticated,
     savedEventsCount,
   })
 
-  // Pin a home-screen happening-soon event tap to that exact event. The id
-  // is carried in the request body (never in the visible message text), so
-  // the chat UI and persisted history stay clean.
+  let pinnedEventName: string | undefined
   if (happeningSoonEventId) {
     try {
       const pinnedEvent = await getEventWithVenue(happeningSoonEventId)
       if (pinnedEvent) {
+        pinnedEventName = pinnedEvent.name
         systemPrompt =
           `${systemPrompt}\n\n` +
           `The user just tapped a specific event from the home screen: "${pinnedEvent.name}" ` +
@@ -193,328 +169,169 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     }
   }
 
-  // Accumulate events across all tool calls
-  const allEvents = new Map<string, ChatEventPayload>()
-  let lastSearchInput: SearchEventsInput | null = null
-  let lastSearchCoverage: CoverageInfo | null = null
-  let lastOriginalQuery = ''
-  let directionsData: DirectionsData | null = null
+  // Trusted prior displayed-event context. Authenticated conversations load
+  // their canonical responses server-side; guests contribute their retained
+  // canonical data-response parts (ids remain untrusted downstream).
+  let priorDisplayedEvents: ReturnType<typeof priorEventsFromCanonical> = []
+  if (userContext.isAuthenticated && conversationId) {
+    try {
+      const conversation = await getConversation(event, { id: conversationId })
+      if (conversation) {
+        priorDisplayedEvents = priorEventsFromCanonical(
+          canonicalsFromMessages((conversation.messages ?? []) as Message[])
+        )
+      }
+    } catch (error) {
+      console.error('[chat] failed to load prior conversation:', error)
+    }
+  } else {
+    priorDisplayedEvents = priorEventsFromUIMessages(uiMessages)
+  }
 
-  // Get the last user message for suggestions
-  lastOriginalQuery = getLastUserQuery(uiMessages)
+  // Inject trusted prior displayed events (ids + order + saved state) so the
+  // work loop can resolve "save the second one", "tell me more", "other one",
+  // "closest", and directions without hidden client context.
+  if (priorDisplayedEvents.length > 0) {
+    systemPrompt =
+      `${systemPrompt}\n\n## Recently shown events (trusted)\n` +
+      `Each entry is an event you already displayed in this conversation, in display order: ` +
+      `"<id>: <name>" (saved when marked). Resolve follow-ups against these ids — e.g. ` +
+      `"save the second one" means the second event below, "tell me more" means the event just discussed.\n` +
+      formatPriorEvents(priorDisplayedEvents)
+  }
 
-  // Create the stream with custom data support
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
-      let wroteStart = false
       let assistantMessageId: string | undefined
-      let stepIndex = -1
       let providerRequestId: string | null = null
 
       const writeStatus = (
-        phase: ChatStreamStatusData['phase'],
-        options?: Pick<
-          ChatStreamStatusData,
-          'toolName' | 'stepIndex' | 'assistantMessageId'
-        >
+        phase: ChatStreamStatusPhase,
+        toolName?: string,
+        stepIndex?: number
       ) => {
         writer.write({
-          type: 'data-status' as const,
+          type: 'data-status',
+          id: `status:${requestId}`,
+          transient: true,
           data: {
             phase,
-            toolName: options?.toolName,
-            stepIndex: options?.stepIndex,
+            toolName,
+            stepIndex,
             requestId,
-            assistantMessageId: options?.assistantMessageId,
+            assistantMessageId,
             timestamp: new Date().toISOString(),
           },
-        })
+        } as never)
+      }
+
+      const writeResponse = (canonical: CanonicalChatResponse) => {
+        writer.write({
+          type: 'data-response',
+          data: canonical,
+        } as never)
       }
 
       try {
         const messageId = generateId()
         assistantMessageId = messageId
-        wroteStart = true
 
-        for (const chunk of buildStreamOpeningChunks(
-          messageId,
-          requestId,
-          new Date().toISOString(),
-        )) {
-          writer.write(chunk)
-        }
+        // `start` MUST precede any data/status chunk.
+        writer.write({ type: 'start', messageId })
+        writeStatus('thinking')
 
-        let streamedReasoning = ''
-        let textBlockId: string | undefined
-        let streamedAnswer = ''
-
-        // Durable started marker keyed by requestId, awaited before the model
-        // runs. If the process dies during execution the row stays `started`.
         if (!userContext.isAuthenticated) {
           await recordGuestRequestStarted({ requestId, conversationId })
         }
 
-        const result = streamText({
-          model: textModel,
-          system: systemPrompt,
-          messages: modelMessages,
-          tools: createTools(userContext, locale),
-          ...CHAT_THINKING,
-          stopWhen: stepCountIs(MAX_STEPS),
-          onChunk: ({ chunk }) => {
-            if (chunk.type === 'reasoning-delta' && chunk.text) {
-              streamedReasoning += chunk.text
-              return
-            }
-            if (chunk.type !== 'text-delta' || !chunk.text) return
-            if (!textBlockId) {
-              textBlockId = generateId()
-              writeStatus('composing', { assistantMessageId })
-              writer.write({ type: 'text-start', id: textBlockId })
-            }
-            streamedAnswer += chunk.text
-            writer.write({
-              type: 'text-delta',
-              id: textBlockId,
-              delta: chunk.text,
-            })
-          },
-          onStepFinish: ({ toolCalls, toolResults }) => {
-            stepIndex += 1
-
-            // Accumulate events from each step
-            for (const result of toolResults) {
-              const toolOutput = result.output as {
-                events?: ChatEventPayload[]
-                metadata?: {
-                  toolInput?: SearchEventsInput
-                  coverage?: CoverageInfo
-                }
-                // For get_directions tool
-                success?: boolean
-                venueName?: string
-                address?: string
-                mapsUrl?: string
-                eventName?: string
-              } | undefined
-
-              if (toolOutput?.events) {
-                for (const event of toolOutput.events) {
-                  allEvents.set(event.id, event)
-                }
-              }
-              // Track last search input for suggestions
-              if (result.toolName === 'search_events' && toolOutput?.metadata?.toolInput) {
-                lastSearchInput = toolOutput.metadata.toolInput
-              }
-              if (result.toolName === 'search_events' && toolOutput?.metadata?.coverage) {
-                lastSearchCoverage = toolOutput.metadata.coverage
-              }
-              // Capture directions data
-              if (result.toolName === 'get_directions' && toolOutput?.success && toolOutput?.mapsUrl) {
-                directionsData = {
-                  venueName: toolOutput.venueName!,
-                  address: toolOutput.address!,
-                  mapsUrl: toolOutput.mapsUrl,
-                  eventName: toolOutput.eventName,
-                }
-              }
-            }
-
-            // Track tool usage with the REAL outcome (the previous
-            // hardcoded `success: true` reported failed searches as
-            // successful). Search calls additionally emit a dedicated
-            // search:executed event with retrieval metadata.
-            for (const call of toolCalls) {
-              writeStatus('calling_tool', {
-                toolName: call.toolName,
-                stepIndex,
-              })
-              const matchingResult = toolResults.find(
-                (result) => result.toolCallId === call.toolCallId
-              )
-              const toolSucceeded = matchingResult
-                ? inferToolResultSuccess(matchingResult.output)
-                : false
-              trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-                tool: call.toolName,
-                success: toolSucceeded,
-              })
-
-              if (call.toolName === 'search_events') {
-                const searchOutput = matchingResult?.output as {
-                  success?: boolean
-                  metadata?: {
-                    resultCount?: number
-                    hasQuery?: boolean
-                    hasFilters?: boolean
-                    searchMode?: 'semantic' | 'filter_only' | 'now'
-                    durationMs?: number
-                    coverage?: {
-                      totalMatches?: number
-                      returned?: number
-                      searchedFrom?: string | null
-                      searchedTo?: string | null
-                      maxEventDate?: string | null
-                    }
-                    toolInput?: SearchEventsInput
-                  }
-                } | null
-                trackServer('search:executed', userContext.userId ?? 'anonymous', {
-                  query: searchOutput?.metadata?.toolInput?.query ?? null,
-                  has_query: searchOutput?.metadata?.hasQuery ?? false,
-                  has_filters: searchOutput?.metadata?.hasFilters ?? false,
-                  search_mode: searchOutput?.metadata?.searchMode ?? null,
-                  result_count: searchOutput?.metadata?.resultCount ?? 0,
-                  total_matches: searchOutput?.metadata?.coverage?.totalMatches ?? 0,
-                  returned: searchOutput?.metadata?.coverage?.returned ?? 0,
-                  time_filter: searchOutput?.metadata?.toolInput?.timeFilter ?? null,
-                  limit: searchOutput?.metadata?.toolInput?.limit ?? null,
-                  success: searchOutput
-                    ? inferToolResultSuccess(searchOutput)
-                    : false,
-                  duration_ms: searchOutput?.metadata?.durationMs ?? null,
-                })
-              }
-            }
+        const result = await orchestrate({
+          requestId,
+          modelMessages,
+          userContext,
+          locale,
+          systemPrompt,
+          originalQuery,
+          priorDisplayedEvents,
+          pinnedEventId: happeningSoonEventId,
+          pinnedEventName,
+          hooks: {
+            onStatus: (phase) => writeStatus(phase),
+            onCallingTool: (toolName, _toolCallId, _input, stepIndex) =>
+              writeStatus('calling_tool', toolName, stepIndex),
+            onToolError: (toolName, error) => {
+              console.error(`[chat] tool ${toolName} errored:`, error)
+            },
           },
         })
 
-        const [steps, generatedText] = await Promise.all([result.steps, result.text])
-        const typedSteps = steps as StepResultLike[]
-        providerRequestId = steps.at(-1)?.response.id ?? null
-        const executionTrace = buildExecutionTrace(typedSteps)
-        if (streamedReasoning && executionTrace[0] && !executionTrace[0].reasoning) {
-          executionTrace[0].reasoning = streamedReasoning
-        }
+        const canonical = result.canonical
+        providerRequestId = result.providerRequestIds.at(-1) ?? null
 
-        const rawFinalText = getFinalVisibleTextFromSteps(typedSteps, generatedText)
-        const nonEmptyStepTextCount = getNonEmptyStepTextCount(typedSteps)
-        const accumulatedEvents = Array.from(allEvents.values())
-        let finalText = stripLeakedReasoning(
-          sanitizeFinalAssistantText(rawFinalText, {
-            hasStructuredData: accumulatedEvents.length > 0 || directionsData !== null,
-          }),
-          streamedReasoning
-        )
-
-        const isDiscoveryList = (lastSearchInput?.limit ?? 1) > 1
-        let events = filterEventsMentionedInText(accumulatedEvents, finalText, {
-          preserveAll: isDiscoveryList,
-        })
-
-        if (finalText && !happeningSoonEventId) {
-          const guarded = await guardForOffTopic(finalText, locale, {
-            query: lastOriginalQuery,
-            eventNames: events.map((e) => e.name),
+        // Track tool usage + fallback from the ledger-backed result.
+        for (const entry of result.ledger.all()) {
+          trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
+            tool: entry.toolName,
+            success: entry.success,
           })
-          if (guarded) {
-            finalText = guarded
-            events = []
+          if (entry.kind === 'search') {
+            trackServer('search:executed', userContext.userId ?? 'anonymous', {
+              query: entry.searchInput?.query ?? null,
+              result_count: entry.count,
+              success: entry.success,
+            })
           }
         }
-
-        if (finalText && lastSearchCoverage) {
-          finalText = guardCoverageClaims(finalText, locale, lastSearchCoverage)
-        }
-
-        if (nonEmptyStepTextCount > 1) {
-          trackServer('chat:response_contract_violation', userContext.userId ?? 'anonymous', {
-            reason: 'multiple_non_empty_step_text',
-            non_empty_step_text_count: nonEmptyStepTextCount,
-          })
-        }
-
-        const totalToolCalls = typedSteps.reduce(
-          (count, step) => count + (step.toolCalls?.length ?? 0),
-          0
-        )
-        const totalToolResults = typedSteps.reduce(
-          (count, step) => count + (step.toolResults?.length ?? 0),
-          0
-        )
-        const finalStepIndex =
-          typedSteps.length > 0 ? typedSteps.length - 1 : undefined
-
         trackServer('chat:final_only_response_emitted', userContext.userId ?? 'anonymous', {
-          step_count: typedSteps.length,
-          tool_call_count: totalToolCalls,
-          tool_result_count: totalToolResults,
-          final_text_length: finalText.length,
-          trace_size_bytes: JSON.stringify(executionTrace).length,
+          step_count: result.executionTrace.length,
+          kind: canonical.kind,
+          fallback_used: canonical.provenance.fallbackUsed,
+          event_count: canonical.events.length,
+          final_text_length: canonical.text.length,
+          trace_size_bytes: JSON.stringify(result.executionTrace).length,
         })
+        if (canonical.provenance.fallbackUsed) {
+          trackServer('chat:response_completed_with_fallback', userContext.userId ?? 'anonymous', {
+            reason: canonical.provenance.fallbackReason ?? 'unknown',
+            kind: canonical.kind,
+          })
+        }
 
-        if (!textBlockId) {
-          textBlockId = generateId()
-          writeStatus('composing', {
-            stepIndex: finalStepIndex,
+        // Server-side authoritative persistence for authenticated users.
+        writeStatus('persisting')
+        if (userContext.isAuthenticated && conversationId && assistantClientMessageId) {
+          await persistAssistantMessageV3({
+            event,
+            conversationId,
+            assistantClientMessageId,
+            userClientMessageId,
+            canonical,
+            executionTrace: result.executionTrace,
+          })
+        }
+
+        // Exactly one final text block.
+        const textId = generateId()
+        writer.write({ type: 'text-start', id: textId })
+        writer.write({ type: 'text-delta', id: textId, delta: canonical.text })
+        writer.write({ type: 'text-end', id: textId })
+
+        writeResponse(canonical)
+
+        // Sanitized execution trace (tool calls/results only) — transient.
+        writer.write({
+          type: 'data-execution-trace',
+          id: `trace:${requestId}`,
+          transient: true,
+          data: {
+            requestId,
             assistantMessageId,
-          })
-          writer.write({ type: 'text-start', id: textBlockId })
-        }
+            steps: result.executionTrace,
+          },
+        } as never)
 
-        if (finalText && finalText !== streamedAnswer) {
-          writer.write({ type: 'text-end', id: textBlockId })
-          textBlockId = generateId()
-          writer.write({ type: 'text-start', id: textBlockId })
-          writer.write({
-            type: 'text-delta',
-            id: textBlockId,
-            delta: finalText,
-          })
-        }
-        writer.write({ type: 'text-end', id: textBlockId })
+        writeStatus('done')
+        writer.write({ type: 'finish', finishReason: 'stop' })
 
-        // Send accumulated events as custom data
-        if (events.length > 0) {
-          writer.write({
-            type: 'data-events' as const,
-            data: buildStreamEnvelope(requestId, events, assistantMessageId),
-          })
-          console.log(`[DEBUG] Sending ${events.length} accumulated events`)
-        }
-
-        // Generate and send suggestions
-        if (lastSearchInput) {
-          const suggestions = generateSuggestions({
-            originalQuery: lastOriginalQuery,
-            toolInput: lastSearchInput,
-            results: events,
-            locale,
-          })
-          if (suggestions.length > 0) {
-            writer.write({
-              type: 'data-suggestions' as const,
-              data: buildStreamEnvelope(requestId, suggestions, assistantMessageId),
-            })
-            console.log(`[DEBUG] Generated ${suggestions.length} suggestions`)
-          }
-        }
-
-        // Send directions data if available
-        if (directionsData) {
-          writer.write({
-            type: 'data-directions' as const,
-            data: buildStreamEnvelope(requestId, directionsData, assistantMessageId),
-          })
-          console.log(`[DEBUG] Sending directions for "${directionsData.venueName}"`)
-        }
-
-        // Send execution trace for persistence/debugging (not rendered in bubble text).
-        writer.write({
-          type: 'data-execution-trace' as const,
-          data: buildStreamEnvelope(requestId, executionTrace, assistantMessageId),
-        })
-
-        writeStatus('done', {
-          stepIndex: finalStepIndex,
-          assistantMessageId,
-        })
-
-        writer.write({
-          type: 'finish',
-          finishReason: 'stop',
-        })
         if (!userContext.isAuthenticated) {
           await Promise.all([
             persistGuestChatDebug({
@@ -524,35 +341,33 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
               messages: buildGuestDebugTranscript(uiMessages, {
                 id: messageId,
                 role: 'assistant',
-                parts: [{ type: 'text', text: finalText }],
-                executionTrace,
+                parts: [
+                  { type: 'text', text: canonical.text },
+                  { type: 'data-response', data: canonical },
+                ],
+                executionTrace: result.executionTrace,
               }),
-              lastUserText: lastOriginalQuery || null,
+              lastUserText: originalQuery || null,
             }),
             recordGuestRequestTerminal({
               requestId,
               conversationId,
-              status: 'completed',
+              status: canonical.provenance.fallbackUsed
+                ? 'completed_with_fallback'
+                : 'completed',
+              errorType: canonical.provenance.fallbackReason,
               providerRequestId,
             }),
           ])
         }
       } catch (error) {
         console.error('[Chat API] Error:', error)
-        writeStatus('error', {
-          stepIndex: stepIndex >= 0 ? stepIndex : undefined,
-          assistantMessageId,
-        })
+        writeStatus('error')
         writer.write({
           type: 'error',
           errorText: error instanceof Error ? error.message : 'An error occurred',
         })
-        if (wroteStart) {
-          writer.write({
-            type: 'finish',
-            finishReason: 'error',
-          })
-        }
+        writer.write({ type: 'finish', finishReason: 'error' })
         if (!userContext.isAuthenticated) {
           await Promise.all([
             persistGuestChatDebug({
@@ -565,7 +380,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
                 parts: [{ type: 'text', text: '' }],
                 error: error instanceof Error ? error.message : 'An error occurred',
               }),
-              lastUserText: lastOriginalQuery || null,
+              lastUserText: originalQuery || null,
             }),
             recordGuestRequestTerminal({
               requestId,
@@ -584,11 +399,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     },
   })
 
-  // Return the stream as a response
   return createUIMessageStreamResponse({
     stream,
-    headers: {
-      'Cache-Control': 'no-cache',
-    },
+    headers: { 'Cache-Control': 'no-cache' },
   })
 }

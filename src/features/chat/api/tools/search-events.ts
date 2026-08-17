@@ -230,6 +230,9 @@ The result includes coverage metadata: the window you searched, total matches, a
             hasQuery: !!query,
             hasFilters: true,
             searchMode: 'filter_only',
+            displayLimit: intent.displayLimit,
+            eventIds: [],
+            zeroResults: true,
             coverage: {
               searchedFrom: searchedWindows ? null : (filters.startsAfter ?? null),
               searchedTo: searchedWindows ? null : (filters.startsBefore ?? null),
@@ -450,6 +453,9 @@ The result includes coverage metadata: the window you searched, total matches, a
           hasQuery: !!query,
           hasFilters: hasMustConstraints(intent.must),
           searchMode,
+          displayLimit: intent.displayLimit,
+          eventIds: results.map((e) => e.id),
+          zeroResults: results.length === 0,
           ...(rerankMeta ? { rerank: rerankMeta.status } : {}),
           durationMs,
           // Coverage metadata: what window was searched, how many matched, and

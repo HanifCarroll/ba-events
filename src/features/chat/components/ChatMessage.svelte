@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Sparkles } from 'lucide-svelte'
+	import { Sparkles, CheckCircle2, XCircle } from 'lucide-svelte'
 	import { marked } from 'marked'
 	import DOMPurify from 'dompurify'
 	import { browser } from '$app/env'
@@ -9,6 +9,7 @@
 	import EventList from '#features/events/components/EventList.svelte'
 	import RefinementSuggestions from './RefinementSuggestions.svelte'
 	import DirectionsCard from './DirectionsCard.svelte'
+	import VenueDetailsCard from './VenueDetailsCard.svelte'
 
 	let {
 		message,
@@ -27,6 +28,8 @@
 	const events = $derived(message.events ?? [])
 	const suggestions = $derived(message.suggestions ?? [])
 	const directions = $derived(message.directions ?? null)
+	const venue = $derived(message.venue ?? null)
+	const operations = $derived(message.operations ?? [])
 	// react-markdown → marked + DOMPurify (client-side only). The legacy
 	// react-markdown escaped raw HTML; DOMPurify sanitizes it the same way.
 	const renderedContent = $derived(
@@ -45,7 +48,7 @@
 	Don't render empty assistant messages that are still streaming (waiting for
 	tool results). The loading indicator in MessageList handles this state.
 -->
-{#if isUser || hasContent || events.length > 0 || directions || !message.isStreaming}
+{#if isUser || hasContent || events.length > 0 || directions || venue || operations.length > 0 || !message.isStreaming}
 	<div
 		data-message-id={message.id}
 		class={cn(
@@ -108,6 +111,31 @@
 				</div>
 			{/if}
 
+			<!-- Venue details card for assistant messages -->
+			{#if !isUser && venue}
+				<div class={hasContent || events.length > 0 || directions ? 'mt-4' : ''}>
+					<VenueDetailsCard {venue} />
+				</div>
+			{/if}
+
+			<!-- Normalized mutation receipts — visible even when prose is generic -->
+			{#if !isUser && operations.length > 0}
+				<ul class={hasContent || events.length > 0 || directions || venue ? 'mt-3 space-y-1' : ''}>
+					{#each operations as op (op.toolCallId)}
+						<li class="flex items-start gap-2 text-sm text-muted-foreground">
+							<span class="mt-0.5 shrink-0">
+								{#if op.outcome === 'applied' || op.outcome === 'already_applied'}
+									<CheckCircle2 class="h-4 w-4 text-accent" />
+								{:else}
+									<XCircle class="h-4 w-4 text-destructive" />
+								{/if}
+							</span>
+							<span>{op.message}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
 			<!-- Refinement suggestions - show after events when not streaming -->
 			{#if !isUser && suggestions.length > 0 && !message.isStreaming && onSuggestionSelect}
 				<RefinementSuggestions
@@ -118,7 +146,7 @@
 			{/if}
 
 			<!-- Timestamp - only show when there's content or message is complete -->
-			{#if hasContent || events.length > 0 || directions || !message.isStreaming}
+			{#if hasContent || events.length > 0 || directions || venue || operations.length > 0 || !message.isStreaming}
 				<p
 					class={cn(
 						'text-[11px] text-muted-foreground mt-2',

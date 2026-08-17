@@ -8,8 +8,10 @@ export type ChatEvent =
   | 'chat:event_clicked'
   | 'chat:no_results'
   | 'chat:directions_opened'
+  | 'chat:venue_link_opened'
   | 'chat:final_only_response_emitted'
   | 'chat:response_contract_violation'
+  | 'chat:response_completed_with_fallback'
   | 'chat:error'
   | 'chat:first_message_handoff'
 
