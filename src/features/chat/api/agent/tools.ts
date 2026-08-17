@@ -1,15 +1,17 @@
 /**
- * Instrumented tool set for the v4 work loop.
+ * Instrumented tool set for the v5 work loop.
  *
- * Builds on `createTools` (existing AI SDK wrappers) and adds:
- * - per-request mutation deduplication so an identical save/unsave is never
- *   re-executed (across parallel calls and across work generations);
- * - two internal, schema-validated, no-side-effect control tools:
- *   `retain_search_results` (reactivate earlier search sources) and
- *   `reject_search_results` (reject one complete prior search stage). Neither
- *   goes through base `createTools` nor touches the database.
- * - pinned-mode tool restriction: broad discovery (`search_events`,
- *   `list_saved_events`) is removed; details/directions/related tools remain.
+ * Builds on `createTools` (existing AI SDK wrappers) and adds two internal,
+ * schema-validated, no-side-effect control tools: `retain_search_results`
+ * (reactivate earlier search sources) and `reject_search_results` (reject one
+ * complete prior search stage). Neither goes through base `createTools` nor
+ * touches the database.
+ *
+ * v5: `save_event`/`unsave_event` are NEVER part of the work loop. Mutations
+ * are planned and executed deterministically AFTER finalizer validation (see
+ * `mutation.ts`), so the work loop cannot run an unrestricted save/unsave
+ * against a model-supplied event id. `createTools` is injectable so tests do
+ * not depend on Vitest `vi.mock`.
  */
 
 import { tool, type ToolSet } from 'ai'
@@ -18,6 +20,12 @@ import type { UserToolContext } from '../user-tools.server.ts'
 import { createTools } from '../tools-ai-sdk.ts'
 
 type ToolObject = { execute: (input: unknown, options?: unknown) => Promise<unknown> }
+
+/** Injectable base-tool factory (defaults to the real AI SDK wrappers). */
+export type CreateToolsFn = (
+  userContext: UserToolContext,
+  locale: 'en' | 'es'
+) => Record<string, ToolObject>
 
 /**
  * Live view of the in-progress work loop, so the control tools can validate
@@ -36,15 +44,12 @@ export interface InstrumentedToolOptions {
   retention?: RetentionControl
   /** When set, broad discovery tools are removed from the work loop. */
   pinnedEventId?: string
-  /** Only true when the latest user request explicitly asks to mutate saved events. */
-  allowMutations?: boolean
+  /** Injectable base-tool factory (test seam; defaults to the real `createTools`). */
+  createToolsFn?: CreateToolsFn
 }
 
 /** Broad discovery tools removed in pinned mode. */
 const PINNED_EXCLUDED = new Set(['search_events', 'list_saved_events'])
-
-/** Mutation tools removed when the latest raw user request lacks save/unsave intent. */
-const MUTATION_TOOLS = new Set(['save_event', 'unsave_event'])
 
 function sameSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
@@ -55,33 +60,19 @@ function sameSet(a: string[], b: string[]): boolean {
 }
 
 export function createInstrumentedTools(options: InstrumentedToolOptions): ToolSet {
-  const { userContext, locale, retention, pinnedEventId, allowMutations } = options
-  const tools = createTools(userContext, locale) as unknown as Record<string, ToolObject>
+  const { userContext, locale, retention, pinnedEventId, createToolsFn } = options
+  const tools = (createToolsFn ?? createTools)(userContext, locale) as unknown as Record<
+    string,
+    ToolObject
+  >
 
-  // In-flight promises are cached BEFORE awaiting so parallel duplicate
-  // save/unsave(eventId) calls share one base execution.
-  const memo = new Map<string, Promise<unknown>>()
-
-  for (const name of ['save_event', 'unsave_event'] as const) {
-    const entry = tools[name]
-    if (!entry) continue
-    const original = entry.execute
-    entry.execute = (input: unknown, options?: unknown) => {
-      const eventId =
-        input && typeof input === 'object' && typeof (input as { eventId?: unknown }).eventId === 'string'
-          ? (input as { eventId: string }).eventId
-          : ''
-      const key = `${name}:${eventId}`
-      const inFlight = memo.get(key)
-      if (inFlight) return inFlight
-      const result = original.call(entry, input, options)
-      memo.set(key, result)
-      return result
-    }
-  }
+  // v5: save/unsave are never available in the work loop. The deterministic
+  // post-plan mutation executor (mutation.ts) is the only mutation surface.
+  delete tools['save_event']
+  delete tools['unsave_event']
 
   // Internal no-side-effect control tools. Added directly here — never through
-  // base `createTools` — so they have no DB surface and no mutation memo.
+  // base `createTools` — so they have no DB surface.
   tools['retain_search_results'] = tool({
     description:
       'Reactivate earlier search_events results by their exact tool call ids so a later refinement can be ignored. Only earlier (already completed) search sources are valid; current, future, or non-search ids are rejected.',
@@ -129,23 +120,12 @@ export function createInstrumentedTools(options: InstrumentedToolOptions): ToolS
     }
   }
 
-  // Structural mutation gating: save/unsave are unavailable unless the latest
-  // raw user request carries explicit save/unsave intent. This ensures an
-  // injected event/tool string cannot cause a mutation.
-  if (allowMutations !== true) {
-    for (const name of MUTATION_TOOLS) {
-      delete tools[name]
-    }
-  }
-
   return tools as ToolSet
 }
 
 export type InstrumentedToolName =
   | 'search_events'
   | 'get_venue_details'
-  | 'save_event'
-  | 'unsave_event'
   | 'list_saved_events'
   | 'get_event_details'
   | 'check_event_saved'

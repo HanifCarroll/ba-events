@@ -48,6 +48,7 @@ interface PrimaryContent {
   emptySourceToolCallIds: string[]
   retainedSourceToolCallIds: string[]
   stageIds: string[]
+  searchIncomplete: boolean
 }
 
 interface DerivedContent {
@@ -64,6 +65,7 @@ interface DerivedContent {
   retainedSourceToolCallIds: string[]
   stageIds: string[]
   searchAttemptToolCallIds: string[]
+  searchIncomplete: boolean
 }
 
 function clampCap(requestedCount: number): number {
@@ -105,10 +107,9 @@ function withSaved(
   event: ChatEventPayload,
   ledger: Ledger,
   requestId: string,
-  priorSaved: Record<string, boolean> | undefined,
-  force?: boolean
+  priorSaved: Record<string, boolean> | undefined
 ): CanonicalChatEventPayload {
-  const saved = force === true ? true : resolveSavedState(event.id, ledger, requestId, priorSaved)
+  const saved = resolveSavedState(event.id, ledger, requestId, priorSaved)
   return { ...event, saved }
 }
 
@@ -130,6 +131,7 @@ function searchPrimary(
       emptySourceToolCallIds: [],
       retainedSourceToolCallIds: [],
       stageIds: [active.stageId],
+      searchIncomplete: false,
     }
   }
   const retainedIds = ledger.retainedSearchToolCallIds(requestId)
@@ -144,12 +146,14 @@ function searchPrimary(
     cap
   )
 
+  const partial = active?.outcome === 'partial_success'
+
   if (events.length > 0) {
     const sourceEntries = entries.filter((e) => e.events.length > 0)
     const pick = events.length === 1 && sourceEntries.some((e) => e.searchInput?.objective === 'surprise')
     return {
       kind: 'recommendations',
-      messageKey: pick ? 'recommendations_pick' : 'recommendations',
+      messageKey: partial ? 'partial_results' : pick ? 'recommendations_pick' : 'recommendations',
       events,
       sourceToolCallIds: sourceEntries.map((e) => e.toolCallId),
       emptySourceToolCallIds: [],
@@ -157,11 +161,12 @@ function searchPrimary(
         sourceEntries.some((e) => e.toolCallId === id)
       ),
       stageIds: contributingStageIds(ledger, requestId, sourceEntries.map((e) => e.toolCallId)),
+      searchIncomplete: partial,
     }
   }
 
-  // No events: an empty active stage grounds no_results; a failed-only stage
-  // cannot, and must not resurrect earlier cards.
+  // No events: an EMPTY active stage grounds no_results. A partial_failure or
+  // failed stage cannot ground no_results and must not resurrect earlier cards.
   if (active && active.outcome === 'empty') {
     const emptyIds = activeEntries.map((e) => e.toolCallId)
     return {
@@ -172,6 +177,7 @@ function searchPrimary(
       emptySourceToolCallIds: emptyIds,
       retainedSourceToolCallIds: [],
       stageIds: contributingStageIds(ledger, requestId, emptyIds),
+      searchIncomplete: false,
     }
   }
   return {
@@ -182,6 +188,7 @@ function searchPrimary(
     emptySourceToolCallIds: [],
     retainedSourceToolCallIds: [],
     stageIds: active ? [active.stageId] : [],
+    searchIncomplete: active?.outcome === 'partial_failure',
   }
 }
 
@@ -207,6 +214,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
         emptySourceToolCallIds: [],
         retainedSourceToolCallIds: [],
         stageIds: [],
+        searchIncomplete: false,
       }
     }
   } else {
@@ -214,7 +222,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
       primary = searchPrimary(ledger, requestId, cap, priorSaved)
     } else if (latest?.kind === 'saved-events') {
       const events = dedupeInOrder(
-        latest.events.map((ev) => withSaved(ev, ledger, requestId, priorSaved, true)),
+        latest.events.map((ev) => withSaved(ev, ledger, requestId, priorSaved)),
         cap
       )
       if (events.length > 0) {
@@ -226,6 +234,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
           emptySourceToolCallIds: [],
           retainedSourceToolCallIds: [],
           stageIds: [],
+          searchIncomplete: false,
         }
       } else {
         primary = {
@@ -236,6 +245,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
           emptySourceToolCallIds: [latest.toolCallId],
           retainedSourceToolCallIds: [],
           stageIds: [],
+          searchIncomplete: false,
         }
       }
     } else if (latest?.kind === 'event-details') {
@@ -248,6 +258,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
           emptySourceToolCallIds: [],
           retainedSourceToolCallIds: [],
           stageIds: [],
+          searchIncomplete: false,
         }
       } else {
         primary = {
@@ -258,6 +269,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
           emptySourceToolCallIds: [],
           retainedSourceToolCallIds: [],
           stageIds: [],
+          searchIncomplete: false,
         }
       }
     }
@@ -317,6 +329,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
       retainedSourceToolCallIds: primary.retainedSourceToolCallIds,
       stageIds: primary.stageIds,
       searchAttemptToolCallIds,
+      searchIncomplete: primary.searchIncomplete,
     }
   }
 
@@ -337,6 +350,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
       retainedSourceToolCallIds: [],
       stageIds: [],
       searchAttemptToolCallIds,
+      searchIncomplete: false,
     }
   }
   if (venue) {
@@ -354,23 +368,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
       retainedSourceToolCallIds: [],
       stageIds: [],
       searchAttemptToolCallIds,
-    }
-  }
-  if (operations.length > 0) {
-    return {
-      kind: 'mutation_result',
-      messageKey: 'mutation_result',
-      events: [],
-      directions: null,
-      venue: null,
-      operations,
-      sourceToolCallIds: [],
-      directionToolCallIds: [],
-      venueToolCallIds: [],
-      emptySourceToolCallIds: [],
-      retainedSourceToolCallIds: [],
-      stageIds: [],
-      searchAttemptToolCallIds,
+      searchIncomplete: false,
     }
   }
   return {
@@ -387,6 +385,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
     retainedSourceToolCallIds: [],
     stageIds: [],
     searchAttemptToolCallIds,
+    searchIncomplete: false,
   }
 }
 
@@ -423,6 +422,7 @@ export function buildFallback(input: FallbackInput): CanonicalChatResponse {
       retainedSourceToolCallIds: content.retainedSourceToolCallIds,
       stageIds: content.stageIds,
       searchAttemptToolCallIds: content.searchAttemptToolCallIds,
+      searchIncomplete: content.searchIncomplete,
       origin: 'fallback',
       fallbackUsed: true,
       fallbackReason: input.reason,

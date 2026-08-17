@@ -252,11 +252,23 @@ function asReceipt(
 }
 
 /**
- * Tri-state saved resolution for a displayed event, respecting ledger
- * chronology. The LATEST successful check-saved / save / unsave evidence wins
- * by (stepIndex, callIndex); failed/denied/unauthenticated/not-found never
+ * Chronological saved-state evidence. Each ledger event is timestamped
+ * evidence, applied in `(stepIndex, callIndex)` order.
+ */
+export type SavedEvidence =
+  | { kind: 'prior_authoritative_state'; saved: boolean }
+  | { kind: 'saved_list_membership'; saved: true }
+  | { kind: 'check_saved'; saved: boolean }
+  | { kind: 'mutation'; saved: boolean }
+
+/**
+ * Tri-state saved resolution for a displayed event, as a chronological evidence
+ * reducer. The latest successful evidence wins by `(stepIndex, callIndex)`:
+ * `list_saved_events` membership establishes `true` at that call's position;
+ * a later successful save/unsave overrides it; `already_saved` gives true and
+ * `not_saved` gives false; failed/denied/unauthenticated/not-found never
  * overwrite the prior known value. Absent any evidence, the prior known value
- * (or null) stands.
+ * (or null) stands. Search/details stay null without evidence.
  */
 export function resolveSavedState(
   eventId: string,
@@ -266,8 +278,21 @@ export function resolveSavedState(
 ): SavedState {
   let result: SavedState =
     priorSaved && typeof priorSaved[eventId] === 'boolean' ? priorSaved[eventId] : null
-  for (const e of ledger.all()) {
-    if (e.requestId !== requestId) continue
+
+  const entries = ledger
+    .all()
+    .filter((e) => e.requestId === requestId)
+    .sort((a, b) => a.stepIndex - b.stepIndex || a.callIndex - b.callIndex)
+
+  for (const e of entries) {
+    if (
+      e.kind === 'saved-events' &&
+      e.success &&
+      e.events.some((ev) => ev.id === eventId)
+    ) {
+      result = true
+      continue
+    }
     if (e.kind === 'check-saved' && e.success && e.checkSaved?.eventId === eventId) {
       result = e.checkSaved.isSaved
       continue

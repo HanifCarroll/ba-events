@@ -3,9 +3,11 @@ import {
   adaptStoredMessageToCanonical,
   adaptV2ToCanonical,
   adaptV3ToCanonical,
+  adaptV4ToCanonical,
   canonicalFromDataResponse,
   canonicalToRender,
   deriveLegacyKind,
+  isV5Canonical,
   isV4Canonical,
 } from './canonical.ts'
 import {
@@ -64,7 +66,7 @@ const suggestion: RefinementSuggestion = {
   type: 'time',
 }
 
-function v4Provenance(): CanonicalChatResponse['provenance'] {
+function v5Provenance(): CanonicalChatResponse['provenance'] {
   return {
     sourceToolCallIds: ['src-1'],
     directionToolCallIds: [],
@@ -75,13 +77,14 @@ function v4Provenance(): CanonicalChatResponse['provenance'] {
     retainedSourceToolCallIds: [],
     stageIds: [],
     searchAttemptToolCallIds: [],
+    searchIncomplete: false,
     origin: 'validated',
     fallbackUsed: false,
     fallbackReason: null,
   }
 }
 
-function v4Canonical(overrides: Partial<CanonicalChatResponse> = {}): CanonicalChatResponse {
+function v5Canonical(overrides: Partial<CanonicalChatResponse> = {}): CanonicalChatResponse {
   return {
     contractVersion: CHAT_CONTRACT_VERSION,
     requestId: 'req-1',
@@ -94,12 +97,12 @@ function v4Canonical(overrides: Partial<CanonicalChatResponse> = {}): CanonicalC
     operations: [],
     suggestions: [],
     clarificationQuestions: [],
-    provenance: v4Provenance(),
+    provenance: v5Provenance(),
     ...overrides,
   }
 }
 
-describe('v4 canonical read adapters', () => {
+describe('v5 canonical read adapters', () => {
   it('adapts v2 legacy rows (visible_content + compound attachments) without rewriting', () => {
     const canonical = adaptV2ToCanonical({
       id: 'msg-1',
@@ -124,12 +127,8 @@ describe('v4 canonical read adapters', () => {
     expect(canonical.suggestions).toHaveLength(1)
     expect(canonical.clarificationQuestions).toEqual([])
     expect(canonical.provenance.origin).toBe('legacy_unknown')
+    expect(canonical.provenance.searchIncomplete).toBe(false)
     expect(canonical.provenance.sourceToolCallIds).toEqual([])
-    expect(canonical.provenance.directionToolCallIds).toEqual([])
-    expect(canonical.provenance.emptySourceToolCallIds).toEqual([])
-    expect(canonical.provenance.retainedSourceToolCallIds).toEqual([])
-    expect(canonical.provenance.stageIds).toEqual([])
-    expect(canonical.provenance.searchAttemptToolCallIds).toEqual([])
   })
 
   it('runtime-filters malformed loose v2 directions instead of trusting the storage type', () => {
@@ -138,7 +137,6 @@ describe('v4 canonical read adapters', () => {
       visible_content: 'Here you go',
       attached_data: {
         events: [],
-        // Malformed: missing address and mapsUrl.
         directions: { venueName: 'Niceto' } as unknown as DirectionsData,
       },
     })
@@ -164,16 +162,6 @@ describe('v4 canonical read adapters', () => {
       venue,
       operations: [operation],
       suggestions: [suggestion],
-      provenance: {
-        sourceToolCallIds: ['old-src'],
-        directionToolCallIds: ['old-dir'],
-        venueToolCallIds: ['old-venue'],
-        mutationToolCallIds: ['old-op'],
-        suggestionToolCallIds: ['old-sug'],
-        origin: 'validated',
-        fallbackUsed: false,
-        fallbackReason: null,
-      },
     }
 
     const canonical = adaptV3ToCanonical(v3, { id: 'msg-3', visible_content: 'These are the matches.' })
@@ -183,7 +171,6 @@ describe('v4 canonical read adapters', () => {
     expect(canonical.text).toBe('These are the matches.')
     expect(canonical.kind).toBe('recommendations')
     expect(canonical.messageKey).toBe('recommendations')
-    // Event order and card data preserved exactly; saved forced to null.
     expect(canonical.events.map((e) => e.id)).toEqual(['e2', 'e1'])
     expect(canonical.events.every((e) => e.saved === null)).toBe(true)
     expect(canonical.directions).toEqual(directions)
@@ -191,18 +178,56 @@ describe('v4 canonical read adapters', () => {
     expect(canonical.operations).toEqual([operation])
     expect(canonical.suggestions).toEqual([suggestion])
     expect(canonical.clarificationQuestions).toEqual([])
-    // Provenance is legacy_unknown with empty arrays (no trusted reconstruction).
     expect(canonical.provenance.origin).toBe('legacy_unknown')
-    expect(canonical.provenance.sourceToolCallIds).toEqual([])
-    expect(canonical.provenance.directionToolCallIds).toEqual([])
-    expect(canonical.provenance.venueToolCallIds).toEqual([])
-    expect(canonical.provenance.mutationToolCallIds).toEqual([])
-    expect(canonical.provenance.suggestionToolCallIds).toEqual([])
-    expect(canonical.provenance.fallbackUsed).toBe(false)
+    expect(canonical.provenance.searchIncomplete).toBe(false)
   })
 
-  it('uses the persisted v4 canonical directly, preserving object identity', () => {
-    const stored = v4Canonical({ events: [canonicalEvent('e1', 'Tango night')], operations: [operation] })
+  it('adapts a v4 canonical to v5, mapping mutation_result and filling searchIncomplete', () => {
+    const v4 = {
+      contractVersion: 4,
+      requestId: 'req-4',
+      kind: 'mutation_result',
+      messageKey: 'mutation_result',
+      text: 'I updated your saved events.',
+      events: [],
+      directions: null,
+      venue: null,
+      operations: [operation],
+      suggestions: [],
+      clarificationQuestions: [],
+      provenance: {
+        sourceToolCallIds: ['src-1'],
+        directionToolCallIds: [],
+        venueToolCallIds: [],
+        mutationToolCallIds: ['op-1'],
+        suggestionToolCallIds: [],
+        emptySourceToolCallIds: [],
+        retainedSourceToolCallIds: [],
+        stageIds: [],
+        searchAttemptToolCallIds: [],
+        origin: 'validated',
+        fallbackUsed: false,
+        fallbackReason: null,
+      },
+    }
+    const canonical = adaptV4ToCanonical(v4, { id: 'msg-4', visible_content: 'I updated your saved events.' })
+
+    expect(canonical.contractVersion).toBe(CHAT_CONTRACT_VERSION)
+    // Visual text preserved verbatim; the legacy mutation_result key maps to the
+    // neutral mutation_mixed lead.
+    expect(canonical.text).toBe('I updated your saved events.')
+    expect(canonical.messageKey).toBe('mutation_mixed')
+    expect(canonical.operations).toEqual([operation])
+    expect(canonical.provenance.searchIncomplete).toBe(false)
+    expect(canonical.provenance.mutationToolCallIds).toEqual(['op-1'])
+  })
+
+  it('rejects a v4 canonical shape with an unknown messageKey safely (v2 fallback)', () => {
+    expect(isV4Canonical({ contractVersion: 4, messageKey: 'nonsense' })).toBe(false)
+  })
+
+  it('uses the persisted v5 canonical directly, preserving object identity', () => {
+    const stored = v5Canonical({ events: [canonicalEvent('e1', 'Tango night')], operations: [operation] })
     const adapted = adaptStoredMessageToCanonical({
       id: 'msg-4',
       response_contract_version: CHAT_CONTRACT_VERSION,
@@ -212,7 +237,7 @@ describe('v4 canonical read adapters', () => {
     expect(adapted).toBe(stored)
   })
 
-  it('dispatches v2/v3/v4 through one adapter and rejects unknown versions safely', () => {
+  it('dispatches v2/v3/v4/v5 through one adapter and rejects unknown versions safely', () => {
     const v2Row = {
       id: 'm2',
       response_contract_version: 2,
@@ -233,6 +258,16 @@ describe('v4 canonical read adapters', () => {
     const fromV3 = adaptStoredMessageToCanonical(v3Row)
     expect(fromV3.contractVersion).toBe(CHAT_CONTRACT_VERSION)
     expect(fromV3.provenance.origin).toBe('legacy_unknown')
+
+    const v4Row = {
+      id: 'm4',
+      response_contract_version: 4,
+      visible_content: 'v4 mutation text',
+      attached_data: {
+        canonical: { contractVersion: 4, requestId: 'r4', kind: 'mutation_result', messageKey: 'mutation_result', text: 'v4 mutation text', events: [], directions: null, venue: null, operations: [], suggestions: [], clarificationQuestions: [], provenance: { sourceToolCallIds: [], directionToolCallIds: [], venueToolCallIds: [], mutationToolCallIds: [], suggestionToolCallIds: [], emptySourceToolCallIds: [], retainedSourceToolCallIds: [], stageIds: [], searchAttemptToolCallIds: [], origin: 'validated', fallbackUsed: false, fallbackReason: null } },
+      },
+    }
+    expect(adaptStoredMessageToCanonical(v4Row).messageKey).toBe('mutation_mixed')
 
     // Unknown runtime version inside canonical → safe legacy fallback, no throw.
     const unknownRow = {
@@ -269,8 +304,6 @@ describe('v4 canonical read adapters', () => {
       },
     }
     const adapted = adaptStoredMessageToCanonical(row)
-    // Rejected to the legacy v2 path (legacy requestId + visible_content text),
-    // NOT adapted as v3 (which would have preserved requestId 'r99').
     expect(adapted.requestId).toBe('legacy:m99')
     expect(adapted.text).toBe('unknown text')
     expect(adapted.provenance.origin).toBe('legacy_unknown')
@@ -282,7 +315,6 @@ describe('v4 canonical read adapters', () => {
       response_contract_version: 3,
       visible_content: 'v3 text',
       attached_data: {
-        // No contractVersion on the payload — column version is the fallback.
         canonical: { requestId: 'r3', kind: 'recommendations', text: 'v3 text', events: [event('e1', 'X')], directions: null, venue: null, operations: [], suggestions: [], provenance: {} },
       },
     }
@@ -291,45 +323,43 @@ describe('v4 canonical read adapters', () => {
     expect(adapted.provenance.origin).toBe('legacy_unknown')
   })
 
-  it('rejects malformed v4 canonicals instead of casting them as v4', () => {
-    expect(isV4Canonical(null)).toBe(false)
-    expect(isV4Canonical({ contractVersion: CHAT_CONTRACT_VERSION })).toBe(false)
-    expect(isV4Canonical({ ...v4Canonical(), contractVersion: 3 })).toBe(false)
-    expect(isV4Canonical(v4Canonical())).toBe(true)
-    expect(canonicalFromDataResponse(v4Canonical())).toBeTruthy()
-    expect(canonicalFromDataResponse({ contractVersion: 3 })).toBeNull()
+  it('rejects malformed v5 canonicals instead of casting them as v5', () => {
+    expect(isV5Canonical(null)).toBe(false)
+    expect(isV5Canonical({ contractVersion: CHAT_CONTRACT_VERSION })).toBe(false)
+    expect(isV5Canonical({ ...v5Canonical(), contractVersion: 4 })).toBe(false)
+    expect(isV5Canonical(v5Canonical())).toBe(true)
+    expect(canonicalFromDataResponse(v5Canonical())).toBeTruthy()
+    expect(canonicalFromDataResponse({ contractVersion: 4 })).toBeNull()
   })
 
   it('validates every event saved value, messageKey, outcome, and provenance array', () => {
-    const base = v4Canonical()
-    expect(isV4Canonical(base)).toBe(true)
+    const base = v5Canonical()
+    expect(isV5Canonical(base)).toBe(true)
 
-    // Event missing the explicit saved tri-state.
-    expect(isV4Canonical({ ...base, events: [{ id: 'e1', name: 'X' }] })).toBe(false)
-    // Missing messageKey.
-    expect(isV4Canonical({ ...base, messageKey: undefined })).toBe(false)
-    // Invalid operation outcome.
+    expect(isV5Canonical({ ...base, events: [{ id: 'e1', name: 'X' }] })).toBe(false)
+    expect(isV5Canonical({ ...base, messageKey: undefined })).toBe(false)
     expect(
-      isV4Canonical({ ...base, operations: [{ ...operation, outcome: 'weird' }] })
+      isV5Canonical({ ...base, operations: [{ ...operation, outcome: 'weird' }] })
     ).toBe(false)
-    // Missing provenance array.
     expect(
-      isV4Canonical({ ...base, provenance: { ...base.provenance, stageIds: undefined } })
+      isV5Canonical({ ...base, provenance: { ...base.provenance, stageIds: undefined } })
     ).toBe(false)
-    // Bad clarification shape.
+    // Missing the v5 searchIncomplete marker is rejected.
     expect(
-      isV4Canonical({ ...base, clarificationQuestions: [{ key: 'not-a-key', label: 'x' }] })
+      isV5Canonical({ ...base, provenance: { ...base.provenance, searchIncomplete: undefined } })
+    ).toBe(false)
+    expect(
+      isV5Canonical({ ...base, clarificationQuestions: [{ key: 'not-a-key', label: 'x' }] })
     ).toBe(false)
   })
 
   it('rejects a provenance fallbackReason outside the closed union', () => {
-    const base = v4Canonical()
+    const base = v5Canonical()
     expect(
-      isV4Canonical({ ...base, provenance: { ...base.provenance, fallbackReason: 'made_up_reason' } })
+      isV5Canonical({ ...base, provenance: { ...base.provenance, fallbackReason: 'made_up_reason' } })
     ).toBe(false)
-    // A valid closed reason (with fallbackUsed true) still validates.
     expect(
-      isV4Canonical({
+      isV5Canonical({
         ...base,
         provenance: { ...base.provenance, fallbackUsed: true, fallbackReason: 'rejected_source' },
       })
@@ -337,16 +367,14 @@ describe('v4 canonical read adapters', () => {
   })
 
   it('keeps canonical.text free of operation receipt messages', () => {
-    const canonical = v4Canonical({ operations: [operation] })
-    // Deterministic contract: the materialized text block must never duplicate
-    // the separately-rendered operation receipt message.
+    const canonical = v5Canonical({ operations: [operation] })
     for (const op of canonical.operations) {
       expect(canonical.text).not.toContain(op.message)
     }
   })
 
   it('maps canonical to render fields including clarification questions', () => {
-    const canonical = v4Canonical({
+    const canonical = v5Canonical({
       clarificationQuestions: [{ key: 'which_day', label: 'Which day?' }],
       operations: [operation],
     })

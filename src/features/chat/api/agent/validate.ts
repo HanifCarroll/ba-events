@@ -29,6 +29,7 @@ import type {
   DirectionsData,
   FallbackReason,
   MessageKey,
+  MutationIntent,
   OperationReceipt,
   ResponseKind,
   VenueDetailsData,
@@ -37,6 +38,7 @@ import type { Ledger, LedgerArtifactKind } from './ledger.ts'
 import type { FinalizerPlan } from './finalizer.ts'
 import { materializeClarificationQuestions, MESSAGE_KEY_KIND } from './materialize.ts'
 import { resolveSavedState } from './record.ts'
+import { planMutation } from './mutation.ts'
 
 export interface ValidateOptions {
   requestId: string
@@ -49,6 +51,8 @@ export interface ValidateOptions {
   requestedCount: number
   /** Prior known saved state per event id (tri-state; absent = unknown). */
   priorSaved?: Record<string, boolean>
+  /** Typed mutation intent (validates finalizer proposedMutations against it). */
+  mutationIntent?: MutationIntent
 }
 
 export interface ValidatedPlan {
@@ -70,6 +74,8 @@ export interface ValidatedPlan {
   retainedSourceToolCallIds: string[]
   stageIds: string[]
   searchAttemptToolCallIds: string[]
+  /** True when a parallel search call failed (partial_success / partial_failure). */
+  searchIncomplete: boolean
   clarificationQuestions: ClarificationQuestion[]
 }
 
@@ -110,6 +116,7 @@ function fail(reason: FallbackReason, kind: ResponseKind, messageKey: MessageKey
     retainedSourceToolCallIds: [],
     stageIds: [],
     searchAttemptToolCallIds: [],
+    searchIncomplete: false,
     clarificationQuestions: [],
   }
 }
@@ -206,7 +213,7 @@ export function validatePlan(
     const event = source.events.find((e) => e.id === sel.eventId)
     if (!event) return fail('unknown_event_id', kind, messageKey)
 
-    const saved = source.kind === 'saved-events' ? true : resolveSavedState(event.id, ledger, requestId, priorSaved)
+    const saved = resolveSavedState(event.id, ledger, requestId, priorSaved)
     events.push({ ...event, saved })
     if (!sourceToolCallIds.includes(sel.sourceToolCallId)) {
       sourceToolCallIds.push(sel.sourceToolCallId)
@@ -260,20 +267,43 @@ export function validatePlan(
     venueToolCallIds.push(v.toolCallId)
   }
 
-  // Mutation receipts: validate refs, materialize the COMPLETE deduped set.
-  for (const toolCallId of plan.operationToolCallIds ?? []) {
-    const entry = ledger.find(toolCallId)
+  // Post-plan mutation proposal validation. The work loop never executes
+  // save/unsave; the finalizer proposes `plannedMutations`, and the server
+  // cross-checks it against the deterministic target (resolved prior target /
+  // pinned event / selected current event). A conflicting proposal is rejected
+  // before any side effect.
+  const proposedMutations = plan.plannedMutations ?? []
+  if (proposedMutations.length > 0) {
+    const intent = options.mutationIntent
+    const deterministic = planMutation({
+      intent: intent && intent.kind !== 'none' ? intent : { kind: 'none' },
+      resolvedEventId: options.resolvedEventId,
+      pinnedEventId,
+      selectedEventId: events[0]?.id,
+      selectedSourceToolCallId: sourceToolCallIds[0],
+    })
+    if (deterministic.status !== 'resolved') {
+      return fail('mutation_target_mismatch', kind, messageKey)
+    }
+    const proposed = proposedMutations[0]
+    const decided = deterministic.planned
+    const proposedSourceToolCallId =
+      proposed.source.kind === 'selected_current_event'
+        ? proposed.source.sourceToolCallId ?? ''
+        : undefined
+    const decidedSourceToolCallId =
+      decided.source.kind === 'selected_current_event'
+        ? decided.source.sourceToolCallId
+        : undefined
     if (
-      !entry ||
-      entry.kind !== 'mutation' ||
-      !entry.receipt ||
-      entry.requestId !== requestId
+      proposed.action !== decided.action ||
+      proposed.eventId !== decided.eventId ||
+      proposed.source.kind !== decided.source.kind ||
+      proposedSourceToolCallId !== decidedSourceToolCallId
     ) {
-      return fail('invalid_mutation_ref', kind, messageKey)
+      return fail('mutation_target_mismatch', kind, messageKey)
     }
   }
-  const operations = ledger.mutationReceipts(requestId)
-  const mutationToolCallIds = ledger.mutationToolCallIds(requestId)
 
   // Suggestion source: a search source that actually produced a selected event.
   let suggestionSourceToolCallId: string | null = null
@@ -300,7 +330,11 @@ export function validatePlan(
     if (emptyIds.length === 0) return fail('invalid_empty_source', kind, messageKey)
 
     const active = ledger.activeStage(requestId)
-    if (active && active.eligibility === 'active' && active.outcome === 'success') {
+    if (
+      active &&
+      active.eligibility === 'active' &&
+      (active.outcome === 'success' || active.outcome === 'partial_success')
+    ) {
       return fail('no_results', kind, messageKey)
     }
     for (const id of ledger.retainedSearchToolCallIds(requestId)) {
@@ -358,7 +392,6 @@ export function validatePlan(
   }
 
   if (kind === 'mutation_result') {
-    if (operations.length === 0) return fail('missing_required_artifact', kind, messageKey)
     if (carriesDisplayArtifacts) return fail('inconsistent_response_kind', kind, messageKey)
   }
 
@@ -370,7 +403,10 @@ export function validatePlan(
     ...sourceToolCallIds,
     ...emptySourceToolCallIds,
   ])
-  const searchAttemptToolCallIds = ledger.activeStage(requestId)?.toolCallIds ?? []
+  const activeStage = ledger.activeStage(requestId)
+  const searchAttemptToolCallIds = activeStage?.toolCallIds ?? []
+  const searchIncomplete =
+    activeStage?.outcome === 'partial_success' || activeStage?.outcome === 'partial_failure'
 
   return {
     ok: true,
@@ -380,16 +416,17 @@ export function validatePlan(
     sourceToolCallIds,
     directions,
     venue,
-    operations,
+    operations: [],
     suggestionSourceToolCallId,
     directionToolCallIds,
     venueToolCallIds,
-    mutationToolCallIds,
+    mutationToolCallIds: [],
     suggestionToolCallIds: suggestionSourceToolCallId ? [suggestionSourceToolCallId] : [],
     emptySourceToolCallIds,
     retainedSourceToolCallIds,
     stageIds,
     searchAttemptToolCallIds,
+    searchIncomplete,
     clarificationQuestions,
   }
 }

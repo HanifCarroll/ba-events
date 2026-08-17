@@ -8,10 +8,9 @@
  * and results. Work text/reasoning stays ephemeral — it is never streamed,
  * never persisted, and never used as visible text.
  *
- * The instrumented tool set (with its per-request mutation memo) is created
- * ONCE per request, before the loop, so duplicate save/unsave(eventId) calls
- * across parallel calls and across work generations collapse to one base
- * mutation execution.
+ * The instrumented tool set is created ONCE per request, before the loop.
+ * save/unsave are never part of the work loop: mutations are planned and
+ * executed deterministically after finalizer validation (see `mutation.ts`).
  *
  * The loop stops on: no further tool calls, work budget exhaustion, a tool
  * approval request, a fatal model error, or a thrown tool error. Finalization
@@ -59,8 +58,6 @@ export interface WorkLoopInput {
   maxWorkGenerations?: number
   /** When set, broad discovery tools are removed from the work loop. */
   pinnedEventId?: string
-  /** True only for an explicit latest-user save/unsave request; omitted fails closed. */
-  allowMutations?: boolean
   hooks?: WorkLoopHooks
 }
 
@@ -118,7 +115,6 @@ export async function runWorkLoop(input: WorkLoopInput): Promise<WorkLoopResult>
     locale: input.locale,
     retention,
     pinnedEventId: input.pinnedEventId,
-    allowMutations: input.allowMutations,
   }) as ToolSet
 
   let stopReason: WorkStopReason = 'no_tool_calls'

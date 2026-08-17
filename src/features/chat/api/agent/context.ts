@@ -1,14 +1,26 @@
 /**
- * Deterministic reference resolution, mutation-intent gating, and bounded
- * model-context construction (v4).
+ * Deterministic reference resolution, mutation-intent parsing, and bounded
+ * model-context construction (v5).
  *
  * The server resolves follow-up references (ordinals, pronouns, named events)
  * deterministically from validated prior groups so orchestrate relation
- * validation has explicit target ids. External names never reach the model:
- * the application-context message carries only ids/order/saved/resolved facts.
+ * validation and the post-plan mutation executor have explicit target ids.
+ * External names never reach the model: the application-context message carries
+ * only ids/order/saved/resolved facts.
+ *
+ * v5: `detectMutationIntent` (boolean) is replaced by `parseMutationIntent`
+ * (typed `MutationIntent`), and `resolveTargetReference` returns a typed
+ * `TargetReference`. Bare `this`/`that`/`other` never resolve without an
+ * event-referential construction; discovery phrases ("other events", "anything
+ * else", "this weekend") never resolve.
  */
 
 import type { ModelMessage, UIMessage } from 'ai'
+import type {
+  MutationAction,
+  MutationIntent,
+  TargetReference,
+} from '#shared/lib/types.ts'
 import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract-visible-text.ts'
 import {
   sanitizeText,
@@ -24,84 +36,66 @@ export const MAX_USER_TEXT = 2000
 export const MAX_APPLICATION_CONTEXT_CHARS = 4000
 
 // ============================================================================
-// MUTATION INTENT GATE
+// MUTATION INTENT PARSING
 // ============================================================================
 
 const EN_SAVE_PHRASES = [
-  /\bsave/,
-  /\bbookmark/,
-  /\bremember/,
-  /\bkeep/,
-  /add (it |this |that )?to my list/,
-  /put (it |this |that )?on my list/,
-  /i want to go/,
-  /i('m| am) going to go/,
-  /want to go/,
+  /\bsave\b/,
+  /\bbookmark\b/,
+  /\badd (it|this|that|this one|that one)?\b[^.]{0,30}\bto (my )?(saved )?(list|saves|saved events)\b/,
+  /\badd (it|this|that|this one|that one) to (my )?(list|saves)\b/,
+  /\bput (it|this|that|this one|that one)? on (my )?(saved )?(list|saves)\b/,
 ]
 
 const EN_UNSAVE_PHRASES = [
-  /\bunsave/,
-  /\bremove/,
-  /\bunbookmark/,
-  /remove (it |this |that )?from my list/,
-  /take (it |this |that )?off/,
-  /delete (it |this |that )?from my list/,
+  /\bunsave\b/,
+  /\bunbookmark\b/,
+  /\bremove (it|this|that|this one|that one|that event|this event|the event)\b/,
+  /\bremove\b[^.]{0,30}\bfrom (my )?(saved )?(list|saves)\b/,
+  /\bdelete (it|this|that|this one|that one|that event|this event|the event)\b/,
+  /\bdelete\b[^.]{0,30}\bfrom (my )?(saved )?(list|saves)\b/,
+  /\btake (it|this|that) off\b/,
 ]
 
+// Spanish stems are matched as precise, bounded conjugations (diacritics
+// stripped) so "guardia"/"guardarropa"/"agrio"/"apuntes" never match.
 const ES_SAVE_PHRASES = [
-  /\bguard/,
-  /\bagreg/,
-  /\bagend/,
-  /\bapunt/,
-  /\banot/,
-  /quiero ir/,
+  /\bguard(ar|a|o|as|amos|an|e|ando|ado|ame|alo|ala)\b/,
+  /\bagreg(ar|a|o|as|amos|an|e|ue|ando|ado|ame|alo|ala)\b/,
+  /\bapunt(ar|a|o|as|amos|an|e|ue|ando|ado|ame|alo|ala)\b/,
+  /\banot(ar|a|o|as|amos|an|e|ue|ando|ado|ame|alo|ala)\b/,
 ]
 
 const ES_UNSAVE_PHRASES = [
-  /\bquit/,
-  /\bsac/,
-  /\bborr/,
-  /\belimin/,
+  /\bsac(ar|a|o|as|amos|an|e|ue|ando|ado|aste|ame|alo|ala)\b/,
+  /\bquit(ar|a|o|as|amos|an|e|ue|ando|ado|aste|ame|alo|ala)\b/,
+  /\bborr(ar|a|o|as|amos|an|e|ue|ando|ado|aste|ame|alo|ala)\b/,
+  /\belimin(ar|a|o|as|amos|an|e|ue|ando|ado|aste|ame|alo|ala)\b/,
 ]
+
+function normalizeForMatch(query: string): string {
+  return sanitizeText(query, MAX_USER_TEXT)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
 
 function anyMatch(q: string, patterns: RegExp[]): boolean {
   return patterns.some((re) => re.test(q))
 }
 
-/**
- * True only when the latest raw user request carries explicit EN/ES save/unsave
- * intent. This is the structural gate for save_event/unsave_event tool
- * availability: an injected event/tool string in a benign query can never flip
- * it (the query is user text, not tool/event data).
- */
-export function detectMutationIntent(query: string): boolean {
-  const q = sanitizeText(query, MAX_USER_TEXT)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-  if (!q) return false
-  return (
-    anyMatch(q, EN_SAVE_PHRASES) ||
-    anyMatch(q, EN_UNSAVE_PHRASES) ||
-    anyMatch(q, ES_SAVE_PHRASES) ||
-    anyMatch(q, ES_UNSAVE_PHRASES)
-  )
+/** Detect an explicit save/unsave action, or null when the query has none. */
+function detectAction(query: string): MutationAction | null {
+  const q = normalizeForMatch(query)
+  if (!q) return null
+  if (anyMatch(q, EN_SAVE_PHRASES) || anyMatch(q, ES_SAVE_PHRASES)) return 'save'
+  if (anyMatch(q, EN_UNSAVE_PHRASES) || anyMatch(q, ES_UNSAVE_PHRASES)) return 'unsave'
+  return null
 }
 
 // ============================================================================
-// REFERENCE RESOLUTION
+// TARGET REFERENCE PARSING
 // ============================================================================
-
-export interface ResolveReferencesInput {
-  query: string
-  groups: PriorDisplayGroup[]
-  venueByEventId?: Map<string, VenueFact>
-}
-
-export interface ResolveReferencesResult {
-  resolvedEventId?: string
-  resolvedVenueId?: string
-}
 
 const EN_ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth']
 
@@ -113,73 +107,62 @@ const ES_ORDINALS: Array<[RegExp, number]> = [
   [/\b(quinto|quinta)\b/, 4],
 ]
 
-const OTHER_PRONOUNS = [
-  /\bother\b/,
-  /\bthe other\b/,
-  /\botro\b/,
-  /\botra\b/,
+/** Event-referential "other" constructions (singular; never "other events"). */
+const OTHER_REFERENCE = [
+  /\bthe other one\b/,
+  /\bthe other event\b/,
+  /\bel otro\b/,
+  /\bla otra\b/,
 ]
 
-const PRONOUNS = [
-  /\bit\b/,
-  /\bthat one\b/,
+/**
+ * Event-referential lead constructions. Bare `this`/`that`/`other` and time
+ * phrases ("this weekend") are deliberately absent.
+ */
+const LEAD_REFERENCE = [
   /\bthis one\b/,
+  /\bthat one\b/,
   /\bthe one\b/,
-  /\bthat\b/,
-  /\bthis\b/,
+  /\bthat event\b/,
+  /\bthis event\b/,
+  /\bthe event\b/,
+  /\bit\b(?!['’])/,
   /\bese\b/,
   /\besa\b/,
   /\beso\b/,
-  /\beste\b/,
-  /\besta\b/,
-  /\besto\b/,
   /\baquel\b/,
   /\baquella\b/,
 ]
 
-function detectOrdinal(q: string): number | null {
+function ordinalMatches(q: string): number[] {
+  const found: number[] = []
   for (let i = 0; i < EN_ORDINALS.length; i++) {
-    if (new RegExp(`\\b${EN_ORDINALS[i]}\\b`).test(q)) return i
+    if (new RegExp(`\\b${EN_ORDINALS[i]}\\b`).test(q)) found.push(i)
   }
   for (const [re, idx] of ES_ORDINALS) {
-    if (re.test(q)) return idx
+    if (re.test(q)) found.push(idx)
   }
-  return null
-}
-
-function newestResultGroup(groups: PriorDisplayGroup[]): PriorDisplayGroup | null {
-  return groups.length > 0 ? groups[groups.length - 1] : null
-}
-
-function withVenue(
-  eventId: string,
-  venueByEventId?: Map<string, VenueFact>
-): ResolveReferencesResult {
-  const venue = venueByEventId?.get(eventId)
-  if (venue?.venueId) {
-    return { resolvedEventId: eventId, resolvedVenueId: venue.venueId }
-  }
-  return { resolvedEventId: eventId }
+  return [...new Set(found)]
 }
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
-function resolveNamed(
+function resolveNamedReference(
   query: string,
   groups: PriorDisplayGroup[],
   venueByEventId?: Map<string, VenueFact>
-): ResolveReferencesResult {
+): TargetReference | null {
   const q = normalize(query)
-  if (!q) return {}
+  if (!q) return null
 
   // Event names, newest group first.
   for (let gi = groups.length - 1; gi >= 0; gi--) {
     for (const ev of groups[gi].events) {
       const name = normalize(ev.name)
       if (name.length >= 3 && q.includes(name)) {
-        return withVenue(ev.eventId, venueByEventId)
+        return { kind: 'named_event', eventId: ev.eventId }
       }
     }
   }
@@ -192,50 +175,151 @@ function resolveNamed(
         if (venue?.venueName) {
           const vn = normalize(venue.venueName)
           if (vn.length >= 3 && q.includes(vn)) {
-            const out: ResolveReferencesResult = { resolvedEventId: ev.eventId }
-            if (venue.venueId) out.resolvedVenueId = venue.venueId
-            return out
+            return { kind: 'named_venue', venueId: venue.venueId ?? ev.eventId }
           }
         }
       }
     }
   }
-  return {}
+  return null
 }
 
 /**
- * Deterministically resolve the latest user query against prior groups.
- * Ordinals (EN+ES) use the newest result-bearing group only; pronouns prefer
- * the latest displayed event (lead), "other one" the second-most-recent; named
- * references search older groups newest-first. Returns event/venue ids for
- * orchestrate relation validation.
+ * Deterministically resolve the latest user query into a typed reference.
+ * Ordinals (EN+ES) resolve against the newest result-bearing group; pronouns
+ * ("this one", "that event", "save it", "ese") resolve to the lead; "the other
+ * one"/"el otro" to the second card; named event/venue references search older
+ * groups newest-first. Bare `this`/`that`/`other` and discovery phrases resolve
+ * to `none`.
+ */
+export function resolveTargetReference(
+  query: string,
+  groups: PriorDisplayGroup[],
+  venueByEventId?: Map<string, VenueFact>
+): TargetReference {
+  const raw = (query ?? '').trim()
+  if (!raw) return { kind: 'none' }
+  const q = normalizeForMatch(raw)
+
+  const ords = ordinalMatches(q)
+  if (ords.length > 1) return { kind: 'ambiguous' }
+  if (ords.length === 1) return { kind: 'ordinal', index: ords[0] }
+
+  if (OTHER_REFERENCE.some((re) => re.test(q))) return { kind: 'other', index: 1 }
+  if (LEAD_REFERENCE.some((re) => re.test(q))) return { kind: 'lead' }
+
+  const named = resolveNamedReference(q, groups, venueByEventId)
+  if (named) return named
+
+  return { kind: 'none' }
+}
+
+// ============================================================================
+// MUTATION INTENT (TYPED)
+// ============================================================================
+
+/** A save/unsave verb with an attached object clitic (lo/la/los/las/me). */
+const CLITIC_VERB =
+  /\b(guard|agreg|apunt|anot|sac|quit|borr|elimin)[a-z]{0,6}(lo|la|los|las|me|nos)\b/
+
+function hasObjectClitic(query: string): boolean {
+  return CLITIC_VERB.test(normalizeForMatch(query))
+}
+
+/**
+ * Parse the latest raw user request into a typed mutation intent. `none` when
+ * there is no explicit save/unsave command; an explicit command carries its
+ * action and its deterministically-resolved target reference. A save/unsave
+ * verb with an attached object clitic ("agregalo", "guardalo") refers to the
+ * lead event when no explicit reference is present. This is the structural gate
+ * for the post-plan mutation executor — an injected event/tool string in a
+ * benign query can never flip it (the query is user text, not tool/event data).
+ */
+export function parseMutationIntent(
+  query: string,
+  groups: PriorDisplayGroup[] = [],
+  venueByEventId?: Map<string, VenueFact>
+): MutationIntent {
+  const action = detectAction(query)
+  if (!action) return { kind: 'none' }
+  let targetReference = resolveTargetReference(query, groups, venueByEventId)
+  if (targetReference.kind === 'none' && hasObjectClitic(query)) {
+    targetReference = { kind: 'lead' }
+  }
+  return { kind: action, targetReference }
+}
+
+// ============================================================================
+// REFERENCE RESOLUTION (IDS)
+// ============================================================================
+
+export interface ResolveReferencesInput {
+  query: string
+  groups: PriorDisplayGroup[]
+  venueByEventId?: Map<string, VenueFact>
+}
+
+export interface ResolveReferencesResult {
+  reference: TargetReference
+  resolvedEventId?: string
+  resolvedVenueId?: string
+}
+
+function newestResultGroup(groups: PriorDisplayGroup[]): PriorDisplayGroup | null {
+  return groups.length > 0 ? groups[groups.length - 1] : null
+}
+
+/**
+ * Resolve the latest user query against prior groups into concrete ids for
+ * orchestrate relation validation and the mutation executor. The typed
+ * `reference` drives mutation target planning; `resolvedEventId`/`resolvedVenueId`
+ * are the concrete prior target ids.
  */
 export function resolveReferences(input: ResolveReferencesInput): ResolveReferencesResult {
-  const query = (input.query ?? '').trim()
-  const groups = input.groups ?? []
-  if (!query || groups.length === 0) return {}
+  const reference = resolveTargetReference(
+    input.query,
+    input.groups ?? [],
+    input.venueByEventId
+  )
+  const result: ResolveReferencesResult = { reference }
+  const newest = newestResultGroup(input.groups ?? [])
+  if (!newest) return result
 
-  const newest = newestResultGroup(groups)
-  if (!newest) return {}
-
-  const ordinal = detectOrdinal(query.toLowerCase())
-  if (ordinal !== null) {
-    const ev = newest.events[ordinal]
-    return ev ? withVenue(ev.eventId, input.venueByEventId) : {}
+  switch (reference.kind) {
+    case 'ordinal': {
+      const ev = newest.events[reference.index]
+      if (ev) result.resolvedEventId = ev.eventId
+      break
+    }
+    case 'lead': {
+      const ev = newest.events[0]
+      if (ev) result.resolvedEventId = ev.eventId
+      break
+    }
+    case 'other': {
+      const ev = newest.events[reference.index]
+      if (ev) result.resolvedEventId = ev.eventId
+      break
+    }
+    case 'named_event': {
+      result.resolvedEventId = reference.eventId
+      break
+    }
+    case 'named_venue': {
+      result.resolvedVenueId = reference.venueId
+      break
+    }
+    default:
+      break
   }
 
-  if (OTHER_PRONOUNS.some((re) => re.test(query.toLowerCase()))) {
-    // First event is the lead; "other one" = the second event when available.
-    const ev = newest.events[1]
-    return ev ? withVenue(ev.eventId, input.venueByEventId) : {}
+  // Venue facts for a resolved prior event (compound relation validation).
+  const eventId = result.resolvedEventId
+  if (eventId) {
+    const venue = input.venueByEventId?.get(eventId)
+    if (venue?.venueId) result.resolvedVenueId = venue.venueId
   }
-
-  if (PRONOUNS.some((re) => re.test(query.toLowerCase()))) {
-    const ev = newest.events[0]
-    return ev ? withVenue(ev.eventId, input.venueByEventId) : {}
-  }
-
-  return resolveNamed(query, groups, input.venueByEventId)
+  return result
 }
 
 // ============================================================================

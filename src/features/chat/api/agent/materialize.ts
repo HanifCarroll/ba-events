@@ -23,12 +23,19 @@ export const MESSAGE_KEY_KIND: Record<MessageKey, ResponseKind> = {
   saved_events: 'saved_events',
   directions: 'directions',
   venue_details: 'venue_details',
-  mutation_result: 'mutation_result',
   clarification: 'clarification',
   no_results: 'no_results',
   out_of_scope: 'out_of_scope',
   share_guidance: 'out_of_scope',
   error: 'error',
+  mutation_applied: 'mutation_result',
+  mutation_already_applied: 'mutation_result',
+  mutation_unauthenticated: 'mutation_result',
+  mutation_not_found: 'mutation_result',
+  mutation_failed: 'mutation_result',
+  mutation_mixed: 'mutation_result',
+  partial_results: 'recommendations',
+  pinned_event_unavailable: 'error',
 }
 
 export interface MaterializeTextInput {
@@ -67,10 +74,6 @@ const TEXTS: Record<MessageKey, { en: string; es: string }> = {
     en: "Here's what I found about this venue.",
     es: 'Esto es lo que encontré de este lugar.',
   },
-  mutation_result: {
-    en: 'I updated your saved events.',
-    es: 'Actualicé tus guardados.',
-  },
   clarification: {
     en: 'Let me narrow this down.',
     es: 'Déjame acotar la búsqueda.',
@@ -91,9 +94,41 @@ const TEXTS: Record<MessageKey, { en: string; es: string }> = {
     en: 'Something went wrong. Please try again.',
     es: 'Algo salió mal. Probá de nuevo.',
   },
+  // Outcome-aware mutation leads. Only `mutation_applied` claims an update;
+  // every other lead is truthful and never claims a change that did not happen.
+  mutation_applied: {
+    en: 'Your saved events are updated.',
+    es: 'Actualicé tus guardados.',
+  },
+  mutation_already_applied: {
+    en: 'Your saved events are already up to date.',
+    es: 'Tus guardados ya están al día.',
+  },
+  mutation_unauthenticated: {
+    en: "Here's what happened.",
+    es: 'Esto fue lo que pasó.',
+  },
+  mutation_not_found: {
+    en: "Here's what happened.",
+    es: 'Esto fue lo que pasó.',
+  },
+  mutation_failed: {
+    en: "Here's what happened.",
+    es: 'Esto fue lo que pasó.',
+  },
+  mutation_mixed: {
+    en: "Here's what happened.",
+    es: 'Esto fue lo que pasó.',
+  },
+  partial_results: {
+    en: "I found these, but part of the search didn't complete.",
+    es: 'Encontré estas opciones, pero una parte de la búsqueda no se pudo completar.',
+  },
+  pinned_event_unavailable: {
+    en: "I couldn't load that event.",
+    es: 'No pude cargar ese evento.',
+  },
 }
-
-/** Strip control characters, collapse whitespace, and bound an interpolated name. */
 function cleanName(value: string | undefined, max = 80): string | undefined {
   if (!value) return undefined
   const cleaned = value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()

@@ -89,7 +89,12 @@ export interface LedgerEntry {
 // =============================================================================
 
 export type SearchStageEligibility = 'active' | 'superseded' | 'rejected'
-export type SearchStageOutcome = 'success' | 'empty' | 'failed'
+export type SearchStageOutcome =
+  | 'success'
+  | 'empty'
+  | 'partial_success'
+  | 'partial_failure'
+  | 'failed'
 
 export interface SearchStage {
   requestId: string
@@ -116,11 +121,37 @@ function setsEqual(a: string[], b: string[]): boolean {
   return true
 }
 
+/** Synthetic step index for post-plan mutation receipts (sorts after all work). */
+export const MUTATION_STEP_INDEX = Number.MAX_SAFE_INTEGER
+
 export class Ledger {
   private entries: LedgerEntry[] = []
 
   push(entry: LedgerEntry): void {
     this.entries.push(entry)
+  }
+
+  /**
+   * Record a post-plan mutation receipt produced by the deterministic executor
+   * (never the work loop). Uses a synthetic high step index so it sorts after
+   * all work-loop evidence in the chronological saved-state reducer.
+   */
+  recordMutationReceipt(receipt: OperationReceipt, requestId: string): void {
+    const applied = receipt.outcome === 'applied' || receipt.outcome === 'already_applied'
+    this.entries.push(
+      emptyEntry({
+        requestId,
+        stepIndex: MUTATION_STEP_INDEX,
+        callIndex: 0,
+        toolCallId: receipt.toolCallId,
+        toolName: receipt.toolName,
+        success: applied,
+        kind: 'mutation',
+        receipt,
+        authRequired: receipt.outcome === 'unauthenticated',
+        error: applied ? null : receipt.outcome,
+      })
+    )
   }
 
   all(): LedgerEntry[] {
@@ -243,9 +274,24 @@ export class Ledger {
       const entries = byStep.get(stepIndex)!.sort((a, b) => a.callIndex - b.callIndex)
       const toolCallIds = entries.map((e) => e.toolCallId)
       const succeeded = entries.filter((e) => e.success)
+      const failed = entries.filter((e) => !e.success)
       const totalEvents = succeeded.reduce((s, e) => s + e.events.length, 0)
-      const outcome: SearchStageOutcome =
-        succeeded.length === 0 ? 'failed' : totalEvents === 0 ? 'empty' : 'success'
+      // Aggregate 5-state outcome:
+      //   success          = all calls succeeded, at least one event.
+      //   empty            = all calls succeeded, zero events.
+      //   partial_success  = some events returned, at least one call failed.
+      //   partial_failure  = no events, at least one empty success, at least one failed.
+      //   failed           = all calls failed.
+      let outcome: SearchStageOutcome
+      if (failed.length === 0) {
+        outcome = totalEvents > 0 ? 'success' : 'empty'
+      } else if (succeeded.length === 0) {
+        outcome = 'failed'
+      } else if (totalEvents > 0) {
+        outcome = 'partial_success'
+      } else {
+        outcome = 'partial_failure'
+      }
       const isActive = stepIndex === lastStep
       const eligibility: SearchStageEligibility = rejectedSteps.has(stepIndex)
         ? 'rejected'

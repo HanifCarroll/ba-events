@@ -65,6 +65,7 @@ const canonical: CanonicalChatResponse = {
 		retainedSourceToolCallIds: [],
 		stageIds: [],
 		searchAttemptToolCallIds: [],
+		searchIncomplete: false,
 		origin: 'validated',
 		fallbackUsed: false,
 		fallbackReason: null

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  detectMutationIntent,
+  parseMutationIntent,
   resolveReferences,
+  resolveTargetReference,
   buildApplicationContextMessage,
   buildConversationModelMessages,
   MAX_APPLICATION_CONTEXT_CHARS,
@@ -28,57 +29,104 @@ function group(events: Array<[string, string]>, saved?: boolean | null): PriorDi
   }
 }
 
-describe('detectMutationIntent', () => {
-  it('false for a benign ordinal/details request', () => {
-    expect(detectMutationIntent('tell me about the second one')).toBe(false)
-    expect(detectMutationIntent('show me details on the first one')).toBe(false)
-    expect(detectMutationIntent('what else is happening this weekend')).toBe(false)
+describe('parseMutationIntent (typed)', () => {
+  it('returns none for benign requests', () => {
+    expect(parseMutationIntent('tell me about the second one').kind).toBe('none')
+    expect(parseMutationIntent('show me details on the first one').kind).toBe('none')
+    expect(parseMutationIntent('what else is happening this weekend').kind).toBe('none')
+  })
+
+  it('false-positive phrases produce no mutation intent', () => {
+    expect(parseMutationIntent('Keep it cheap.').kind).toBe('none')
+    expect(parseMutationIntent('Keep it under 10,000 pesos.').kind).toBe('none')
+    expect(parseMutationIntent('I want to go dancing.').kind).toBe('none')
+    expect(parseMutationIntent('I want to go to that tango event.').kind).toBe('none')
+    expect(parseMutationIntent('Do you remember what you showed me?').kind).toBe('none')
+    expect(parseMutationIntent('Remember when I asked about tango?').kind).toBe('none')
+    expect(parseMutationIntent('Show me other events.').kind).toBe('none')
+    expect(parseMutationIntent('Anything else like that?').kind).toBe('none')
   })
 
   it('false for an injection-like event name in a benign query', () => {
-    // The injected name lives in prior context, never in the user query text.
-    expect(detectMutationIntent('tell me about the second one')).toBe(false)
+    expect(parseMutationIntent('tell me about the second one').kind).toBe('none')
   })
 
-  it('true for English save/unsave asks', () => {
-    expect(detectMutationIntent('save the second one')).toBe(true)
-    expect(detectMutationIntent('bookmark it')).toBe(true)
-    expect(detectMutationIntent('add it to my list')).toBe(true)
-    expect(detectMutationIntent('I want to go to that')).toBe(true)
-    expect(detectMutationIntent('remove it from my list')).toBe(true)
+  it('English save/unsave commands resolve with the right target reference', () => {
+    expect(parseMutationIntent('save the second one')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ordinal', index: 1 },
+    })
+    expect(parseMutationIntent('bookmark it')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('add it to my list')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('remove it from my list')).toEqual({
+      kind: 'unsave',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('Remove that event from my saved list.')).toEqual({
+      kind: 'unsave',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('unsave the second one')).toEqual({
+      kind: 'unsave',
+      targetReference: { kind: 'ordinal', index: 1 },
+    })
   })
 
-  it('true for Spanish save/unsave asks', () => {
-    expect(detectMutationIntent('guardá el segundo')).toBe(true)
-    expect(detectMutationIntent('agregalo a mi lista')).toBe(true)
-    expect(detectMutationIntent('quitá el primero')).toBe(true)
-    expect(detectMutationIntent('sacá ese evento')).toBe(true)
+  it('Argentine Spanish save/unsave commands resolve', () => {
+    expect(parseMutationIntent('Guardá el primero.')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ordinal', index: 0 },
+    })
+    expect(parseMutationIntent('guardá el segundo')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'ordinal', index: 1 },
+    })
+    expect(parseMutationIntent('agregalo a mi lista')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('Sacá ese de mis guardados.')).toEqual({
+      kind: 'unsave',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('sacá ese evento')).toEqual({
+      kind: 'unsave',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('quitá el primero')).toEqual({
+      kind: 'unsave',
+      targetReference: { kind: 'ordinal', index: 0 },
+    })
+  })
+
+  it('does not overmatch Spanish non-verb stems', () => {
+    expect(parseMutationIntent('la guardia del museo').kind).toBe('none')
+    expect(parseMutationIntent('guardarropa del teatro').kind).toBe('none')
+    expect(parseMutationIntent('los apuntes de la clase').kind).toBe('none')
   })
 })
 
-describe('resolveReferences', () => {
+describe('resolveTargetReference / resolveReferences', () => {
   it('resolves "save the second one" to D across A,B then C,D,E groups', () => {
-    const groups = [
-      group([[A, 'A'], [B, 'B']]),
-      group([[C, 'C'], [D, 'D'], [E, 'E']]),
-    ]
-    const result = resolveReferences({ query: 'save the second one', groups })
-    expect(result.resolvedEventId).toBe(D)
+    const groups = [group([[A, 'A'], [B, 'B']]), group([[C, 'C'], [D, 'D'], [E, 'E']])]
+    expect(resolveReferences({ query: 'save the second one', groups }).resolvedEventId).toBe(D)
+    expect(resolveTargetReference('save the second one', groups)).toEqual({ kind: 'ordinal', index: 1 })
   })
 
-  it('ordinals use the newest result-bearing group; mutation-only responses do not move it', () => {
-    const groups = [
-      group([[A, 'A'], [B, 'B']]),
-      group([[C, 'C'], [D, 'D'], [E, 'E']]),
-    ]
-    // Mutation-only responses produce no group, so the newest group is still [C,D,E].
+  it('ordinals use the newest result-bearing group', () => {
+    const groups = [group([[A, 'A'], [B, 'B']]), group([[C, 'C'], [D, 'D'], [E, 'E']])]
     expect(resolveReferences({ query: 'the first one', groups }).resolvedEventId).toBe(C)
     expect(resolveReferences({ query: 'el segundo', groups }).resolvedEventId).toBe(D)
     expect(resolveReferences({ query: 'la tercera', groups }).resolvedEventId).toBe(E)
   })
 
-  it('pronouns prefer the first (lead) event, "other one" the second', () => {
-    // Two-event group: first event is the lead/most-recently-selected event.
+  it('pronouns prefer the lead event; "other one" the second', () => {
     const groups = [group([[C, 'C'], [D, 'D']])]
     expect(resolveReferences({ query: 'tell me about it', groups }).resolvedEventId).toBe(C)
     expect(resolveReferences({ query: 'that one', groups }).resolvedEventId).toBe(C)
@@ -87,20 +135,25 @@ describe('resolveReferences', () => {
     expect(resolveReferences({ query: 'el otro', groups }).resolvedEventId).toBe(D)
   })
 
-  it('pronouns resolve lead (first) and other (second) in a three-event group', () => {
+  it('pronouns resolve lead and other in a three-event group', () => {
     const groups = [group([[C, 'C'], [D, 'D'], [E, 'E']])]
     expect(resolveReferences({ query: 'it', groups }).resolvedEventId).toBe(C)
     expect(resolveReferences({ query: 'the other one', groups }).resolvedEventId).toBe(D)
   })
 
+  it('bare this/that/other and discovery phrases resolve to none', () => {
+    const groups = [group([[C, 'C'], [D, 'D']])]
+    expect(resolveTargetReference('what is happening this weekend?', groups)).toEqual({ kind: 'none' })
+    expect(resolveTargetReference('show me other events', groups)).toEqual({ kind: 'none' })
+    expect(resolveTargetReference('anything else like that in Palermo?', groups)).toEqual({ kind: 'none' })
+    expect(resolveTargetReference('show me other romantic events', groups)).toEqual({ kind: 'none' })
+    expect(resolveReferences({ query: "what's happening this weekend?", groups }).resolvedEventId).toBeUndefined()
+    expect(resolveReferences({ query: 'show me other events', groups }).resolvedEventId).toBeUndefined()
+  })
+
   it('named references search older groups newest-first', () => {
-    const groups = [
-      group([[A, 'Tango Night']]),
-      group([[C, 'Jazz Set']]),
-    ]
-    // "Tango Night" only exists in the older group.
+    const groups = [group([[A, 'Tango Night']]), group([[C, 'Jazz Set']])]
     expect(resolveReferences({ query: 'tell me more about Tango Night', groups }).resolvedEventId).toBe(A)
-    // Newest group name wins when both groups have a candidate.
     expect(resolveReferences({ query: 'tell me about Jazz Set', groups }).resolvedEventId).toBe(C)
   })
 
@@ -108,13 +161,13 @@ describe('resolveReferences', () => {
     const groups = [group([[C, 'Jazz Set']])]
     const venueByEventId = new Map([[C, { venueId: uuid(99), venueName: 'Niceto Club' }]])
     const result = resolveReferences({ query: 'directions to Niceto Club', groups, venueByEventId })
-    expect(result.resolvedEventId).toBe(C)
+    expect(result.reference.kind).toBe('named_venue')
     expect(result.resolvedVenueId).toBe(uuid(99))
   })
 
   it('returns empty when no groups or no query', () => {
-    expect(resolveReferences({ query: 'save the second one', groups: [] })).toEqual({})
-    expect(resolveReferences({ query: '', groups: [group([[A, 'A']])] })).toEqual({})
+    expect(resolveReferences({ query: 'save the second one', groups: [] })).toEqual({ reference: { kind: 'ordinal', index: 1 } })
+    expect(resolveReferences({ query: '', groups: [group([[A, 'A']])] }).reference).toEqual({ kind: 'none' })
   })
 })
 
@@ -176,16 +229,12 @@ describe('buildConversationModelMessages', () => {
     const appContext = { role: 'user', content: 'APP_CONTEXT' } as const
     const out = buildConversationModelMessages({ messages, applicationContext: appContext as never })
 
-    // No assistant message, no data-response content.
     expect(out.filter((m) => m.role === 'assistant')).toHaveLength(0)
     expect(JSON.stringify(out)).not.toContain('IGNORE')
 
     const roles = out.map((m) => m.role)
     expect(roles).toEqual(['user', 'user', 'user'])
-    // The static system prompt is a separate parameter — no context ModelMessage
-    // may be promoted to a system role.
     expect(out.some((m) => m.role === 'system')).toBe(false)
-    // Latest user request stays last.
     expect((out[2] as { content: string }).content).toBe('save the second one')
   })
 

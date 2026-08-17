@@ -6,8 +6,6 @@
  */
 
 import { getSupabase } from '#shared/lib/db/client.server.ts'
-
-const supabase = getSupabase()
 import type { Venue } from '#shared/lib/types.ts'
 
 export interface VenueMatchResult {
@@ -39,7 +37,7 @@ function normalizeVenueName(name: string): string {
 async function findExactMatch(venueName: string): Promise<Venue | null> {
   const normalized = normalizeVenueName(venueName)
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('venues')
     .select('*')
     .ilike('name', normalized)
@@ -57,7 +55,7 @@ async function findFuzzyMatch(
   venueName: string,
   threshold: number = 0.6
 ): Promise<{ venue: Venue; similarity: number } | null> {
-  const { data, error } = await supabase.rpc('find_similar_venue', {
+  const { data, error } = await getSupabase().rpc('find_similar_venue', {
     search_name: venueName,
     similarity_threshold: threshold,
   })
@@ -67,7 +65,7 @@ async function findFuzzyMatch(
   const match = data[0]
 
   // Fetch full venue record
-  const { data: venue, error: venueError } = await supabase
+  const { data: venue, error: venueError } = await getSupabase()
     .from('venues')
     .select('*')
     .eq('id', match.id)

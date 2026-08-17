@@ -66,6 +66,35 @@ export interface CheckEventSavedResult {
 // ============================================================================
 
 /**
+ * Bounded authoritative saved-membership query for a set of prior event ids.
+ * Returns a map event_id -> true for events the user currently has saved.
+ * Used by authenticated prior-context rehydration; never trusts client input.
+ */
+export async function getSavedMembershipForIds(
+  ctx: UserToolContext,
+  ids: string[]
+): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>()
+  if (!ctx.isAuthenticated || !ctx.userId || !ctx.event || ids.length === 0) return out
+  try {
+    const client = createSupabaseServerClient(ctx.event)
+    const { data, error } = await client
+      .from('saved_events')
+      .select('event_id')
+      .eq('user_id', ctx.userId)
+      .in('event_id', ids)
+      .limit(ids.length)
+    if (error) return out
+    for (const row of (data ?? []) as Array<{ event_id: string }>) {
+      out.set(row.event_id, true)
+    }
+  } catch (error) {
+    console.error('[getSavedMembershipForIds] Error:', error)
+  }
+  return out
+}
+
+/**
  * Get the user context for tool execution.
  * This is called once at the start of the agent loop and passed to tool executors.
  */

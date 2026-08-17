@@ -14,10 +14,12 @@
  * - Rehydration re-fetches those IDs from the database in one bounded query and
  *   discards missing/non-displayable events. Only DB names/venue facts survive.
  *
- * Saved state is tri-state and chronological: a successful save/already-saved
- * writes true, a successful unsave/not-saved writes false, and
- * failed/denied/unauthenticated/not-found never overwrite. The final state is
- * stamped onto every occurrence of that event across groups.
+ * Saved-state authority (v5):
+ * - Guest history: client-provided `saved` values and historical operation
+ *   outcomes are NOT trusted as saved-state evidence; rehydrated events default
+ *   to `null`.
+ * - Authenticated history: current saved membership is rehydrated from the
+ *   database (one bounded membership query) and is authoritative.
  */
 
 import { z } from 'zod'
@@ -28,7 +30,6 @@ import type {
   MutationOutcome,
   ResponseKind,
 } from '#shared/lib/types.ts'
-import { mutationSavedState } from './record.ts'
 import { adaptStoredMessageToCanonical } from '#features/chat/lib/canonical.ts'
 
 // ============================================================================
@@ -110,7 +111,7 @@ export interface PriorContext {
 
 /** Validated hint extracted from an untrusted data-response / canonical. */
 export interface DataResponseHint {
-  contractVersion: 3 | 4
+  contractVersion: 3 | 4 | 5
   requestId: string
   kind: ResponseKind
   events: Array<{ eventId: string; saved: PriorSaved }>
@@ -182,7 +183,7 @@ const hintOperationSchema = z.object({
  * oversized arrays/strings are rejected.
  */
 export const dataResponseHintSchema = z.object({
-  contractVersion: z.union([z.literal(3), z.literal(4)]),
+  contractVersion: z.union([z.literal(3), z.literal(4), z.literal(5)]),
   requestId: z.string().min(1).max(MAX_ID_STRING),
   kind: z.enum(RESPONSE_KINDS),
   events: z.array(hintEventSchema).max(MAX_HINT_EVENTS).default([]),
@@ -321,10 +322,15 @@ export function collectEventIds(responses: PriorResponseHint[]): string[] {
 /**
  * Build grouped prior context from validated hints + rehydrated DB facts.
  * Pure and deterministic (no DB access).
+ *
+ * `savedMembership` (authenticated only) is the authoritative saved-state map;
+ * when absent (guest), every rehydrated event defaults to `saved: null` and
+ * client `saved`/operation outcomes are ignored.
  */
 export function buildPriorContext(
   responses: PriorResponseHint[],
-  facts: EventFact[]
+  facts: EventFact[],
+  savedMembership?: ReadonlyMap<string, boolean>
 ): PriorContext {
   const factsById = new Map<string, EventFact>()
   const venueByEventId = new Map<string, VenueFact>()
@@ -338,15 +344,14 @@ export function buildPriorContext(
   }
 
   const savedByEventId = new Map<string, boolean>()
+  if (savedMembership) {
+    for (const [id, saved] of savedMembership) {
+      if (saved) savedByEventId.set(id, true)
+    }
+  }
   const groups: PriorDisplayGroup[] = []
 
   for (const r of responses) {
-    // Operations apply first (chronologically) and across all known events.
-    for (const op of r.operations) {
-      const s = mutationSavedState(op.toolName, op.outcome)
-      if (s !== null) savedByEventId.set(op.eventId, s)
-    }
-
     // Mutation-only / empty responses create no group.
     if (r.events.length === 0) continue
 
@@ -354,11 +359,10 @@ export function buildPriorContext(
     for (const hintEvent of r.events) {
       const fact = factsById.get(hintEvent.eventId)
       if (!fact) continue // discard missing / non-displayable
-      if (hintEvent.saved !== null) savedByEventId.set(hintEvent.eventId, hintEvent.saved)
       events.push({
         eventId: hintEvent.eventId,
         name: sanitizeText(fact.name),
-        saved: null, // stamped below
+        saved: null, // stamped below from authoritative membership only
       })
     }
     if (events.length > 0) {
@@ -399,14 +403,16 @@ export function buildPriorContext(
 
 /**
  * Rehydrate prior context from validated hints using an injected fetch function
- * (one bounded query). Guest and auth paths share this exact pipeline.
+ * (one bounded query). Guest and auth paths share this exact pipeline; the auth
+ * path additionally supplies authoritative saved membership.
  */
 export async function rehydratePriorContext(
   responses: PriorResponseHint[],
-  fetchByIds: FetchEventFacts
+  fetchByIds: FetchEventFacts,
+  savedMembership?: ReadonlyMap<string, boolean>
 ): Promise<PriorContext> {
   const ids = collectEventIds(responses)
   if (ids.length === 0) return { groups: [], venueByEventId: new Map() }
   const facts = await fetchByIds(ids)
-  return buildPriorContext(responses, facts)
+  return buildPriorContext(responses, facts, savedMembership)
 }

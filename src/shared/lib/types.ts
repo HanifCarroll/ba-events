@@ -603,8 +603,13 @@ export interface ConciergeMessage extends ChatMessage {
 // CANONICAL CHAT RESPONSE (v4)
 // =============================================================================
 
-/** Response contract version. v4 = closed-message canonical response (single source of truth). */
-export const CHAT_CONTRACT_VERSION = 4 as const
+/**
+ * Response contract version.
+ * v5 = outcome-aware mutation leads, partial-search provenance, typed
+ * pinned-event failures, and deterministic post-plan mutation execution.
+ * v4 = closed-message canonical response (single source of truth).
+ */
+export const CHAT_CONTRACT_VERSION = 5 as const
 
 export type ResponseKind =
   | 'recommendations'
@@ -621,6 +626,11 @@ export type ResponseKind =
 /**
  * Closed set of deterministic text templates. Server text is materialized from
  * one of these keys plus validated artifacts — never from arbitrary model prose.
+ *
+ * v5: the single `mutation_result` key is replaced by outcome-aware mutation
+ * lead keys derived server-side from normalized receipts; `partial_results`
+ * marks a search that returned events while another call failed; and
+ * `pinned_event_unavailable` is the typed pinned-event failure lead.
  */
 export const MESSAGE_KEYS = [
   'recommendations',
@@ -629,14 +639,24 @@ export const MESSAGE_KEYS = [
   'saved_events',
   'directions',
   'venue_details',
-  'mutation_result',
   'clarification',
   'no_results',
   'out_of_scope',
   'share_guidance',
   'error',
+  'mutation_applied',
+  'mutation_already_applied',
+  'mutation_unauthenticated',
+  'mutation_not_found',
+  'mutation_failed',
+  'mutation_mixed',
+  'partial_results',
+  'pinned_event_unavailable',
 ] as const
 export type MessageKey = (typeof MESSAGE_KEYS)[number]
+
+/** The legacy v4 mutation lead key, replaced in v5 by outcome-aware leads. */
+export const LEGACY_MUTATION_RESULT_KEY = 'mutation_result' as const
 
 /** Closed set of clarification question templates (sanitized, no artifact facts). */
 export const CLARIFICATION_KEYS = [
@@ -698,6 +718,8 @@ export const FALLBACK_REASONS = [
   'invalid_empty_source',
   'invalid_message_key',
   'invalid_clarification',
+  'mutation_target_mismatch',
+  'ambiguous_mutation_target',
 ] as const
 
 export type FallbackReason = (typeof FALLBACK_REASONS)[number]
@@ -725,6 +747,77 @@ export interface OperationReceipt {
   message: string
 }
 
+// ============================================================================
+// TYPED MUTATION + REFERENCE INTENT (v5)
+// ============================================================================
+
+/** A deterministic reference to a prior displayed event (or none/ambiguous). */
+export type TargetReference =
+  | { kind: 'ordinal'; index: number }
+  | { kind: 'lead' }
+  | { kind: 'other'; index: number }
+  | { kind: 'named_event'; eventId: string }
+  | { kind: 'named_venue'; venueId: string }
+  | { kind: 'none' }
+  | { kind: 'ambiguous' }
+
+export type MutationAction = 'save' | 'unsave'
+
+/**
+ * Typed mutation intent, parsed deterministically from the latest raw user
+ * request. `none` means no explicit save/unsave command; an explicit command
+ * carries the action plus its target reference. No broad boolean gate.
+ */
+export type MutationIntent =
+  | { kind: 'save'; targetReference: TargetReference }
+  | { kind: 'unsave'; targetReference: TargetReference }
+  | { kind: 'none' }
+
+/**
+ * Where a validated mutation target came from. `selected_current_event` binds
+ * the target to the exact source artifact that produced the selected event.
+ */
+export type PlannedMutationSource =
+  | { kind: 'resolved_prior_target' }
+  | { kind: 'pinned_event' }
+  | { kind: 'selected_current_event'; sourceToolCallId: string }
+
+/** A single validated mutation, executed once by the deterministic executor. */
+export interface PlannedMutation {
+  action: MutationAction
+  eventId: string
+  source: PlannedMutationSource
+}
+
+/**
+ * Outcome-aware mutation lead key derived server-side from normalized receipts.
+ * Each key materializes a truthful localized lead (EN + ES).
+ */
+export type MutationMessageKey =
+  | 'mutation_applied'
+  | 'mutation_already_applied'
+  | 'mutation_unauthenticated'
+  | 'mutation_not_found'
+  | 'mutation_failed'
+  | 'mutation_mixed'
+
+// ============================================================================
+// PINNED-EVENT MODE (v5)
+// ============================================================================
+
+/**
+ * Typed pinned-event resolution. A requested pin that cannot resolve to a
+ * displayable event is a typed failure — never a silent fallback to discovery.
+ */
+export type PinResolution =
+  | { requested: false }
+  | { requested: true; status: 'resolved'; eventId: string; venueId: string | null }
+  | {
+      requested: true
+      status: 'invalid' | 'missing' | 'unavailable'
+      eventIdHint: string | null
+    }
+
 /** Where a canonical response's provenance came from. */
 export type ProvenanceOrigin = 'validated' | 'fallback' | 'legacy_unknown'
 
@@ -747,6 +840,12 @@ export interface CanonicalProvenance {
   stageIds: string[]
   /** Exact tool call ids of the LATEST search stage attempt (success, empty, or failed). */
   searchAttemptToolCallIds: string[]
+  /**
+   * True when a parallel search call failed but at least one event is shown
+   * (partial_success) or no events exist yet part of the search failed.
+   * Marks the response as incomplete.
+   */
+  searchIncomplete: boolean
   origin: ProvenanceOrigin
   fallbackUsed: boolean
   fallbackReason: FallbackReason | null
@@ -763,10 +862,10 @@ export interface VenueDetailsData {
 }
 
 /**
- * The single authoritative assistant response for a chat turn (v4).
+ * The single authoritative assistant response for a chat turn (v5).
  * Text is deterministic (closed messageKey + validated artifacts), never model
  * prose. `messageKey`, `clarificationQuestions`, and every provenance array are
- * required: the v4 producer always sets them, and the legacy v2/v3 adapters
+ * required: the v5 producer always sets them, and the legacy v2/v3/v4 adapters
  * fill deterministic defaults.
  */
 export interface CanonicalChatResponse {

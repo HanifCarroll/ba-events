@@ -79,4 +79,42 @@ describe('materializeText (deterministic server text)', () => {
       'botón de compartir'
     )
   })
+
+  it('only the applied mutation lead claims an update; the rest are truthful', () => {
+    expect(materializeText({ messageKey: 'mutation_applied', locale: 'en' })).toBe(
+      'Your saved events are updated.'
+    )
+    expect(materializeText({ messageKey: 'mutation_applied', locale: 'es' })).toBe(
+      'Actualicé tus guardados.'
+    )
+    // Failure/mixed/unauthenticated/not-found leads never claim an update.
+    for (const key of [
+      'mutation_failed',
+      'mutation_mixed',
+      'mutation_unauthenticated',
+      'mutation_not_found',
+    ] as const) {
+      const en = materializeText({ messageKey: key, locale: 'en' })
+      const es = materializeText({ messageKey: key, locale: 'es' })
+      expect(en).not.toContain('updated')
+      expect(es).not.toContain('Actualicé')
+    }
+    expect(materializeText({ messageKey: 'mutation_failed', locale: 'en' })).toBe(
+      "Here's what happened."
+    )
+    expect(materializeText({ messageKey: 'mutation_failed', locale: 'es' })).toBe(
+      'Esto fue lo que pasó.'
+    )
+  })
+
+  it('partial_results and pinned_event_unavailable materialize closed EN + ES text', () => {
+    expect(materializeText({ messageKey: 'partial_results', locale: 'en' })).toContain(
+      "part of the search didn't complete"
+    )
+    expect(materializeText({ messageKey: 'partial_results', locale: 'es' })).toContain(
+      'una parte de la búsqueda no se pudo completar'
+    )
+    expect(materializeText({ messageKey: 'pinned_event_unavailable', locale: 'en' }).length).toBeGreaterThan(0)
+    expect(materializeText({ messageKey: 'pinned_event_unavailable', locale: 'es' }).length).toBeGreaterThan(0)
+  })
 })

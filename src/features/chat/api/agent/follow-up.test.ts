@@ -182,43 +182,42 @@ describe('buildPriorContext (grouping + saved state)', () => {
     expect(ctx.groups[1].events.map((e) => e.eventId)).toEqual([E1, E3])
     expect(ctx.groups[2].events.map((e) => e.eventId)).toEqual([E4])
     // save applied in the mutation-only response -> true across all occurrences.
-    expect(ctx.groups[0].events[0].saved).toBe(true)
-    expect(ctx.groups[1].events[0].saved).toBe(true)
+    // (v5 guest: historical operations are NOT trusted as saved evidence.)
+    expect(ctx.groups[0].events[0].saved).toBeNull()
+    expect(ctx.groups[1].events[0].saved).toBeNull()
   })
 
-  it('resolves save/already-saved -> true and unsave/not-saved -> false across occurrences', () => {
+  it('applies authoritative saved membership (auth) across occurrences', () => {
     const responses: PriorResponseHint[] = [
-      resp({ events: [ev(E1, true)] }), // displayed as saved (saved-list)
+      resp({ assistantMessageId: 'a1', requestId: 'r1', events: [ev(E1), ev(E2)] }),
+      resp({ assistantMessageId: 'a2', requestId: 'r2', events: [ev(E1), ev(E3)] }),
+    ]
+    const ctx = buildPriorContext(responses, [fact(E1, 'One'), fact(E2, 'Two'), fact(E3, 'Three')], new Map([[E1, true]]))
+    expect(ctx.groups[0].events[0].saved).toBe(true)
+    expect(ctx.groups[0].events[1].saved).toBeNull()
+    expect(ctx.groups[1].events[0].saved).toBe(true)
+    expect(ctx.groups[1].events[1].saved).toBeNull()
+  })
+
+  it('guest history never trusts client saved markers or operation outcomes', () => {
+    const responses: PriorResponseHint[] = [
+      resp({ events: [ev(E1, true)] }), // client claims saved
       resp({ events: [], operations: [{ toolName: 'unsave_event', eventId: E1, outcome: 'applied' }] }),
     ]
     const ctx = buildPriorContext(responses, [fact(E1, 'One')])
-    expect(ctx.groups[0].events[0].saved).toBe(false)
+    expect(ctx.groups[0].events[0].saved).toBeNull()
   })
 
-  it('failed/denied/unauthenticated/not-found do not overwrite known saved state', () => {
+  it('authoritative membership is the only saved-state source', () => {
     const outcomes = ['failed', 'denied', 'unauthenticated', 'not_found'] as const
     for (const outcome of outcomes) {
       const responses: PriorResponseHint[] = [
         resp({ events: [ev(E1, true)] }),
         resp({ events: [], operations: [{ toolName: 'save_event', eventId: E1, outcome }] }),
       ]
-      const ctx = buildPriorContext(responses, [fact(E1, 'One')])
-      expect(ctx.groups[0].events[0].saved).toBe(true)
+      // Even with a client saved=true, guest defaults to null.
+      expect(buildPriorContext(responses, [fact(E1, 'One')]).groups[0].events[0].saved).toBeNull()
     }
-  })
-
-  it('already-applied save -> true, already-applied unsave -> false', () => {
-    const saveResponses: PriorResponseHint[] = [
-      resp({ events: [ev(E1)] }),
-      resp({ events: [], operations: [{ toolName: 'save_event', eventId: E1, outcome: 'already_applied' }] }),
-    ]
-    expect(buildPriorContext(saveResponses, [fact(E1, 'One')]).groups[0].events[0].saved).toBe(true)
-
-    const unsaveResponses: PriorResponseHint[] = [
-      resp({ events: [ev(E1)] }),
-      resp({ events: [], operations: [{ toolName: 'unsave_event', eventId: E1, outcome: 'already_applied' }] }),
-    ]
-    expect(buildPriorContext(unsaveResponses, [fact(E1, 'One')]).groups[0].events[0].saved).toBe(false)
   })
 
   it('uses the DB name, never a supplied client name', () => {

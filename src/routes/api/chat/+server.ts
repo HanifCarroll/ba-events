@@ -29,7 +29,7 @@ import {
   createUIMessageStreamResponse,
 } from 'ai'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
-import { getUserToolContext, listSavedEventsForUser } from '#features/chat/api/user-tools.server.ts'
+import { getUserToolContext, listSavedEventsForUser, getSavedMembershipForIds } from '#features/chat/api/user-tools.server.ts'
 import { getSystemPrompt } from '#features/chat/api/prompts/index.ts'
 import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
 import { trackServer } from '#shared/lib/analytics.server.ts'
@@ -39,6 +39,7 @@ import type {
   CanonicalChatResponse,
   ChatStreamStatusPhase,
   Message,
+  PinResolution,
 } from '#shared/lib/types.ts'
 import { orchestrate } from '#features/chat/api/agent/orchestrate.ts'
 import { persistAssistantMessageV4 } from '#features/chat/api/agent/persist.ts'
@@ -47,13 +48,14 @@ import {
   hintsFromMessages,
   hintsFromUIMessages,
   rehydratePriorContext,
+  collectEventIds,
   sanitizeText,
   type PriorContext,
 } from '#features/chat/api/agent/follow-up.ts'
 import {
   buildApplicationContextMessage,
   buildConversationModelMessages,
-  detectMutationIntent,
+  parseMutationIntent,
   resolveReferences,
   MAX_USER_TEXT,
 } from '#features/chat/api/agent/context.ts'
@@ -164,30 +166,41 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     savedEventsCount,
   })
 
-  // Pinned event: validate the hint as a UUID, rehydrate from the DB, and only
-  // pin when a displayable exact event exists. Never interpolate its name.
-  let pinnedEventId: string | undefined
-  if (happeningSoonEventId && UUID_RE.test(happeningSoonEventId)) {
-    try {
-      const facts = await getEventFactsByIds([happeningSoonEventId])
-      const fact = facts.find((f) => f.id === happeningSoonEventId)
-      if (fact && isDisplayableStatus(fact.status)) pinnedEventId = fact.id
-    } catch {
-      // Event missing or unreadable — fall back to the normal flow.
+  // Pinned event: validate the hint as a UUID, rehydrate from the DB, and
+  // resolve a typed PinResolution. A requested-but-unresolved pin is a typed
+  // failure (no discovery fallback); never interpolate its name.
+  let pin: PinResolution = { requested: false }
+  if (happeningSoonEventId != null) {
+    if (!UUID_RE.test(happeningSoonEventId)) {
+      pin = { requested: true, status: 'invalid', eventIdHint: happeningSoonEventId.slice(0, 128) }
+    } else {
+      try {
+        const facts = await getEventFactsByIds([happeningSoonEventId])
+        const fact = facts.find((f) => f.id === happeningSoonEventId)
+        if (fact && isDisplayableStatus(fact.status)) {
+          pin = { requested: true, status: 'resolved', eventId: fact.id, venueId: fact.venue_id }
+        } else if (fact) {
+          pin = { requested: true, status: 'unavailable', eventIdHint: happeningSoonEventId }
+        } else {
+          pin = { requested: true, status: 'missing', eventIdHint: happeningSoonEventId }
+        }
+      } catch {
+        pin = { requested: true, status: 'unavailable', eventIdHint: happeningSoonEventId }
+      }
     }
   }
 
   // Prior displayed-event context: guest and auth share the same parse +
-  // rehydrate pipeline; only the history source differs.
+  // rehydrate pipeline; only the history source differs. Auth additionally
+  // rehydrates authoritative saved membership (never client markers).
   let priorContext: PriorContext = EMPTY_PRIOR
   try {
     if (userContext.isAuthenticated && conversationId) {
       const conversation = await getConversation(event, { id: conversationId })
       if (conversation) {
-        priorContext = await rehydratePriorContext(
-          hintsFromMessages((conversation.messages ?? []) as Message[]),
-          getEventFactsByIds
-        )
+        const hints = hintsFromMessages((conversation.messages ?? []) as Message[])
+        const membership = await getSavedMembershipForIds(userContext, collectEventIds(hints))
+        priorContext = await rehydratePriorContext(hints, getEventFactsByIds, membership)
       }
     } else {
       priorContext = await rehydratePriorContext(
@@ -208,7 +221,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
   // Bounded application-context message (ids/order/saved/resolved only).
   const applicationContext = buildApplicationContextMessage({
-    pinnedEventId,
+    pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
     groups: priorContext.groups,
     resolvedEventId: resolved.resolvedEventId,
     resolvedVenueId: resolved.resolvedVenueId,
@@ -220,8 +233,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     applicationContext,
   })
 
-  // Structural mutation gating from the latest raw user request.
-  const allowMutations = detectMutationIntent(originalQuery)
+  // Typed mutation intent from the latest raw user request.
+  const mutationIntent = parseMutationIntent(
+    originalQuery,
+    priorContext.groups,
+    priorContext.venueByEventId
+  )
 
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
@@ -275,10 +292,10 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           systemPrompt,
           originalQuery,
           priorDisplayedEvents: priorContext.groups,
-          pinnedEventId,
+          pin,
           resolvedEventId: resolved.resolvedEventId,
           resolvedVenueId: resolved.resolvedVenueId,
-          allowMutations,
+          mutationIntent,
           hooks: {
             onStatus: (phase) => writeStatus(phase),
             onCallingTool: (toolName, _toolCallId, _input, stepIndex) =>

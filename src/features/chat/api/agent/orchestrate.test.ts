@@ -28,7 +28,7 @@ function workResult(ledger: Ledger, steps: WorkLoopResult['steps'] = [], finalWo
 
 function validPlan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
   return {
-    contractVersion: 4,
+    contractVersion: 5,
     primaryKind: 'recommendations',
     messageKey: 'recommendations',
     eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }],
@@ -38,6 +38,7 @@ function validPlan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
     operationToolCallIds: [],
     emptySourceToolCallIds: [],
     clarificationQuestions: [],
+    plannedMutations: [],
     reason: null,
     ...overrides,
   }
@@ -357,8 +358,51 @@ describe('orchestrate (v4)', () => {
       }),
     })
 
-    await orchestrate({ ...baseInput, pinnedEventId: 'pin' })
+    await orchestrate({ ...baseInput, pin: { requested: true, status: 'resolved', eventId: 'pin', venueId: null } })
     expect(mockedRunWorkLoop.mock.calls[0][0].pinnedEventId).toBe('pin')
+  })
+
+  it('a requested-but-unresolved pin yields a typed failure with zero cards and no work loop', async () => {
+    const result = await orchestrate({
+      ...baseInput,
+      pin: { requested: true, status: 'invalid', eventIdHint: 'not-a-uuid' },
+    })
+    expect(mockedRunWorkLoop).not.toHaveBeenCalled()
+    expect(mockedRunFinalizer).not.toHaveBeenCalled()
+    expect(result.canonical.kind).toBe('error')
+    expect(result.canonical.messageKey).toBe('pinned_event_unavailable')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.operations).toEqual([])
+  })
+
+  it('executes a current-search save against the validated selected event only', async () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 }),
+    ])
+    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockedRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }],
+        plannedMutations: [
+          { action: 'save', eventId: 'tango', source: { kind: 'selected_current_event', sourceToolCallId: 's1' } },
+        ],
+      }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      mutationIntent: { kind: 'save', targetReference: { kind: 'none' } },
+    })
+
+    expect(result.canonical.kind).toBe('recommendations')
+    expect(result.canonical.events.map((e) => e.id)).toEqual(['tango'])
+    // An anonymous context yields an unauthenticated receipt, and an
+    // unauthenticated mutation never changes saved state.
+    expect(result.canonical.operations).toHaveLength(1)
+    expect(result.canonical.operations[0].outcome).toBe('unauthenticated')
+    expect(result.canonical.events[0].saved).toBeNull()
+    expect(result.canonical.provenance.mutationToolCallIds).toEqual(['mutation:save_event:tango'])
   })
 })
 

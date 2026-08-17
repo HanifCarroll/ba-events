@@ -32,7 +32,7 @@ function uuid(n: number): string {
 
 function plan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
   return {
-    contractVersion: 4,
+    contractVersion: 5,
     primaryKind: 'recommendations',
     messageKey: 'recommendations',
     eventSelections: [],
@@ -42,6 +42,7 @@ function plan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
     operationToolCallIds: [],
     emptySourceToolCallIds: [],
     clarificationQuestions: [],
+    plannedMutations: [],
     reason: null,
     ...overrides,
   }
@@ -161,8 +162,8 @@ describe('deterministic concierge regressions', () => {
     const groups: PriorDisplayGroup[] = ctx.groups
     // "the second one" resolves within the newest group -> E4.
     expect(resolveReferences({ query: 'save the second one', groups }).resolvedEventId).toBe(E4)
-    // The save applied in r2 stamps saved=true across the E3 occurrence.
-    expect(ctx.groups[1].events[0].saved).toBe(true)
+    // Guest history never trusts historical operation outcomes as saved evidence.
+    expect(ctx.groups[1].events[0].saved).toBeNull()
   })
 
   it('pinned failure: substitution is rejected and no alternate card is shown', () => {

@@ -163,12 +163,15 @@ describe('buildFallback (v4)', () => {
     expect(canonical.events.map((e) => e.id)).toEqual(['a', 'b'])
   })
 
-  it('preserves deduped mutation receipts and marks fallback', () => {
+  it('fallback never fabricates a mutation result (mutations are post-plan)', () => {
+    // Mutation entries can no longer appear in a fallback ledger: the work loop
+    // never executes save/unsave, and the executor runs only on the validated
+    // path. A ledger with only stale mutation entries yields a deterministic
+    // error, never a mutation_result.
     const m1 = mutationEntry({ toolCallId: 'm1', toolName: 'save_event', eventId: 'a', outcome: 'applied' })
-    const m1dup = mutationEntry({ toolCallId: 'm2', toolName: 'save_event', eventId: 'a', outcome: 'applied' })
-    const canonical = buildFallback({ ...base, ledger: ledgerFrom([m1, m1dup]) })
-    expect(canonical.operations).toHaveLength(1)
-    expect(canonical.kind).toBe('mutation_result')
+    const canonical = buildFallback({ ...base, ledger: ledgerFrom([m1]) })
+    expect(canonical.kind).toBe('error')
+    expect(canonical.events).toEqual([])
     expect(canonical.provenance.fallbackUsed).toBe(true)
     expect(canonical.provenance.fallbackReason).toBe('invalid_schema')
     expect(canonical.provenance.origin).toBe('fallback')
@@ -368,5 +371,25 @@ describe('buildFallback (v4)', () => {
     const check = checkSavedEntry({ toolCallId: 'cs0', eventId: 'a', isSaved: true })
     const canonical = buildFallback({ ...base, ledger: ledgerFrom([search, check]) })
     expect(canonical.events[0].saved).toBe(true)
+  })
+
+  it('a partial_success stage shows events with the incomplete lead and provenance', () => {
+    const ok = searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 })
+    const failed = searchEntry({ stepIndex: 0, callIndex: 1, toolCallId: 's1', events: [], limit: 1, success: false })
+    const canonical = buildFallback({ ...base, ledger: ledgerFrom([ok, failed]) })
+    expect(canonical.kind).toBe('recommendations')
+    expect(canonical.messageKey).toBe('partial_results')
+    expect(canonical.events.map((e) => e.id)).toEqual(['a'])
+    expect(canonical.provenance.searchIncomplete).toBe(true)
+    expect(canonical.text).toContain("part of the search didn't complete")
+  })
+
+  it('a partial_failure stage (no events, some failed) yields error, not no_results', () => {
+    const empty = searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [], limit: 1 })
+    const failed = searchEntry({ stepIndex: 0, callIndex: 1, toolCallId: 's1', events: [], limit: 1, success: false })
+    const canonical = buildFallback({ ...base, ledger: ledgerFrom([empty, failed]) })
+    expect(canonical.kind).toBe('error')
+    expect(canonical.events).toEqual([])
+    expect(canonical.messageKey).toBe('error')
   })
 })

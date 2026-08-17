@@ -18,7 +18,7 @@ import type { LedgerEntry } from './ledger.ts'
 
 function plan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
   return {
-    contractVersion: 4,
+    contractVersion: 5,
     primaryKind: 'recommendations',
     messageKey: 'recommendations',
     eventSelections: [],
@@ -28,6 +28,7 @@ function plan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
     operationToolCallIds: [],
     emptySourceToolCallIds: [],
     clarificationQuestions: [],
+    plannedMutations: [],
     reason: null,
     ...overrides,
   }
@@ -251,24 +252,21 @@ describe('validatePlan (v4)', () => {
       limit: 1,
     })
 
-    it('accepts events + related directions + related venue + mutation', () => {
+    it('accepts events + related directions + related venue', () => {
       const dir = directionsEntry({ toolCallId: 'dir0', eventId: 'e1' })
       const venue = venueDetailsEntry({ toolCallId: 'v0', venueId: 'v1' })
-      const mutation = mutationEntry({ toolCallId: 'm0', toolName: 'save_event', eventId: 'e1', outcome: 'applied' })
       const result = v(
         plan({
           eventSelections: [{ eventId: 'e1', sourceToolCallId: 's0' }],
           directionsToolCallId: 'dir0',
           venueToolCallId: 'v0',
-          operationToolCallIds: ['m0'],
         }),
-        [search, dir, venue, mutation]
+        [search, dir, venue]
       )
       expect(result.ok).toBe(true)
       expect(result.events.map((e) => e.id)).toEqual(['e1'])
       expect(result.directions?.eventId).toBe('e1')
       expect(result.venue?.venueId).toBe('v1')
-      expect(result.operations).toHaveLength(1)
     })
 
     it('rejects an unrelated directions ref', () => {
@@ -393,38 +391,76 @@ describe('validatePlan (v4)', () => {
     })
   })
 
-  describe('mutation receipts', () => {
-    it('rejects an invalid mutation reference', () => {
+  describe('planned mutations', () => {
+    it('rejects a mutation proposed without any save/unsave intent', () => {
       const result = v(
-        plan({ primaryKind: 'mutation_result', messageKey: 'mutation_result', operationToolCallIds: ['call-missing'] }),
+        plan({
+          primaryKind: 'mutation_result',
+          messageKey: 'mutation_mixed',
+          plannedMutations: [
+            { action: 'save', eventId: 'e1', source: { kind: 'resolved_prior_target' } },
+          ],
+        }),
         [search]
       )
       expect(result.ok).toBe(false)
-      expect(result.reason).toBe('invalid_mutation_ref')
+      expect(result.reason).toBe('mutation_target_mismatch')
     })
 
-    it('accepts failed and unauthenticated mutation receipts as valid', () => {
-      const failed = mutationEntry({ toolCallId: 'call-failed', toolName: 'save_event', eventId: 'e1', outcome: 'failed' })
-      const unauth = mutationEntry({ toolCallId: 'call-unauth', toolName: 'save_event', eventId: 'e2', outcome: 'unauthenticated' })
+    it('rejects a mutation whose eventId differs from the deterministic target', () => {
       const result = v(
-        plan({ primaryKind: 'mutation_result', messageKey: 'mutation_result', operationToolCallIds: ['call-failed', 'call-unauth'] }),
-        [failed, unauth]
+        plan({
+          primaryKind: 'mutation_result',
+          messageKey: 'mutation_mixed',
+          plannedMutations: [
+            { action: 'save', eventId: 'WRONG', source: { kind: 'resolved_prior_target' } },
+          ],
+        }),
+        [search],
+        {
+          mutationIntent: { kind: 'save', targetReference: { kind: 'ordinal', index: 0 } },
+          resolvedEventId: 'e1',
+        }
       )
-      expect(result.ok).toBe(true)
-      expect(result.operations.map((o) => o.outcome)).toEqual(['failed', 'unauthenticated'])
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('mutation_target_mismatch')
     })
 
-    it('materializes every deduped mutation receipt, never duplicates', () => {
-      const m1 = mutationEntry({ toolCallId: 'call-save', toolName: 'save_event', eventId: 'e1', outcome: 'applied' })
-      const m2 = mutationEntry({ toolCallId: 'call-save-dup', toolName: 'save_event', eventId: 'e1', outcome: 'applied' })
-      const m3 = mutationEntry({ toolCallId: 'call-unsave', toolName: 'unsave_event', eventId: 'e2', outcome: 'applied' })
+    it('accepts a mutation matching the resolved prior target', () => {
       const result = v(
-        plan({ primaryKind: 'mutation_result', messageKey: 'mutation_result', operationToolCallIds: ['call-save'] }),
-        [m1, m2, m3]
+        plan({
+          primaryKind: 'mutation_result',
+          messageKey: 'mutation_mixed',
+          plannedMutations: [
+            { action: 'save', eventId: 'e1', source: { kind: 'resolved_prior_target' } },
+          ],
+        }),
+        [search],
+        {
+          mutationIntent: { kind: 'save', targetReference: { kind: 'ordinal', index: 0 } },
+          resolvedEventId: 'e1',
+        }
       )
       expect(result.ok).toBe(true)
-      expect(result.operations.map((o) => o.eventId)).toEqual(['e1', 'e2'])
-      expect(result.mutationToolCallIds).toEqual(['call-save', 'call-unsave'])
+    })
+
+    it('rejects a save proposed where unsave was intended (actions are not interchangeable)', () => {
+      const result = v(
+        plan({
+          primaryKind: 'mutation_result',
+          messageKey: 'mutation_mixed',
+          plannedMutations: [
+            { action: 'save', eventId: 'e1', source: { kind: 'resolved_prior_target' } },
+          ],
+        }),
+        [search],
+        {
+          mutationIntent: { kind: 'unsave', targetReference: { kind: 'ordinal', index: 0 } },
+          resolvedEventId: 'e1',
+        }
+      )
+      expect(result.ok).toBe(false)
+      expect(result.reason).toBe('mutation_target_mismatch')
     })
   })
 
@@ -595,7 +631,7 @@ describe('validatePlan (v4)', () => {
       const s0 = searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('e1', 'One')], limit: 1 })
       const failed = mutationEntry({ toolCallId: 'm0', toolName: 'save_event', eventId: 'e1', outcome: 'failed' })
       const result = v(
-        plan({ eventSelections: [{ eventId: 'e1', sourceToolCallId: 's0' }], operationToolCallIds: ['m0'] }),
+        plan({ eventSelections: [{ eventId: 'e1', sourceToolCallId: 's0' }] }),
         [s0, failed],
         { priorSaved: { e1: true } }
       )
@@ -667,26 +703,21 @@ describe('validatePlan (v4)', () => {
   })
 
   describe('mutation receipts on empty primaries', () => {
-    it('preserves mutation receipts on a clarification primary (siblings)', () => {
-      const m = mutationEntry({ toolCallId: 'm0', toolName: 'save_event', eventId: 'e1', outcome: 'applied' })
+    it('allows a clarification primary with no mutation (no planned mutation)', () => {
       const result = v(
-        plan({ primaryKind: 'clarification', messageKey: 'clarification', clarificationQuestions: [{ key: 'which_day' }], operationToolCallIds: ['m0'] }),
-        [m]
+        plan({ primaryKind: 'clarification', messageKey: 'clarification', clarificationQuestions: [{ key: 'which_day' }] }),
+        []
       )
       expect(result.ok).toBe(true)
       expect(result.kind).toBe('clarification')
-      expect(result.operations).toHaveLength(1)
+      expect(result.operations).toHaveLength(0)
     })
 
-    it('preserves mutation receipts on an error primary (siblings)', () => {
-      const m = mutationEntry({ toolCallId: 'm0', toolName: 'save_event', eventId: 'e1', outcome: 'applied' })
-      const result = v(
-        plan({ primaryKind: 'error', messageKey: 'error', operationToolCallIds: ['m0'] }),
-        [m]
-      )
+    it('allows an error primary with no mutation', () => {
+      const result = v(plan({ primaryKind: 'error', messageKey: 'error' }), [])
       expect(result.ok).toBe(true)
       expect(result.kind).toBe('error')
-      expect(result.operations).toHaveLength(1)
+      expect(result.operations).toHaveLength(0)
     })
   })
 

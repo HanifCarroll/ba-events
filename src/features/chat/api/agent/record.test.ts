@@ -6,7 +6,7 @@ import {
   mutationSavedState,
   resolveSavedState,
 } from './record.ts'
-import { searchEntry, event, mutationEntry, checkSavedEntry } from './_test-helpers.ts'
+import { searchEntry, event, mutationEntry, checkSavedEntry, savedEventsEntry } from './_test-helpers.ts'
 import { Ledger } from './ledger.ts'
 
 function record(toolName: string, input: unknown, output: Record<string, unknown>, stepIndex = 0, callIndex = 0) {
@@ -192,5 +192,52 @@ describe('recordToolResult (v4)', () => {
     })
     expect(entry.kind).toBe('directions')
     expect(entry.directions?.eventId).toBe('e1')
+  })
+})
+
+describe('resolveSavedState chronology (list_saved_events membership)', () => {
+  it('a saved-list event with no later evidence is true', () => {
+    const ledger = new Ledger()
+    ledger.push(savedEventsEntry({ toolCallId: 'sv0', events: [event('e1', 'One')] }))
+    expect(resolveSavedState('e1', ledger, 'req-1')).toBe(true)
+  })
+
+  it('a saved-list event followed by a successful unsave is false', () => {
+    const ledger = new Ledger()
+    ledger.push(savedEventsEntry({ toolCallId: 'sv0', events: [event('e1', 'One')], stepIndex: 0, callIndex: 0 }))
+    ledger.push(mutationEntry({ toolCallId: 'm1', toolName: 'unsave_event', eventId: 'e1', outcome: 'applied', stepIndex: 0, callIndex: 1 }))
+    expect(resolveSavedState('e1', ledger, 'req-1')).toBe(false)
+  })
+
+  it('a saved-list event followed by a failed unsave remains true', () => {
+    const ledger = new Ledger()
+    ledger.push(savedEventsEntry({ toolCallId: 'sv0', events: [event('e1', 'One')], stepIndex: 0, callIndex: 0 }))
+    ledger.push(mutationEntry({ toolCallId: 'm1', toolName: 'unsave_event', eventId: 'e1', outcome: 'failed', stepIndex: 0, callIndex: 1 }))
+    expect(resolveSavedState('e1', ledger, 'req-1')).toBe(true)
+  })
+
+  it('a saved-list event followed by a successful save is true', () => {
+    const ledger = new Ledger()
+    ledger.push(savedEventsEntry({ toolCallId: 'sv0', events: [event('e1', 'One')], stepIndex: 0, callIndex: 0 }))
+    ledger.push(mutationEntry({ toolCallId: 'm1', toolName: 'save_event', eventId: 'e1', outcome: 'applied', stepIndex: 0, callIndex: 1 }))
+    expect(resolveSavedState('e1', ledger, 'req-1')).toBe(true)
+  })
+
+  it('a search event with no evidence is null', () => {
+    const ledger = new Ledger()
+    ledger.push(searchEntry({ toolCallId: 's0', events: [event('e1', 'One')] }))
+    expect(resolveSavedState('e1', ledger, 'req-1')).toBeNull()
+  })
+
+  it('check-saved already_saved gives true, not_saved gives false', () => {
+    const ledger = new Ledger()
+    ledger.push(searchEntry({ toolCallId: 's0', events: [event('e1', 'One')] }))
+    ledger.push(checkSavedEntry({ toolCallId: 'cs0', eventId: 'e1', isSaved: true }))
+    expect(resolveSavedState('e1', ledger, 'req-1')).toBe(true)
+
+    const ledger2 = new Ledger()
+    ledger2.push(searchEntry({ toolCallId: 's0', events: [event('e1', 'One')] }))
+    ledger2.push(checkSavedEntry({ toolCallId: 'cs0', eventId: 'e1', isSaved: false }))
+    expect(resolveSavedState('e1', ledger2, 'req-1')).toBe(false)
   })
 })
