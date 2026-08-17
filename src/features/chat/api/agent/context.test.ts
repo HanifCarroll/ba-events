@@ -5,11 +5,15 @@ import {
   resolveTargetReference,
   resolveEventRelativeReference,
   resolveTurnTarget,
+  resolveResolvedTurnTarget,
+  resolveTurnTargetFromQuery,
+  parseTargetedActions,
   detectResponseLanguage,
   buildApplicationContextMessage,
   buildConversationModelMessages,
   MAX_APPLICATION_CONTEXT_CHARS,
 } from './context.ts'
+import { ledgerFrom, searchEntry, retentionEntry, event } from './_test-helpers.ts'
 import type { PriorDisplayGroup, PriorDisplayEvent } from './follow-up.ts'
 import type { UIMessage } from 'ai'
 
@@ -423,5 +427,255 @@ describe('buildConversationModelMessages', () => {
     ] as UIMessage[]
     const out = buildConversationModelMessages({ messages, applicationContext: null })
     expect(out).toEqual([{ role: 'user', content: 'hi' }])
+  })
+})
+
+describe('parseMutationIntent fails closed', () => {
+  it('negated commands produce none (EN + Argentine ES)', () => {
+    expect(parseMutationIntent("Don't save it—just show me directions").kind).toBe('none')
+    expect(parseMutationIntent('Do not save this event').kind).toBe('none')
+    expect(parseMutationIntent('no guardá eso').kind).toBe('none')
+    expect(parseMutationIntent('no lo agregues').kind).toBe('none')
+  })
+
+  it('interrogative commands produce none (never a side effect)', () => {
+    expect(parseMutationIntent('Should I save it?').kind).toBe('none')
+    expect(parseMutationIntent('Should I save or unsave it?').kind).toBe('none')
+    expect(parseMutationIntent('¿Lo guardo?').kind).toBe('none')
+  })
+
+  it('conflicting save/unsave commands are ambiguous (EN + Argentine ES)', () => {
+    expect(parseMutationIntent('Save it? No, unsave it.')).toEqual({ kind: 'ambiguous' })
+    expect(parseMutationIntent('save it or unsave it')).toEqual({ kind: 'ambiguous' })
+    expect(parseMutationIntent('¿Guardalo? No, sacalo.')).toEqual({ kind: 'ambiguous' })
+  })
+
+  it('quoted save text does not mutate', () => {
+    expect(parseMutationIntent('tell me about "save the date"').kind).toBe('none')
+    expect(parseMutationIntent('tell me about “save the date”').kind).toBe('none')
+  })
+
+  it('event names containing save do not mutate', () => {
+    const groups = [group([['e1', 'Save the Date']])]
+    expect(parseMutationIntent('tell me about Save the Date', groups).kind).toBe('none')
+  })
+
+  it('curly apostrophe (U+2019) negation produces none', () => {
+    expect(parseMutationIntent('Don\u2019t save it\u2014just show me directions.').kind).toBe('none')
+    expect(parseMutationIntent('Don\u2019t save it').kind).toBe('none')
+  })
+
+  it('a contraction apostrophe is not a quote delimiter', () => {
+    expect(parseMutationIntent("It's great, save it")).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+  })
+
+  it('a mid-query "Save it?" question followed by a redirect never mutates', () => {
+    expect(parseMutationIntent('Save it? Actually, just show me directions.').kind).toBe('none')
+  })
+
+  it('a suppressed quoted/question candidate does not hide a later real command', () => {
+    expect(parseMutationIntent('He said "save it" \u2014 actually save it.')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+    expect(parseMutationIntent('Should I save it? Yes, save it.')).toEqual({
+      kind: 'save',
+      targetReference: { kind: 'lead' },
+    })
+  })
+})
+
+describe('parseTargetedActions / resolveTurnTargetFromQuery (multi-action agreement)', () => {
+  const A = uuid(10)
+  const B = uuid(11)
+  const C = uuid(12)
+  const VA = uuid(90)
+  const VB = uuid(91)
+  const groups = [group([[A, 'Tango Night']]), group([[B, 'Jazz Set'], [C, 'Milonga']])]
+  const venueByEventId = new Map<string, { venueId: string | null; venueName: string | null }>([
+    [A, { venueId: VA, venueName: null }],
+    [B, { venueId: VB, venueName: null }],
+  ])
+
+  it('same-target compounds agree on one target (EN)', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'save it and give me directions to it',
+      groups,
+      venueByEventId,
+    })
+    expect(r.mutationIntent.kind).toBe('save')
+    expect(r.turnTarget).toEqual({ scope: 'prior', eventId: B, venueId: VB })
+  })
+
+  it('same-target compounds agree on one target (Argentine ES)', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'guardalo y dame direcciones para eso',
+      groups,
+      venueByEventId,
+    })
+    expect(r.mutationIntent.kind).toBe('save')
+    expect(r.turnTarget).toEqual({ scope: 'prior', eventId: B, venueId: VB })
+  })
+
+  it('different targets are ambiguous (never globally retarget)', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'save it and directions to the second one',
+      groups,
+      venueByEventId,
+    })
+    expect(r.turnTarget).toEqual({ scope: 'ambiguous' })
+  })
+
+  it('named different targets across groups are ambiguous', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'save Tango Night and directions to Jazz Set',
+      groups,
+      venueByEventId,
+    })
+    expect(r.turnTarget).toEqual({ scope: 'ambiguous' })
+  })
+
+  it('conflicting save/unsave commands force ambiguity', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'Save it? No, unsave it.',
+      groups,
+      venueByEventId,
+    })
+    expect(r.mutationIntent).toEqual({ kind: 'ambiguous' })
+    expect(r.turnTarget).toEqual({ scope: 'ambiguous' })
+  })
+
+  it('parses each action with its own clause target', () => {
+    const actions = parseTargetedActions('save it and directions to the second one', groups)
+    expect(actions.map((a) => a.action)).toEqual(['save', 'directions'])
+    expect(actions[0].reference).toEqual({ kind: 'lead' })
+    expect(actions[1].reference).toEqual({ kind: 'ordinal', index: 1 })
+  })
+
+  it('an ordinal query with no detected action falls back to prior baseline resolution', () => {
+    const r = resolveTurnTargetFromQuery({ query: 'show me the second one', groups })
+    expect(r.turnTarget).toEqual({ scope: 'prior', eventId: C, venueId: null })
+  })
+
+  it('a pinned compound agrees on the pin (lead pronouns, no prior groups)', () => {
+    const PIN = uuid(30)
+    const PIN_V = uuid(31)
+    const r = resolveTurnTargetFromQuery({
+      query: 'save it and give me directions to it',
+      groups: [],
+      pinnedEventId: PIN,
+      pinnedVenueId: PIN_V,
+    })
+    expect(r.mutationIntent.kind).toBe('save')
+    expect(r.turnTarget).toEqual({ scope: 'pinned', eventId: PIN, venueId: PIN_V })
+  })
+
+  it('an event action plus its known venue agree and merge (event clause first)', () => {
+    const venueByName = new Map<string, { venueId: string | null; venueName: string | null }>([
+      [A, { venueId: VA, venueName: 'Niceto Club' }],
+      [B, { venueId: VB, venueName: 'The Blue Note' }],
+    ])
+    const r = resolveTurnTargetFromQuery({
+      query: 'save Tango Night and get directions to Niceto Club',
+      groups,
+      venueByEventId: venueByName,
+    })
+    expect(r.mutationIntent.kind).toBe('save')
+    expect(r.turnTarget).toEqual({ scope: 'prior', eventId: A, venueId: VA })
+  })
+
+  it('an event action plus its known venue agree and merge (venue clause first)', () => {
+    const venueByName = new Map<string, { venueId: string | null; venueName: string | null }>([
+      [A, { venueId: VA, venueName: 'Niceto Club' }],
+      [B, { venueId: VB, venueName: 'The Blue Note' }],
+    ])
+    const r = resolveTurnTargetFromQuery({
+      query: 'get directions to Niceto Club and save Tango Night',
+      groups,
+      venueByEventId: venueByName,
+    })
+    expect(r.turnTarget).toEqual({ scope: 'prior', eventId: A, venueId: VA })
+  })
+
+  it('different events/venues remain ambiguous', () => {
+    const venueByName = new Map<string, { venueId: string | null; venueName: string | null }>([
+      [A, { venueId: VA, venueName: 'Niceto Club' }],
+      [B, { venueId: VB, venueName: 'The Blue Note' }],
+    ])
+    const r = resolveTurnTargetFromQuery({
+      query: 'save Tango Night and get directions to The Blue Note',
+      groups,
+      venueByEventId: venueByName,
+    })
+    expect(r.turnTarget).toEqual({ scope: 'ambiguous' })
+  })
+
+  it('never borrows another action event for a venue-only mutation target', () => {
+    const venueByName = new Map<string, { venueId: string | null; venueName: string | null }>([
+      [A, { venueId: VA, venueName: 'Niceto Club' }],
+    ])
+    const r = resolveTurnTargetFromQuery({
+      query: 'save Niceto Club and tell me more about Tango Night',
+      groups,
+      venueByEventId: venueByName,
+    })
+    expect(r.turnTarget).toEqual({ scope: 'ambiguous' })
+  })
+
+  it('parses "Find three events and tell me more about the second one." to current_selection index 1', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'Find three events and tell me more about the second one.',
+      groups,
+    })
+    expect(r.turnTarget).toEqual({ scope: 'current_selection', index: 1 })
+  })
+})
+
+describe('resolveResolvedTurnTarget (current_selection against the ledger)', () => {
+  it('binds the indexed active search event + source + venue', () => {
+    const ledger = ledgerFrom([
+      searchEntry({
+        stepIndex: 0,
+        toolCallId: 's0',
+        events: [event('a', 'A'), event('b', 'B', { venue_id: 'v1' }), event('c', 'C')],
+        limit: 3,
+      }),
+    ])
+    expect(
+      resolveResolvedTurnTarget({ scope: 'current_selection', index: 1 }, ledger, 'req-1')
+    ).toEqual({
+      scope: 'current_selection',
+      eventId: 'b',
+      sourceToolCallId: 's0',
+      venueId: 'v1',
+    })
+  })
+
+  it('orders active events before retained events and preserves the exact source', () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('old', 'Old')], limit: 1 }),
+      searchEntry({ stepIndex: 1, toolCallId: 's1', events: [event('a', 'A'), event('b', 'B')], limit: 2 }),
+      retentionEntry({ toolCallId: 'r0', retainedToolCallIds: ['s0'], stepIndex: 1, callIndex: 1 }),
+    ])
+    expect(
+      resolveResolvedTurnTarget({ scope: 'current_selection', index: 2 }, ledger, 'req-1')
+    ).toEqual({
+      scope: 'current_selection',
+      eventId: 'old',
+      sourceToolCallId: 's0',
+      venueId: null,
+    })
+  })
+
+  it('an out-of-range current index is ambiguous', () => {
+    const ledger = ledgerFrom([
+      searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 }),
+    ])
+    expect(
+      resolveResolvedTurnTarget({ scope: 'current_selection', index: 4 }, ledger, 'req-1')
+    ).toEqual({ scope: 'ambiguous' })
   })
 })

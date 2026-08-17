@@ -113,6 +113,13 @@ export interface SearchStage {
 /** Validation state of a single search source tool call. */
 export type SearchSourceStatus = 'active' | 'retained' | 'rejected' | 'superseded' | 'unknown'
 
+/** One selectable search event bound to its exact source + venue (v5). */
+export interface SelectableSearchTarget {
+  eventId: string
+  sourceToolCallId: string
+  venueId: string | null
+}
+
 function setsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
   const sa = [...a].sort()
@@ -233,6 +240,36 @@ export class Ledger {
         if (seen.has(id) || rejected.has(id) || activeIds.has(id)) continue
         seen.add(id)
         out.push(id)
+      }
+    }
+    return out
+  }
+
+  /**
+   * Ordered selectable (ACTIVE stage + RETAINED) search targets, deduped by
+   * event id in display order — active-stage sources in call order first, then
+   * retained sources. This is the canonical order a `current_selection` index
+   * resolves against (never the finalizer's eventSelections). A rejected active
+   * stage yields no targets.
+   */
+  selectableSearchTargets(requestId?: string): SelectableSearchTarget[] {
+    const active = this.activeStage(requestId)
+    if (active && active.eligibility === 'rejected') return []
+    const activeEntries = active ? this.searchesInStep(active.stepIndex, requestId) : []
+    const retainedEntries = this.retainedSearchToolCallIds(requestId)
+      .map((id) => this.find(id))
+      .filter((e): e is LedgerEntry => !!e && e.kind === 'search' && e.success)
+    const seen = new Set<string>()
+    const out: SelectableSearchTarget[] = []
+    for (const e of [...activeEntries, ...retainedEntries]) {
+      for (const ev of e.events) {
+        if (seen.has(ev.id)) continue
+        seen.add(ev.id)
+        out.push({
+          eventId: ev.id,
+          sourceToolCallId: e.toolCallId,
+          venueId: typeof ev.venue_id === 'string' && ev.venue_id ? ev.venue_id : null,
+        })
       }
     }
     return out

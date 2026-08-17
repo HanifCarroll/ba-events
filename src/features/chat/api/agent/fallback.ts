@@ -20,8 +20,8 @@ import type {
   FallbackReason,
   MessageKey,
   OperationReceipt,
+  ResolvedTurnTarget,
   ResponseKind,
-  TurnTarget,
   VenueDetailsData,
 } from '#shared/lib/types.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
@@ -36,11 +36,9 @@ export interface FallbackInput {
   reason: FallbackReason
   ledger: Ledger
   requestedCount: number
-  /** Query-derived turn target (authoritative for every event-relative artifact). */
-  turnTarget: TurnTarget
+  /** Concrete query-derived turn target (authoritative for every artifact). */
+  resolvedTurnTarget: ResolvedTurnTarget
   pinnedEventId?: string
-  /** The pin's known venue id (from PinResolution), authoritative without details. */
-  pinnedVenueId?: string
   priorSaved?: Record<string, boolean>
 }
 
@@ -197,12 +195,11 @@ function searchPrimary(
 }
 
 function deriveContent(input: FallbackInput): DerivedContent {
-  const { ledger, requestId, requestedCount, pinnedEventId, priorSaved, turnTarget } = input
+  const { ledger, requestId, requestedCount, pinnedEventId, priorSaved, resolvedTurnTarget } = input
   const operations = ledger.mutationReceipts(requestId)
   const cap = clampCap(requestedCount)
 
   const pinnedDetails = pinnedEventId ? ledger.eventDetailsFor(pinnedEventId, requestId) : null
-  const pinnedVenueId = input.pinnedVenueId ?? (pinnedDetails?.events[0]?.venue_id ?? null)
   const latest = pinnedEventId ? null : latestEventRead(ledger, requestId)
 
   // --- Primary events source ---
@@ -256,7 +253,7 @@ function deriveContent(input: FallbackInput): DerivedContent {
       const event = latest.events[0]
       const authorized =
         event &&
-        resolveAuthorizedScope(turnTarget, [event], null).eventIds.has(event.id)
+        resolveAuthorizedScope(resolvedTurnTarget).eventIds.has(event.id)
       primary = authorized
         ? {
             kind: 'event_details',
@@ -282,8 +279,9 @@ function deriveContent(input: FallbackInput): DerivedContent {
   }
 
   // --- Relation identity sets for compound siblings (single turn target) ---
-  // Derived from the ONE turn target — never a union of prior + current ids.
-  const allowed = resolveAuthorizedScope(turnTarget, primary?.events ?? [], pinnedVenueId)
+  // Derived from the ONE concrete resolved target — never a union of prior +
+  // current ids.
+  const allowed = resolveAuthorizedScope(resolvedTurnTarget)
   const allowedEventIds = allowed.eventIds
   const allowedVenueIds = allowed.venueIds
 

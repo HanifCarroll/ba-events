@@ -56,9 +56,7 @@ import {
   buildApplicationContextMessage,
   buildConversationModelMessages,
   detectResponseLanguage,
-  parseMutationIntent,
-  resolveReferences,
-  resolveTurnTarget,
+  resolveTurnTargetFromQuery,
   MAX_USER_TEXT,
 } from '#features/chat/api/agent/context.ts'
 import { getConversation } from '#features/chat/api/conversations.server.ts'
@@ -218,23 +216,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     console.error('[chat] failed to build prior context:', error)
   }
 
-  const resolved = resolveReferences({
+  const { turnTarget, mutationIntent } = resolveTurnTargetFromQuery({
     query: originalQuery,
     groups: priorContext.groups,
     venueByEventId: priorContext.venueByEventId,
-  })
-  const mutationIntent = parseMutationIntent(
-    originalQuery,
-    priorContext.groups,
-    priorContext.venueByEventId
-  )
-  const turnTarget = resolveTurnTarget({
-    reference:
-      mutationIntent.kind !== 'none' ? mutationIntent.targetReference : resolved.reference,
     pinnedEventId: pin.requested && pin.status === 'resolved' ? pin.eventId : undefined,
     pinnedVenueId: pin.requested && pin.status === 'resolved' ? pin.venueId : undefined,
-    resolvedEventId: resolved.resolvedEventId,
-    resolvedVenueId: resolved.resolvedVenueId,
   })
 
   // The model sees only the one authorized prior target, never prior ids beside

@@ -41,7 +41,7 @@ function v(planInput: FinalizerPlan, entries: LedgerEntry[], opts: Partial<Valid
     requestId: REQ,
     locale: 'en',
     requestedCount: 3,
-    turnTarget: { scope: 'none' },
+    resolvedTurnTarget: { scope: 'none' },
     ...opts,
   })
 }
@@ -203,7 +203,7 @@ describe('validatePlan (v5)', () => {
           eventSelections: [{ eventId: 'pin', sourceToolCallId: 'd0' }],
         }),
         [details],
-        { pinnedEventId: 'pin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null } }
+        { pinnedEventId: 'pin', resolvedTurnTarget: { scope: 'pinned', eventId: 'pin', venueId: null } }
       )
       expect(result.ok).toBe(true)
       expect(result.events.map((e) => e.id)).toEqual(['pin'])
@@ -238,7 +238,7 @@ describe('validatePlan (v5)', () => {
       const result = v(
         plan({ primaryKind: 'directions', messageKey: 'directions', directionsToolCallId: 'dir0', eventSelections: [] }),
         [details, dir],
-        { pinnedEventId: 'pin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null } }
+        { pinnedEventId: 'pin', resolvedTurnTarget: { scope: 'pinned', eventId: 'pin', venueId: null } }
       )
       expect(result.ok).toBe(true)
       expect(result.directions?.eventId).toBe('pin')
@@ -250,7 +250,7 @@ describe('validatePlan (v5)', () => {
       const result = v(
         plan({ primaryKind: 'directions', messageKey: 'directions', directionsToolCallId: 'dir0', eventSelections: [] }),
         [details, dir],
-        { pinnedEventId: 'pin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: null } }
+        { pinnedEventId: 'pin', resolvedTurnTarget: { scope: 'pinned', eventId: 'pin', venueId: null } }
       )
       expect(result.ok).toBe(false)
       expect(result.reason).toBe('unrelated_directions_ref')
@@ -261,7 +261,7 @@ describe('validatePlan (v5)', () => {
       const result = v(
         plan({ primaryKind: 'venue_details', messageKey: 'venue_details', venueToolCallId: 'v0' }),
         [venue],
-        { pinnedEventId: 'pin', pinnedVenueId: 'vpin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: 'vpin' } }
+        { pinnedEventId: 'pin', resolvedTurnTarget: { scope: 'pinned', eventId: 'pin', venueId: 'vpin' } }
       )
       expect(result.ok).toBe(true)
       expect(result.venue?.venueId).toBe('vpin')
@@ -286,7 +286,7 @@ describe('validatePlan (v5)', () => {
           venueToolCallId: 'v0',
         }),
         [search, dir, venue],
-        { turnTarget: { scope: 'current_selection', index: 0 } }
+        { resolvedTurnTarget: { scope: 'current_selection', eventId: 'e1', sourceToolCallId: 's0', venueId: 'v1' } }
       )
       expect(result.ok).toBe(true)
       expect(result.events.map((e) => e.id)).toEqual(['e1'])
@@ -325,7 +325,7 @@ describe('validatePlan (v5)', () => {
       const result = v(
         plan({ primaryKind: 'directions', messageKey: 'directions', directionsToolCallId: 'dir0' }),
         [dir],
-        { turnTarget: { scope: 'prior', eventId: 'resolved', venueId: null } }
+        { resolvedTurnTarget: { scope: 'prior', eventId: 'resolved', venueId: null } }
       )
       expect(result.ok).toBe(true)
     })
@@ -344,7 +344,7 @@ describe('validatePlan (v5)', () => {
           directionsToolCallId: 'dir0',
         }),
         [saved, dir],
-        { turnTarget: { scope: 'current_selection', index: 0 } }
+        { resolvedTurnTarget: { scope: 'current_selection', eventId: 'e1', sourceToolCallId: 'sv0', venueId: null } }
       )
       expect(result.ok).toBe(true)
       expect(result.kind).toBe('saved_events')
@@ -363,7 +363,7 @@ describe('validatePlan (v5)', () => {
           directionsToolCallId: 'dir0',
         }),
         [details, dir],
-        { turnTarget: { scope: 'prior', eventId: 'e1', venueId: null } }
+        { resolvedTurnTarget: { scope: 'prior', eventId: 'e1', venueId: null } }
       )
       expect(result.ok).toBe(true)
       expect(result.kind).toBe('event_details')
@@ -381,7 +381,7 @@ describe('validatePlan (v5)', () => {
           eventSelections: [{ eventId: 'D', sourceToolCallId: 'd0' }],
         }),
         [details],
-        { turnTarget: { scope: 'prior', eventId: 'D', venueId: null } }
+        { resolvedTurnTarget: { scope: 'prior', eventId: 'D', venueId: null } }
       )
       expect(result.ok).toBe(true)
       expect(result.events.map((e) => e.id)).toEqual(['D'])
@@ -396,7 +396,7 @@ describe('validatePlan (v5)', () => {
           eventSelections: [{ eventId: 'X', sourceToolCallId: 'd0' }],
         }),
         [details],
-        { turnTarget: { scope: 'prior', eventId: 'D', venueId: null } }
+        { resolvedTurnTarget: { scope: 'prior', eventId: 'D', venueId: null } }
       )
       expect(result.ok).toBe(false)
       expect(result.reason).toBe('unrelated_event_details_ref')
@@ -416,7 +416,7 @@ describe('validatePlan (v5)', () => {
           directionsToolCallId: 'dir0',
         }),
         [search, dir],
-        { turnTarget: { scope: 'current_selection', index: 1 } }
+        { resolvedTurnTarget: { scope: 'current_selection', eventId: 'b', sourceToolCallId: 's0', venueId: null } }
       )
       expect(result.ok).toBe(false)
       expect(result.reason).toBe('unrelated_directions_ref')
@@ -431,7 +431,7 @@ describe('validatePlan (v5)', () => {
           directionsToolCallId: 'dir0',
         }),
         [search, dir],
-        { turnTarget: { scope: 'prior', eventId: 'e1', venueId: null } }
+        { resolvedTurnTarget: { scope: 'prior', eventId: 'e1', venueId: null } }
       )
       expect(result.ok).toBe(false)
       expect(result.reason).toBe('unrelated_directions_ref')
@@ -442,7 +442,7 @@ describe('validatePlan (v5)', () => {
       const result = v(
         plan({ primaryKind: 'venue_details', messageKey: 'venue_details', venueToolCallId: 'v0' }),
         [venue],
-        { turnTarget: { scope: 'prior', eventId: null, venueId: 'v1' } }
+        { resolvedTurnTarget: { scope: 'prior', eventId: null, venueId: 'v1' } }
       )
       expect(result.ok).toBe(true)
       expect(result.venue?.venueId).toBe('v1')
@@ -535,7 +535,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'save', targetReference: { kind: 'ordinal', index: 0 } },
-          turnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
+          resolvedTurnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
         }
       )
       expect(result.ok).toBe(false)
@@ -554,7 +554,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'save', targetReference: { kind: 'ordinal', index: 0 } },
-          turnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
+          resolvedTurnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
         }
       )
       expect(result.ok).toBe(true)
@@ -572,7 +572,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'unsave', targetReference: { kind: 'ordinal', index: 0 } },
-          turnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
+          resolvedTurnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
         }
       )
       expect(result.ok).toBe(false)
@@ -585,7 +585,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'save', targetReference: { kind: 'ordinal', index: 0 } },
-          turnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
+          resolvedTurnTarget: { scope: 'prior', eventId: 'e1', venueId: null },
         }
       )
       expect(result.ok).toBe(false)
@@ -612,7 +612,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'save', targetReference: { kind: 'none' } },
-          turnTarget: { scope: 'current_selection', index: 0 },
+          resolvedTurnTarget: { scope: 'current_selection', eventId: 'e1', sourceToolCallId: 'call-search', venueId: null },
         }
       )
       expect(result.ok).toBe(false)
@@ -631,7 +631,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'save', targetReference: { kind: 'named_venue', venueId: 'v1' } },
-          turnTarget: { scope: 'prior', eventId: null, venueId: 'v1' },
+          resolvedTurnTarget: { scope: 'prior', eventId: null, venueId: 'v1' },
         }
       )
       expect(result.ok).toBe(false)
@@ -645,7 +645,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'save', targetReference: { kind: 'named_venue', venueId: 'v1' } },
-          turnTarget: { scope: 'prior', eventId: null, venueId: 'v1' },
+          resolvedTurnTarget: { scope: 'prior', eventId: null, venueId: 'v1' },
         }
       )
       expect(result.ok).toBe(true)
@@ -664,7 +664,7 @@ describe('validatePlan (v5)', () => {
         [search],
         {
           mutationIntent: { kind: 'save', targetReference: { kind: 'current_selection', index: 0 } },
-          turnTarget: { scope: 'current_selection', index: 0 },
+          resolvedTurnTarget: { scope: 'current_selection', eventId: 'e1', sourceToolCallId: 'call-search', venueId: null },
         }
       )
       expect(result.ok).toBe(true)
@@ -857,7 +857,7 @@ describe('validatePlan (v5)', () => {
       const result = v(
         plan({ primaryKind: 'event_details', messageKey: 'event_details', eventSelections: [{ eventId: 'e1', sourceToolCallId: 'd0' }] }),
         [details],
-        { turnTarget: { scope: 'prior', eventId: 'e1', venueId: null } }
+        { resolvedTurnTarget: { scope: 'prior', eventId: 'e1', venueId: null } }
       )
       expect(result.ok).toBe(true)
       expect(result.events[0].saved).toBeNull()
@@ -945,5 +945,85 @@ describe('validatePlan (v5)', () => {
     const result = v(plan({ eventSelections: [{ eventId: 'e2', sourceToolCallId: 'call-search' }] }), [shared])
     expect(result.ok).toBe(true)
     expect(result.events.map((e) => e.id)).toEqual(['e2'])
+  })
+})
+
+describe('current_selection exact identity (requirement 1)', () => {
+  const target = {
+    scope: 'current_selection',
+    eventId: 'b',
+    sourceToolCallId: 's0',
+    venueId: null,
+  } as const
+
+  it('index 1 accepts second-event detail even when the details response has one event', () => {
+    const details = eventDetailsEntry({ toolCallId: 'd0', eventId: 'b', name: 'B' })
+    const result = v(
+      plan({
+        primaryKind: 'event_details',
+        messageKey: 'event_details',
+        eventSelections: [{ eventId: 'b', sourceToolCallId: 'd0' }],
+      }),
+      [details],
+      { resolvedTurnTarget: target }
+    )
+    expect(result.ok).toBe(true)
+    expect(result.events.map((e) => e.id)).toEqual(['b'])
+  })
+
+  it('first-event substitution for index 1 fails', () => {
+    const details = eventDetailsEntry({ toolCallId: 'd0', eventId: 'a', name: 'A' })
+    const result = v(
+      plan({
+        primaryKind: 'event_details',
+        messageKey: 'event_details',
+        eventSelections: [{ eventId: 'a', sourceToolCallId: 'd0' }],
+      }),
+      [details],
+      { resolvedTurnTarget: target }
+    )
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('unrelated_event_details_ref')
+  })
+
+  it('third-event substitution for index 1 fails', () => {
+    const details = eventDetailsEntry({ toolCallId: 'd0', eventId: 'c', name: 'C' })
+    const result = v(
+      plan({
+        primaryKind: 'event_details',
+        messageKey: 'event_details',
+        eventSelections: [{ eventId: 'c', sourceToolCallId: 'd0' }],
+      }),
+      [details],
+      { resolvedTurnTarget: target }
+    )
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('unrelated_event_details_ref')
+  })
+
+  it('current-selection directions and venue still authorize the exact second event', () => {
+    const search = searchEntry({
+      stepIndex: 0,
+      toolCallId: 's0',
+      events: [event('a', 'A', { venue_id: 'va' }), event('b', 'B', { venue_id: 'vb' })],
+      limit: 2,
+    })
+    const dir = directionsEntry({ toolCallId: 'dir0', eventId: 'b' })
+    const venue = venueDetailsEntry({ toolCallId: 'v0', venueId: 'vb' })
+    const result = v(
+      plan({
+        eventSelections: [
+          { eventId: 'a', sourceToolCallId: 's0' },
+          { eventId: 'b', sourceToolCallId: 's0' },
+        ],
+        directionsToolCallId: 'dir0',
+        venueToolCallId: 'v0',
+      }),
+      [search, dir, venue],
+      { resolvedTurnTarget: { scope: 'current_selection', eventId: 'b', sourceToolCallId: 's0', venueId: 'vb' } }
+    )
+    expect(result.ok).toBe(true)
+    expect(result.directions?.eventId).toBe('b')
+    expect(result.venue?.venueId).toBe('vb')
   })
 })

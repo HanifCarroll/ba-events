@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { validatePlan, type ValidateOptions } from '#features/chat/api/agent/validate.ts'
 import { buildFallback } from '#features/chat/api/agent/fallback.ts'
-import { resolveReferences, parseMutationIntent, resolveTurnTarget } from '#features/chat/api/agent/context.ts'
+import { resolveReferences, parseMutationIntent, resolveTurnTarget, resolveTurnTargetFromQuery } from '#features/chat/api/agent/context.ts'
 import { buildPriorContext, parseDataResponseHint } from '#features/chat/api/agent/follow-up.ts'
 import { mutationMessage } from '#features/chat/api/agent/record.ts'
 import {
@@ -50,8 +50,8 @@ function plan(overrides: Partial<FinalizerPlan> = {}): FinalizerPlan {
 }
 
 const REQ = 'req-1'
-const OPTIONS: ValidateOptions = { requestId: REQ, locale: 'en', requestedCount: 3, turnTarget: { scope: 'none' } }
-const BASE = { requestId: REQ, locale: 'en' as const, reason: 'invalid_schema' as const, requestedCount: 5, turnTarget: { scope: 'none' } as const }
+const OPTIONS: ValidateOptions = { requestId: REQ, locale: 'en', requestedCount: 3, resolvedTurnTarget: { scope: 'none' } }
+const BASE = { requestId: REQ, locale: 'en' as const, reason: 'invalid_schema' as const, requestedCount: 5, resolvedTurnTarget: { scope: 'none' } as const }
 
 describe('deterministic concierge regressions', () => {
   it('romantic speed-dating stage is superseded by the final tango pick, never re-shown', () => {
@@ -129,7 +129,7 @@ describe('deterministic concierge regressions', () => {
         directionsToolCallId: 'dir0',
       }),
       ledger,
-      { ...OPTIONS, turnTarget: { scope: 'current_selection', index: 0 } }
+      { ...OPTIONS, resolvedTurnTarget: { scope: 'current_selection', eventId: 'e1', sourceToolCallId: 's0', venueId: 'v1' } }
     )
     expect(result.ok).toBe(true)
     expect(result.events.map((e) => e.id)).toEqual(['e1'])
@@ -281,7 +281,7 @@ describe('deterministic target-bound directions/venue validation', () => {
         directionsToolCallId: 'dir0',
       }),
       ledger,
-      { ...OPTIONS, turnTarget: { scope: 'current_selection', index: 1 } }
+      { ...OPTIONS, resolvedTurnTarget: { scope: 'current_selection', eventId: 'b', sourceToolCallId: 's0', venueId: null } }
     )
     expect(result.ok).toBe(true)
     expect(result.directions?.eventId).toBe('b')
@@ -301,7 +301,7 @@ describe('deterministic target-bound directions/venue validation', () => {
         venueToolCallId: 'v0',
       }),
       ledger,
-      { ...OPTIONS, turnTarget: { scope: 'current_selection', index: 1 } }
+      { ...OPTIONS, resolvedTurnTarget: { scope: 'current_selection', eventId: 'b', sourceToolCallId: 's0', venueId: 'v1' } }
     )
     expect(result.ok).toBe(true)
     expect(result.venue?.venueId).toBe('v1')
@@ -312,7 +312,7 @@ describe('deterministic target-bound directions/venue validation', () => {
     const result = validatePlan(
       plan({ primaryKind: 'directions', messageKey: 'directions', directionsToolCallId: 'dir0' }),
       ledger,
-      { ...OPTIONS, turnTarget: { scope: 'prior', eventId: 'prior', venueId: null } }
+      { ...OPTIONS, resolvedTurnTarget: { scope: 'prior', eventId: 'prior', venueId: null } }
     )
     expect(result.ok).toBe(true)
     expect(result.directions?.eventId).toBe('prior')
@@ -330,10 +330,54 @@ describe('deterministic target-bound directions/venue validation', () => {
         directionsToolCallId: 'dir0',
       }),
       ledger,
-      { ...OPTIONS, pinnedEventId: 'pin', turnTarget: { scope: 'pinned', eventId: 'pin', venueId: 'vpin' } }
+      { ...OPTIONS, pinnedEventId: 'pin', resolvedTurnTarget: { scope: 'pinned', eventId: 'pin', venueId: 'vpin' } }
     )
     expect(result.ok).toBe(true)
     expect(result.events.map((e) => e.id)).toEqual(['pin'])
     expect(result.directions?.eventId).toBe('pin')
+  })
+})
+
+describe('deterministic multi-action target agreement (integration)', () => {
+  const E_TANGO = uuid(21)
+  const E_JAZZ = uuid(22)
+  const E_MILONGA = uuid(23)
+
+  function priorGroups(): PriorDisplayGroup[] {
+    const responses: PriorResponseHint[] = [
+      { assistantMessageId: 'a1', createdAt: null, requestId: 'r1', events: [{ eventId: E_TANGO, saved: null }], operations: [] },
+      { assistantMessageId: 'a2', createdAt: null, requestId: 'r2', events: [{ eventId: E_JAZZ, saved: null }, { eventId: E_MILONGA, saved: null }], operations: [] },
+    ]
+    const facts = [E_TANGO, E_JAZZ, E_MILONGA].map((id, i) => ({
+      id,
+      name: ['Tango Night', 'Jazz Set', 'Milonga'][i],
+      venue_id: null,
+      venue_name: null,
+      status: 'scheduled' as const,
+    }))
+    return buildPriorContext(responses, facts).groups
+  }
+
+  it('different named targets across groups are ambiguous (never globally retarget)', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'Save Tango Night and directions to Jazz Set',
+      groups: priorGroups(),
+    })
+    expect(r.turnTarget).toEqual({ scope: 'ambiguous' })
+  })
+
+  it('save + directions to the same lead agree on one target', () => {
+    const r = resolveTurnTargetFromQuery({
+      query: 'save it and give me directions to it',
+      groups: priorGroups(),
+    })
+    expect(r.turnTarget).toEqual({ scope: 'prior', eventId: E_JAZZ, venueId: null })
+  })
+
+  it('negated/interrogative/conflicting commands never mutate', () => {
+    const groups = priorGroups()
+    expect(parseMutationIntent("Don't save it—just show me directions", groups).kind).toBe('none')
+    expect(parseMutationIntent('Should I save it?', groups).kind).toBe('none')
+    expect(parseMutationIntent('Save it? No, unsave it.', groups)).toEqual({ kind: 'ambiguous' })
   })
 })

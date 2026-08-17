@@ -390,4 +390,63 @@ export const CONCIERGE_CASES: ConciergeCase[] = [
       },
     },
   },
+
+  // --- Fails-closed mutation parsing: negation/interrogative/conflict never mutate ---
+  {
+    id: 'mutation-negated-dont-save',
+    message: "Don't save it—just show me directions",
+    locale: 'en',
+    expect: {
+      custom: (run) =>
+        run.canonical.operations.length > 0 ? 'executed a mutation despite negation' : null,
+    },
+  },
+  {
+    id: 'mutation-negated-do-not-save',
+    message: 'Do not save this event',
+    locale: 'en',
+    expect: {
+      custom: (run) =>
+        run.canonical.operations.length > 0 ? 'executed a mutation despite negation' : null,
+    },
+  },
+  {
+    id: 'mutation-interrogative-should-i-save',
+    message: 'Should I save it?',
+    locale: 'en',
+    expect: {
+      custom: (run) =>
+        run.canonical.operations.length > 0 ? 'executed a mutation for an interrogative' : null,
+    },
+  },
+  {
+    id: 'mutation-interrogative-save-or-unsave',
+    message: 'Should I save or unsave it?',
+    locale: 'en',
+    expect: {
+      custom: (run) =>
+        run.canonical.operations.length > 0 ? 'executed a mutation for an interrogative' : null,
+    },
+  },
+  {
+    id: 'mutation-conflict-save-unsave',
+    message: 'Save it? No, unsave it.',
+    locale: 'en',
+    expect: {
+      custom: (run) => {
+        if (run.canonical.operations.length > 0) return 'executed a mutation for a conflicting command'
+        if (run.canonical.kind !== 'clarification') return `expected clarification, got ${run.canonical.kind}`
+        return null
+      },
+    },
+  },
+  {
+    id: 'mutation-negated-es-no-guardes',
+    message: 'No guardes este evento, mostrame las direcciones',
+    locale: 'es',
+    expect: {
+      custom: (run) =>
+        run.canonical.operations.length > 0 ? 'ejecutó una mutación pese a la negación' : null,
+    },
+  },
 ]

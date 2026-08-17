@@ -32,8 +32,8 @@ import type {
   MutationIntent,
   OperationReceipt,
   PlannedMutation,
+  ResolvedTurnTarget,
   ResponseKind,
-  TurnTarget,
   VenueDetailsData,
 } from '#shared/lib/types.ts'
 import type { Ledger, LedgerArtifactKind } from './ledger.ts'
@@ -46,20 +46,18 @@ import { resolveAuthorizedScope } from './context.ts'
 export interface ValidateOptions {
   requestId: string
   locale: 'en' | 'es'
-  /** Query-derived turn target (authoritative for every event-relative action). */
-  turnTarget: TurnTarget
+  /**
+   * Concrete query-derived turn target, resolved against the ledger BEFORE
+   * validation (authoritative for every event-relative action).
+   */
+  resolvedTurnTarget: ResolvedTurnTarget
   /** Pinned event id for pinned-enforcement (independent of the turn target). */
   pinnedEventId?: string
-  /**
-   * The pin's known venue id (from PinResolution), authoritative even when the
-   * ledger carries no get_event_details artifact for the pin.
-   */
-  pinnedVenueId?: string
   /** The display limit requested by the search (clamped 1..5). */
   requestedCount: number
   /** Prior known saved state per event id (tri-state; absent = unknown). */
   priorSaved?: Record<string, boolean>
-  /** Typed mutation intent (action; its target reference is folded into turnTarget). */
+  /** Typed mutation intent (action; its target reference is folded into the target). */
   mutationIntent?: MutationIntent
 }
 
@@ -158,7 +156,7 @@ export function validatePlan(
   ledger: Ledger,
   options: ValidateOptions
 ): ValidatedPlan {
-  const { requestId, requestedCount, locale, priorSaved, turnTarget } = options
+  const { requestId, requestedCount, locale, priorSaved, resolvedTurnTarget } = options
   const kind = plan.primaryKind
   const messageKey = plan.messageKey
 
@@ -219,9 +217,6 @@ export function validatePlan(
   // Resolve each selection against the exact source artifact.
   const events: CanonicalChatEventPayload[] = []
   const sourceToolCallIds: string[] = []
-  // Index-aligned with `events`: the exact source that produced each selected
-  // event. The deduped `sourceToolCallIds` provenance array is NOT aligned.
-  const selectedEventSourceIds: string[] = []
   const sourceKind = expectedSourceKind(kind)
   for (const sel of selections) {
     const source = ledger.find(sel.sourceToolCallId)
@@ -243,7 +238,6 @@ export function validatePlan(
 
     const saved = resolveSavedState(event.id, ledger, requestId, priorSaved)
     events.push({ ...event, saved })
-    selectedEventSourceIds.push(sel.sourceToolCallId)
     if (!sourceToolCallIds.includes(sel.sourceToolCallId)) {
       sourceToolCallIds.push(sel.sourceToolCallId)
     }
@@ -255,12 +249,9 @@ export function validatePlan(
   }
 
   // Relation context for compound siblings: allowed event/venue identities.
-  // Derived from the SINGLE turn target — never a union of prior + current ids.
-  // Pinned-exclusive: prior resolved ids are IGNORED while pinned; only the pin
-  // and its known venue authorize directions/venue.
-  const pinnedDetails = pinnedEventId ? ledger.eventDetailsFor(pinnedEventId, requestId) : null
-  const pinnedVenueId = options.pinnedVenueId ?? (pinnedDetails?.events[0]?.venue_id ?? null)
-  const allowed = resolveAuthorizedScope(turnTarget, events, pinnedVenueId)
+  // Derived from the SINGLE concrete resolved turn target — never a union of
+  // prior + current ids and never the finalizer's eventSelections.
+  const allowed = resolveAuthorizedScope(resolvedTurnTarget)
   const allowedEventIds = allowed.eventIds
   const allowedVenueIds = allowed.venueIds
 
@@ -306,9 +297,7 @@ export function validatePlan(
       : ({ kind: 'none' as const })
   const deterministic = planMutation({
     intent,
-    turnTarget,
-    selectedEventIds: events.map((e) => e.id),
-    selectedSourceToolCallIds: selectedEventSourceIds,
+    resolvedTurnTarget,
   })
 
   let mutationStatus: 'none' | 'ambiguous' | 'resolved'

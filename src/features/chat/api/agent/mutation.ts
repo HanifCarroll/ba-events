@@ -23,7 +23,7 @@ import type {
   MutationMessageKey,
   OperationReceipt,
   PlannedMutation,
-  TurnTarget,
+  ResolvedTurnTarget,
 } from '#shared/lib/types.ts'
 import type { UserToolContext } from '../user-tools.server.ts'
 import { saveEventForUser, unsaveEventForUser } from '../user-tools.server.ts'
@@ -36,28 +36,22 @@ export type MutationPlanResult =
 
 export interface PlanMutationInput {
   intent: MutationIntent
-  /** Query-derived turn target (authoritative scope for the mutation). */
-  turnTarget: TurnTarget
-  /** Ordered current-turn selected event ids (validated selections). */
-  selectedEventIds?: string[]
-  /**
-   * Exact source artifact per selected event, index-aligned with
-   * `selectedEventIds` (the deduped provenance array is NOT index-aligned).
-   */
-  selectedSourceToolCallIds?: string[]
+  /** Concrete query-derived turn target (resolved against the ledger). */
+  resolvedTurnTarget: ResolvedTurnTarget
 }
 
 /**
- * Derive the single authorized mutation from typed intent + the turn target.
- * Returns `none` (no intent), `ambiguous` (clarify, zero side effects), or
- * `resolved` with the validated plan. Only the intended scope is authorized —
- * a pinned target never falls back to a prior id, a prior target never falls
+ * Derive the single authorized mutation from typed intent + the concrete turn
+ * target. Returns `none` (no intent), `ambiguous` (clarify, zero side effects),
+ * or `resolved` with the validated plan. Only the intended scope is authorized
+ * — a pinned target never falls back to a prior id, a prior target never falls
  * back to the current selection, and vice versa.
  */
 export function planMutation(input: PlanMutationInput): MutationPlanResult {
   if (input.intent.kind === 'none') return { status: 'none' }
+  if (input.intent.kind === 'ambiguous') return { status: 'ambiguous' }
   const action = input.intent.kind
-  const target = input.turnTarget
+  const target = input.resolvedTurnTarget
 
   switch (target.scope) {
     case 'pinned':
@@ -83,21 +77,16 @@ export function planMutation(input: PlanMutationInput): MutationPlanResult {
       }
     }
     case 'current_selection': {
-      // Compound discovery + mutation: target the current-turn selection at the
-      // reference index. Never falls back to a prior group.
-      const id = input.selectedEventIds?.[target.index]
-      const source = input.selectedSourceToolCallIds?.[target.index]
-      if (id && source) {
-        return {
-          status: 'resolved',
-          planned: {
-            action,
-            eventId: id,
-            source: { kind: 'selected_current_event', sourceToolCallId: source },
-          },
-        }
+      // The concrete resolved identity is authoritative; never falls back to
+      // a prior group or re-resolves against finalizer eventSelections.
+      return {
+        status: 'resolved',
+        planned: {
+          action,
+          eventId: target.eventId,
+          source: { kind: 'selected_current_event', sourceToolCallId: target.sourceToolCallId },
+        },
       }
-      return { status: 'ambiguous' }
     }
     case 'none':
       return { status: 'ambiguous' }

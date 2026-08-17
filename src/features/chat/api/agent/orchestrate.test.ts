@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 import { orchestrate } from './orchestrate.ts'
+import { resolveTurnTargetFromQuery } from './context.ts'
 import type { WorkLoopResult } from './work-loop.ts'
 import { Ledger } from './ledger.ts'
 import { searchEntry, savedEventsEntry, mutationEntry, retentionEntry, event, eventDetailsEntry, venueDetailsEntry, ledgerFrom } from './_test-helpers.ts'
@@ -389,6 +390,46 @@ describe('orchestrate (v5)', () => {
     expect(result.canonical.operations).toEqual([])
   })
 
+  it('resolves a current-selection detail target from search artifacts before finalization', async () => {
+    const ledger = ledgerFrom([
+      searchEntry({
+        stepIndex: 0,
+        toolCallId: 's1',
+        events: [event('a', 'A'), event('b', 'B'), event('c', 'C')],
+        limit: 3,
+      }),
+      eventDetailsEntry({ stepIndex: 1, toolCallId: 'd1', eventId: 'b', name: 'B' }),
+    ])
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'event_details',
+        messageKey: 'event_details',
+        eventSelections: [{ eventId: 'b', sourceToolCallId: 'd1' }],
+      }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      originalQuery: 'Find three events and tell me more about the second one.',
+      turnTarget: { scope: 'current_selection', index: 1 },
+    })
+
+    expect(mockRunFinalizer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resolvedTurnTarget: {
+          scope: 'current_selection',
+          eventId: 'b',
+          sourceToolCallId: 's1',
+          venueId: null,
+        },
+      })
+    )
+    expect(result.canonical.events.map((e) => e.id)).toEqual(['b'])
+    expect(result.canonical.provenance.fallbackUsed).toBe(false)
+  })
+
   it('executes a current-search save against the validated selected event only', async () => {
     const ledger = ledgerFrom([
       searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 }),
@@ -448,6 +489,48 @@ describe('orchestrate (v5)', () => {
     expect(result.canonical.operations).toHaveLength(1)
     expect(result.canonical.operations[0].eventId).toBe('b')
     expect(result.canonical.provenance.mutationToolCallIds).toEqual(['mutation:save_event:b'])
+  })
+
+  it('a multi-turn action-target conflict clarifies with zero side effects', async () => {
+    const priorDisplayedEvents = [
+      {
+        assistantMessageId: 'prior-1',
+        requestId: 'prior-request',
+        createdAt: null,
+        events: [
+          { eventId: 'a', name: 'Tango Night', saved: false },
+          { eventId: 'b', name: 'Jazz Set', saved: false },
+        ],
+      },
+    ]
+    const query = 'Save it and give me directions to the second one.'
+    const resolved = resolveTurnTargetFromQuery({ query, groups: priorDisplayedEvents })
+    expect(resolved.turnTarget).toEqual({ scope: 'ambiguous' })
+
+    mockRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockRunFinalizer.mockResolvedValue({
+      ok: true,
+      plan: validPlan({
+        primaryKind: 'mutation_result',
+        messageKey: 'mutation_mixed',
+        eventSelections: [],
+        plannedMutations: [
+          { action: 'save', eventId: 'a', source: { kind: 'resolved_prior_target' } },
+        ],
+      }),
+    })
+
+    const result = await orchestrate({
+      ...baseInput,
+      originalQuery: query,
+      priorDisplayedEvents,
+      mutationIntent: resolved.mutationIntent,
+      turnTarget: resolved.turnTarget,
+    })
+
+    expect(result.canonical.kind).toBe('clarification')
+    expect(result.canonical.operations).toEqual([])
+    expect(result.canonical.provenance.mutationToolCallIds).toEqual([])
   })
 
   it('an ambiguous event-relative target yields clarification with zero artifacts', async () => {

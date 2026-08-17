@@ -20,8 +20,8 @@ import { textModel, NO_THINKING } from '#shared/lib/ai/providers.ts'
 import {
   CLARIFICATION_KEYS,
   type MutationIntent,
+  type ResolvedTurnTarget,
   type ResponseKind,
-  type TurnTarget,
 } from '#shared/lib/types.ts'
 import type { Ledger, LedgerEntry } from './ledger.ts'
 import type { PriorDisplayGroup } from './follow-up.ts'
@@ -122,8 +122,8 @@ export interface FinalizerInput {
   pinnedEventId?: string
   requestedCount: number
   mode: 'pick' | 'discovery' | 'enumeration' | 'other'
-  /** Query-derived turn target (authoritative mutation target description). */
-  turnTarget: TurnTarget
+  /** Concrete query-derived turn target (authoritative target description). */
+  resolvedTurnTarget: ResolvedTurnTarget
   /** Typed mutation intent, for proposing plannedMutations. */
   mutationIntent?: MutationIntent
 }
@@ -258,7 +258,7 @@ function compactLedger(ledger: Ledger, locale: 'en' | 'es'): string {
   return lines.join('\n')
 }
 
-function describeMutationTarget(target: TurnTarget): string {
+function describeMutationTarget(target: ResolvedTurnTarget): string {
   switch (target.scope) {
     case 'pinned':
       return `pinned_event eventId=${target.eventId}`
@@ -267,7 +267,7 @@ function describeMutationTarget(target: TurnTarget): string {
         ? `resolved_prior_target eventId=${target.eventId}`
         : 'ambiguous (propose no mutation and use clarification)'
     case 'current_selection':
-      return `selected_current_event index=${target.index} (copy eventId and sourceToolCallId from that eventSelection; clarify if absent)`
+      return `selected_current_event eventId=${target.eventId} sourceToolCallId=${target.sourceToolCallId}`
     case 'none':
       return 'ambiguous (no event target; propose no mutation and use clarification)'
     case 'ambiguous':
@@ -275,7 +275,7 @@ function describeMutationTarget(target: TurnTarget): string {
   }
 }
 
-function describeEventRelativeTarget(target: TurnTarget): string {
+function describeEventRelativeTarget(target: ResolvedTurnTarget): string {
   switch (target.scope) {
     case 'pinned':
       return `pinned_event eventId=${target.eventId} (directions/venue may target only this event or its venue)`
@@ -286,7 +286,7 @@ function describeEventRelativeTarget(target: TurnTarget): string {
           ? `prior venue venueId=${target.venueId}`
           : 'prior (no concrete id — no directions/venue may be authorized; clarify)'
     case 'current_selection':
-      return `current_selection index=${target.index} (relate directions/venue to the eventSelection at that display index)`
+      return `current_selection eventId=${target.eventId} venueId=${target.venueId ?? 'none'} (relate directions/venue/details to exactly this event)`
     case 'none':
       return 'none (no event-relative artifact may be authorized)'
     case 'ambiguous':
@@ -310,10 +310,10 @@ function buildPrompt(input: FinalizerInput): string {
   const ledger = compactLedger(input.ledger, input.locale) || '(empty)'
 
   const mutation = input.mutationIntent && input.mutationIntent.kind !== 'none'
-    ? `Mutation intent: ${input.mutationIntent.kind}; deterministic target: ${describeMutationTarget(input.turnTarget)}`
+    ? `Mutation intent: ${input.mutationIntent.kind}; deterministic target: ${describeMutationTarget(input.resolvedTurnTarget)}`
     : 'Mutation intent: none; plannedMutations MUST be empty'
 
-  const eventRelative = `Turn target (authoritative for directions/venue/details): ${describeEventRelativeTarget(input.turnTarget)}`
+  const eventRelative = `Turn target (authoritative for directions/venue/details): ${describeEventRelativeTarget(input.resolvedTurnTarget)}`
 
   return `Latest request: ${JSON.stringify(input.originalQuery)}
 Locale: ${input.locale}

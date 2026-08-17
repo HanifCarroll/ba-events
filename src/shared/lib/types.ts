@@ -800,13 +800,36 @@ export type TurnTarget =
   | { scope: 'current_selection'; index: number }
 
 /**
+ * A turn target resolved to concrete identity against the artifact ledger
+ * (v5). `current_selection` binds the exact event + source tool call + venue
+ * resolved from ordered ACTIVE/RETAINED search artifacts — never the
+ * finalizer's `eventSelections`, which are validated against this concrete
+ * identity instead. `prior`/`pinned` carry their concrete ids; `none` and
+ * `ambiguous` authorize nothing.
+ */
+export type ResolvedTurnTarget =
+  | { scope: 'none' }
+  | { scope: 'ambiguous' }
+  | { scope: 'pinned'; eventId: string; venueId: string | null }
+  | { scope: 'prior'; eventId: string | null; venueId: string | null }
+  | {
+      scope: 'current_selection'
+      eventId: string
+      sourceToolCallId: string
+      venueId: string | null
+    }
+
+/**
  * Typed mutation intent, parsed deterministically from the latest raw user
- * request. `none` means no explicit save/unsave command; an explicit command
- * carries the action plus its target reference. No broad boolean gate.
+ * request. `none` means no explicit save/unsave command (or a negated /
+ * interrogative / quoted one); an explicit command carries the action plus its
+ * target reference; `ambiguous` means conflicting save/unsave commands (never
+ * a side effect). No broad boolean gate.
  */
 export type MutationIntent =
   | { kind: 'save'; targetReference: TargetReference }
   | { kind: 'unsave'; targetReference: TargetReference }
+  | { kind: 'ambiguous' }
   | { kind: 'none' }
 
 /**

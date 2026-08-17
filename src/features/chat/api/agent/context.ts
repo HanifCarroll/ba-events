@@ -19,6 +19,7 @@ import type { ModelMessage, UIMessage } from 'ai'
 import type {
   MutationAction,
   MutationIntent,
+  ResolvedTurnTarget,
   TargetReference,
   TurnTarget,
 } from '#shared/lib/types.ts'
@@ -28,6 +29,7 @@ import {
   type PriorDisplayGroup,
   type VenueFact,
 } from './follow-up.ts'
+import type { Ledger } from './ledger.ts'
 
 /** Cap on prior user text messages kept for the model. */
 export const MAX_PRIOR_MESSAGES = 12
@@ -79,6 +81,8 @@ function normalizeForMatch(query: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
 }
 
 /** Earliest match index of any pattern, or -1 when none match. */
@@ -91,14 +95,130 @@ function earliestMatchIndex(q: string, patterns: RegExp[]): number {
   return best
 }
 
-/** Detect an explicit save/unsave action with its position, or null. */
-function findAction(query: string): { action: MutationAction; index: number } | null {
-  const q = normalizeForMatch(query)
-  if (!q) return null
-  const saveIdx = earliestMatchIndex(q, [...EN_SAVE_PHRASES, ...ES_SAVE_PHRASES])
-  if (saveIdx >= 0) return { action: 'save', index: saveIdx }
-  const unsaveIdx = earliestMatchIndex(q, [...EN_UNSAVE_PHRASES, ...ES_UNSAVE_PHRASES])
-  if (unsaveIdx >= 0) return { action: 'unsave', index: unsaveIdx }
+/** Every (deduped) match position of any pattern, ascending. */
+function allMatchPositions(q: string, patterns: RegExp[]): number[] {
+  const set = new Set<number>()
+  for (const re of patterns) {
+    const global = new RegExp(re.source, 'g')
+    for (const m of q.matchAll(global)) {
+      if (m.index !== undefined) set.add(m.index)
+    }
+  }
+  return [...set].sort((a, b) => a - b)
+}
+
+// ============================================================================
+// FAIL-CLOSED MUTATION COMMAND DETECTION
+// ============================================================================
+
+/** A negator directly preceding a verb (no sentence boundary in between). */
+const NEGATION_LOOKBACK =
+  /\b(?:don'?t|do not|never|not|no|nunca|jamas|tampoco)\b[^.!?]{0,12}$/
+
+/** Question-command leaders; a whole-query question is never a command. */
+const INTERROGATIVE_LEADERS = [
+  /\b(?:should|could|would|can|may|shall|will|do) (?:i|we|you|u)\b/,
+  /\bdeber[ií]a\b/,
+  /\bdeber[ií]amos\b/,
+  /\bdebo\b/,
+  /\bpuedo\b/,
+  /\bpodemos\b/,
+  /\btengo que\b/,
+]
+
+/** A query that is itself a question (trailing `?`) is never a command. */
+function isInterrogativeWholeQuery(q: string): boolean {
+  return /\?\s*$/.test(q)
+}
+
+/** Bounds of the sentence containing `index` (split on . ! ? ;). */
+function sentenceSpan(q: string, index: number): { start: number; end: number } {
+  let start = index
+  while (start > 0 && !/[.!?;]/.test(q[start - 1])) start--
+  let end = index
+  while (end < q.length && !/[.!?;]/.test(q[end])) end++
+  if (end < q.length) end++ // include the terminator
+  return { start, end }
+}
+
+/**
+ * True when the candidate at `index` sits in a question sentence: an
+ * interrogative leader (should/could/… I/we/you), a trailing `?`, or a Spanish
+ * inverted `¿`. Sentence-scoped so a mid-query "Save it?" imperative redirect
+ * ("Save it? Actually, just show me directions.") is not a command, while a
+ * declarative save elsewhere in the query still is.
+ */
+function isInterrogativeAt(q: string, index: number): boolean {
+  const { start, end } = sentenceSpan(q, index)
+  const sentence = q.slice(start, end)
+  if (INTERROGATIVE_LEADERS.some((re) => re.test(sentence))) return true
+  if (/\?\s*$/.test(sentence)) return true
+  if (sentence.includes('¿')) return true
+  return false
+}
+
+function isNegatedAt(q: string, index: number): boolean {
+  const before = q.slice(Math.max(0, index - 20), index)
+  return NEGATION_LOOKBACK.test(before)
+}
+
+function isQuotedAt(q: string, index: number): boolean {
+  let dq = 0
+  let sq = 0
+  for (let i = 0; i < index; i++) {
+    const c = q[i]
+    if (c === '"' || c === '«' || c === '»') {
+      dq++
+      continue
+    }
+    if (c === "'") {
+      // A contraction apostrophe (letter'letter, e.g. don't / it's) is not a
+      // quote delimiter and must not toggle the single-quote depth.
+      const prev = q[i - 1] ?? ''
+      const next = q[i + 1] ?? ''
+      if (/[a-z]/.test(prev) && /[a-z]/.test(next)) continue
+      sq++
+    }
+  }
+  return dq % 2 === 1 || sq % 2 === 1
+}
+
+/** True when the action word falls inside a prior event name span. */
+function isPartOfEventName(q: string, index: number, groups: PriorDisplayGroup[]): boolean {
+  for (const g of groups) {
+    for (const ev of g.events) {
+      const name = normalizeForMatch(ev.name)
+      if (name.length < 3) continue
+      let from = 0
+      while (true) {
+        const idx = q.indexOf(name, from)
+        if (idx < 0) break
+        if (index >= idx && index < idx + name.length) return true
+        from = idx + 1
+      }
+    }
+  }
+  return false
+}
+
+/** True when a save/unsave verb is not a real command (negated/quoted/named/question). */
+function isSuppressedMutation(q: string, index: number, groups: PriorDisplayGroup[]): boolean {
+  if (isNegatedAt(q, index)) return true
+  if (isQuotedAt(q, index)) return true
+  if (isPartOfEventName(q, index, groups)) return true
+  if (isInterrogativeAt(q, index)) return true
+  return false
+}
+
+/** First candidate position not suppressed, or null when all are suppressed. */
+function firstRealMutationCandidate(
+  q: string,
+  positions: number[],
+  groups: PriorDisplayGroup[]
+): number | null {
+  for (const index of positions) {
+    if (!isSuppressedMutation(q, index, groups)) return index
+  }
   return null
 }
 
@@ -187,27 +307,38 @@ function coordinateReference(
 // EVENT-RELATIVE ACTION DETECTION (directions / venue / details)
 // ============================================================================
 
-const EN_EVENT_RELATIVE_ACTIONS = [
+const EN_DIRECTIONS_PHRASES = [
   /\bdirections?\b/,
-  /\bvenue\b/,
-  /\bdetails?\b/,
-  /\btell me (more )?about\b/,
   /\bhow (do|can|could) i (get|reach)\b/,
   /\bget (?:(?:me|us) )?there\b/,
   /\bwhere is\b/,
-  /\b(location|map)\b/,
 ]
+const EN_VENUE_PHRASES = [/\bvenue\b/, /\b(location|map)\b/]
+const EN_DETAILS_PHRASES = [/\bdetails?\b/, /\btell me (more )?about\b/]
 
-const ES_EVENT_RELATIVE_ACTIONS = [
+const ES_DIRECTIONS_PHRASES = [
   /\bdirecciones\b/,
   /\bindicaciones\b/,
-  /\blugar\b/,
+  /\bdonde (es|queda)\b/,
+  /\bcomo (llego|llegar|voy)\b/,
+]
+const ES_VENUE_PHRASES = [/\blugar\b/, /\b(ubicacion|mapa)\b/]
+const ES_DETAILS_PHRASES = [
   /\bdetalles\b/,
   /\bcontame (mas )?(sobre|acerca de)\b/,
   /\bhablame (mas )?(sobre|acerca de)\b/,
-  /\bdonde (es|queda)\b/,
-  /\bcomo (llego|llegar|voy)\b/,
-  /\b(ubicacion|mapa)\b/,
+]
+
+const EN_EVENT_RELATIVE_ACTIONS = [
+  ...EN_DIRECTIONS_PHRASES,
+  ...EN_VENUE_PHRASES,
+  ...EN_DETAILS_PHRASES,
+]
+
+const ES_EVENT_RELATIVE_ACTIONS = [
+  ...ES_DIRECTIONS_PHRASES,
+  ...ES_VENUE_PHRASES,
+  ...ES_DETAILS_PHRASES,
 ]
 
 /**
@@ -416,32 +547,143 @@ function hasObjectClitic(query: string): boolean {
   return CLITIC_VERB.test(normalizeForMatch(query))
 }
 
+// ============================================================================
+// TARGETED EVENT-RELATIVE ACTIONS (save/unsave/directions/venue/details)
+// ============================================================================
+
+/** A concrete event-relative action the user asked for. */
+export type EventRelativeAction =
+  | 'save'
+  | 'unsave'
+  | 'directions'
+  | 'venue_details'
+  | 'event_details'
+
+/** One event-relative action with its own clause-scoped target reference. */
+export interface TargetedAction {
+  action: EventRelativeAction
+  reference: TargetReference
+}
+
+interface ActionHit {
+  action: EventRelativeAction
+  index: number
+}
+
+function detectActionHits(query: string): ActionHit[] {
+  const q = normalizeForMatch(query)
+  if (!q) return []
+  const hits: ActionHit[] = []
+  const groups: Array<[EventRelativeAction, RegExp[]]> = [
+    ['save', [...EN_SAVE_PHRASES, ...ES_SAVE_PHRASES]],
+    ['unsave', [...EN_UNSAVE_PHRASES, ...ES_UNSAVE_PHRASES]],
+    ['directions', [...EN_DIRECTIONS_PHRASES, ...ES_DIRECTIONS_PHRASES]],
+    ['venue_details', [...EN_VENUE_PHRASES, ...ES_VENUE_PHRASES]],
+    ['event_details', [...EN_DETAILS_PHRASES, ...ES_DETAILS_PHRASES]],
+  ]
+  for (const [action, patterns] of groups) {
+    for (const index of allMatchPositions(q, patterns)) hits.push({ action, index })
+  }
+  return hits.sort((a, b) => a.index - b.index)
+}
+
+/** Index of the next event-relative action after `position`, or query length. */
+function nextActionBoundary(q: string, position: number): number {
+  let boundary = q.length
+  for (const h of detectActionHits(q)) {
+    if (h.index > position && h.index < boundary) boundary = h.index
+  }
+  return boundary
+}
+
+/** Resolve a clause's target reference (pronoun/ordinal/named/clitic). */
+function resolveClauseTarget(
+  clause: string,
+  groups: PriorDisplayGroup[],
+  venueByEventId?: Map<string, VenueFact>
+): TargetReference {
+  let reference = resolveTargetReference(clause, groups, venueByEventId)
+  if (reference.kind === 'none' && hasObjectClitic(clause)) reference = { kind: 'lead' }
+  return reference
+}
+
 /**
- * Parse the latest raw user request into a typed mutation intent. `none` when
- * there is no explicit save/unsave command; an explicit command carries its
- * action and its deterministically-resolved target reference. A save/unsave
- * verb with an attached object clitic ("agregalo", "guardalo") refers to the
- * lead event when no explicit reference is present. This is the structural gate
- * for the post-plan mutation executor — an injected event/tool string in a
- * benign query can never flip it (the query is user text, not tool/event data).
+ * Parse every event-relative action separately, each with its own
+ * clause-scoped target resolved against prior groups and coordinated with
+ * discovery clauses. Suppressed mutations (negated/interrogative/quoted/event
+ * names) are excluded; non-mutation actions are always included.
+ */
+export function parseTargetedActions(
+  query: string,
+  groups: PriorDisplayGroup[] = [],
+  venueByEventId?: Map<string, VenueFact>
+): TargetedAction[] {
+  const q = normalizeForMatch(query)
+  if (!q) return []
+  const hits = detectActionHits(query)
+  if (hits.length === 0) return []
+  const discovery = discoveryMatchPositions(query)
+  const out: TargetedAction[] = []
+  for (let i = 0; i < hits.length; i++) {
+    const hit = hits[i]
+    const isMutation = hit.action === 'save' || hit.action === 'unsave'
+    if (isMutation && isSuppressedMutation(q, hit.index, groups)) continue
+    const next = hits[i + 1]?.index ?? q.length
+    const clause = q.slice(hit.index, next)
+    const reference = resolveClauseTarget(clause, groups, venueByEventId)
+    out.push({
+      action: hit.action,
+      reference: coordinateReference(reference, discovery, hit.index),
+    })
+  }
+  return out
+}
+
+/**
+ * Parse the latest raw user request into a typed mutation intent, FAILING
+ * CLOSED. `none` when there is no explicit, non-negated, non-interrogative,
+ * non-quoted save/unsave command; `ambiguous` when save and unsave commands
+ * conflict (never pick save just because it occurs first); otherwise the single
+ * action plus its clause-scoped, discovery-coordinated target reference. A
+ * save/unsave verb with an attached object clitic ("agregalo", "guardalo")
+ * refers to the lead event when no explicit reference is present. This is the
+ * structural gate for the post-plan mutation executor — an injected
+ * event/tool string in a benign query can never flip it.
  */
 export function parseMutationIntent(
   query: string,
   groups: PriorDisplayGroup[] = [],
   venueByEventId?: Map<string, VenueFact>
 ): MutationIntent {
-  const found = findAction(query)
-  if (!found) return { kind: 'none' }
-  const action = found.action
-  let targetReference = resolveTargetReference(query, groups, venueByEventId)
-  if (targetReference.kind === 'none' && hasObjectClitic(query)) {
-    targetReference = { kind: 'lead' }
-  }
+  const q = normalizeForMatch(query)
+  if (!q) return { kind: 'none' }
+  const savePositions = allMatchPositions(q, [...EN_SAVE_PHRASES, ...ES_SAVE_PHRASES])
+  const unsavePositions = allMatchPositions(q, [...EN_UNSAVE_PHRASES, ...ES_UNSAVE_PHRASES])
+  if (savePositions.length === 0 && unsavePositions.length === 0) return { kind: 'none' }
+
+  // A whole-query question is never a command.
+  if (isInterrogativeWholeQuery(q)) return { kind: 'none' }
+
+  // Conflicting commands (save + unsave verbs both present) are ambiguous with
+  // zero side effects — never pick save just because it occurs first.
+  if (savePositions.length > 0 && unsavePositions.length > 0) return { kind: 'ambiguous' }
+
+  // Single action type: the first candidate not suppressed by
+  // negation/quotation/event-name/question context wins; a suppressed candidate
+  // must not hide a later real one.
+  const positions = savePositions.length > 0 ? savePositions : unsavePositions
+  const action: MutationAction = savePositions.length > 0 ? 'save' : 'unsave'
+  const position = firstRealMutationCandidate(q, positions, groups)
+  if (position === null) return { kind: 'none' }
+
+  // Clause-scoped target: bound by the next event-relative action of any type.
+  const clause = q.slice(position, nextActionBoundary(q, position))
+  let targetReference = resolveClauseTarget(clause, groups, venueByEventId)
   // Clause-aware discovery coordination anchored on the save/unsave verb.
   targetReference = coordinateReference(
     targetReference,
     discoveryMatchPositions(query),
-    found.index
+    position
   )
   return { kind: action, targetReference }
 }
@@ -467,21 +709,17 @@ function newestResultGroup(groups: PriorDisplayGroup[]): PriorDisplayGroup | nul
 }
 
 /**
- * Resolve the latest user query against prior groups into concrete ids for
- * orchestrate relation validation and the mutation executor. The typed
- * `reference` is clause-aware (discovery-before → current selection,
- * discovery-after → prior) for directions/venue/details as well as mutation;
- * `resolvedEventId`/`resolvedVenueId` are the concrete prior target ids (never
- * set for a current-selection reference).
+ * Map a typed reference to concrete prior ids (never set for a
+ * current-selection / none / ambiguous reference). Venue facts for a resolved
+ * prior event are also attached (compound relation validation).
  */
-export function resolveReferences(input: ResolveReferencesInput): ResolveReferencesResult {
-  const reference = resolveEventRelativeReference(
-    input.query,
-    input.groups ?? [],
-    input.venueByEventId
-  )
-  const result: ResolveReferencesResult = { reference }
-  const newest = newestResultGroup(input.groups ?? [])
+export function resolveReferenceIds(
+  reference: TargetReference,
+  groups: PriorDisplayGroup[],
+  venueByEventId?: Map<string, VenueFact>
+): { resolvedEventId?: string; resolvedVenueId?: string } {
+  const result: { resolvedEventId?: string; resolvedVenueId?: string } = {}
+  const newest = newestResultGroup(groups)
   if (!newest) return result
 
   switch (reference.kind) {
@@ -512,13 +750,32 @@ export function resolveReferences(input: ResolveReferencesInput): ResolveReferen
       break
   }
 
-  // Venue facts for a resolved prior event (compound relation validation).
   const eventId = result.resolvedEventId
   if (eventId) {
-    const venue = input.venueByEventId?.get(eventId)
+    const venue = venueByEventId?.get(eventId)
     if (venue?.venueId) result.resolvedVenueId = venue.venueId
   }
   return result
+}
+
+/**
+ * Resolve the latest user query against prior groups into concrete ids for
+ * orchestrate relation validation and the mutation executor. The typed
+ * `reference` is clause-aware (discovery-before → current selection,
+ * discovery-after → prior) for directions/venue/details as well as mutation;
+ * `resolvedEventId`/`resolvedVenueId` are the concrete prior target ids (never
+ * set for a current-selection reference).
+ */
+export function resolveReferences(input: ResolveReferencesInput): ResolveReferencesResult {
+  const reference = resolveEventRelativeReference(
+    input.query,
+    input.groups ?? [],
+    input.venueByEventId
+  )
+  return {
+    reference,
+    ...resolveReferenceIds(reference, input.groups ?? [], input.venueByEventId),
+  }
 }
 
 // ============================================================================
@@ -564,7 +821,7 @@ export function resolveTurnTarget(input: ResolveTurnTargetInput): TurnTarget {
     case 'named_event':
       return { scope: 'prior', eventId: input.resolvedEventId ?? null, venueId: input.resolvedVenueId ?? null }
     case 'named_venue':
-      return { scope: 'prior', eventId: null, venueId: input.resolvedVenueId ?? null }
+      return { scope: 'prior', eventId: input.resolvedEventId ?? null, venueId: input.resolvedVenueId ?? null }
     case 'current_selection':
       return { scope: 'current_selection', index: ref.index }
     case 'ambiguous':
@@ -583,36 +840,239 @@ export interface AuthorizedScope {
 }
 
 /**
- * The single intended event/venue scope authorized by a turn target. A pinned
- * target authorizes only the pin (+ its venue); a prior target only the
- * resolved prior id (+ its venue); a current-selection target only the exact
- * indexed validated selection (+ its venue); `none` and `ambiguous` authorize
- * nothing. Never a union of prior
- * and current ids.
+ * Resolve a concrete `ResolvedTurnTarget` against the artifact ledger. A
+ * `current_selection` index is resolved against ordered ACTIVE/RETAINED search
+ * artifacts (never the finalizer's eventSelections), binding the exact event +
+ * source tool call + venue; an out-of-range index is `ambiguous`. Pinned venue
+ * falls back to the ledger's event-details venue when not otherwise known.
  */
-export function resolveAuthorizedScope(
+export function resolveResolvedTurnTarget(
   turnTarget: TurnTarget,
-  events: Array<{ id: string; venue_id?: string | null }>,
-  pinnedVenueId: string | null
-): AuthorizedScope {
-  const lead = (index: number): AuthorizedScope => {
-    const ev = events[index]
-    const venueIds = new Set<string>()
-    if (ev && typeof ev.venue_id === 'string' && ev.venue_id) venueIds.add(ev.venue_id)
-    return { eventIds: ev ? new Set([ev.id]) : new Set<string>(), venueIds }
-  }
+  ledger: Ledger,
+  requestId: string,
+  pinnedVenueId?: string | null
+): ResolvedTurnTarget {
   switch (turnTarget.scope) {
     case 'pinned': {
-      const venue = turnTarget.venueId ?? pinnedVenueId
-      return { eventIds: new Set([turnTarget.eventId]), venueIds: venue ? new Set([venue]) : new Set() }
+      const detailsVenue =
+        ledger.eventDetailsFor(turnTarget.eventId, requestId)?.events[0]?.venue_id ?? null
+      const venue = turnTarget.venueId ?? pinnedVenueId ?? detailsVenue
+      return { scope: 'pinned', eventId: turnTarget.eventId, venueId: venue }
     }
     case 'prior':
+      return { scope: 'prior', eventId: turnTarget.eventId, venueId: turnTarget.venueId }
+    case 'current_selection': {
+      const target = ledger.selectableSearchTargets(requestId)[turnTarget.index]
+      if (!target) return { scope: 'ambiguous' }
       return {
-        eventIds: turnTarget.eventId ? new Set([turnTarget.eventId]) : new Set(),
-        venueIds: turnTarget.venueId ? new Set([turnTarget.venueId]) : new Set(),
+        scope: 'current_selection',
+        eventId: target.eventId,
+        sourceToolCallId: target.sourceToolCallId,
+        venueId: target.venueId,
+      }
+    }
+    case 'none':
+      return { scope: 'none' }
+    case 'ambiguous':
+      return { scope: 'ambiguous' }
+  }
+}
+
+/** The prior event whose venue is `venueId`, or null when unknown. */
+function eventIdForVenue(
+  venueByEventId: Map<string, VenueFact> | undefined,
+  venueId: string
+): string | null {
+  for (const [eventId, venue] of venueByEventId ?? []) {
+    if (venue.venueId === venueId) return eventId
+  }
+  return null
+}
+
+/**
+ * A canonical identity key for a target reference. An event and that event's
+ * known venue share one key (they denote the same target); a lead/none
+ * reference while pinned keys to the pin; current-selection/ambiguous/none keep
+ * their scope keys.
+ */
+function targetKey(
+  reference: TargetReference,
+  groups: PriorDisplayGroup[],
+  venueByEventId?: Map<string, VenueFact>,
+  pinnedEventId?: string
+): string {
+  switch (reference.kind) {
+    case 'current_selection':
+      return `current:${reference.index}`
+    case 'ambiguous':
+      return 'ambiguous'
+    case 'none':
+    case 'lead':
+      if (pinnedEventId) return `event:${pinnedEventId}`
+      break
+    default:
+      break
+  }
+  const ids = resolveReferenceIds(reference, groups, venueByEventId)
+  if (ids.resolvedEventId) return `event:${ids.resolvedEventId}`
+  if (ids.resolvedVenueId) {
+    const ev = eventIdForVenue(venueByEventId, ids.resolvedVenueId)
+    return ev ? `event:${ev}` : `venue:${ids.resolvedVenueId}`
+  }
+  return 'none'
+}
+
+/** Concrete event/venue ids for a reference (pin-aware). */
+function referenceTargetIds(
+  reference: TargetReference,
+  groups: PriorDisplayGroup[],
+  venueByEventId?: Map<string, VenueFact>,
+  pinnedEventId?: string,
+  pinnedVenueId?: string | null
+): { eventId: string | null; venueId: string | null } {
+  if (pinnedEventId && (reference.kind === 'lead' || reference.kind === 'none')) {
+    const venue = pinnedVenueId ?? venueByEventId?.get(pinnedEventId)?.venueId ?? null
+    return { eventId: pinnedEventId, venueId: venue }
+  }
+  const ids = resolveReferenceIds(reference, groups, venueByEventId)
+  return { eventId: ids.resolvedEventId ?? null, venueId: ids.resolvedVenueId ?? null }
+}
+
+interface AgreedActions {
+  reference: TargetReference | null
+  resolvedEventId?: string
+  resolvedVenueId?: string
+}
+
+/**
+ * All parsed actions must denote the SAME target. Unresolved, differing, or
+ * conflicting actions make the turn ambiguous — never globally retarget. An
+ * event action plus that event's known venue agree and merge into one
+ * event+venue identity regardless of clause order; a lead/none reference while
+ * pinned agrees on the pin.
+ */
+function agreeActions(
+  actions: TargetedAction[],
+  groups: PriorDisplayGroup[],
+  venueByEventId?: Map<string, VenueFact>,
+  pinnedEventId?: string,
+  pinnedVenueId?: string | null
+): AgreedActions {
+  if (actions.length === 0) return { reference: null }
+  const keys = actions.map((a) => targetKey(a.reference, groups, venueByEventId, pinnedEventId))
+  const first = keys[0]
+  if (first === 'none' || first === 'ambiguous') return { reference: { kind: 'ambiguous' } }
+  if (keys.some((k) => k !== first)) return { reference: { kind: 'ambiguous' } }
+
+  const reference = actions[0].reference
+  const out: { resolvedEventId?: string; resolvedVenueId?: string } = {}
+  for (const a of actions) {
+    const ids = referenceTargetIds(a.reference, groups, venueByEventId, pinnedEventId, pinnedVenueId)
+    const needsEvent = a.action === 'save' || a.action === 'unsave' || a.action === 'event_details'
+    if (needsEvent && a.reference.kind !== 'current_selection' && !ids.eventId) {
+      return { reference: { kind: 'ambiguous' } }
+    }
+    if (ids.eventId && !out.resolvedEventId) out.resolvedEventId = ids.eventId
+    if (ids.venueId && !out.resolvedVenueId) out.resolvedVenueId = ids.venueId
+  }
+  if (out.resolvedEventId && !out.resolvedVenueId) {
+    const venue = venueByEventId?.get(out.resolvedEventId)?.venueId
+    if (venue) out.resolvedVenueId = venue
+  }
+  return { reference, ...out }
+}
+
+export interface TurnTargetResolution {
+  turnTarget: TurnTarget
+  mutationIntent: MutationIntent
+  resolvedEventId?: string
+  resolvedVenueId?: string
+  targetedActions: TargetedAction[]
+}
+
+/**
+ * Resolve the single turn target from ALL parsed event-relative actions. Each
+ * action's target is resolved from its own clause; the turn proceeds only when
+ * every action identity agrees (unresolved/different/conflicting → ambiguous,
+ * zero side effects). A conflicting save/unsave intent also forces ambiguity.
+ */
+export function resolveTurnTargetFromQuery(input: {
+  query: string
+  groups: PriorDisplayGroup[]
+  venueByEventId?: Map<string, VenueFact>
+  pinnedEventId?: string
+  pinnedVenueId?: string | null
+}): TurnTargetResolution {
+  const groups = input.groups ?? []
+  const targetedActions = parseTargetedActions(input.query, groups, input.venueByEventId)
+  const mutationIntent = parseMutationIntent(input.query, groups, input.venueByEventId)
+
+  let reference: TargetReference | null
+  let resolvedEventId: string | undefined
+  let resolvedVenueId: string | undefined
+  if (mutationIntent.kind === 'ambiguous') {
+    reference = { kind: 'ambiguous' }
+  } else if (mutationIntent.kind === 'none' && targetedActions.length === 0) {
+    // No mutation and no event-relative action: fall back to the clause-aware
+    // reference resolver so ordinal/lead/named references keep prior baseline
+    // semantics (e.g. "show me the second one"). No mutation side effects are
+    // re-enabled (mutationIntent is `none`).
+    const fallback = resolveReferences({ query: input.query, groups, venueByEventId: input.venueByEventId })
+    reference = fallback.reference
+    resolvedEventId = fallback.resolvedEventId
+    resolvedVenueId = fallback.resolvedVenueId
+  } else {
+    const agreed = agreeActions(
+      targetedActions,
+      groups,
+      input.venueByEventId,
+      input.pinnedEventId,
+      input.pinnedVenueId
+    )
+    reference = agreed.reference
+    resolvedEventId = agreed.resolvedEventId
+    resolvedVenueId = agreed.resolvedVenueId
+  }
+
+  const turnTarget = resolveTurnTarget({
+    reference,
+    pinnedEventId: input.pinnedEventId,
+    pinnedVenueId: input.pinnedVenueId,
+    resolvedEventId,
+    resolvedVenueId,
+  })
+  return { turnTarget, mutationIntent, resolvedEventId, resolvedVenueId, targetedActions }
+}
+
+export interface AuthorizedScope {
+  eventIds: Set<string>
+  venueIds: Set<string>
+}
+
+/**
+ * The single intended event/venue scope authorized by a concrete resolved
+ * target. A pinned target authorizes only the pin (+ its venue); a prior target
+ * only the resolved prior id (+ its venue); a current-selection target only the
+ * exact resolved event (+ its venue); `none` and `ambiguous` authorize nothing.
+ * Never a union of prior and current ids.
+ */
+export function resolveAuthorizedScope(target: ResolvedTurnTarget): AuthorizedScope {
+  switch (target.scope) {
+    case 'pinned':
+      return {
+        eventIds: new Set([target.eventId]),
+        venueIds: target.venueId ? new Set([target.venueId]) : new Set(),
+      }
+    case 'prior':
+      return {
+        eventIds: target.eventId ? new Set([target.eventId]) : new Set(),
+        venueIds: target.venueId ? new Set([target.venueId]) : new Set(),
       }
     case 'current_selection':
-      return lead(turnTarget.index)
+      return {
+        eventIds: new Set([target.eventId]),
+        venueIds: target.venueId ? new Set([target.venueId]) : new Set(),
+      }
     case 'none':
     case 'ambiguous':
       return { eventIds: new Set(), venueIds: new Set() }

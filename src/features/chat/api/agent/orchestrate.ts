@@ -28,6 +28,7 @@ import type {
   OperationReceipt,
   PinResolution,
   ResponseKind,
+  TargetReference,
   TurnTarget,
 } from '#shared/lib/types.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
@@ -36,7 +37,7 @@ import { runWorkLoop, type WorkLoopHooks, type WorkLoopResult } from './work-loo
 import { runFinalizer, type FinalizerPlan } from './finalizer.ts'
 import { validatePlan, type ValidatedPlan } from './validate.ts'
 import { buildFallback } from './fallback.ts'
-import { resolveTurnTarget } from './context.ts'
+import { resolveResolvedTurnTarget, resolveTurnTarget } from './context.ts'
 import {
   materializeText,
   materializeClarificationText,
@@ -166,6 +167,13 @@ function priorSavedFrom(prior: PriorDisplayGroup[]): Record<string, boolean> {
     }
   }
   return out
+}
+
+/** The reference a mutation intent carries (or ambiguous/null for none). */
+function mutationReference(intent: MutationIntent | undefined): TargetReference | null {
+  if (!intent || intent.kind === 'none') return null
+  if (intent.kind === 'ambiguous') return { kind: 'ambiguous' }
+  return intent.targetReference
 }
 
 function findSuggestionSource(
@@ -344,10 +352,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   const turnTarget: TurnTarget =
     input.turnTarget ??
     resolveTurnTarget({
-      reference:
-        input.mutationIntent && input.mutationIntent.kind !== 'none'
-          ? input.mutationIntent.targetReference
-          : null,
+      reference: mutationReference(input.mutationIntent),
       pinnedEventId,
       pinnedVenueId,
       resolvedEventId: input.resolvedEventId,
@@ -371,6 +376,16 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   const { requestedCount, mode } = deriveSearchContext(work.ledger, input.requestId)
   const priorSaved = input.priorSaved ?? priorSavedFrom(input.priorDisplayedEvents)
 
+  // Concrete turn target, resolved against the ledger BEFORE finalizer
+  // validation (a current_selection index binds the exact event + source +
+  // venue from ordered ACTIVE/RETAINED search artifacts).
+  const resolvedTurnTarget = resolveResolvedTurnTarget(
+    turnTarget,
+    work.ledger,
+    input.requestId,
+    pinnedVenueId
+  )
+
   // Finalization is ALWAYS a separate generation, even when the last work
   // generation called tools.
   input.hooks?.onStatus?.('finalizing')
@@ -385,7 +400,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     requestedCount,
     mode,
     mutationIntent: input.mutationIntent,
-    turnTarget,
+    resolvedTurnTarget,
   })
 
   let canonical: CanonicalChatResponse
@@ -398,9 +413,8 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     validated = validatePlan(plan, work.ledger, {
       requestId: input.requestId,
       locale: input.locale,
-      turnTarget,
+      resolvedTurnTarget,
       pinnedEventId,
-      pinnedVenueId,
       requestedCount,
       priorSaved,
       mutationIntent: input.mutationIntent,
@@ -418,9 +432,8 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
         reason: validated.reason ?? 'invalid_schema',
         ledger: work.ledger,
         requestedCount,
-        turnTarget,
+        resolvedTurnTarget,
         pinnedEventId,
-        pinnedVenueId,
         priorSaved,
       })
     }
@@ -431,14 +444,13 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
       reason: finalizerResult.error === 'invalid_schema' ? 'invalid_schema' : 'finalizer_error',
       ledger: work.ledger,
       requestedCount,
-      turnTarget,
+      resolvedTurnTarget,
       pinnedEventId,
-      pinnedVenueId,
       priorSaved,
     })
   }
 
-  if (turnTarget.scope === 'ambiguous' && canonical.kind !== 'clarification') {
+  if (resolvedTurnTarget.scope === 'ambiguous' && canonical.kind !== 'clarification') {
     canonical = recoverAsClarification(canonical, input.locale, 'ambiguous_turn_target')
   } else if (
     canonical.kind === 'error' &&
