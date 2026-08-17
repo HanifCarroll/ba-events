@@ -67,6 +67,10 @@ export interface OrchestrateInput {
   mutationIntent?: MutationIntent
   maxWorkGenerations?: number
   hooks?: WorkLoopHooks & { onStatus?: (phase: import('#shared/lib/types.ts').ChatStreamStatusPhase) => void }
+  /** Injectable work-loop runner (test seam; defaults to `runWorkLoop`). */
+  runWorkLoopFn?: typeof runWorkLoop
+  /** Injectable finalizer runner (test seam; defaults to `runFinalizer`). */
+  runFinalizerFn?: typeof runFinalizer
 }
 
 export interface OrchestrateResult {
@@ -277,7 +281,10 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   }
   const pinnedEventId = pin.requested && pin.status === 'resolved' ? pin.eventId : undefined
 
-  const work = await runWorkLoop({
+  const runWorkLoopImpl = input.runWorkLoopFn ?? runWorkLoop
+  const runFinalizerImpl = input.runFinalizerFn ?? runFinalizer
+
+  const work = await runWorkLoopImpl({
     requestId: input.requestId,
     modelMessages: input.modelMessages,
     systemPrompt: input.systemPrompt,
@@ -294,7 +301,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   // Finalization is ALWAYS a separate generation, even when the last work
   // generation called tools.
   input.hooks?.onStatus?.('finalizing')
-  const finalizerResult = await runFinalizer({
+  const finalizerResult = await runFinalizerImpl({
     requestId: input.requestId,
     locale: input.locale,
     originalQuery: input.originalQuery,

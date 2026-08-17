@@ -1,15 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-vi.mock('ai', () => ({ generateText: vi.fn() }))
-vi.mock('./tools.ts', () => ({ createInstrumentedTools: vi.fn(() => ({})) }))
-
-import { generateText } from 'ai'
 import { runWorkLoop, MAX_WORK_STEPS } from './work-loop.ts'
-import { createInstrumentedTools } from './tools.ts'
 import { event } from './_test-helpers.ts'
 
-const mockGenerateText = vi.mocked(generateText)
-const mockedCreateInstrumentedTools = vi.mocked(createInstrumentedTools)
+// Dependency injection (no vi.mock) so these tests run identically under Bun's
+// native runner and Vitest without cross-file module-mock leakage.
+const mockGenerateText = vi.fn()
+const mockCreateInstrumentedTools = vi.fn(() => ({}))
 
 function searchToolCall(id: string, input: unknown) {
   return { toolCallId: id, toolName: 'search_events', input }
@@ -70,11 +67,15 @@ const baseInput = {
   systemPrompt: 'concierge',
   userContext: { userId: null, isAuthenticated: false },
   locale: 'en' as const,
+  generateTextFn: mockGenerateText as never,
+  createInstrumentedToolsFn: mockCreateInstrumentedTools as never,
 }
 
 describe('runWorkLoop (two real generateText generations)', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    mockGenerateText.mockReset()
+    mockCreateInstrumentedTools.mockReset()
+    mockCreateInstrumentedTools.mockReturnValue({})
   })
 
   it('rejects speed-dating via ephemeral work text and ends in later tango/music/jazz tool calls', async () => {
@@ -101,7 +102,6 @@ describe('runWorkLoop (two real generateText generations)', () => {
         fakeResult({
           stepNumber: 2,
           finishReason: 'tool-calls',
-          // Model order: c1 then c2. Results complete in REVERSE order.
           toolCalls: [searchToolCall('c1', { query: 'tango' }), searchToolCall('c2', { query: 'jazz' })],
           toolResults: [
             searchToolResult('c2', { query: 'jazz' }, [music, jazz]),
@@ -114,31 +114,24 @@ describe('runWorkLoop (two real generateText generations)', () => {
 
     const result = await runWorkLoop(baseInput)
 
-    // Two generations ran, with the configured default budget.
     expect(mockGenerateText).toHaveBeenCalledTimes(MAX_WORK_STEPS)
-    // The instrumented tool set (and its mutation memo) is created once per
-    // request — never once per work generation.
-    expect(mockedCreateInstrumentedTools).toHaveBeenCalledTimes(1)
+    expect(mockCreateInstrumentedTools).toHaveBeenCalledTimes(1)
     expect(result.stopReason).toBe('budget_exhausted')
     expect(result.finalWorkCalledTools).toBe(true)
 
-    // The second generation received the first generation's response messages.
     const secondCallMessages = mockGenerateText.mock.calls[1]![0].messages as unknown[]
     expect(secondCallMessages).toContain(gen0Messages[0])
 
-    // Work text lives only in ephemeral notes, never in the trace.
     expect(result.workNotes.join('\n')).toContain('unsuitable')
     expect(result.workNotes.join('\n')).toContain('Tango night')
     for (const step of result.steps) {
       expect(JSON.stringify(step)).not.toContain('unsuitable')
     }
 
-    // Call order survives reverse tool-result completion: c1 (tango) before c2.
     const searches = result.ledger.successfulSearches()
     expect(searches.map((e) => e.toolCallId)).toEqual(['c0', 'c1', 'c2'])
     expect(searches[1].events.map((e) => e.id)).toEqual(['tango'])
     expect(searches[2].events.map((e) => e.id)).toEqual(['music', 'jazz'])
-    // Provider request ids captured per generation.
     expect(result.providerRequestIds).toEqual(['prov-0', 'prov-1'])
   })
 

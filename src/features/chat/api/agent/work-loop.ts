@@ -59,6 +59,10 @@ export interface WorkLoopInput {
   /** When set, broad discovery tools are removed from the work loop. */
   pinnedEventId?: string
   hooks?: WorkLoopHooks
+  /** Injectable model call (test seam; defaults to the real `generateText`). */
+  generateTextFn?: typeof generateText
+  /** Injectable tool-set factory (test seam; defaults to `createInstrumentedTools`). */
+  createInstrumentedToolsFn?: typeof createInstrumentedTools
 }
 
 export interface WorkLoopResult {
@@ -110,7 +114,9 @@ export async function runWorkLoop(input: WorkLoopInput): Promise<WorkLoopResult>
   // ONE instrumented tool set per request — the mutation memo must survive
   // across loop iterations and across parallel calls within a generation.
   const retention: RetentionControl = { currentStepIndex: 0, searchStages: [] }
-  const instrumentedTools = createInstrumentedTools({
+  const generateTextImpl = input.generateTextFn ?? generateText
+  const createInstrumentedToolsImpl = input.createInstrumentedToolsFn ?? createInstrumentedTools
+  const instrumentedTools = createInstrumentedToolsImpl({
     userContext: input.userContext,
     locale: input.locale,
     retention,
@@ -130,7 +136,7 @@ export async function runWorkLoop(input: WorkLoopInput): Promise<WorkLoopResult>
 
     let result
     try {
-      result = await generateText({
+      result = await generateTextImpl({
         model: textModel,
         system: workSystem,
         messages,

@@ -1,19 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-vi.mock('./work-loop.ts', () => ({ runWorkLoop: vi.fn() }))
-vi.mock('./finalizer.ts', () => ({ runFinalizer: vi.fn() }))
-
 import { orchestrate } from './orchestrate.ts'
-import { runWorkLoop } from './work-loop.ts'
-import { runFinalizer } from './finalizer.ts'
 import type { WorkLoopResult } from './work-loop.ts'
 import { Ledger } from './ledger.ts'
 import { searchEntry, savedEventsEntry, mutationEntry, retentionEntry, event, ledgerFrom } from './_test-helpers.ts'
 import type { FinalizerPlan } from './finalizer.ts'
 import type { SearchEventsInput } from '../tools/search-events.ts'
 
-const mockedRunWorkLoop = vi.mocked(runWorkLoop)
-const mockedRunFinalizer = vi.mocked(runFinalizer)
+// Dependency injection (no vi.mock) so these tests run identically under Bun's
+// native runner and Vitest without cross-file module-mock leakage.
+const mockRunWorkLoop = vi.fn()
+const mockRunFinalizer = vi.fn()
 
 function workResult(ledger: Ledger, steps: WorkLoopResult['steps'] = [], finalWorkCalledTools = false): WorkLoopResult {
   return {
@@ -52,6 +49,8 @@ const baseInput = {
   systemPrompt: 'concierge',
   originalQuery: 'romantic weekday night',
   priorDisplayedEvents: [],
+  runWorkLoopFn: mockRunWorkLoop as never,
+  runFinalizerFn: mockRunFinalizer as never,
 }
 
 describe('orchestrate (v4)', () => {
@@ -66,15 +65,15 @@ describe('orchestrate (v4)', () => {
       searchEntry({ stepIndex: 2, callIndex: 0, toolCallId: 's2', events: [event('tango', 'Tango night')], limit: 1 }),
     ])
 
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger, [], true))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger, [], true))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({ eventSelections: [{ eventId: 'tango', sourceToolCallId: 's2' }] }),
     })
 
     const result = await orchestrate(baseInput)
 
-    expect(mockedRunFinalizer).toHaveBeenCalledTimes(1)
+    expect(mockRunFinalizer).toHaveBeenCalledTimes(1)
     expect(result.finalWorkCalledTools).toBe(true)
     expect(result.canonical.events.map((e) => e.id)).toEqual(['tango'])
     expect(result.canonical.events.map((e) => e.id)).not.toContain('speed1')
@@ -88,8 +87,8 @@ describe('orchestrate (v4)', () => {
 
   it('materializes text deterministically from the closed messageKey — no model prose', async () => {
     const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 })])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({ eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }] }),
     })
@@ -102,8 +101,8 @@ describe('orchestrate (v4)', () => {
   })
 
   it('materializes a clarification as one text block containing the question labels (EN)', async () => {
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         primaryKind: 'clarification',
@@ -123,8 +122,8 @@ describe('orchestrate (v4)', () => {
   })
 
   it('materializes a clarification as one text block with the default question (ES)', async () => {
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         primaryKind: 'clarification',
@@ -144,8 +143,8 @@ describe('orchestrate (v4)', () => {
   })
 
   it('materializes share_guidance text under the out_of_scope kind', async () => {
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledgerFrom([])))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         primaryKind: 'out_of_scope',
@@ -165,8 +164,8 @@ describe('orchestrate (v4)', () => {
       searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('speed1', 'Speed dating')], limit: 1 }),
       searchEntry({ stepIndex: 1, callIndex: 0, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 }),
     ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({ eventSelections: [{ eventId: 'nope', sourceToolCallId: 's1' }] }),
     })
@@ -181,8 +180,8 @@ describe('orchestrate (v4)', () => {
 
   it('falls back on schema failure', async () => {
     const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 })])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
 
     const result = await orchestrate(baseInput)
     expect(result.canonical.provenance.fallbackUsed).toBe(true)
@@ -192,8 +191,8 @@ describe('orchestrate (v4)', () => {
 
   it('falls back with finalizer_error on a provider failure', async () => {
     const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 })])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'finalizer_error' })
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({ ok: false, error: 'finalizer_error' })
 
     const result = await orchestrate(baseInput)
     expect(result.canonical.provenance.fallbackUsed).toBe(true)
@@ -205,8 +204,8 @@ describe('orchestrate (v4)', () => {
       searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('speed1', 'Speed dating')], limit: 1 }),
       searchEntry({ stepIndex: 1, callIndex: 0, toolCallId: 's1', events: [], limit: 3, success: false }),
     ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'finalizer_error' })
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({ ok: false, error: 'finalizer_error' })
 
     const result = await orchestrate(baseInput)
 
@@ -227,8 +226,8 @@ describe('orchestrate (v4)', () => {
       searchEntry({ stepIndex: 0, callIndex: 0, toolCallId: 's0', events: [event('speed1', 'Speed dating')], limit: 1 }),
       searchEntry({ stepIndex: 1, callIndex: 0, toolCallId: 's1', events: [], limit: 3, success: false }),
     ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
 
     const result = await orchestrate(baseInput)
 
@@ -247,8 +246,8 @@ describe('orchestrate (v4)', () => {
       searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 }),
       mutationEntry({ stepIndex: 1, callIndex: 0, toolCallId: 'm1', toolName: 'save_event', eventId: 'a', outcome: 'applied' }),
     ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
 
     const result = await orchestrate(baseInput)
     expect(result.canonical.operations).toHaveLength(1)
@@ -261,8 +260,8 @@ describe('orchestrate (v4)', () => {
     s1.searchInput = { ...s1.searchInput, timeFilter: 'tonight' } as SearchEventsInput
     const ret = retentionEntry({ toolCallId: 'r0', retainedToolCallIds: ['s0'], stepIndex: 1, callIndex: 1 })
     const ledger = ledgerFrom([s0, s1, ret])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         eventSelections: [
@@ -287,8 +286,8 @@ describe('orchestrate (v4)', () => {
         events: [event('a', 'A'), event('b', 'B'), event('c', 'C')],
       }),
     ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         primaryKind: 'saved_events',
@@ -302,7 +301,7 @@ describe('orchestrate (v4)', () => {
     })
 
     await orchestrate(baseInput)
-    expect(mockedRunFinalizer.mock.calls[0][0].requestedCount).toBe(3)
+    expect(mockRunFinalizer.mock.calls[0][0].requestedCount).toBe(3)
   })
 
   it('derives requestedCount from the final saved read over an earlier limit-1 search', async () => {
@@ -315,8 +314,8 @@ describe('orchestrate (v4)', () => {
         events: [event('a', 'A'), event('b', 'B'), event('c', 'C'), event('d', 'D'), event('e', 'E')],
       }),
     ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         primaryKind: 'saved_events',
@@ -332,13 +331,13 @@ describe('orchestrate (v4)', () => {
     })
 
     await orchestrate(baseInput)
-    expect(mockedRunFinalizer.mock.calls[0][0].requestedCount).toBe(5)
+    expect(mockRunFinalizer.mock.calls[0][0].requestedCount).toBe(5)
   })
 
   it('records fallback-derived suggestion provenance on the exact search artifact', async () => {
     const ledger = ledgerFrom([searchEntry({ stepIndex: 0, toolCallId: 's0', events: [event('a', 'A')], limit: 1 })])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({ ok: false, error: 'invalid_schema' })
 
     const result = await orchestrate(baseInput)
     expect(result.canonical.provenance.fallbackUsed).toBe(true)
@@ -348,8 +347,8 @@ describe('orchestrate (v4)', () => {
 
   it('plumbs pinnedEventId through to the work loop (restricts broad discovery)', async () => {
     const ledger = ledgerFrom([eventDetailsEntryLike()])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         primaryKind: 'event_details',
@@ -359,7 +358,7 @@ describe('orchestrate (v4)', () => {
     })
 
     await orchestrate({ ...baseInput, pin: { requested: true, status: 'resolved', eventId: 'pin', venueId: null } })
-    expect(mockedRunWorkLoop.mock.calls[0][0].pinnedEventId).toBe('pin')
+    expect(mockRunWorkLoop.mock.calls[0][0].pinnedEventId).toBe('pin')
   })
 
   it('a requested-but-unresolved pin yields a typed failure with zero cards and no work loop', async () => {
@@ -367,8 +366,8 @@ describe('orchestrate (v4)', () => {
       ...baseInput,
       pin: { requested: true, status: 'invalid', eventIdHint: 'not-a-uuid' },
     })
-    expect(mockedRunWorkLoop).not.toHaveBeenCalled()
-    expect(mockedRunFinalizer).not.toHaveBeenCalled()
+    expect(mockRunWorkLoop).not.toHaveBeenCalled()
+    expect(mockRunFinalizer).not.toHaveBeenCalled()
     expect(result.canonical.kind).toBe('error')
     expect(result.canonical.messageKey).toBe('pinned_event_unavailable')
     expect(result.canonical.events).toEqual([])
@@ -379,8 +378,8 @@ describe('orchestrate (v4)', () => {
     const ledger = ledgerFrom([
       searchEntry({ stepIndex: 0, toolCallId: 's1', events: [event('tango', 'Tango night')], limit: 1 }),
     ])
-    mockedRunWorkLoop.mockResolvedValue(workResult(ledger))
-    mockedRunFinalizer.mockResolvedValue({
+    mockRunWorkLoop.mockResolvedValue(workResult(ledger))
+    mockRunFinalizer.mockResolvedValue({
       ok: true,
       plan: validPlan({
         eventSelections: [{ eventId: 'tango', sourceToolCallId: 's1' }],
