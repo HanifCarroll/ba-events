@@ -22,7 +22,7 @@
  *     addressed by server-owned handles (`requestId:event_N`).
  *   - save/unsave are NEVER executed by the chat: the planner maps them to
  *     show_for_save / show_for_unsave, which return the card + a deterministic
- *     pointer to the card's own Save/Unsave control.
+ *     pointer to the card's heart control.
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
@@ -52,6 +52,12 @@ import {
   type PriorContext,
 } from '#features/chat/api/agent/follow-up.ts'
 import { detectResponseLanguage, MAX_USER_TEXT } from '#features/chat/api/agent/context.ts'
+import {
+  currentDateInBuenosAires,
+  lastSearchContextFromMessages,
+  lastSearchContextFromUIMessages,
+  type LastSearchContext,
+} from '#features/chat/api/agent/search-context.ts'
 import { getConversation } from '#features/chat/api/conversations.server.ts'
 import {
   buildGuestDebugTranscript,
@@ -138,6 +144,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   const userContext = await getUserToolContext(event)
   const requestId = generateId()
   const originalQuery = sanitizeText(getLastUserQuery(uiMessages), MAX_USER_TEXT)
+  const currentDateInBA = currentDateInBuenosAires()
 
   // Response language follows the latest user message; the UI locale is only a
   // fallback when the message is empty or language-neutral.
@@ -182,23 +189,27 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     }
   }
 
-  // Prior displayed-event context: guest and auth share the same parse +
-  // rehydrate pipeline; only the history source differs. Auth additionally
-  // rehydrates authoritative saved membership (never client markers).
+  // Prior displayed-event context and previous-search context: guest and auth
+  // share bounded validation, while authenticated history is read from the
+  // server-owned persisted conversation instead of client-supplied canonicals.
   let priorContext: PriorContext = EMPTY_PRIOR
+  let lastSearch: LastSearchContext | null = null
   try {
     if (userContext.isAuthenticated && conversationId) {
       const conversation = await getConversation(event, { id: conversationId })
       if (conversation) {
-        const hints = hintsFromMessages((conversation.messages ?? []) as Message[])
+        const storedMessages = (conversation.messages ?? []) as Message[]
+        const hints = hintsFromMessages(storedMessages)
         const membership = await getSavedMembershipForIds(userContext, collectEventIds(hints))
         priorContext = await rehydratePriorContext(hints, getEventFactsByIds, membership)
+        lastSearch = lastSearchContextFromMessages(storedMessages)
       }
     } else {
       priorContext = await rehydratePriorContext(
         hintsFromUIMessages(uiMessages),
         getEventFactsByIds
       )
+      lastSearch = lastSearchContextFromUIMessages(uiMessages)
     }
   } catch (error) {
     console.error('[chat] failed to build prior context:', error)
@@ -249,6 +260,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           originalQuery,
           priorDisplayedEvents: priorContext.groups,
           venueByEventId: priorContext.venueByEventId,
+          lastSearch,
+          currentDateInBA,
           pin,
           pinFacts,
         })

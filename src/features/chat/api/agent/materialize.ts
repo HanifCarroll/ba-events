@@ -1,5 +1,5 @@
 /**
- * Deterministic server-side text materialization for the v4 canonical response.
+ * Deterministic server-side text materialization for the v5 canonical response.
  *
  * Text is derived from a closed `messageKey` plus validated artifact facts
  * (event/venue/directions names) and the locale. No arbitrary model prose ever
@@ -97,8 +97,6 @@ const TEXTS: Record<MessageKey, { en: string; es: string }> = {
     en: 'Something went wrong. Please try again.',
     es: 'Algo salió mal. Probá de nuevo.',
   },
-  // Outcome-aware mutation leads. Only `mutation_applied` claims an update;
-  // every other lead is truthful and never claims a change that did not happen.
   mutation_applied: {
     en: 'Your saved events are updated.',
     es: 'Actualicé tus guardados.',
@@ -132,18 +130,19 @@ const TEXTS: Record<MessageKey, { en: string; es: string }> = {
     es: 'No pude cargar ese evento.',
   },
   use_save_control: {
-    en: 'Use the Save button on this card to add it to your list.',
-    es: 'Usá el botón Guardar de esta tarjeta para agregarlo a tu lista.',
+    en: 'Use the Save button—the heart button on this card—to add it to your saved events.',
+    es: 'Usá el botón Guardar, el botón del corazón de esta tarjeta, para agregarlo a tus guardados.',
   },
   use_unsave_control: {
-    en: 'Use the Remove from saved button on this card to take it off your list.',
-    es: 'Usá el botón Quitar de guardados de esta tarjeta para sacarlo de tu lista.',
+    en: 'Use the Remove from saved button—the filled heart button on this card—to remove it from your saved events.',
+    es: 'Usá el botón Quitar de guardados, el botón del corazón marcado de esta tarjeta, para quitarlo de tus guardados.',
   },
   login_required: {
     en: 'Log in to see your saved events.',
     es: 'Iniciá sesión para ver tus guardados.',
   },
 }
+
 function cleanName(value: string | undefined, max = 80): string | undefined {
   if (!value) return undefined
   const cleaned = value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()

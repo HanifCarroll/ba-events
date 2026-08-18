@@ -22,6 +22,11 @@ import { handleFor, type PriorDisplayGroup, type VenueFact } from './follow-up.t
 import { runPlanner, type PriorEventHint } from './planner.ts'
 import { runExecutor, type ExecutorTools, type PriorResolvedEvent, type ReadSummary } from './executor.ts'
 import { materializeText } from './materialize.ts'
+import {
+  attachSearchContext,
+  currentDateInBuenosAires,
+  type LastSearchContext,
+} from './search-context.ts'
 
 export interface OrchestrateInput {
   requestId: string
@@ -30,6 +35,10 @@ export interface OrchestrateInput {
   originalQuery: string
   priorDisplayedEvents: PriorDisplayGroup[]
   venueByEventId?: Map<string, VenueFact>
+  /** Most recent executed search, used only for bounded contextual refinements. */
+  lastSearch?: LastSearchContext | null
+  /** Injectable server-owned BA date for deterministic tests; defaults to today. */
+  currentDateInBA?: string
   pin?: PinResolution
   /** Rehydrated pinned-event facts (server-owned, never client input). */
   pinFacts?: { name: string; venueName: string | null } | null
@@ -196,6 +205,8 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     originalQuery: input.originalQuery,
     locale: input.locale,
     prior: hints,
+    lastSearch: input.lastSearch ?? null,
+    currentDateInBA: input.currentDateInBA ?? currentDateInBuenosAires(),
     pinned,
   })
 
@@ -220,6 +231,19 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     pinnedVenueName: pinned?.venueName ?? undefined,
     tools,
   })
+
+  // Persist only the exact search input that the deterministic executor actually
+  // ran. This additive canonical metadata becomes the bounded context for a
+  // later refinement such as "tomorrow instead" or "anything cheaper?".
+  const searchRead = executed.reads.find(
+    (read) => read.toolName === 'search_events' && read.success
+  )
+  if (searchRead) {
+    attachSearchContext(executed.canonical, {
+      originalQuery: input.originalQuery,
+      input: searchRead.input,
+    })
+  }
 
   return {
     canonical: executed.canonical,
