@@ -67,7 +67,9 @@ describe('orchestrate planner context', () => {
       buildToolsFn: () => ({}) as ExecutorTools,
     })
 
-    expect(seen?.lastSearch?.originalQuery).toBe('jazz tonight')
-    expect(seen?.currentDateInBA).toBe('2026-08-17')
+    expect(seen).not.toBeNull()
+    const plannerInput = seen as PlannerInput
+    expect(plannerInput.lastSearch?.originalQuery).toBe('jazz tonight')
+    expect(plannerInput.currentDateInBA).toBe('2026-08-17')
   })
 })
