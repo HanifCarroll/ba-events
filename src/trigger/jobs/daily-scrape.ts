@@ -21,9 +21,9 @@ import type { enrichEventsJob } from './enrich-events.ts'
 const SOURCE_JOBS = [
   { id: 'scrape-eventbrite', name: 'Eventbrite' },
   { id: 'scrape-ba-tourism', name: 'BA Tourism' },
+  { id: 'scrape-passline', name: 'Passline' },
   { id: 'scrape-meetup', name: 'Meetup' },
   { id: 'scrape-luma', name: 'Luma' },
-  { id: 'scrape-passline', name: 'Passline' },
   { id: 'scrape-venti', name: 'Venti' },
 ] as const
 
@@ -197,6 +197,13 @@ export const dailyScrape = schedules.task({
     // Trigger all source jobs in parallel
     console.log('[daily-scrape] Triggering source jobs...')
 
+    // Submit Passline before Meetup: both consume the shared Browserbase queue
+    // (concurrencyLimit 1), so Passline is enqueued — and therefore runs — first.
+    const passlineHandle = await tasks.trigger<typeof scrapePassline>('scrape-passline', {
+      daysAhead: 30,
+      scrapeRunId,
+    })
+
     const handles = await Promise.all([
       tasks.trigger<typeof scrapeEventbrite>('scrape-eventbrite', {
         daysAhead: 30,
@@ -205,15 +212,12 @@ export const dailyScrape = schedules.task({
       tasks.trigger<typeof scrapeBATourism>('scrape-ba-tourism', {
         scrapeRunId,
       }),
+      passlineHandle,
       tasks.trigger<typeof scrapeMeetup>('scrape-meetup', {
         daysAhead: 14,
         scrapeRunId,
       }),
       tasks.trigger<typeof scrapeLuma>('scrape-luma', {
-        scrapeRunId,
-      }),
-      tasks.trigger<typeof scrapePassline>('scrape-passline', {
-        daysAhead: 30,
         scrapeRunId,
       }),
       tasks.trigger<typeof scrapeVenti>('scrape-venti', {

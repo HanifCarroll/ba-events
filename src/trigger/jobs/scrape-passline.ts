@@ -7,6 +7,7 @@
  */
 import { task } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client.ts'
+import { browserbaseScraperQueue } from '../queues.ts'
 import { processPasslineImport, type PasslineImportResult } from '#features/import/core/passline.ts'
 
 export interface PasslineJobPayload {
@@ -16,6 +17,8 @@ export interface PasslineJobPayload {
 
 export const scrapePassline = task({
   id: 'scrape-passline',
+  // Shared queue: only one Browserbase-consuming scraper runs at a time
+  queue: browserbaseScraperQueue,
   // Browserbase scraping + embedding generation can take a while
   maxDuration: 1800, // 30 minutes
   // Start with medium machine for cost efficiency (1 vCPU, 2GB RAM)

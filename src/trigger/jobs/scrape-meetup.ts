@@ -6,6 +6,7 @@
  */
 import { task } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client.ts'
+import { browserbaseScraperQueue } from '../queues.ts'
 import { processMeetupImport, type MeetupImportResult } from '#features/import/core/meetup.ts'
 
 export interface MeetupJobPayload {
@@ -15,6 +16,8 @@ export interface MeetupJobPayload {
 
 export const scrapeMeetup = task({
   id: 'scrape-meetup',
+  // Shared queue: only one Browserbase-consuming scraper runs at a time
+  queue: browserbaseScraperQueue,
   // Browser scraping can take a long time (day-by-day)
   maxDuration: 1800, // 30 minutes
   // Start with medium machine for cost efficiency (1 vCPU, 2GB RAM)
