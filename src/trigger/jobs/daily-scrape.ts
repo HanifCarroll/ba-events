@@ -7,6 +7,7 @@
 import { schedules, tasks, batch } from '@trigger.dev/sdk/v3'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceRoleClient } from '../utils/db-client.ts'
+import { countEventsNeedingEnrichment } from '#features/import/core/event-enrichment.ts'
 
 // Import task types for type-safe triggering
 import type { scrapeEventbrite } from './scrape-eventbrite.ts'
@@ -16,6 +17,10 @@ import type { scrapeLuma } from './scrape-luma.ts'
 import type { scrapePassline } from './scrape-passline.ts'
 import type { scrapeVenti } from './scrape-venti.ts'
 import type { enrichEventsJob } from './enrich-events.ts'
+import {
+  DEFAULT_ENRICHMENT_BATCH_SIZE,
+  DEFAULT_ENRICHMENT_MAX_BATCHES,
+} from './enrich-events.ts'
 import {
   mapBatchRunsToResults,
   summarizeResults,
@@ -133,6 +138,7 @@ export const dailyScrape = schedules.task({
     let scrapeRunMetadata: unknown = null
     let results: DailyScrapeResult['results'] = []
     let enrichmentTriggered = false
+    let enrichmentEligible = 0
     let blocklistCleanup = 0
 
     try {
@@ -203,18 +209,32 @@ export const dailyScrape = schedules.task({
         console.log(`[daily-scrape] Blocklist cleanup: deleted ${blocklistCleanup} events`)
       }
 
-      // Trigger enrichment job for newly imported events
-      if (totals.inserted > 0) {
-        console.log('[daily-scrape] Triggering enrichment job...')
+      // Count newly-imported events eligible for enrichment (pending/failed,
+      // created after this run started). `eligible` is recorded synchronously
+      // on this run's audit metadata; the async chain writes back the rest.
+      enrichmentEligible = await timed('enrichment eligible count', () =>
+        countEventsNeedingEnrichment(client, { createdAfter: startedAt })
+      )
+
+      // Trigger the async enrichment chain (fire-and-forget: the parent does
+      // not wait). The chain drains eligible events in bounded batches
+      // (100/batch, 1000-event ceiling) and writes final counts back to this
+      // scrape run's metadata.
+      if (enrichmentEligible > 0) {
+        console.log(`[daily-scrape] Triggering enrichment chain for ${enrichmentEligible} eligible events...`)
         try {
           await timed('enrichment trigger', async () => {
             await tasks.trigger<typeof enrichEventsJob>('enrich-events', {
-              limit: 100,
+              limit: DEFAULT_ENRICHMENT_BATCH_SIZE,
               createdAfter: startedAt,
+              batchNumber: 1,
+              maxBatches: DEFAULT_ENRICHMENT_MAX_BATCHES,
+              scrapeRunId: runId,
+              eligible: enrichmentEligible,
             })
           })
           enrichmentTriggered = true
-          console.log('[daily-scrape] Enrichment job triggered')
+          console.log('[daily-scrape] Enrichment chain triggered')
         } catch (enrichError) {
           console.error('[daily-scrape] Failed to trigger enrichment:', enrichError)
         }
@@ -229,6 +249,7 @@ export const dailyScrape = schedules.task({
         completedAt,
         results,
         enrichmentTriggered,
+        enrichmentEligible,
         blocklistCleanup,
       }
     } finally {
@@ -239,7 +260,8 @@ export const dailyScrape = schedules.task({
           scrapeRunMetadata,
           results,
           enrichmentTriggered,
-          blocklistCleanup
+          blocklistCleanup,
+          enrichmentEligible
         )
       }
     }

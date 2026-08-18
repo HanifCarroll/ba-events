@@ -18,6 +18,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 vi.mock('#shared/lib/ai/embeddings.ts', () => ({
   embedEventWithDocument: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('#features/import/adapters/enrichment/registry.ts', () => ({
   getEnrichmentAdapter: vi.fn(),
 }))
 
-import { enrichSingleEvent } from './event-enrichment.ts'
+import { enrichSingleEvent, countEventsNeedingEnrichment, getEventsNeedingEnrichment } from './event-enrichment.ts'
 import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
 import { HttpError } from '#shared/lib/errors.ts'
@@ -55,6 +56,32 @@ function makeClient() {
 function makeExtractFacetsMock() {
   return vi.fn()
 }
+
+/**
+ * Recorder fake for the Supabase query-builder chain: every chained method
+ * returns the builder and records its args, and the builder is awaitable at
+ * the end (resolves to the supplied `result`).
+ */
+function makeQueryClient(result: unknown) {
+  const calls: Array<{ method: string; args: unknown[] }> = []
+  const builder: Record<string, unknown> = {
+    then: (resolve: (v: unknown) => void) => resolve(result),
+  }
+  for (const method of ['select', 'in', 'neq', 'gte', 'not', 'eq', 'limit', 'order']) {
+    builder[method] = (...args: unknown[]) => {
+      calls.push({ method, args })
+      return builder
+    }
+  }
+  const from = (table: string) => {
+    calls.push({ method: 'from', args: [table] })
+    return builder
+  }
+  return { client: { from } as unknown as SupabaseClient, calls }
+}
+
+const queryArgsFor = (calls: Array<{ method: string; args: unknown[] }>, method: string) =>
+  calls.filter((c) => c.method === method).map((c) => c.args)
 
 describe('enrichSingleEvent facets-only path', () => {
   beforeEach(() => {
@@ -215,5 +242,81 @@ describe('enrichSingleEvent terminal skipped handling', () => {
     expect(written.status).toBe('canceled')
     expect(written.enrichment_status).toBe('skipped')
     expect(written.enrichment_error).toBe('HTTP 404 - Event page not found')
+  })
+})
+
+describe('countEventsNeedingEnrichment', () => {
+  it('returns the exact count', async () => {
+    const { client } = makeQueryClient({ count: 42 })
+    await expect(countEventsNeedingEnrichment(client)).resolves.toBe(42)
+  })
+
+  it('scopes to createdAfter via created_at >= when provided', async () => {
+    const { client, calls } = makeQueryClient({ count: 0 })
+    await countEventsNeedingEnrichment(client, { createdAfter: '2026-08-18T09:00:00.000Z' })
+
+    expect(queryArgsFor(calls, 'gte')).toContainEqual(['created_at', '2026-08-18T09:00:00.000Z'])
+  })
+
+  it('filters by source via eq when provided', async () => {
+    const { client, calls } = makeQueryClient({ count: 0 })
+    await countEventsNeedingEnrichment(client, { source: 'eventbrite' })
+
+    expect(queryArgsFor(calls, 'eq')).toContainEqual(['source', 'eventbrite'])
+  })
+
+  it('applies the shared eligibility filters', async () => {
+    const { client, calls } = makeQueryClient({ count: 0 })
+    await countEventsNeedingEnrichment(client)
+
+    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending', 'failed']])
+    expect(queryArgsFor(calls, 'neq')).toContainEqual(['status', 'canceled'])
+    expect(queryArgsFor(calls, 'neq')).toContainEqual(['status', 'past'])
+    expect(queryArgsFor(calls, 'not')).toContainEqual(['link', 'is', null])
+    expect(queryArgsFor(calls, 'gte').some((a) => a[0] === 'starts_at')).toBe(true)
+  })
+
+  it('counts only pending when statuses: ["pending"] (failed rows excluded)', async () => {
+    const { client, calls } = makeQueryClient({ count: 0 })
+    await countEventsNeedingEnrichment(client, { statuses: ['pending'] })
+
+    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending']])
+  })
+
+  it('returns 0 on error instead of throwing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { client } = makeQueryClient({ error: { message: 'down' } })
+    await expect(countEventsNeedingEnrichment(client)).resolves.toBe(0)
+  })
+})
+
+describe('getEventsNeedingEnrichment failure-loop guard', () => {
+  it('selects pending + failed by default (catch-up/remaining path)', async () => {
+    const { client, calls } = makeQueryClient({ data: [], error: null })
+    await getEventsNeedingEnrichment(client)
+
+    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending', 'failed']])
+  })
+
+  it('selects pending only when statuses: ["pending"], so failed rows are not re-selected', async () => {
+    const { client, calls } = makeQueryClient({ data: [], error: null })
+    await getEventsNeedingEnrichment(client, { statuses: ['pending'] })
+
+    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending']])
+    expect(queryArgsFor(calls, 'in')).not.toContainEqual(['enrichment_status', ['pending', 'failed']])
+  })
+
+  it('orders oldest-first and limits the batch so later pending rows progress', async () => {
+    const { client, calls } = makeQueryClient({ data: [], error: null })
+    await getEventsNeedingEnrichment(client, { limit: 100, statuses: ['pending'] })
+
+    expect(queryArgsFor(calls, 'order')).toContainEqual(['starts_at', { ascending: true }])
+    expect(queryArgsFor(calls, 'limit')).toContainEqual([100])
+  })
+
+  it('returns rows unchanged (no client-side filtering)', async () => {
+    const rows = [{ id: 'evt-1', name: 'A' }]
+    const { client } = makeQueryClient({ data: rows, error: null })
+    await expect(getEventsNeedingEnrichment(client)).resolves.toEqual(rows)
   })
 })

@@ -620,6 +620,8 @@ export async function getEventsNeedingEnrichment(
     source?: string
     limit?: number
     createdAfter?: string
+    /** Statuses to include (default: ['pending', 'failed']). */
+    statuses?: Array<'pending' | 'failed'>
   }
 ): Promise<EventEnrichmentInput[]> {
   let query = client
@@ -627,7 +629,7 @@ export async function getEventsNeedingEnrichment(
     .select(
       'id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, embedding, price, is_free'
     )
-    .in('enrichment_status', ['pending', 'failed'])
+    .in('enrichment_status', options?.statuses ?? ['pending', 'failed'])
     .neq('status', 'canceled')
     .neq('status', 'past')
     .gte('starts_at', enrichmentStartsAtFloor())
@@ -656,6 +658,48 @@ export async function getEventsNeedingEnrichment(
   }
 
   return (data || []) as EventEnrichmentInput[]
+}
+
+/**
+ * Count events needing enrichment using the same eligibility filters as
+ * `getEventsNeedingEnrichment` (pending/failed, not canceled/past, has link,
+ * starts_at >= now). Used for the `eligible`/`remaining` audit counts that
+ * bookend a daily enrichment chain.
+ */
+export async function countEventsNeedingEnrichment(
+  client: SupabaseClient,
+  options?: {
+    source?: string
+    createdAfter?: string
+    /** Statuses to include (default: ['pending', 'failed']). */
+    statuses?: Array<'pending' | 'failed'>
+  }
+): Promise<number> {
+  let query = client
+    .from('events')
+    .select('*', { count: 'exact', head: true })
+    .in('enrichment_status', options?.statuses ?? ['pending', 'failed'])
+    .neq('status', 'canceled')
+    .neq('status', 'past')
+    .gte('starts_at', enrichmentStartsAtFloor())
+    .not('link', 'is', null)
+
+  if (options?.source) {
+    query = query.eq('source', options.source)
+  }
+
+  if (options?.createdAfter) {
+    query = query.gte('created_at', options.createdAfter)
+  }
+
+  const { count, error } = await query
+
+  if (error) {
+    console.error('[event-enrichment] Failed to count events needing enrichment:', error)
+    return 0
+  }
+
+  return count ?? 0
 }
 
 /**

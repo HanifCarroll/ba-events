@@ -21,7 +21,49 @@ export interface DailyScrapeResult {
     error?: string
   }[]
   enrichmentTriggered: boolean
+  enrichmentEligible: number
   blocklistCleanup: number
+}
+
+/**
+ * Counts recorded against a daily run's enrichment chain. `eligible` is known
+ * synchronously at trigger time (the parent writes it); `enriched`/`failed`/
+ * `remaining` are written back by the final batch of the async chain.
+ */
+export interface EnrichmentAudit {
+  eligible: number
+  enriched: number
+  failed: number
+  remaining: number
+}
+
+/**
+ * Merge a partial enrichment audit patch into any existing enrichment metadata
+ * object, so the async chain's final write preserves the `eligible` the parent
+ * already recorded (and vice versa).
+ */
+export function mergeEnrichmentMetadata(
+  existing: unknown,
+  patch: Partial<EnrichmentAudit>
+): EnrichmentAudit {
+  const base =
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? (existing as Record<string, unknown>)
+      : {}
+  return { ...base, ...patch } as EnrichmentAudit
+}
+
+/**
+ * Whether an enrichment chain should trigger its next batch. Sequential:
+ * the next batch is only triggered after the current one fully completes,
+ * so batches never overlap and never double-process the same events.
+ */
+export function shouldChainNextBatch(
+  remainingCount: number,
+  batchNumber: number,
+  maxBatches: number
+): boolean {
+  return remainingCount > 0 && batchNumber < maxBatches
 }
 
 export type ScrapeRunStatus = 'completed' | 'partial' | 'failed'
@@ -163,7 +205,8 @@ export async function finalizeScrapeRun(
   metadata: unknown,
   results: DailyScrapeResult['results'],
   enrichmentTriggered: boolean,
-  blocklistCleanup: number
+  blocklistCleanup: number,
+  enrichmentEligible: number
 ): Promise<void> {
   const totals = summarizeResults(results)
   const status = determineScrapeRunStatus(results)
@@ -186,11 +229,54 @@ export async function finalizeScrapeRun(
         results,
         enrichmentTriggered,
         blocklistCleanup,
+        enrichment: mergeEnrichmentMetadata(undefined, { eligible: enrichmentEligible }),
       },
     })
     .eq('id', scrapeRunId)
 
   if (updateError) {
     throw new Error(`Failed to finalize scrape run: ${updateError.message}`)
+  }
+}
+
+/**
+ * Write enrichment chain results back to the daily run's audit row. Merges the
+ * patch into the existing `metadata.enrichment` (so the parent's `eligible` is
+ * preserved) and updates the dedicated `enrichments_completed`/
+ * `enrichments_failed` columns. Best-effort: logs instead of throwing so a
+ * failed audit write never marks the enrichment chain as failed.
+ */
+export async function recordEnrichmentAudit(
+  client: SupabaseClient,
+  scrapeRunId: string,
+  patch: Partial<EnrichmentAudit>
+): Promise<void> {
+  const { data: current, error: readError } = await client
+    .from('scrape_runs')
+    .select('metadata')
+    .eq('id', scrapeRunId)
+    .maybeSingle()
+
+  if (readError) {
+    console.error('[enrichment-audit] Failed to read scrape run metadata:', readError)
+    return
+  }
+
+  const existingMetadata = (current?.metadata as Record<string, unknown> | null) ?? {}
+  const enrichment = mergeEnrichmentMetadata(existingMetadata.enrichment, patch)
+
+  const update: Record<string, unknown> = {
+    metadata: { ...existingMetadata, enrichment },
+  }
+  if (patch.enriched !== undefined) update.enrichments_completed = patch.enriched
+  if (patch.failed !== undefined) update.enrichments_failed = patch.failed
+
+  const { error: updateError } = await client
+    .from('scrape_runs')
+    .update(update)
+    .eq('id', scrapeRunId)
+
+  if (updateError) {
+    console.error('[enrichment-audit] Failed to write enrichment audit:', updateError)
   }
 }
