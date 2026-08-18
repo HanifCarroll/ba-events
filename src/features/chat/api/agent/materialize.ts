@@ -130,12 +130,12 @@ const TEXTS: Record<MessageKey, { en: string; es: string }> = {
     es: 'No pude cargar ese evento.',
   },
   use_save_control: {
-    en: 'Use the heart button on this card to add it to your saved events.',
-    es: 'Usá el botón del corazón de esta tarjeta para agregarlo a tus guardados.',
+    en: 'Use the Save button—the heart button on this card—to add it to your saved events.',
+    es: 'Usá el botón Guardar, el botón del corazón de esta tarjeta, para agregarlo a tus guardados.',
   },
   use_unsave_control: {
-    en: 'Use the filled heart button on this card to remove it from your saved events.',
-    es: 'Usá el botón del corazón marcado de esta tarjeta para quitarlo de tus guardados.',
+    en: 'Use the Remove from saved button—the filled heart button on this card—to remove it from your saved events.',
+    es: 'Usá el botón Quitar de guardados, el botón del corazón marcado de esta tarjeta, para quitarlo de tus guardados.',
   },
   login_required: {
     en: 'Log in to see your saved events.',
