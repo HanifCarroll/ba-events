@@ -23,6 +23,7 @@ import { runPlanner, type PriorEventHint } from './planner.ts'
 import { runExecutor, type ExecutorTools, type PriorResolvedEvent, type ReadSummary } from './executor.ts'
 import { materializeText } from './materialize.ts'
 import {
+  attachSearchContext,
   currentDateInBuenosAires,
   type LastSearchContext,
 } from './search-context.ts'
@@ -230,6 +231,19 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     pinnedVenueName: pinned?.venueName ?? undefined,
     tools,
   })
+
+  // Persist only the exact search input that the deterministic executor actually
+  // ran. This additive canonical metadata becomes the bounded context for a
+  // later refinement such as "tomorrow instead" or "anything cheaper?".
+  const searchRead = executed.reads.find(
+    (read) => read.toolName === 'search_events' && read.success
+  )
+  if (searchRead) {
+    attachSearchContext(executed.canonical, {
+      originalQuery: input.originalQuery,
+      input: searchRead.input,
+    })
+  }
 
   return {
     canonical: executed.canonical,

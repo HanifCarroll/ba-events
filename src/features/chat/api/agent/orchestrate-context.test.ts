@@ -4,6 +4,7 @@ import type { UserToolContext } from '../user-tools.server.ts'
 import type { ExecutorResult, ExecutorTools } from './executor.ts'
 import type { PlannerInput, PlannerResult } from './planner.ts'
 import { orchestrate } from './orchestrate.ts'
+import { searchContextFromCanonical } from './search-context.ts'
 
 const ANON: UserToolContext = { userId: null, isAuthenticated: false }
 
@@ -71,5 +72,42 @@ describe('orchestrate planner context', () => {
     const plannerInput = seen as PlannerInput
     expect(plannerInput.lastSearch?.originalQuery).toBe('jazz tonight')
     expect(plannerInput.currentDateInBA).toBe('2026-08-17')
+  })
+
+  it('attaches the exact successful search read to the canonical response', async () => {
+    const planFn = async (): Promise<PlannerResult> => ({
+      ok: true,
+      plan: { kind: 'search', search: { query: 'jazz' }, count: 3, followUp: null },
+      providerRequestId: 'provider',
+    })
+    const executeFn = async (): Promise<ExecutorResult> => ({
+      canonical: response(),
+      executionTrace: [],
+      reads: [
+        {
+          toolCallId: 'search:req',
+          toolName: 'search_events',
+          input: { query: 'jazz', timeFilter: 'tonight', limit: 3 },
+          success: true,
+          eventIds: ['event-1'],
+        },
+      ],
+    })
+
+    const result = await orchestrate({
+      requestId: 'req',
+      userContext: ANON,
+      locale: 'en',
+      originalQuery: 'Jazz tonight',
+      priorDisplayedEvents: [],
+      planFn,
+      executeFn,
+      buildToolsFn: () => ({}) as ExecutorTools,
+    })
+
+    expect(searchContextFromCanonical(result.canonical)).toEqual({
+      originalQuery: 'Jazz tonight',
+      input: { query: 'jazz', timeFilter: 'tonight', limit: 3 },
+    })
   })
 })
