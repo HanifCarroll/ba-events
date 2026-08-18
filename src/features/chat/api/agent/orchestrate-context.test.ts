@@ -41,9 +41,9 @@ function response(): CanonicalChatResponse {
 
 describe('orchestrate planner context', () => {
   it('passes the bounded previous search and injected BA date to the single planner call', async () => {
-    let seen: PlannerInput | null = null
+    const seen: PlannerInput[] = []
     const planFn = async (input: PlannerInput): Promise<PlannerResult> => {
-      seen = input
+      seen.push(input)
       return { ok: true, plan: { kind: 'out_of_scope' }, providerRequestId: 'provider' }
     }
     const executeFn = async (): Promise<ExecutorResult> => ({
@@ -68,10 +68,9 @@ describe('orchestrate planner context', () => {
       buildToolsFn: () => ({}) as ExecutorTools,
     })
 
-    expect(seen).not.toBeNull()
-    const plannerInput = seen as PlannerInput
-    expect(plannerInput.lastSearch?.originalQuery).toBe('jazz tonight')
-    expect(plannerInput.currentDateInBA).toBe('2026-08-17')
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.lastSearch?.originalQuery).toBe('jazz tonight')
+    expect(seen[0]?.currentDateInBA).toBe('2026-08-17')
   })
 
   it('attaches the exact successful search read to the canonical response', async () => {
