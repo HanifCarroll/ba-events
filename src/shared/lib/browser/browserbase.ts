@@ -21,6 +21,34 @@ export interface BrowserbaseSession {
   connectUrl: string
 }
 
+/** Bound for the Browserbase session-creation API call. */
+export const SESSION_CREATION_TIMEOUT_MS = 45_000
+
+/** Bound for connecting to a session over the Chrome DevTools Protocol. */
+export const CDP_CONNECT_TIMEOUT_MS = 30_000
+
+/**
+ * Race a promise against a timeout, preserving the promise's original error
+ * when it rejects first. The timeout error is a distinct, clearly-labelled
+ * failure that only surfaces when the operation exceeds the bound.
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+  })
+
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 /**
  * Create a Browserbase session configured for Buenos Aires event scraping.
  *
@@ -36,18 +64,22 @@ export async function createBrowserbaseSession(): Promise<BrowserbaseSession> {
 
   const bb = new Browserbase({ apiKey })
 
-  const session = await bb.sessions.create({
-    projectId: process.env.BROWSERBASE_PROJECT_ID || undefined,
-    browserSettings: {
-      viewport: {
-        width: BROWSER_VIEWPORT.width,
-        height: BROWSER_VIEWPORT.height,
+  const session = await withTimeout(
+    bb.sessions.create({
+      projectId: process.env.BROWSERBASE_PROJECT_ID || undefined,
+      browserSettings: {
+        viewport: {
+          width: BROWSER_VIEWPORT.width,
+          height: BROWSER_VIEWPORT.height,
+        },
+        solveCaptchas: true,
       },
-      solveCaptchas: true,
-    },
-    // Use Browserbase's managed proxy network by default.
-    proxies: true,
-  })
+      // Use Browserbase's managed proxy network by default.
+      proxies: true,
+    }),
+    SESSION_CREATION_TIMEOUT_MS,
+    'Browserbase session creation'
+  )
 
   return { sessionId: session.id, connectUrl: session.connectUrl }
 }

@@ -1,0 +1,184 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  mapBatchRunsToResults,
+  summarizeResults,
+  determineScrapeRunStatus,
+  finalizeScrapeRun,
+  type DailyScrapeResult,
+} from './daily-scrape-outcome.ts'
+
+const SOURCE_JOBS = [
+  { id: 'scrape-passline', name: 'Passline' },
+  { id: 'scrape-meetup', name: 'Meetup' },
+  { id: 'scrape-eventbrite', name: 'Eventbrite' },
+  { id: 'scrape-ba-tourism', name: 'BA Tourism' },
+  { id: 'scrape-luma', name: 'Luma' },
+  { id: 'scrape-venti', name: 'Venti' },
+] as const
+
+const okRun = (taskIdentifier: string, stats: Record<string, number> = {}) => ({
+  taskIdentifier,
+  ok: true,
+  output: {
+    eventsInserted: 0,
+    eventsUpdated: 0,
+    eventsSkipped: 0,
+    venuesAutoCreated: 0,
+    ...stats,
+  },
+})
+
+const failRun = (taskIdentifier: string, error: unknown = 'boom') => ({
+  taskIdentifier,
+  ok: false,
+  error,
+})
+
+function resultsFor(success: boolean[]): DailyScrapeResult['results'] {
+  return success.map((ok, i) => ({
+    source: `source-${i}`,
+    success: ok,
+    eventsInserted: 0,
+    eventsUpdated: 0,
+    eventsSkipped: 0,
+    venuesAutoCreated: 0,
+    ...(ok ? {} : { error: 'failure' }),
+  }))
+}
+
+describe('mapBatchRunsToResults', () => {
+  it('maps runs to source results by taskIdentifier', () => {
+    const results = mapBatchRunsToResults(
+      [
+        okRun('scrape-passline', { eventsInserted: 3, eventsUpdated: 1 }),
+        okRun('scrape-meetup', { eventsInserted: 2 }),
+        failRun('scrape-eventbrite', 'eventbrite down'),
+        okRun('scrape-ba-tourism'),
+        okRun('scrape-luma'),
+        okRun('scrape-venti'),
+      ],
+      SOURCE_JOBS
+    )
+
+    expect(results).toHaveLength(6)
+    expect(results[0]).toMatchObject({
+      source: 'Passline',
+      success: true,
+      eventsInserted: 3,
+      eventsUpdated: 1,
+    })
+    expect(results[2]).toMatchObject({
+      source: 'Eventbrite',
+      success: false,
+      error: 'eventbrite down',
+    })
+  })
+
+  it('marks a missing run as failed', () => {
+    const results = mapBatchRunsToResults([okRun('scrape-passline')], SOURCE_JOBS)
+    expect(results[1]).toMatchObject({ source: 'Meetup', success: false, error: 'No run produced' })
+  })
+
+  it('extracts a nested error object message', () => {
+    const results = mapBatchRunsToResults(
+      [failRun('scrape-passline', { message: 'nested failure' })],
+      SOURCE_JOBS
+    )
+    expect(results[0].error).toBe('nested failure')
+  })
+})
+
+describe('summarizeResults', () => {
+  it('aggregates inserted/updated/skipped/venue stats', () => {
+    const results: DailyScrapeResult['results'] = [
+      { source: 'a', success: true, eventsInserted: 1, eventsUpdated: 2, eventsSkipped: 3, venuesAutoCreated: 4 },
+      { source: 'b', success: true, eventsInserted: 5, eventsUpdated: 6, eventsSkipped: 7, venuesAutoCreated: 8 },
+    ]
+    expect(summarizeResults(results)).toEqual({
+      inserted: 6,
+      updated: 8,
+      skipped: 10,
+      venuesCreated: 12,
+    })
+  })
+})
+
+describe('determineScrapeRunStatus', () => {
+  it('returns completed when all sources succeeded', () => {
+    expect(determineScrapeRunStatus(resultsFor([true, true, true]))).toBe('completed')
+  })
+
+  it('returns failed when all sources failed', () => {
+    expect(determineScrapeRunStatus(resultsFor([false, false]))).toBe('failed')
+  })
+
+  it('returns partial when some sources succeeded and some failed', () => {
+    expect(determineScrapeRunStatus(resultsFor([true, false, true]))).toBe('partial')
+  })
+
+  it('returns failed for an empty result set', () => {
+    expect(determineScrapeRunStatus([])).toBe('failed')
+  })
+})
+
+describe('finalizeScrapeRun', () => {
+  function fakeFinalizeClient() {
+    const updates: Array<Record<string, unknown>> = []
+    const eq = vi.fn(() => Promise.resolve({ error: null }))
+    const update = vi.fn((payload: Record<string, unknown>) => {
+      updates.push(payload)
+      return { eq }
+    })
+    const from = vi.fn(() => ({ update }))
+    return { client: { from } as unknown as SupabaseClient, updates, eq }
+  }
+
+  it('writes status completed, completed_at and stats for a fully-successful run', async () => {
+    const { client, updates, eq } = fakeFinalizeClient()
+    const results = resultsFor([true, true])
+
+    await finalizeScrapeRun(client, 'run-1', { scheduled: true }, results, true, 4)
+
+    expect(eq).toHaveBeenCalledWith('id', 'run-1')
+    const payload = updates[0]
+    expect(payload.status).toBe('completed')
+    expect(payload.completed_at).toBeTruthy()
+    expect(payload.error_message).toBeNull()
+    expect(payload.events_fetched).toBe(0)
+    expect(payload.metadata).toMatchObject({
+      scheduled: true,
+      enrichmentTriggered: true,
+      blocklistCleanup: 4,
+    })
+  })
+
+  it('writes status failed for an all-failed run with an error message', async () => {
+    const { client, updates } = fakeFinalizeClient()
+    await finalizeScrapeRun(client, 'run-2', null, resultsFor([false, false]), false, 0)
+
+    expect(updates[0].status).toBe('failed')
+    expect(updates[0].completed_at).toBeTruthy()
+    expect(updates[0].error_message).toBe('source-0: failure; source-1: failure')
+  })
+
+  it('throws when the update returns an error', async () => {
+    const eq = vi.fn(() => Promise.resolve({ error: { message: 'db constraint violated' } }))
+    const update = vi.fn(() => ({ eq }))
+    const client = { from: vi.fn(() => ({ update })) } as unknown as SupabaseClient
+
+    await expect(
+      finalizeScrapeRun(client, 'run-4', null, resultsFor([true]), false, 0)
+    ).rejects.toThrow('Failed to finalize scrape run: db constraint violated')
+  })
+
+  it('throws when the update rejects', async () => {
+    const eq = vi.fn(() => Promise.reject(new Error('db down')))
+    const update = vi.fn(() => ({ eq }))
+    const client = { from: vi.fn(() => ({ update })) } as unknown as SupabaseClient
+
+    await expect(
+      finalizeScrapeRun(client, 'run-3', null, resultsFor([true]), false, 0)
+    ).rejects.toThrow('db down')
+  })
+})

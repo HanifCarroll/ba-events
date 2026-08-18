@@ -11,7 +11,13 @@
 export { isCloudflareChallenge } from './cloudflare.ts'
 
 // Browserbase (cloud browser) helpers
-export { isBrowserbaseAvailable, createBrowserbaseSession } from './browserbase.ts'
+export {
+  isBrowserbaseAvailable,
+  createBrowserbaseSession,
+  withTimeout,
+  SESSION_CREATION_TIMEOUT_MS,
+  CDP_CONNECT_TIMEOUT_MS,
+} from './browserbase.ts'
 
 // Constants
 export {

@@ -12,10 +12,13 @@
  * datacenter-IP blocking. This mirrors the Meetup scraper's Browserbase path.
  */
 import { chromium } from 'playwright'
-import { createBrowserbaseSession } from '#shared/lib/browser/index.ts'
+import { createBrowserbaseSession, withTimeout, CDP_CONNECT_TIMEOUT_MS } from '#shared/lib/browser/index.ts'
 import { logger } from '#shared/lib/logger.ts'
 import { PASSLINE_API_URL } from './api.ts'
 import type { PasslineEvent } from './api.ts'
+
+/** Bound for the in-page Passline API fetch. */
+const IN_PAGE_FETCH_TIMEOUT_MS = 45_000
 
 /**
  * Fetch all Passline events for Argentina from inside a Browserbase session.
@@ -27,7 +30,9 @@ export async function fetchPasslineEventsWithBrowserbase(): Promise<PasslineEven
   const { sessionId, connectUrl } = await createBrowserbaseSession()
   logger.info('[passline] Browserbase session created', { sessionId })
 
-  const browser = await chromium.connectOverCDP(connectUrl)
+  const browser = await chromium.connectOverCDP(connectUrl, {
+    timeout: CDP_CONNECT_TIMEOUT_MS,
+  })
 
   try {
     const ctx = browser.contexts()[0]
@@ -45,25 +50,29 @@ export async function fetchPasslineEventsWithBrowserbase(): Promise<PasslineEven
       })
     }
 
-    const events = await page.evaluate(
-      async (url: string): Promise<PasslineEvent[]> => {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({ country: 'argentina' }),
-        })
+    const events = await withTimeout(
+      page.evaluate(
+        async (url: string): Promise<PasslineEvent[]> => {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify({ country: 'argentina' }),
+          })
 
-        if (!res.ok) {
-          throw new Error(`Passline API error: ${res.status} ${res.statusText}`)
-        }
+          if (!res.ok) {
+            throw new Error(`Passline API error: ${res.status} ${res.statusText}`)
+          }
 
-        const data = (await res.json()) as { BillboardByCountry?: PasslineEvent[] }
-        return data.BillboardByCountry || []
-      },
-      PASSLINE_API_URL
+          const data = (await res.json()) as { BillboardByCountry?: PasslineEvent[] }
+          return data.BillboardByCountry || []
+        },
+        PASSLINE_API_URL
+      ),
+      IN_PAGE_FETCH_TIMEOUT_MS,
+      'Passline in-page fetch'
     )
 
     logger.info('[passline] Fetched events via Browserbase', { count: events.length })
