@@ -22,6 +22,10 @@ import { handleFor, type PriorDisplayGroup, type VenueFact } from './follow-up.t
 import { runPlanner, type PriorEventHint } from './planner.ts'
 import { runExecutor, type ExecutorTools, type PriorResolvedEvent, type ReadSummary } from './executor.ts'
 import { materializeText } from './materialize.ts'
+import {
+  currentDateInBuenosAires,
+  type LastSearchContext,
+} from './search-context.ts'
 
 export interface OrchestrateInput {
   requestId: string
@@ -30,6 +34,10 @@ export interface OrchestrateInput {
   originalQuery: string
   priorDisplayedEvents: PriorDisplayGroup[]
   venueByEventId?: Map<string, VenueFact>
+  /** Most recent executed search, used only for bounded contextual refinements. */
+  lastSearch?: LastSearchContext | null
+  /** Injectable server-owned BA date for deterministic tests; defaults to today. */
+  currentDateInBA?: string
   pin?: PinResolution
   /** Rehydrated pinned-event facts (server-owned, never client input). */
   pinFacts?: { name: string; venueName: string | null } | null
@@ -196,6 +204,8 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     originalQuery: input.originalQuery,
     locale: input.locale,
     prior: hints,
+    lastSearch: input.lastSearch ?? null,
+    currentDateInBA: input.currentDateInBA ?? currentDateInBuenosAires(),
     pinned,
   })
 
