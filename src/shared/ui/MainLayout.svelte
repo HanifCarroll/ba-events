@@ -19,7 +19,6 @@
 	import SkipLink from '#shared/ui/SkipLink.svelte';
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts';
 	import { signOut } from '#features/auth/api/auth.remote.ts';
-	import { track } from '#shared/lib/analytics.ts';
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte';
 	import FeedbackDialog from '#shared/ui/FeedbackDialog.svelte';
 	import * as m from '#paraglide/messages.js';
@@ -66,7 +65,6 @@
 		isSigningOut = true;
 		try {
 			await signOut();
-			track('auth:logout');
 			// Clear the shared auth state so the sidebar updates immediately.
 			const state = getAuthState();
 			state.user = null;

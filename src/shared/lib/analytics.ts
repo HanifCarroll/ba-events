@@ -1,64 +1,27 @@
 import { getLocale } from '#paraglide/runtime.js'
 import { browser } from '$app/env'
 
-// Chat events - core feature tracking
-export type ChatEvent =
+export type AnalyticsEvent =
   | 'chat:message_sent'
   | 'chat:response_received'
   | 'chat:event_clicked'
-  | 'chat:no_results'
-  | 'chat:directions_opened'
-  | 'chat:venue_link_opened'
-  | 'chat:final_only_response_emitted'
-  | 'chat:response_contract_violation'
-  | 'chat:response_completed_with_fallback'
   | 'chat:error'
-  | 'chat:first_message_handoff'
-
-// Event engagement tracking
-export type EventEngagementEvent =
-  | 'event:viewed'
   | 'event:saved'
   | 'event:unsaved'
   | 'event:link_clicked'
-  | 'event:shared'
-
-// Authentication events
-export type AuthEvent =
-  | 'auth:login_completed'
-  | 'auth:login_failed'
-  | 'auth:logout'
-
-// Concierge/recommendation events
-export type ConciergeEvent =
-  | 'concierge:recommendation_shown'
-  | 'concierge:ticket_clicked'
-  | 'concierge:refinement_clicked'
-  | 'concierge:surprise_me'
-
-// Home screen events
-export type HomeEvent =
-  | 'home:happening_soon_clicked'
-
-// Agent tool usage events (server-side tracking)
-export type AgentToolEvent =
-  | 'agent:tool_used'
-  | 'search:executed'
-
-export type AnalyticsEvent =
-  | ChatEvent
-  | EventEngagementEvent
-  | AuthEvent
-  | ConciergeEvent
-  | HomeEvent
-  | AgentToolEvent
+  | 'feedback:submitted'
 
 // Lazy-loaded PostHog instance (client-side only)
 let posthogInstance: typeof import('posthog-js').default | null = null
 let posthogPromise: Promise<typeof import('posthog-js').default> | null = null
+const ANALYTICS_HOSTS = new Set(['baeventos.com', 'www.baeventos.com'])
+
+export function isAnalyticsEnabled(): boolean {
+  return browser && ANALYTICS_HOSTS.has(window.location.hostname)
+}
 
 async function getPostHog() {
-  if (!browser) return null
+  if (!isAnalyticsEnabled()) return null
   if (posthogInstance) return posthogInstance
 
   if (!posthogPromise) {
@@ -80,7 +43,7 @@ export function track(
   event: AnalyticsEvent,
   properties?: Record<string, unknown>
 ) {
-  if (!browser) return
+  if (!isAnalyticsEnabled()) return
 
   getPostHog().then(posthog => {
     if (posthog) {

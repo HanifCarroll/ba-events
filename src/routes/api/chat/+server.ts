@@ -31,7 +31,6 @@ import { generateId, createUIMessageStream, createUIMessageStreamResponse } from
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
 import { getUserToolContext, getSavedMembershipForIds } from '#features/chat/api/user-tools.server.ts'
 import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
-import { trackServer } from '#shared/lib/analytics.server.ts'
 import { formatTime } from '#shared/lib/utils/formatting.ts'
 import * as m from '#paraglide/messages.js'
 import type {
@@ -268,37 +267,6 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
         const canonical = result.canonical
         providerRequestId = result.providerRequestId
-
-        // Track the reads the executor actually performed (preserves the
-        // search/telemetry signal of the old tool ledger).
-        for (const read of result.reads) {
-          trackServer('agent:tool_used', userContext.userId ?? 'anonymous', {
-            tool: read.toolName,
-            success: read.success,
-          })
-          if (read.toolName === 'search_events') {
-            const input = read.input as { query?: string | null } | undefined
-            trackServer('search:executed', userContext.userId ?? 'anonymous', {
-              query: input?.query ?? null,
-              result_count: read.eventIds.length,
-              success: read.success,
-            })
-          }
-        }
-        trackServer('chat:final_only_response_emitted', userContext.userId ?? 'anonymous', {
-          step_count: result.executionTrace.length,
-          kind: canonical.kind,
-          fallback_used: canonical.provenance.fallbackUsed,
-          event_count: canonical.events.length,
-          final_text_length: canonical.text.length,
-          trace_size_bytes: JSON.stringify(result.executionTrace).length,
-        })
-        if (canonical.provenance.fallbackUsed) {
-          trackServer('chat:response_completed_with_fallback', userContext.userId ?? 'anonymous', {
-            reason: canonical.provenance.fallbackReason ?? 'unknown',
-            kind: canonical.kind,
-          })
-        }
 
         // Server-side authoritative persistence for authenticated users.
         writeStatus('persisting')

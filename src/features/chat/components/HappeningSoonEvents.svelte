@@ -3,7 +3,6 @@
 	import * as m from '#paraglide/messages.js'
 	import { formatPrice } from '#features/chat/lib/messages.ts'
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
-	import { track } from '#shared/lib/analytics.ts'
 	import type { ChatEventPayload } from '#shared/lib/types.ts'
 
 	let {
@@ -42,13 +41,7 @@
 				{@const showPrice = event.is_free || event.price !== null}
 				<button
 					type="button"
-					onclick={() => {
-						track('home:happening_soon_clicked', {
-							event_id: event.id,
-							event_name: event.name
-						})
-						onSelectPrompt(m.home_happening_soon_prompt({ name: event.name }), { eventId: event.id })
-					}}
+					onclick={() => onSelectPrompt(m.home_happening_soon_prompt({ name: event.name }), { eventId: event.id })}
 					aria-label={m.home_happening_soon_prompt({ name: event.name })}
 					class="group flex w-[58%] max-w-[220px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
 				>

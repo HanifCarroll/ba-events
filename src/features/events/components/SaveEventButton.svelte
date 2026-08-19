@@ -77,10 +77,10 @@
 		try {
 			if (newSavedState) {
 				await saveEvent(eventId);
-				track('event:saved', { event_id: eventId, event_name: eventName, source });
+				track('event:saved', { event_id: eventId, source });
 			} else {
 				await unsaveEvent(eventId);
-				track('event:unsaved', { event_id: eventId, event_name: eventName, source });
+				track('event:unsaved', { event_id: eventId, source });
 			}
 			onSaveChange?.(newSavedState);
 		} catch (error) {

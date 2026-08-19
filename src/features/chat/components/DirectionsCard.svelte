@@ -1,21 +1,12 @@
 <script lang="ts">
 	import { MapPin, Navigation, ExternalLink } from 'lucide-svelte'
-	import { track } from '#shared/lib/analytics.ts'
 	import { openMapsUrl } from '#shared/lib/utils/maps.ts'
 	import type { DirectionsData } from '#shared/lib/types.ts'
 
 	let { directions }: { directions: DirectionsData } = $props()
 
-	function handleOpenMaps() {
-		track('chat:directions_opened', {
-			venue_name: directions.venueName,
-			has_event: !!directions.eventName
-		})
-	}
-
 	function handleClick(event: MouseEvent) {
 		event.preventDefault()
-		handleOpenMaps()
 		openMapsUrl(directions.mapsUrl)
 	}
 </script>

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { MapPin, Globe, AtSign } from 'lucide-svelte'
-	import { track } from '#shared/lib/analytics.ts'
 	import type { VenueDetailsData } from '#shared/lib/types.ts'
 
 	let { venue }: { venue: VenueDetailsData } = $props()
@@ -20,9 +19,6 @@
 				: null)
 	)
 
-	function trackClick(kind: 'website' | 'instagram') {
-		track('chat:venue_link_opened', { venue_name: venue.venueName, kind })
-	}
 </script>
 
 <div
@@ -52,7 +48,6 @@
 						href={websiteHref}
 						target="_blank"
 						rel="noopener noreferrer"
-						onclick={() => trackClick('website')}
 						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border/60 bg-card/50 hover:border-primary/30 hover:text-primary transition-all"
 					>
 						<Globe class="h-3.5 w-3.5" />
@@ -64,7 +59,6 @@
 						href={instagramHref}
 						target="_blank"
 						rel="noopener noreferrer"
-						onclick={() => trackClick('instagram')}
 						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border/60 bg-card/50 hover:border-primary/30 hover:text-primary transition-all"
 					>
 						<AtSign class="h-3.5 w-3.5" />

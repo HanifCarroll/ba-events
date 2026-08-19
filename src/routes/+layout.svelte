@@ -7,6 +7,7 @@
 	import { initAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
+	import { isAnalyticsEnabled } from '#shared/lib/analytics.ts'
 	import MainLayout from '#shared/ui/MainLayout.svelte'
 	import Toaster from '#shared/ui/sonner/sonner.svelte'
 	import type { LayoutProps } from './$types'
@@ -35,7 +36,6 @@
 	// non-wrapping sibling in the legacy), so it registers itself here and
 	// PostHogInit notifies it once the client instance is ready.
 	const posthogReadyCallbacks = new Set<() => void>()
-
 	function notifyPosthogReady() {
 		for (const callback of posthogReadyCallbacks) callback()
 	}
@@ -47,7 +47,7 @@
 	// plain $effect is the faithful equivalent — it never touches the render
 	// tree. Runs once per app lifetime via the module-instance guard.
 	$effect(() => {
-		if (!browser || posthogInitStarted) return
+		if (!browser || posthogInitStarted || !isAnalyticsEnabled()) return
 		posthogInitStarted = true
 		let cancelled = false
 
@@ -60,16 +60,11 @@
 					api_host: PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
 					defaults: '2025-05-24',
 					capture_pageview: true,
-					capture_pageleave: true,
-					autocapture: true,
-					disable_surveys: false,
-					disable_session_recording: false,
-					session_recording: {
-						maskAllInputs: false,
-						maskInputOptions: {
-							password: true
-						}
-					},
+					capture_pageleave: false,
+					autocapture: false,
+					disable_surveys: true,
+					disable_session_recording: true,
+					respect_dnt: true,
 					loaded: (ph) => {
 						// Expose globally for debugging.
 						;(window as unknown as Record<string, unknown>).posthog = ph
@@ -103,9 +98,8 @@
 			if (!posthogClient) return
 
 			if (user) {
-				// Identify user with their ID (never use email as distinct_id).
+				// Keep PostHog pseudonymous: Supabase remains the system of record for email.
 				posthogClient.identify(user.id, {
-					email: user.email,
 					locale: getLocale(),
 					is_admin: isAdmin
 				})

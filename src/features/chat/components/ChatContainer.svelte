@@ -24,7 +24,6 @@
 	import { resolveMessageTimestamp } from '#features/chat/lib/message-timestamps.ts'
 	import {
 		markHandoffPhaseTime,
-		readHandoffMarkTime,
 		type HandoffPhase
 	} from '#features/chat/lib/handoff-marks.ts'
 	import {
@@ -292,46 +291,6 @@
 			})
 
 			if (isHandoffRequestRef) {
-				const handoffId = activeHandoffIdRef
-				if (handoffId) {
-					markHandoffPhase('complete')
-					const elapsed = (end?: number, start?: number): number | null =>
-						start !== undefined && end !== undefined
-							? Math.round(Math.max(0, end - start))
-							: null
-					track('chat:first_message_handoff', {
-						handoff_id: handoffId,
-						query: pendingUserMessageRef ?? null,
-						persistence_ms: elapsed(
-							readHandoffMarkTime(handoffId, 'guest_conversation_written'),
-							readHandoffMarkTime(handoffId, 'submit')
-						),
-						navigation_ms: elapsed(
-							readHandoffMarkTime(handoffId, 'mount'),
-							readHandoffMarkTime(handoffId, 'navigate')
-						),
-						consumption_ms: elapsed(
-							readHandoffMarkTime(handoffId, 'consume'),
-							readHandoffMarkTime(handoffId, 'mount')
-						),
-						request_start_ms: elapsed(
-							readHandoffMarkTime(handoffId, 'request_start'),
-							readHandoffMarkTime(handoffId, 'consume')
-						),
-						first_response_ms: elapsed(
-							readHandoffMarkTime(handoffId, 'first_response'),
-							readHandoffMarkTime(handoffId, 'request_start')
-						),
-						completion_ms: elapsed(
-							readHandoffMarkTime(handoffId, 'complete'),
-							readHandoffMarkTime(handoffId, 'request_start')
-						),
-						total_ms: elapsed(
-							readHandoffMarkTime(handoffId, 'complete'),
-							readHandoffMarkTime(handoffId, 'submit')
-						)
-					})
-				}
 				activeHandoffIdRef = null
 				isHandoffRequestRef = false
 				handoffMarksRef = {}
@@ -425,8 +384,7 @@
 			setRequestLifecyclePhase('error')
 			error = err.message || 'An error occurred. Please try again.'
 			track('chat:error', {
-				error_type: 'client_error',
-				error_message: err.message
+				error_type: 'client_error'
 			})
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
@@ -483,7 +441,6 @@
 		eventsCountRef = 0
 		startTimeRef = Date.now()
 		track('chat:message_sent', {
-			query: content,
 			message_length: content.length,
 			has_history: chat.messages.length > 0
 		})

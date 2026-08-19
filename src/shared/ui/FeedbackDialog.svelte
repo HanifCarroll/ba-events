@@ -11,21 +11,7 @@
 	} from '#shared/ui/dialog/index.ts';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Textarea } from '#shared/ui/textarea/index.ts';
-
-	const SURVEY_ID = '019bc2ff-adb1-0000-362c-eed6326569f2';
-	const QUESTION_ID = 'c94107a7-5e8a-4ff3-aa34-f30b41268370';
-
-	// Get the initialized PostHog instance from window
-	function getPostHog() {
-		if (!browser) return null;
-		return (
-			window as unknown as {
-				posthog?: {
-					capture: (event: string, properties?: Record<string, unknown>) => void;
-				};
-			}
-		).posthog;
-	}
+	import { track } from '#shared/lib/analytics.ts';
 
 	let {
 		open,
@@ -35,15 +21,6 @@
 	let feedback = $state('');
 	let isSubmitting = $state(false);
 	let submitted = $state(false);
-
-	// Track survey shown event when dialog opens
-	$effect(() => {
-		if (open && !submitted) {
-			getPostHog()?.capture('survey shown', {
-				$survey_id: SURVEY_ID
-			});
-		}
-	});
 
 	// Auto-close after submission
 	$effect(() => {
@@ -60,23 +37,19 @@
 		}
 	});
 
-	function handleSubmit() {
+	async function handleSubmit() {
 		if (!feedback.trim() || isSubmitting) return;
 
 		isSubmitting = true;
 
 		try {
-			getPostHog()?.capture('survey sent', {
-				$survey_id: SURVEY_ID,
-				[`$survey_response_${QUESTION_ID}`]: feedback,
-				$survey_questions: [
-					{
-						id: QUESTION_ID,
-						question: 'What feedback do you have for us?',
-						response: feedback
-					}
-				]
+			const response = await fetch('/api/feedback', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ message: feedback })
 			});
+			if (!response.ok) throw new Error('Feedback submission failed');
+			track('feedback:submitted');
 			submitted = true;
 		} catch (error) {
 			console.error('Failed to submit feedback:', error);
@@ -86,12 +59,6 @@
 	}
 
 	function handleClose(newOpen: boolean) {
-		if (!newOpen && !submitted) {
-			// Track dismissal
-			getPostHog()?.capture('survey dismissed', {
-				$survey_id: SURVEY_ID
-			});
-		}
 		onOpenChange(newOpen);
 
 		// Reset state after close animation

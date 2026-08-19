@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { exchangeCode } from '#features/auth/api/auth.remote.ts';
-	import { track } from '#shared/lib/analytics.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -39,17 +38,13 @@
 
 			await exchangeCode({ tokenHash, type: type ?? undefined });
 
-			track('auth:login_completed', { method: 'magic_link' });
-
 			status = 'Redirecting...';
 			// Full navigation so the root layout re-seeds auth state from the
 			// session cookies set by the exchange above.
 			window.location.href = '/';
 		} catch (err) {
 			console.error('Auth callback error:', err);
-			const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
-			track('auth:login_failed', { method: 'magic_link', error: errorMessage });
-			clientError = errorMessage;
+			clientError = err instanceof Error ? err.message : 'Authentication failed';
 		}
 	});
 </script>

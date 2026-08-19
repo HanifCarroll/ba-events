@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Mail, Sparkles, Check } from 'lucide-svelte';
 	import { signInWithMagicLink } from '#features/auth/api/client.ts';
-	import { track } from '#shared/lib/analytics.ts';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Input } from '#shared/ui/input/index.ts';
 	import { Label } from '#shared/ui/label/index.ts';
@@ -21,9 +20,7 @@
 			await signInWithMagicLink(email);
 			magicLinkSent = true;
 		} catch (err) {
-			const errorMessage = err instanceof Error ? err.message : 'Failed to send magic link';
-			track('auth:login_failed', { method: 'magic_link', error: errorMessage });
-			error = errorMessage;
+			error = err instanceof Error ? err.message : 'Failed to send magic link';
 		} finally {
 			isSubmitting = false;
 		}

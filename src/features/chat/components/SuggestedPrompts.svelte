@@ -8,7 +8,6 @@
 	import type { SvelteComponentTyped } from 'svelte'
 	import * as m from '#paraglide/messages.js'
 	import type { ChatEventPayload } from '#shared/lib/types.ts'
-	import { track } from '#shared/lib/analytics.ts'
 	import HappeningSoonEvents from './HappeningSoonEvents.svelte'
 
 	let {
@@ -47,7 +46,6 @@
 			? m.context_prompt_time_only({ time: timePart })
 			: m.context_prompt_surprise()
 
-		track('concierge:surprise_me', { time: timeContext })
 		onSelectPrompt(prompt)
 	}
 </script>

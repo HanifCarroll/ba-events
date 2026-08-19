@@ -82,11 +82,6 @@
 					text: buildEventSummary(event, locale),
 					url: shareUrl
 				});
-				track('event:shared', {
-					event_id: event.id,
-					event_name: event.name,
-					share_method: 'native'
-				});
 				return;
 			} catch {
 				// fall back to clipboard
@@ -95,11 +90,6 @@
 
 		await navigator.clipboard.writeText(shareUrl);
 		copied = true;
-		track('event:shared', {
-			event_id: event.id,
-			event_name: event.name,
-			share_method: 'clipboard'
-		});
 		setTimeout(() => {
 			copied = false;
 		}, 2000);
@@ -109,7 +99,6 @@
 		if (!externalEventUrl) return;
 		track('event:link_clicked', {
 			event_id: event.id,
-			event_name: event.name,
 			link_type: getExternalLinkType(externalActionKind)
 		});
 		window.open(externalEventUrl, '_blank', 'noopener,noreferrer');

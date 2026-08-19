@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		Calendar,
 		MapPin,
@@ -79,26 +78,6 @@
 
 	let copied = $state(false);
 
-	// Card content is always visible — track the view on mount.
-	// Hero tracks a recommendation impression; default cards track the view.
-	onMount(() => {
-		if (variant === 'hero') {
-			track('concierge:recommendation_shown', {
-				event_id: event.id,
-				event_name: event.name,
-				position,
-				source
-			});
-		} else {
-			track('event:viewed', {
-				event_id: event.id,
-				event_name: event.name,
-				position,
-				source
-			});
-		}
-	});
-
 	const handleShare = async () => {
 		const shareUrl = getEventUrl(event.id);
 		const shareText = event.venue_name
@@ -108,11 +87,6 @@
 		if (navigator.share) {
 			try {
 				await navigator.share({ title: event.name, text: shareText, url: shareUrl });
-				track('event:shared', {
-					event_id: event.id,
-					event_name: event.name,
-					share_method: 'native'
-				});
 				return;
 			} catch {
 				// User canceled or share failed — fall back to clipboard
@@ -121,11 +95,6 @@
 
 		await navigator.clipboard.writeText(shareUrl);
 		copied = true;
-		track('event:shared', {
-			event_id: event.id,
-			event_name: event.name,
-			share_method: 'clipboard'
-		});
 		setTimeout(() => {
 			copied = false;
 		}, 2000);
@@ -134,7 +103,6 @@
 	const handleExternalClick = () => {
 		track('event:link_clicked', {
 			event_id: event.id,
-			event_name: event.name,
 			link_type: getExternalLinkType(externalActionKind)
 		});
 	};
@@ -142,7 +110,6 @@
 	const handleDetailsClick = () => {
 		track('chat:event_clicked', {
 			event_id: event.id,
-			event_name: event.name,
 			position,
 			source
 		});
