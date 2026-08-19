@@ -150,6 +150,23 @@ export interface PriorResponseHint {
   }>
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function homeHintsFromIds(ids: string[]): PriorResponseHint | null {
+  const events = ids
+    .filter((id) => UUID_RE.test(id))
+    .slice(0, 4)
+    .map((eventId) => ({ eventId, saved: null as PriorSaved }))
+  if (events.length === 0) return null
+  return {
+    assistantMessageId: 'home',
+    createdAt: null,
+    requestId: 'home',
+    events,
+    operations: [],
+  }
+}
+
 // ============================================================================
 // UNTRUSTED PARSER (v3/v4 hint shapes only; v2 had no data-response)
 // ============================================================================

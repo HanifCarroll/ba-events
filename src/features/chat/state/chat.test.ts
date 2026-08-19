@@ -33,11 +33,17 @@ describe('ChatState first-message handoff', () => {
 		const state = new HandoffState()
 
 		state.setPendingFirstMessage({ content: 'first', handoffId: 'h-1' })
-		state.setPendingFirstMessage({ content: 'second', eventId: 'evt-1', handoffId: 'h-2' })
+		state.setPendingFirstMessage({
+			content: 'second',
+			eventId: 'evt-1',
+			happeningSoonEventIds: ['home-1'],
+			handoffId: 'h-2'
+		})
 
 		expect(state.takePendingFirstMessage()).toEqual({
 			content: 'second',
 			eventId: 'evt-1',
+			happeningSoonEventIds: ['home-1'],
 			handoffId: 'h-2'
 		})
 	})

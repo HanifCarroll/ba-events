@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseDataResponseHint,
+  homeHintsFromIds,
   buildPriorContext,
   rehydratePriorContext,
   hintsFromUIMessages,
@@ -263,6 +264,16 @@ describe('buildPriorContext (grouping + saved state)', () => {
     expect(total).toBeLessThanOrEqual(MAX_PRIOR_EVENTS)
     // Oldest events dropped: earliest group's front events are gone.
     expect(ctx.groups.length).toBe(MAX_PRIOR_GROUPS)
+  })
+})
+
+describe('homeHintsFromIds', () => {
+  it('keeps at most four UUIDs and drops invalid ids', () => {
+    const hint = homeHintsFromIds(['bad', E1, E2, E3, E4, E5])
+    expect(hint?.requestId).toBe('home')
+    expect(hint?.events.map((event) => event.eventId)).toEqual([E1, E2, E3, E4])
+    expect(hint?.events.every((event) => event.saved === null)).toBe(true)
+    expect(homeHintsFromIds(['bad'])).toBeNull()
   })
 })
 

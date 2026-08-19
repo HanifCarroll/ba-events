@@ -46,6 +46,7 @@ import {
   hintsFromMessages,
   hintsFromUIMessages,
   rehydratePriorContext,
+  homeHintsFromIds,
   collectEventIds,
   sanitizeText,
   type PriorContext,
@@ -109,6 +110,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let uiMessages: UIMessage[]
   let locale: 'en' | 'es'
   let happeningSoonEventId: string | undefined
+  let happeningSoonEventIds: string[]
   let conversationId: string | null
   let userClientMessageId: string | null
   let assistantClientMessageId: string | null
@@ -118,6 +120,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       messages?: UIMessage[]
       locale?: 'en' | 'es'
       happeningSoonEventId?: string
+      happeningSoonEventIds?: unknown
       conversationId?: string | null
       userClientMessageId?: string | null
       assistantClientMessageId?: string | null
@@ -126,6 +129,9 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     locale = body.locale === 'es' ? 'es' : 'en'
     uiMessages = Array.isArray(body.messages) ? body.messages : []
     happeningSoonEventId = body.happeningSoonEventId
+    happeningSoonEventIds = Array.isArray(body.happeningSoonEventIds)
+      ? body.happeningSoonEventIds.filter((id): id is string => typeof id === 'string')
+      : []
     conversationId = body.conversationId ?? null
     userClientMessageId = body.userClientMessageId ?? null
     assistantClientMessageId = body.assistantClientMessageId ?? null
@@ -209,6 +215,16 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         getEventFactsByIds
       )
       lastSearch = lastSearchContextFromUIMessages(uiMessages)
+    }
+
+    if (priorContext.groups.length === 0) {
+      const homeHint = homeHintsFromIds(happeningSoonEventIds)
+      if (homeHint) {
+        const membership = userContext.isAuthenticated
+          ? await getSavedMembershipForIds(userContext, collectEventIds([homeHint]))
+          : undefined
+        priorContext = await rehydratePriorContext([homeHint], getEventFactsByIds, membership)
+      }
     }
   } catch (error) {
     console.error('[chat] failed to build prior context:', error)

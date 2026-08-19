@@ -105,6 +105,7 @@
 	let prevConversationIdRef: string | null | undefined = untrack(() => conversationId)
 
 	let pendingHappeningSoonEventIdRef: string | null = null
+	let pendingHappeningSoonEventIdsRef: string[] | null = null
 	let pendingUserMessageRef: string | null = null
 	let pendingConversationIdRef: string | null = null
 	let pendingAssistantClientMessageIdRef: string | null = null
@@ -275,12 +276,18 @@
 			body: () => {
 				const happeningSoonEventId = pendingHappeningSoonEventIdRef
 				pendingHappeningSoonEventIdRef = null
+				const happeningSoonEventIds = !chat.messages.some((message) => message.role === 'assistant')
+					? (pendingHappeningSoonEventIdsRef ??
+						happeningSoonEvents?.slice(0, 4).map((event) => event.id))
+					: undefined
+				pendingHappeningSoonEventIdsRef = null
 				return {
 					locale: getLocale() as 'en' | 'es',
 					conversationId: conversationId ?? pendingConversationIdRef ?? null,
 					userClientMessageId: pendingUserClientMessageIdRef,
 					assistantClientMessageId: pendingAssistantClientMessageIdRef,
-					...(happeningSoonEventId ? { happeningSoonEventId } : {})
+					...(happeningSoonEventId ? { happeningSoonEventId } : {}),
+					...(happeningSoonEventIds?.length ? { happeningSoonEventIds } : {})
 				}
 			}
 		}),
@@ -434,8 +441,15 @@
 	// ==========================================================================
 	// Send message
 	// ==========================================================================
-	async function handleSendMessage(content: string, options?: { eventId?: string }) {
+	async function handleSendMessage(
+		content: string,
+		options?: { eventId?: string; happeningSoonEventIds?: string[] }
+	) {
 		pendingHappeningSoonEventIdRef = options?.eventId ?? null
+		pendingHappeningSoonEventIdsRef =
+			options?.happeningSoonEventIds ??
+			happeningSoonEvents?.slice(0, 4).map((event) => event.id) ??
+			null
 		error = null
 		resetRequestCorrelations()
 		eventsCountRef = 0
@@ -490,7 +504,12 @@
 				}
 				isHandoffPending = true
 				markHandoffPhase('navigate', handoffId)
-				chatState.setPendingFirstMessage({ content, eventId: options?.eventId, handoffId })
+				chatState.setPendingFirstMessage({
+					content,
+					eventId: options?.eventId,
+					happeningSoonEventIds: pendingHappeningSoonEventIdsRef ?? undefined,
+					handoffId
+				})
 				onConversationChange?.(currentConversationId)
 				return
 			}
@@ -703,7 +722,10 @@
 			markHandoffPhase('consume')
 			isHandoffRequestRef = true
 			untrack(() => {
-				void handleSendMessage(pending.content, { eventId: pending.eventId })
+				void handleSendMessage(pending.content, {
+					eventId: pending.eventId,
+					happeningSoonEventIds: pending.happeningSoonEventIds
+				})
 			})
 		}
 	})
