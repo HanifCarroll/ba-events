@@ -335,8 +335,9 @@ export async function runExecutor(input: ExecutorInput): Promise<ExecutorResult>
 
       const events = results.map((e) => stampSaved(e, byId.get(e.id) ?? null))
       canonical.kind = 'recommendations'
-      canonical.messageKey =
-        plan.count === 1 && plan.search.objective === 'surprise'
+      canonical.messageKey = result.metadata?.genreMismatch
+        ? 'recommendations_mismatch'
+        : plan.count === 1 && plan.search.objective === 'surprise'
           ? 'recommendations_pick'
           : 'recommendations'
       canonical.events = events

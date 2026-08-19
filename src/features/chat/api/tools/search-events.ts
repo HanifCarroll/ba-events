@@ -15,6 +15,7 @@ import { getNowInBA, ensureChatEventPayloads, formatEventsToolResult } from './u
 import {
   canonicalizeSearchIntent,
   applyPreferAvoid,
+  mapAvoidGenres,
   type EventSearchMust,
 } from './search-intent.ts'
 import {
@@ -32,6 +33,17 @@ import { logger } from '#shared/lib/logger.ts'
 export const DISPLAY_LIMIT_DEFAULT = 1
 export const DISPLAY_LIMIT_MAX = 5
 export const CANDIDATE_LIMIT = 50
+
+function filterNamedGenre<T extends { facets?: { genres?: string[] } }>(
+  candidates: T[],
+  genre: string | undefined
+): { candidates: T[]; mismatch: boolean } {
+  if (!genre) return { candidates, mismatch: false }
+  const filtered = candidates.filter((event) => event.facets?.genres?.includes(genre))
+  return filtered.length > 0
+    ? { candidates: filtered, mismatch: false }
+    : { candidates, mismatch: true }
+}
 
 // ============================================================================
 // INPUT SCHEMA
@@ -195,12 +207,14 @@ The result includes coverage metadata: the window you searched, total matches, a
       const displayLimit = intent.displayLimit
       const query = intent.semanticQuery
       const objective = intent.objective
+      const namedGenre = intent.queryGenres?.length === 1 ? intent.queryGenres[0] : undefined
+      let genreMismatch: string | undefined
 
-      // Avoid terms for the hosted reranker are soft context only. Genres
-      // already hard-excluded upstream (intent.avoid.genres) are gone from the
-      // candidate set, so pass the raw input.avoid strings only when no genre
-      // was hard-excluded.
-      const rerankAvoid = intent.avoid.genres?.length ? [] : (input.avoid ?? [])
+      // Keep non-genre avoids as soft reranker context; genre avoids are already
+      // hard filters and should not be duplicated there.
+      const rerankAvoid = (input.avoid ?? []).filter(
+        (term) => mapAvoidGenres([term]).length === 0
+      )
 
       logger.debug('[search_events] Search parameters', {
         input,
@@ -308,6 +322,9 @@ The result includes coverage metadata: the window you searched, total matches, a
           })
         }
         totalMatches = nowEvents.length
+        const genreResult = filterNamedGenre(nowEvents, namedGenre)
+        nowEvents = genreResult.candidates
+        if (genreResult.mismatch) genreMismatch = namedGenre
         if (objective === 'surprise') {
           searchMode = 'surprise'
           // Surprise is always exactly one pick, ignoring displayLimit.
@@ -371,7 +388,9 @@ The result includes coverage metadata: the window you searched, total matches, a
                 hybridEventSearch(query, f, CANDIDATE_LIMIT)
               )
             : await hybridEventSearch(query, filters, CANDIDATE_LIMIT)
-          const { ordered: reranked, meta } = await rerankEvents(candidates, {
+          const genreResult = filterNamedGenre(candidates, namedGenre)
+          if (genreResult.mismatch) genreMismatch = namedGenre
+          const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
             semanticQuery: query,
             prefer: intent.prefer,
             avoid: rerankAvoid,
@@ -393,7 +412,9 @@ The result includes coverage metadata: the window you searched, total matches, a
                 searchEventsWithFilters(f, CANDIDATE_LIMIT)
               )
             : await searchEventsWithFilters(filters, CANDIDATE_LIMIT)
-          const { ordered: reranked, meta } = await rerankEvents(candidates, {
+          const genreResult = filterNamedGenre(candidates, namedGenre)
+          if (genreResult.mismatch) genreMismatch = namedGenre
+          const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
             semanticQuery: query,
             prefer: intent.prefer,
             avoid: rerankAvoid,
@@ -473,6 +494,7 @@ The result includes coverage metadata: the window you searched, total matches, a
           },
           // Include input for refinement suggestion generation
           toolInput: input,
+          ...(genreMismatch ? { genreMismatch } : {}),
         },
       }
     } catch (error) {

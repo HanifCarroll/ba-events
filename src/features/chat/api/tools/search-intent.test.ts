@@ -266,6 +266,21 @@ describe('canonicalizeSearchIntent — prefer extraction', () => {
     expect(intent.prefer.genres).toContain('techno')
   })
 
+  it.each(['girlfriend', 'novia'])('maps %s to couples', async (query) => {
+    const intent = await canonicalizeSearchIntent({ query }, WEDNESDAY_NOON)
+    expect(intent.prefer.audience).toContain('couples')
+  })
+
+  it('adds electronic to avoid for live music', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'live music' }, WEDNESDAY_NOON)
+    expect(intent.avoid.genres).toContain('electronic')
+  })
+
+  it('does not add electronic to avoid for live techno', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'live techno' }, WEDNESDAY_NOON)
+    expect(intent.avoid.genres ?? []).not.toContain('electronic')
+  })
+
   it('keeps chill detection and fills relaxed vibe for "chill tonight"', async () => {
     const intent = await canonicalizeSearchIntent({ query: 'chill tonight' }, WEDNESDAY_NOON)
     expect(detectChillIntent(intent.semanticQuery)).toBe(true)

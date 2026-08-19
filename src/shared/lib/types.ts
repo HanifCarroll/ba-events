@@ -520,6 +520,7 @@ export type ResponseKind =
 export const MESSAGE_KEYS = [
   'recommendations',
   'recommendations_pick',
+  'recommendations_mismatch',
   'event_details',
   'saved_events',
   'directions',

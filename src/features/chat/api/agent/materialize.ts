@@ -19,6 +19,7 @@ import type {
 export const MESSAGE_KEY_KIND: Record<MessageKey, ResponseKind> = {
   recommendations: 'recommendations',
   recommendations_pick: 'recommendations',
+  recommendations_mismatch: 'recommendations',
   event_details: 'event_details',
   saved_events: 'saved_events',
   directions: 'directions',
@@ -60,6 +61,10 @@ const TEXTS: Record<MessageKey, { en: string; es: string }> = {
   recommendations_pick: {
     en: 'This one looks like a great fit.',
     es: 'Este me parece una gran opción.',
+  },
+  recommendations_mismatch: {
+    en: 'Closest I found — not an exact match for what you asked.',
+    es: 'Esto es lo más cercano — no es exactamente lo que pediste.',
   },
   event_details: {
     en: 'Here are the details.',

@@ -72,6 +72,8 @@ export interface EventSearchAvoid {
 export interface EventSearchIntent {
   must: EventSearchMust
   prefer: EventSearchPrefer
+  /** Genres extracted from the query only, excluding planner-provided preferences. */
+  queryGenres?: string[]
   avoid: EventSearchAvoid
   semanticQuery: string
   displayLimit: number
@@ -178,6 +180,8 @@ const PREFER_ALIASES: Record<PreferFacetKey, PreferAlias[]> = {
     { phrase: 'date', value: 'couples' },
     { phrase: 'cita', value: 'couples' },
     { phrase: 'pareja', value: 'couples' },
+    { phrase: 'girlfriend', value: 'couples' },
+    { phrase: 'novia', value: 'couples' },
   ],
   setting: [
     ...SETTING_VALUES.map((v) => ({ phrase: normalizeText(v), value: v })),
@@ -589,6 +593,17 @@ export async function canonicalizeSearchIntent(
   const avoidGenres = mapAvoidGenres(input.avoid)
   if (avoidGenres.length > 0) avoid.genres = avoidGenres
 
+  // Live music should not drift into electronic-only listings unless the user
+  // explicitly named an electronic genre.
+  const queryPrefer = extractPreferFromQuery(annotated.normalizedQuery)
+  const prefer = mergePrefer(input.prefer, queryPrefer)
+  const namedElectronicGenre = (queryPrefer.genres ?? []).some((genre) =>
+    ['electronic', 'techno', 'house'].includes(genre)
+  )
+  if (prefer.activities?.includes('live-music') && !namedElectronicGenre) {
+    avoid.genres = [...new Set([...(avoid.genres ?? []), 'electronic'])]
+  }
+
   // --- semanticQuery: ordered unconsumed tokens (the annotator's residue) ---
   let semanticQuery = annotated.semanticQuery
 
@@ -596,7 +611,6 @@ export async function canonicalizeSearchIntent(
   // `input.prefer` with soft hints extracted from the free-text query tokens.
   // When the user-facing semanticQuery is empty but prefer terms exist, append
   // them so the hybrid retriever still has something to embed / lexically match.
-  const prefer = mergePrefer(input.prefer, extractPreferFromQuery(annotated.normalizedQuery))
   if (!semanticQuery) {
     semanticQuery = joinPreferIntoQuery(prefer)
   }
@@ -615,6 +629,7 @@ export async function canonicalizeSearchIntent(
   return {
     must,
     prefer,
+    ...(queryPrefer.genres?.length ? { queryGenres: queryPrefer.genres } : {}),
     avoid,
     semanticQuery,
     displayLimit,

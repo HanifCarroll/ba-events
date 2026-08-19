@@ -201,14 +201,21 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     locale: input.locale,
   })
 
-  const plannerResult = await planFn({
-    originalQuery: input.originalQuery,
-    locale: input.locale,
-    prior: hints,
-    lastSearch: input.lastSearch ?? null,
-    currentDateInBA: input.currentDateInBA ?? currentDateInBuenosAires(),
-    pinned,
-  })
+  const plannerResult =
+    pin.requested && pin.status === 'resolved'
+      ? ({
+          ok: true,
+          plan: { kind: 'pinned_event_action', action: 'event_details' } as const,
+          providerRequestId: null,
+        } satisfies Awaited<ReturnType<typeof runPlanner>>)
+      : await planFn({
+          originalQuery: input.originalQuery,
+          locale: input.locale,
+          prior: hints,
+          lastSearch: input.lastSearch ?? null,
+          currentDateInBA: input.currentDateInBA ?? currentDateInBuenosAires(),
+          pinned,
+        })
 
   if (!plannerResult.ok) {
     return {

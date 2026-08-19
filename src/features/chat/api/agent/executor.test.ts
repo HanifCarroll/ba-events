@@ -81,6 +81,20 @@ function run(
 }
 
 describe('executor: current-search follow-ups', () => {
+  it('uses the mismatch message when search returns a genre mismatch', async () => {
+    const r = await run(
+      { kind: 'search', search: { query: 'jazz' }, count: 1, followUp: null },
+      {
+        search: async () => ({
+          success: true,
+          events: [ev('electronic', 'Electronic')],
+          metadata: { genreMismatch: 'jazz' },
+        }),
+      }
+    )
+    expect(r.canonical.messageKey).toBe('recommendations_mismatch')
+  })
+
   it('search three + details second resolves resultIndex 1 exactly', async () => {
     const r = await run({
       kind: 'search',

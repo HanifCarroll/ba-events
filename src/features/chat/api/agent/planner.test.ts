@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { turnPlanSchema, buildPlannerPrompt, type TurnPlan } from './planner.ts'
+import { PLANNER_SYSTEM, turnPlanSchema, buildPlannerPrompt, type TurnPlan } from './planner.ts'
 
 function validSearch(): Record<string, unknown> {
   return { kind: 'search', search: { query: 'jazz' }, count: 3, followUp: null }
@@ -97,6 +97,14 @@ describe('buildPlannerPrompt (bounded server state)', () => {
     expect(prompt).toContain('directions to the second one')
     // The rehydrated fact names are present, but no event UUID is ever emitted.
     expect(prompt).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
+  })
+
+  it('includes first-turn named details and couple avoid rules', () => {
+    expect(PLANNER_SYSTEM).toContain('Prior displayed events is none and Pinned event is none')
+    expect(PLANNER_SYSTEM).toContain('tell me about X')
+    expect(PLANNER_SYSTEM).toContain('which_event')
+    expect(PLANNER_SYSTEM).toContain('speed dating')
+    expect(PLANNER_SYSTEM).toContain('tinder')
   })
 
   it('reports the pinned event when one is showing', () => {

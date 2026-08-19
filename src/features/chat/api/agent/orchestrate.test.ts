@@ -107,6 +107,40 @@ describe('orchestrate: single planner call, no work loop/finalizer', () => {
     expect(result.canonical.provenance.fallbackReason).toBe('invalid_schema')
   })
 
+  it('a resolved pin skips planning and runs event_details for the pinned id', async () => {
+    let planCalls = 0
+    let detailsId: string | undefined
+    const planFn = async (): Promise<PlannerResult> => {
+      planCalls++
+      return { ok: true, plan: PLAN, providerRequestId: null }
+    }
+    const event = { id: 'pinned-id', name: 'Pinned event' } as never
+    const result = await orchestrate({
+      requestId: 'req',
+      userContext: ANON,
+      locale: 'en',
+      originalQuery: 'tell me about it',
+      priorDisplayedEvents: [],
+      pin: { requested: true, status: 'resolved', eventId: 'pinned-id', venueId: null },
+      planFn,
+      buildToolsFn: () => ({
+        search: async () => ({ success: true, events: [] }),
+        eventDetails: async (input) => {
+          detailsId = input.eventId
+          return { success: true, events: [event] }
+        },
+        directions: async () => ({ success: true, directions: null }),
+        venueDetails: async () => ({ success: true, venue: null }),
+        listSaved: async () => ({ success: true, events: [] }),
+      }),
+    })
+
+    expect(planCalls).toBe(0)
+    expect(detailsId).toBe('pinned-id')
+    expect(result.reads.map((read) => read.toolName)).toEqual(['get_event_details'])
+    expect(result.canonical.kind).toBe('event_details')
+  })
+
   it('a requested-but-unresolved pin is a typed failure with zero planner calls', async () => {
     let planCalls = 0
     const planFn = async (): Promise<PlannerResult> => {

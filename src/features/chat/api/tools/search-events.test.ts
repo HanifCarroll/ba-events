@@ -1138,4 +1138,35 @@ describe('search_events plain weekday filter-only + coverage', () => {
     expect(coverage?.searchedFrom).toBeNull()
     expect(coverage?.searchedTo).toBeNull()
   })
+
+  it('filters named query genres but returns a mismatch fallback when none match', async () => {
+    const jazz = { id: 'jazz', name: 'Jazz', starts_at: '2026-08-20T20:00:00Z', categories: [], facets: { genres: ['jazz'] } }
+    const electronic = { id: 'electronic', name: 'Electronic', starts_at: '2026-08-20T20:00:00Z', categories: [], facets: { genres: ['electronic'] } }
+    mockedCountEventsWithFilters.mockResolvedValue(2)
+    mockedHybridEventSearch.mockResolvedValue([jazz, electronic])
+
+    const matching = await searchEventsTool.execute({ query: 'jazz', limit: 5 }, context)
+    expect(matching.events?.map((event) => event.id)).toEqual(['jazz'])
+
+    mockedHybridEventSearch.mockResolvedValue([electronic])
+    const mismatch = await searchEventsTool.execute({ query: 'jazz', limit: 5 }, context)
+    expect(mismatch.events?.map((event) => event.id)).toEqual(['electronic'])
+    expect(mismatch.metadata?.genreMismatch).toBe('jazz')
+  })
+
+  it('does not use planner-provided genres for the named-genre filter', async () => {
+    const candidates = [
+      { id: 'jazz', name: 'Jazz', starts_at: '2026-08-20T20:00:00Z', categories: [], facets: { genres: ['jazz'] } },
+      { id: 'electronic', name: 'Electronic', starts_at: '2026-08-20T20:00:00Z', categories: [], facets: { genres: ['electronic'] } },
+    ]
+    mockedCountEventsWithFilters.mockResolvedValue(2)
+    mockedHybridEventSearch.mockResolvedValue(candidates)
+
+    const result = await searchEventsTool.execute(
+      { query: 'a concert', prefer: { genres: ['jazz'] }, limit: 5 } as never,
+      context
+    )
+    expect(result.events?.map((event) => event.id)).toEqual(['jazz', 'electronic'])
+    expect(result.metadata?.genreMismatch).toBeUndefined()
+  })
 })
