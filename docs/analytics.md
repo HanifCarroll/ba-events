@@ -26,6 +26,18 @@ Authenticated people are identified with their application user ID, locale, and 
 
 Feedback text is stored separately in the first-party `product_feedback` table when a person explicitly submits the form. It is not sent to PostHog.
 
+## Feedback alerts
+
+Every successfully saved feedback submission can send an immediate email through Resend. Configure these server-side deployment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `RESEND_API_KEY` | Resend API key |
+| `FEEDBACK_ALERT_FROM` | Verified Resend sender, for example `BA Eventos <feedback@baeventos.com>` |
+| `FEEDBACK_ALERT_TO` | Alert recipient, for example `hanif@hanifcarroll.com` |
+
+If delivery fails, the feedback remains saved and the person sees a successful submission. The alert includes the submitted feedback and is sent only to the configured recipient; it is never sent to PostHog.
+
 ## Reporting
 
 Use PostHog directly. Do not build a second analytics dashboard or add GA4.

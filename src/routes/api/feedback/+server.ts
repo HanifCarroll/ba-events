@@ -2,6 +2,7 @@ import { json, type RequestHandler } from '@sveltejs/kit'
 import { checkApiRateLimit } from '#features/auth/api/rate-limit.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
+import { sendFeedbackAlert } from '#shared/lib/feedback/alert.server.ts'
 
 const MAX_FEEDBACK_LENGTH = 2000
 
@@ -42,6 +43,9 @@ export const POST: RequestHandler = async (event) => {
     console.error('[feedback] failed to store submission:', error.code)
     return json({ error: 'Unable to send feedback right now.' }, { status: 500 })
   }
+
+  // Saving feedback is the source of truth. An email outage must not make someone submit twice.
+  await sendFeedbackAlert(message)
 
   return json({ success: true })
 }
