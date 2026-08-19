@@ -68,6 +68,42 @@ export function shouldChainNextBatch(
 
 export type ScrapeRunStatus = 'completed' | 'partial' | 'failed'
 
+export const STALE_SCRAPE_RUN_AGE_MS = 2 * 60 * 60 * 1000
+
+/**
+ * Close audit rows that a hard Trigger.dev timeout prevented from finalizing.
+ * The next daily run performs this best-effort reconciliation before creating
+ * its own row. Source-level results remain available in Trigger.dev.
+ */
+export async function reconcileStaleScrapeRuns(
+  client: SupabaseClient,
+  now: Date = new Date()
+): Promise<number> {
+  const reconciledAt = now.toISOString()
+  const cutoff = new Date(now.getTime() - STALE_SCRAPE_RUN_AGE_MS).toISOString()
+
+  const { data, error } = await client
+    .from('scrape_runs')
+    .update({
+      status: 'failed',
+      completed_at: reconciledAt,
+      error_message: 'Run did not finalize before the two-hour stale cutoff',
+      error_details: {
+        reason: 'stale_running_run',
+        reconciledAt,
+      },
+    })
+    .eq('status', 'running')
+    .lt('started_at', cutoff)
+    .select('id')
+
+  if (error) {
+    throw new Error(`Failed to reconcile stale scrape runs: ${error.message}`)
+  }
+
+  return data?.length ?? 0
+}
+
 function getUnknownMessage(value: unknown): string | null {
   if (!value) return null
   if (typeof value === 'string') return value

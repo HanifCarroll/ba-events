@@ -25,6 +25,7 @@ import {
   mapBatchRunsToResults,
   summarizeResults,
   finalizeScrapeRun,
+  reconcileStaleScrapeRuns,
   type DailyScrapeResult,
 } from './daily-scrape-outcome.ts'
 
@@ -127,12 +128,23 @@ export const dailyScrape = schedules.task({
     timezone: 'America/Buenos_Aires',
   },
   maxDuration: 3600, // 1 hour for full scrape
-  run: async (payload): Promise<DailyScrapeResult> => {
+  run: async (payload, { ctx }): Promise<DailyScrapeResult> => {
     console.log('[daily-scrape] Starting daily scrape orchestration')
     console.log(`[daily-scrape] Scheduled time: ${payload.timestamp}`)
 
     const client = createServiceRoleClient()
     const startedAt = new Date().toISOString()
+
+    try {
+      const reconciled = await timed('stale-run reconciliation', () =>
+        reconcileStaleScrapeRuns(client, new Date(startedAt))
+      )
+      if (reconciled > 0) {
+        console.warn(`[daily-scrape] Reconciled ${reconciled} stale scrape run(s)`)
+      }
+    } catch (error) {
+      console.error('[daily-scrape] Failed to reconcile stale scrape runs:', error)
+    }
 
     let scrapeRunId: string | null = null
     let scrapeRunMetadata: unknown = null
@@ -148,8 +160,9 @@ export const dailyScrape = schedules.task({
         .insert({
           source: 'all',
           status: 'running',
-          trigger_id: payload.scheduleId,
+          trigger_id: ctx.run.id,
           metadata: {
+            scheduleId: payload.scheduleId,
             scheduledTime: payload.timestamp,
             lastRun: payload.lastTimestamp,
           },

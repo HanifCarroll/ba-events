@@ -5,6 +5,7 @@ import {
   summarizeResults,
   determineScrapeRunStatus,
   finalizeScrapeRun,
+  reconcileStaleScrapeRuns,
   mergeEnrichmentMetadata,
   shouldChainNextBatch,
   recordEnrichmentAudit,
@@ -185,6 +186,55 @@ describe('finalizeScrapeRun', () => {
     await expect(
       finalizeScrapeRun(client, 'run-3', null, resultsFor([true]), false, 0, 0)
     ).rejects.toThrow('db down')
+  })
+})
+
+describe('reconcileStaleScrapeRuns', () => {
+  function fakeReconciliationClient(
+    data: Array<{ id: string }> = [],
+    error: { message: string } | null = null
+  ) {
+    const updates: Array<Record<string, unknown>> = []
+    const select = vi.fn(() => Promise.resolve({ data, error }))
+    const lt = vi.fn(() => ({ select }))
+    const eq = vi.fn(() => ({ lt }))
+    const update = vi.fn((payload: Record<string, unknown>) => {
+      updates.push(payload)
+      return { eq }
+    })
+    const from = vi.fn(() => ({ update }))
+
+    return { client: { from } as unknown as SupabaseClient, updates, eq, lt }
+  }
+
+  it('marks only runs older than two hours as failed', async () => {
+    const { client, updates, eq, lt } = fakeReconciliationClient([
+      { id: 'stale-1' },
+      { id: 'stale-2' },
+    ])
+    const now = new Date('2026-08-19T12:00:00.000Z')
+
+    await expect(reconcileStaleScrapeRuns(client, now)).resolves.toBe(2)
+
+    expect(eq).toHaveBeenCalledWith('status', 'running')
+    expect(lt).toHaveBeenCalledWith('started_at', '2026-08-19T10:00:00.000Z')
+    expect(updates[0]).toEqual({
+      status: 'failed',
+      completed_at: '2026-08-19T12:00:00.000Z',
+      error_message: 'Run did not finalize before the two-hour stale cutoff',
+      error_details: {
+        reason: 'stale_running_run',
+        reconciledAt: '2026-08-19T12:00:00.000Z',
+      },
+    })
+  })
+
+  it('throws when reconciliation fails', async () => {
+    const { client } = fakeReconciliationClient([], { message: 'db unavailable' })
+
+    await expect(reconcileStaleScrapeRuns(client)).rejects.toThrow(
+      'Failed to reconcile stale scrape runs: db unavailable'
+    )
   })
 })
 
