@@ -37,6 +37,11 @@
 
 	const event = $derived(data.event);
 	const locale = getLocale() as 'en' | 'es';
+	const ogLocale = locale === 'es' ? 'es_AR' : 'en_US';
+	const ogAlternateLocale = locale === 'es' ? 'en_US' : 'es_AR';
+	const eventImageAlt = $derived(
+		locale === 'es' ? `Imagen de ${event.name}` : `Image for ${event.name}`
+	);
 	const fromChat = $derived(page.url.searchParams.get('from') === 'chat');
 
 	const startDate = $derived(new Date(event.starts_at));
@@ -118,14 +123,19 @@
 	<title>{data.meta.title}</title>
 	<meta name="description" content={data.meta.description} />
 	<meta property="og:type" content="event" />
+	<meta property="og:site_name" content="BA Eventos" />
 	<meta property="og:title" content={data.event.name} />
 	<meta property="og:description" content={data.meta.description} />
 	<meta property="og:image" content={data.meta.imageUrl} />
+	<meta property="og:image:alt" content={eventImageAlt} />
 	<meta property="og:url" content={data.meta.eventUrl} />
+	<meta property="og:locale" content={ogLocale} />
+	<meta property="og:locale:alternate" content={ogAlternateLocale} />
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={data.event.name} />
 	<meta name="twitter:description" content={data.meta.description} />
 	<meta name="twitter:image" content={data.meta.imageUrl} />
+	<meta name="twitter:image:alt" content={eventImageAlt} />
 	<link rel="canonical" href={data.meta.eventUrl} />
 	<script type="application/ld+json">
 		{JSON.stringify(data.meta.jsonLd)}

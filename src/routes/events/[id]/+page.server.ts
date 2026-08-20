@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	const summary = buildEventSummary(event);
 	const imageUrl = event.image_url
 		? resolveSiteUrl(event.image_url)
-		: resolveSiteUrl('/og-image.png');
+		: resolveSiteUrl('/og-image-2026.jpg');
 	const eventJsonLd = buildEventJsonLd(event, eventUrl, imageUrl);
 
 	return {

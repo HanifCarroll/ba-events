@@ -126,26 +126,31 @@
 		en: {
 			title: 'BA Events - Discover Buenos Aires',
 			description:
-				'Discover events in Buenos Aires with artificial intelligence. Find techno nights, jazz bars, tango milongas, and more.'
+				"Discover events in Buenos Aires based on when, where, and what you're into. Culture, music, food, markets, and more."
 		},
 		es: {
 			title: 'BA Eventos - Descubrí Buenos Aires',
 			description:
-				'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.'
+				'Descubrí eventos en Buenos Aires según cuándo, dónde y qué te interesa. Cultura, música, gastronomía, mercados y más.'
 		}
 	}
 
 	const locale = getLocale() as AppLocale
 	const seo = SEO[locale]
 	const siteUrl = getSiteUrl()
-	const ogImageUrl = `${siteUrl}/og-image.png`
+	const ogImageUrl = `${siteUrl}/og-image-2026.jpg`
+	const ogLocale = locale === 'es' ? 'es_AR' : 'en_US'
+	const ogAlternateLocale = locale === 'es' ? 'en_US' : 'es_AR'
+	const ogImageAlt =
+		locale === 'es'
+			? 'Un mercado, una función y un concierto al aire libre en Buenos Aires'
+			: 'A market, a performance, and an outdoor concert in Buenos Aires'
 
 	const webAppSchema = JSON.stringify({
 		'@context': 'https://schema.org',
 		'@type': 'WebApplication',
 		name: 'BA Eventos',
-		description:
-			'Descubrí eventos en Buenos Aires con inteligencia artificial. Encontrá noches de techno, bares de jazz, milongas de tango, y más.',
+		description: seo.description,
 		url: siteUrl,
 		applicationCategory: 'EntertainmentApplication',
 		operatingSystem: 'Web',
@@ -167,35 +172,42 @@
 	const isExcludedPage = $derived(
 		EXCLUDED_ROUTES.some((route) => page.url.pathname.startsWith(route))
 	)
+	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
 </script>
 
 <svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
 	<meta name="theme-color" content="#fafaf8" />
-
-	<!-- Open Graph tags -->
-	<meta property="og:type" content="website" />
-	<meta property="og:site_name" content="BA Eventos" />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:image" content={ogImageUrl} />
-	<meta property="og:url" content={siteUrl} />
-	<meta property="og:locale" content="es_AR" />
-	<meta property="og:locale:alternate" content="en_US" />
-
-	<!-- Twitter Card tags -->
-	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-	<meta name="twitter:image" content={ogImageUrl} />
-
-	<link rel="canonical" href={siteUrl} />
 	<link rel="manifest" href="/manifest.json" />
 
-	<script type="application/ld+json">
-		{@html webAppSchema}
-	</script>
+	{#if !isEventPage}
+		<title>{seo.title}</title>
+		<meta name="description" content={seo.description} />
+
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="BA Eventos" />
+		<meta property="og:title" content={seo.title} />
+		<meta property="og:description" content={seo.description} />
+		<meta property="og:image" content={ogImageUrl} />
+		<meta property="og:image:type" content="image/jpeg" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={ogImageAlt} />
+		<meta property="og:url" content={siteUrl} />
+		<meta property="og:locale" content={ogLocale} />
+		<meta property="og:locale:alternate" content={ogAlternateLocale} />
+
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={seo.title} />
+		<meta name="twitter:description" content={seo.description} />
+		<meta name="twitter:image" content={ogImageUrl} />
+		<meta name="twitter:image:alt" content={ogImageAlt} />
+
+		<link rel="canonical" href={siteUrl} />
+
+		<script type="application/ld+json">
+			{@html webAppSchema}
+		</script>
+	{/if}
 </svelte:head>
 
 {#if isExcludedPage}

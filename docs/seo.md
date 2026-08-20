@@ -2,12 +2,12 @@
 
 ## Overview
 
-BA Eventos is a **conversational AI application** for discovering events in Buenos Aires. Unlike traditional event listing sites, this app has a single public-facing chat interface rather than individual event pages.
+BA Eventos is a conversational application for discovering events in Buenos Aires. The homepage centers on chat-based discovery, with public pages for sharing individual events.
 
 ### Key Architectural Considerations
 
-- **Single indexable page**: The main `/` route is the only public page worth optimizing
-- **No event URLs**: Events exist only within chat responses, not as standalone pages
+- **Public discovery page**: The main `/` route presents broad event discovery
+- **Shareable event URLs**: `/events/:id` pages provide event-specific metadata
 - **Auth-gated content**: `/saved`, `/profile` require login
 - **Bilingual**: English and Spanish support via Paraglide
 
@@ -132,13 +132,8 @@ Disallow: /register
 - Neighborhood spotlights
 - Seasonal event roundups
 
-#### 12. Shareable Event Links (Feature Addition)
-**Why**: Enable word-of-mouth and social sharing of specific events.
-
-**Implementation**:
-- Create `/event/:id` routes that display single events
-- Generate OG tags dynamically per event
-- This would be a significant feature addition
+#### 12. Shareable Event Links
+Implemented at `/events/:id` with event-specific Open Graph metadata.
 
 ---
 
@@ -147,6 +142,7 @@ Disallow: /register
 ### Current Route Structure
 ```
 /                 - Chat interface (indexable)
+/events/:id       - Public event detail (indexable)
 /saved            - Saved events (noindex)
 /profile          - User settings (noindex)
 /login            - Auth (noindex)
@@ -156,7 +152,7 @@ Disallow: /register
 ```
 
 ### Meta Tag Implementation Location
-Add meta tags in `src/routes/__root.tsx` or individual route files using TanStack Router's head management.
+Default metadata lives in `src/routes/+layout.svelte`; event-specific metadata lives in `src/routes/events/[id]/+page.svelte`.
 
 ### Language Detection
 Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or headers communicate language to crawlers.
@@ -187,7 +183,7 @@ Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or h
 - [ ] About page
 - [ ] Static guide content
 - [ ] Blog/highlights section
-- [ ] Shareable event links feature
+- [x] Shareable event links feature
 
 ---
 
@@ -199,13 +195,22 @@ Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or h
 - Added Open Graph tags (og:type, og:site_name, og:title, og:description, og:image, og:url, og:locale) to `__root.tsx`
 - Added Twitter Card tags (summary_large_image) to `__root.tsx`
 - Added canonical URL link tag
-- Created 1200x630px OG image (`public/og-image.png`) with Buenos Aires nightlife theme
+- Created 1200x630px OG image (`public/og-image.png`) with Buenos Aires nightlife theme (superseded in 2026)
 - Updated `public/robots.txt` to block /admin/, /saved, /profile, /api/, /login, /register, /auth/
 - Updated `public/manifest.json` with BA Eventos branding; theme colors aligned to the light UI (#fafaf8, matching the `theme-color` meta)
 - Added SEO info section to `SuggestedPrompts.tsx` with H2 heading and descriptive text
 - Added i18n keys for EN/ES (home_about_title, home_about_text)
+- SEO section styled to be subtle (muted-foreground/50) so it doesn't compete with main UI
 
 **Notes**:
 - OG image generated using Playwright to render HTML template to PNG
 - Hreflang deferred as it requires URL-based language routing (current setup uses cookies/headers)
-- SEO section styled to be subtle (muted-foreground/50) so it doesn't compete with main UI
+
+### Date: 2026-08-20
+**Item**: Open Graph Image and Positioning Refresh
+
+**Changes Made**:
+- Replaced the nightlife-focused image with `static/og-image-2026.jpg`, covering markets, performance, and live music
+- Broadened the description from nightlife examples to culture, music, food, markets, and more
+- Added image dimensions, type, alt text, and locale-specific Open Graph metadata
+- Prevented the default site metadata from competing with event-page metadata
