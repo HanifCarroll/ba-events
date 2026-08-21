@@ -12,7 +12,8 @@
 		User,
 		ChevronLeft,
 		ChevronRight,
-		MessageCircle
+		MessageCircle,
+		ShieldCheck
 	} from 'lucide-svelte';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Tooltip, TooltipContent, TooltipTrigger } from '#shared/ui/tooltip/index.ts';
@@ -88,7 +89,8 @@
 		{ to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, exact: true },
 		{ to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
 		{ to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
-		{ label: 'Feedback', icon: MessageCircle, action: handleFeedback }
+		{ label: 'Feedback', icon: MessageCircle, action: handleFeedback },
+		{ to: '/privacy', label: m.nav_privacy(), icon: ShieldCheck }
 	];
 
 	const filteredMainNavItems = $derived(

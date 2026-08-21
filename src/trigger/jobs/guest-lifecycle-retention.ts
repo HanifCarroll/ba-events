@@ -1,10 +1,8 @@
 /**
  * Guest Lifecycle Retention
  *
- * Bounds growth of the `guest_request_lifecycle` debug table. Runs daily and
- * deletes rows older than RETENTION_DAYS. A row stuck in `started` is a
- * diagnostic signal only for a short window; after that it is noise and is
- * purged with everything else.
+ * Bounds growth of the guest lifecycle and transcript debug tables. Runs
+ * daily and deletes rows older than RETENTION_DAYS.
  */
 import { schedules } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client.ts'

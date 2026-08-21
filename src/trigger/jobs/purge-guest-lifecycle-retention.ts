@@ -14,18 +14,30 @@ export async function purgeGuestLifecycleRetention(
 		Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000
 	).toISOString()
 
-	const { error, count } = await client
+	const { error: lifecycleError, count: lifecycleCount } = await client
 		.from('guest_request_lifecycle')
 		.delete({ count: 'exact' })
 		.lt('started_at', cutoff)
 
-	if (error) {
-		console.error('[guest-lifecycle-retention] Purge failed', error.message)
-		throw new Error(`Guest lifecycle retention failed: ${error.message}`)
+	if (lifecycleError) {
+		console.error('[guest-lifecycle-retention] Purge failed', lifecycleError.message)
+		throw new Error(`Guest lifecycle retention failed: ${lifecycleError.message}`)
 	}
 
+	const { error: transcriptError, count: transcriptCount } = await client
+		.from('guest_chat_debug')
+		.delete({ count: 'exact' })
+		.lt('updated_at', cutoff)
+
+	if (transcriptError) {
+		console.error('[guest-lifecycle-retention] Purge failed', transcriptError.message)
+		throw new Error(`Guest lifecycle retention failed: ${transcriptError.message}`)
+	}
+
+	const purged = (lifecycleCount ?? 0) + (transcriptCount ?? 0)
+
 	console.log(
-		`[guest-lifecycle-retention] Purged ${count ?? 0} rows older than ${RETENTION_DAYS} days`
+		`[guest-lifecycle-retention] Purged ${purged} rows older than ${RETENTION_DAYS} days`
 	)
-	return { purged: count ?? 0 }
+	return { purged }
 }

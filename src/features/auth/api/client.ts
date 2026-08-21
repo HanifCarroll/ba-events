@@ -91,6 +91,22 @@ export async function signInWithMagicLink(email: string) {
 	return data
 }
 
+export async function signInWithGoogle() {
+	const client = getSupabaseBrowserClient()
+	const { data, error } = await client.auth.signInWithOAuth({
+		provider: 'google',
+		options: {
+			redirectTo: `${window.location.origin}/auth/callback`
+		}
+	})
+
+	if (error) {
+		throw error
+	}
+
+	return data
+}
+
 // Sign out
 export async function signOut() {
 	const client = getSupabaseBrowserClient()

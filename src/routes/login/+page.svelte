@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Mail, Sparkles, Check } from 'lucide-svelte';
-	import { signInWithMagicLink } from '#features/auth/api/client.ts';
+	import { signInWithGoogle, signInWithMagicLink } from '#features/auth/api/client.ts';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Input } from '#shared/ui/input/index.ts';
 	import { Label } from '#shared/ui/label/index.ts';
@@ -9,7 +9,20 @@
 	let email = $state('');
 	let error = $state<string | null>(null);
 	let isSubmitting = $state(false);
+	let isGoogleSubmitting = $state(false);
 	let magicLinkSent = $state(false);
+
+	async function handleGoogleSignIn() {
+		error = null;
+		isGoogleSubmitting = true;
+
+		try {
+			await signInWithGoogle();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to sign in with Google';
+			isGoogleSubmitting = false;
+		}
+	}
 
 	async function handleMagicLink(e: SubmitEvent) {
 		e.preventDefault();
@@ -82,6 +95,27 @@
 		</div>
 
 		<div class="bg-card/40 backdrop-blur-sm border border-border/50 rounded-xl p-6 shadow-xl shadow-black/20">
+			<Button
+				type="button"
+				onclick={handleGoogleSignIn}
+				disabled={isGoogleSubmitting || isSubmitting}
+				variant="outline"
+				class="w-full bg-background/50"
+			>
+				{#if isGoogleSubmitting}
+					<div class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+				{:else}
+					<span aria-hidden="true" class="font-semibold">G</span>
+					{m.login_google_submit()}
+				{/if}
+			</Button>
+
+			<div class="flex items-center gap-3 my-5 text-xs text-muted-foreground" aria-hidden="true">
+				<div class="h-px flex-1 bg-border/50"></div>
+				<span>{m.login_or()}</span>
+				<div class="h-px flex-1 bg-border/50"></div>
+			</div>
+
 			<form onsubmit={handleMagicLink} class="space-y-4">
 				{#if magicLinkSent}
 					<div class="text-center py-4">
@@ -103,13 +137,6 @@
 						</button>
 					</div>
 				{:else}
-					<div
-						class="inline-flex items-center gap-2 rounded-full border border-border/40 bg-background/50 px-3 py-1 text-xs text-muted-foreground"
-					>
-						<Sparkles class="h-3.5 w-3.5 text-primary" />
-						Magic-link sign in only
-					</div>
-
 					<div class="space-y-2">
 						<Label for="magic-email" class="text-sm text-muted-foreground">
 							{m.login_email()}
