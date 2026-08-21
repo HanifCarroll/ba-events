@@ -188,10 +188,6 @@
 			</form>
 		</div>
 
-		<div class="mt-6 text-center text-xs text-muted-foreground">
-			Use the same email whether you are returning or signing in for the first time.
-		</div>
-
 		<!-- Decorative bottom element -->
 		<div class="flex items-center justify-center gap-2 mt-8">
 			<div class="w-8 h-px bg-gradient-to-r from-transparent via-border to-transparent"></div>
