@@ -12,8 +12,7 @@
 		User,
 		ChevronLeft,
 		ChevronRight,
-		MessageCircle,
-		ShieldCheck
+		MessageCircle
 	} from 'lucide-svelte';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Tooltip, TooltipContent, TooltipTrigger } from '#shared/ui/tooltip/index.ts';
@@ -89,8 +88,7 @@
 		{ to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, exact: true },
 		{ to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
 		{ to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
-		{ label: 'Feedback', icon: MessageCircle, action: handleFeedback },
-		{ to: '/privacy', label: m.nav_privacy(), icon: ShieldCheck }
+		{ label: 'Feedback', icon: MessageCircle, action: handleFeedback }
 	];
 
 	const filteredMainNavItems = $derived(
@@ -173,6 +171,13 @@
 				{/each}
 				<div class="my-2 h-px bg-border"></div>
 				<LanguageSwitcher />
+				<a
+					href="/privacy"
+					onclick={() => (mobileMenuOpen = false)}
+					class="flex min-h-11 items-center px-4 text-sm text-muted-foreground hover:text-foreground"
+				>
+					{m.nav_privacy()}
+				</a>
 				{#if auth.user}
 					<div class="space-y-2">
 						<div class="px-3 py-2">
@@ -287,8 +292,16 @@
 		</nav>
 
 		<!-- Language switcher -->
-		<div class="px-5 pb-3">
+		<div class="px-5 pb-3 space-y-1">
 			<LanguageSwitcher collapsed={collapsed && !mobileMenuOpen} />
+			{#if !collapsed || mobileMenuOpen}
+				<a
+					href="/privacy"
+					class="flex min-h-11 items-center px-4 text-sm text-muted-foreground hover:text-foreground"
+				>
+					{m.nav_privacy()}
+				</a>
+			{/if}
 		</div>
 
 		<div
