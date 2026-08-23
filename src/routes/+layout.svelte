@@ -177,10 +177,10 @@
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
 	const eventId = $derived(page.url.searchParams.get('event'))
 	const selectedEvent = $derived(
-		eventId
-			? page.state.selectedEvent ??
-				(page.data as { selectedEvent?: App.PageState['selectedEvent'] }).selectedEvent
-			: undefined
+		page.state.selectedEvent ??
+			(eventId
+				? (page.data as { selectedEvent?: App.PageState['selectedEvent'] }).selectedEvent
+				: undefined)
 	)
 	let eventOverlay = $state<HTMLDivElement | null>(null)
 
