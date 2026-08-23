@@ -15,13 +15,14 @@
 	import { formatPrice } from '#features/chat/lib/messages.ts';
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts';
 	import { track } from '#shared/lib/analytics.ts';
-	import { preloadData, pushState, goto } from '$app/navigation';
+	import { preloadData, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getEventUrl } from '#shared/lib/utils/url.ts';
 	import { getLocale } from '#paraglide/runtime.js';
 	import { pickDescriptionSummary } from '#features/events/lib/description-presentation.ts';
 	import {
 		getChatEventHref,
+		getEventDetailsGotoOptions,
 		shouldInterceptChatEventClick
 	} from '#features/events/lib/event-detail-navigation.ts';
 	import {
@@ -130,13 +131,19 @@
 
 		click.preventDefault();
 		const href = detailsHref;
-		const result = await preloadData(standaloneDetailsHref);
-		if (result.type === 'loaded' && result.status === 200) {
-			pushState(href, {
-				selectedEvent: result.data as App.PageState['selectedEvent']
-			});
-		} else {
-			await goto(href);
+		try {
+			const result = await preloadData(standaloneDetailsHref);
+			if (result.type === 'loaded' && result.status === 200) {
+				await goto(
+					href,
+					getEventDetailsGotoOptions(result.data as App.PageState['selectedEvent'])
+				);
+			} else {
+				await goto(standaloneDetailsHref);
+			}
+		} catch {
+			// The default was already prevented; visibly navigate if preload fails.
+			await goto(standaloneDetailsHref);
 		}
 	};
 </script>

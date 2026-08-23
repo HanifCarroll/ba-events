@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
 	getChatEventHref,
+	getEventDetailsGotoOptions,
 	shouldInterceptChatEventClick
 } from './event-detail-navigation.ts'
 
@@ -14,10 +15,19 @@ const click = (overrides: Partial<MouseEvent> = {}) => ({
 })
 
 describe('event detail shallow navigation', () => {
-	it('builds chat-scoped event URLs', () => {
+	it('builds chat-scoped event URLs without leaving the chat route', () => {
 		expect(getChatEventHref('/chat/conversation-1', 'event/1')).toBe(
 			'/chat/conversation-1?event=event%2F1'
 		)
+	})
+
+	it('uses shallow goto with the loaded event state', () => {
+		const selectedEvent = { event: { id: 'event-1' } } as App.PageState['selectedEvent']
+
+		expect(getEventDetailsGotoOptions(selectedEvent)).toEqual({
+			state: { selectedEvent },
+			shallow: true
+		})
 	})
 
 	it('intercepts ordinary chat clicks for every card variant', () => {
