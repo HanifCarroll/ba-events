@@ -11,11 +11,22 @@
 		Mic2,
 		Search,
 		Sparkles,
-		Ticket
+		Ticket,
+		User
 	} from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import type { ChatEventPayload } from '#shared/lib/types.ts'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
+	import {
+		DropdownMenu,
+		DropdownMenuContent,
+		DropdownMenuItem,
+		DropdownMenuSeparator,
+		DropdownMenuTrigger
+	} from '#shared/ui/dropdown-menu/index.ts'
+	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
+	import { signOut } from '#features/auth/api/auth.remote.ts'
+	import { goto } from '$app/navigation'
 	import HappeningSoonEvents from './HappeningSoonEvents.svelte'
 
 	let {
@@ -26,9 +37,26 @@
 		happeningSoonEvents?: ChatEventPayload[]
 	} = $props()
 
+	const auth = useAuthContext()
 	let landingQuery = $state('')
 	let landingPage = $state<HTMLDivElement | null>(null)
 	let landingInput = $state<HTMLInputElement | null>(null)
+	let isSigningOut = $state(false)
+
+	async function handleSignOut() {
+		isSigningOut = true
+		try {
+			await signOut()
+			const state = getAuthState()
+			state.user = null
+			state.profile = null
+			await goto('/')
+		} catch (err) {
+			console.error('Sign out error:', err)
+		} finally {
+			isSigningOut = false
+		}
+	}
 
 	function submitQuery() {
 		const prompt = landingQuery.trim()
@@ -108,7 +136,7 @@
 	})
 </script>
 
-<div bind:this={landingPage} class="h-full overflow-y-auto bg-background text-foreground">
+<div bind:this={landingPage} class="h-full overflow-y-auto scroll-smooth bg-background text-foreground">
 	<section class="relative isolate min-h-[760px] overflow-hidden text-white sm:min-h-[680px]">
 		<img
 			src="/hero-rooftop-buenos-aires.jpg"
@@ -129,16 +157,41 @@
 			<a href="/" class="flex items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
 				BA Eventos
 			</a>
-			<div class="flex items-center gap-3 text-xs font-medium sm:gap-6 sm:text-sm">
-				<a href="#how-it-works" class="hover:text-indigo-200">{m.landing_how_it_works()}</a>
-				<a href="/saved" class="hidden hover:text-indigo-200 sm:inline">{m.nav_saved()}</a>
+			<div class="flex items-center gap-2 text-xs font-medium sm:gap-4 sm:text-sm">
+				<a href="#what-it-does" class="hidden hover:text-indigo-200 sm:inline">{m.landing_what_it_does()}</a>
+				<a href="#how-it-works" class="hidden hover:text-indigo-200 sm:inline">{m.landing_how_it_works()}</a>
 				<LanguageSwitcher compact />
-				<a
-					href="/login"
-					class="rounded-lg border border-white/60 px-3 py-2 hover:bg-white/10 sm:px-4"
-				>
-					{m.auth_sign_in()}
-				</a>
+				{#if auth.user}
+					<DropdownMenu>
+						<DropdownMenuTrigger>
+							{#snippet child({ props })}
+								<button
+									{...props}
+									type="button"
+									class="flex min-h-10 items-center gap-1 rounded-lg border border-white/60 px-2.5 py-2 hover:bg-white/10 sm:px-3"
+								>
+									<User class="size-4" aria-hidden="true" />
+									<span>{m.nav_account()}</span>
+								</button>
+							{/snippet}
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end" class="w-48">
+							<DropdownMenuItem onclick={() => goto('/saved')}>{m.nav_my_saved_events()}</DropdownMenuItem>
+							<DropdownMenuItem onclick={() => goto('/profile')}>{m.nav_settings()}</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem onclick={handleSignOut} disabled={isSigningOut}>
+								{isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				{:else}
+					<a
+						href="/login"
+						class="rounded-lg border border-white/60 px-3 py-2 hover:bg-white/10 sm:px-4"
+					>
+						{m.auth_sign_in()}
+					</a>
+				{/if}
 			</div>
 		</nav>
 
@@ -203,7 +256,7 @@
 	<main class="mx-auto max-w-7xl px-5 py-12 sm:px-10 sm:py-16">
 		<HappeningSoonEvents onSelectPrompt={onSelectPrompt} initialEvents={happeningSoonEvents} />
 
-		<section data-reveal="explanation" class="grid gap-10 py-16 lg:grid-cols-2 lg:items-center" aria-labelledby="ask-heading">
+		<section id="what-it-does" data-reveal="explanation" class="scroll-mt-8 grid gap-10 py-16 lg:grid-cols-2 lg:items-center" aria-labelledby="ask-heading">
 			<div>
 				<h2 id="ask-heading" class="font-display text-4xl leading-tight sm:text-5xl">
 					{m.landing_ask_title()}
