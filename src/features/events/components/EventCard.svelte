@@ -129,9 +129,9 @@
 					src={event.image_url}
 					alt=""
 					width={640}
-					height={360}
+					height={640}
 					loading="lazy"
-					class="aspect-video w-full rounded-xl object-cover sm:aspect-square sm:max-w-none"
+					class="aspect-square w-full rounded-xl object-cover sm:max-w-none"
 				/>
 			{/if}
 
