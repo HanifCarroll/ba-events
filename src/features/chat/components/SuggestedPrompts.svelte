@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { onMount } from 'svelte'
+	import { gsap } from 'gsap'
+	import { ScrollTrigger } from 'gsap/ScrollTrigger'
 	import {
 		ArrowUp,
 		ArrowUpRight,
@@ -25,6 +28,7 @@
 
 	let landingQuery = $state('')
 	let landingPage = $state<HTMLDivElement | null>(null)
+	let landingInput = $state<HTMLInputElement | null>(null)
 
 	function submitQuery() {
 		const prompt = landingQuery.trim()
@@ -34,6 +38,83 @@
 	function startAsking() {
 		landingPage?.scrollTo({ top: 0, behavior: 'smooth' })
 	}
+
+	onMount(() => {
+		const root = landingPage
+		if (!root) return
+		landingInput?.focus({ preventScroll: true })
+
+		gsap.registerPlugin(ScrollTrigger)
+		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+		const context = gsap.context(() => {
+			const heroItems = root.querySelectorAll('[data-hero-motion]')
+			const revealItems = root.querySelectorAll('[data-reveal]')
+			const prompts = [
+				m.landing_placeholder(),
+				m.landing_placeholder_2(),
+				m.landing_placeholder_3(),
+				m.landing_placeholder_4(),
+				m.landing_placeholder_5()
+			]
+			const input = landingInput
+
+			if (reduceMotion) {
+				gsap.set([...heroItems, ...revealItems], { clearProps: 'all' })
+				input?.setAttribute('placeholder', prompts[0])
+				return
+			}
+
+			if (input) {
+				const progress = { value: 0 }
+				const typewriter = gsap.timeline({ repeat: -1, defaults: { ease: 'none' } })
+				const setPlaceholder = (text: string) => {
+					input.setAttribute('placeholder', text.slice(0, Math.round(progress.value * text.length)))
+				}
+
+				for (const prompt of prompts) {
+					typewriter.to({}, { duration: 2 })
+					typewriter.to(progress, {
+						value: 1,
+						duration: prompt.length * 0.045,
+						onUpdate: () => setPlaceholder(prompt)
+					})
+					typewriter.to({}, { duration: 3 })
+					typewriter.to(progress, {
+						value: 0,
+						duration: prompt.length * 0.045,
+						onUpdate: () => setPlaceholder(prompt)
+					})
+				}
+			}
+
+			gsap.set(heroItems, { opacity: 0, y: 18 })
+			gsap.set(revealItems, { opacity: 0, y: 24 })
+
+			gsap
+				.timeline({ defaults: { ease: 'power3.out' } })
+				.to('[data-hero-motion="nav"]', { opacity: 1, y: 0, duration: 0.7 })
+				.to('[data-hero-motion="content"]', { opacity: 1, y: 0, duration: 0.85 }, '-=0.45')
+				.to('[data-hero-motion="actions"]', { opacity: 1, y: 0, duration: 0.7 }, '-=0.5')
+				.to('[data-hero-motion="reassurance"]', { opacity: 1, y: 0, duration: 0.55 }, '-=0.4')
+
+			const reveal = (selector: string, trigger: string, start = 'top 82%') => {
+				gsap.to(selector, {
+					opacity: 1,
+					y: 0,
+					duration: 0.8,
+					ease: 'power3.out',
+					stagger: 0.12,
+					scrollTrigger: { trigger, scroller: root, start, once: true }
+				})
+			}
+
+			reveal('[data-reveal="explanation"]', '[data-reveal="explanation"]')
+			reveal('[data-reveal="steps"], [data-reveal="steps-heading"], [data-reveal="step"]', '[data-reveal="steps"]')
+			reveal('[data-reveal="cta"]', '[data-reveal="cta"]', 'top 88%')
+		}, root)
+
+		return () => context.revert()
+	})
 </script>
 
 <div bind:this={landingPage} class="h-full overflow-y-auto bg-background text-foreground">
@@ -50,6 +131,7 @@
 		></div>
 
 		<nav
+			data-hero-motion="nav"
 			class="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-10"
 			aria-label={m.landing_nav_label()}
 		>
@@ -69,7 +151,7 @@
 			</div>
 		</nav>
 
-		<div class="mx-auto flex max-w-4xl flex-col items-center px-5 pb-16 pt-16 text-center sm:pt-24">
+		<div data-hero-motion="content" class="mx-auto flex max-w-4xl flex-col items-center px-5 pb-16 pt-16 text-center sm:pt-24">
 			<h1 class="font-display max-w-[680px] text-5xl leading-[0.98] tracking-tight sm:text-7xl">
 				{m.landing_title()}
 			</h1>
@@ -86,9 +168,10 @@
 				<Search class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
 				<label for="landing-composer" class="sr-only">{m.landing_placeholder()}</label>
 				<input
+					bind:this={landingInput}
 					bind:value={landingQuery}
 					id="landing-composer"
-					placeholder={m.landing_placeholder()}
+					placeholder=""
 					autocomplete="off"
 					class="min-w-0 flex-1 bg-transparent px-1 py-3 text-base outline-none placeholder:text-muted-foreground sm:text-sm"
 				/>
@@ -99,7 +182,7 @@
 					{m.landing_submit()}
 				</button>
 			</form>
-			<div class="mt-6 flex flex-wrap justify-center gap-3">
+			<div data-hero-motion="actions" class="mt-6 flex flex-wrap justify-center gap-3">
 				<button
 					type="button"
 					onclick={() => onSelectPrompt(m.landing_prompt_live_music())}
@@ -122,14 +205,14 @@
 					<Sparkles class="size-4" aria-hidden="true" />{m.home_surprise_label()}
 				</button>
 			</div>
-			<p class="mt-7 text-sm text-white/80">{m.landing_reassurance()}</p>
+			<p data-hero-motion="reassurance" class="mt-7 text-sm text-white/80">{m.landing_reassurance()}</p>
 		</div>
 	</section>
 
 	<main class="mx-auto max-w-7xl px-5 py-12 sm:px-10 sm:py-16">
 		<HappeningSoonEvents onSelectPrompt={onSelectPrompt} initialEvents={happeningSoonEvents} />
 
-		<section class="grid gap-10 py-16 lg:grid-cols-2 lg:items-center" aria-labelledby="ask-heading">
+		<section data-reveal="explanation" class="grid gap-10 py-16 lg:grid-cols-2 lg:items-center" aria-labelledby="ask-heading">
 			<div>
 				<h2 id="ask-heading" class="font-display text-4xl leading-tight sm:text-5xl">
 					{m.landing_ask_title()}
@@ -172,16 +255,16 @@
 			</div>
 		</section>
 
-		<section id="how-it-works" class="scroll-mt-8 py-12 text-center" aria-labelledby="how-heading">
-			<h2 id="how-heading" class="font-display text-4xl">{m.landing_how_it_works()}</h2>
+		<section id="how-it-works" data-reveal="steps" class="scroll-mt-8 py-12 text-center" aria-labelledby="how-heading">
+			<h2 id="how-heading" data-reveal="steps-heading" class="font-display text-4xl">{m.landing_how_it_works()}</h2>
 			<div class="mt-10 grid gap-10 md:grid-cols-3">
-				<div><MessageCircle class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">1. {m.landing_step_one_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_one_body()}</p></div>
-				<div><CalendarDays class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">2. {m.landing_step_two_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_two_body()}</p></div>
-				<div><Ticket class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">3. {m.landing_step_three_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_three_body()}</p></div>
+				<div data-reveal="step"><MessageCircle class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">1. {m.landing_step_one_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_one_body()}</p></div>
+				<div data-reveal="step"><CalendarDays class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">2. {m.landing_step_two_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_two_body()}</p></div>
+				<div data-reveal="step"><Ticket class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">3. {m.landing_step_three_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_three_body()}</p></div>
 			</div>
 		</section>
 
-		<section class="flex flex-col items-center py-12 text-center">
+		<section data-reveal="cta" class="flex flex-col items-center py-12 text-center">
 			<button
 				type="button"
 				onclick={startAsking}

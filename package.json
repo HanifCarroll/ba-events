@@ -64,6 +64,7 @@
 		"date-fns-tz": "^3.2.0",
 		"dexie": "^4.4.5",
 		"dompurify": "^3.4.13",
+		"gsap": "^3.15.0",
 		"lucide-svelte": "^1.0.1",
 		"marked": "^18.0.9",
 		"playwright": "1.57.0",

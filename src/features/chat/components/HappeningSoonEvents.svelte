@@ -32,7 +32,7 @@
 
 		<div
 			data-horizontal-scroll
-			class="flex touch-pan-x gap-3 overflow-x-auto overscroll-contain pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-4 sm:gap-4 sm:overflow-visible sm:overscroll-auto sm:pb-0 stagger-children"
+			class="flex touch-pan-x gap-3 overflow-x-auto overscroll-contain pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-4 sm:gap-4 sm:overflow-visible sm:overscroll-auto sm:pb-0"
 		>
 			{#each displayedEvents as event (event.id)}
 				{@const startDate = new Date(event.starts_at)}
