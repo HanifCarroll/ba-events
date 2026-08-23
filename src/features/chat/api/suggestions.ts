@@ -31,7 +31,7 @@ export interface SuggestionContext {
  * - For no results: suggestions help pivot to new searches
  */
 export function generateSuggestions(context: SuggestionContext): RefinementSuggestion[] {
-  const { originalQuery, toolInput, results, locale } = context
+  const { toolInput, results, locale } = context
   const suggestions: RefinementSuggestion[] = []
   const hasResults = results.length > 0
   const isSingleRecommendation = results.length === 1
@@ -113,14 +113,14 @@ export function generateSuggestions(context: SuggestionContext): RefinementSugge
         suggestions.push({
           id: 'tonight',
           label: locale === 'es' ? 'Esta noche' : 'Tonight',
-          prompt: `${originalQuery} tonight`,
+          prompt: locale === 'es' ? 'esta noche' : 'tonight',
           icon: 'moon',
           type: 'time',
         })
         suggestions.push({
           id: 'weekend',
           label: locale === 'es' ? 'Este finde' : 'This weekend',
-          prompt: `${originalQuery} this weekend`,
+          prompt: locale === 'es' ? 'este fin de semana' : 'this weekend',
           icon: 'calendar',
           type: 'time',
         })
@@ -132,7 +132,7 @@ export function generateSuggestions(context: SuggestionContext): RefinementSugge
         suggestions.push({
           id: 'free',
           label: locale === 'es' ? 'Solo gratis' : 'Free only',
-          prompt: `free ${originalQuery}`,
+          prompt: locale === 'es' ? 'solo gratis' : 'free only',
           icon: 'ticket',
           type: 'price',
         })
@@ -150,7 +150,7 @@ export function generateSuggestions(context: SuggestionContext): RefinementSugge
         suggestions.push({
           id: `neighborhood-${topNeighborhood}`,
           label: locale === 'es' ? `En ${topNeighborhood}` : `In ${topNeighborhood}`,
-          prompt: `${originalQuery} in ${topNeighborhood}`,
+          prompt: locale === 'es' ? `en ${topNeighborhood}` : `in ${topNeighborhood}`,
           icon: 'map-pin',
           type: 'neighborhood',
         })
