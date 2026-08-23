@@ -60,12 +60,13 @@
 
 	let {
 		conversationId = null as string | null,
-		onConversationChange = undefined as ((id: string) => void) | undefined,
+		onConversationChange = undefined as
+			((id: string, options?: { replace?: boolean }) => void) | undefined,
 		happeningSoonEvents = undefined as ChatEventPayload[] | undefined,
 		preloadedConversation = null as ConversationWithMessages | null
 	}: {
 		conversationId?: string | null
-		onConversationChange?: (id: string) => void
+		onConversationChange?: (id: string, options?: { replace?: boolean }) => void
 		happeningSoonEvents?: ChatEventPayload[]
 		preloadedConversation?: ConversationWithMessages | null
 	} = $props()
@@ -110,6 +111,7 @@
 	let pendingAssistantClientMessageIdRef: string | null = null
 	let pendingUserClientMessageIdRef: string | null = null
 	let pendingUserPersistencePromiseRef: Promise<MessagePersistenceResult> | null = null
+	let pendingConversationCreationRef: Promise<{ id: string }> | null = null
 	let pendingUserPersistedMessageIdRef: string | null = null
 	let persistedAssistantMessageIdsRef = new Map<string, string>()
 	let isFirstExchangeRef = true
@@ -282,7 +284,7 @@
 				pendingHappeningSoonEventIdsRef = null
 				return {
 					locale: getLocale() as 'en' | 'es',
-					conversationId: conversationId ?? pendingConversationIdRef ?? null,
+					conversationId: pendingConversationIdRef ?? conversationId ?? null,
 					userClientMessageId: pendingUserClientMessageIdRef,
 					assistantClientMessageId: pendingAssistantClientMessageIdRef,
 					...(happeningSoonEventId ? { happeningSoonEventId } : {}),
@@ -477,8 +479,8 @@
 					throw new Error('[chat] invariant: first-message branch without handoff id')
 				}
 				if (isAuthenticated) {
-					const newConversation = await chatState.createConversation()
-					currentConversationId = newConversation.id
+					pendingConversationCreationRef = chatState.createConversation()
+					currentConversationId = generateId()
 				} else {
 					currentConversationId = generateId()
 					createGuestConversation(currentConversationId)
@@ -514,6 +516,13 @@
 			}
 
 			setRequestLifecyclePhase('preparing')
+			isHandoffPending = false
+			if (pendingConversationCreationRef) {
+				const newConversation = await pendingConversationCreationRef
+				pendingConversationCreationRef = null
+				currentConversationId = newConversation.id
+				onConversationChange?.(newConversation.id, { replace: true })
+			}
 			pendingConversationIdRef = currentConversationId
 
 			const userMessagePayload: MessagePersistencePayload = {
@@ -570,6 +579,7 @@
 			pendingAssistantClientMessageIdRef = null
 			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
+			pendingConversationCreationRef = null
 			pendingUserPersistedMessageIdRef = null
 			persistedAssistantMessageIdsRef.clear()
 			pendingFirstMessage = null
@@ -704,6 +714,7 @@
 			pendingAssistantClientMessageIdRef = null
 			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
+			pendingConversationCreationRef = null
 			pendingUserPersistedMessageIdRef = null
 			persistedAssistantMessageIdsRef.clear()
 			activeHandoffIdRef = null
@@ -716,6 +727,7 @@
 		if (!conversationId) return
 		const pending = chatState.takePendingFirstMessage()
 		if (pending) {
+			pendingFirstMessage = pending
 			activeHandoffIdRef = pending.handoffId
 			markHandoffPhase('consume')
 			isHandoffRequestRef = true

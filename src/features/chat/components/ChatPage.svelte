@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state'
-	import { goto } from '$app/navigation'
+	import { pushState, replaceState } from '$app/navigation'
 	import ChatContainer from './ChatContainer.svelte'
+	import { getChatConversationId, getChatHandoffNavigation } from '#features/chat/lib/chat-navigation.ts'
 	import type { ChatEventPayload, ConversationWithMessages } from '#shared/lib/types.ts'
 
 	/**
@@ -9,7 +10,9 @@
 	 * `/chat/:conversationId` URL (absent on `/`) and drives the URL when a new
 	 * conversation is created, so every chat has a stable address.
 	 */
-	const conversationId = $derived((page.params.conversationId as string | undefined) ?? null)
+	const conversationId = $derived(
+		getChatConversationId(page.url.pathname, page.params.conversationId as string | undefined)
+	)
 
 	// The home route prefetches happening-soon events; the /chat/:id route
 	// prefetches the signed-in conversation. Guests get `conversation: null`
@@ -21,8 +24,10 @@
 	const happeningSoon = $derived(data.happeningSoon)
 	const preloadedConversation = $derived(data.conversation ?? null)
 
-	function handleConversationChange(id: string) {
-		goto(`/chat/${id}`)
+	function handleConversationChange(id: string, options?: { replace?: boolean }) {
+		const navigation = getChatHandoffNavigation(id, page.state)
+		const navigate = options?.replace ? replaceState : pushState
+		navigate(navigation.url, navigation.state)
 	}
 </script>
 
