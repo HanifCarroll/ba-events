@@ -4,6 +4,7 @@
 	import { formatPrice } from '#features/chat/lib/messages.ts'
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
 	import type { ChatEventPayload } from '#shared/lib/types.ts'
+	import EventArtwork from '#features/events/components/EventArtwork.svelte'
 
 	let {
 		onSelectPrompt,
@@ -46,11 +47,12 @@
 					class="group flex w-[58%] max-w-[220px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-card text-left transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto sm:max-w-none"
 				>
 					{#if event.image_url}
-						<img
-							src={event.image_url}
-							alt=""
+						<EventArtwork
+							imageUrl={event.image_url}
+							imageWidth={event.image_width}
+							imageHeight={event.image_height}
 							loading="lazy"
-							class="h-24 w-full object-cover sm:h-36"
+							class="min-h-24 w-full sm:min-h-36"
 						/>
 					{:else}
 						<div

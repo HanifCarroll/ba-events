@@ -232,6 +232,11 @@ export async function processEventbriteImport(
     if (detail.min_age !== null) {
       transformed.min_age = detail.min_age
     }
+    if (detail.image_url) {
+      transformed.image_url = detail.image_url
+      transformed.image_width = detail.image_width
+      transformed.image_height = detail.image_height
+    }
   }
 
   // Step 7: Categorize events with AI
@@ -311,6 +316,8 @@ export async function processEventbriteImport(
             is_free: eventWithEmbedding.is_free,
             min_age: eventWithEmbedding.min_age ?? null,
             image_url: eventWithEmbedding.image_url,
+            image_width: eventWithEmbedding.image_width ?? null,
+            image_height: eventWithEmbedding.image_height ?? null,
             embedding: eventWithEmbedding.embedding,
             search_document: eventWithEmbedding.search_document,
             embedding_version: eventWithEmbedding.embedding_version,

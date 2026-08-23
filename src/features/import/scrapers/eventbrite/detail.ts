@@ -30,6 +30,10 @@ export interface EventbriteDetailInfo {
   hasPrice: boolean
   /** Minimum age, or null when the page lists no age restriction */
   min_age: number | null
+  /** Higher-fidelity image from the detail page JSON-LD, when present */
+  image_url: string | null
+  image_width: number | null
+  image_height: number | null
 }
 
 /**
@@ -51,6 +55,125 @@ function toUtcIso(value: string): string | null {
   const iso = withOffset ? value : `${value}-03:00`
   const date = new Date(iso)
   return isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+/** Extract the detail-page JSON-LD image without fetching the page again. */
+export function extractEventbriteDetailImage(html: string): {
+  url: string | null
+  width: number | null
+  height: number | null
+} {
+  const scripts = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+  for (const match of scripts) {
+    try {
+      const value = JSON.parse(match[1].trim()) as unknown
+      const roots = Array.isArray(value) ? value : [value]
+      const nodes = roots.flatMap((root) => {
+        if (!root || typeof root !== 'object') return []
+        const graph = (root as { ['@graph']?: unknown })['@graph']
+        return Array.isArray(graph) ? graph : [root]
+      })
+      for (const node of nodes) {
+        if (!node || typeof node !== 'object') continue
+        const event = node as { ['@type']?: string | string[]; image?: unknown }
+        const type = event['@type']
+        if (!(type === 'Event' || (Array.isArray(type) && type.includes('Event')))) continue
+        const image = Array.isArray(event.image) ? event.image[0] : event.image
+        const imageObject = typeof image === 'string' ? { url: image } : image
+        if (!imageObject || typeof imageObject !== 'object') continue
+        const record = imageObject as { url?: unknown; width?: unknown; height?: unknown }
+        if (typeof record.url !== 'string' || !/^https?:\/\//.test(record.url)) continue
+        return {
+          url: record.url,
+          width: toImageDimension(record.width) ?? dimensionFromUrl(record.url, 'w') ?? extractMetaDimension(html, 'og:image:width'),
+          height: toImageDimension(record.height) ?? dimensionFromUrl(record.url, 'h') ?? extractMetaDimension(html, 'og:image:height'),
+        }
+      }
+    } catch {
+      // JSON-LD blocks can contain invalid fragments; try the next one.
+    }
+  }
+  return { url: null, width: null, height: null }
+}
+
+function toImageDimension(value: unknown): number | null {
+  const dimension = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  return Number.isInteger(dimension) && dimension > 0 ? dimension : null
+}
+
+function dimensionFromUrl(url: string, key: 'w' | 'h'): number | null {
+  try {
+    return toImageDimension(new URL(url).searchParams.get(key))
+  } catch {
+    return null
+  }
+}
+
+function extractMetaDimension(html: string, property: string): number | null {
+  const match = html.match(new RegExp(`property=["']${property}["'][^>]+content=["'](\\d+)["']`, 'i'))
+  return toImageDimension(match?.[1])
+}
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** Read dimensions from common image headers without decoding or storing the image. */
+export function readImageDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return { width: readUint32(bytes, 16), height: readUint32(bytes, 20) }
+  }
+  if (bytes.length >= 10 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+    return { width: readUint16LittleEndian(bytes, 6), height: readUint16LittleEndian(bytes, 8) }
+  }
+  if (bytes.length >= 30 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+    if (bytes[12] === 0x56 && bytes[13] === 0x50 && bytes[14] === 0x38 && bytes[15] === 0x58) {
+      return {
+        width: 1 + readUint24LittleEndian(bytes, 24),
+        height: 1 + readUint24LittleEndian(bytes, 27),
+      }
+    }
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    for (let offset = 2; offset + 9 < bytes.length; ) {
+      if (bytes[offset] !== 0xff) { offset++; continue }
+      const marker = bytes[offset + 1]
+      offset += 2
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) continue
+      const length = readUint16(bytes, offset)
+      if (length < 2 || offset + length > bytes.length) break
+      if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+        return { width: readUint16(bytes, offset + 5), height: readUint16(bytes, offset + 3) }
+      }
+      offset += length
+    }
+  }
+  return null
+}
+
+function readUint16(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] << 8) | bytes[offset + 1]
+}
+function readUint16LittleEndian(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] | (bytes[offset + 1] << 8)
+}
+function readUint24LittleEndian(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16)
+}
+function readUint32(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] * 0x1000000 + (bytes[offset + 1] << 16) + (bytes[offset + 2] << 8) + bytes[offset + 3]
+}
+
+async function measureImage(url: string): Promise<{ width: number; height: number } | null> {
+  try {
+    const response = await fetch(url, { headers: { 'User-Agent': EVENTBRITE_UA }, signal: AbortSignal.timeout(10000), redirect: 'follow' })
+    if (!response.ok) return null
+    const contentLength = Number(response.headers.get('content-length'))
+    if (contentLength > MAX_IMAGE_BYTES) return null
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (bytes.byteLength > MAX_IMAGE_BYTES) return null
+    return readImageDimensions(bytes)
+  } catch {
+    return null
+  }
 }
 
 /** Extract minimum age from page HTML. Returns null when no age restriction is present. */
@@ -132,6 +255,14 @@ export async function fetchEventbriteDetail(url: string): Promise<EventbriteDeta
 
   const price = extractPrice(html)
   const free = isFreeEvent(html)
+  const image = extractEventbriteDetailImage(html)
+  if (image.url && (!image.width || !image.height)) {
+    const measured = await measureImage(image.url)
+    if (measured) {
+      image.width ??= measured.width
+      image.height ??= measured.height
+    }
+  }
   // "hasPrice" is true only when the page explicitly says free or lists a paid price;
   // a page with neither (no offersSchema, no badge) leaves the price unknown.
   const hasPrice = free || price !== null
@@ -143,6 +274,9 @@ export async function fetchEventbriteDetail(url: string): Promise<EventbriteDeta
     is_free: free,
     hasPrice,
     min_age: extractMinAge(html),
+    image_url: image.url,
+    image_width: image.width,
+    image_height: image.height,
   }
 }
 

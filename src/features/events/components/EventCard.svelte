@@ -10,6 +10,7 @@
 		Check
 	} from 'lucide-svelte';
 	import SaveEventButton from './SaveEventButton.svelte';
+	import EventArtwork from './EventArtwork.svelte';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { formatPrice } from '#features/chat/lib/messages.ts';
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts';
@@ -142,13 +143,12 @@
 			class={`grid gap-5 ${event.image_url ? 'sm:grid-cols-[148px_minmax(0,1fr)] sm:gap-6' : 'max-w-2xl'}`}
 		>
 			{#if event.image_url}
-				<img
-					src={event.image_url}
-					alt=""
-					width={640}
-					height={640}
-					loading="lazy"
-					class="aspect-square w-full rounded-xl object-cover sm:max-w-none"
+				<EventArtwork
+					imageUrl={event.image_url}
+					imageWidth={event.image_width}
+					imageHeight={event.image_height}
+					loading="eager"
+					class="w-full sm:max-w-none"
 				/>
 			{/if}
 

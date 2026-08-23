@@ -131,6 +131,8 @@ export interface Event {
   is_free: boolean
   min_age: number | null // Minimum age required, null means all ages
   image_url: string | null
+  image_width?: number | null
+  image_height?: number | null
   link: string | null
   ticket_url: string | null
   source: string
@@ -181,6 +183,8 @@ export interface EventInsert {
   is_free?: boolean
   min_age?: number | null
   image_url?: string | null
+  image_width?: number | null
+  image_height?: number | null
   link?: string | null
   ticket_url?: string | null
   source: string

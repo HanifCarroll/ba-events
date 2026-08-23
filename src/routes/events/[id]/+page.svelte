@@ -12,6 +12,7 @@
 		Ticket
 	} from 'lucide-svelte';
 	import SaveEventButton from '#features/events/components/SaveEventButton.svelte';
+	import EventArtwork from '#features/events/components/EventArtwork.svelte';
 	import { renderMarkdown } from '#features/events/lib/render-markdown.ts';
 	import { Button } from '#shared/ui/button/index.ts';
 	import { Badge } from '#shared/ui/badge/index.ts';
@@ -172,15 +173,15 @@
 					: 'max-w-2xl'}
 			>
 				{#if event.image_url}
-					<div class="aspect-square w-full overflow-hidden rounded-2xl">
-						<img
-							src={resolveSiteUrl(event.image_url)}
-							alt={event.name}
-							class="block h-full w-full object-cover"
-							loading="eager"
-							fetchpriority="high"
-						/>
-					</div>
+					<EventArtwork
+						imageUrl={resolveSiteUrl(event.image_url)}
+						imageWidth={event.image_width}
+						imageHeight={event.image_height}
+						alt={event.name}
+						loading="eager"
+						fetchpriority="high"
+						class="w-full rounded-2xl"
+					/>
 				{/if}
 
 				<section class="min-w-0 space-y-5" aria-labelledby="event-title">

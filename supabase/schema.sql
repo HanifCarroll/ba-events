@@ -108,6 +108,8 @@ create table events (
   is_free boolean not null default false,
   min_age integer, -- null means all ages
   image_url text,
+  image_width integer check (image_width > 0),
+  image_height integer check (image_height > 0),
   link text,
   ticket_url text,
   source text not null,
