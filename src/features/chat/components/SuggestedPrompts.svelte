@@ -47,7 +47,6 @@
 		gsap.registerPlugin(ScrollTrigger)
 		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 		const context = gsap.context(() => {
-			const heroItems = root.querySelectorAll('[data-hero-motion]')
 			const revealItems = root.querySelectorAll('[data-reveal]')
 			const prompts = [
 				m.landing_placeholder(),
@@ -59,7 +58,7 @@
 			const input = landingInput
 
 			if (reduceMotion) {
-				gsap.set([...heroItems, ...revealItems], { clearProps: 'all' })
+				gsap.set(revealItems, { clearProps: 'all' })
 				input?.setAttribute('placeholder', prompts[0])
 				return
 			}
@@ -87,15 +86,7 @@
 				}
 			}
 
-			gsap.set(heroItems, { opacity: 0, y: 18 })
 			gsap.set(revealItems, { opacity: 0, y: 24 })
-
-			gsap
-				.timeline({ defaults: { ease: 'power3.out' } })
-				.to('[data-hero-motion="nav"]', { opacity: 1, y: 0, duration: 0.7 })
-				.to('[data-hero-motion="content"]', { opacity: 1, y: 0, duration: 0.85 }, '-=0.45')
-				.to('[data-hero-motion="actions"]', { opacity: 1, y: 0, duration: 0.7 }, '-=0.5')
-				.to('[data-hero-motion="reassurance"]', { opacity: 1, y: 0, duration: 0.55 }, '-=0.4')
 
 			const reveal = (selector: string, trigger: string, start = 'top 82%') => {
 				gsap.to(selector, {
@@ -276,3 +267,34 @@
 		</section>
 	</main>
 </div>
+
+<style>
+	@keyframes hero-enter {
+		from {
+			opacity: 0;
+			transform: translateY(18px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		[data-hero-motion] {
+			animation: hero-enter 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+		}
+
+		[data-hero-motion='content'] {
+			animation-delay: 100ms;
+		}
+
+		[data-hero-motion='actions'] {
+			animation-delay: 200ms;
+		}
+
+		[data-hero-motion='reassurance'] {
+			animation-delay: 300ms;
+		}
+	}
+</style>
