@@ -40,7 +40,7 @@
 	const auth = useAuthContext()
 	let landingQuery = $state('')
 	let landingPage = $state<HTMLDivElement | null>(null)
-	let landingInput = $state<HTMLInputElement | null>(null)
+	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
 
 	async function handleSignOut() {
@@ -61,6 +61,13 @@
 	function submitQuery() {
 		const prompt = landingQuery.trim()
 		if (prompt) onSelectPrompt(prompt)
+	}
+
+	function handleComposerKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+			event.preventDefault()
+			submitQuery()
+		}
 	}
 
 	function startAsking() {
@@ -221,24 +228,29 @@
 					event.preventDefault()
 					submitQuery()
 				}}
-				class="mt-8 flex w-full max-w-3xl items-center gap-2 rounded-2xl bg-white p-1.5 pl-4 text-foreground shadow-2xl"
+				class="mt-8 flex w-full max-w-3xl flex-col gap-2 rounded-2xl bg-white p-3 text-foreground shadow-2xl sm:flex-row sm:items-center sm:p-1.5 sm:pl-4"
 			>
-				<Search class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+				<Search class="hidden size-5 shrink-0 text-muted-foreground sm:block" aria-hidden="true" />
 				<label for="landing-composer" class="sr-only">{m.landing_placeholder()}</label>
-				<input
+				<textarea
 					bind:this={landingInput}
 					bind:value={landingQuery}
 					id="landing-composer"
 					placeholder=""
 					autocomplete="off"
-					class="min-w-0 flex-1 bg-transparent px-1 py-3 text-base outline-none placeholder:text-muted-foreground sm:text-sm"
-				/>
-				<button
-					type="submit"
-					class="min-h-11 shrink-0 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:px-6"
-				>
-					{m.landing_submit()}
-				</button>
+					onkeydown={handleComposerKeydown}
+					rows="2"
+					class="min-h-20 w-full min-w-0 resize-none overflow-x-hidden bg-transparent px-1 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground sm:h-11 sm:min-h-11 sm:flex-1 sm:overflow-hidden sm:py-3 sm:text-sm"
+				></textarea>
+				<div class="flex items-center justify-between gap-2 sm:contents">
+					<Search class="size-5 shrink-0 text-muted-foreground sm:hidden" aria-hidden="true" />
+					<button
+						type="submit"
+						class="min-h-11 shrink-0 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:px-6"
+					>
+						{m.landing_submit()}
+					</button>
+				</div>
 			</form>
 			<div data-hero-motion="actions" class="mt-6 flex flex-wrap justify-center gap-3">
 				<button
