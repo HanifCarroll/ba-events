@@ -20,16 +20,19 @@
 
 	let { collapsed = false, compact = false }: { collapsed?: boolean; compact?: boolean } = $props();
 
-	const { user } = useAuthContext();
+	const auth = useAuthContext();
 	const currentLocale = getLocale();
 	const currentConfig = LOCALE_CONFIG[currentLocale] || LOCALE_CONFIG.en;
 
-	function handleLocaleChange(locale: string) {
-		// Save to database if user is logged in (fire and forget)
-		if (user) {
-			updateLocalePreference(locale as Locale).catch(console.error);
+	async function handleLocaleChange(locale: string) {
+		if (auth.user) {
+			try {
+				await updateLocalePreference(locale as Locale);
+			} catch (error) {
+				console.error('Failed to save locale preference:', error);
+				return;
+			}
 		}
-		// Set locale (updates cookie and reloads page)
 		setLocale(locale as (typeof locales)[number]);
 	}
 </script>

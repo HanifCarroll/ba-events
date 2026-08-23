@@ -176,10 +176,24 @@
 							{/snippet}
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" class="w-48">
-							<DropdownMenuItem onclick={() => goto('/saved')}>{m.nav_my_saved_events()}</DropdownMenuItem>
-							<DropdownMenuItem onclick={() => goto('/profile')}>{m.nav_settings()}</DropdownMenuItem>
+							<DropdownMenuItem
+								onclick={() => goto('/saved')}
+								class="cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
+							>
+								{m.nav_my_saved_events()}
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								onclick={() => goto('/profile')}
+								class="cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
+							>
+								{m.nav_settings()}
+							</DropdownMenuItem>
 							<DropdownMenuSeparator />
-							<DropdownMenuItem onclick={handleSignOut} disabled={isSigningOut}>
+							<DropdownMenuItem
+								onclick={handleSignOut}
+								disabled={isSigningOut}
+								class="cursor-pointer hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary"
+							>
 								{isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}
 							</DropdownMenuItem>
 						</DropdownMenuContent>
