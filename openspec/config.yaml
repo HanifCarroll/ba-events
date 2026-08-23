@@ -1,0 +1,7 @@
+schema: spec-driven
+
+context: |
+  BA Events is a SvelteKit 3 / Svelte 5 TypeScript application using Bun only.
+  The current pilot capability is the server-side search_events intent boundary.
+  Canonical product decisions live in docs/decisions.md; implementation and
+  deterministic tests are under src/features/chat/api/tools/.
