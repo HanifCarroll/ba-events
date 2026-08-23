@@ -76,6 +76,7 @@
 			}
 			committedTranscriptRef = committed
 			landingQuery = [baseValueRef, committed, interim].filter(Boolean).join(' ')
+			requestAnimationFrame(resizeLandingInput)
 		}
 
 		recognition.onerror = (event) => {
@@ -144,6 +145,12 @@
 			event.preventDefault()
 			submitQuery()
 		}
+	}
+
+	function resizeLandingInput() {
+		if (!landingInput || window.matchMedia('(min-width: 640px)').matches) return
+		landingInput.style.height = 'auto'
+		landingInput.style.height = `${landingInput.scrollHeight}px`
 	}
 
 	function startAsking() {
@@ -314,7 +321,7 @@
 					event.preventDefault()
 					submitQuery()
 				}}
-				class="mt-8 flex w-full max-w-3xl flex-col gap-2 rounded-2xl bg-white p-3 text-foreground shadow-2xl sm:flex-row sm:items-center sm:p-1.5 sm:pl-4"
+				class="mt-8 flex w-full max-w-3xl flex-col gap-0 rounded-2xl bg-white p-3 text-foreground shadow-2xl sm:flex-row sm:items-center sm:gap-2 sm:p-1.5 sm:pl-4"
 			>
 				<Search class="hidden size-5 shrink-0 text-muted-foreground sm:block" aria-hidden="true" />
 				<label for="landing-composer" class="sr-only">{m.landing_placeholder()}</label>
@@ -325,8 +332,9 @@
 					placeholder=""
 					autocomplete="off"
 					onkeydown={handleComposerKeydown}
-					rows="2"
-					class="min-h-16 w-full min-w-0 resize-none overflow-x-hidden bg-transparent px-1 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground sm:h-11 sm:min-h-11 sm:flex-1 sm:overflow-hidden sm:py-3 sm:text-sm"
+					oninput={resizeLandingInput}
+					rows="1"
+					class="min-h-11 w-full min-w-0 resize-none overflow-x-hidden bg-transparent px-1 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground sm:!h-11 sm:min-h-11 sm:flex-1 sm:overflow-hidden sm:py-3 sm:text-sm"
 				></textarea>
 				<div class="flex items-center justify-between gap-2 sm:contents">
 					<button
