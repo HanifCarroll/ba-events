@@ -82,10 +82,13 @@
 	]);
 
 	const standaloneDetailsHref = $derived(`/events/${event.id}`);
+	const chatPathname = $derived(
+		page.state.chatConversationId
+			? `/chat/${encodeURIComponent(page.state.chatConversationId)}`
+			: page.url.pathname
+	);
 	const detailsHref = $derived(
-		source === 'chat'
-			? getChatEventHref(page.url.pathname, event.id)
-			: standaloneDetailsHref
+		source === 'chat' ? getChatEventHref(chatPathname, event.id) : standaloneDetailsHref
 	);
 
 	let copied = $state(false);
@@ -131,7 +134,10 @@
 		if (!shouldInterceptChatEventClick(source, click)) return;
 
 		click.preventDefault();
-		await goto(detailsHref, getEventDetailsGotoOptions(buildEventDetailData(event)));
+		await goto(
+			detailsHref,
+			getEventDetailsGotoOptions(buildEventDetailData(event), page.state)
+		);
 	};
 </script>
 

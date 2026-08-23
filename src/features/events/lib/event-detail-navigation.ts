@@ -7,10 +7,11 @@ export function getChatEventHref(pathname: string, eventId: string): string {
 }
 
 export function getEventDetailsGotoOptions(
-	selectedEvent: SelectedEvent
+	selectedEvent: SelectedEvent,
+	state: App.PageState = {}
 ): { state: App.PageState; shallow: true } {
 	return {
-		state: { selectedEvent: selectedEvent as App.PageState['selectedEvent'] },
+		state: { ...state, selectedEvent: selectedEvent as App.PageState['selectedEvent'] },
 		shallow: true
 	}
 }

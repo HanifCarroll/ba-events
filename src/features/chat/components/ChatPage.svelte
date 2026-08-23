@@ -11,7 +11,11 @@
 	 * conversation is created, so every chat has a stable address.
 	 */
 	const conversationId = $derived(
-		getChatConversationId(page.url.pathname, page.params.conversationId as string | undefined)
+		getChatConversationId(
+			page.url.pathname,
+			page.params.conversationId as string | undefined,
+			page.state.chatConversationId
+		)
 	)
 
 	// The home route prefetches happening-soon events; the /chat/:id route

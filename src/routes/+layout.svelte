@@ -173,7 +173,8 @@
 	const isExcludedPage = $derived(
 		EXCLUDED_ROUTES.some((route) => page.url.pathname.startsWith(route))
 	)
-	const isLandingPage = $derived(page.url.pathname === '/')
+	const isShallowChat = $derived(!!page.state.chatConversationId)
+	const isLandingPage = $derived(page.url.pathname === '/' && !isShallowChat)
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
 	const eventId = $derived(page.url.searchParams.get('event'))
 	const selectedEvent = $derived(

@@ -23,16 +23,17 @@ describe('event detail shallow navigation', () => {
 		)
 	})
 
-	it('builds immediate shallow-goto state from the card event', () => {
+	it('preserves chat state when building immediate shallow-goto state', () => {
 		const event = {
 			id: 'event-1',
 			name: 'A show',
 			venue_neighborhood: 'Palermo'
 		} as EventWithVenue
 		const selectedEvent = buildEventDetailData(event)
+		const state = { chatConversationId: 'conversation-1' } as App.PageState
 
-		expect(getEventDetailsGotoOptions(selectedEvent)).toEqual({
-			state: { selectedEvent },
+		expect(getEventDetailsGotoOptions(selectedEvent, state)).toEqual({
+			state: { ...state, selectedEvent },
 			shallow: true
 		})
 		expect(selectedEvent.event).toBe(event)
