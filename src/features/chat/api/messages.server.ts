@@ -10,7 +10,7 @@ import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 
-type AddMessageInput = {
+export type AddMessageInput = {
   conversationId: string
   parentMessageId?: string | null
   role: 'user' | 'assistant' | 'system'
@@ -22,7 +22,7 @@ type AddMessageInput = {
   attachedData?: MessageAttachedData
 }
 
-function buildMessageRpcPayload(data: AddMessageInput) {
+export function buildMessageRpcPayload(data: AddMessageInput) {
   return {
     p_conversation_id: data.conversationId,
     p_parent_id: data.parentMessageId ?? null,

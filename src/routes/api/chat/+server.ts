@@ -29,7 +29,7 @@ import type { RequestEvent } from '@sveltejs/kit'
 import type { UIMessage } from 'ai'
 import { generateId, createUIMessageStream, createUIMessageStreamResponse } from 'ai'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
-import { getUserToolContext, getSavedMembershipForIds } from '#features/chat/api/user-tools.server.ts'
+import { getUserToolContext } from '#features/chat/api/user-tools.server.ts'
 import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
 import { formatTime } from '#shared/lib/utils/formatting.ts'
 import * as m from '#paraglide/messages.js'
@@ -39,21 +39,19 @@ import type {
   Message,
   PinResolution,
 } from '#shared/lib/types.ts'
-import { orchestrate } from '#features/chat/api/agent/orchestrate.ts'
+import {
+  normalizeChatTurn,
+  runSharedChatTurn,
+} from '#features/chat/api/agent/shared-turn.server.ts'
 import { persistAssistantMessageV4 } from '#features/chat/api/agent/persist.ts'
 import {
   isDisplayableStatus,
   hintsFromMessages,
   hintsFromUIMessages,
-  rehydratePriorContext,
-  homeHintsFromIds,
-  collectEventIds,
   sanitizeText,
-  type PriorContext,
+  type PriorResponseHint,
 } from '#features/chat/api/agent/follow-up.ts'
-import { detectResponseLanguage, MAX_USER_TEXT } from '#features/chat/api/agent/context.ts'
 import {
-  currentDateInBuenosAires,
   lastSearchContextFromMessages,
   lastSearchContextFromUIMessages,
   type LastSearchContext,
@@ -102,8 +100,6 @@ function createRateLimitResponse(resetTimestamp: number): Response {
   )
 }
 
-const EMPTY_PRIOR: PriorContext = { groups: [], venueByEventId: new Map() }
-
 export const POST = async (event: RequestEvent): Promise<Response> => {
   const { request } = event
 
@@ -148,12 +144,9 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
   const userContext = await getUserToolContext(event)
   const requestId = generateId()
-  const originalQuery = sanitizeText(getLastUserQuery(uiMessages), MAX_USER_TEXT)
-  const currentDateInBA = currentDateInBuenosAires()
-
-  // Response language follows the latest user message; the UI locale is only a
-  // fallback when the message is empty or language-neutral.
-  locale = detectResponseLanguage(originalQuery, locale)
+  const normalizedTurn = normalizeChatTurn(getLastUserQuery(uiMessages), locale)
+  const originalQuery = normalizedTurn.originalQuery
+  locale = normalizedTurn.locale
 
   if (!userContext.isAuthenticated) {
     void persistGuestChatDebug({
@@ -197,37 +190,24 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   // Prior displayed-event context and previous-search context: guest and auth
   // share bounded validation, while authenticated history is read from the
   // server-owned persisted conversation instead of client-supplied canonicals.
-  let priorContext: PriorContext = EMPTY_PRIOR
+  let priorHints: PriorResponseHint[] = []
   let lastSearch: LastSearchContext | null = null
-  try {
-    if (userContext.isAuthenticated && conversationId) {
+  let historyLoadFailed = false
+  if (userContext.isAuthenticated && conversationId) {
+    try {
       const conversation = await getConversation(event, { id: conversationId })
       if (conversation) {
         const storedMessages = (conversation.messages ?? []) as Message[]
-        const hints = hintsFromMessages(storedMessages)
-        const membership = await getSavedMembershipForIds(userContext, collectEventIds(hints))
-        priorContext = await rehydratePriorContext(hints, getEventFactsByIds, membership)
+        priorHints = hintsFromMessages(storedMessages)
         lastSearch = lastSearchContextFromMessages(storedMessages)
       }
-    } else {
-      priorContext = await rehydratePriorContext(
-        hintsFromUIMessages(uiMessages),
-        getEventFactsByIds
-      )
-      lastSearch = lastSearchContextFromUIMessages(uiMessages)
+    } catch (error) {
+      historyLoadFailed = true
+      console.error('[chat] failed to load conversation context:', error)
     }
-
-    if (priorContext.groups.length === 0) {
-      const homeHint = homeHintsFromIds(happeningSoonEventIds)
-      if (homeHint) {
-        const membership = userContext.isAuthenticated
-          ? await getSavedMembershipForIds(userContext, collectEventIds([homeHint]))
-          : undefined
-        priorContext = await rehydratePriorContext([homeHint], getEventFactsByIds, membership)
-      }
-    }
-  } catch (error) {
-    console.error('[chat] failed to build prior context:', error)
+  } else {
+    priorHints = hintsFromUIMessages(uiMessages)
+    lastSearch = lastSearchContextFromUIMessages(uiMessages)
   }
 
   const stream = createUIMessageStream({
@@ -268,15 +248,14 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           await recordGuestRequestStarted({ requestId, conversationId })
         }
 
-        const result = await orchestrate({
+        const result = await runSharedChatTurn({
           requestId,
           userContext,
           locale,
-          originalQuery,
-          priorDisplayedEvents: priorContext.groups,
-          venueByEventId: priorContext.venueByEventId,
+          text: originalQuery,
+          priorHints,
           lastSearch,
-          currentDateInBA,
+          homeEventIds: historyLoadFailed ? [] : happeningSoonEventIds,
           pin,
           pinFacts,
         })

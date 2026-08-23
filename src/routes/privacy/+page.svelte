@@ -7,14 +7,15 @@
 			title: 'Privacy policy',
 			intro:
 				'This policy explains what BA Eventos collects, why we use it, and the choices available to you.',
-			updated: 'Last updated: August 21, 2026',
+			updated: 'Last updated: August 23, 2026',
 			sections: [
 				{
 					title: 'Information we collect',
 					body: [
 						'If you create an account, we receive your email address and basic profile information. Google sign-in may provide your name and profile image. We use this information only to create your account, authenticate you, and display your profile.',
 						'If you are signed in, we store your saved events, language preference, profile name, and chat conversations. Guest chat history is stored in your browser. To troubleshoot failures, we also keep a protected server-side diagnostic copy of guest chat text, language, IP address, and request details for up to 30 days.',
-						'When you send feedback, we store the message and, if you are signed in, your user ID. We may email the feedback to the site operator so it can be reviewed.'
+						'When you send feedback, we store the message and, if you are signed in, your user ID. We may email the feedback to the site operator so it can be reviewed.',
+						'In the Telegram private-chat pilot, we process your Telegram user and chat identifiers and the messages you send. For identity, BA Eventos stores only a one-way HMAC, not your raw Telegram identifiers, username, or name; consenting conversation messages are stored for the retention period below. Telegram is not linked to a BA Eventos account, and event saving is unavailable there.'
 					]
 				},
 				{
@@ -27,7 +28,7 @@
 				{
 					title: 'Chat and AI processing',
 					body: [
-						'Your chat messages are sent to AI service providers, including DeepSeek and OpenAI, when needed to understand your request, search events, and generate a response. Do not include sensitive personal information in a chat message.'
+						'Your chat messages, including consenting Telegram messages, are sent to AI service providers, including DeepSeek and OpenAI, when needed to understand your request, search events, and generate a response. Telegram asks for explicit consent before retaining a query as conversation history or sending it to AI; the webhook uses a transient encrypted handoff to deliver the request and consent flow. Do not include sensitive personal information in a chat message.'
 					]
 				},
 				{
@@ -39,13 +40,13 @@
 				{
 					title: 'Service providers',
 					body: [
-						'We use service providers to run BA Eventos: Supabase for authentication and stored account data; Google for optional sign-in; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
+						'We use service providers to run BA Eventos: Supabase for authentication, stored account data, and Telegram pilot conversations; Trigger.dev for encrypted Telegram background processing; Google for optional sign-in; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
 					]
 				},
 				{
 					title: 'Retention and your choices',
 					body: [
-						'Account data is kept while your account is active. You can delete your account, profile, saved events, and account conversations from Settings. You can delete guest conversations in the app or clear them by removing this site’s browser data. A feedback message may be retained for review after account deletion, without its link to your account.',
+						'Account data is kept while your account is active. You can delete your account, profile, saved events, and account conversations from Settings. You can delete guest conversations in the app or clear them by removing this site’s browser data. Telegram pilot data is kept for no more than 30 days. Using /delete immediately removes the conversation and HMAC identity; a minimal operational delivery record, without chat or user identifiers or message text, may remain until it ages out. A feedback message may be retained for review after account deletion, without its link to your account.',
 						'You may ask to access, correct, update, or delete your personal data. In Argentina, these rights are protected by Law 25,326. Use the Feedback option in BA Eventos to contact us about a privacy request.'
 					]
 				},
@@ -61,14 +62,15 @@
 			title: 'Política de privacidad',
 			intro:
 				'Esta política explica qué recopila BA Eventos, para qué lo usamos y qué opciones tenés.',
-			updated: 'Última actualización: 21 de agosto de 2026',
+			updated: 'Última actualización: 23 de agosto de 2026',
 			sections: [
 				{
 					title: 'Información que recopilamos',
 					body: [
 						'Si creás una cuenta, recibimos tu correo electrónico e información básica de perfil. El acceso con Google puede proporcionar tu nombre y foto de perfil. Usamos esta información únicamente para crear tu cuenta, autenticarte y mostrar tu perfil.',
 						'Si iniciás sesión, guardamos tus eventos, preferencia de idioma, nombre de perfil y conversaciones. El historial de chat de invitado se guarda en tu navegador. Para diagnosticar fallas, también conservamos una copia protegida en el servidor con el texto del chat, idioma, dirección IP y detalles de la solicitud durante un máximo de 30 días.',
-						'Cuando enviás comentarios, guardamos el mensaje y, si iniciaste sesión, tu identificador de usuario. Podemos enviar el comentario por correo al responsable del sitio para revisarlo.'
+						'Cuando enviás comentarios, guardamos el mensaje y, si iniciaste sesión, tu identificador de usuario. Podemos enviar el comentario por correo al responsable del sitio para revisarlo.',
+						'En el piloto de chat privado de Telegram, procesamos tus identificadores de usuario y chat de Telegram y los mensajes que enviás. Para la identidad, BA Eventos guarda únicamente un HMAC unidireccional, no tus identificadores sin procesar, usuario ni nombre de Telegram; los mensajes enviados con consentimiento se guardan durante el plazo indicado abajo. No vinculamos Telegram con una cuenta de BA Eventos y allí no se pueden guardar eventos.'
 					]
 				},
 				{
@@ -81,7 +83,7 @@
 				{
 					title: 'Chat y procesamiento con IA',
 					body: [
-						'Tus mensajes se envían a proveedores de IA, incluidos DeepSeek y OpenAI, cuando es necesario para interpretar tu pedido, buscar eventos y generar una respuesta. No incluyas información personal sensible en un mensaje.'
+						'Tus mensajes, incluidos los mensajes de Telegram enviados con consentimiento, se envían a proveedores de IA, incluidos DeepSeek y OpenAI, cuando es necesario para interpretar tu pedido, buscar eventos y generar una respuesta. Telegram pide consentimiento explícito antes de conservar una consulta en el historial o enviarla a la IA; el webhook usa una transferencia cifrada transitoria para entregar la solicitud y el flujo de consentimiento. No incluyas información personal sensible en un mensaje.'
 					]
 				},
 				{
@@ -93,13 +95,13 @@
 				{
 					title: 'Proveedores',
 					body: [
-						'Usamos proveedores para operar BA Eventos: Supabase para autenticación y datos de cuenta; Google para el acceso opcional; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
+						'Usamos proveedores para operar BA Eventos: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Trigger.dev para el procesamiento cifrado de Telegram en segundo plano; Google para el acceso opcional; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
 					]
 				},
 				{
 					title: 'Conservación y tus opciones',
 					body: [
-						'Conservamos los datos de la cuenta mientras esté activa. Podés eliminar tu cuenta, perfil, eventos guardados y conversaciones de la cuenta desde Configuración. Podés borrar conversaciones de invitado en la app o eliminar los datos de este sitio del navegador. Un comentario puede conservarse para revisión después de eliminar la cuenta, sin el vínculo con tu cuenta.',
+						'Conservamos los datos de la cuenta mientras esté activa. Podés eliminar tu cuenta, perfil, eventos guardados y conversaciones de la cuenta desde Configuración. Podés borrar conversaciones de invitado en la app o eliminar los datos de este sitio del navegador. Los datos del piloto de Telegram se conservan como máximo 30 días. Al usar /delete se borran inmediatamente la conversación y la identidad HMAC; un registro operativo mínimo de entrega, sin identificadores de chat o usuario ni texto de mensajes, puede permanecer hasta vencer. Un comentario puede conservarse para revisión después de eliminar la cuenta, sin el vínculo con tu cuenta.',
 						'Podés pedir acceso, rectificación, actualización o supresión de tus datos personales. En Argentina, estos derechos están protegidos por la Ley 25.326. Usá la opción Comentarios de BA Eventos para contactarnos por una solicitud de privacidad.'
 					]
 				},

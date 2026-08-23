@@ -765,10 +765,14 @@ export interface MessageAttachedData {
   canonical?: unknown
 }
 
+export type ConversationChannel = 'web' | 'telegram'
+
 /** Database record for a conversation */
 export interface Conversation {
   id: string
   user_id: string | null
+  channel: ConversationChannel
+  external_identity_hash: string | null
   title: string
   created_at: string
   updated_at: string
@@ -779,12 +783,16 @@ export interface Conversation {
 /** For inserting a new conversation */
 export interface ConversationInsert {
   user_id?: string | null
+  channel?: ConversationChannel
+  external_identity_hash?: string | null
   title?: string
   metadata?: Record<string, Json>
 }
 
 /** For updating a conversation */
-export type ConversationUpdate = Partial<Omit<ConversationInsert, 'user_id'>> & {
+export type ConversationUpdate = Partial<
+  Omit<ConversationInsert, 'user_id' | 'channel' | 'external_identity_hash'>
+> & {
   deleted_at?: string | null
 }
 

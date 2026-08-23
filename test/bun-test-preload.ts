@@ -13,7 +13,16 @@
 // global at open time). Preload runs before every test file, so this is the
 // only reliable ordering.
 import 'fake-indexeddb/auto'
-import { vi } from 'bun:test'
+import { mock, vi } from 'bun:test'
+
+// SvelteKit 3's `$app/env` is virtual in Vite but literal Bun has no plugin
+// resolver. Tests exercise SSR behavior, so the server-side values are enough.
+mock.module('$app/env', () => ({
+	browser: false,
+	building: false,
+	dev: false,
+	version: 'test'
+}))
 
 type AnyVi = typeof vi & Record<string, unknown>
 
