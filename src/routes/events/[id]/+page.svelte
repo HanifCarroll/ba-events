@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/env';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		ArrowLeft,
@@ -118,7 +118,10 @@
 			if (page.state.selectedEvent && browser && history.length > 1) {
 				history.back();
 			} else {
-				replaceState(page.url.pathname, {});
+				void goto(page.url.pathname, {
+					replace: true,
+					reset: false
+				});
 			}
 			return;
 		}
