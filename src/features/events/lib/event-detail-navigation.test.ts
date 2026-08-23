@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import type { EventWithVenue } from '#shared/lib/types.ts'
+import { buildEventDetailData } from './event-detail-data.ts'
 import {
 	getChatEventHref,
 	getEventDetailsGotoOptions,
@@ -21,13 +23,19 @@ describe('event detail shallow navigation', () => {
 		)
 	})
 
-	it('uses shallow goto with the loaded event state', () => {
-		const selectedEvent = { event: { id: 'event-1' } } as App.PageState['selectedEvent']
+	it('builds immediate shallow-goto state from the card event', () => {
+		const event = {
+			id: 'event-1',
+			name: 'A show',
+			venue_neighborhood: 'Palermo'
+		} as EventWithVenue
+		const selectedEvent = buildEventDetailData(event)
 
 		expect(getEventDetailsGotoOptions(selectedEvent)).toEqual({
 			state: { selectedEvent },
 			shallow: true
 		})
+		expect(selectedEvent.event).toBe(event)
 	})
 
 	it('intercepts ordinary chat clicks for every card variant', () => {

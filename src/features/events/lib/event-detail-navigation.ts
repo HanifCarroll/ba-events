@@ -1,11 +1,18 @@
+import type { buildEventDetailData } from './event-detail-data.ts'
+
+type SelectedEvent = ReturnType<typeof buildEventDetailData>
+
 export function getChatEventHref(pathname: string, eventId: string): string {
 	return `${pathname}?event=${encodeURIComponent(eventId)}`
 }
 
 export function getEventDetailsGotoOptions(
-	selectedEvent: App.PageState['selectedEvent']
+	selectedEvent: SelectedEvent
 ): { state: App.PageState; shallow: true } {
-	return { state: { selectedEvent }, shallow: true }
+	return {
+		state: { selectedEvent: selectedEvent as App.PageState['selectedEvent'] },
+		shallow: true
+	}
 }
 
 export function shouldInterceptChatEventClick(
