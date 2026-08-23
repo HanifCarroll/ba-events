@@ -24,15 +24,15 @@
 {#if displayedEvents.length === 0}
 	<!-- Hidden entirely when there are no events to show (legacy behavior). -->
 {:else}
-	<section class="border-t border-border/60 pt-3" aria-label={m.home_happening_soon_title()}>
-		<div class="mb-2.5 flex items-baseline justify-between gap-3">
-			<h2 class="text-sm font-medium text-foreground">{m.home_happening_soon_title()}</h2>
+	<section aria-label={m.home_happening_soon_title()}>
+		<div class="mb-4 flex items-baseline justify-between gap-3">
+			<h2 class="text-base font-medium text-foreground">{m.home_happening_soon_title()}</h2>
 			<p class="text-right text-xs text-muted-foreground">{m.home_happening_soon_hint()}</p>
 		</div>
 
 		<div
 			data-horizontal-scroll
-			class="flex touch-pan-x gap-2.5 overflow-x-auto overscroll-contain pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-4 sm:gap-3 sm:overflow-visible sm:overscroll-auto sm:pb-0 stagger-children"
+			class="flex touch-pan-x gap-3 overflow-x-auto overscroll-contain pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:touch-auto sm:grid-cols-4 sm:gap-4 sm:overflow-visible sm:overscroll-auto sm:pb-0 stagger-children"
 		>
 			{#each displayedEvents as event (event.id)}
 				{@const startDate = new Date(event.starts_at)}
@@ -50,16 +50,16 @@
 							src={event.image_url}
 							alt=""
 							loading="lazy"
-							class="h-16 w-full object-cover sm:h-20"
+							class="h-24 w-full object-cover sm:h-36"
 						/>
 					{:else}
 						<div
-							class="flex h-16 items-center justify-center bg-muted text-muted-foreground/60 sm:h-20"
+							class="flex h-24 items-center justify-center bg-muted text-muted-foreground/60 sm:h-36"
 						>
 							<Calendar class="h-6 w-6" aria-hidden="true" />
 						</div>
 					{/if}
-					<div class="p-2.5">
+					<div class="p-3">
 						<p
 							class="line-clamp-1 text-sm font-medium text-foreground transition-colors group-hover:text-primary"
 						>

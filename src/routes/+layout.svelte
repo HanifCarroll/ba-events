@@ -172,6 +172,7 @@
 	const isExcludedPage = $derived(
 		EXCLUDED_ROUTES.some((route) => page.url.pathname.startsWith(route))
 	)
+	const isLandingPage = $derived(page.url.pathname === '/')
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
 </script>
 
@@ -210,7 +211,7 @@
 	{/if}
 </svelte:head>
 
-{#if isExcludedPage}
+{#if isExcludedPage || isLandingPage}
 	<!-- Atmospheric gradient overlay -->
 	<div
 		class="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0"

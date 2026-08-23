@@ -33,7 +33,7 @@
 	} from '#features/chat/lib/canonical.ts'
 	import MessageList from './MessageList.svelte'
 	import ChatInput from './ChatInput.svelte'
-	import SuggestedPrompts, { type HomeTimeContext } from './SuggestedPrompts.svelte'
+	import SuggestedPrompts from './SuggestedPrompts.svelte'
 	import {
 		CHAT_CONTRACT_VERSION,
 		type CanonicalChatResponse,
@@ -77,7 +77,6 @@
 	// Rendered state
 	// ==========================================================================
 	let error = $state<string | null>(null)
-	let homeTimeContext = $state<HomeTimeContext>(null)
 	let pendingFirstMessage = $state<PendingFirstMessage | null>(null)
 	let isHandoffPending = $state(false)
 	let requestPhase = $state<RequestPhase>('idle')
@@ -700,7 +699,6 @@
 			executionTraceByAssistantIdRef.clear()
 			setRequestLifecyclePhase('idle')
 			error = null
-			homeTimeContext = null
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
 			pendingAssistantClientMessageIdRef = null
@@ -880,6 +878,7 @@
 	})
 
 	const hasPendingHandoff = $derived(!!pendingFirstMessage)
+	const isHome = $derived(!conversationId && !hasMessages && requestPhase === 'idle' && !hasPendingHandoff)
 
 	const showConversationLoading = $derived(
 		!!(
@@ -963,17 +962,17 @@
 			<SuggestedPrompts
 				onSelectPrompt={handleSendMessage}
 				happeningSoonEvents={happeningSoonEvents}
-				timeContext={homeTimeContext}
-				onTimeContextChange={(context) => (homeTimeContext = context)}
 			/>
 		{/if}
 	</div>
 
-	<div class="shrink-0 bg-background">
-		<ChatInput
-			onSend={handleSendMessage}
-			disabled={isLoading || showConversationLoading || isHandoffPending || hasPendingHandoff}
-			emphasized={!hasMessages && requestPhase === 'idle' && !conversationId}
-		/>
-	</div>
+	{#if !isHome}
+		<div class="shrink-0 bg-background">
+			<ChatInput
+				onSend={handleSendMessage}
+				disabled={isLoading || showConversationLoading || isHandoffPending || hasPendingHandoff}
+				emphasized={!hasMessages && requestPhase === 'idle' && !conversationId}
+			/>
+		</div>
+	{/if}
 </div>

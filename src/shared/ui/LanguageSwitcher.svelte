@@ -18,7 +18,7 @@
 		es: { label: 'Español' }
 	};
 
-	let { collapsed = false }: { collapsed?: boolean } = $props();
+	let { collapsed = false, compact = false }: { collapsed?: boolean; compact?: boolean } = $props();
 
 	const { user } = useAuthContext();
 	const currentLocale = getLocale();
@@ -70,7 +70,23 @@
 	</DropdownMenu>
 {/snippet}
 
-{#if collapsed}
+{#if compact}
+	<div class="flex items-center gap-1" aria-label="Language / Idioma">
+		{#each locales as locale (locale)}
+			{@const isActive = locale === currentLocale}
+			<button
+				type="button"
+				onclick={() => handleLocaleChange(locale)}
+				aria-current={isActive ? 'true' : undefined}
+				class="rounded px-1.5 py-1 text-xs font-semibold transition-colors {isActive
+					? 'bg-white/15 text-white'
+					: 'text-white/65 hover:text-white'}"
+			>
+				{locale.toUpperCase()}
+			</button>
+		{/each}
+	</div>
+{:else if collapsed}
 	<Tooltip>
 		<TooltipTrigger>
 			{#snippet child({ props })}
