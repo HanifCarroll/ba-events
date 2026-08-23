@@ -16,10 +16,14 @@
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts';
 	import { track } from '#shared/lib/analytics.ts';
 	import { preloadData, pushState, goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { getEventUrl } from '#shared/lib/utils/url.ts';
 	import { getLocale } from '#paraglide/runtime.js';
 	import { pickDescriptionSummary } from '#features/events/lib/description-presentation.ts';
-	import { shouldInterceptChatEventClick } from '#features/events/lib/event-detail-navigation.ts';
+	import {
+		getChatEventHref,
+		shouldInterceptChatEventClick
+	} from '#features/events/lib/event-detail-navigation.ts';
 	import {
 		getExternalActionKind,
 		getExternalActionLabel,
@@ -75,8 +79,11 @@
 		...(!hasDescription ? [m.event_limited_info()] : [])
 	]);
 
+	const standaloneDetailsHref = $derived(`/events/${event.id}`);
 	const detailsHref = $derived(
-		`/events/${event.id}${source === 'chat' ? '?from=chat' : ''}`
+		source === 'chat'
+			? getChatEventHref(page.url.pathname, event.id)
+			: standaloneDetailsHref
 	);
 
 	let copied = $state(false);
@@ -123,7 +130,7 @@
 
 		click.preventDefault();
 		const href = detailsHref;
-		const result = await preloadData(href);
+		const result = await preloadData(standaloneDetailsHref);
 		if (result.type === 'loaded' && result.status === 200) {
 			pushState(href, {
 				selectedEvent: result.data as App.PageState['selectedEvent']

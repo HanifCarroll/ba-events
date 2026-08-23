@@ -175,10 +175,17 @@
 	)
 	const isLandingPage = $derived(page.url.pathname === '/')
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
+	const eventId = $derived(page.url.searchParams.get('event'))
+	const selectedEvent = $derived(
+		eventId
+			? page.state.selectedEvent ??
+				(page.data as { selectedEvent?: App.PageState['selectedEvent'] }).selectedEvent
+			: undefined
+	)
 	let eventOverlay = $state<HTMLDivElement | null>(null)
 
 	$effect(() => {
-		if (!page.state.selectedEvent) return
+		if (!selectedEvent) return
 		requestAnimationFrame(() => eventOverlay?.focus())
 	})
 </script>
@@ -228,10 +235,10 @@
 	</div>
 {:else}
 	<div class="relative h-full">
-		<MainLayout backgroundInert={!!page.state.selectedEvent}>
+		<MainLayout backgroundInert={!!selectedEvent}>
 			{@render children()}
 		</MainLayout>
-		{#if page.state.selectedEvent}
+		{#if selectedEvent}
 			<div
 				bind:this={eventOverlay}
 				class="fixed inset-0 z-50 bg-background"
@@ -240,8 +247,8 @@
 				tabindex="-1"
 			>
 				<EventPage
-					data={page.state.selectedEvent}
-					params={{ id: page.state.selectedEvent.event.id }}
+					data={selectedEvent}
+					params={{ id: selectedEvent.event.id }}
 					form={null}
 					isChatOverlay
 				/>

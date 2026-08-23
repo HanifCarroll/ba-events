@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/env';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		ArrowLeft,
@@ -114,6 +114,15 @@
 	};
 
 	const handleBackToChat = () => {
+		if (isChatOverlay) {
+			if (page.state.selectedEvent && browser && history.length > 1) {
+				history.back();
+			} else {
+				replaceState(page.url.pathname, {});
+			}
+			return;
+		}
+
 		if (browser && history.length > 1) {
 			history.back();
 			return;
