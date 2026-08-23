@@ -6,6 +6,7 @@
 		ArrowUp,
 		ArrowUpRight,
 		CalendarDays,
+		Mic,
 		MapPin,
 		MessageCircle,
 		Mic2,
@@ -15,6 +16,15 @@
 		User
 	} from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
+	import { toast } from 'svelte-sonner'
+	import { getLocale } from '#paraglide/runtime.js'
+	import {
+		createSpeechRecognition,
+		ensureOnDeviceLanguagePack,
+		getRecognitionMode,
+		type RecognitionMode,
+		type SpeechRecognitionLike
+	} from '#features/chat/lib/speech-recognition.ts'
 	import type { ChatEventPayload } from '#shared/lib/types.ts'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
 	import {
@@ -42,6 +52,72 @@
 	let landingPage = $state<HTMLDivElement | null>(null)
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
+	let isSupported = $state(false)
+	let modeRef: RecognitionMode = 'cloud'
+	let isListening = $state(false)
+	let recognitionRef: SpeechRecognitionLike | null = null
+	let baseValueRef = ''
+	let committedTranscriptRef = ''
+
+	const getRecognitionLang = () => (getLocale() === 'es' ? 'es-AR' : 'en-US')
+
+	function startRecognition(recognition: SpeechRecognitionLike, base: string) {
+		recognitionRef = recognition
+		baseValueRef = base
+		committedTranscriptRef = ''
+
+		recognition.onresult = (event) => {
+			let interim = ''
+			let committed = committedTranscriptRef
+			for (let i = event.resultIndex; i < event.results.length; i++) {
+				const result = event.results[i]
+				if (result.isFinal) committed += result[0].transcript
+				else interim += result[0].transcript
+			}
+			committedTranscriptRef = committed
+			landingQuery = [baseValueRef, committed, interim].filter(Boolean).join(' ')
+		}
+
+		recognition.onerror = (event) => {
+			if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+				toast.error(m.chat_dictate_permission())
+			} else if (event.error === 'language-not-supported') {
+				recognition.abort()
+				const fallback = createSpeechRecognition(getRecognitionLang(), 'cloud')
+				if (fallback) startRecognition(fallback, baseValueRef)
+			}
+		}
+
+		recognition.onend = () => {
+			isListening = false
+			if (recognitionRef === recognition) recognitionRef = null
+		}
+
+		recognition.start()
+		isListening = true
+	}
+
+	async function handleMicClick() {
+		if (!isSupported) return
+		if (isListening) {
+			recognitionRef?.stop()
+			return
+		}
+
+		const lang = getRecognitionLang()
+		let effectiveMode: RecognitionMode = modeRef
+		if (modeRef === 'on-device') {
+			const { ok, fallbackToCloud } = await ensureOnDeviceLanguagePack(lang)
+			if (!ok && !fallbackToCloud) {
+				toast.error(m.chat_dictate_install_error())
+				return
+			}
+			effectiveMode = ok ? 'on-device' : 'cloud'
+		}
+
+		const recognition = createSpeechRecognition(lang, effectiveMode)
+		if (recognition) startRecognition(recognition, landingQuery)
+	}
 
 	async function handleSignOut() {
 		isSigningOut = true
@@ -73,6 +149,16 @@
 	function startAsking() {
 		landingPage?.scrollTo({ top: 0, behavior: 'smooth' })
 	}
+
+	$effect(() => {
+		const mode = getRecognitionMode()
+		modeRef = mode
+		isSupported = mode !== 'unsupported'
+	})
+
+	$effect(() => {
+		return () => recognitionRef?.abort()
+	})
 
 	onMount(() => {
 		const root = landingPage
@@ -240,10 +326,23 @@
 					autocomplete="off"
 					onkeydown={handleComposerKeydown}
 					rows="2"
-					class="min-h-20 w-full min-w-0 resize-none overflow-x-hidden bg-transparent px-1 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground sm:h-11 sm:min-h-11 sm:flex-1 sm:overflow-hidden sm:py-3 sm:text-sm"
+					class="min-h-16 w-full min-w-0 resize-none overflow-x-hidden bg-transparent px-1 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground sm:h-11 sm:min-h-11 sm:flex-1 sm:overflow-hidden sm:py-3 sm:text-sm"
 				></textarea>
 				<div class="flex items-center justify-between gap-2 sm:contents">
-					<Search class="size-5 shrink-0 text-muted-foreground sm:hidden" aria-hidden="true" />
+					<button
+						type="button"
+						onclick={handleMicClick}
+						disabled={!isSupported}
+						aria-label={isListening ? m.chat_stop_dictating() : m.chat_dictate()}
+						aria-pressed={isListening}
+						title={!isSupported ? m.chat_dictate_unsupported() : undefined}
+						class="flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors {isListening
+							? 'bg-red-500/15 text-red-500'
+							: 'text-muted-foreground hover:bg-primary/10 hover:text-primary'} disabled:cursor-not-allowed disabled:text-muted-foreground/40"
+					>
+						<Mic class="size-5" aria-hidden="true" />
+						<span class="sr-only">{isListening ? m.chat_stop_dictating() : m.chat_dictate()}</span>
+					</button>
 					<button
 						type="submit"
 						class="min-h-11 shrink-0 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:px-6"
