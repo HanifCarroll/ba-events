@@ -12,7 +12,9 @@ declare global {
 			isAdmin: boolean;
 		}
 		// interface PageData {}
-		// interface PageState {}
+		interface PageState {
+			selectedEvent?: import('./routes/events/[id]/$types').PageData;
+		}
 		// interface Platform {}
 	}
 }

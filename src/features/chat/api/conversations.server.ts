@@ -198,10 +198,7 @@ export async function searchConversations(
  */
 export async function getConversation(event: RequestEvent, data: { id: string }) {
   const supabase = createSupabaseServerClient(event)
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = event.locals.user
 
   if (!user) {
     return null

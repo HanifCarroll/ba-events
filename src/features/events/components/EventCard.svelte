@@ -14,9 +14,11 @@
 	import { formatPrice } from '#features/chat/lib/messages.ts';
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts';
 	import { track } from '#shared/lib/analytics.ts';
+	import { preloadData, pushState, goto } from '$app/navigation';
 	import { getEventUrl } from '#shared/lib/utils/url.ts';
 	import { getLocale } from '#paraglide/runtime.js';
 	import { pickDescriptionSummary } from '#features/events/lib/description-presentation.ts';
+	import { shouldInterceptChatEventClick } from '#features/events/lib/event-detail-navigation.ts';
 	import {
 		getExternalActionKind,
 		getExternalActionLabel,
@@ -107,12 +109,27 @@
 		});
 	};
 
-	const handleDetailsClick = () => {
+	const handleDetailsClick = async (click: MouseEvent) => {
 		track('chat:event_clicked', {
 			event_id: event.id,
 			position,
 			source
 		});
+
+		// Keep the live chat mounted for ordinary in-app chat clicks. Modified
+		// clicks and saved/direct links retain normal browser/SSR navigation.
+		if (!shouldInterceptChatEventClick(source, click)) return;
+
+		click.preventDefault();
+		const href = detailsHref;
+		const result = await preloadData(href);
+		if (result.type === 'loaded' && result.status === 200) {
+			pushState(href, {
+				selectedEvent: result.data as App.PageState['selectedEvent']
+			});
+		} else {
+			await goto(href);
+		}
 	};
 </script>
 
@@ -196,6 +213,7 @@
 					/>
 					<a
 						href={detailsHref}
+						onclick={handleDetailsClick}
 						class="inline-flex h-7 items-center rounded-md px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
 						<Info class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
@@ -257,6 +275,7 @@
 					/>
 					<a
 						href={detailsHref}
+						onclick={handleDetailsClick}
 						class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
 						<Info class="h-3.5 w-3.5" aria-hidden="true" />

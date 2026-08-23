@@ -33,7 +33,10 @@
 		exact?: boolean;
 	}
 
-	let { children }: { children: import('svelte').Snippet } = $props();
+	let {
+		children,
+		backgroundInert = false
+	}: { children: import('svelte').Snippet; backgroundInert?: boolean } = $props();
 
 	const auth = useAuthContext();
 	let mobileMenuOpen = $state(false);
@@ -136,7 +139,10 @@
 	{/if}
 {/snippet}
 
-<div class="relative h-full flex flex-col lg:flex-row overflow-hidden">
+<div
+	class="relative h-full flex flex-col lg:flex-row overflow-hidden"
+	inert={backgroundInert ? true : undefined}
+>
 	<SkipLink />
 
 	<!-- Mobile header -->

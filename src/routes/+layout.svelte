@@ -9,6 +9,7 @@
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
 	import { isAnalyticsEnabled } from '#shared/lib/analytics.ts'
 	import MainLayout from '#shared/ui/MainLayout.svelte'
+	import EventPage from './events/[id]/+page.svelte'
 	import Toaster from '#shared/ui/sonner/sonner.svelte'
 	import type { LayoutProps } from './$types'
 
@@ -174,6 +175,12 @@
 	)
 	const isLandingPage = $derived(page.url.pathname === '/')
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
+	let eventOverlay = $state<HTMLDivElement | null>(null)
+
+	$effect(() => {
+		if (!page.state.selectedEvent) return
+		requestAnimationFrame(() => eventOverlay?.focus())
+	})
 </script>
 
 <svelte:head>
@@ -220,9 +227,27 @@
 		{@render children()}
 	</div>
 {:else}
-	<MainLayout>
-		{@render children()}
-	</MainLayout>
+	<div class="relative h-full">
+		<MainLayout backgroundInert={!!page.state.selectedEvent}>
+			{@render children()}
+		</MainLayout>
+		{#if page.state.selectedEvent}
+			<div
+				bind:this={eventOverlay}
+				class="fixed inset-0 z-50 bg-background"
+				role="dialog"
+				aria-modal="true"
+				tabindex="-1"
+			>
+				<EventPage
+					data={page.state.selectedEvent}
+					params={{ id: page.state.selectedEvent.event.id }}
+					form={null}
+					isChatOverlay
+				/>
+			</div>
+		{/if}
+	</div>
 {/if}
 
 <Toaster position="bottom-right" richColors />

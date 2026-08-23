@@ -33,7 +33,10 @@
 	import * as m from '#paraglide/messages.js';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let {
+		data,
+		isChatOverlay = false
+	}: PageProps & { isChatOverlay?: boolean } = $props();
 
 	const event = $derived(data.event);
 	const locale = getLocale() as 'en' | 'es';
@@ -42,7 +45,7 @@
 	const eventImageAlt = $derived(
 		locale === 'es' ? `Imagen de ${event.name}` : `Image for ${event.name}`
 	);
-	const fromChat = $derived(page.url.searchParams.get('from') === 'chat');
+	const fromChat = $derived(isChatOverlay || page.url.searchParams.get('from') === 'chat');
 
 	const startDate = $derived(new Date(event.starts_at));
 	const dateStr = $derived(formatShortDate(startDate));
@@ -169,12 +172,13 @@
 					: 'max-w-2xl'}
 			>
 				{#if event.image_url}
-					<div class="flex items-start justify-center">
+					<div class="aspect-square w-full overflow-hidden rounded-2xl">
 						<img
 							src={resolveSiteUrl(event.image_url)}
 							alt={event.name}
-							class="block h-auto max-h-[60vh] max-w-full rounded-2xl w-auto"
-							loading="lazy"
+							class="block h-full w-full object-cover"
+							loading="eager"
+							fetchpriority="high"
 						/>
 					</div>
 				{/if}
