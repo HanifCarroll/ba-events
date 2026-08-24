@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
@@ -10,12 +9,9 @@
 		Settings,
 		LogOut,
 		User,
-		ChevronLeft,
-		ChevronRight,
 		MessageCircle
 	} from 'lucide-svelte';
 	import { Button } from '#shared/ui/button/index.ts';
-	import { Tooltip, TooltipContent, TooltipTrigger } from '#shared/ui/tooltip/index.ts';
 	import SkipLink from '#shared/ui/SkipLink.svelte';
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts';
 	import { signOut } from '#features/auth/api/auth.remote.ts';
@@ -42,23 +38,7 @@
 	const auth = useAuthContext();
 	let mobileMenuOpen = $state(false);
 	let isSigningOut = $state(false);
-	let collapsed = $state(false);
-	let collapsedPreferenceLoaded = $state(false);
 	let feedbackOpen = $state(false);
-
-	// Resolve browser-only preferences after hydration so the server and first
-	// client render always agree.
-	onMount(() => {
-		collapsed = localStorage.getItem('sidebar-collapsed') === 'true';
-		collapsedPreferenceLoaded = true;
-	});
-
-	// Persist collapsed state after the stored preference has been read.
-	$effect(() => {
-		if (collapsedPreferenceLoaded) {
-			localStorage.setItem('sidebar-collapsed', String(collapsed));
-		}
-	});
 
 	function handleFeedback() {
 		feedbackOpen = true;
@@ -237,40 +217,14 @@
 	{/if}
 
 	<!-- Sidebar (desktop only) -->
-	<aside
-		class={collapsed
-			? 'hidden lg:flex flex-col shrink-0 h-full border-r bg-card lg:w-[72px]'
-			: 'hidden lg:flex flex-col shrink-0 h-full border-r bg-card lg:w-[238px]'}
-	>
+	<aside class="hidden lg:flex flex-col shrink-0 h-full border-r bg-card lg:w-[238px]">
 		<!-- Sidebar header -->
-		<div class="h-20 flex items-center justify-between px-5 shrink-0">
-			<a
-				href="/"
-				class="flex items-center gap-3 hover:opacity-80 transition-opacity overflow-hidden {collapsed
-					? 'lg:justify-center lg:w-full'
-					: ''}"
-			>
-				<div
-					class="overflow-hidden transition-all duration-300 {collapsed
-						? 'lg:w-0 lg:opacity-0'
-						: 'w-auto opacity-100'}"
-				>
-					<span
-						class="text-base font-semibold tracking-tight text-foreground whitespace-nowrap"
-					>
-						BA Eventos
-					</span>
-				</div>
+		<div class="h-20 flex items-center px-5 shrink-0">
+			<a href="/" class="hover:opacity-80 transition-opacity">
+				<span class="text-base font-semibold tracking-tight text-foreground whitespace-nowrap">
+					BA Eventos
+				</span>
 			</a>
-			<button
-				onclick={() => (collapsed = !collapsed)}
-				class="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200 {collapsed
-					? 'absolute right-2'
-					: ''}"
-				aria-label={collapsed ? m.sidebar_expand() : m.sidebar_collapse()}
-			>
-				{#if collapsed}<ChevronRight class="h-4 w-4" />{:else}<ChevronLeft class="h-4 w-4" />{/if}
-			</button>
 		</div>
 
 		<!-- Navigation -->
@@ -278,27 +232,12 @@
 			<!-- Main navigation -->
 			<div class="flex flex-col gap-1">
 				{#each filteredMainNavItems as item (item.label)}
-					{@const showLabel = !collapsed || mobileMenuOpen}
-					{#if collapsed && !mobileMenuOpen}
-						<Tooltip>
-							<TooltipTrigger>
-								{#snippet child({ props })}
-									<div {...props}>
-										{@render navItem(item, false)}
-									</div>
-								{/snippet}
-							</TooltipTrigger>
-							<TooltipContent side="right" class="font-medium">{item.label}</TooltipContent>
-						</Tooltip>
-					{:else}
-						{@render navItem(item, showLabel)}
-					{/if}
+					{@render navItem(item, true)}
 				{/each}
 			</div>
 
 			<!-- Conversation history (signed-in) -->
-			<!-- @migration TODO: render ConversationHistory here once U1 ports it.
-			     Legacy: <ConversationHistory collapsed={collapsed && !mobileMenuOpen} /> -->
+			<!-- @migration TODO: render ConversationHistory here once U1 ports it. -->
 
 			<!-- Spacer -->
 			<div class="flex-1"></div>
@@ -306,31 +245,22 @@
 
 		<!-- Language switcher -->
 		<div class="px-5 pb-3 space-y-1">
-			<LanguageSwitcher collapsed={collapsed && !mobileMenuOpen} />
-			{#if !collapsed || mobileMenuOpen}
-				<a
-					href="/privacy"
-					class="flex min-h-11 items-center px-4 text-sm text-muted-foreground hover:text-foreground"
-				>
-					{m.nav_privacy()}
-				</a>
-			{/if}
+			<LanguageSwitcher />
+			<a
+				href="/privacy"
+				class="flex min-h-11 items-center px-4 text-sm text-muted-foreground hover:text-foreground"
+			>
+				{m.nav_privacy()}
+			</a>
 		</div>
 
-		<div
-			class="h-px bg-border {collapsed && !mobileMenuOpen ? 'mx-3' : 'mx-5'}"
-		></div>
+		<div class="h-px bg-border mx-5"></div>
 
 		<!-- User section -->
 		<div class="p-5 pt-3">
 			{#if auth.user}
 				<div class="space-y-2">
-					<!-- User info - only show when expanded -->
-					<div
-						class="overflow-hidden transition-all duration-300 {collapsed && !mobileMenuOpen
-							? 'h-0 opacity-0'
-							: 'h-auto opacity-100 px-3 py-2'}"
-					>
+					<div class="px-3 py-2">
 						<p class="text-xs text-muted-foreground uppercase tracking-wider">
 							{m.auth_signed_in_as()}
 						</p>
@@ -338,78 +268,26 @@
 							{auth.profile?.display_name || auth.user.email?.split('@')[0]}
 						</p>
 					</div>
-					<!-- Sign out button -->
-					{#if collapsed && !mobileMenuOpen}
-						<Tooltip>
-							<TooltipTrigger>
-								{#snippet child({ props })}
-									<Button
-										{...props}
-										onclick={(e) => {
-											(props.onclick as ((evt: MouseEvent) => void) | undefined)?.(e);
-											handleSignOut();
-										}}
-										variant="ghost"
-										disabled={isSigningOut}
-										class="w-full p-3 justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-									>
-										<LogOut class="h-5 w-5" />
-									</Button>
-								{/snippet}
-							</TooltipTrigger>
-							<TooltipContent side="right" class="font-medium">
-								{isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}
-							</TooltipContent>
-						</Tooltip>
-					{:else}
-						<Button
-							variant="ghost"
-							onclick={handleSignOut}
-							disabled={isSigningOut}
-							class="w-full justify-start gap-3 px-4 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-						>
-							<LogOut class="h-5 w-5" />
-							<span
-								class="transition-all duration-300 {collapsed && !mobileMenuOpen
-									? 'w-0 opacity-0'
-									: 'w-auto opacity-100'}"
-							>
-								{isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}
-							</span>
-						</Button>
-					{/if}
-				</div>
-			{:else}
-				<!-- Sign in button -->
-				{#if collapsed && !mobileMenuOpen}
-					<Tooltip>
-						<TooltipTrigger>
-							{#snippet child({ props })}
-								<Button
-									{...props}
-									variant="ghost"
-									href="/login"
-									class="w-full p-3 justify-center text-foreground hover:bg-muted hover:text-foreground"
-								>
-									<User class="h-5 w-5" />
-								</Button>
-							{/snippet}
-						</TooltipTrigger>
-						<TooltipContent side="right" class="font-medium">
-							{m.auth_sign_in()}
-						</TooltipContent>
-					</Tooltip>
-				{:else}
 					<Button
 						variant="ghost"
-						href="/login"
-						onclick={() => (mobileMenuOpen = false)}
-						class="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
+						onclick={handleSignOut}
+						disabled={isSigningOut}
+						class="w-full justify-start gap-3 px-4 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
 					>
-						<User class="h-5 w-5" />
-						<span>{m.auth_sign_in()}</span>
+						<LogOut class="h-5 w-5" />
+						<span>{isSigningOut ? m.auth_signing_out() : m.auth_sign_out()}</span>
 					</Button>
-				{/if}
+				</div>
+			{:else}
+				<Button
+					variant="ghost"
+					href="/login"
+					onclick={() => (mobileMenuOpen = false)}
+					class="w-full justify-start gap-3 px-3 text-foreground hover:bg-muted hover:text-foreground"
+				>
+					<User class="h-5 w-5" />
+					<span>{m.auth_sign_in()}</span>
+				</Button>
 			{/if}
 		</div>
 	</aside>
