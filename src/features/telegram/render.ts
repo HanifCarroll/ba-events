@@ -18,8 +18,6 @@ const COPY = {
     free: 'Free',
     timeTba: 'Time TBA',
     locationTba: 'Location TBA',
-    details: 'Details',
-    tickets: 'Tickets / event page',
     directions: 'Directions',
     venue: 'Venue',
     instagram: 'Instagram',
@@ -31,8 +29,6 @@ const COPY = {
     free: 'Gratis',
     timeTba: 'Horario a confirmar',
     locationTba: 'Ubicación a confirmar',
-    details: 'Detalles',
-    tickets: 'Entradas / evento',
     directions: 'Cómo llegar',
     venue: 'Lugar',
     instagram: 'Instagram',
@@ -116,9 +112,9 @@ function lead(response: CanonicalChatResponse, locale: 'en' | 'es'): string {
   return plain(response.text, 800)
 }
 
-function truncate(value: string): string {
-  if (value.length <= MAX_MESSAGE) return value
-  let output = value.slice(0, MAX_MESSAGE - 1).trimEnd()
+function truncate(value: string, max = MAX_MESSAGE): string {
+  if (value.length <= max) return value
+  let output = value.slice(0, max - 1).trimEnd()
   if (/^[\uD800-\uDBFF]$/.test(output.at(-1) ?? '')) output = output.slice(0, -1)
   return `${output}…`
 }
@@ -133,13 +129,14 @@ export function renderTelegramMessage(
     .filter(Boolean)
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = []
 
-  for (const event of events) {
-    const row: TelegramInlineKeyboardMarkup['inline_keyboard'][number] = [
-      { text: copy.details, url: `${SITE_ORIGIN}/events/${encodeURIComponent(event.id)}` },
-    ]
-    const external = httpsUrl(event.ticket_url) ?? httpsUrl(event.link)
-    if (external) row.push({ text: copy.tickets, url: external })
-    rows.push(row)
+  for (const [index, event] of events.entries()) {
+    const prefix = `${index + 1} · `
+    const suffix = ' ↗'
+    const name = truncate(plain(event.name), 64 - prefix.length - suffix.length)
+    rows.push([{
+      text: `${prefix}${name}${suffix}`,
+      url: `${SITE_ORIGIN}/events/${encodeURIComponent(event.id)}`,
+    }])
   }
 
   const directions = httpsUrl(response.directions?.mapsUrl)

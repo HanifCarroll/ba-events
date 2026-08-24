@@ -82,14 +82,19 @@ describe('Telegram canonical renderer', () => {
     expect(spanish).toContain('$ 12.000')
   })
 
-  it('keeps only HTTPS buttons and always uses BA Eventos detail links', () => {
+  it('uses one sanitized named BA Eventos button per event', () => {
     const rendered = renderTelegramMessage(response(), 'en')
     const buttons = rendered.replyMarkup?.inline_keyboard.flat() ?? []
+    const eventButtons = buttons.filter((button) => button.url?.startsWith('https://baeventos.com/events/'))
 
-    expect(buttons.every((button) => button.url?.startsWith('https://'))).toBe(true)
-    expect(buttons.some((button) => button.url === 'http://unsafe.example/tickets')).toBe(false)
-    expect(buttons.some((button) => button.url === 'https://events.example/tango')).toBe(true)
-    expect(buttons.some((button) => button.url === 'https://baeventos.com/events/event%200')).toBe(true)
+    expect(eventButtons).toHaveLength(5)
+    expect(eventButtons.every((button) => button.text.length <= 64)).toBe(true)
+    expect(eventButtons[0]).toMatchObject({
+      text: expect.stringMatching(/^1 · Tango 0 night .* ↗$/),
+      url: 'https://baeventos.com/events/event%200',
+    })
+    expect(buttons.some((button) => button.text === 'Details' || button.text === 'Tickets / event page')).toBe(false)
+    expect(buttons.some((button) => button.url === 'https://events.example/tango')).toBe(false)
     expect(buttons.some((button) => button.url === 'https://maps.example/route')).toBe(true)
     expect(buttons.some((button) => button.url === 'https://venue.example/')).toBe(true)
     expect(buttons.some((button) => button.url === 'https://www.instagram.com/venue.ba')).toBe(true)

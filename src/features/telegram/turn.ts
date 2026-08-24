@@ -43,6 +43,12 @@ const COPY = {
       free: 'Free events nearby',
       live: 'Live music tonight',
     },
+    loading: {
+      chill: 'Searching tonight…',
+      weekend: 'Searching this weekend…',
+      free: 'Searching free events nearby…',
+      live: 'Searching live music…',
+    },
     help: 'Ask me for events, dates, neighborhoods, venues, or directions. Commands: /new, /privacy, /delete. Saving and account linking are not available in Telegram.',
     fresh: 'Started a new conversation.',
     privacy: 'Telegram privacy details. Chats may be stored for up to 30 days. Use /delete at any time to delete your conversation data.',
@@ -62,6 +68,12 @@ const COPY = {
       weekend: '¿Qué hay este finde?',
       free: 'Eventos gratis cerca',
       live: 'Música en vivo hoy',
+    },
+    loading: {
+      chill: 'Buscando algo tranqui para hoy…',
+      weekend: 'Buscando eventos este finde…',
+      free: 'Buscando eventos gratis cerca…',
+      live: 'Buscando música en vivo…',
     },
     help: 'Preguntame por eventos, fechas, barrios, lugares o cómo llegar. Comandos: /new, /privacy, /delete. Telegram no permite guardar eventos ni vincular cuentas.',
     fresh: 'Empezamos una conversación nueva.',
@@ -167,6 +179,25 @@ async function sendMessageBestEffort(
   }
 }
 
+function startTypingBestEffort(chatId: string, dependencies: TelegramTurnDependencies): () => void {
+  let active = true
+  let sending = false
+  const send = () => {
+    if (!active || sending) return
+    sending = true
+    void Promise.resolve()
+      .then(() => dependencies.sendTyping(chatId))
+      .catch(() => undefined)
+      .finally(() => { sending = false })
+  }
+  send()
+  const refresh = setInterval(send, 4_000)
+  return () => {
+    active = false
+    clearInterval(refresh)
+  }
+}
+
 export async function processTelegramTurn(
   rawPayload: TelegramTaskPayload,
   dependencies: TelegramTurnDependencies
@@ -208,7 +239,11 @@ export async function processTelegramTurn(
       }
 
       if (!prompt) throw new Error('Unknown Telegram prompt callback')
-      await answerCallbackBestEffort(input.callbackId, undefined, dependencies)
+      await answerCallbackBestEffort(
+        input.callbackId,
+        input.rateLimited ? COPY[locale].rateLimited : COPY[locale].loading[prompt],
+        dependencies
+      )
       conversation = await dependencies.getConversation({
         channel: 'telegram',
         conversationId,
@@ -293,34 +328,38 @@ export async function processTelegramTurn(
       return
     }
 
-    await dependencies.sendTyping(input.chatId)
-    const userMessage = await dependencies.insertMessage({
-      channel: 'telegram',
-      conversationId,
-      clientMessageId: `telegram:${payload.updateId}:user`,
-      role: 'user',
-      content: normalizedTurn.originalQuery,
-    })
-    const result = await dependencies.runTurn({
-      requestId: `telegram:${payload.updateId}`,
-      userContext: { userId: null, isAuthenticated: false },
-      text: normalizedTurn.originalQuery,
-      locale,
-      priorHints: hintsFromMessages(messages),
-      lastSearch: lastSearchContextFromMessages(messages),
-    })
-    await dependencies.insertMessage({
-      channel: 'telegram',
-      conversationId,
-      parentMessageId: userMessage.id,
-      clientMessageId: assistantClientMessageId,
-      role: 'assistant',
-      content: result.canonical.text,
-      executionTrace: result.executionTrace,
-      attachedData: { canonical: result.canonical },
-    })
-    await dependencies.sendMessage(input.chatId, dependencies.render(result.canonical, locale))
-    await dependencies.markCompleted(payload.updateId, conversationId)
+    const stopTyping = startTypingBestEffort(input.chatId, dependencies)
+    try {
+      const userMessage = await dependencies.insertMessage({
+        channel: 'telegram',
+        conversationId,
+        clientMessageId: `telegram:${payload.updateId}:user`,
+        role: 'user',
+        content: normalizedTurn.originalQuery,
+      })
+      const result = await dependencies.runTurn({
+        requestId: `telegram:${payload.updateId}`,
+        userContext: { userId: null, isAuthenticated: false },
+        text: normalizedTurn.originalQuery,
+        locale,
+        priorHints: hintsFromMessages(messages),
+        lastSearch: lastSearchContextFromMessages(messages),
+      })
+      await dependencies.insertMessage({
+        channel: 'telegram',
+        conversationId,
+        parentMessageId: userMessage.id,
+        clientMessageId: assistantClientMessageId,
+        role: 'assistant',
+        content: result.canonical.text,
+        executionTrace: result.executionTrace,
+        attachedData: { canonical: result.canonical },
+      })
+      await dependencies.sendMessage(input.chatId, dependencies.render(result.canonical, locale))
+      await dependencies.markCompleted(payload.updateId, conversationId)
+    } finally {
+      stopTyping()
+    }
   } catch (error) {
     try {
       await dependencies.markFailed(

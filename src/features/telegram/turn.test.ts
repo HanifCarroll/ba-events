@@ -147,6 +147,53 @@ describe('Telegram turn processor', () => {
     expect(deps.render).toHaveBeenCalledWith(expect.anything(), 'en')
   })
 
+  it('keeps refreshing typing through a slow search and cleans up after failure', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveSearch!: () => void
+      const search = new Promise<void>((resolve) => { resolveSearch = resolve })
+      const deps = dependencies()
+      deps.runTurn = vi.fn(() => search.then(() => ({
+        canonical: { text: 'canonical result' },
+        executionTrace: [],
+        reads: [],
+        providerRequestId: null,
+      }))) as never
+      const turn = processTelegramTurn(
+        payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
+        deps,
+      )
+      for (let index = 0; index < 12; index += 1) await Promise.resolve()
+      expect(deps.sendTyping).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(8_000)
+      expect(deps.sendTyping).toHaveBeenCalledTimes(3)
+      resolveSearch()
+      await turn
+      await vi.advanceTimersByTimeAsync(8_000)
+      expect(deps.sendTyping).toHaveBeenCalledTimes(3)
+
+      const typingFailure = dependencies()
+      typingFailure.sendTyping = vi.fn(async () => { throw new Error('typing unavailable') })
+      await expect(processTelegramTurn(
+        payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
+        typingFailure,
+      )).resolves.toBeUndefined()
+      expect(typingFailure.markCompleted).toHaveBeenCalled()
+
+      const failedSearch = dependencies()
+      failedSearch.runTurn = vi.fn(async () => { throw new Error('search failed') }) as never
+      await expect(processTelegramTurn(
+        payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
+        failedSearch,
+      )).rejects.toThrow('search failed')
+      expect(failedSearch.markFailed).toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(8_000)
+      expect(failedSearch.sendTyping).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('persists one canonical turn with stable ids and parent before delivery', async () => {
     const deps = dependencies({ locale: 'es' })
     await processTelegramTurn(
@@ -233,7 +280,7 @@ describe('Telegram turn processor', () => {
     await processTelegramTurn(payload({
       chatId: '123', callbackId: 'callback-1', callbackData: 'prompt:v1:weekend', languageCode: 'es',
     }), deps)
-    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', undefined)
+    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', 'Buscando eventos este finde…')
     expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({
       text: '¿Qué hay este finde?', locale: 'es', requestId: 'telegram:42',
     }))
@@ -245,7 +292,10 @@ describe('Telegram turn processor', () => {
     await processTelegramTurn(payload({
       chatId: '123', callbackId: 'callback-1', callbackData: 'prompt:v1:chill', rateLimited: true,
     }), deps)
-    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', undefined)
+    expect(deps.answerCallback).toHaveBeenCalledWith(
+      'callback-1',
+      expect.stringContaining('Too many requests')
+    )
     expect(deps.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({ text: expect.stringContaining('Too many') }))
     expect(deps.runTurn).not.toHaveBeenCalled()
   })
