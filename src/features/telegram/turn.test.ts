@@ -280,7 +280,7 @@ describe('Telegram turn processor', () => {
     await processTelegramTurn(payload({
       chatId: '123', callbackId: 'callback-1', callbackData: 'prompt:v1:weekend', languageCode: 'es',
     }), deps)
-    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', 'Buscando eventos este finde…')
+    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', undefined)
     expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({
       text: '¿Qué hay este finde?', locale: 'es', requestId: 'telegram:42',
     }))

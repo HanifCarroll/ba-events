@@ -43,12 +43,6 @@ const COPY = {
       free: 'Free events nearby',
       live: 'Live music tonight',
     },
-    loading: {
-      chill: 'Searching tonight…',
-      weekend: 'Searching this weekend…',
-      free: 'Searching free events nearby…',
-      live: 'Searching live music…',
-    },
     help: 'Ask me for events, dates, neighborhoods, venues, or directions. Commands: /new, /privacy, /delete. Saving and account linking are not available in Telegram.',
     fresh: 'Started a new conversation.',
     privacy: 'Telegram privacy details. Chats may be stored for up to 30 days. Use /delete at any time to delete your conversation data.',
@@ -68,12 +62,6 @@ const COPY = {
       weekend: '¿Qué hay este finde?',
       free: 'Eventos gratis cerca',
       live: 'Música en vivo hoy',
-    },
-    loading: {
-      chill: 'Buscando algo tranqui para hoy…',
-      weekend: 'Buscando eventos este finde…',
-      free: 'Buscando eventos gratis cerca…',
-      live: 'Buscando música en vivo…',
     },
     help: 'Preguntame por eventos, fechas, barrios, lugares o cómo llegar. Comandos: /new, /privacy, /delete. Telegram no permite guardar eventos ni vincular cuentas.',
     fresh: 'Empezamos una conversación nueva.',
@@ -241,7 +229,7 @@ export async function processTelegramTurn(
       if (!prompt) throw new Error('Unknown Telegram prompt callback')
       await answerCallbackBestEffort(
         input.callbackId,
-        input.rateLimited ? COPY[locale].rateLimited : COPY[locale].loading[prompt],
+        input.rateLimited ? COPY[locale].rateLimited : undefined,
         dependencies
       )
       conversation = await dependencies.getConversation({
