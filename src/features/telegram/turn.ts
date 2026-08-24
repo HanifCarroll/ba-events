@@ -30,48 +30,37 @@ import {
 } from './task-payload.ts'
 import { parseConsentCallback, parseTelegramText } from './update.ts'
 
-export const TELEGRAM_CONSENT_VERSION = 'telegram-v1'
-
 const PRIVACY_URL = 'https://baeventos.com/privacy'
 
 const COPY = {
   en: {
-    disclosure: `BA Eventos can use your Telegram identifier and messages to search events with AI. Supabase and Trigger.dev process and retain this pilot data for up to 30 days. No account linking or event saving. Privacy: ${PRIVACY_URL}`,
-    consent: 'Do you agree? After accepting, resend your question.',
-    accept: 'Accept',
-    decline: 'Decline',
-    accepted: 'Consent saved. Send me an event question.',
-    declined: 'Declined. Your Telegram conversation data was deleted.',
-    start: 'Hi! I can help you find events in Buenos Aires. Send me what you are looking for.',
+    start: 'Hi! I use AI to help find Buenos Aires events. Chats may be stored for up to 30 days. Use /delete anytime. By continuing, you agree to the privacy policy.',
     help: 'Ask me for events, dates, neighborhoods, venues, or directions. Commands: /new, /privacy, /delete. Saving and account linking are not available in Telegram.',
-    fresh: 'Started a new conversation. Your privacy consent is unchanged.',
-    privacy: `Telegram privacy details: ${PRIVACY_URL}\nUse /delete at any time to delete your conversation data.`,
+    fresh: 'Started a new conversation.',
+    privacy: 'Telegram privacy details. Chats may be stored for up to 30 days. Use /delete at any time to delete your conversation data.',
+    privacyButton: 'Privacy',
+    legacyAccepted: 'Thanks. You can send me an event question anytime.',
+    declined: 'Declined. Your Telegram conversation data was deleted.',
     deleted: 'Your Telegram conversation data was deleted.',
     rateLimited: 'Too many requests right now. Please try again later. /help, /privacy, and /delete remain available.',
     unsupported: 'I did not recognize that command. Try /help.',
   },
   es: {
-    disclosure: `BA Eventos puede usar tu identificador y mensajes de Telegram para buscar eventos con IA. Supabase y Trigger.dev procesan y conservan estos datos del piloto hasta 30 días. No vinculamos cuentas ni permitimos guardar eventos. Privacidad: ${PRIVACY_URL}`,
-    consent: '¿Aceptás? Después de aceptar, volvé a enviar tu pregunta.',
-    accept: 'Aceptar',
-    decline: 'Rechazar',
-    accepted: 'Consentimiento guardado. Mandame una pregunta sobre eventos.',
-    declined: 'Rechazado. Eliminamos los datos de tu conversación de Telegram.',
-    start: '¡Hola! Puedo ayudarte a encontrar eventos en Buenos Aires. Contame qué buscás.',
+    start: '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.',
     help: 'Preguntame por eventos, fechas, barrios, lugares o cómo llegar. Comandos: /new, /privacy, /delete. Telegram no permite guardar eventos ni vincular cuentas.',
-    fresh: 'Empezamos una conversación nueva. Tu consentimiento de privacidad no cambió.',
-    privacy: `Detalles de privacidad de Telegram: ${PRIVACY_URL}\nUsá /delete en cualquier momento para borrar los datos de tu conversación.`,
+    fresh: 'Empezamos una conversación nueva.',
+    privacy: 'Detalles de privacidad de Telegram. Los chats pueden guardarse hasta 30 días. Usá /delete en cualquier momento para borrar los datos de tu conversación.',
+    privacyButton: 'Privacidad',
+    legacyAccepted: 'Gracias. Podés mandarme una pregunta sobre eventos cuando quieras.',
+    declined: 'Rechazado. Eliminamos los datos de tu conversación de Telegram.',
     deleted: 'Eliminamos los datos de tu conversación de Telegram.',
     rateLimited: 'Hay demasiadas solicitudes. Probá más tarde. /help, /privacy y /delete siguen disponibles.',
     unsupported: 'No reconocí ese comando. Probá /help.',
   },
 } as const
 
-const consentKeyboard = (locale: 'en' | 'es') => ({
-  inline_keyboard: [[
-    { text: COPY[locale].accept, callback_data: 'consent:v1:accept' },
-    { text: COPY[locale].decline, callback_data: 'consent:v1:decline' },
-  ]],
+const privacyKeyboard = (locale: 'en' | 'es') => ({
+  inline_keyboard: [[{ text: COPY[locale].privacyButton, url: PRIVACY_URL }]],
 })
 
 export interface TelegramTurnDependencies {
@@ -90,7 +79,6 @@ export interface TelegramTurnDependencies {
   answerCallback: (callbackId: string, text?: string) => Promise<unknown>
   markCompleted: typeof markTelegramUpdateCompleted
   markFailed: typeof markTelegramUpdateFailed
-  now: () => Date
 }
 
 export const defaultTelegramTurnDependencies: Omit<
@@ -109,7 +97,6 @@ export const defaultTelegramTurnDependencies: Omit<
   render: renderTelegramMessage,
   markCompleted: markTelegramUpdateCompleted,
   markFailed: markTelegramUpdateFailed,
-  now: () => new Date(),
 }
 
 function localeFrom(languageCode?: string, conversation?: ExternalConversation): 'en' | 'es' {
@@ -117,10 +104,6 @@ function localeFrom(languageCode?: string, conversation?: ExternalConversation):
     return conversation.metadata.locale
   }
   return languageCode?.toLowerCase().startsWith('es') ? 'es' : 'en'
-}
-
-function hasConsent(conversation: ExternalConversation): boolean {
-  return conversation.metadata.consentVersion === TELEGRAM_CONSENT_VERSION
 }
 
 function persistedCanonical(messages: Message[], clientMessageId: string): CanonicalChatResponse | null {
@@ -154,17 +137,6 @@ async function sendMessageBestEffort(
   }
 }
 
-async function sendConsent(
-  chatId: string,
-  locale: 'en' | 'es',
-  dependencies: TelegramTurnDependencies
-) {
-  await dependencies.sendMessage(chatId, {
-    text: `${COPY[locale].disclosure}\n\n${COPY[locale].consent}`,
-    replyMarkup: consentKeyboard(locale),
-  })
-}
-
 export async function processTelegramTurn(
   rawPayload: TelegramTaskPayload,
   dependencies: TelegramTurnDependencies
@@ -195,17 +167,8 @@ export async function processTelegramTurn(
         conversationId,
       })
       locale = localeFrom(input.languageCode, conversation)
-      await dependencies.updateMetadata({
-        channel: 'telegram',
-        conversationId,
-        metadataPatch: {
-          consentVersion: TELEGRAM_CONSENT_VERSION,
-          consentedAt: dependencies.now().toISOString(),
-          locale,
-        },
-      })
-      await answerCallbackBestEffort(input.callbackId, COPY[locale].accepted, dependencies)
-      await dependencies.sendMessage(input.chatId, { text: COPY[locale].accepted })
+      await answerCallbackBestEffort(input.callbackId, COPY[locale].legacyAccepted, dependencies)
+      await dependencies.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted })
       await dependencies.markCompleted(payload.updateId, conversationId)
       return
     }
@@ -238,7 +201,10 @@ export async function processTelegramTurn(
 
     if (parsed.kind === 'command') {
       if (parsed.command === 'privacy') {
-        await dependencies.sendMessage(input.chatId, { text: COPY[locale].privacy })
+        await dependencies.sendMessage(input.chatId, {
+          text: COPY[locale].privacy,
+          replyMarkup: privacyKeyboard(locale),
+        })
       } else if (parsed.command === 'help') {
         await dependencies.sendMessage(input.chatId, { text: COPY[locale].help })
       } else if (parsed.command === 'new') {
@@ -249,10 +215,11 @@ export async function processTelegramTurn(
           metadataPatch: { locale },
         })
         await dependencies.sendMessage(input.chatId, { text: COPY[locale].fresh })
-      } else if (hasConsent(conversation)) {
-        await dependencies.sendMessage(input.chatId, { text: COPY[locale].start })
       } else {
-        await sendConsent(input.chatId, locale, dependencies)
+        await dependencies.sendMessage(input.chatId, {
+          text: COPY[locale].start,
+          replyMarkup: privacyKeyboard(locale),
+        })
       }
       await dependencies.markCompleted(payload.updateId, conversationId)
       return
@@ -266,12 +233,6 @@ export async function processTelegramTurn(
         conversationId,
         metadataPatch: { locale },
       })
-    }
-
-    if (!hasConsent(conversation)) {
-      await sendConsent(input.chatId, locale, dependencies)
-      await dependencies.markCompleted(payload.updateId, conversationId)
-      return
     }
 
     const messages = await dependencies.loadMessages({ channel: 'telegram', conversationId })

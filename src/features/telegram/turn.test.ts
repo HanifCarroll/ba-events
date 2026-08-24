@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TelegramTurnDependencies } from './turn.ts'
-import { processTelegramTurn, TELEGRAM_CONSENT_VERSION } from './turn.ts'
+import { processTelegramTurn } from './turn.ts'
 import { sealTelegramEnvelope } from './envelope.server.ts'
 
 const key = Buffer.alloc(32, 8).toString('base64')
@@ -53,7 +53,6 @@ function dependencies(metadata: Record<string, unknown> = {}): TelegramTurnDepen
     answerCallback: vi.fn(async () => undefined),
     markCompleted: vi.fn(async () => undefined) as never,
     markFailed: vi.fn(async () => undefined) as never,
-    now: () => new Date('2026-08-23T12:00:00Z'),
   }
 }
 
@@ -71,23 +70,18 @@ describe('Telegram turn processor', () => {
     expect(deps.markFailed).not.toHaveBeenCalled()
   })
 
-  it('asks for explicit consent without storing or invoking the model', async () => {
+  it('processes a new user query without consent metadata', async () => {
     const deps = dependencies()
     await processTelegramTurn(
       payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas', languageCode: 'es' }),
       deps
     )
 
-    expect(deps.insertMessage).not.toHaveBeenCalled()
-    expect(deps.runTurn).not.toHaveBeenCalled()
-    expect(deps.sendMessage).toHaveBeenCalledWith(
-      '123',
-      expect.objectContaining({ replyMarkup: expect.any(Object) })
-    )
-    expect(deps.markCompleted).toHaveBeenCalledWith('42', conversation.id)
+    expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({ text: 'milongas', locale: 'es' }))
+    expect(deps.insertMessage).toHaveBeenCalledTimes(2)
   })
 
-  it('stores versioned consent metadata and deletes on decline', async () => {
+  it('acknowledges legacy accept without restoring a consent gate, and deletes on decline', async () => {
     const accepted = dependencies()
     await processTelegramTurn(
       payload({
@@ -100,16 +94,12 @@ describe('Telegram turn processor', () => {
       }),
       accepted
     )
-    expect(accepted.updateMetadata).toHaveBeenCalledWith({
-      channel: 'telegram',
-      conversationId: conversation.id,
-      metadataPatch: {
-        consentVersion: TELEGRAM_CONSENT_VERSION,
-        consentedAt: '2026-08-23T12:00:00.000Z',
-        locale: 'en',
-      },
-    })
+    expect(accepted.updateMetadata).not.toHaveBeenCalled()
     expect(accepted.answerCallback).toHaveBeenCalled()
+    expect(accepted.sendMessage).toHaveBeenCalledWith(
+      '123',
+      { text: 'Thanks. You can send me an event question anytime.' },
+    )
 
     const declined = dependencies()
     declined.answerCallback = vi.fn(async () => {
@@ -142,7 +132,7 @@ describe('Telegram turn processor', () => {
   })
 
   it('detects and persists a changed natural-text locale per turn', async () => {
-    const deps = dependencies({ consentVersion: TELEGRAM_CONSENT_VERSION, locale: 'es' })
+    const deps = dependencies({ locale: 'es' })
     await processTelegramTurn(
       payload({ chatId: '123', userId: '123', messageId: '9', text: 'events tonight' }),
       deps
@@ -158,12 +148,11 @@ describe('Telegram turn processor', () => {
   })
 
   it('persists one canonical turn with stable ids and parent before delivery', async () => {
-    const deps = dependencies({ consentVersion: TELEGRAM_CONSENT_VERSION, locale: 'es' })
+    const deps = dependencies({ locale: 'es' })
     await processTelegramTurn(
       payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
       deps
     )
-
     expect(deps.sendTyping).toHaveBeenCalledWith('123')
     expect(deps.runTurn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -204,8 +193,23 @@ describe('Telegram turn processor', () => {
     }
   )
 
+  it('uses a localized HTTPS privacy button for /start and /privacy', async () => {
+    const start = dependencies()
+    await processTelegramTurn(payload({ chatId: '123', text: '/start' }), start)
+    expect(start.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({
+      text: expect.stringContaining('By continuing, you agree to the privacy policy.'),
+      replyMarkup: { inline_keyboard: [[{ text: 'Privacy', url: 'https://baeventos.com/privacy' }]] },
+    }))
+
+    const privacy = dependencies()
+    await processTelegramTurn(payload({ chatId: '123', text: '/privacy' }), privacy)
+    expect(privacy.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({
+      replyMarkup: { inline_keyboard: [[{ text: 'Privacy', url: 'https://baeventos.com/privacy' }]] },
+    }))
+  })
+
   it('clears history on /new and hard-deletes on /delete', async () => {
-    const fresh = dependencies({ consentVersion: TELEGRAM_CONSENT_VERSION })
+    const fresh = dependencies()
     await processTelegramTurn(
       payload({ chatId: '123', userId: '123', messageId: '9', text: '/new' }),
       fresh

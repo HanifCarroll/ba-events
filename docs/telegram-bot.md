@@ -9,7 +9,7 @@ Create separate test and production bots, and connect each to its own matching a
 - disable group joins (`/setjoingroups` → Disable);
 - keep inline mode disabled;
 - set these commands in English and Spanish descriptions:
-  - `start` — start and review consent;
+  - `start` — start and review the privacy notice;
   - `help` — help and available commands;
   - `new` — clear conversation history;
   - `privacy` — privacy details;
@@ -44,7 +44,7 @@ Local setup script environment:
 - `TELEGRAM_WEBHOOK_SECRET`;
 - `TELEGRAM_WEBHOOK_URL` (for example `https://baeventos.com/api/telegram`).
 
-Raw Telegram IDs, message text, and the stable identity HMAC never enter Trigger's retained payload or queue metadata. Trigger receives only the update ID, an opaque sealed envelope, and the random conversation UUID used as its queue key. The webhook encrypts the bounded transient handoff with a random per-update AES-256-GCM key stored only in the service-role-only `telegram_updates` row. Consent is required before retaining a query as conversation history or sending it to AI. Completion clears the key, making the retained Trigger envelope undecryptable. Failed/pending deliveries retain the key for idempotent retry; retention deletes stale rows after 30 days. `/delete` or consent decline immediately deletes the conversation and HMAC identity, clears keys and identity links from all earlier delivery claims, and leaves only minimal nonidentifying delivery state until retention expires.
+Raw Telegram IDs, message text, and the stable identity HMAC never enter Trigger's retained payload or queue metadata. Trigger receives only the update ID, an opaque sealed envelope, and the random conversation UUID used as its queue key. The webhook encrypts the bounded transient handoff with a random per-update AES-256-GCM key stored only in the service-role-only `telegram_updates` row. The bot shows a privacy notice on `/start`; continued use indicates agreement, without requiring consent metadata or an Accept click. Completion clears the key, making the retained Trigger envelope undecryptable. Failed/pending deliveries retain the key for idempotent retry; retention deletes stale rows after 30 days. `/delete` or a legacy consent decline immediately deletes the conversation and HMAC identity, clears keys and identity links from all earlier delivery claims, and leaves only minimal nonidentifying delivery state until retention expires.
 
 ## 3. Deployment order
 
@@ -76,16 +76,16 @@ By default this preserves pending Telegram updates. Set `TELEGRAM_DROP_PENDING_U
 Use the test bot in a private chat:
 
 1. Send unsupported media and verify there is no response and webhook info shows no error.
-2. Send `/start`; verify bilingual disclosure and Accept/Decline buttons.
-3. Send ordinary text before consent; verify no AI answer and a consent prompt.
-4. Decline; verify deletion confirmation. Start again, accept, then resend the question.
+2. Send `/start`; verify the localized notice and Privacy/Privacidad HTTPS button without a raw URL preview.
+3. Send ordinary text immediately; verify it is processed and stored normally.
+4. Verify a legacy Accept callback is acknowledged without gating; legacy Decline still confirms deletion.
 5. Verify one compact event answer, links, follow-up context, and typing indicator.
 6. Verify `/help`, `/privacy`, `/new`, and `/delete` in English and Spanish.
-7. After `/new`, verify history is cleared but consent remains. After `/delete`, verify consent is required again.
+7. After `/new`, verify history is cleared. After `/delete`, verify the conversation and identity are deleted.
 8. Retry the same update in a controlled non-production test and verify one Trigger run/one stored turn.
 9. Check database rows contain only the HMAC identity, delivery state, and ephemeral key while pending—never raw Telegram IDs, names, usernames, or payloads.
 10. Confirm a normally completed `telegram_updates` row has `envelope_key = NULL` and that Trigger's retained payload/queue metadata contains no identity HMAC.
 11. After `/delete` or decline, confirm every claim for that identity has `identity_hash = NULL`, `envelope_key = NULL`, and `error_code = 'identity_redacted'`.
-12. Confirm group messages are ignored and rate limiting still leaves commands and consent callbacks available.
+12. Confirm group messages are ignored and rate limiting still leaves commands and legacy consent callbacks available.
 
 Do not run migration, deployment, webhook, or bot calls from automated tests.

@@ -116,13 +116,13 @@ describe('external conversation repository', () => {
     expect(messages.limit).toHaveBeenCalledWith(120)
   })
 
-  it('merges locale/consent metadata', async () => {
+  it('merges conversation metadata', async () => {
     const metadataRead = chain({
       single: { data: { metadata: { retained: true } }, error: null },
     })
     const updated = chain({
       single: {
-        data: { ...conversation, metadata: { retained: true, locale: 'es', consent: true } },
+        data: { ...conversation, metadata: { retained: true, locale: 'es' } },
         error: null,
       },
     })
@@ -140,12 +140,12 @@ describe('external conversation repository', () => {
       {
         channel: 'telegram',
         conversationId: conversation.id,
-        metadataPatch: { locale: 'es', consentVersion: 'telegram-v1' },
+        metadataPatch: { locale: 'es' },
       },
       metadataClient
     )
     expect(update).toHaveBeenCalledWith({
-      metadata: { retained: true, locale: 'es', consentVersion: 'telegram-v1' },
+      metadata: { retained: true, locale: 'es' },
     })
   })
 

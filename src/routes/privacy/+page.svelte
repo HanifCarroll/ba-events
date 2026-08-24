@@ -7,7 +7,7 @@
 			title: 'Privacy policy',
 			intro:
 				'This policy explains what BA Eventos collects, why we use it, and the choices available to you.',
-			updated: 'Last updated: August 23, 2026',
+			updated: 'Last updated: August 24, 2026',
 			sections: [
 				{
 					title: 'Information we collect',
@@ -15,7 +15,7 @@
 						'If you create an account, we receive your email address and basic profile information. Google sign-in may provide your name and profile image. We use this information only to create your account, authenticate you, and display your profile.',
 						'If you are signed in, we store your saved events, language preference, profile name, and chat conversations. Guest chat history is stored in your browser. To troubleshoot failures, we also keep a protected server-side diagnostic copy of guest chat text, language, IP address, and request details for up to 30 days.',
 						'When you send feedback, we store the message and, if you are signed in, your user ID. We may email the feedback to the site operator so it can be reviewed.',
-						'In the Telegram private-chat pilot, we process your Telegram user and chat identifiers and the messages you send. For identity, BA Eventos stores only a one-way HMAC, not your raw Telegram identifiers, username, or name; consenting conversation messages are stored for the retention period below. Telegram is not linked to a BA Eventos account, and event saving is unavailable there.'
+						'In the Telegram private-chat pilot, we process your Telegram user and chat identifiers and the messages you send. For identity, BA Eventos stores only a one-way HMAC, not your raw Telegram identifiers, username, or name; conversation messages are stored for the retention period below after the bot shows a privacy notice and you continue using it. Telegram is not linked to a BA Eventos account, and event saving is unavailable there.'
 					]
 				},
 				{
@@ -28,7 +28,7 @@
 				{
 					title: 'Chat and AI processing',
 					body: [
-						'Your chat messages, including consenting Telegram messages, are sent to AI service providers, including DeepSeek and OpenAI, when needed to understand your request, search events, and generate a response. Telegram asks for explicit consent before retaining a query as conversation history or sending it to AI; the webhook uses a transient encrypted handoff to deliver the request and consent flow. Do not include sensitive personal information in a chat message.'
+						'Your chat messages, including Telegram messages, are sent to AI service providers, including DeepSeek and OpenAI, when needed to understand your request, search events, and generate a response. The bot shows a privacy notice describing this processing; continued use indicates agreement. The webhook uses a transient encrypted handoff to deliver requests. Do not include sensitive personal information in a chat message.'
 					]
 				},
 				{
@@ -62,7 +62,7 @@
 			title: 'Política de privacidad',
 			intro:
 				'Esta política explica qué recopila BA Eventos, para qué lo usamos y qué opciones tenés.',
-			updated: 'Última actualización: 23 de agosto de 2026',
+			updated: 'Última actualización: 24 de agosto de 2026',
 			sections: [
 				{
 					title: 'Información que recopilamos',
@@ -70,7 +70,7 @@
 						'Si creás una cuenta, recibimos tu correo electrónico e información básica de perfil. El acceso con Google puede proporcionar tu nombre y foto de perfil. Usamos esta información únicamente para crear tu cuenta, autenticarte y mostrar tu perfil.',
 						'Si iniciás sesión, guardamos tus eventos, preferencia de idioma, nombre de perfil y conversaciones. El historial de chat de invitado se guarda en tu navegador. Para diagnosticar fallas, también conservamos una copia protegida en el servidor con el texto del chat, idioma, dirección IP y detalles de la solicitud durante un máximo de 30 días.',
 						'Cuando enviás comentarios, guardamos el mensaje y, si iniciaste sesión, tu identificador de usuario. Podemos enviar el comentario por correo al responsable del sitio para revisarlo.',
-						'En el piloto de chat privado de Telegram, procesamos tus identificadores de usuario y chat de Telegram y los mensajes que enviás. Para la identidad, BA Eventos guarda únicamente un HMAC unidireccional, no tus identificadores sin procesar, usuario ni nombre de Telegram; los mensajes enviados con consentimiento se guardan durante el plazo indicado abajo. No vinculamos Telegram con una cuenta de BA Eventos y allí no se pueden guardar eventos.'
+						'En el piloto de chat privado de Telegram, procesamos tus identificadores de usuario y chat de Telegram y los mensajes que enviás. Para la identidad, BA Eventos guarda únicamente un HMAC unidireccional, no tus identificadores sin procesar, usuario ni nombre de Telegram; los mensajes se guardan durante el plazo indicado abajo después de que el bot muestra un aviso de privacidad y continuás usándolo. No vinculamos Telegram con una cuenta de BA Eventos y allí no se pueden guardar eventos.'
 					]
 				},
 				{
@@ -83,7 +83,7 @@
 				{
 					title: 'Chat y procesamiento con IA',
 					body: [
-						'Tus mensajes, incluidos los mensajes de Telegram enviados con consentimiento, se envían a proveedores de IA, incluidos DeepSeek y OpenAI, cuando es necesario para interpretar tu pedido, buscar eventos y generar una respuesta. Telegram pide consentimiento explícito antes de conservar una consulta en el historial o enviarla a la IA; el webhook usa una transferencia cifrada transitoria para entregar la solicitud y el flujo de consentimiento. No incluyas información personal sensible en un mensaje.'
+						'Tus mensajes, incluidos los mensajes de Telegram, se envían a proveedores de IA, incluidos DeepSeek y OpenAI, cuando es necesario para interpretar tu pedido, buscar eventos y generar una respuesta. El bot muestra un aviso de privacidad sobre este procesamiento; al continuar usándolo, indicás tu acuerdo. El webhook usa una transferencia cifrada transitoria para entregar las solicitudes. No incluyas información personal sensible en un mensaje.'
 					]
 				},
 				{
