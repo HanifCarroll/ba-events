@@ -193,49 +193,61 @@ describe('Telegram turn processor', () => {
     }
   )
 
-  it('uses a privacy button and localized one-time starter prompts on /start', async () => {
+  it('sends one localized /start message with two-column inline prompts and privacy', async () => {
     const start = dependencies()
     await processTelegramTurn(payload({ chatId: '123', text: '/start' }), start)
-    expect(start.sendMessage).toHaveBeenNthCalledWith(1, '123', {
+    expect(start.sendMessage).toHaveBeenCalledOnce()
+    expect(start.sendMessage).toHaveBeenCalledWith('123', {
       text: expect.stringContaining('By continuing, you agree to the privacy policy.'),
-      replyMarkup: { inline_keyboard: [[{ text: 'Privacy', url: 'https://baeventos.com/privacy' }]] },
-    })
-    expect(start.sendMessage).toHaveBeenNthCalledWith(2, '123', {
-      text: 'Try one of these, or type your own:',
       replyMarkup: {
-        keyboard: [
-          [{ text: 'Anything chill tonight?' }, { text: "What's on this weekend?" }],
-          [{ text: 'Free events nearby' }, { text: 'Live music tonight' }],
+        inline_keyboard: [
+          [
+            { text: 'Chill tonight', callback_data: 'prompt:v1:chill' },
+            { text: 'This weekend', callback_data: 'prompt:v1:weekend' },
+          ],
+          [
+            { text: 'Free nearby', callback_data: 'prompt:v1:free' },
+            { text: 'Live music', callback_data: 'prompt:v1:live' },
+          ],
+          [{ text: 'Privacy', url: 'https://baeventos.com/privacy' }],
         ],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-        input_field_placeholder: 'Choose a prompt or type your own',
       },
     })
 
     const spanish = dependencies()
-    await processTelegramTurn(
-      payload({ chatId: '123', text: '/start', languageCode: 'es' }),
-      spanish
-    )
-    expect(spanish.sendMessage).toHaveBeenNthCalledWith(2, '123', {
-      text: 'Probá una de estas opciones o escribí la tuya:',
-      replyMarkup: {
-        keyboard: [
-          [{ text: '¿Algo tranqui para hoy?' }, { text: '¿Qué hay este finde?' }],
-          [{ text: 'Eventos gratis cerca' }, { text: 'Música en vivo hoy' }],
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-        input_field_placeholder: 'Elegí una opción o escribí la tuya',
-      },
-    })
-
-    const privacy = dependencies()
-    await processTelegramTurn(payload({ chatId: '123', text: '/privacy' }), privacy)
-    expect(privacy.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({
-      replyMarkup: { inline_keyboard: [[{ text: 'Privacy', url: 'https://baeventos.com/privacy' }]] },
+    await processTelegramTurn(payload({ chatId: '123', text: '/start', languageCode: 'es' }), spanish)
+    expect(spanish.sendMessage).toHaveBeenCalledOnce()
+    expect(spanish.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({
+      text: expect.stringContaining('Probá una de estas opciones o escribí la tuya:'),
+      replyMarkup: expect.objectContaining({
+        inline_keyboard: expect.arrayContaining([
+          [{ text: 'Algo tranqui hoy', callback_data: 'prompt:v1:chill' }, { text: 'Este finde', callback_data: 'prompt:v1:weekend' }],
+          [{ text: 'Gratis cerca', callback_data: 'prompt:v1:free' }, { text: 'Música en vivo', callback_data: 'prompt:v1:live' }],
+        ]),
+      }),
     }))
+  })
+
+  it('turns a prompt callback into the normal stored search turn', async () => {
+    const deps = dependencies()
+    await processTelegramTurn(payload({
+      chatId: '123', callbackId: 'callback-1', callbackData: 'prompt:v1:weekend', languageCode: 'es',
+    }), deps)
+    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', undefined)
+    expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({
+      text: '¿Qué hay este finde?', locale: 'es', requestId: 'telegram:42',
+    }))
+    expect(deps.insertMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('acknowledges a rate-limited prompt without invoking AI', async () => {
+    const deps = dependencies()
+    await processTelegramTurn(payload({
+      chatId: '123', callbackId: 'callback-1', callbackData: 'prompt:v1:chill', rateLimited: true,
+    }), deps)
+    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', undefined)
+    expect(deps.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({ text: expect.stringContaining('Too many') }))
+    expect(deps.runTurn).not.toHaveBeenCalled()
   })
 
   it('clears history on /new and hard-deletes on /delete', async () => {

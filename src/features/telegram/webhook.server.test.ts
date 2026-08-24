@@ -51,6 +51,16 @@ const messageUpdate = {
   },
 }
 
+const promptCallbackUpdate = {
+  update_id: 43,
+  callback_query: {
+    id: 'callback-1',
+    from: { id: 123, is_bot: false, language_code: 'es' },
+    message: { message_id: 10, chat: { id: 123, type: 'private' } },
+    data: 'prompt:v1:weekend',
+  },
+}
+
 describe('Telegram webhook', () => {
   it('authenticates before parsing and fails closed without config', async () => {
     const trigger = triggerMock()
@@ -177,6 +187,38 @@ describe('Telegram webhook', () => {
       trigger: triggerMock(),
     })
     expect(rateLimit).not.toHaveBeenCalled()
+  })
+
+  it('rate-limits prompt callbacks, but exempts consent callbacks', async () => {
+    const trigger = triggerMock()
+    const rateLimit = vi.fn(async () => ({ success: false, remaining: 0, reset: 1 }))
+    await handleTelegramWebhook(request(promptCallbackUpdate), { ...base, rateLimit, trigger })
+    expect(rateLimit).toHaveBeenCalledOnce()
+    const callbackPayload = telegramPlaintextPayloadSchema.parse(
+      openTelegramEnvelope(trigger.mock.calls[0][0].sealedEnvelope, key, '43', queueKey)
+    )
+    expect(callbackPayload).toMatchObject({
+      callbackId: 'callback-1', callbackData: 'prompt:v1:weekend', rateLimited: true,
+    })
+
+    const consent = structuredClone(promptCallbackUpdate)
+    consent.update_id = 44
+    consent.callback_query.data = 'consent:v1:accept'
+    const exemptRateLimit = vi.fn()
+    await handleTelegramWebhook(request(consent), { ...base, rateLimit: exemptRateLimit, trigger: triggerMock() })
+    expect(exemptRateLimit).not.toHaveBeenCalled()
+  })
+
+  it('does not spend quota again for a duplicate prompt callback', async () => {
+    const trigger = triggerMock()
+    const rateLimit = vi.fn(async () => ({ success: true, remaining: 1, reset: 0 }))
+    const claim = vi.fn()
+      .mockResolvedValueOnce({ completed: false as const, envelopeKey: key, checkRateLimit: true })
+      .mockResolvedValueOnce({ completed: true as const })
+    await handleTelegramWebhook(request(promptCallbackUpdate), { ...base, claim, rateLimit, trigger })
+    await handleTelegramWebhook(request(promptCallbackUpdate), { ...base, claim, rateLimit, trigger })
+    expect(rateLimit).toHaveBeenCalledOnce()
+    expect(trigger).toHaveBeenCalledOnce()
   })
 
   it('enqueues an opaque rate-limit response and leaves commands available', async () => {

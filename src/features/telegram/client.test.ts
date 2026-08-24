@@ -16,9 +16,7 @@ describe('Telegram Bot API client', () => {
     const client = createTelegramClient({ token: '123:secret', fetch: fetchMock as typeof fetch })
 
     await client.sendMessage('99', 'hello', {
-      keyboard: [[{ text: 'Events tonight' }]],
-      resize_keyboard: true,
-      one_time_keyboard: true,
+      inline_keyboard: [[{ text: 'Events tonight', callback_data: 'prompt:v1:chill' }]],
     })
 
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -28,9 +26,7 @@ describe('Telegram Bot API client', () => {
       chat_id: '99',
       text: 'hello',
       reply_markup: {
-        keyboard: [[{ text: 'Events tonight' }]],
-        resize_keyboard: true,
-        one_time_keyboard: true,
+        inline_keyboard: [[{ text: 'Events tonight', callback_data: 'prompt:v1:chill' }]],
       },
     })
   })

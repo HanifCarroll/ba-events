@@ -9,7 +9,7 @@ import {
   markTelegramUpdateFailed,
 } from './delivery.server.ts'
 import { telegramPlaintextPayloadSchema, type TelegramTaskPayload } from './task-payload.ts'
-import { parseTelegramText, parseTelegramUpdate } from './update.ts'
+import { parsePromptCallback, parseTelegramText, parseTelegramUpdate } from './update.ts'
 
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -153,11 +153,16 @@ export async function handleTelegramWebhook(
           : {}),
       }
     } else {
+      const promptCallback = parsePromptCallback(update.callback_query.data)
+      const rateLimited = promptCallback && claim.checkRateLimit
+        ? !(await (dependencies.rateLimit ?? checkRateLimit)(identityHash)).success
+        : false
       plaintext = {
         identityHash,
         chatId: update.callback_query.message.chat.id,
         callbackId: update.callback_query.id,
         callbackData: update.callback_query.data,
+        ...(rateLimited ? { rateLimited: true } : {}),
         ...(update.callback_query.from.language_code
           ? { languageCode: update.callback_query.from.language_code }
           : {}),

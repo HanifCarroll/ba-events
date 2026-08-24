@@ -5,7 +5,7 @@ const callbackData = z
   .string()
   .max(64)
   .refine((value) => new TextEncoder().encode(value).length <= 64)
-  .regex(/^consent:v1:(accept|decline)$/)
+  .regex(/^(?:consent:v1:(?:accept|decline)|prompt:v1:(?:chill|weekend|free|live))$/)
 
 const user = z.object({
   id: telegramId,
@@ -65,4 +65,11 @@ export function parseTelegramText(input: string): ParsedTelegramText | null {
 export function parseConsentCallback(data: string): 'accept' | 'decline' | null {
   const match = /^consent:v1:(accept|decline)$/.exec(data)
   return (match?.[1] as 'accept' | 'decline' | undefined) ?? null
+}
+
+export type TelegramPromptKey = 'chill' | 'weekend' | 'free' | 'live'
+
+export function parsePromptCallback(data: string): TelegramPromptKey | null {
+  const match = /^prompt:v1:(chill|weekend|free|live)$/.exec(data)
+  return (match?.[1] as TelegramPromptKey | undefined) ?? null
 }

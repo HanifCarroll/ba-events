@@ -10,15 +10,26 @@ export const telegramPlaintextPayloadSchema = z
     text: z.string().min(1).max(4096).optional(),
     languageCode: z.string().max(35).optional(),
     callbackId: z.string().min(1).max(128).optional(),
-    callbackData: z.enum(['consent:v1:accept', 'consent:v1:decline']).optional(),
+    callbackData: z.enum([
+      'consent:v1:accept',
+      'consent:v1:decline',
+      'prompt:v1:chill',
+      'prompt:v1:weekend',
+      'prompt:v1:free',
+      'prompt:v1:live',
+    ]).optional(),
     rateLimited: z.boolean().optional(),
   })
   .strict()
   .refine((value) => {
-    const message = Boolean(value.text || value.rateLimited)
-    const callback = Boolean(value.callbackId && value.callbackData)
-    return message !== callback && !(value.callbackId || value.callbackData) === message
-  }, 'Expected exactly one message or callback payload')
+    const hasCallback = Boolean(value.callbackId || value.callbackData)
+    if (hasCallback) {
+      return Boolean(value.callbackId && value.callbackData)
+        && !value.text
+        && (!value.rateLimited || value.callbackData?.startsWith('prompt:v1:'))
+    }
+    return Boolean(value.text) !== (value.rateLimited === true)
+  }, 'Expected one message, rate-limit response, or valid callback payload')
 
 export const telegramTaskPayloadSchema = z
   .object({

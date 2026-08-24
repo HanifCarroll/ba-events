@@ -28,7 +28,7 @@ import {
   telegramTaskPayloadSchema,
   type TelegramTaskPayload,
 } from './task-payload.ts'
-import { parseConsentCallback, parseTelegramText } from './update.ts'
+import { parseConsentCallback, parsePromptCallback, parseTelegramText } from './update.ts'
 
 const PRIVACY_URL = 'https://baeventos.com/privacy'
 
@@ -36,13 +36,13 @@ const COPY = {
   en: {
     start: 'Hi! I use AI to help find Buenos Aires events. Chats may be stored for up to 30 days. Use /delete anytime. By continuing, you agree to the privacy policy.',
     starter: 'Try one of these, or type your own:',
-    starterPlaceholder: 'Choose a prompt or type your own',
-    starterOptions: [
-      'Anything chill tonight?',
-      "What's on this weekend?",
-      'Free events nearby',
-      'Live music tonight',
-    ],
+    promptLabels: ['Chill tonight', 'This weekend', 'Free nearby', 'Live music'],
+    promptQueries: {
+      chill: 'Anything chill tonight?',
+      weekend: "What's on this weekend?",
+      free: 'Free events nearby',
+      live: 'Live music tonight',
+    },
     help: 'Ask me for events, dates, neighborhoods, venues, or directions. Commands: /new, /privacy, /delete. Saving and account linking are not available in Telegram.',
     fresh: 'Started a new conversation.',
     privacy: 'Telegram privacy details. Chats may be stored for up to 30 days. Use /delete at any time to delete your conversation data.',
@@ -56,13 +56,13 @@ const COPY = {
   es: {
     start: '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.',
     starter: 'Probá una de estas opciones o escribí la tuya:',
-    starterPlaceholder: 'Elegí una opción o escribí la tuya',
-    starterOptions: [
-      '¿Algo tranqui para hoy?',
-      '¿Qué hay este finde?',
-      'Eventos gratis cerca',
-      'Música en vivo hoy',
-    ],
+    promptLabels: ['Algo tranqui hoy', 'Este finde', 'Gratis cerca', 'Música en vivo'],
+    promptQueries: {
+      chill: '¿Algo tranqui para hoy?',
+      weekend: '¿Qué hay este finde?',
+      free: 'Eventos gratis cerca',
+      live: 'Música en vivo hoy',
+    },
     help: 'Preguntame por eventos, fechas, barrios, lugares o cómo llegar. Comandos: /new, /privacy, /delete. Telegram no permite guardar eventos ni vincular cuentas.',
     fresh: 'Empezamos una conversación nueva.',
     privacy: 'Detalles de privacidad de Telegram. Los chats pueden guardarse hasta 30 días. Usá /delete en cualquier momento para borrar los datos de tu conversación.',
@@ -79,18 +79,19 @@ const privacyKeyboard = (locale: 'en' | 'es') => ({
   inline_keyboard: [[{ text: COPY[locale].privacyButton, url: PRIVACY_URL }]],
 })
 
-const starterKeyboard = (locale: 'en' | 'es') => {
-  const options = COPY[locale].starterOptions
-  return {
-    keyboard: [
-      options.slice(0, 2).map((text) => ({ text })),
-      options.slice(2).map((text) => ({ text })),
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: true,
-    input_field_placeholder: COPY[locale].starterPlaceholder,
-  }
-}
+const startKeyboard = (locale: 'en' | 'es') => ({
+  inline_keyboard: [
+    COPY[locale].promptLabels.slice(0, 2).map((text, index) => ({
+      text,
+      callback_data: `prompt:v1:${(['chill', 'weekend'] as const)[index]}`,
+    })),
+    COPY[locale].promptLabels.slice(2).map((text, index) => ({
+      text,
+      callback_data: `prompt:v1:${(['free', 'live'] as const)[index]}`,
+    })),
+    [{ text: COPY[locale].privacyButton, url: PRIVACY_URL }],
+  ],
+})
 
 export interface TelegramTurnDependencies {
   getEnvelopeKey: typeof getTelegramUpdateEnvelopeKey
@@ -144,7 +145,7 @@ function persistedCanonical(messages: Message[], clientMessageId: string): Canon
 
 async function answerCallbackBestEffort(
   callbackId: string,
-  text: string,
+  text: string | undefined,
   dependencies: TelegramTurnDependencies
 ) {
   try {
@@ -181,8 +182,11 @@ export async function processTelegramTurn(
     )
     let locale = localeFrom(input.languageCode)
 
+    let conversation: ExternalConversation | undefined
+    let promptText: string | undefined
     if (input.callbackId && input.callbackData) {
       const action = parseConsentCallback(input.callbackData)
+      const prompt = parsePromptCallback(input.callbackData)
       if (action === 'decline') {
         await dependencies.deleteConversation({ channel: 'telegram', conversationId })
         await dependencies.redactClaims(input.identityHash)
@@ -191,15 +195,31 @@ export async function processTelegramTurn(
         return
       }
 
-      const conversation = await dependencies.getConversation({
+      if (action === 'accept') {
+        conversation = await dependencies.getConversation({
+          channel: 'telegram',
+          conversationId,
+        })
+        locale = localeFrom(input.languageCode, conversation)
+        await answerCallbackBestEffort(input.callbackId, COPY[locale].legacyAccepted, dependencies)
+        await dependencies.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted })
+        await dependencies.markCompleted(payload.updateId, conversationId)
+        return
+      }
+
+      if (!prompt) throw new Error('Unknown Telegram prompt callback')
+      await answerCallbackBestEffort(input.callbackId, undefined, dependencies)
+      conversation = await dependencies.getConversation({
         channel: 'telegram',
         conversationId,
       })
       locale = localeFrom(input.languageCode, conversation)
-      await answerCallbackBestEffort(input.callbackId, COPY[locale].legacyAccepted, dependencies)
-      await dependencies.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted })
-      await dependencies.markCompleted(payload.updateId, conversationId)
-      return
+      if (input.rateLimited) {
+        await dependencies.sendMessage(input.chatId, { text: COPY[locale].rateLimited })
+        await dependencies.markCompleted(payload.updateId, conversationId)
+        return
+      }
+      promptText = COPY[locale].promptQueries[prompt]
     }
 
     if (input.rateLimited) {
@@ -208,7 +228,7 @@ export async function processTelegramTurn(
       return
     }
 
-    const parsed = parseTelegramText(input.text ?? '')
+    const parsed = parseTelegramText(promptText ?? input.text ?? '')
     if (!parsed) {
       await dependencies.sendMessage(input.chatId, { text: COPY[locale].unsupported })
       await dependencies.markCompleted(payload.updateId, conversationId)
@@ -222,7 +242,7 @@ export async function processTelegramTurn(
       return
     }
 
-    const conversation = await dependencies.getConversation({
+    conversation ??= await dependencies.getConversation({
       channel: 'telegram',
       conversationId,
     })
@@ -246,12 +266,8 @@ export async function processTelegramTurn(
         await dependencies.sendMessage(input.chatId, { text: COPY[locale].fresh })
       } else {
         await dependencies.sendMessage(input.chatId, {
-          text: COPY[locale].start,
-          replyMarkup: privacyKeyboard(locale),
-        })
-        await dependencies.sendMessage(input.chatId, {
-          text: COPY[locale].starter,
-          replyMarkup: starterKeyboard(locale),
+          text: `${COPY[locale].start}\n\n${COPY[locale].starter}`,
+          replyMarkup: startKeyboard(locale),
         })
       }
       await dependencies.markCompleted(payload.updateId, conversationId)
