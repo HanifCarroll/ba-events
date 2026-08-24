@@ -63,12 +63,14 @@
 		onConversationChange = undefined as
 			((id: string, options?: { replace?: boolean }) => void) | undefined,
 		happeningSoonEvents = undefined as ChatEventPayload[] | undefined,
-		preloadedConversation = null as ConversationWithMessages | null
+		preloadedConversation = null as ConversationWithMessages | null,
+		showLanding = true
 	}: {
 		conversationId?: string | null
 		onConversationChange?: (id: string, options?: { replace?: boolean }) => void
 		happeningSoonEvents?: ChatEventPayload[]
 		preloadedConversation?: ConversationWithMessages | null
+		showLanding?: boolean
 	} = $props()
 
 	const auth = useAuthContext()
@@ -890,7 +892,9 @@
 	})
 
 	const hasPendingHandoff = $derived(!!pendingFirstMessage)
-	const isHome = $derived(!conversationId && !hasMessages && requestPhase === 'idle' && !hasPendingHandoff)
+	const isHome = $derived(
+		showLanding && !conversationId && !hasMessages && requestPhase === 'idle' && !hasPendingHandoff
+	)
 
 	const showConversationLoading = $derived(
 		!!(
@@ -970,7 +974,7 @@
 				loadingLabel={loadingLabel}
 				onSuggestionSelect={handleSendMessage}
 			/>
-		{:else}
+		{:else if showLanding}
 			<SuggestedPrompts
 				onSelectPrompt={handleSendMessage}
 				happeningSoonEvents={happeningSoonEvents}

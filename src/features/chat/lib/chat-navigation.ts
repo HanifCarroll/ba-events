@@ -4,6 +4,7 @@ export function getChatConversationId(
 	stateConversationId?: string
 ): string | null {
 	if (routeConversationId) return routeConversationId
+	if (pathname === '/chat') return null
 	if (stateConversationId) return stateConversationId
 	const match = pathname.match(/^\/chat\/([^/]+)$/)
 	return match ? decodeURIComponent(match[1]) : null

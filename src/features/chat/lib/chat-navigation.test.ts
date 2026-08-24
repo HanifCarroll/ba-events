@@ -6,6 +6,7 @@ describe('chat handoff navigation', () => {
 		expect(getChatConversationId('/chat/from-url', 'from-param', 'from-state')).toBe('from-param')
 		expect(getChatConversationId('/', undefined, 'from-state')).toBe('from-state')
 		expect(getChatConversationId('/chat/from-url')).toBe('from-url')
+		expect(getChatConversationId('/chat', undefined, 'stale-state')).toBeNull()
 		expect(getChatConversationId('/')).toBeNull()
 	})
 

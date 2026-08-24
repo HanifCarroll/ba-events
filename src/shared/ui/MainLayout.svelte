@@ -19,6 +19,7 @@
 	import SkipLink from '#shared/ui/SkipLink.svelte';
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts';
 	import { signOut } from '#features/auth/api/auth.remote.ts';
+	import { chatState } from '#features/chat/state/chat.svelte.ts';
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte';
 	import FeedbackDialog from '#shared/ui/FeedbackDialog.svelte';
 	import * as m from '#paraglide/messages.js';
@@ -64,6 +65,12 @@
 		mobileMenuOpen = false;
 	}
 
+	async function handleNewChat() {
+		chatState.startNewChat();
+		mobileMenuOpen = false;
+		await goto('/chat');
+	}
+
 	async function handleSignOut() {
 		isSigningOut = true;
 		try {
@@ -88,7 +95,7 @@
 	}
 
 	const mainNavItems: NavItem[] = [
-		{ to: '/', label: m.nav_new_chat(), icon: MessageSquarePlus, exact: true },
+		{ label: m.nav_new_chat(), icon: MessageSquarePlus, action: handleNewChat },
 		{ to: '/saved', label: m.nav_saved(), icon: Bookmark, requiresAuth: true },
 		{ to: '/profile', label: m.nav_settings(), icon: Settings, requiresAuth: true },
 		{ label: 'Feedback', icon: MessageCircle, action: handleFeedback }

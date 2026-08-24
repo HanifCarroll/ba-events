@@ -5,6 +5,8 @@
 	import { getChatConversationId, getChatHandoffNavigation } from '#features/chat/lib/chat-navigation.ts'
 	import type { ChatEventPayload, ConversationWithMessages } from '#shared/lib/types.ts'
 
+	const isMarketingLanding = $derived(page.url.pathname === '/')
+
 	/**
 	 * Shared page for the chat routes. Reads the active conversation id from the
 	 * `/chat/:conversationId` URL (absent on `/`) and drives the URL when a new
@@ -40,6 +42,7 @@
 		conversationId={conversationId}
 		happeningSoonEvents={happeningSoon}
 		preloadedConversation={preloadedConversation}
+		showLanding={isMarketingLanding}
 		onConversationChange={handleConversationChange}
 	/>
 </div>
