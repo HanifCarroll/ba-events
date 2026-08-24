@@ -180,7 +180,7 @@ describe('Telegram turn processor', () => {
     )
   })
 
-  it.each(['/start', '/help', '/privacy'] as const)(
+  it.each(['/help', '/privacy'] as const)(
     'handles %s without invoking AI',
     async (command) => {
       const deps = dependencies()
@@ -193,13 +193,43 @@ describe('Telegram turn processor', () => {
     }
   )
 
-  it('uses a localized HTTPS privacy button for /start and /privacy', async () => {
+  it('uses a privacy button and localized one-time starter prompts on /start', async () => {
     const start = dependencies()
     await processTelegramTurn(payload({ chatId: '123', text: '/start' }), start)
-    expect(start.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({
+    expect(start.sendMessage).toHaveBeenNthCalledWith(1, '123', {
       text: expect.stringContaining('By continuing, you agree to the privacy policy.'),
       replyMarkup: { inline_keyboard: [[{ text: 'Privacy', url: 'https://baeventos.com/privacy' }]] },
-    }))
+    })
+    expect(start.sendMessage).toHaveBeenNthCalledWith(2, '123', {
+      text: 'Try one of these, or type your own:',
+      replyMarkup: {
+        keyboard: [
+          [{ text: 'Anything chill tonight?' }, { text: "What's on this weekend?" }],
+          [{ text: 'Free events nearby' }, { text: 'Live music tonight' }],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+        input_field_placeholder: 'Choose a prompt or type your own',
+      },
+    })
+
+    const spanish = dependencies()
+    await processTelegramTurn(
+      payload({ chatId: '123', text: '/start', languageCode: 'es' }),
+      spanish
+    )
+    expect(spanish.sendMessage).toHaveBeenNthCalledWith(2, '123', {
+      text: 'Probá una de estas opciones o escribí la tuya:',
+      replyMarkup: {
+        keyboard: [
+          [{ text: '¿Algo tranqui para hoy?' }, { text: '¿Qué hay este finde?' }],
+          [{ text: 'Eventos gratis cerca' }, { text: 'Música en vivo hoy' }],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+        input_field_placeholder: 'Elegí una opción o escribí la tuya',
+      },
+    })
 
     const privacy = dependencies()
     await processTelegramTurn(payload({ chatId: '123', text: '/privacy' }), privacy)

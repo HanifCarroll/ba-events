@@ -35,6 +35,14 @@ const PRIVACY_URL = 'https://baeventos.com/privacy'
 const COPY = {
   en: {
     start: 'Hi! I use AI to help find Buenos Aires events. Chats may be stored for up to 30 days. Use /delete anytime. By continuing, you agree to the privacy policy.',
+    starter: 'Try one of these, or type your own:',
+    starterPlaceholder: 'Choose a prompt or type your own',
+    starterOptions: [
+      'Anything chill tonight?',
+      "What's on this weekend?",
+      'Free events nearby',
+      'Live music tonight',
+    ],
     help: 'Ask me for events, dates, neighborhoods, venues, or directions. Commands: /new, /privacy, /delete. Saving and account linking are not available in Telegram.',
     fresh: 'Started a new conversation.',
     privacy: 'Telegram privacy details. Chats may be stored for up to 30 days. Use /delete at any time to delete your conversation data.',
@@ -47,6 +55,14 @@ const COPY = {
   },
   es: {
     start: '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.',
+    starter: 'Probá una de estas opciones o escribí la tuya:',
+    starterPlaceholder: 'Elegí una opción o escribí la tuya',
+    starterOptions: [
+      '¿Algo tranqui para hoy?',
+      '¿Qué hay este finde?',
+      'Eventos gratis cerca',
+      'Música en vivo hoy',
+    ],
     help: 'Preguntame por eventos, fechas, barrios, lugares o cómo llegar. Comandos: /new, /privacy, /delete. Telegram no permite guardar eventos ni vincular cuentas.',
     fresh: 'Empezamos una conversación nueva.',
     privacy: 'Detalles de privacidad de Telegram. Los chats pueden guardarse hasta 30 días. Usá /delete en cualquier momento para borrar los datos de tu conversación.',
@@ -62,6 +78,19 @@ const COPY = {
 const privacyKeyboard = (locale: 'en' | 'es') => ({
   inline_keyboard: [[{ text: COPY[locale].privacyButton, url: PRIVACY_URL }]],
 })
+
+const starterKeyboard = (locale: 'en' | 'es') => {
+  const options = COPY[locale].starterOptions
+  return {
+    keyboard: [
+      options.slice(0, 2).map((text) => ({ text })),
+      options.slice(2).map((text) => ({ text })),
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: true,
+    input_field_placeholder: COPY[locale].starterPlaceholder,
+  }
+}
 
 export interface TelegramTurnDependencies {
   getEnvelopeKey: typeof getTelegramUpdateEnvelopeKey
@@ -219,6 +248,10 @@ export async function processTelegramTurn(
         await dependencies.sendMessage(input.chatId, {
           text: COPY[locale].start,
           replyMarkup: privacyKeyboard(locale),
+        })
+        await dependencies.sendMessage(input.chatId, {
+          text: COPY[locale].starter,
+          replyMarkup: starterKeyboard(locale),
         })
       }
       await dependencies.markCompleted(payload.updateId, conversationId)

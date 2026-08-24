@@ -1,13 +1,13 @@
 import type { CanonicalChatResponse, CanonicalChatEventPayload } from '#shared/lib/types.ts'
-import type { TelegramInlineKeyboardMarkup } from './client.ts'
+import type { TelegramInlineKeyboardMarkup, TelegramReplyMarkup } from './client.ts'
 
 const SITE_ORIGIN = 'https://baeventos.com'
 const TIME_ZONE = 'America/Argentina/Buenos_Aires'
 const MAX_MESSAGE = 4096
 
-export interface TelegramRenderedMessage {
+export interface TelegramRenderedMessage<ReplyMarkup extends TelegramReplyMarkup = TelegramReplyMarkup> {
   text: string
-  replyMarkup?: TelegramInlineKeyboardMarkup
+  replyMarkup?: ReplyMarkup
 }
 
 const COPY = {
@@ -126,7 +126,7 @@ function truncate(value: string): string {
 export function renderTelegramMessage(
   response: CanonicalChatResponse,
   locale: 'en' | 'es',
-): TelegramRenderedMessage {
+): TelegramRenderedMessage<TelegramInlineKeyboardMarkup> {
   const copy = COPY[locale]
   const events = response.events.slice(0, 5)
   const sections = [lead(response, locale), ...events.map((event, index) => eventText(event, index, locale))]

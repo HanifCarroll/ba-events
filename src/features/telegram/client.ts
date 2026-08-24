@@ -8,6 +8,15 @@ export interface TelegramInlineKeyboardMarkup {
   inline_keyboard: TelegramInlineKeyboardButton[][]
 }
 
+export interface TelegramReplyKeyboardMarkup {
+  keyboard: { text: string }[][]
+  resize_keyboard?: boolean
+  one_time_keyboard?: boolean
+  input_field_placeholder?: string
+}
+
+export type TelegramReplyMarkup = TelegramInlineKeyboardMarkup | TelegramReplyKeyboardMarkup
+
 export class TelegramApiError extends Error {
   constructor(
     message: string,
@@ -77,7 +86,7 @@ export function createTelegramClient({
   }
 
   return {
-    sendMessage(chatId: string, text: string, replyMarkup?: TelegramInlineKeyboardMarkup) {
+    sendMessage(chatId: string, text: string, replyMarkup?: TelegramReplyMarkup) {
       return call<unknown>('sendMessage', {
         chat_id: chatId,
         text,

@@ -76,8 +76,8 @@ By default this preserves pending Telegram updates. Set `TELEGRAM_DROP_PENDING_U
 Use the test bot in a private chat:
 
 1. Send unsupported media and verify there is no response and webhook info shows no error.
-2. Send `/start`; verify the localized notice and Privacy/Privacidad HTTPS button without a raw URL preview.
-3. Send ordinary text immediately; verify it is processed and stored normally.
+2. Send `/start`; verify the localized notice, Privacy/Privacidad HTTPS button, and one-time four-prompt reply keyboard without a raw URL preview.
+3. Tap a starter prompt, then send ordinary text; verify both are processed and stored normally.
 4. Verify a legacy Accept callback is acknowledged without gating; legacy Decline still confirms deletion.
 5. Verify one compact event answer, links, follow-up context, and typing indicator.
 6. Verify `/help`, `/privacy`, `/new`, and `/delete` in English and Spanish.
