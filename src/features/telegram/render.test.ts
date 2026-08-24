@@ -88,9 +88,9 @@ describe('Telegram canonical renderer', () => {
     const eventButtons = buttons.filter((button) => button.url?.startsWith('https://baeventos.com/events/'))
 
     expect(eventButtons).toHaveLength(5)
-    expect(eventButtons.every((button) => button.text.length <= 64)).toBe(true)
+    expect(eventButtons.every((button) => button.text.length <= 64 && !button.text.includes('↗'))).toBe(true)
     expect(eventButtons[0]).toMatchObject({
-      text: expect.stringMatching(/^1 · Tango 0 night .* ↗$/),
+      text: expect.stringMatching(/^1 · Tango 0 night /),
       url: 'https://baeventos.com/events/event%200',
     })
     expect(buttons.some((button) => button.text === 'Details' || button.text === 'Tickets / event page')).toBe(false)

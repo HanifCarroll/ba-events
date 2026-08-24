@@ -131,10 +131,9 @@ export function renderTelegramMessage(
 
   for (const [index, event] of events.entries()) {
     const prefix = `${index + 1} · `
-    const suffix = ' ↗'
-    const name = truncate(plain(event.name), 64 - prefix.length - suffix.length)
+    const name = truncate(plain(event.name), 64 - prefix.length)
     rows.push([{
-      text: `${prefix}${name}${suffix}`,
+      text: `${prefix}${name}`,
       url: `${SITE_ORIGIN}/events/${encodeURIComponent(event.id)}`,
     }])
   }
