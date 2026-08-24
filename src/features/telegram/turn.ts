@@ -167,19 +167,28 @@ async function sendMessageBestEffort(
   }
 }
 
-function startTypingBestEffort(chatId: string, dependencies: TelegramTurnDependencies): () => void {
+async function startTypingBestEffort(
+  chatId: string,
+  dependencies: TelegramTurnDependencies
+): Promise<() => void> {
   let active = true
   let sending = false
-  const send = () => {
+  const send = async () => {
     if (!active || sending) return
     sending = true
-    void Promise.resolve()
-      .then(() => dependencies.sendTyping(chatId))
-      .catch(() => undefined)
-      .finally(() => { sending = false })
+    try {
+      await dependencies.sendTyping(chatId)
+    } catch (error) {
+      console.warn(
+        '[telegram] sendChatAction failed:',
+        error instanceof Error ? error.name : 'unknown_error'
+      )
+    } finally {
+      sending = false
+    }
   }
-  send()
-  const refresh = setInterval(send, 4_000)
+  await send()
+  const refresh = setInterval(() => void send(), 4_000)
   return () => {
     active = false
     clearInterval(refresh)
@@ -316,7 +325,7 @@ export async function processTelegramTurn(
       return
     }
 
-    const stopTyping = startTypingBestEffort(input.chatId, dependencies)
+    const stopTyping = await startTypingBestEffort(input.chatId, dependencies)
     try {
       const userMessage = await dependencies.insertMessage({
         channel: 'telegram',

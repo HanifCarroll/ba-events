@@ -147,8 +147,27 @@ describe('Telegram turn processor', () => {
     expect(deps.render).toHaveBeenCalledWith(expect.anything(), 'en')
   })
 
+  it('waits for Telegram to accept the initial typing action before searching', async () => {
+    let acceptTyping!: () => void
+    const deps = dependencies()
+    deps.sendTyping = vi.fn(() => new Promise<void>((resolve) => { acceptTyping = resolve }))
+    const turn = processTelegramTurn(
+      payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
+      deps,
+    )
+
+    for (let index = 0; index < 12; index += 1) await Promise.resolve()
+    expect(deps.sendTyping).toHaveBeenCalledWith('123')
+    expect(deps.runTurn).not.toHaveBeenCalled()
+
+    acceptTyping()
+    await turn
+    expect(deps.runTurn).toHaveBeenCalledOnce()
+  })
+
   it('keeps refreshing typing through a slow search and cleans up after failure', async () => {
     vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       let resolveSearch!: () => void
       const search = new Promise<void>((resolve) => { resolveSearch = resolve })
@@ -190,6 +209,7 @@ describe('Telegram turn processor', () => {
       await vi.advanceTimersByTimeAsync(8_000)
       expect(failedSearch.sendTyping).toHaveBeenCalledTimes(1)
     } finally {
+      warn.mockRestore()
       vi.useRealTimers()
     }
   })
