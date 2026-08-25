@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-telegram",
+  "main": "src/telegram-worker/index.ts",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
+  "workers_dev": true,
+  "triggers": {
+    "crons": ["0 * * * *", "30 10 * * *"]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TELEGRAM_INBOX",
+        "class_name": "TelegramInbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TelegramInbox"]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true }
+  }
+}

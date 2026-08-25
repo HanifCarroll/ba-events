@@ -26,9 +26,6 @@ const base = {
   getOrCreateConversation: vi.fn(async () => ({ id: queueKey })) as never,
   attachConversation: vi.fn(async () => undefined) as never,
   markFailed: vi.fn(async () => undefined),
-  clearMessages: vi.fn(async () => undefined) as never,
-  updateMetadata: vi.fn(async () => undefined) as never,
-  markCompleted: vi.fn(async () => undefined) as never,
   rateLimit: vi.fn(async () => ({ success: true, remaining: 1, reset: 0 })),
 }
 
@@ -255,72 +252,10 @@ describe('Telegram webhook', () => {
     expect(trigger).toHaveBeenCalledOnce()
   })
 
-  it.each(['/start', '/help', '/privacy', '/new'] as const)(
-    'processes %s synchronously without Trigger',
-    async (command) => {
-      const trigger = triggerMock()
-      const clearMessages = vi.fn(async () => undefined)
-      const updateMetadata = vi.fn(async () => undefined)
-      const markCompleted = vi.fn(async () => undefined)
-      const update = structuredClone(messageUpdate)
-      update.update_id = Number(command === '/start' ? 45 : command === '/help' ? 46 : command === '/privacy' ? 47 : 48)
-      update.message.text = command
-
-      const result = await handleTelegramWebhook(request(update), {
-        ...base,
-        clearMessages: clearMessages as never,
-        updateMetadata: updateMetadata as never,
-        markCompleted: markCompleted as never,
-        trigger,
-      })
-
-      expect(result.status).toBe(200)
-      expect(await result.json()).toEqual({
-        method: 'sendMessage',
-        chat_id: 123,
-        text: {
-          '/start': '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.\n\nhttps://baeventos.com/privacy',
-          '/help': 'Preguntame por eventos, fechas, barrios, lugares o cómo llegar. Comandos: /new, /privacy, /delete. Telegram no permite guardar eventos ni vincular cuentas.',
-          '/privacy': 'Detalles de privacidad de Telegram. Los chats pueden guardarse hasta 30 días. Usá /delete en cualquier momento para borrar los datos de tu conversación.',
-          '/new': 'Empezamos una conversación nueva.',
-        }[command],
-        ...(command === '/start' ? { reply_markup: { remove_keyboard: true } } : {}),
-        ...(command === '/privacy' ? { reply_markup: { inline_keyboard: [[{ text: 'Privacidad', url: 'https://baeventos.com/privacy' }]] } } : {}),
-      })
-      expect(trigger).not.toHaveBeenCalled()
-      expect(markCompleted).toHaveBeenCalledWith(String(update.update_id), queueKey)
-      if (command === '/new') {
-        expect(clearMessages).toHaveBeenCalledWith({ channel: 'telegram', conversationId: queueKey })
-        expect(updateMetadata).toHaveBeenCalledWith({
-          channel: 'telegram', conversationId: queueKey, metadataPatch: { locale: 'es' },
-        })
-      } else {
-        expect(clearMessages).not.toHaveBeenCalled()
-        expect(updateMetadata).not.toHaveBeenCalled()
-      }
-    },
-  )
-
   it('keeps ordinary text on Trigger', async () => {
     const trigger = triggerMock()
     await handleTelegramWebhook(request(messageUpdate), { ...base, trigger })
     expect(trigger).toHaveBeenCalledOnce()
-  })
-
-  it('marks a failed direct command for Telegram retry', async () => {
-    const markCompleted = vi.fn(async () => { throw new Error('completion unavailable') })
-    const markFailed = vi.fn(async () => undefined)
-    const command = structuredClone(messageUpdate)
-    command.update_id = 49
-    command.message.text = '/help'
-    const result = await handleTelegramWebhook(request(command), {
-      ...base,
-      markCompleted: markCompleted as never,
-      markFailed,
-      trigger: triggerMock(),
-    })
-    expect(result.status).toBe(503)
-    expect(markFailed).toHaveBeenCalledWith('49', 'dispatch_failed')
   })
 
   it('enqueues an opaque rate-limit response and leaves commands available', async () => {

@@ -65,7 +65,4 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		)
 	);
 
-const appHandle = sequence(handleSupabase, handleLocaleSync, handleParaglide);
-
-export const handle: Handle = ({ event, resolve }) =>
-	event.url.pathname === '/api/telegram' ? resolve(event) : appHandle({ event, resolve });
+export const handle = sequence(handleSupabase, handleLocaleSync, handleParaglide);

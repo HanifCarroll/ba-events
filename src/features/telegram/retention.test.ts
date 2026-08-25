@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { purgeTelegramRetention } from './purge-telegram-retention.ts'
+import { purgeTelegramRetention } from './retention.ts'
 
 function deletion(count: number, error: unknown = null) {
   const query: Record<string, ReturnType<typeof vi.fn>> = {}

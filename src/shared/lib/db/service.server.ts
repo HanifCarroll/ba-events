@@ -1,5 +1,4 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { nodeRealtimeOptions } from './node-realtime.ts'
 
 let serviceRoleClient: SupabaseClient | null = null
 
@@ -20,7 +19,6 @@ export function getSupabaseServiceRoleClient(): SupabaseClient {
   }
 
   serviceRoleClient = createClient(supabaseUrl, serviceRoleKey, {
-    ...nodeRealtimeOptions,
     auth: {
       persistSession: false,
       autoRefreshToken: false,

@@ -6,15 +6,10 @@ import { sealTelegramEnvelope } from './envelope.server.ts'
 import {
   attachTelegramUpdateConversation,
   claimTelegramUpdate,
-  markTelegramUpdateCompleted,
   markTelegramUpdateFailed,
 } from './delivery.server.ts'
-import {
-  clearExternalConversationMessages,
-  getOrCreateExternalConversation,
-  updateExternalConversationMetadata,
-} from '#features/chat/api/external-conversations.server.ts'
-import { commandReply, localeFrom } from './commands.ts'
+import { getOrCreateExternalConversation } from '#features/chat/api/external-conversations.server.ts'
+
 import { telegramPlaintextPayloadSchema, type TelegramTaskPayload } from './task-payload.ts'
 import { parsePromptCallback, parseTelegramText, parseTelegramUpdate } from './update.ts'
 
@@ -32,9 +27,6 @@ export interface TelegramWebhookDependencies {
     payload: TelegramTaskPayload,
     options: { idempotencyKey: string; idempotencyKeyTTL: string; concurrencyKey: string }
   ) => Promise<unknown>
-  clearMessages?: typeof clearExternalConversationMessages
-  updateMetadata?: typeof updateExternalConversationMetadata
-  markCompleted?: typeof markTelegramUpdateCompleted
 }
 
 class TelegramBodyTooLargeError extends Error {}
@@ -56,16 +48,6 @@ function response(status = 200): Response {
 
 function typingResponse(chatId: string): Response {
   return Response.json({ method: 'sendChatAction', chat_id: Number(chatId), action: 'typing' })
-}
-
-function commandResponse(chatId: string, command: Parameters<typeof commandReply>[0], locale: 'en' | 'es'): Response {
-  const reply = commandReply(command, locale)
-  return Response.json({
-    method: 'sendMessage',
-    chat_id: Number(chatId),
-    text: reply.text,
-    ...(reply.replyMarkup ? { reply_markup: reply.replyMarkup } : {}),
-  })
 }
 
 async function readBoundedBody(request: Request): Promise<Uint8Array> {
@@ -154,10 +136,6 @@ export async function handleTelegramWebhook(
   let typingChatId: string | null = null
   try {
     const ordinaryText = 'message' in update && parsedText?.kind === 'text'
-    const directCommand =
-      'message' in update && parsedText?.kind === 'command' && parsedText.command !== 'delete'
-        ? parsedText.command
-        : null
     const promptCallback = 'callback_query' in update
       ? parsePromptCallback(update.callback_query.data)
       : null
@@ -204,31 +182,6 @@ export async function handleTelegramWebhook(
           ? { languageCode: update.callback_query.from.language_code }
           : {}),
       }
-    }
-
-    if (directCommand && 'message' in update) {
-      const directLocale = localeFrom(update.message.from.language_code, conversation.metadata?.locale)
-      if (directCommand === 'new') {
-        await (dependencies.clearMessages ?? clearExternalConversationMessages)({
-          channel: 'telegram',
-          conversationId: conversation.id,
-        })
-        await (dependencies.updateMetadata ?? updateExternalConversationMetadata)({
-          channel: 'telegram',
-          conversationId: conversation.id,
-          metadataPatch: { locale: directLocale },
-        })
-      }
-      await (dependencies.markCompleted ?? markTelegramUpdateCompleted)(update.update_id, conversation.id)
-      logger.info('[telegram] webhook dispatch', {
-        channel: 'telegram',
-        updateId: update.update_id,
-        requestId: `telegram:${update.update_id}`,
-        phase: 'dispatch',
-        durationMs: Math.round(performance.now() - dispatchStarted),
-        outcome: 'success',
-      })
-      return commandResponse(update.message.chat.id, directCommand, directLocale)
     }
 
     const validatedPlaintext = telegramPlaintextPayloadSchema.parse(plaintext)

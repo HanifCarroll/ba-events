@@ -2,8 +2,8 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
-import adapter from '@sveltejs/adapter-netlify';
 import { sveltekit } from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-cloudflare';
 
 // The legacy suite assumed .env values in process.env (Bun auto-loads them; Vitest's
 // node environment does not). Populate missing keys only — real env always wins.
@@ -14,12 +14,12 @@ for (const [key, value] of Object.entries(loadEnv(process.env.NODE_ENV ?? 'devel
 export default defineConfig({
 	plugins: [
 		sveltekit({
+			adapter: adapter(),
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true,
 				experimental: { async: true }
 			},
-			adapter: adapter(),
 			experimental: { remoteFunctions: true }
 		}),
 

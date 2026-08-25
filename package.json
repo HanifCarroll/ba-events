@@ -6,7 +6,9 @@
 	"scripts": {
 		"dev": "vite dev --port 3001",
 		"build": "vite build",
+		"deploy": "bun run build && wrangler deploy",
 		"preview": "vite preview",
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
@@ -21,14 +23,17 @@
 		"snapshot:search-corpus": "bun scripts/snapshot-search-corpus.ts",
 		"eval:titles": "bun evals/titles/run.ts",
 		"trigger:dev": "bunx trigger.dev@4.5.11 dev",
-		"trigger:deploy": "bunx trigger.dev@4.5.11 deploy"
+		"trigger:deploy": "bunx trigger.dev@4.5.11 deploy",
+		"telegram:dry-run": "wrangler deploy --config wrangler.telegram.jsonc --dry-run",
+		"telegram:deploy": "wrangler deploy --config wrangler.telegram.jsonc"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20260825.1",
 		"@inlang/paraglide-js": "^2.24.1",
-		"@trigger.dev/build": "4.5.11",
-		"@sveltejs/adapter-netlify": "^7.0.0-next.8",
+		"@sveltejs/adapter-cloudflare": "^7.2.9",
 		"@sveltejs/kit": "^3.0.0-next.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@trigger.dev/build": "4.5.11",
 		"@types/ws": "8.18.1",
 		"bits-ui": "^2.16.3",
 		"fake-indexeddb": "^6.2.5",
@@ -36,7 +41,8 @@
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
 		"vite": "^8.1.5",
-		"vitest": "^4.1.8"
+		"vitest": "^4.1.8",
+		"wrangler": "^4"
 	},
 	"imports": {
 		"#lib": "./src/lib/index.js",

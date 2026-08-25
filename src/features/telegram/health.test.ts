@@ -6,7 +6,7 @@ import {
   parseTelegramWebhookInfo,
   runTelegramHealthCheck,
   telegramHealthDecision,
-} from './telegram-health.ts'
+} from './health.ts'
 
 const now = new Date('2026-08-25T12:00:00Z')
 const webhook = { url: 'https://baeventos.com/api/telegram', pending_update_count: 0 }

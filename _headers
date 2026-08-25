@@ -1,0 +1,5 @@
+/service-worker.js
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
