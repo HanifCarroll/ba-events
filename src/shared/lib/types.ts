@@ -1,3 +1,5 @@
+import type { RecommendationFraming } from './recommendation-framing.ts'
+
 import type { EventFacets } from '#shared/lib/search-facets.ts'
 
 // All 48 official CABA neighborhoods
@@ -706,6 +708,8 @@ export interface CanonicalChatResponse {
   /** Compatibility/UI classification key; not the source of `text`. */
   messageKey: MessageKey
   text: string
+  /** AI-authored framing only; event facts remain in `events` and other artifacts. */
+  framing?: RecommendationFraming
   events: CanonicalChatEventPayload[]
   directions: DirectionsData | null
   venue: VenueDetailsData | null

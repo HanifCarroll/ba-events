@@ -1,5 +1,6 @@
 import type { CanonicalChatResponse, CanonicalChatEventPayload } from '#shared/lib/types.ts'
 import type { TelegramInlineKeyboardMarkup } from './client.ts'
+import { extractRecommendationFraming, warmRecommendationFallback, type RecommendationFraming } from '#shared/lib/recommendation-framing.ts'
 
 const SITE_ORIGIN = 'https://baeventos.com'
 const TIME_ZONE = 'America/Argentina/Buenos_Aires'
@@ -23,7 +24,6 @@ const COPY = {
     venue: 'Venue',
     instagram: 'Instagram',
     eventsLead: (count: number) => `Here are ${count} events:`,
-    eventsFollowUp: 'Would you like more details or directions for any of them?',
   },
   es: {
     saveUnavailable: 'Todavía no se pueden guardar eventos desde Telegram.',
@@ -37,7 +37,6 @@ const COPY = {
     venue: 'Lugar',
     instagram: 'Instagram',
     eventsLead: (count: number) => `Acá tenés ${count} eventos:`,
-    eventsFollowUp: '¿Querés más detalles o indicaciones sobre alguno?',
   },
 } as const
 
@@ -115,12 +114,23 @@ function eventText(event: CanonicalChatEventPayload, index: number, locale: 'en'
   ].join('\n')
 }
 
-function lead(response: CanonicalChatResponse, locale: 'en' | 'es', eventCount: number): string {
+function framing(response: CanonicalChatResponse, locale: 'en' | 'es', events: CanonicalChatEventPayload[]): RecommendationFraming {
+  const stored = response.framing
+  const checked = stored
+    ? extractRecommendationFraming(`ACK: ${stored.acknowledgement}\nNEXT: ${stored.nextStep}`, events, [
+        ...response.events.map((event) => event.venue_name ?? ''),
+        ...(response.venue?.venueName ? [response.venue.venueName] : []),
+      ])
+    : null
+  return checked ?? warmRecommendationFallback(locale, events.length)
+}
+
+function lead(response: CanonicalChatResponse, locale: 'en' | 'es', eventCount: number, recommendationFraming?: RecommendationFraming): string {
   if (response.messageKey === 'use_save_control') return COPY[locale].saveUnavailable
   if (response.messageKey === 'use_unsave_control') return COPY[locale].unsaveUnavailable
   if (response.messageKey === 'login_required') return COPY[locale].loginUnavailable
   if (response.messageKey === 'share_guidance') return COPY[locale].shareGuidance
-  if (response.kind === 'recommendations' && eventCount > 0) return COPY[locale].eventsLead(eventCount)
+  if (response.kind === 'recommendations' && eventCount > 0) return recommendationFraming?.acknowledgement ?? COPY[locale].eventsLead(eventCount)
   return plain(response.text, 800)
 }
 
@@ -137,10 +147,13 @@ export function renderTelegramMessage(
 ): TelegramRenderedMessage {
   const copy = COPY[locale]
   const events = response.events.slice(0, 5)
+  const recommendation = response.kind === 'recommendations' && events.length > 0
+    ? framing(response, locale, events)
+    : null
   const sections = [
-    lead(response, locale, events.length),
+    lead(response, locale, events.length, recommendation ?? undefined),
     ...events.map((event, index) => eventText(event, index, locale)),
-    ...(response.kind === 'recommendations' && events.length ? [copy.eventsFollowUp] : []),
+    ...(recommendation ? [recommendation.nextStep] : []),
   ].filter(Boolean)
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = []
 

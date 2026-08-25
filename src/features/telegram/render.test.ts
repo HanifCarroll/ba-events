@@ -71,17 +71,23 @@ describe('Telegram canonical renderer', () => {
     expect(renderTelegramMessage(response(), 'en')).toEqual(rendered)
   })
 
-  it('replaces recommendation prose with a localized deterministic lead', () => {
+  it('uses warm localized fallback framing when persisted framing is absent or invalid', () => {
     const rendered = renderTelegramMessage(response({ text: 'Tango 0 is the perfect event for you.' }), 'en')
 
-    expect(rendered.text.startsWith('Here are 5 events:')).toBe(true)
-    expect(renderTelegramMessage(response(), 'es').text.startsWith('Acá tenés 5 eventos:')).toBe(true)
+    expect(rendered.text.startsWith('I found 5 options for you.')).toBe(true)
     expect(rendered.text).not.toContain('Tango 0 is the perfect event for you.')
-    expect(rendered.text.match(/Tango 0/g)).toHaveLength(1)
-    expect(rendered.text).toContain('Would you like more details or directions for any of them?')
+    expect(rendered.text).toContain('Would you like help with more details or directions?')
     const spanish = renderTelegramMessage(response({ text: 'Tango 0 es ideal para vos.' }), 'es').text
-    expect(spanish).toContain('¿Querés más detalles o indicaciones sobre alguno?')
-    expect(spanish.match(/Tango 0/g)).toHaveLength(1)
+    expect(spanish.startsWith('Encontré 5 opciones para vos.')).toBe(true)
+    expect(spanish).toContain('¿Querés que te ayude con más detalles o indicaciones?')
+  })
+
+  it('places accepted framing around the trusted event list', () => {
+    const rendered = renderTelegramMessage(response({
+      framing: { acknowledgement: 'I found a few options for your night out.', nextStep: 'Want me to help with details or directions?' },
+    }), 'en').text
+    expect(rendered.indexOf('I found a few options')).toBeLessThan(rendered.indexOf('1.'))
+    expect(rendered.lastIndexOf('Want me to help')).toBeGreaterThan(rendered.lastIndexOf('5.'))
   })
 
   it('preserves prose paragraphs and bullets for non-recommendation responses', () => {

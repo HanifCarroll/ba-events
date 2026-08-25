@@ -116,7 +116,8 @@ describe('ToolLoopAgent acceptance behavior', () => {
   it('never builds cards from model prose', async () => {
     const text = 'Unknown invented event and https://evil.example costs $999.'
     const result = await orchestrate({ ...base, ...toolCase({ success: true, events: [event(CHEBA_ID, 'CHEBA')], formatted: '{}' }, text, 'search_events') })
-    expect(result.canonical.text).toBe(text)
+    expect(result.canonical.text).toBe('I found an option that could work for you.')
+    expect(result.canonical.text).not.toContain('https://')
     expect(result.canonical.events.map((item) => item.id)).toEqual([CHEBA_ID])
     expect(result.canonical.events.map((item) => item.name)).not.toContain('Unknown invented event')
   })
