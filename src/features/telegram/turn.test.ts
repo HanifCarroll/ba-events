@@ -94,14 +94,13 @@ describe('Telegram turn processor', () => {
   })
 
   it('serializes initial and trusted search drafts before final delivery', async () => {
-    let resolveInitial!: () => void
-    let resolveFound!: () => void
+    const resolvers: Array<() => void> = []
     const deps = dependencies()
-    deps.sendDraft = vi.fn((_chatId: string, _draftId: number, text: string) => new Promise<void>((resolve) => {
-      if (text === 'Finding events…') resolveInitial = resolve
-      else resolveFound = resolve
+    deps.sendDraft = vi.fn((_chatId: string, _draftId: number, _text: string) => new Promise<void>((resolve) => {
+      resolvers.push(resolve)
     }))
-    deps.runTurn = vi.fn(async (input: { onTrustedSearchProgress?: () => void }) => {
+    deps.runTurn = vi.fn(async (input: { onSearchStart?: () => void; onTrustedSearchProgress?: () => void }) => {
+      input.onSearchStart?.()
       input.onTrustedSearchProgress?.()
       return {
         canonical: { text: 'canonical result' },
@@ -117,13 +116,11 @@ describe('Telegram turn processor', () => {
     expect(deps.sendDraft).toHaveBeenNthCalledWith(1, '123', 42, 'Finding events…')
     expect(deps.sendMessage).not.toHaveBeenCalled()
 
-    resolveInitial()
+    resolvers.shift()?.()
     for (let index = 0; index < 4; index += 1) await Promise.resolve()
     expect(deps.sendDraft).toHaveBeenCalledTimes(2)
     expect(deps.sendDraft).toHaveBeenNthCalledWith(2, '123', 42, 'Found events…')
-    expect(deps.sendMessage).not.toHaveBeenCalled()
-
-    resolveFound()
+    resolvers.shift()?.()
     await turn
     expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' })
   })
@@ -197,11 +194,9 @@ describe('Telegram turn processor', () => {
   it('starts the agent alongside progress calls but waits for user persistence', async () => {
     let acceptTyping!: () => void
     let acceptUser!: (value: { id: string }) => void
-    let acceptDraft!: () => void
     let acceptAgent!: (value: { canonical: { text: string }; executionTrace: never[]; reads: never[]; providerRequestId: null }) => void
     const deps = dependencies()
     deps.sendTyping = vi.fn(() => new Promise<void>((resolve) => { acceptTyping = resolve }))
-    deps.sendDraft = vi.fn(() => new Promise<void>((resolve) => { acceptDraft = resolve }))
     deps.insertMessage = vi.fn((input: { role: string }) => input.role === 'user'
       ? new Promise((resolve) => { acceptUser = resolve })
       : Promise.resolve({ id: 'assistant-row' })) as never
@@ -213,7 +208,7 @@ describe('Telegram turn processor', () => {
 
     for (let index = 0; index < 12; index += 1) await Promise.resolve()
     expect(deps.sendTyping).toHaveBeenCalledWith('123')
-    expect(deps.sendDraft).toHaveBeenCalledWith('123', 42, 'Finding events…')
+    expect(deps.sendDraft).not.toHaveBeenCalled()
     expect(deps.runTurn).toHaveBeenCalledOnce()
     expect(deps.insertMessage).toHaveBeenCalledTimes(1)
 
@@ -222,7 +217,6 @@ describe('Telegram turn processor', () => {
     expect(deps.insertMessage).toHaveBeenCalledTimes(1)
     acceptAgent({ canonical: { text: 'canonical result' }, executionTrace: [], reads: [], providerRequestId: null })
     acceptTyping()
-    acceptDraft()
     await turn
     expect(deps.insertMessage).toHaveBeenCalledTimes(2)
   })

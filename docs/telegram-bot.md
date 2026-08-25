@@ -31,11 +31,13 @@ App/deployment environment:
 - `TELEGRAM_ID_HASH_SECRET`: the other generated secret, at least 32 bytes, used for HMAC only at the authenticated webhook boundary;
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 
-Telegram Worker environment (all are required unless the corresponding AI provider is disabled in the existing app configuration):
+Telegram Worker environment:
 
 - `TELEGRAM_BOT_TOKEN`;
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`;
-- `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `AI_MODEL`, and `AI_BASE_URL`.
+- `DEEPSEEK_API_KEY` and `OPENAI_API_KEY`;
+- `VOYAGE_API_KEY` for search reranking;
+- optional `AI_MODEL`, `AI_BASE_URL`, and `VOYAGE_RERANK_MODEL` overrides.
 
 Local setup script environment:
 
@@ -43,7 +45,7 @@ Local setup script environment:
 - `TELEGRAM_WEBHOOK_SECRET`;
 - `TELEGRAM_WEBHOOK_URL` (production: `https://baeventos-telegram.paseaban-decorosa0m.workers.dev/api/telegram`).
 
-Raw Telegram IDs, message text, and the stable identity HMAC never enter the Worker's retained Durable Object payload metadata. The Telegram Worker receives only the update ID, an opaque sealed envelope, and the random conversation UUID used as its Durable Object name. The per-conversation Durable Object stores the opaque payload before acknowledging Telegram, deduplicates update IDs, and processes only the inbox head. It retries terminal work three times with bounded backoff and honors Telegram `retry_after` values in full. The webhook encrypts the bounded transient handoff with a random per-update AES-256-GCM key stored only in the service-role-only `telegram_updates` row. The bot shows a privacy notice on `/start`; continued use indicates agreement, without requiring consent metadata or an Accept click. The hourly Worker cron checks Telegram webhook-info shape, treats more than 100 pending updates or a webhook error from the last two hours as unhealthy, and checks failed delivery rows older than two hours (well beyond normal Trigger retries). Older Telegram errors are historical and do not fail the check. It logs only bounded counts/status and throws on unhealthy state, using the Worker observability logs. Health and 30-day retention query Supabase only; they intentionally do not enumerate Durable Objects. Completion clears the key, making any retained opaque envelope undecryptable. Failed/pending deliveries retain the key for idempotent retry; retention deletes stale rows after 30 days. `/delete` or a legacy consent decline immediately deletes the conversation and HMAC identity, clears keys and identity links from all earlier delivery claims, and leaves only minimal nonidentifying delivery state until retention expires.
+Raw Telegram IDs, message text, and the stable identity HMAC never enter the Worker's retained Durable Object payload metadata. The Telegram Worker receives only the update ID, an opaque sealed envelope, and the random conversation UUID used as its Durable Object name. The per-conversation Durable Object stores the opaque payload before acknowledging Telegram, deduplicates update IDs, and processes only the inbox head. It retries terminal work three times with bounded backoff and honors Telegram `retry_after` values in full. The webhook encrypts the bounded transient handoff with a random per-update AES-256-GCM key stored only in the service-role-only `telegram_updates` row. The bot shows a privacy notice on `/start`; continued use indicates agreement, without requiring consent metadata or an Accept click. The hourly Worker cron checks Telegram webhook-info shape, treats more than 100 pending updates or a webhook error from the last two hours as unhealthy, and checks failed delivery rows older than two hours (well beyond normal Durable Object retries). Older Telegram errors are historical and do not fail the check. It logs only bounded counts/status and throws on unhealthy state, using the Worker observability logs. Health and 30-day retention query Supabase only; they intentionally do not enumerate Durable Objects. Completion clears the key, making any retained opaque envelope undecryptable. Failed/pending deliveries retain the key for idempotent retry; retention deletes stale rows after 30 days. `/delete` or a legacy consent decline immediately deletes the conversation and HMAC identity, clears keys and identity links from all earlier delivery claims, and leaves only minimal nonidentifying delivery state until retention expires.
 
 ## 3. Deployment order
 
@@ -74,7 +76,7 @@ Stop new deliveries first:
 bun scripts/telegram-webhook.ts delete
 ```
 
-By default this preserves pending Telegram updates. Set `TELEGRAM_DROP_PENDING_UPDATES=true` only when intentionally discarding Telegram's queue. Then roll back the app/Trigger deployments. Keep the migration until retained rows have expired or been deliberately purged.
+By default this preserves pending Telegram updates. Set `TELEGRAM_DROP_PENDING_UPDATES=true` only when intentionally discarding Telegram's queue. Then roll back the web and Telegram Worker deployments. Keep the migration until retained rows have expired or been deliberately purged.
 
 ## Manual QA
 

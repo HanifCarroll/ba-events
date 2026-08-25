@@ -980,6 +980,16 @@ describe('applyDiversity counters — rejected candidates must not consume capac
     categories,
   })
 
+  it('drops normalized title duplicates so alternatives keep the slots', () => {
+    const ranked = [
+      { ...mk('e-0', 'venue-a', ['comedy']), name: 'UNIVERSO STAND-UP - COMEDY SHOW' },
+      { ...mk('e-1', 'venue-b', ['comedy']), name: ' universo   stand-up - comedy show ' },
+      { ...mk('e-2', 'venue-c', ['arts']), name: 'BADA' },
+    ]
+    const out = applyDiversity(ranked, 3)
+    expect(out.map((e) => e.id)).toEqual(['e-0', 'e-2'])
+  })
+
   it('assigns an unused empty-category signature its own counting slot', async () => {
     const ranked = [
       mk('e-0', null, []),

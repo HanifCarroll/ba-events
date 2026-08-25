@@ -24,6 +24,7 @@ const COPY = {
     venue: 'Venue',
     instagram: 'Instagram',
     eventsLead: (count: number) => `Here are ${count} events:`,
+    pickLead: 'My top pick:',
   },
   es: {
     saveUnavailable: 'Todavía no se pueden guardar eventos desde Telegram.',
@@ -37,6 +38,7 @@ const COPY = {
     venue: 'Lugar',
     instagram: 'Instagram',
     eventsLead: (count: number) => `Acá tenés ${count} eventos:`,
+    pickLead: 'Mi recomendación principal:',
   },
 } as const
 
@@ -81,13 +83,15 @@ function formatDate(event: CanonicalChatEventPayload, locale: 'en' | 'es'): stri
   const language = locale === 'es' ? 'es-AR' : 'en-US'
   const dateText = new Intl.DateTimeFormat(language, {
     timeZone: TIME_ZONE,
-    dateStyle: 'medium',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
   }).format(date)
   if (event.is_all_day) return dateText
   if (event.time_tba) return `${dateText} · ${COPY[locale].timeTba}`
   const time = new Intl.DateTimeFormat(language, {
     timeZone: TIME_ZONE,
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     hourCycle: locale === 'es' ? 'h23' : 'h12',
   }).format(date)
@@ -97,21 +101,28 @@ function formatDate(event: CanonicalChatEventPayload, locale: 'en' | 'es'): stri
 function formatPrice(event: CanonicalChatEventPayload, locale: 'en' | 'es'): string | null {
   if (event.is_free || event.price === 0) return COPY[locale].free
   if (event.price == null || !Number.isFinite(event.price)) return null
-  return new Intl.NumberFormat(locale === 'es' ? 'es-AR' : 'en-US', {
-    style: 'currency',
-    currency: 'ARS',
+  const amount = new Intl.NumberFormat(locale === 'es' ? 'es-AR' : 'en-US', {
     maximumFractionDigits: 0,
   }).format(event.price)
+  return `ARS ${amount}`
 }
 
 function eventText(event: CanonicalChatEventPayload, index: number, locale: 'en' | 'es'): string {
   const place = event.location_hidden
     ? COPY[locale].locationTba
-    : plain(event.venue_name || event.venue_neighborhood || COPY[locale].locationTba, 120)
+    : plain(event.venue_neighborhood || event.venue_name || COPY[locale].locationTba, 80)
   return [
     `${index + 1}. ${plain(event.name, 180)}`,
     [formatDate(event, locale), place, formatPrice(event, locale)].filter(Boolean).join(' · '),
-  ].join('\n')
+    (() => {
+      const description = locale === 'es'
+        ? event.description_summary_es || event.description_display_es || event.description_es
+          || event.description_summary_en || event.description_display_en || event.description_en
+        : event.description_summary_en || event.description_display_en || event.description_en
+          || event.description_summary_es || event.description_display_es || event.description_es
+      return description && !event.description_unavailable ? plain(description, 180).replace(/\s+/g, ' ') : null
+    })(),
+  ].filter(Boolean).join('\n')
 }
 
 function framing(response: CanonicalChatResponse, locale: 'en' | 'es', events: CanonicalChatEventPayload[]): RecommendationFraming {
@@ -130,6 +141,7 @@ function lead(response: CanonicalChatResponse, locale: 'en' | 'es', eventCount: 
   if (response.messageKey === 'use_unsave_control') return COPY[locale].unsaveUnavailable
   if (response.messageKey === 'login_required') return COPY[locale].loginUnavailable
   if (response.messageKey === 'share_guidance') return COPY[locale].shareGuidance
+  if (response.messageKey === 'recommendations_pick' && eventCount > 0) return COPY[locale].pickLead
   if (response.kind === 'recommendations' && eventCount > 0) return recommendationFraming?.acknowledgement ?? COPY[locale].eventsLead(eventCount)
   return plain(response.text, 800)
 }
@@ -147,7 +159,7 @@ export function renderTelegramMessage(
 ): TelegramRenderedMessage {
   const copy = COPY[locale]
   const events = response.events.slice(0, 5)
-  const recommendation = response.kind === 'recommendations' && events.length > 0
+  const recommendation = response.kind === 'recommendations' && response.messageKey !== 'recommendations_pick' && events.length > 0
     ? framing(response, locale, events)
     : null
   const sections = [

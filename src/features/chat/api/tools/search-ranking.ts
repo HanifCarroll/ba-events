@@ -163,9 +163,12 @@ export function surpriseRank<T extends SearchScoreable>(
 export function applyDiversity<T extends SearchScoreable>(ranked: T[], limit: number): T[] {
   const venueCount = new Map<string, number>()
   const catCount = new Map<string, number>()
+  const titleCount = new Set<string>()
   const out: T[] = []
   for (const ev of ranked) {
     if (out.length >= limit) break
+    const titleKey = normalizeText(ev.name).replace(/\s+/g, ' ').trim()
+    if (titleKey && titleCount.has(titleKey)) continue
     // Only real venue values constrain — events with no venue are distinct and
     // must not be collapsed into one "anon" bucket.
     const venueKey = ev.venue_id ?? ev.venue_name
@@ -181,6 +184,7 @@ export function applyDiversity<T extends SearchScoreable>(ranked: T[], limit: nu
     // Every cap passed — accept now, then record its slots.
     if (venueKey) venueCount.set(venueKey, (venueCount.get(venueKey) ?? 0) + 1)
     catCount.set(catKey, (catCount.get(catKey) ?? 0) + 1)
+    if (titleKey) titleCount.add(titleKey)
     out.push(ev)
   }
   return out

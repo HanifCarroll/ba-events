@@ -33,7 +33,11 @@ type Env = {
   TELEGRAM_WEBHOOK_SECRET: string
   TELEGRAM_ID_HASH_SECRET: string
   SUPABASE_URL: string
+  SUPABASE_ANON_KEY: string
   SUPABASE_SERVICE_ROLE_KEY: string
+  DEEPSEEK_API_KEY: string
+  OPENAI_API_KEY: string
+  VOYAGE_API_KEY: string
   TELEGRAM_INBOX: DurableObjectNamespaceLike
 }
 

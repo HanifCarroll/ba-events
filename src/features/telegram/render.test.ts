@@ -16,6 +16,9 @@ function event(index: number): CanonicalChatEventPayload {
     is_free: index === 0,
     price: index === 0 ? 0 : 12_000,
     ticket_url: index === 0 ? 'http://unsafe.example/tickets' : 'https://tickets.example/buy',
+    description_summary_en: 'A relaxed neighborhood dance night.',
+    description_summary_es: null,
+    description_unavailable: false,
     link: index === 0 ? 'https://events.example/tango' : null,
     saved: null,
   } as CanonicalChatEventPayload
@@ -112,10 +115,22 @@ describe('Telegram canonical renderer', () => {
     const english = renderTelegramMessage(canonical, 'en').text
     const spanish = renderTelegramMessage(canonical, 'es').text
 
-    expect(english).toContain('Jan 15, 2026 · 05:30 PM')
-    expect(english).toContain('ARS 12,000')
-    expect(spanish).toContain('15 ene 2026 · 17:30')
-    expect(spanish).toContain('$ 12.000')
+    expect(english).toContain('Thu, Jan 15 · 5:30 PM')
+    expect(english).toContain('ARS 12,000')
+    expect(english).toContain('A relaxed neighborhood dance night.')
+    expect(spanish).toContain('jue, 15 ene · 17:30')
+    expect(spanish).toContain('ARS 12.000')
+  })
+
+  it('keeps recommendation picks decisive and renders one event card', () => {
+    const rendered = renderTelegramMessage(response({
+      messageKey: 'recommendations_pick',
+      events: [event(0)],
+      text: 'The top pick is Tango 0; alternatively consider another event.',
+    }), 'en')
+    expect(rendered.text).toContain('My top pick:')
+    expect(rendered.text).not.toContain('alternatively')
+    expect(rendered.text.match(/^1\./m)).toHaveLength(1)
   })
 
   it('uses one sanitized named BA Eventos button per event', () => {

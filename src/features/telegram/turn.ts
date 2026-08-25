@@ -350,7 +350,6 @@ export async function processTelegramTurn(
       timing('user-insert', userInsertStarted, 'error')
       throw error
     })
-    queueDraft(COPY[locale].draft, 'initial-draft')
     const agentStarted = performance.now()
     const agentPromise = dependencies.runTurn({
       requestId: `telegram:${payload.updateId}`,
@@ -360,6 +359,7 @@ export async function processTelegramTurn(
       priorHints: hintsFromMessages(messages),
       lastSearch: lastSearchContextFromMessages(messages),
       recentMessages: buildAgentHistoryFromStoredMessages(messages, normalizedTurn.originalQuery),
+      onSearchStart: () => queueDraft(COPY[locale].draft, 'initial-draft'),
       onTrustedSearchProgress: () => queueDraft(COPY[locale].found, 'found-draft'),
     }).then((result) => {
       timing('agent', agentStarted, 'success')

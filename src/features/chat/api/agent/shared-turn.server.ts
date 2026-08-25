@@ -29,6 +29,7 @@ export interface SharedChatTurnInput {
   pin?: PinResolution
   pinFacts?: { name: string; venueName: string | null } | null
   recentMessages?: AgentHistoryMessage[]
+  onSearchStart?: () => void
   onTrustedSearchProgress?: () => void
 }
 
@@ -112,6 +113,7 @@ export async function runSharedChatTurn(
     pin: input.pin,
     pinFacts: input.pinFacts,
     recentMessages: input.recentMessages,
+    onSearchStart: input.onSearchStart,
     onTrustedSearchProgress: input.onTrustedSearchProgress,
   })
 }
