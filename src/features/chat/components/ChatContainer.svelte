@@ -458,7 +458,6 @@
 			conversationId?: string
 			userClientMessageId?: string
 			assistantClientMessageId?: string
-			createConversation?: boolean
 		}
 	) {
 		pendingHappeningSoonEventIdRef = options?.eventId ?? null
@@ -496,7 +495,20 @@
 					throw new Error('[chat] invariant: first-message branch without handoff id')
 				}
 				currentConversationId = crypto.randomUUID()
-				if (!isAuthenticated) {
+				const pending = {
+					content,
+					conversationId: currentConversationId,
+					userClientMessageId,
+					assistantClientMessageId,
+					eventId: options?.eventId,
+					happeningSoonEventIds: pendingHappeningSoonEventIdsRef ?? undefined,
+					handoffId
+				}
+				pendingFirstMessage = pending
+
+				if (isAuthenticated) {
+					await chatState.createConversation(currentConversationId)
+				} else {
 					createGuestConversation(currentConversationId)
 						.then(() => markHandoffPhase('guest_conversation_written', handoffId))
 						.catch((persistError) => {
@@ -517,27 +529,16 @@
 						messages: []
 					})
 				}
+
 				isHandoffPending = true
 				markHandoffPhase('navigate', handoffId)
-				chatState.setPendingFirstMessage({
-					content,
-					conversationId: currentConversationId,
-					userClientMessageId,
-					assistantClientMessageId,
-					eventId: options?.eventId,
-					happeningSoonEventIds: pendingHappeningSoonEventIdsRef ?? undefined,
-					handoffId
-				})
+				chatState.setPendingFirstMessage(pending)
 				onConversationChange?.(currentConversationId)
 				return
 			}
 
 			setRequestLifecyclePhase('preparing')
 			isHandoffPending = false
-			if (options?.createConversation && isAuthenticated) {
-				const createdConversation = await chatState.createConversation(currentConversationId)
-				currentConversationId = createdConversation.id
-			}
 			pendingConversationIdRef = currentConversationId
 
 			const userMessagePayload: MessagePersistencePayload = {
@@ -761,7 +762,6 @@
 					conversationId: pending.conversationId,
 					userClientMessageId: pending.userClientMessageId,
 					assistantClientMessageId: pending.assistantClientMessageId,
-					createConversation: isAuthenticated,
 					eventId: pending.eventId,
 					happeningSoonEventIds: pending.happeningSoonEventIds
 				})
