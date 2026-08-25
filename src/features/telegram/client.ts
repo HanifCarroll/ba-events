@@ -8,6 +8,13 @@ export interface TelegramInlineKeyboardMarkup {
   inline_keyboard: TelegramInlineKeyboardButton[][]
 }
 
+const TELEGRAM_DRAFT_ID_MAX = 2_147_483_647
+
+export function telegramDraftIdFromUpdateId(updateId: string): number {
+  const value = BigInt(updateId)
+  return Number(value % BigInt(TELEGRAM_DRAFT_ID_MAX)) || 1
+}
+
 export class TelegramApiError extends Error {
   constructor(
     message: string,
@@ -83,6 +90,13 @@ export function createTelegramClient({
         text,
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       })
+    },
+    sendMessageDraft(chatId: string, draftId: number, text = '') {
+      if (!Number.isSafeInteger(draftId) || draftId <= 0 || draftId > 2_147_483_647) {
+        throw new Error('Telegram draft id must be a positive safe 31-bit integer')
+      }
+      if (text.length > 4096) throw new Error('Telegram draft text is too long')
+      return call<unknown>('sendMessageDraft', { chat_id: chatId, draft_id: draftId, text })
     },
     sendChatAction(chatId: string, action: 'typing' = 'typing') {
       return call<unknown>('sendChatAction', { chat_id: chatId, action })

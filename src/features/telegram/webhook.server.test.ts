@@ -154,26 +154,52 @@ describe('Telegram webhook', () => {
     expect(JSON.stringify({ payload, options })).not.toContain(plaintext.identityHash)
     expect(claim).toHaveBeenCalledWith('42', plaintext.identityHash)
     expect(attachConversation).toHaveBeenCalledWith('42', plaintext.identityHash, queueKey)
+    expect(base.getOrCreateConversation).toHaveBeenCalledWith({
+      channel: 'telegram',
+      externalIdentityHash: plaintext.identityHash,
+      metadata: { locale: 'es' },
+    })
   })
 
-  it('claims before limiting and skips quota for an in-flight duplicate', async () => {
+  it('starts conversation lookup and quota together after claim, and waits for both before trigger', async () => {
     const order: string[] = []
-    const trigger = vi.fn(async (_payload: TelegramTaskPayload, _options: TriggerOptions) => {
-      order.push('trigger')
-    })
-    await handleTelegramWebhook(request(messageUpdate), {
+    let resolveConversation!: (value: { id: string }) => void
+    let resolveRate!: (value: { success: boolean; remaining: number; reset: number }) => void
+    const conversation = new Promise<{ id: string }>((resolve) => { resolveConversation = resolve })
+    const rate = new Promise<{ success: boolean; remaining: number; reset: number }>((resolve) => { resolveRate = resolve })
+    const attachConversation = vi.fn(async () => { order.push('attach') })
+    const trigger = vi.fn(async () => { order.push('trigger') })
+    const dispatch = handleTelegramWebhook(request(messageUpdate), {
       ...base,
       claim: vi.fn(async () => {
         order.push('claim')
         return { completed: false as const, envelopeKey: key, checkRateLimit: true }
       }),
-      rateLimit: vi.fn(async () => {
-        order.push('rate')
-        return { success: true, remaining: 1, reset: 0 }
-      }),
+      getOrCreateConversation: vi.fn(() => {
+        order.push('conversation-start')
+        return conversation
+      }) as never,
+      attachConversation: attachConversation as never,
+      rateLimit: vi.fn(() => {
+        order.push('rate-start')
+        return rate
+      }) as never,
       trigger,
     })
-    expect(order).toEqual(['claim', 'rate', 'trigger'])
+
+    for (let index = 0; index < 8; index += 1) await Promise.resolve()
+    expect(order).toEqual(['claim', 'conversation-start', 'rate-start'])
+    expect(attachConversation).not.toHaveBeenCalled()
+    expect(trigger).not.toHaveBeenCalled()
+
+    resolveConversation({ id: queueKey })
+    for (let index = 0; index < 4; index += 1) await Promise.resolve()
+    expect(attachConversation).not.toHaveBeenCalled()
+    expect(trigger).not.toHaveBeenCalled()
+
+    resolveRate({ success: true, remaining: 1, reset: 0 })
+    await dispatch
+    expect(order).toEqual(['claim', 'conversation-start', 'rate-start', 'attach', 'trigger'])
 
     const rateLimit = vi.fn()
     await handleTelegramWebhook(request(messageUpdate), {

@@ -1,4 +1,5 @@
 import type { CanonicalChatResponse, Message } from '#shared/lib/types.ts'
+import { logger } from '#shared/lib/logger.ts'
 import { adaptStoredMessageToCanonical } from '#features/chat/lib/canonical.ts'
 import { hintsFromMessages } from '#features/chat/api/agent/follow-up.ts'
 import { lastSearchContextFromMessages } from '#features/chat/api/agent/search-context.ts'
@@ -23,6 +24,7 @@ import {
   redactTelegramIdentityClaims,
 } from './delivery.server.ts'
 import { openTelegramEnvelope } from './envelope.server.ts'
+import { telegramDraftIdFromUpdateId } from './client.ts'
 import { renderTelegramMessage, type TelegramRenderedMessage } from './render.ts'
 import {
   telegramPlaintextPayloadSchema,
@@ -107,6 +109,7 @@ export interface TelegramTurnDependencies {
   render: typeof renderTelegramMessage
   sendMessage: (chatId: string, message: TelegramRenderedMessage) => Promise<unknown>
   sendTyping: (chatId: string) => Promise<unknown>
+  sendDraft: (chatId: string, draftId: number) => Promise<unknown>
   answerCallback: (callbackId: string, text?: string) => Promise<unknown>
   markCompleted: typeof markTelegramUpdateCompleted
   markFailed: typeof markTelegramUpdateFailed
@@ -114,7 +117,7 @@ export interface TelegramTurnDependencies {
 
 export const defaultTelegramTurnDependencies: Omit<
   TelegramTurnDependencies,
-  'sendMessage' | 'sendTyping' | 'answerCallback'
+  'sendMessage' | 'sendTyping' | 'sendDraft' | 'answerCallback'
 > = {
   getEnvelopeKey: getTelegramUpdateEnvelopeKey,
   getConversation: getExternalConversation,
@@ -168,13 +171,33 @@ async function sendMessageBestEffort(
   }
 }
 
-async function startTypingBestEffort(
+async function sendDraftBestEffort(
+  chatId: string,
+  draftId: number,
+  dependencies: TelegramTurnDependencies
+) {
+  try {
+    await dependencies.sendDraft(chatId, draftId)
+  } catch {
+    // Drafts are only a native progress hint; final delivery remains authoritative.
+  }
+}
+
+function logTiming(phase: string, startedAt: number, status: 'success' | 'error') {
+  logger.info('[telegram] stage timing', {
+    phase,
+    durationMs: Math.round(performance.now() - startedAt),
+    status,
+  })
+}
+
+function startTypingBestEffort(
   chatId: string,
   dependencies: TelegramTurnDependencies
-): Promise<() => void> {
+): { initial: Promise<void>; stop: () => void } {
   let active = true
   let sending = false
-  const send = async () => {
+  const send = async (): Promise<void> => {
     if (!active || sending) return
     sending = true
     try {
@@ -188,11 +211,13 @@ async function startTypingBestEffort(
       sending = false
     }
   }
-  await send()
   const refresh = setInterval(() => void send(), 4_000)
-  return () => {
-    active = false
-    clearInterval(refresh)
+  return {
+    initial: send(),
+    stop: () => {
+      active = false
+      clearInterval(refresh)
+    },
   }
 }
 
@@ -309,15 +334,23 @@ export async function processTelegramTurn(
 
     const normalizedTurn = normalizeChatTurn(parsed.text, locale)
     locale = normalizedTurn.locale
-    if (conversation.metadata.locale !== locale) {
-      await dependencies.updateMetadata({
-        channel: 'telegram',
-        conversationId,
-        metadataPatch: { locale },
-      })
+    const setupStarted = performance.now()
+    const metadataPromise = conversation.metadata.locale !== locale
+      ? dependencies.updateMetadata({
+          channel: 'telegram',
+          conversationId,
+          metadataPatch: { locale },
+        })
+      : Promise.resolve(conversation)
+    const messagesPromise = dependencies.loadMessages({ channel: 'telegram', conversationId })
+    let messages: Message[]
+    try {
+      [, messages] = await Promise.all([metadataPromise, messagesPromise])
+      logTiming('natural-turn-setup', setupStarted, 'success')
+    } catch (error) {
+      logTiming('natural-turn-setup', setupStarted, 'error')
+      throw error
     }
-
-    const messages = await dependencies.loadMessages({ channel: 'telegram', conversationId })
     const assistantClientMessageId = `telegram:${payload.updateId}:assistant`
     const existingCanonical = persistedCanonical(messages, assistantClientMessageId)
     if (existingCanonical) {
@@ -326,38 +359,63 @@ export async function processTelegramTurn(
       return
     }
 
-    const stopTyping = await startTypingBestEffort(input.chatId, dependencies)
+    const typing = startTypingBestEffort(input.chatId, dependencies)
+    const userMessagePromise = dependencies.insertMessage({
+      channel: 'telegram',
+      conversationId,
+      clientMessageId: `telegram:${payload.updateId}:user`,
+      role: 'user',
+      content: normalizedTurn.originalQuery,
+    })
+    const draftPromise = sendDraftBestEffort(
+      input.chatId,
+      telegramDraftIdFromUpdateId(payload.updateId),
+      dependencies
+    )
     try {
-      const userMessage = await dependencies.insertMessage({
-        channel: 'telegram',
-        conversationId,
-        clientMessageId: `telegram:${payload.updateId}:user`,
-        role: 'user',
-        content: normalizedTurn.originalQuery,
-      })
-      const result = await dependencies.runTurn({
-        requestId: `telegram:${payload.updateId}`,
-        userContext: { userId: null, isAuthenticated: false },
-        text: normalizedTurn.originalQuery,
-        locale,
-        priorHints: hintsFromMessages(messages),
-        lastSearch: lastSearchContextFromMessages(messages),
-        recentMessages: buildAgentHistoryFromStoredMessages(messages, normalizedTurn.originalQuery),
-      })
-      await dependencies.insertMessage({
-        channel: 'telegram',
-        conversationId,
-        parentMessageId: userMessage.id,
-        clientMessageId: assistantClientMessageId,
-        role: 'assistant',
-        content: result.canonical.text,
-        executionTrace: result.executionTrace,
-        attachedData: { canonical: result.canonical },
-      })
-      await dependencies.sendMessage(input.chatId, dependencies.render(result.canonical, locale))
+      const [, userMessage] = await Promise.all([
+        typing.initial,
+        userMessagePromise,
+        draftPromise,
+      ])
+      const agentStarted = performance.now()
+      let result: Awaited<ReturnType<TelegramTurnDependencies['runTurn']>>
+      try {
+        result = await dependencies.runTurn({
+          requestId: `telegram:${payload.updateId}`,
+          userContext: { userId: null, isAuthenticated: false },
+          text: normalizedTurn.originalQuery,
+          locale,
+          priorHints: hintsFromMessages(messages),
+          lastSearch: lastSearchContextFromMessages(messages),
+          recentMessages: buildAgentHistoryFromStoredMessages(messages, normalizedTurn.originalQuery),
+        })
+      } catch (error) {
+        logTiming('agent', agentStarted, 'error')
+        throw error
+      }
+      logTiming('agent', agentStarted, 'success')
+      const persistSendStarted = performance.now()
+      try {
+        await dependencies.insertMessage({
+          channel: 'telegram',
+          conversationId,
+          parentMessageId: userMessage.id,
+          clientMessageId: assistantClientMessageId,
+          role: 'assistant',
+          content: result.canonical.text,
+          executionTrace: result.executionTrace,
+          attachedData: { canonical: result.canonical },
+        })
+        await dependencies.sendMessage(input.chatId, dependencies.render(result.canonical, locale))
+        logTiming('persist-send', persistSendStarted, 'success')
+      } catch (error) {
+        logTiming('persist-send', persistSendStarted, 'error')
+        throw error
+      }
       await dependencies.markCompleted(payload.updateId, conversationId)
     } finally {
-      stopTyping()
+      typing.stop()
     }
   } catch (error) {
     try {

@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { checkRateLimit } from '#features/auth/api/rate-limit.server.ts'
+import { logger } from '#shared/lib/logger.ts'
 import { getOrCreateExternalConversation } from '#features/chat/api/external-conversations.server.ts'
 import { hashTelegramIdentity } from './identity.server.ts'
 import { sealTelegramEnvelope } from './envelope.server.ts'
@@ -114,6 +115,7 @@ export async function handleTelegramWebhook(
 
   const source = 'message' in update ? update.message : update.callback_query
   const identityHash = hashTelegramIdentity(source.from.id, dependencies.identitySecret)
+  const locale = source.from.language_code?.toLowerCase().startsWith('es') ? 'es' : 'en'
   const parsedText = 'message' in update ? parseTelegramText(update.message.text) : null
   if ('message' in update && !parsedText) return response()
 
@@ -125,25 +127,33 @@ export async function handleTelegramWebhook(
   }
   if (claim.completed) return response()
 
+  const dispatchStarted = performance.now()
   try {
-    const conversation = await (
+    const ordinaryText = 'message' in update && parsedText?.kind === 'text'
+    const promptCallback = 'callback_query' in update
+      ? parsePromptCallback(update.callback_query.data)
+      : null
+    const shouldCheckRateLimit = Boolean(claim.checkRateLimit && (ordinaryText || promptCallback))
+    const conversationPromise = (
       dependencies.getOrCreateConversation ?? getOrCreateExternalConversation
     )({
       channel: 'telegram',
       externalIdentityHash: identityHash,
+      metadata: { locale },
     })
+    const rateLimitPromise = shouldCheckRateLimit
+      ? (dependencies.rateLimit ?? checkRateLimit)(identityHash)
+      : Promise.resolve({ success: true })
+    const [conversation, rateResult] = await Promise.all([conversationPromise, rateLimitPromise])
     await (dependencies.attachConversation ?? attachTelegramUpdateConversation)(
       update.update_id,
       identityHash,
       conversation.id
     )
 
+    const rateLimited = shouldCheckRateLimit && !rateResult.success
     let plaintext
     if ('message' in update) {
-      const ordinaryText = parsedText?.kind === 'text'
-      const rateLimited = ordinaryText && claim.checkRateLimit
-        ? !(await (dependencies.rateLimit ?? checkRateLimit)(identityHash)).success
-        : false
       plaintext = {
         identityHash,
         chatId: update.message.chat.id,
@@ -153,10 +163,6 @@ export async function handleTelegramWebhook(
           : {}),
       }
     } else {
-      const promptCallback = parsePromptCallback(update.callback_query.data)
-      const rateLimited = promptCallback && claim.checkRateLimit
-        ? !(await (dependencies.rateLimit ?? checkRateLimit)(identityHash)).success
-        : false
       plaintext = {
         identityHash,
         chatId: update.callback_query.message.chat.id,
@@ -185,7 +191,17 @@ export async function handleTelegramWebhook(
       idempotencyKeyTTL: '30d',
       concurrencyKey: conversation.id,
     })
+    logger.info('[telegram] webhook dispatch', {
+      phase: 'dispatch',
+      durationMs: Math.round(performance.now() - dispatchStarted),
+      status: 'success',
+    })
   } catch {
+    logger.info('[telegram] webhook dispatch', {
+      phase: 'dispatch',
+      durationMs: Math.round(performance.now() - dispatchStarted),
+      status: 'error',
+    })
     try {
       await (dependencies.markFailed ?? markTelegramUpdateFailed)(update.update_id, 'dispatch_failed')
     } catch {

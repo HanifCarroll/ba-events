@@ -50,6 +50,7 @@ function dependencies(metadata: Record<string, unknown> = {}): TelegramTurnDepen
     render: vi.fn(() => ({ text: 'rendered result' })) as never,
     sendMessage: vi.fn(async () => undefined),
     sendTyping: vi.fn(async () => undefined),
+    sendDraft: vi.fn(async () => undefined),
     answerCallback: vi.fn(async () => undefined),
     markCompleted: vi.fn(async () => undefined) as never,
     markFailed: vi.fn(async () => undefined) as never,
@@ -79,6 +80,17 @@ describe('Telegram turn processor', () => {
 
     expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({ text: 'milongas', locale: 'es' }))
     expect(deps.insertMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let a failed draft block the agent or final answer', async () => {
+    const deps = dependencies()
+    deps.sendDraft = vi.fn(async () => { throw new Error('draft unavailable') })
+    await processTelegramTurn(
+      payload({ chatId: '123', text: 'milongas' }),
+      deps
+    )
+    expect(deps.runTurn).toHaveBeenCalledOnce()
+    expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' })
   })
 
   it('acknowledges legacy accept without restoring a consent gate, and deletes on decline', async () => {
@@ -147,10 +159,16 @@ describe('Telegram turn processor', () => {
     expect(deps.render).toHaveBeenCalledWith(expect.anything(), 'en')
   })
 
-  it('waits for Telegram to accept the initial typing action before searching', async () => {
+  it('overlaps typing, user insert, and draft, but waits for all three before searching', async () => {
     let acceptTyping!: () => void
+    let acceptUser!: (value: { id: string }) => void
+    let acceptDraft!: () => void
     const deps = dependencies()
     deps.sendTyping = vi.fn(() => new Promise<void>((resolve) => { acceptTyping = resolve }))
+    deps.sendDraft = vi.fn(() => new Promise<void>((resolve) => { acceptDraft = resolve }))
+    deps.insertMessage = vi.fn((input: { role: string }) => input.role === 'user'
+      ? new Promise((resolve) => { acceptUser = resolve })
+      : Promise.resolve({ id: 'assistant-row' })) as never
     const turn = processTelegramTurn(
       payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
       deps,
@@ -158,11 +176,36 @@ describe('Telegram turn processor', () => {
 
     for (let index = 0; index < 12; index += 1) await Promise.resolve()
     expect(deps.sendTyping).toHaveBeenCalledWith('123')
+    expect(deps.sendDraft).toHaveBeenCalledWith('123', 42)
     expect(deps.runTurn).not.toHaveBeenCalled()
 
     acceptTyping()
+    acceptUser({ id: 'user-row' })
+    await Promise.resolve()
+    expect(deps.runTurn).not.toHaveBeenCalled()
+    acceptDraft()
     await turn
     expect(deps.runTurn).toHaveBeenCalledOnce()
+  })
+
+  it('stops typing refresh when user persistence fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const deps = dependencies()
+      deps.insertMessage = vi.fn(async (input: { role: string }) => {
+        if (input.role === 'user') throw new Error('user insert failed')
+        return { id: 'assistant-row' }
+      }) as never
+      await expect(processTelegramTurn(
+        payload({ chatId: '123', text: 'milongas' }),
+        deps,
+      )).rejects.toThrow('user insert failed')
+      expect(deps.sendTyping).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(8_000)
+      expect(deps.sendTyping).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps refreshing typing through a slow search and cleans up after failure', async () => {

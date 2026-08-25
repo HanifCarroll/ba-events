@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createTelegramClient, TelegramApiError } from './client.ts'
+import { createTelegramClient, TelegramApiError, telegramDraftIdFromUpdateId } from './client.ts'
 
 function telegramResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -29,6 +29,24 @@ describe('Telegram Bot API client', () => {
         inline_keyboard: [[{ text: 'Events tonight', callback_data: 'prompt:v1:chill' }]],
       },
     })
+  })
+
+  it('sends an empty native Telegram draft with bounded fields', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      telegramResponse({ ok: true, result: true }),
+    )
+    const client = createTelegramClient({ token: '123:secret', fetch: fetchMock as typeof fetch })
+
+    await client.sendMessageDraft('99', telegramDraftIdFromUpdateId('42'))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.telegram.org/bot123:secret/sendMessageDraft',
+      expect.objectContaining({
+        body: JSON.stringify({ chat_id: '99', draft_id: 42, text: '' }),
+      }),
+    )
+    expect(telegramDraftIdFromUpdateId('2147483647')).toBe(1)
+    expect(telegramDraftIdFromUpdateId('9223372036854775808')).toBeGreaterThan(0)
   })
 
   it('limits webhook delivery to pilot update types', async () => {

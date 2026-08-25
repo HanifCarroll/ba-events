@@ -43,6 +43,7 @@ export const telegramUpdateTask = task({
         sendMessage: (chatId, message) =>
           retryTelegram(() => client.sendMessage(chatId, message.text, message.replyMarkup)),
         sendTyping: (chatId) => retryTelegram(() => client.sendChatAction(chatId)),
+        sendDraft: (chatId, draftId) => client.sendMessageDraft(chatId, draftId),
         answerCallback: (callbackId, text) =>
           retryTelegram(() => client.answerCallbackQuery(callbackId, text)),
       })
