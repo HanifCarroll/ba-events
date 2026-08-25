@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte'
 	import { page } from '$app/state'
 	import { pushState, replaceState } from '$app/navigation'
 	import ChatContainer from './ChatContainer.svelte'
@@ -20,15 +21,30 @@
 		)
 	)
 
-	// The home route prefetches happening-soon events; the /chat/:id route
-	// prefetches the signed-in conversation. Guests get `conversation: null`
-	// from the server (their chats live in IndexedDB and are read client-side).
+	// The home route loads happening-soon events after first paint; the
+	// /chat/:id route preloads the signed-in conversation. Guests get
+	// `conversation: null` from the server (their chats live in IndexedDB).
 	const data = $derived(page.data as {
-		happeningSoon?: ChatEventPayload[]
 		conversation?: ConversationWithMessages | null
 	})
-	const happeningSoon = $derived(data.happeningSoon)
+	let happeningSoonEvents = $state.raw<ChatEventPayload[]>([])
+	const happeningSoon = $derived(happeningSoonEvents)
 	const preloadedConversation = $derived(data.conversation ?? null)
+
+	onMount(() => {
+		if (!isMarketingLanding) return
+
+		const frame = requestAnimationFrame(() => {
+			void fetch('/api/events/happening-soon')
+				.then((response) => (response.ok ? response.json() : null))
+				.then((payload: { success?: boolean; data?: ChatEventPayload[] } | null) => {
+					if (payload?.success && Array.isArray(payload.data)) happeningSoonEvents = payload.data
+				})
+				.catch(() => {})
+		})
+
+		return () => cancelAnimationFrame(frame)
+	})
 
 	function handleConversationChange(id: string, options?: { replace?: boolean }) {
 		const navigation = getChatHandoffNavigation(id, page.state)
