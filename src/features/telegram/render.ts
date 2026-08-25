@@ -21,6 +21,7 @@ const COPY = {
     directions: 'Directions',
     venue: 'Venue',
     instagram: 'Instagram',
+    eventsLead: (count: number) => `Here are ${count} events:`,
   },
   es: {
     saveUnavailable: 'Todavía no se pueden guardar eventos desde Telegram.',
@@ -32,6 +33,7 @@ const COPY = {
     directions: 'Cómo llegar',
     venue: 'Lugar',
     instagram: 'Instagram',
+    eventsLead: (count: number) => `Acá tenés ${count} eventos:`,
   },
 } as const
 
@@ -105,10 +107,11 @@ function eventText(event: CanonicalChatEventPayload, index: number, locale: 'en'
   ].join('\n')
 }
 
-function lead(response: CanonicalChatResponse, locale: 'en' | 'es'): string {
+function lead(response: CanonicalChatResponse, locale: 'en' | 'es', eventCount: number): string {
   if (response.messageKey === 'use_save_control') return COPY[locale].saveUnavailable
   if (response.messageKey === 'use_unsave_control') return COPY[locale].unsaveUnavailable
   if (response.messageKey === 'login_required') return COPY[locale].loginUnavailable
+  if (response.kind === 'recommendations' && eventCount > 0) return COPY[locale].eventsLead(eventCount)
   return plain(response.text, 800)
 }
 
@@ -125,7 +128,7 @@ export function renderTelegramMessage(
 ): TelegramRenderedMessage {
   const copy = COPY[locale]
   const events = response.events.slice(0, 5)
-  const sections = [lead(response, locale), ...events.map((event, index) => eventText(event, index, locale))]
+  const sections = [lead(response, locale, events.length), ...events.map((event, index) => eventText(event, index, locale))]
     .filter(Boolean)
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = []
 

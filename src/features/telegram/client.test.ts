@@ -42,11 +42,22 @@ describe('Telegram Bot API client', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.telegram.org/bot123:secret/sendMessageDraft',
       expect.objectContaining({
-        body: JSON.stringify({ chat_id: '99', draft_id: 42, text: '' }),
+        body: JSON.stringify({ chat_id: 99, draft_id: 42, text: '' }),
       }),
     )
     expect(telegramDraftIdFromUpdateId('2147483647')).toBe(1)
     expect(telegramDraftIdFromUpdateId('9223372036854775808')).toBeGreaterThan(0)
+  })
+
+  it('rejects non-integer and unsafe draft chat ids', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      telegramResponse({ ok: true, result: true }),
+    )
+    const client = createTelegramClient({ token: '123:secret', fetch: fetchMock as typeof fetch })
+
+    expect(() => client.sendMessageDraft('not-a-chat', 42)).toThrow('safe integer')
+    expect(() => client.sendMessageDraft('9007199254740992', 42)).toThrow('safe integer')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('limits webhook delivery to pilot update types', async () => {

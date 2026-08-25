@@ -176,9 +176,12 @@ async function sendDraftBestEffort(
   draftId: number,
   dependencies: TelegramTurnDependencies
 ) {
+  const startedAt = performance.now()
   try {
     await dependencies.sendDraft(chatId, draftId)
+    logTiming('initial-draft', startedAt, 'success')
   } catch {
+    logTiming('initial-draft', startedAt, 'error')
     // Drafts are only a native progress hint; final delivery remains authoritative.
   }
 }
@@ -197,23 +200,22 @@ function startTypingBestEffort(
 ): { initial: Promise<void>; stop: () => void } {
   let active = true
   let sending = false
-  const send = async (): Promise<void> => {
+  const send = async (initial = false): Promise<void> => {
     if (!active || sending) return
     sending = true
+    const startedAt = initial ? performance.now() : 0
     try {
       await dependencies.sendTyping(chatId)
-    } catch (error) {
-      console.warn(
-        '[telegram] sendChatAction failed:',
-        error instanceof Error ? error.name : 'unknown_error'
-      )
+      if (initial) logTiming('initial-typing', startedAt, 'success')
+    } catch {
+      if (initial) logTiming('initial-typing', startedAt, 'error')
     } finally {
       sending = false
     }
   }
   const refresh = setInterval(() => void send(), 4_000)
   return {
-    initial: send(),
+    initial: send(true),
     stop: () => {
       active = false
       clearInterval(refresh)

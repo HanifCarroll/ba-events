@@ -92,11 +92,15 @@ export function createTelegramClient({
       })
     },
     sendMessageDraft(chatId: string, draftId: number, text = '') {
+      const numericChatId = Number(chatId)
+      if (!/^-?\d+$/.test(chatId) || !Number.isSafeInteger(numericChatId)) {
+        throw new Error('Telegram draft chat id must be a safe integer')
+      }
       if (!Number.isSafeInteger(draftId) || draftId <= 0 || draftId > 2_147_483_647) {
         throw new Error('Telegram draft id must be a positive safe 31-bit integer')
       }
       if (text.length > 4096) throw new Error('Telegram draft text is too long')
-      return call<unknown>('sendMessageDraft', { chat_id: chatId, draft_id: draftId, text })
+      return call<unknown>('sendMessageDraft', { chat_id: numericChatId, draft_id: draftId, text })
     },
     sendChatAction(chatId: string, action: 'typing' = 'typing') {
       return call<unknown>('sendChatAction', { chat_id: chatId, action })

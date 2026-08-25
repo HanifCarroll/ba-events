@@ -71,6 +71,21 @@ describe('Telegram canonical renderer', () => {
     expect(renderTelegramMessage(response(), 'en')).toEqual(rendered)
   })
 
+  it('replaces recommendation prose with a localized deterministic lead', () => {
+    const rendered = renderTelegramMessage(response({ text: 'Tango 0 is the perfect event for you.' }), 'en')
+
+    expect(rendered.text.startsWith('Here are 5 events:')).toBe(true)
+    expect(renderTelegramMessage(response(), 'es').text.startsWith('Acá tenés 5 eventos:')).toBe(true)
+    expect(rendered.text).not.toContain('Tango 0 is the perfect event for you.')
+    expect(rendered.text.match(/Tango 0/g)).toHaveLength(1)
+  })
+
+  it('preserves prose for non-recommendation responses with events', () => {
+    const rendered = renderTelegramMessage(response({ kind: 'event_details', text: 'Tango 0 is tonight.' }), 'en')
+
+    expect(rendered.text).toContain('Tango 0 is tonight.')
+  })
+
   it('formats in the requested locale and Buenos Aires time zone', () => {
     const canonical = response({ events: [event(1)] })
     const english = renderTelegramMessage(canonical, 'en').text
