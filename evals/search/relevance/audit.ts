@@ -5,8 +5,7 @@
  *
  * Selects the union of queries where pure Voyage and fused(2) disagree
  * (different rank 1, materially different top five, or Voyage loses NDCG@5),
- * where the facet variant protects a subjective query's rank-1 relevance that
- * pure Voyage drops, and every mixed-language query. For each selected query it
+ * and every mixed-language query. For each selected query it
  * emits:
  *   - a blinded worksheet (shuffled event content, opaque option ids, blank
  *     grade/rationale) with NO ranker, rank, variant order, old grade, or event
@@ -27,7 +26,6 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
-  facetOrder,
   fusedOrder,
   voyageOrder,
   asStringArray,
@@ -113,11 +111,6 @@ function ndcg5(order: string[], labels: Record<string, Grade>): number {
   return idcg > 0 ? dcg(actual) / idcg : 0
 }
 
-function gradeAt(labels: Record<string, Grade>, order: string[], pos: number): number {
-  const id = order[pos]
-  return id === undefined ? 0 : (labels[id] ?? 0)
-}
-
 function sameSet(a: string[], b: string[]): boolean {
   const sa = new Set(a)
   const sb = new Set(b)
@@ -143,7 +136,6 @@ interface Qualified {
   reasons: string[]
   voyageTop5: string[]
   fusedTop5: string[]
-  facetTop5: string[]
   voyageNdcg: number
   fusedNdcg: number
 }
@@ -157,7 +149,6 @@ for (let i = 0; i < capture.queries.length; i++) {
   const labels = LIVE_LABELS[q.id] ?? {}
   const voyageTop5 = voyageOrder(q).slice(0, 5)
   const fusedTop5 = fusedOrder(q, 2).slice(0, 5)
-  const facetTop5 = facetOrder(q, capture.events).slice(0, 5)
   const voyageNdcg = ndcg5(voyageTop5, labels)
   const fusedNdcg = ndcg5(fusedTop5, labels)
 
@@ -167,14 +158,11 @@ for (let i = 0; i < capture.queries.length; i++) {
   const top5Material =
     !sameSet(voyageTop5, fusedTop5) || positionalDiffs(voyageTop5, fusedTop5) >= 2
   const voyageLoss = voyageNdcg < fusedNdcg
-  const facetProtection =
-    q.subjective && gradeAt(labels, facetTop5, 0) >= 2 && gradeAt(labels, voyageTop5, 0) < 2
   const mixedLanguage = q.lang === 'mixed'
 
   if (rank1Differs) reasons.push('rank1-differs')
   if (top5Material) reasons.push('top5-material-differs')
   if (voyageLoss) reasons.push('voyage-ndcg-loss')
-  if (facetProtection) reasons.push('subjective-facet-protection')
   if (mixedLanguage) reasons.push('mixed-language')
 
   if (reasons.length === 0) continue
@@ -185,7 +173,6 @@ for (let i = 0; i < capture.queries.length; i++) {
     reasons,
     voyageTop5,
     fusedTop5,
-    facetTop5,
     voyageNdcg,
     fusedNdcg,
   })
@@ -199,7 +186,6 @@ const CAP = 50
 
 function priorityRank(reasons: string[]): number {
   if (reasons.includes('voyage-ndcg-loss')) return 0
-  if (reasons.includes('subjective-facet-protection')) return 1
   if (reasons.includes('mixed-language')) return 2
   if (reasons.includes('rank1-differs') || reasons.includes('top5-material-differs')) return 3
   return 4
@@ -297,7 +283,6 @@ for (const sel of selected) {
     reasons: sel.reasons,
     voyageTop5: sel.voyageTop5,
     fused2Top5: sel.fusedTop5,
-    facetTop5: sel.facetTop5,
     options: keyOptions,
   })
 }

@@ -39,7 +39,7 @@ import { canonicalizeSearchIntent, type EventSearchIntent } from '#features/chat
 import { normalizeText } from '#shared/lib/utils/normalize-text.ts'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import { rerankEvents, type RerankDocumentEvent, type RerankMeta } from '#shared/lib/search/rerank.ts'
-import { corpusToRerankDocument, corpusToScoreable, facetRerank } from './rerank-variants.ts'
+import { corpusToRerankDocument } from './rerank-variants.ts'
 import type { CorpusEvent, CorpusFile } from '../corpus/types.ts'
 import { RELEVANCE_QUERIES, RELEVANCE_NOW_BA, type SeedQuery, type SeedMust } from './queries.ts'
 
@@ -445,12 +445,6 @@ async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): P
   const hasKey = !!process.env.VOYAGE_API_KEY
 
   const baselineOrders: CorpusEvent[][] = inputs.map((inp) => inp.baselineRanked.slice(0, RECALL_K))
-  const facetOrders: CorpusEvent[][] = inputs.map((inp) => {
-    const byId = new Map(inp.baselineRanked.map((e) => [e.id, e]))
-    const scoreables = inp.baselineRanked.slice(0, RECALL_K).map(corpusToScoreable)
-    return facetRerank(scoreables, inp.intent.semanticQuery, inp.intent.prefer).map((s) => byId.get(s.id)!)
-  })
-
   const voyageOrders: CorpusEvent[][] = []
   const rerankedOrders: CorpusEvent[][] = []
   const latencies: number[] = []
@@ -509,15 +503,14 @@ async function runRerankVariants(cases: CaseResult[], inputs: VariantInput[]): P
   console.log(`\n=== rerank variants ===`)
 
   printVariantTable('baseline', cases, inputs, baselineOrders)
-  printVariantTable('facet', cases, inputs, facetOrders)
   if (hasKey) {
     printVariantTable('voyage', cases, inputs, voyageOrders)
     printVariantTable('voyage+production', cases, inputs, rerankedOrders)
   }
 
   const ordersByName: Record<string, CorpusEvent[][]> = hasKey
-    ? { facet: facetOrders, voyage: voyageOrders, 'voyage+production': rerankedOrders }
-    : { facet: facetOrders }
+    ? { voyage: voyageOrders, 'voyage+production': rerankedOrders }
+    : {}
   for (const name of Object.keys(ordersByName)) {
     let total = 0
     let queries = 0

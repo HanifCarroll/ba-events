@@ -6,7 +6,6 @@ import {
   canonicalizeSearchIntent,
   mustToFilters,
   applyPreferAvoid,
-  detectChillIntent,
 } from './search-intent.ts'
 
 vi.mock('#shared/lib/db/client.server.ts', () => ({
@@ -281,9 +280,8 @@ describe('canonicalizeSearchIntent — prefer extraction', () => {
     expect(intent.avoid.genres ?? []).not.toContain('electronic')
   })
 
-  it('keeps chill detection and fills relaxed vibe for "chill tonight"', async () => {
+  it('fills relaxed vibe for "chill tonight"', async () => {
     const intent = await canonicalizeSearchIntent({ query: 'chill tonight' }, WEDNESDAY_NOON)
-    expect(detectChillIntent(intent.semanticQuery)).toBe(true)
     expect(intent.prefer.vibes).toContain('relaxed')
   })
 
@@ -500,34 +498,5 @@ describe('applyPreferAvoid', () => {
     const intent = await canonicalizeSearchIntent({ query: 'ciudad' }, WEDNESDAY_NOON)
     const filters = applyPreferAvoid(intent)
     expect(filters.avoidGenres).toBeUndefined()
-  })
-})
-
-describe('detectChillIntent', () => {
-  it.each([
-    ['chill tonight'],
-    ['algo tranquilo'],
-    ['algo tranqui'],
-    ['algo tranquila'],
-    ['algo relajado'],
-    ['algo relajada'],
-    ['something relaxed'],
-    ['something lowkey'],
-    ['a low-key evening'],
-    ['algo calmado'],
-    ['jazz suave'],
-  ])('detects %j as a chill ask', (query) => {
-    expect(detectChillIntent(query)).toBe(true)
-  })
-
-  it.each([
-    ['recital de rock'],
-    ['chillout festival'],
-    ['freestyle rap'],
-    ['techno party'],
-    [''],
-    ['   '],
-  ])('does NOT detect %j as a chill ask (token boundary, no substring)', (query) => {
-    expect(detectChillIntent(query)).toBe(false)
   })
 })

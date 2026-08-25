@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { ToolDefinition } from './types.ts'
 import { searchEventsTool, fetchAcrossWeekdayWindows, CANDIDATE_LIMIT } from './search-events.ts'
-import { applyDiversity } from './quality-diversity.ts'
+import { applyDiversity } from './search-ranking.ts'
 import {
   getEventsHappeningNow,
   getFurthestEventDate,

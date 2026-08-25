@@ -750,24 +750,3 @@ export function mapAvoidGenres(avoid: CanonicalizeInput['avoid'] | undefined): s
   }
   return [...matched]
 }
-
-// ============================================================================
-// CHILL INTENT (ranking signal only — never a filter, never event scoring)
-// ============================================================================
-
-/**
- * True when the semantic query asks for something chill / tranquilo / relaxed.
- * Intent detection only — it drives a soft rerank upstream and must never
- * become a SQL filter or a per-event score.
- */
-export function detectChillIntent(semanticQuery: string): boolean {
-  if (!semanticQuery.trim()) return false
-  const tokens = normalizeText(semanticQuery).split(' ').filter(Boolean)
-  if (tokens.some((t) => CHILL_TOKENS.has(t))) return true
-  // "low-key" normalizes to the adjacent pair "low key"; match it as a phrase
-  // while still refusing substring matches.
-  for (let i = 0; i + 1 < tokens.length; i++) {
-    if (tokens[i] === 'low' && tokens[i + 1] === 'key') return true
-  }
-  return false
-}

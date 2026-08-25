@@ -7,7 +7,7 @@
  * than extrapolated from rounded aggregate rates. All statistics are computed
  * from the frozen artifact — no network, no env keys, no DB.
  *
- * Variant names: baseline, facet, voyage, fused(1), fused(2), fused(3),
+ * Variant names: baseline, voyage, fused(1), fused(2), fused(3),
  * depth(10), depth(20), depth(30), depth(50). Orders come from
  * frozen-variants.ts, the same adapters replay.ts and audit.ts use.
  *
@@ -42,13 +42,11 @@ import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   baseOrder,
-  facetOrder,
   fusedOrder,
   voyageOrder,
   depthVoyageOrder,
   displayLimitOf,
   type CaptureFile,
-  type FrozenEvent,
   type FrozenQuery,
 } from './frozen-variants.ts'
 import { portablePath } from './portable-path.ts'
@@ -100,7 +98,6 @@ if (!Number.isInteger(SAMPLES) || SAMPLES < 1) {
 
 const SUPPORTED_VARIANTS = [
   'baseline',
-  'facet',
   'voyage',
   'fused(1)',
   'fused(2)',
@@ -115,12 +112,10 @@ function isSupportedVariant(name: string): boolean {
   return (SUPPORTED_VARIANTS as readonly string[]).includes(name)
 }
 
-function orderFor(name: string, q: FrozenQuery, events: Record<string, FrozenEvent>): string[] {
+function orderFor(name: string, q: FrozenQuery): string[] {
   switch (name) {
     case 'baseline':
       return baseOrder(q)
-    case 'facet':
-      return facetOrder(q, events)
     case 'voyage':
       return voyageOrder(q)
     case 'fused(1)':
@@ -210,8 +205,8 @@ function queryMetrics(order: string[], labels: Labels, displayLimit: number): Qu
   }
 }
 
-const aOrders = capture.queries.map((q) => orderFor(VARIANT_A, q, capture.events))
-const bOrders = capture.queries.map((q) => orderFor(VARIANT_B, q, capture.events))
+const aOrders = capture.queries.map((q) => orderFor(VARIANT_A, q))
+const bOrders = capture.queries.map((q) => orderFor(VARIANT_B, q))
 
 const aMetrics = capture.queries.map((q, i) =>
   queryMetrics(aOrders[i], LIVE_LABELS[q.id] ?? {}, displayLimitOf(q))

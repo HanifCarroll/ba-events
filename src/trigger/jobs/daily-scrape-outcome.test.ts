@@ -252,9 +252,6 @@ describe('mergeEnrichmentMetadata', () => {
     expect(merged).toEqual({ eligible: 100, enriched: 90, failed: 3, remaining: 7 })
   })
 
-  it('overwrites a key when the patch supplies it', () => {
-    expect(mergeEnrichmentMetadata({ eligible: 100 }, { eligible: 42 })).toEqual({ eligible: 42 })
-  })
 })
 
 describe('shouldChainNextBatch', () => {

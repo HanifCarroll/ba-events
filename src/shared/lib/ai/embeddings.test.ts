@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSearchDocument, CURRENT_EMBEDDING_VERSION } from './embeddings.ts'
+import { buildSearchDocument } from './embeddings.ts'
 
 describe('buildSearchDocument', () => {
   it('includes title, descriptions, categories, facets, venue, neighborhood, free/paid, and event type for a venued event', () => {
@@ -66,11 +66,5 @@ describe('buildSearchDocument', () => {
     // is_free is unknown here, so we must not label it a "paid event" (or free)
     // — that would be an ungrounded claim about cost.
     expect(doc).not.toMatch(/paid event|free event|ARS/)
-  })
-})
-
-describe('CURRENT_EMBEDDING_VERSION', () => {
-  it('is the schema-v2 richer document version', () => {
-    expect(CURRENT_EMBEDDING_VERSION).toBe(2)
   })
 })

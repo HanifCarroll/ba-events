@@ -8,7 +8,6 @@
  *
  * Variants per query:
  *   baseline  — the frozen retrieval order, unchanged.
- *   facet     — production-equivalent facet/chill rerank (facetRerank).
  *   voyage    — order by rerankerRank asc (fallback to baseline when unapplied).
  *   fused(w)  — w/(60+rerankerRank) + 1/(60+baseRank) desc, ties by baseRank.
  *
@@ -32,7 +31,6 @@ import { pathToFileURL } from 'node:url'
 import { buildRerankDocument, type RerankDocumentEvent } from '#shared/lib/search/rerank.ts'
 import {
   baseOrder,
-  facetOrder,
   fusedOrder,
   voyageOrder,
   depthVoyageOrder,
@@ -78,7 +76,6 @@ interface Variant {
 
 const variants: Variant[] = [
   { name: 'baseline', order: baseOrder },
-  { name: 'facet', order: (q) => facetOrder(q, capture.events) },
   { name: 'voyage', order: voyageOrder },
   { name: 'fused(1)', order: (q) => fusedOrder(q, 1) },
   { name: 'fused(2)', order: (q) => fusedOrder(q, 2) },

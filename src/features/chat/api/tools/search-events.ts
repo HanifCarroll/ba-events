@@ -21,7 +21,7 @@ import {
 import {
   surpriseRank,
   applyDiversity,
-} from './quality-diversity.ts'
+} from './search-ranking.ts'
 import { rerankEvents, type RerankMeta } from '#shared/lib/search/rerank.ts'
 import { logger } from '#shared/lib/logger.ts'
 

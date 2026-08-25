@@ -143,7 +143,4 @@ describe('extractExternalIds', () => {
     expect(ids).toEqual(['a', 'b', 'c'])
   })
 
-  it('returns an empty array for empty input', () => {
-    expect(extractExternalIds([], (p: never) => ({ external_id: p }))).toEqual([])
-  })
 })

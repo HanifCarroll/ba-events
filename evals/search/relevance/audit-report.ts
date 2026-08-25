@@ -87,7 +87,6 @@ interface KeyQuery {
   reasons?: string[]
   voyageTop5?: string[]
   fused2Top5?: string[]
-  facetTop5?: string[]
   options: KeyOption[]
 }
 

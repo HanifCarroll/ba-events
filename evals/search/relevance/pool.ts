@@ -3,7 +3,7 @@
  * Build the labeling worksheet for the rerank eval.
  *
  * For each captured query, pools the union of the top-8 events across every
- * replay variant (baseline / facet / pure voyage / fused@1 / fused@2 /
+ * replay variant (baseline / pure voyage / fused@1 / fused@2 /
  * fused@3), plus the top-5 of the reranking-depth ablation variants (10/20/30;
  * depth 50 equals pure voyage). These are the only events whose grades can
  * move any measured top-five metric, so replay.ts treats anything outside the
@@ -18,7 +18,6 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   baseOrder,
-  facetOrder,
   fusedOrder,
   voyageOrder,
   depthVoyageOrder,
@@ -61,7 +60,6 @@ interface Variant {
 
 const mainVariants: Variant[] = [
   { name: 'baseline', order: baseOrder },
-  { name: 'facet', order: (q) => facetOrder(q, capture.events) },
   { name: 'voyage', order: voyageOrder },
   { name: 'fused(1)', order: (q) => fusedOrder(q, 1) },
   { name: 'fused(2)', order: (q) => fusedOrder(q, 2) },

@@ -8,9 +8,7 @@
  * baseOrder and the hosted reranker ranks captured at freeze time.
  */
 
-import type { SearchScoreable } from '#features/chat/api/tools/quality-diversity.ts'
 import type { EventSearchPrefer } from '#features/chat/api/tools/search-intent.ts'
-import { facetRerank } from './rerank-variants.ts'
 
 // ============================================================================
 // Frozen artifact shapes (mirror capture.ts)
@@ -75,10 +73,6 @@ export interface CaptureFile {
   queries: FrozenQuery[]
 }
 
-// ============================================================================
-// FrozenEvent → SearchScoreable (for the facet/chill comparison variant)
-// ============================================================================
-
 export function asStringArray(value: unknown): string[] | undefined {
   if (Array.isArray(value)) {
     const out = value.filter((v): v is string => typeof v === 'string')
@@ -96,29 +90,6 @@ export function asEnergy(value: unknown): Energy | undefined {
     return value as Energy
   }
   return undefined
-}
-
-export function toScoreable(e: FrozenEvent): SearchScoreable {
-  return {
-    id: e.id,
-    name: e.name,
-    starts_at: e.starts_at,
-    image_url: e.image_url,
-    venue_id: e.venue_id,
-    venue_name: e.venue_name,
-    location_tba: e.location_tba,
-    description_unavailable: e.description_unavailable,
-    categories: e.categories,
-    facets: {
-      genres: asStringArray(e.facets.genres),
-      vibes: asStringArray(e.facets.vibes) ?? asStringArray(e.facets.vibe),
-      activities: asStringArray(e.facets.activities) ?? asStringArray(e.facets.activity),
-      audience: asStringArray(e.facets.audience) ?? asStringArray(e.facets.audiences),
-      setting: asStringArray(e.facets.setting) ?? asStringArray(e.facets.settings),
-      energy: asEnergy(e.facets.energy),
-      eventType: asStringArray(e.facets.eventType) ?? asStringArray(e.facets.event_type),
-    },
-  }
 }
 
 // ============================================================================
@@ -165,12 +136,6 @@ export function fusedOrder(q: FrozenQuery, w: number): string[] {
     if (sb !== sa) return sb - sa
     return ba - bb
   })
-}
-
-/** Production-equivalent facet/chill rerank (the path the hosted reranker replaced). */
-export function facetOrder(q: FrozenQuery, events: Record<string, FrozenEvent>): string[] {
-  const scoreables = q.baseOrder.map((id) => toScoreable(events[id]))
-  return facetRerank(scoreables, q.semanticQuery, q.prefer).map((s) => s.id)
 }
 
 /** Frozen canonicalized display limit, defaulting to 1 for pre-extension captures. */
