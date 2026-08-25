@@ -156,7 +156,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   }
 
   const userContext = await getUserToolContext(event)
-  const requestId = generateId()
+  const requestId = crypto.randomUUID()
   let originalQuery: string
   let authoritativeTurn: Awaited<ReturnType<typeof claimChatTurn>> | null = null
   let replayAssistant: Awaited<ReturnType<typeof getTurnAssistant>> | null = null

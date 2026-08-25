@@ -743,7 +743,7 @@
 				parts.push({ type: 'data-response', data: canonical })
 			}
 			return {
-				id: storedMessage.id,
+				id: storedMessage.client_message_id ?? storedMessage.id,
 				role: storedMessage.role as 'user' | 'assistant',
 				metadata: { createdAt: storedMessage.created_at },
 				parts
@@ -755,7 +755,10 @@
 		const persistedAssistantIds = new Map<string, string>()
 		for (const storedMessage of sortedMessages) {
 			if (storedMessage.role === 'assistant') {
-				persistedAssistantIds.set(storedMessage.id, storedMessage.id)
+				persistedAssistantIds.set(
+					storedMessage.client_message_id ?? storedMessage.id,
+					storedMessage.id
+				)
 			}
 		}
 		persistedAssistantMessageIdsRef = persistedAssistantIds

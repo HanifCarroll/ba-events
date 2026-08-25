@@ -76,8 +76,8 @@ BEGIN
   IF owner_id IS NULL OR owner_id <> current_user_id THEN RAISE EXCEPTION 'Turn conflict'; END IF;
 
   SELECT * INTO user_message FROM insert_message_with_turn(
-    p_conversation_id, 'user', p_content, p_content, '[]'::jsonb, 5, '{}'::jsonb,
-    p_user_client_message_id, NULL
+    p_conversation_id, 'user', p_content, p_content, '[]'::jsonb, 5::SMALLINT, '{}'::jsonb,
+    p_user_client_message_id, NULL::UUID
   );
 
   INSERT INTO chat_turns (
@@ -138,7 +138,7 @@ BEGIN
   IF result_turn.status = 'completed' THEN RETURN result_turn; END IF;
   SELECT * INTO assistant_message FROM insert_message_with_turn(
     result_turn.conversation_id, 'assistant', p_content, p_content,
-    COALESCE(p_execution_trace, '[]'::jsonb), 5, COALESCE(p_attached_data, '{}'::jsonb),
+    COALESCE(p_execution_trace, '[]'::jsonb), 5::SMALLINT, COALESCE(p_attached_data, '{}'::jsonb),
     p_assistant_client_message_id, result_turn.user_message_id
   );
   UPDATE chat_turns SET assistant_message_id = assistant_message.id, status = 'completed',
