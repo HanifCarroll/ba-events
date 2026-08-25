@@ -48,8 +48,8 @@
 		<ol class="list-decimal space-y-2 pl-5 text-sm text-foreground">
 			<li>
 				<span class="inline-flex items-center gap-2">
-					<Share class="size-5 text-[#007aff]" aria-hidden="true" />
 					{m.install_ios_step_one()}
+					<Share class="size-5 text-[#007aff]" aria-hidden="true" />
 				</span>
 			</li>
 			<li>{m.install_ios_step_two()}</li>
