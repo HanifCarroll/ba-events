@@ -25,6 +25,7 @@ import {
 } from './delivery.server.ts'
 import { openTelegramEnvelope } from './envelope.server.ts'
 import { telegramDraftIdFromUpdateId, type TelegramReplyMarkup } from './client.ts'
+import { COPY, PRIVACY_URL, localeFrom, privacyKeyboard } from './commands.ts'
 import { renderTelegramMessage, type TelegramRenderedMessage } from './render.ts'
 import {
   telegramPlaintextPayloadSchema,
@@ -32,57 +33,6 @@ import {
   type TelegramTaskPayload,
 } from './task-payload.ts'
 import { parseConsentCallback, parsePromptCallback, parseTelegramText } from './update.ts'
-
-const PRIVACY_URL = 'https://baeventos.com/privacy'
-
-const COPY = {
-  en: {
-    start: 'Hi! I use AI to help find Buenos Aires events. Chats may be stored for up to 30 days. Use /delete anytime. By continuing, you agree to the privacy policy.',
-
-    promptQueries: {
-      chill: 'Anything chill tonight?',
-      weekend: "What's on this weekend?",
-      free: 'Free events nearby',
-      live: 'Live music tonight',
-    },
-    help: 'Ask me for events, dates, neighborhoods, venues, or directions. Commands: /new, /privacy, /delete. Saving and account linking are not available in Telegram.',
-    fresh: 'Started a new conversation.',
-    privacy: 'Telegram privacy details. Chats may be stored for up to 30 days. Use /delete at any time to delete your conversation data.',
-    privacyButton: 'Privacy',
-    legacyAccepted: 'Thanks. You can send me an event question anytime.',
-    declined: 'Declined. Your Telegram conversation data was deleted.',
-    deleted: 'Your Telegram conversation data was deleted.',
-    rateLimited: 'Too many requests right now. Please try again later. /help, /privacy, and /delete remain available.',
-    unsupported: 'I did not recognize that command. Try /help.',
-    draft: 'Finding events…',
-    found: 'Found events…',
-  },
-  es: {
-    start: '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.',
-
-    promptQueries: {
-      chill: '¿Algo tranqui para hoy?',
-      weekend: '¿Qué hay este finde?',
-      free: 'Eventos gratis cerca',
-      live: 'Música en vivo hoy',
-    },
-    help: 'Preguntame por eventos, fechas, barrios, lugares o cómo llegar. Comandos: /new, /privacy, /delete. Telegram no permite guardar eventos ni vincular cuentas.',
-    fresh: 'Empezamos una conversación nueva.',
-    privacy: 'Detalles de privacidad de Telegram. Los chats pueden guardarse hasta 30 días. Usá /delete en cualquier momento para borrar los datos de tu conversación.',
-    privacyButton: 'Privacidad',
-    legacyAccepted: 'Gracias. Podés mandarme una pregunta sobre eventos cuando quieras.',
-    declined: 'Rechazado. Eliminamos los datos de tu conversación de Telegram.',
-    deleted: 'Eliminamos los datos de tu conversación de Telegram.',
-    rateLimited: 'Hay demasiadas solicitudes. Probá más tarde. /help, /privacy y /delete siguen disponibles.',
-    unsupported: 'No reconocí ese comando. Probá /help.',
-    draft: 'Buscando eventos…',
-    found: 'Encontré eventos…',
-  },
-} as const
-
-const privacyKeyboard = (locale: 'en' | 'es') => ({
-  inline_keyboard: [[{ text: COPY[locale].privacyButton, url: PRIVACY_URL }]],
-})
 
 interface TelegramOutgoingMessage {
   text: string
@@ -124,13 +74,6 @@ export const defaultTelegramTurnDependencies: Omit<
   render: renderTelegramMessage,
   markCompleted: markTelegramUpdateCompleted,
   markFailed: markTelegramUpdateFailed,
-}
-
-function localeFrom(languageCode?: string, conversation?: ExternalConversation): 'en' | 'es' {
-  if (conversation?.metadata.locale === 'en' || conversation?.metadata.locale === 'es') {
-    return conversation.metadata.locale
-  }
-  return languageCode?.toLowerCase().startsWith('es') ? 'es' : 'en'
 }
 
 function persistedCanonical(messages: Message[], clientMessageId: string): CanonicalChatResponse | null {
@@ -272,7 +215,7 @@ export async function processTelegramTurn(
           channel: 'telegram',
           conversationId,
         })
-        locale = localeFrom(input.languageCode, conversation)
+        locale = localeFrom(input.languageCode, conversation?.metadata.locale)
         await answerCallbackBestEffort(input.callbackId, COPY[locale].legacyAccepted, dependencies)
         await dependencies.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted })
         await dependencies.markCompleted(payload.updateId, conversationId)
@@ -289,7 +232,7 @@ export async function processTelegramTurn(
         channel: 'telegram',
         conversationId,
       })
-      locale = localeFrom(input.languageCode, conversation)
+      locale = localeFrom(input.languageCode, conversation?.metadata.locale)
       if (input.rateLimited) {
         await dependencies.sendMessage(input.chatId, { text: COPY[locale].rateLimited })
         await dependencies.markCompleted(payload.updateId, conversationId)
@@ -322,7 +265,7 @@ export async function processTelegramTurn(
       channel: 'telegram',
       conversationId,
     })
-    locale = localeFrom(input.languageCode, conversation)
+    locale = localeFrom(input.languageCode, conversation?.metadata.locale)
 
     if (parsed.kind === 'command') {
       if (parsed.command === 'privacy') {

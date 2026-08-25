@@ -329,8 +329,8 @@ describe('Telegram turn processor', () => {
     )
   })
 
-  it.each(['/help', '/privacy'] as const)(
-    'handles %s without invoking AI',
+  it.each(['/start', '/help', '/privacy', '/new'] as const)(
+    'handles %s without invoking AI and completes delivery',
     async (command) => {
       const deps = dependencies()
       await processTelegramTurn(
@@ -339,6 +339,8 @@ describe('Telegram turn processor', () => {
       )
       expect(deps.runTurn).not.toHaveBeenCalled()
       expect(deps.sendMessage).toHaveBeenCalledTimes(1)
+      expect(deps.markCompleted).toHaveBeenCalledWith('42', queueKey)
+      if (command === '/new') expect(deps.clearMessages).toHaveBeenCalledWith({ channel: 'telegram', conversationId: queueKey })
     }
   )
 
