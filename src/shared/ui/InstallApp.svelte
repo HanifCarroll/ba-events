@@ -52,6 +52,7 @@
 					<Share class="size-5 text-[#007aff]" aria-hidden="true" />
 				</span>
 			</li>
+			<li>{m.install_ios_view_more()}</li>
 			<li>{m.install_ios_step_two()}</li>
 		</ol>
 		<DialogFooter>

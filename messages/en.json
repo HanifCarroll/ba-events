@@ -32,6 +32,7 @@
   "install_ios_title": "Add BA Eventos to your Home Screen",
   "install_ios_description": "Tap Share, then Add to Home Screen.",
   "install_ios_step_one": "Tap the Share button.",
+  "install_ios_view_more": "If shown, tap View More.",
   "install_ios_step_two": "Choose Add to Home Screen, then tap Add.",
   "install_close": "Close",
   "landing_what_it_does": "What it does",
