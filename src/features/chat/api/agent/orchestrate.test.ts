@@ -42,7 +42,7 @@ describe('recommendation follow-ups', () => {
         await details.execute({ eventRef: 'search-1:event_1', purpose: 'recommendation' }, { toolCallId: 'detail-2' })
         calls.push('compared')
         return {
-          text: 'Second is the strongest fit for this plan.',
+          text: 'REASON_1: This fits your request for a focused recommendation.',
           steps: [{ toolResults: [
             { toolCallId: 'detail-1', toolName: 'get_event_details' },
             { toolCallId: 'detail-2', toolName: 'get_event_details' },
@@ -53,9 +53,10 @@ describe('recommendation follow-ups', () => {
     })
     expect(calls).toEqual(['compared'])
     expect(result.canonical.messageKey).toBe('recommendations_pick')
-    expect(result.canonical.text).toBe('Second is the strongest fit for this plan.')
+    expect(result.canonical.text).toBe('This fits your request for a focused recommendation.')
     expect(result.canonical.events).toHaveLength(1)
     expect(result.canonical.events[0]?.name).toBe('Second')
+    expect(result.canonical.events[0]?.recommendation_reason).toBe('This fits your request for a focused recommendation.')
   })
 })
 

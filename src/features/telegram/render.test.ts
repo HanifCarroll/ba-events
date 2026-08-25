@@ -110,6 +110,33 @@ describe('Telegram canonical renderer', () => {
     expect(rendered.text).not.toMatch(/\n{3,}/)
   })
 
+  it('prefers a contextual recommendation reason over stored summaries', () => {
+    const rendered = renderTelegramMessage(response({
+      events: [{ ...event(1), recommendation_reason: 'This matches your request for a relaxed night.' }],
+    }), 'en').text
+
+    expect(rendered).toContain('This matches your request for a relaxed night.')
+    expect(rendered).not.toContain('A relaxed neighborhood dance night.')
+  })
+
+  it('falls back to the requested locale summary when no reason exists', () => {
+    const rendered = renderTelegramMessage(response({ events: [{
+      ...event(1),
+      description_summary_en: 'English stored summary.',
+      description_summary_es: 'Resumen guardado en español.',
+    }] }), 'es').text
+
+    expect(rendered).toContain('Resumen guardado en español.')
+    expect(rendered).not.toContain('English stored summary.')
+  })
+
+  it('does not cross-language fallback description lines', () => {
+    const rendered = renderTelegramMessage(response({ events: [event(1)] }), 'es').text
+
+    expect(rendered).not.toContain('A relaxed neighborhood dance night.')
+    expect(rendered).toContain('1. Tango 1')
+  })
+
   it('formats in the requested locale and Buenos Aires time zone', () => {
     const canonical = response({ events: [event(1)] })
     const english = renderTelegramMessage(canonical, 'en').text

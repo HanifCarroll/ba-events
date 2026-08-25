@@ -586,6 +586,8 @@ export type SavedState = boolean | null
  */
 export type CanonicalChatEventPayload = ChatEventPayload & {
   saved: SavedState
+  /** Optional model-authored fit rationale for recommendation cards. */
+  recommendation_reason?: string
 }
 
 /**

@@ -115,11 +115,9 @@ function eventText(event: CanonicalChatEventPayload, index: number, locale: 'en'
     `${index + 1}. ${plain(event.name, 180)}`,
     [formatDate(event, locale), place, formatPrice(event, locale)].filter(Boolean).join(' · '),
     (() => {
-      const description = locale === 'es'
+      const description = event.recommendation_reason || (locale === 'es'
         ? event.description_summary_es || event.description_display_es || event.description_es
-          || event.description_summary_en || event.description_display_en || event.description_en
-        : event.description_summary_en || event.description_display_en || event.description_en
-          || event.description_summary_es || event.description_display_es || event.description_es
+        : event.description_summary_en || event.description_display_en || event.description_en)
       return description && !event.description_unavailable ? plain(description, 180).replace(/\s+/g, ' ') : null
     })(),
   ].filter(Boolean).join('\n')

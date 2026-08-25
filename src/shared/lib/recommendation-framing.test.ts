@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractRecommendationFraming, removeFramingMarkers } from './recommendation-framing.ts'
+import { extractRecommendationFraming, extractRecommendationReasons, extractRecommendationResponse, removeFramingMarkers } from './recommendation-framing.ts'
 
 const events = [{ name: 'Tango Nights', venue_name: 'Club Sur' }]
 
@@ -12,6 +12,39 @@ describe('recommendation framing contract', () => {
       acknowledgement: text.split('\n')[0].slice(5),
       nextStep: text.split('\n')[1].slice(6),
     })
+  })
+
+  it('maps exact ordinal reasons to returned event order', () => {
+    const response = extractRecommendationResponse(
+      'ACK: These fit your plan.\n\nREASON_1: A relaxed option for your music interest.\n\nREASON_2: A hands-on option for your weekend plan.\n\nNEXT: Want details?',
+      [{ name: 'First' }, { name: 'Second' }],
+    )
+    expect(response?.reasons).toEqual([
+      'A relaxed option for your music interest.',
+      'A hands-on option for your weekend plan.',
+    ])
+  })
+
+  it.each([
+    'ACK: These fit your plan.\nNEXT: Want details?\nREASON_1: First fit.\nREASON_3: Wrong key.',
+    'ACK: These fit your plan.\nNEXT: Want details?\nREASON_1: First fit.',
+    'ACK: These fit your plan.\nNEXT: Want details?\nREASON_1: https://example.com\nREASON_2: Second fit.',
+  ])('rejects malformed or cardinality-mismatched reasons: %s', (text) => {
+    expect(extractRecommendationResponse(text, [{ name: 'First' }, { name: 'Second' }])).toBeNull()
+  })
+
+  it('parses a single-pick reason without accepting prose', () => {
+    expect(extractRecommendationReasons('REASON_1: This fits your 18-year-old sister’s creative interests.', [{ name: 'Event' }])).toEqual([
+      'This fits your 18-year-old sister’s creative interests.',
+    ])
+    expect(extractRecommendationReasons('This fits your request.', [{ name: 'Event' }])).toBeNull()
+  })
+
+  it('shortens a long structured reason at a word boundary', () => {
+    const reason = extractRecommendationReasons(`REASON_1: ${'hands-on creative workshop '.repeat(8)}`, [{ name: 'Event' }])?.[0]
+    expect(reason?.length).toBeLessThanOrEqual(180)
+    expect(reason?.endsWith('…')).toBe(true)
+    expect(reason).not.toContain('worksh…')
   })
 
   it('removes only a complete marker envelope', () => {

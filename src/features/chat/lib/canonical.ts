@@ -39,7 +39,7 @@ import {
   type ResponseKind,
   type VenueDetailsData,
 } from '#shared/lib/types.ts'
-import { extractRecommendationFraming, type RecommendationFraming } from '#shared/lib/recommendation-framing.ts'
+import { extractRecommendationFraming, isValidRecommendationReason, type RecommendationFraming } from '#shared/lib/recommendation-framing.ts'
 
 const CONTRACT_VERSION_V4 = 4
 const CONTRACT_VERSION_V3 = 3
@@ -130,7 +130,11 @@ function isEventPayload(value: unknown): value is ChatEventPayload {
 
 function isCanonicalEvent(value: unknown): value is CanonicalChatEventPayload {
   if (!isEventPayload(value)) return false
-  return value.saved === true || value.saved === false || value.saved === null
+  return (
+    (value.saved === true || value.saved === false || value.saved === null) &&
+    ((value as { recommendation_reason?: unknown }).recommendation_reason === undefined ||
+      isValidRecommendationReason((value as { recommendation_reason?: unknown }).recommendation_reason))
+  )
 }
 
 function isDirectionsData(value: unknown): value is DirectionsData {

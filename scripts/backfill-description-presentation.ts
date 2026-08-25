@@ -4,12 +4,15 @@
  * Run with:
  *   bun scripts/backfill-description-presentation.ts
  *   bun scripts/backfill-description-presentation.ts --retry-failed
+ *   BACKFILL_SUMMARY_LIMIT=100 bun scripts/backfill-description-presentation.ts --summary-only --dry-run
+ *   BACKFILL_SUMMARY_LIMIT=100 BACKFILL_SUMMARY_CONCURRENCY=4 bun scripts/backfill-description-presentation.ts --summary-only
  */
 
 import { createClient } from '@supabase/supabase-js'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { translateText } from '#shared/lib/ai/enrichment.ts'
 
 // .env is auto-loaded by Bun (dotenv removed: not a dependency in this repo; see migration evidence T1)
 
@@ -28,12 +31,37 @@ const CHECKPOINT_PATH = path.resolve(
 const PRESENTATION_GAP_FILTER =
   'and(description_es.not.is.null,or(description_display_es.is.null,description_summary_es.is.null)),' +
   'and(description_en.not.is.null,or(description_display_en.is.null,description_summary_en.is.null))'
+const SUMMARY_GAP_FILTER =
+  'and(description_summary_es.is.null,description_summary_en.not.is.null),' +
+  'and(description_summary_en.is.null,description_summary_es.not.is.null)'
 
 interface BackfillRow {
   id: string
   name: string
   description_es: string | null
   description_en: string | null
+}
+
+export interface SummaryBackfillRow {
+  id: string
+  name: string
+  starts_at: string
+  description_summary_es: string | null
+  description_summary_en: string | null
+}
+
+export function missingSummaryUpdate(row: SummaryBackfillRow): {
+  field: 'description_summary_es' | 'description_summary_en'
+  source: string
+  direction: 'es-to-en' | 'en-to-es'
+} | null {
+  if (!row.description_summary_es?.trim() && row.description_summary_en?.trim()) {
+    return { field: 'description_summary_es', source: row.description_summary_en, direction: 'en-to-es' }
+  }
+  if (!row.description_summary_en?.trim() && row.description_summary_es?.trim()) {
+    return { field: 'description_summary_en', source: row.description_summary_es, direction: 'es-to-en' }
+  }
+  return null
 }
 
 interface BackfillCheckpoint {
@@ -199,7 +227,80 @@ async function updatePresentationFields(id: string, fields: Awaited<ReturnType<t
   }
 }
 
+async function fetchSummaryGaps(limit: number): Promise<SummaryBackfillRow[]> {
+  const supabase = getSupabaseAdminClient()
+  const pageSize = Math.min(1000, Math.max(1, Number(process.env.BACKFILL_PAGE_SIZE ?? 500)))
+  const rows: SummaryBackfillRow[] = []
+  const now = new Date().toISOString()
+
+  for (let offset = 0; rows.length < limit; offset += pageSize) {
+    const { data, error } = await supabase
+      .from('events')
+      .select('id, name, starts_at, description_summary_es, description_summary_en')
+      .or(SUMMARY_GAP_FILTER)
+      .neq('status', 'canceled')
+      .gte('starts_at', now)
+      .order('id', { ascending: true })
+      .range(offset, offset + Math.min(pageSize, limit - rows.length) - 1)
+
+    if (error) throw new Error(`Failed to fetch summary gaps: ${error.message}`)
+    const page = (data ?? []) as SummaryBackfillRow[]
+    rows.push(...page)
+    if (page.length < pageSize) break
+  }
+  return rows
+}
+
+async function runSummaryBackfill(): Promise<void> {
+  const limit = Math.max(1, Number(process.env.BACKFILL_SUMMARY_LIMIT ?? 100))
+  const dryRun = process.argv.includes('--dry-run')
+  const concurrency = Math.max(1, Number(process.env.BACKFILL_SUMMARY_CONCURRENCY ?? 4))
+  const rows = await fetchSummaryGaps(limit)
+  const candidates = rows.filter((row) => missingSummaryUpdate(row))
+  console.log(`[summary-backfill] Selected ${candidates.length} of ${rows.length} future non-canceled events (limit ${limit})`)
+  if (dryRun) {
+    console.log('[summary-backfill] Updated 0; failed 0 (dry run)')
+    return
+  }
+
+  const supabase = getSupabaseAdminClient()
+  const queue = [...candidates]
+  let updated = 0
+  let failed = 0
+  const worker = async () => {
+    while (queue.length > 0) {
+      const row = queue.shift()
+      if (!row) return
+      try {
+        const update = missingSummaryUpdate(row)
+        if (!update) continue
+        const translated = await translateText(update.source, update.direction)
+        if (!translated?.trim()) throw new Error('translation_failed')
+        const { error } = await supabase
+          .from('events')
+          .update({ [update.field]: translated.trim() })
+          .eq('id', row.id)
+          .is(update.field, null)
+        if (error) throw new Error(`update_failed: ${error.message}`)
+        updated++
+        console.log(`[summary-backfill] Updated ${row.id} (${row.name})`)
+      } catch (error) {
+        failed++
+        const reason = error instanceof Error ? error.message.split(':', 1)[0] : 'unknown_failure'
+        console.error(`[summary-backfill] Failed ${row.id} (${row.name}): ${reason}`)
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, () => worker()))
+  console.log(`[summary-backfill] Updated ${updated}; failed ${failed}`)
+}
+
 async function main() {
+  if (process.argv.includes('--summary-only')) {
+    await runSummaryBackfill()
+    return
+  }
+
   const retryFailed = process.argv.includes('--retry-failed')
   const checkpoint = await readCheckpoint(retryFailed)
   const skippedIds = new Set(checkpoint.skippedEventIds)
@@ -275,7 +376,9 @@ async function main() {
   console.log(`[backfill] Checkpoint: ${CHECKPOINT_PATH}`)
 }
 
-main().catch((error) => {
-  console.error('[backfill] Fatal error:', error)
-  process.exit(1)
-})
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error('[backfill] Fatal error:', error)
+    process.exit(1)
+  })
+}

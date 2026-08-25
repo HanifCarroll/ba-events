@@ -103,6 +103,19 @@ function v5Canonical(overrides: Partial<CanonicalChatResponse> = {}): CanonicalC
 }
 
 describe('v5 canonical read adapters', () => {
+  it('preserves recommendation reasons through persisted reload', () => {
+    const stored = v5Canonical({
+      events: [{ ...canonicalEvent('e1', 'Tango night'), recommendation_reason: 'This matches your music plans.' }, canonicalEvent('e2', 'Jazz night')],
+    })
+    const reloaded = adaptStoredMessageToCanonical({
+      id: 'msg-1',
+      attached_data: { canonical: stored },
+    })
+
+    expect(reloaded.events[0]?.recommendation_reason).toBe('This matches your music plans.')
+    expect(isV5Canonical(reloaded)).toBe(true)
+  })
+
   it('adapts v2 legacy rows (visible_content + compound attachments) without rewriting', () => {
     const canonical = adaptV2ToCanonical({
       id: 'msg-1',
