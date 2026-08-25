@@ -29,6 +29,7 @@
 	import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
 	import { resolveMessageTimestamp } from '#features/chat/lib/message-timestamps.ts'
 	import {
+		findRetryTurn,
 		shouldAutoHandlePendingTurn,
 		resetAttemptedTurnIds,
 		shouldPersistUserMessage
@@ -138,6 +139,7 @@
 	let isFlushingOutboxRef = false
 	let restoredScrollConversationIdRef: string | null = null
 	const durableTurns = $derived(isAuthenticated ? pendingTurns : (guestConversation?.turns ?? []))
+	let activeRetryTurnId = $state<string | null>(null)
 	let localRetryTurn = $state<{
 		id: string
 		conversation_id: string
@@ -147,7 +149,7 @@
 		user_client_message_id: string
 		assistant_client_message_id: string
 	} | null>(null)
-	const retryTurn = $derived(durableTurns.find((turn) => turn.status === 'failed' || turn.status === 'interrupted'))
+	const retryTurn = $derived(findRetryTurn(durableTurns, activeRetryTurnId))
 	const visibleRetryTurn = $derived(localRetryTurn ?? retryTurn)
 
 	// ==========================================================================
@@ -534,7 +536,10 @@
 			retry?: boolean
 		}
 	) {
-		if (options?.retry) localRetryTurn = null
+		if (options?.retry) {
+			activeRetryTurnId = options.turnId ?? null
+			localRetryTurn = null
+		}
 			pendingHappeningSoonEventIdRef = options?.eventId ?? null
 		pendingHappeningSoonEventIdsRef =
 			options?.happeningSoonEventIds ??
@@ -709,6 +714,7 @@
 
 		if (!conversationId || conversationId !== prev) {
 			resetAttemptedTurnIds(attemptedTurnIdsRef, true)
+			activeRetryTurnId = null
 			localRetryTurn = null
 			chat.messages = []
 			messageTimestampsById.clear()

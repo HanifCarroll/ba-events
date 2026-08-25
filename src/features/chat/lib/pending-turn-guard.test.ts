@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { resetAttemptedTurnIds, shouldAutoHandlePendingTurn, shouldPersistUserMessage } from './pending-turn-guard.ts'
+import {
+	findRetryTurn,
+	resetAttemptedTurnIds,
+	shouldAutoHandlePendingTurn,
+	shouldPersistUserMessage
+} from './pending-turn-guard.ts'
 
 describe('pending turn guard', () => {
 	it('handles a pending turn once and ignores stale props afterward', () => {
@@ -16,6 +21,15 @@ describe('pending turn guard', () => {
 		expect(attempted.has('turn')).toBe(true)
 		resetAttemptedTurnIds(attempted, true)
 		expect(attempted.size).toBe(0)
+	})
+
+	it('hides the stale retry row while its explicit retry is active', () => {
+		const turns = [
+			{ id: 'turn-1', status: 'interrupted' },
+			{ id: 'turn-2', status: 'failed' }
+		]
+		expect(findRetryTurn(turns, null)?.id).toBe('turn-1')
+		expect(findRetryTurn(turns, 'turn-1')?.id).toBe('turn-2')
 	})
 
 	it('uses durable bootstrap as the only user persistence for new turns', () => {

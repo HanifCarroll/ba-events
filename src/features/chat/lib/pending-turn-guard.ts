@@ -1,3 +1,13 @@
+export function findRetryTurn<
+	T extends { id: string; status: string }
+>(turns: readonly T[], activeRetryTurnId: string | null): T | undefined {
+	return turns.find(
+		(turn) =>
+			turn.id !== activeRetryTurnId &&
+			(turn.status === 'failed' || turn.status === 'interrupted')
+	)
+}
+
 export function shouldAutoHandlePendingTurn(input: {
 	conversationId: string | null
 	pendingTurnId: string | null
