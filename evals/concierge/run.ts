@@ -35,7 +35,7 @@ function scoreCase(c: ConciergeCase, run: AgentRun): CaseResult {
   }
   if (e.anyToolOf && !run.toolCalls.some((t) => e.anyToolOf!.includes(t.toolName))) {
     const askedQuestion = run.text.includes('?')
-    if (!(e.allowQuestionInstead && run.toolCalls.length === 0 && askedQuestion)) {
+    if (!(e.allowQuestionInstead && askedQuestion && run.toolCalls.every((tool) => tool.toolName === 'ask_clarification'))) {
       failures.push(
         run.toolCalls.length === 0
           ? `expected one of [${e.anyToolOf.join(', ')}], no tools called`
@@ -120,8 +120,9 @@ if (cases.length === 0) {
   process.exit(2)
 }
 
-console.log(`Running ${cases.length} concierge case(s) (concurrency 4)...`)
-const results = await mapWithConcurrency(cases, 4, async (c) => {
+const concurrency = 2
+console.log(`Running ${cases.length} concierge case(s) (concurrency ${concurrency})...`)
+const results = await mapWithConcurrency(cases, concurrency, async (c) => {
   try {
     const run = await runConcierge(c.message, c.locale)
     return scoreCase(c, run)

@@ -4,6 +4,17 @@ This document tracks important architectural decisions made during development.
 
 Newest decisions appear first.
 
+## Current concierge architecture (2026-08-24)
+
+The active implementation is a bounded Vercel AI SDK 7 `ToolLoopAgent` using
+DeepSeek and read-only `tool()` wrappers. It receives bounded untrusted visible
+history plus server-rehydrated event facts, may chain up to five steps, and
+writes final visible prose. The server validates event/venue refs, keeps raw
+per-call artifacts, and assembles canonical cards, links, directions, venue
+facts, and provenance only from successful tool results. `runSharedChatTurn`
+is shared by web and Telegram. The older planner/executor/finalizer material
+below is historical and no longer describes the production path.
+
 ## Template
 
 When adding a new decision, use this format:
@@ -26,7 +37,7 @@ When adding a new decision, use this format:
 
 ## Decisions
 
-### Bounded concierge MVP: single planner call, deterministic executor
+### Historical (superseded): bounded concierge MVP planner/executor
 
 **Date:** 2026-08-17
 
@@ -52,7 +63,7 @@ about, and the model never writes visible prose.
 
 ### Chat response v4: closed canonical response (deterministic text, structural trust)
 
-**Status:** Superseded by [Bounded concierge MVP](#bounded-concierge-mvp-single-planner-call-deterministic-executor); implementation details below are historical.
+**Status:** Historical only. Superseded by the ToolLoopAgent architecture documented at the top of this file; the implementation details below are retained for decision history.
 
 **Date:** 2026-08-16
 

@@ -6,6 +6,7 @@ import {
   normalizeChatTurn,
   runSharedChatTurn,
 } from '#features/chat/api/agent/shared-turn.server.ts'
+import { buildAgentHistoryFromStoredMessages } from '#features/chat/api/agent/history.ts'
 import {
   clearExternalConversationMessages,
   getExternalConversation,
@@ -341,6 +342,7 @@ export async function processTelegramTurn(
         locale,
         priorHints: hintsFromMessages(messages),
         lastSearch: lastSearchContextFromMessages(messages),
+        recentMessages: buildAgentHistoryFromStoredMessages(messages, normalizedTurn.originalQuery),
       })
       await dependencies.insertMessage({
         channel: 'telegram',

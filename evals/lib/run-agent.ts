@@ -2,10 +2,9 @@
 /**
  * Agent runner for evals.
  *
- * Mirrors src/routes/api/chat/+server.ts: bounded server state -> ONE planner
- * generateText call (closed TurnPlan, no tools) -> deterministic executor ->
- * CanonicalChatResponse, running against the real DeepSeek model and dev
- * database with an anonymous user context.
+ * Mirrors src/routes/api/chat/+server.ts: bounded DATA history + rehydrated
+ * state -> ToolLoopAgent read loop -> canonical response, running against the
+ * real DeepSeek model and dev database with an anonymous user context.
  */
 import { generateId } from 'ai'
 import { orchestrate } from '#features/chat/api/agent/orchestrate.ts'

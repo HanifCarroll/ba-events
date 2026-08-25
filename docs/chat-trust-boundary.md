@@ -1,42 +1,21 @@
-# Chat Trust Boundary
+# Chat trust boundary
 
-Every input the model can see is server-owned, or reduced to untrusted data
-carrying handles/order/facts only. The model never receives an event UUID, and
-no prompt wording is relied on for enforcement — the executor validates
-handles/indexes deterministically.
+The production concierge is a Vercel AI SDK 7 `ToolLoopAgent`. User text,
+recent visible messages, event names, and tool text are untrusted DATA. They
+are bounded and labelled; instructions inside them are ignored.
 
-## Static planner system
+Prior event IDs are parsed from bounded persisted/client hints, rehydrated from
+the database, and exposed as server-owned handles (`requestId:event_N`) with
+server facts. Same-turn results expose opaque event/venue refs while raw IDs
+remain in the server artifact ledger; reference-taking tools reject unknown
+values. Pinned IDs are validated before the agent runs.
 
-`PLANNER_SYSTEM` (`src/features/chat/api/agent/planner.ts`) is static. Pinned
-and prior facts are placed only in the bounded user prompt, never interpolated
-into the system prompt.
-
-## Prior/pinned context in the planner prompt
-
-The planner prompt carries ONLY bounded, server-rehydrated state:
-
-- Prior displayed events as `responseOrder + displayOrder + handle + facts`,
-  where the handle is `requestId:event_N` (derived server-side from the
-  persisted canonical's `requestId` + original display order). The planner must return the exact
-  handle; it never sees or returns a raw event UUID.
-- The pinned event's name + venue, when one is showing (so the planner can map
-  a target-less action to `pinned_event_action`).
-
-Names are rehydrated from the DB (server-owned facts), never client input, and
-are framed as DATA. The planner returns only a closed `TurnPlan` — no free text
-field exists to smuggle prose or instructions back out.
-
-## Deterministic validation (not prompt-enforced)
-
-The executor (`runExecutor`) validates every plan reference against the actual
-state:
-
-- `prior_event_action.targetHandle` must exactly equal a server-issued handle;
-  otherwise clarification.
-- `search.followUp.resultIndex` must be within the actual ordered result list;
-  otherwise clarification.
-- `pinned_event_action` uses only the server-resolved pin (`pin.eventId` /
-  `pin.venueId`).
-
-Save/unsave are structurally impossible: `ExecutorTools` has no mutation
-surface, and the canonical's `operations` is always empty.
+The model can call only read tools: search, event details, directions, venue
+details, and list saved. There are no save/unsave tools. Search results register
+opaque refs for subsequent chained calls. Canonical cards, links, directions,
+venue facts, clarification questions, and provenance are assembled from ordered
+successful tool results, never from model prose. Final prose is required by the
+prompt to stay within those results or active server facts; semantic grounding
+remains prompt-enforced. A timeout after successful reads preserves only those
+artifacts with deterministic error text; failures without a successful read
+fail closed to the deterministic error canonical.

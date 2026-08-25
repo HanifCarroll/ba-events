@@ -1,28 +1,26 @@
 /**
  * Chat API Route (bounded concierge MVP).
  *
- * Latest user request + bounded server-rehydrated state -> ONE planner
- * `generateText` call (`Output.object`, closed `TurnPlan`, NO tools) -> one
- * deterministic executor -> a server-built `CanonicalChatResponse`, streamed
+ * Latest user request + bounded recent DATA + server-rehydrated state -> a
+ * bounded Vercel AI SDK `ToolLoopAgent` with read-only tools -> a canonical
+ * response, streamed
  * through `createUIMessageStream`:
  *   - `start` first
  *   - one stable transient `data-status` id `status:${requestId}`
- *   - exactly one final text block (deterministic server text — the model never
- *     writes visible prose)
+ *   - exactly one final text block containing the agent's grounded prose
  *   - exactly one persistent `data-response` carrying the canonical response
  *   - sanitized `data-execution-trace` (reads only)
  *   - `finish`
  *
  * Trust boundary:
- *   - Client messages are UNTRUSTED. Only bounded user text feeds the planner;
- *     assistant/data/status/trace parts are dropped. Prior event ids are parsed
- *     from a bounded Zod schema, re-fetched from the database, and reduced to
- *     server-owned handles + facts (name/venue/saved) in the planner prompt.
- *   - The planner never sees or returns a raw event UUID: prior events are
- *     addressed by server-owned handles (`requestId:event_N`).
- *   - save/unsave are NEVER executed by the chat: the planner maps them to
- *     show_for_save / show_for_unsave, which return the card + a deterministic
- *     pointer to the card's heart control.
+ *   - Client messages are UNTRUSTED. Recent visible user/assistant text is
+ *     bounded and labelled DATA. Prior event ids are parsed from a bounded Zod
+ *     schema, re-fetched from the database, and reduced to server-owned handles
+ *     + facts for the agent.
+ *   - Prior and same-turn events use server-issued refs; raw IDs stay inside
+ *     validated server tool artifacts and never come from model prose.
+ *   - save/unsave are NEVER executed by the chat: the agent has no mutation
+ *     tools; the card heart remains the mutation surface.
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
@@ -64,6 +62,7 @@ import {
   recordGuestRequestTerminal,
 } from '#features/chat/api/guest-debug.server.ts'
 import { getLastUserQuery } from '#features/chat/lib/extract-visible-text.ts'
+import { buildAgentHistoryFromStoredMessages, buildAgentHistoryFromUIMessages } from '#features/chat/api/agent/history.ts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -193,6 +192,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let priorHints: PriorResponseHint[] = []
   let lastSearch: LastSearchContext | null = null
   let historyLoadFailed = false
+  let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
   if (userContext.isAuthenticated && conversationId) {
     try {
       const conversation = await getConversation(event, { id: conversationId })
@@ -200,6 +200,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         const storedMessages = (conversation.messages ?? []) as Message[]
         priorHints = hintsFromMessages(storedMessages)
         lastSearch = lastSearchContextFromMessages(storedMessages)
+        recentMessages = buildAgentHistoryFromStoredMessages(storedMessages, originalQuery)
       }
     } catch (error) {
       historyLoadFailed = true
@@ -208,6 +209,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   } else {
     priorHints = hintsFromUIMessages(uiMessages)
     lastSearch = lastSearchContextFromUIMessages(uiMessages)
+    recentMessages = buildAgentHistoryFromUIMessages(uiMessages, originalQuery)
   }
 
   const stream = createUIMessageStream({
@@ -258,6 +260,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           homeEventIds: historyLoadFailed ? [] : happeningSoonEventIds,
           pin,
           pinFacts,
+          recentMessages,
         })
 
         const canonical = result.canonical

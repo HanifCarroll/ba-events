@@ -1,7 +1,7 @@
 /**
  * Grouped follow-up context + untrusted canonical rehydration.
  *
- * Prior displayed events stay grouped by assistant response so the planner can
+ * Prior displayed events stay grouped by assistant response so the agent can
  * interpret references against the newest displayed list. Historical
  * mutation-only responses create no group and never move the ordinal window.
  *
@@ -81,7 +81,7 @@ export type PriorSaved = boolean | null
  * Existing v5 ordered event IDs already persist this mapping (the canonical
  * stores `requestId` + ordered `events`), so no wire bump is needed to address
  * a prior event on a later turn. Handles are never exposed to the model as
- * UUIDs — the planner only ever sees/returns these exact strings.
+ * UUIDs — the agent only ever sees/returns these exact strings.
  */
 export function handleFor(requestId: string, index: number): string {
   return `${requestId}:event_${index}`

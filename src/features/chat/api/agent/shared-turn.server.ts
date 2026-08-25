@@ -15,6 +15,7 @@ import {
 } from './follow-up.ts'
 import { orchestrate, type OrchestrateResult } from './orchestrate.ts'
 import { currentDateInBuenosAires, type LastSearchContext } from './search-context.ts'
+import type { AgentHistoryMessage } from './history.ts'
 
 export interface SharedChatTurnInput {
   requestId: string
@@ -26,6 +27,7 @@ export interface SharedChatTurnInput {
   homeEventIds?: string[]
   pin?: PinResolution
   pinFacts?: { name: string; venueName: string | null } | null
+  recentMessages?: AgentHistoryMessage[]
 }
 
 type SharedChatTurnDependencies = {
@@ -93,5 +95,6 @@ export async function runSharedChatTurn(
     currentDateInBA: dependencies.currentDateInBA ?? currentDateInBuenosAires(),
     pin: input.pin,
     pinFacts: input.pinFacts,
+    recentMessages: input.recentMessages,
   })
 }

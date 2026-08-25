@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { UIMessage } from 'ai'
 import type { CanonicalChatResponse, Message } from '#shared/lib/types.ts'
-import { buildPlannerPrompt } from './planner.ts'
 import {
   attachSearchContext,
   currentDateInBuenosAires,
@@ -103,23 +102,6 @@ describe('bounded previous-search context', () => {
       isFree: true,
       timeFilter: 'weekend',
     })
-  })
-
-  it('provides the planner with the previous search and the BA date', () => {
-    const prompt = buildPlannerPrompt({
-      originalQuery: 'Tomorrow instead',
-      locale: 'en',
-      prior: [],
-      lastSearch: {
-        originalQuery: 'jazz in Palermo tonight',
-        input: { query: 'jazz', neighborhoods: ['Palermo'], timeFilter: 'tonight', limit: 3 },
-      },
-      currentDateInBA: '2026-08-17',
-    })
-
-    expect(prompt).toContain('Current date in Buenos Aires: 2026-08-17')
-    expect(prompt).toContain('jazz in Palermo tonight')
-    expect(prompt).toContain('"timeFilter":"tonight"')
   })
 
   it('calculates the date in Buenos Aires rather than UTC', () => {

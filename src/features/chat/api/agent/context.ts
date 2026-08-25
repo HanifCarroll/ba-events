@@ -1,11 +1,9 @@
 /**
  * Bounded model-context + response-language helpers (v5 replacement).
  *
- * The deterministic natural-language action/target/mutation regex parser that
- * lived here is gone: the planner (single `generateText` + closed `TurnPlan`)
- * interprets EN/ES natural language itself. This module keeps only the
- * deterministic response-language detection and the user-text bound, so the
- * server can localize deterministic text without a model call.
+ * Natural-language interpretation lives in the bounded ToolLoopAgent. This
+ * module keeps only the
+ * deterministic response-language detection and the user-text bound.
  */
 
 import { sanitizeText } from './follow-up.ts'

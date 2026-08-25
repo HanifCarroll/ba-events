@@ -497,8 +497,8 @@ export interface ConciergeMessage extends ChatMessage {
 // =============================================================================
 
 /**
- * Response contract version. The bounded planner/executor keeps the v5 wire
- * shape; mutation/stage fields remain only for non-destructive historical reads.
+ * Response contract version. The ToolLoopAgent keeps the v5 wire shape;
+ * mutation/stage fields remain only for non-destructive historical reads.
  */
 export const CHAT_CONTRACT_VERSION = 5 as const
 
@@ -515,11 +515,10 @@ export type ResponseKind =
   | 'error'
 
 /**
- * Closed set of deterministic text templates. Server text is materialized from
- * one of these keys plus validated artifacts — never from arbitrary model prose.
- * Mutation and partial-stage keys remain for historical v4/v5 rows. New turns
- * use the bounded planner/executor keys, including the explicit card-control
- * and pinned-event leads.
+ * Closed compatibility/classification keys for response kinds and historical UI
+ * rendering. New turns may use a model-written text value, which must be
+ * grounded in successful tool results or server-rehydrated active facts. The
+ * key remains structured UI metadata, not a prose generator.
  */
 export const MESSAGE_KEYS = [
   'recommendations',
@@ -587,8 +586,8 @@ export type CanonicalChatEventPayload = ChatEventPayload & {
 }
 
 /**
- * Typed fallback reasons. Most values are retained for historical v5 rows;
- * bounded turns emit only planner_error or invalid_schema.
+ * Typed fallback reasons retained for historical v5 rows. Current agent turns
+ * reuse planner_error for provider/loop failures.
  */
 export const FALLBACK_REASONS = [
   'planner_error',
@@ -674,7 +673,7 @@ export interface CanonicalProvenance {
   retainedSourceToolCallIds: string[]
   /** Compatibility-only stage ids; always empty on new turns. */
   stageIds: string[]
-  /** The bounded turn's single search call id, when it searched. */
+  /** Every search call attempted by the bounded agent loop, in execution order. */
   searchAttemptToolCallIds: string[]
   /** Compatibility-only partial-stage marker; always false on new turns. */
   searchIncomplete: boolean
@@ -695,16 +694,16 @@ export interface VenueDetailsData {
 
 /**
  * The single authoritative assistant response for a chat turn (v5).
- * Text is deterministic (closed messageKey + validated artifacts), never model
- * prose. `messageKey`, `clarificationQuestions`, and every provenance array are
- * required: the v5 producer always sets them, and legacy adapters fill
- * deterministic defaults.
+ * `text` is the agent's visible prose; structured artifacts never come from
+ * that prose. `messageKey`,
+ * `clarificationQuestions`, and every provenance array are required, and
+ * legacy adapters fill compatibility defaults.
  */
 export interface CanonicalChatResponse {
   contractVersion: typeof CHAT_CONTRACT_VERSION
   requestId: string
   kind: ResponseKind
-  /** Closed deterministic-text template used to materialize `text`. */
+  /** Compatibility/UI classification key; not the source of `text`. */
   messageKey: MessageKey
   text: string
   events: CanonicalChatEventPayload[]

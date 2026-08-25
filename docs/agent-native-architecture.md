@@ -1,61 +1,32 @@
-# Bounded Concierge Architecture
+# Concierge architecture
 
-The BA Events concierge is a finite conversational workflow, not a general-purpose agent.
-
-```text
-latest user request + bounded server state
-                  ↓
-one generateText call + Output.object(TurnPlan)
-                  ↓
-        deterministic executor
-                  ↓
-       canonical response → UI
-```
-
-## Planner
-
-`src/features/chat/api/agent/planner.ts` defines the closed `TurnPlan` union. The planner:
-
-- interprets English and Spanish;
-- receives only the latest request, bounded prior-event handles and facts, and optional pinned-event facts;
-- returns one search, one prior/pinned action, a saved-events read, a clarification, or out-of-scope;
-- has no tools and no visible-prose field;
-- runs exactly once on a normal turn.
-
-Unsupported or conflicting compounds clarify. There is no model repair pass.
-
-## Executor
-
-`src/features/chat/api/agent/executor.ts` validates the plan against server-owned state and calls the existing read implementations directly:
-
-- `search_events`;
-- `get_event_details`;
-- `get_directions`;
-- `get_venue_details`;
-- `list_saved_events`.
-
-A turn performs at most one search and one related read, or one prior/pinned/saved-events read. The executor builds the canonical response and localized text deterministically.
-
-## Stable event targeting
-
-Displayed events use handles derived from the persisted response id and original display position:
+BA Events uses one bounded Vercel AI SDK 7 `ToolLoopAgent` in `src/features/chat/api/agent/orchestrate.ts`.
 
 ```text
-<requestId>:event_<zero-based-position>
+recent visible DATA + server-rehydrated event facts
+        -> ToolLoopAgent (DeepSeek, max 5 steps)
+        -> existing read tools and their results
+        -> model final prose + server-built canonical cards
 ```
 
-Prior event IDs are parsed from persisted canonicals, re-fetched from Supabase, and mapped to these handles. The planner returns a handle; the executor accepts it only when it exists in the rehydrated map. Current-search actions use an index validated against the actual ordered results. The model never returns an event UUID.
+The agent may chain search, details, venue, directions, and saved-list reads.
+After a non-empty search, `prepareStep` removes search from the active tool set
+so the agent must use returned refs rather than repeat discovery. It never
+receives chat mutation tools. Save/unsave intent is carried as a validated
+details-read purpose so web can show the heart control and Telegram can replace
+that web-only guidance. Both channels call `runSharedChatTurn`; only rendering
+differs.
 
-## Save and unsave
+Prior event references are stable server handles (`requestId:event_N`). Each
+same-turn result receives an opaque `eventRef`/`venueRef` for later calls; raw
+IDs remain in the server artifact ledger. Unknown refs fail closed. Prior IDs
+and names are rehydrated from the database. Recent user and assistant text is
+bounded and labelled untrusted DATA.
 
-Chat text never mutates saved events. Save/unsave requests return the exact event card with a deterministic instruction to use its existing Save/Remove control. The existing UI button and authenticated Supabase path remain the only mutation surface.
-
-## Preserved boundaries
-
-- Existing constrained semantic retrieval, ranking, and suggestions.
-- Canonical `data-response` rendering and historical read adapters.
-- One assistant message with one text block and one canonical response.
-- Auth, persistence, rate limits, telemetry, and a reads-only execution trace.
-- Pinned-event validation and authoritative saved membership for prior events.
-
-See also: [`canonical-response.md`](./canonical-response.md), [`chat-streaming.md`](./chat-streaming.md), and [`chat-trust-boundary.md`](./chat-trust-boundary.md).
+Canonical cards, directions, venue data, provenance, clarification questions,
+and links come only from ordered successful tool results. The model supplies
+final prose and is explicitly instructed to ground it in current results or
+active server facts. If a final model step times out after successful reads,
+those canonical artifacts survive with deterministic error text. Failures
+without a successful read return the deterministic error response. Saves
+remain the card-heart mutation surface.

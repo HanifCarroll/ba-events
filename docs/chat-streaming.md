@@ -1,45 +1,20 @@
-# Chat Streaming and Response Contract
+# Chat streaming and response contract
 
-The chat API uses response contract **v5** — the closed canonical response. A
-turn is two deterministic server phases with exactly ONE model call in between:
+The route keeps the v5 canonical wire contract and streams one final text
+block, one `data-response`, and one sanitized reads-only execution trace. The
+text is the final prose returned by the ToolLoopAgent; cards, directions,
+venue data, links, and provenance are server-derived from executed tool
+results.
 
-1. **Planner** — one `generateText` call with `Output.object` against a closed
-   Zod `TurnPlan` schema (`src/features/chat/api/agent/planner.ts`). NO tools,
-   no work loop, no free text. The model selects one finite plan (search /
-   prior_event_action / pinned_event_action / list_saved / clarification /
-   out_of_scope).
-2. **Executor** — `runExecutor`
-   (`src/features/chat/api/agent/executor.ts`) runs the plan deterministically
-   against the existing tool implementations (search / details / directions /
-   venue / list-saved) and builds the `CanonicalChatResponse` server-side. Text
-   is materialized from a closed `messageKey` (`materialize.ts`); the model
-   never writes visible prose.
+The agent uses DeepSeek through `ToolLoopAgent`, `stopWhen: isStepCount(5)`, a
+60-second total / 20-second step bound, a seven-second per-tool bound, and one
+retry. It receives the latest user request, bounded recent visible
+user/assistant DATA, and server-rehydrated prior/pinned facts. It may chain
+tools until it writes final prose. It never receives mutation tools. If a final
+model step times out after successful reads, the server preserves those
+canonical artifacts with deterministic fallback text; failures without a
+successful read return the deterministic error canonical.
 
-The planner is the only model call. There is no work loop, no finalizer, no
-second generation, no ledger, and no repair model call on failure.
-
-## Server phases
-
-1. **Rehydrate** — the route parses prior event ids from untrusted/persisted
-   canonicals (bounded Zod), re-fetches facts from the DB, and reduces them to
-   server-owned handles + response/display order + facts + saved membership.
-2. **Plan** — `runPlanner` returns a `TurnPlan` (or a typed failure:
-   `invalid_schema` / `planner_error`).
-3. **Execute** — `runExecutor` performs at most one search + one follow-up read
-   (or one saved-events / prior / pinned read), validates handles and
-   `resultIndex` exactly, and constructs the canonical.
-4. **Stream** — the route writes one text block, one `data-response`, and a
-   sanitized `data-execution-trace` (reads only).
-
-## Fail-closed
-
-- Planner provider/schema failure → deterministic `error` canonical
-  (`fallbackUsed: true`, typed `fallbackReason`), never a repair call.
-- Invalid handle / out-of-range `resultIndex` → deterministic clarification.
-- A requested-but-unresolved pinned event → typed `pinned_event_unavailable`.
-
-## Save / unsave
-
-The chat never mutates. Save/unsave requests are planned as
-`show_for_save` / `show_for_unsave`, which return the exact event card plus a
-deterministic message pointing at the card's own Save/Unsave control.
+`runSharedChatTurn` is the channel-neutral entry point used by both the web API
+and Telegram. Authentication, persistence, rate limits, guest debug, and
+channel-specific rendering remain outside the agent.

@@ -1,10 +1,9 @@
 # Follow-up Display Groups and Stable Handles
 
 Follow-up reference resolution ("the second one", "that", "the Niceto one") is
-handled by the **planner** (a single model call interpreting EN/ES natural
-language) against bounded, server-rehydrated prior context. Source:
-`src/features/chat/api/agent/follow-up.ts` (grouping + rehydration + handles)
-and `src/features/chat/api/agent/planner.ts` (the interpretation).
+handled by the bounded **ToolLoopAgent** against server-rehydrated prior
+context. Source: `src/features/chat/api/agent/follow-up.ts` (grouping +
+rehydration + handles) and `orchestrate.ts` (agent prompt + validation).
 
 ## Group shape and bounds
 
@@ -46,11 +45,10 @@ handleFor(requestId, index) => `${requestId}:event_${index}`
 ```
 
 Existing v5 ordered event IDs already persist this mapping (the canonical stores
-`requestId` + ordered `events`), so no wire bump is needed. The planner prompt
-lists `responseOrder`, `displayOrder`, handles, and facts; the planner returns the exact
-`targetHandle` for `prior_event_action`. The executor validates the handle
-against the exact server-issued map — an unknown handle fails closed to
-clarification. The model never sees or returns a raw event UUID.
+`requestId` + ordered `events`), so no wire bump is needed. The agent prompt lists `responseOrder`, `displayOrder`, handles, and facts.
+The server resolves handles against the exact server-issued map; an unknown
+handle fails closed. Same-turn results receive opaque refs for later calls;
+raw event UUIDs remain in the server artifact ledger.
 
 ## Rehydration
 

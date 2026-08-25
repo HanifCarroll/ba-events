@@ -1,7 +1,7 @@
 /**
  * Sanitized reads-only execution trace for persistence and debugging.
  *
- * Contains deterministic executor calls/results only. Embeddings are stripped
+ * Contains sanitized tool calls/results only. Embeddings are stripped
  * recursively; there is no model reasoning or work-loop text.
  */
 
