@@ -377,10 +377,15 @@ describe('v5 canonical read adapters', () => {
     const canonical = v5Canonical({
       clarificationQuestions: [{ key: 'which_day', label: 'Which day?' }],
       operations: [operation],
+      framing: {
+        acknowledgement: 'I found a couple of options for your night out.',
+        nextStep: 'Want details or directions?',
+      },
     })
     const render = canonicalToRender(canonical)
     expect(render.events.map((e) => e.id)).toEqual(['e1', 'e2'])
     expect(render.operations).toEqual([operation])
     expect(render.clarificationQuestions).toHaveLength(1)
+    expect(render.framing?.nextStep).toBe('Want details or directions?')
   })
 })

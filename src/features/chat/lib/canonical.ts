@@ -39,6 +39,7 @@ import {
   type ResponseKind,
   type VenueDetailsData,
 } from '#shared/lib/types.ts'
+import { extractRecommendationFraming, type RecommendationFraming } from '#shared/lib/recommendation-framing.ts'
 
 const CONTRACT_VERSION_V4 = 4
 const CONTRACT_VERSION_V3 = 3
@@ -519,7 +520,15 @@ export function canonicalToRender(canonical: CanonicalChatResponse): {
   venue: CanonicalChatResponse['venue']
   operations: CanonicalChatResponse['operations']
   clarificationQuestions: ClarificationQuestion[]
+  framing: RecommendationFraming | null
 } {
+  const framing = canonical.kind === 'recommendations' && canonical.framing
+    ? extractRecommendationFraming(
+        `ACK: ${canonical.framing.acknowledgement}\nNEXT: ${canonical.framing.nextStep}`,
+        canonical.events,
+        canonical.events.map((event) => event.venue_name ?? ''),
+      )
+    : null
   return {
     events: canonical.events,
     suggestions: canonical.suggestions,
@@ -527,6 +536,7 @@ export function canonicalToRender(canonical: CanonicalChatResponse): {
     venue: canonical.venue,
     operations: canonical.operations,
     clarificationQuestions: canonical.clarificationQuestions,
+    framing,
   }
 }
 

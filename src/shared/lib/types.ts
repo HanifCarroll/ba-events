@@ -256,6 +256,7 @@ export interface ChatMessage {
   directions?: DirectionsData
   venue?: VenueDetailsData
   operations?: OperationReceipt[]
+  recommendationNextStep?: string
   /** Bounded fixed-template clarification questions (clarification kind). */
   clarificationQuestions?: ClarificationQuestion[]
   timestamp: Date

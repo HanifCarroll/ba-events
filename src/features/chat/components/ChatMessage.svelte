@@ -30,6 +30,7 @@
 	const directions = $derived(message.directions ?? null)
 	const venue = $derived(message.venue ?? null)
 	const operations = $derived(message.operations ?? [])
+	const recommendationNextStep = $derived(message.recommendationNextStep ?? null)
 	// Render only the fixed-template clarification labels NOT already present in
 	// content. New v4 clarification text includes the labels as its single text
 	// block; older v4 generic-text records keep them in this separate list.
@@ -108,6 +109,12 @@
 				<div class={hasContent ? 'mt-4' : ''}>
 					<EventList events={events} />
 				</div>
+			{/if}
+
+			{#if !isUser && recommendationNextStep}
+				<p class="mt-4 max-w-[68ch] text-[15px] leading-relaxed text-foreground">
+					{recommendationNextStep}
+				</p>
 			{/if}
 
 			<!-- Directions card for assistant messages -->

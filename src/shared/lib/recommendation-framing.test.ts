@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractRecommendationFraming } from './recommendation-framing.ts'
+import { extractRecommendationFraming, removeFramingMarkers } from './recommendation-framing.ts'
 
 const events = [{ name: 'Tango Nights', venue_name: 'Club Sur' }]
 
@@ -12,6 +12,11 @@ describe('recommendation framing contract', () => {
       acknowledgement: text.split('\n')[0].slice(5),
       nextStep: text.split('\n')[1].slice(6),
     })
+  })
+
+  it('removes only a complete marker envelope', () => {
+    expect(removeFramingMarkers('ACK: Warm intro\nNEXT: Want details?')).toBe('')
+    expect(removeFramingMarkers('Directions are ready.\nNext: open the map.')).toBe('Directions are ready.\nNext: open the map.')
   })
 
   it.each([

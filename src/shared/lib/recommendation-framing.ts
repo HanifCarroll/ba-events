@@ -66,8 +66,6 @@ export function extractRecommendationFraming(
 }
 
 export function removeFramingMarkers(value: string): string {
-  return value
-    .replace(/^(?:ACK|NEXT)\s*:\s*.*$/gim, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  const lines = value.replace(/\r\n?/g, '\n').split('\n')
+  return lines.length === 2 && lines.every((line) => MARKER.test(line)) ? '' : value.trim()
 }

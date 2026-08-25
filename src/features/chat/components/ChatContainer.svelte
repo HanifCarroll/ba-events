@@ -9,6 +9,7 @@
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { chatState, type PendingFirstMessage } from '#features/chat/state/chat.svelte.ts'
 	import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract-visible-text.ts'
+	import { warmRecommendationFallback } from '#shared/lib/recommendation-framing.ts'
 	import {
 		flushMessagePersistenceOutbox,
 		getConversationTerminalFailures,
@@ -833,7 +834,23 @@
 			const canonical = message.role === 'assistant' ? canonicalFromParts(parts) : null
 			const render = canonical
 				? canonicalToRender(canonical)
-				: { events: [], suggestions: [], directions: null, venue: null, operations: [], clarificationQuestions: [] }
+				: {
+						events: [],
+						suggestions: [],
+						directions: null,
+						venue: null,
+						operations: [],
+						clarificationQuestions: [],
+						framing: null
+					}
+			const recommendationNextStep =
+				canonical?.kind === 'recommendations' && render.events.length > 0
+					? render.framing?.nextStep ??
+						warmRecommendationFallback(
+							getLocale().startsWith('es') ? 'es' : 'en',
+							render.events.length
+						).nextStep
+					: undefined
 			if (canonical) {
 				eventsCountRef = canonical.events.length
 			}
@@ -849,6 +866,7 @@
 				directions: render.directions ?? undefined,
 				venue: render.venue ?? undefined,
 				operations: render.operations.length > 0 ? render.operations : undefined,
+				recommendationNextStep,
 				clarificationQuestions:
 					render.clarificationQuestions.length > 0 ? render.clarificationQuestions : undefined
 			} satisfies ChatMessage
