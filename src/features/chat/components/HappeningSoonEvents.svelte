@@ -51,8 +51,9 @@
 							imageUrl={event.image_url}
 							imageWidth={event.image_width}
 							imageHeight={event.image_height}
+							aspectRatio="4 / 3"
 							loading="lazy"
-							class="min-h-24 w-full sm:min-h-36"
+							class="w-full"
 						/>
 					{:else}
 						<div
