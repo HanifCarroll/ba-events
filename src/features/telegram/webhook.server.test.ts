@@ -135,6 +135,11 @@ describe('Telegram webhook', () => {
     })
 
     expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      method: 'sendChatAction',
+      chat_id: 123,
+      action: 'typing',
+    })
     const [payload, options] = trigger.mock.calls[0]
     expect(payload.updateId).toBe('42')
     expect(payload.queueKey).toBe(queueKey)
@@ -249,11 +254,12 @@ describe('Telegram webhook', () => {
 
   it('enqueues an opaque rate-limit response and leaves commands available', async () => {
     const trigger = triggerMock()
-    await handleTelegramWebhook(request(messageUpdate), {
+    const rateLimitedResponse = await handleTelegramWebhook(request(messageUpdate), {
       ...base,
       rateLimit: vi.fn(async () => ({ success: false, remaining: 0, reset: 1 })),
       trigger,
     })
+    expect(await rateLimitedResponse.text()).toBe('')
     const payload = trigger.mock.calls[0][0]
     const plaintext = telegramPlaintextPayloadSchema.parse(
       openTelegramEnvelope(payload.sealedEnvelope, key, payload.updateId, payload.queueKey)

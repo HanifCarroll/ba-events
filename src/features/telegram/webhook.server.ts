@@ -45,6 +45,10 @@ function response(status = 200): Response {
   return new Response(null, { status })
 }
 
+function typingResponse(chatId: string): Response {
+  return Response.json({ method: 'sendChatAction', chat_id: Number(chatId), action: 'typing' })
+}
+
 async function readBoundedBody(request: Request): Promise<Uint8Array> {
   const reader = request.body?.getReader()
   if (!reader) return new Uint8Array()
@@ -128,6 +132,7 @@ export async function handleTelegramWebhook(
   if (claim.completed) return response()
 
   const dispatchStarted = performance.now()
+  let typingChatId: string | null = null
   try {
     const ordinaryText = 'message' in update && parsedText?.kind === 'text'
     const promptCallback = 'callback_query' in update
@@ -152,6 +157,9 @@ export async function handleTelegramWebhook(
     )
 
     const rateLimited = shouldCheckRateLimit && !rateResult.success
+    if ('message' in update && parsedText?.kind === 'text' && !rateLimited) {
+      typingChatId = update.message.chat.id
+    }
     let plaintext
     if ('message' in update) {
       plaintext = {
@@ -209,5 +217,5 @@ export async function handleTelegramWebhook(
     }
     return response(503)
   }
-  return response()
+  return typingChatId ? typingResponse(typingChatId) : response()
 }
