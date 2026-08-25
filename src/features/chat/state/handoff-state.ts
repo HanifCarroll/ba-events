@@ -19,6 +19,9 @@
  */
 export interface PendingFirstMessage {
 	content: string
+	conversationId: string
+	userClientMessageId: string
+	assistantClientMessageId: string
 	eventId?: string
 	/** Visible home-card ids at submit time. /chat/:id does not reload them. */
 	happeningSoonEventIds?: string[]

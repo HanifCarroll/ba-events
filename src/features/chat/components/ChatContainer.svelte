@@ -114,7 +114,6 @@
 	let pendingAssistantClientMessageIdRef: string | null = null
 	let pendingUserClientMessageIdRef: string | null = null
 	let pendingUserPersistencePromiseRef: Promise<MessagePersistenceResult> | null = null
-	let pendingConversationCreationRef: Promise<{ id: string }> | null = null
 	let pendingUserPersistedMessageIdRef: string | null = null
 	let persistedAssistantMessageIdsRef = new Map<string, string>()
 	let isFirstExchangeRef = true
@@ -451,7 +450,15 @@
 	// ==========================================================================
 	async function handleSendMessage(
 		content: string,
-		options?: { eventId?: string; happeningSoonEventIds?: string[] }
+		options?: {
+			eventId?: string
+			happeningSoonEventIds?: string[]
+			handoffId?: string
+			conversationId?: string
+			userClientMessageId?: string
+			assistantClientMessageId?: string
+			createConversation?: boolean
+		}
 	) {
 		pendingHappeningSoonEventIdRef = options?.eventId ?? null
 		pendingHappeningSoonEventIdsRef =
@@ -467,29 +474,28 @@
 			has_history: chat.messages.length > 0
 		})
 
-		const handoffId = !conversationId ? generateId() : null
+		const handoffId = !conversationId
+			? (options?.handoffId ?? crypto.randomUUID())
+			: (options?.handoffId ?? null)
 		if (handoffId) {
 			markHandoffPhase('submit', handoffId)
 		}
 
 		pendingUserMessageRef = content
 		pendingUserPersistedMessageIdRef = null
-		const userClientMessageId = generateId()
-		const assistantClientMessageId = generateId()
+		const userClientMessageId = options?.userClientMessageId ?? crypto.randomUUID()
+		const assistantClientMessageId = options?.assistantClientMessageId ?? crypto.randomUUID()
 		pendingUserClientMessageIdRef = userClientMessageId
 		pendingAssistantClientMessageIdRef = assistantClientMessageId
 
 		try {
-			let currentConversationId = conversationId
+			let currentConversationId = conversationId ?? options?.conversationId ?? null
 			if (!currentConversationId) {
 				if (!handoffId) {
 					throw new Error('[chat] invariant: first-message branch without handoff id')
 				}
-				if (isAuthenticated) {
-					pendingConversationCreationRef = chatState.createConversation()
-					currentConversationId = generateId()
-				} else {
-					currentConversationId = generateId()
+				currentConversationId = crypto.randomUUID()
+				if (!isAuthenticated) {
 					createGuestConversation(currentConversationId)
 						.then(() => markHandoffPhase('guest_conversation_written', handoffId))
 						.catch((persistError) => {
@@ -514,6 +520,9 @@
 				markHandoffPhase('navigate', handoffId)
 				chatState.setPendingFirstMessage({
 					content,
+					conversationId: currentConversationId,
+					userClientMessageId,
+					assistantClientMessageId,
 					eventId: options?.eventId,
 					happeningSoonEventIds: pendingHappeningSoonEventIdsRef ?? undefined,
 					handoffId
@@ -524,11 +533,9 @@
 
 			setRequestLifecyclePhase('preparing')
 			isHandoffPending = false
-			if (pendingConversationCreationRef) {
-				const newConversation = await pendingConversationCreationRef
-				pendingConversationCreationRef = null
-				currentConversationId = newConversation.id
-				onConversationChange?.(newConversation.id, { replace: true })
+			if (options?.createConversation && isAuthenticated) {
+				const createdConversation = await chatState.createConversation(currentConversationId)
+				currentConversationId = createdConversation.id
 			}
 			pendingConversationIdRef = currentConversationId
 
@@ -564,10 +571,21 @@
 			}
 
 			markHandoffPhase('request_start')
-			await chat.sendMessage({
-				text: content,
-				metadata: { createdAt: new Date().toISOString() }
-			})
+			const messageMetadata = { createdAt: new Date().toISOString() }
+			if (chat.messages.some((message) => message.id === userClientMessageId)) {
+				await chat.sendMessage({
+					text: content,
+					messageId: userClientMessageId,
+					metadata: messageMetadata
+				})
+			} else {
+				await chat.sendMessage({
+					id: userClientMessageId,
+					role: 'user',
+					parts: [{ type: 'text', text: content }],
+					metadata: messageMetadata
+				})
+			}
 			await userPersistencePromise
 		} catch (err) {
 			console.error('Failed to send message:', err)
@@ -578,7 +596,7 @@
 				description: errorMessage,
 				action: {
 					label: 'Retry',
-					onClick: () => handleSendMessage(content)
+					onClick: () => handleSendMessage(content, options)
 				}
 			})
 			pendingUserMessageRef = null
@@ -586,7 +604,6 @@
 			pendingAssistantClientMessageIdRef = null
 			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
-			pendingConversationCreationRef = null
 			pendingUserPersistedMessageIdRef = null
 			persistedAssistantMessageIdsRef.clear()
 			pendingFirstMessage = null
@@ -721,7 +738,6 @@
 			pendingAssistantClientMessageIdRef = null
 			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
-			pendingConversationCreationRef = null
 			pendingUserPersistedMessageIdRef = null
 			persistedAssistantMessageIdsRef.clear()
 			activeHandoffIdRef = null
@@ -740,6 +756,11 @@
 			isHandoffRequestRef = true
 			untrack(() => {
 				void handleSendMessage(pending.content, {
+					handoffId: pending.handoffId,
+					conversationId: pending.conversationId,
+					userClientMessageId: pending.userClientMessageId,
+					assistantClientMessageId: pending.assistantClientMessageId,
+					createConversation: isAuthenticated,
 					eventId: pending.eventId,
 					happeningSoonEventIds: pending.happeningSoonEventIds
 				})
@@ -856,7 +877,7 @@
 
 		return [
 			{
-				id: `pending-${optimistic.content}`,
+				id: optimistic.userClientMessageId,
 				role: 'user' as const,
 				content: optimistic.content,
 				timestamp: new Date(),

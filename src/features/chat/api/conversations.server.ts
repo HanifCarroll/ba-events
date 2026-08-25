@@ -240,6 +240,10 @@ export async function getConversation(event: RequestEvent, data: { id: string })
  * Create a new conversation.
  */
 export async function createConversation(event: RequestEvent, data: ConversationInsert) {
+  if (data.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.id)) {
+    throw new Error('Failed to create conversation')
+  }
+
   const supabase = createSupabaseServerClient(event)
 
   const {
@@ -253,6 +257,7 @@ export async function createConversation(event: RequestEvent, data: Conversation
   const { data: conversation, error } = await supabase
     .from('conversations')
     .insert({
+      ...(data.id ? { id: data.id } : {}),
       user_id: user.id,
       title: data.title ?? 'New conversation',
       metadata: data.metadata ?? {},
@@ -261,6 +266,19 @@ export async function createConversation(event: RequestEvent, data: Conversation
     .single()
 
   if (error) {
+    // A lost insert response is safe to retry. Only reveal a collision when
+    // the existing row belongs to this authenticated user.
+    if (data.id && error.code === '23505') {
+      const { data: existingConversation } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('id', data.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (existingConversation) return existingConversation as Conversation
+    }
+
     console.error('[createConversation] Error:', error)
     throw new Error('Failed to create conversation')
   }

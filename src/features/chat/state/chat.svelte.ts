@@ -129,9 +129,9 @@ export class ChatState extends HandoffState {
 	}
 
 	/** Create a new (authenticated) conversation. */
-	async createConversation(): Promise<{ id: string }> {
+	async createConversation(id?: string): Promise<{ id: string }> {
 		if (!this.isAuthenticated) throw new Error('Not authenticated')
-		const conversation = await conversationsRemote.createConversation({})
+		const conversation = await conversationsRemote.createConversation(id ? { id } : {})
 		this.#bumpConversations()
 		return conversation
 	}

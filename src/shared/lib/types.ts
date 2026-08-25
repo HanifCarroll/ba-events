@@ -781,6 +781,7 @@ export interface Conversation {
 
 /** For inserting a new conversation */
 export interface ConversationInsert {
+  id?: string
   user_id?: string | null
   channel?: ConversationChannel
   external_identity_hash?: string | null

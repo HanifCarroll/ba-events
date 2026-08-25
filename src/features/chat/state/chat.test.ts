@@ -14,7 +14,14 @@ describe('ChatState first-message handoff', () => {
 
 		expect(state.peekPendingFirstMessage()).toBeNull()
 
-		const parked = { content: 'hola', eventId: undefined, handoffId: 'h-1' }
+		const parked = {
+			content: 'hola',
+			conversationId: '00000000-0000-4000-8000-000000000001',
+			userClientMessageId: 'user-1',
+			assistantClientMessageId: 'assistant-1',
+			eventId: undefined,
+			handoffId: 'h-1'
+		}
 		state.setPendingFirstMessage(parked)
 
 		// Peek may be called any number of times (render is not idempotent-safe
@@ -32,9 +39,18 @@ describe('ChatState first-message handoff', () => {
 	it('a later park overwrites an earlier one', () => {
 		const state = new HandoffState()
 
-		state.setPendingFirstMessage({ content: 'first', handoffId: 'h-1' })
+		state.setPendingFirstMessage({
+			content: 'first',
+			conversationId: 'conversation-1',
+			userClientMessageId: 'user-1',
+			assistantClientMessageId: 'assistant-1',
+			handoffId: 'h-1'
+		})
 		state.setPendingFirstMessage({
 			content: 'second',
+			conversationId: 'conversation-2',
+			userClientMessageId: 'user-2',
+			assistantClientMessageId: 'assistant-2',
 			eventId: 'evt-1',
 			happeningSoonEventIds: ['home-1'],
 			handoffId: 'h-2'
@@ -42,6 +58,9 @@ describe('ChatState first-message handoff', () => {
 
 		expect(state.takePendingFirstMessage()).toEqual({
 			content: 'second',
+			conversationId: 'conversation-2',
+			userClientMessageId: 'user-2',
+			assistantClientMessageId: 'assistant-2',
 			eventId: 'evt-1',
 			happeningSoonEventIds: ['home-1'],
 			handoffId: 'h-2'
