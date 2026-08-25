@@ -82,11 +82,7 @@
 	]);
 
 	const standaloneDetailsHref = $derived(`/events/${event.id}`);
-	const chatPathname = $derived(
-		page.state.chatConversationId
-			? `/chat/${encodeURIComponent(page.state.chatConversationId)}`
-			: page.url.pathname
-	);
+	const chatPathname = $derived(page.url.pathname);
 	const detailsHref = $derived(
 		source === 'chat' ? getChatEventHref(chatPathname, event.id) : standaloneDetailsHref
 	);

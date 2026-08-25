@@ -2,10 +2,8 @@
  * Shared chat state — the Svelte port of `ChatProvider.tsx` plus the
  * conversation persistence branching that lived in `useConversations.ts`.
  *
- * The provider semantics are unchanged: the first-message handoff (`peek` is
- * idempotent, `take` is one-shot) and per-conversation scroll memory survive
- * the `/chat/:id` remount because they live here, in a module singleton,
- * instead of in a component that unmounts on navigation.
+ * Per-conversation scroll memory survives route remounts through this module
+ * singleton. Conversation identity and pending turns live in the URL/database.
  */
 
 import { getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
@@ -22,10 +20,7 @@ import type {
 	Message,
 	MessageAttachedData
 } from '#shared/lib/types.ts'
-import { HandoffState } from './handoff-state.ts'
-export type { PendingFirstMessage } from './handoff-state.ts'
-
-export class ChatState extends HandoffState {
+export class ChatState {
 	/**
 	 * ID of the currently active conversation (null = new conversation not yet
 	 * created). Kept in sync with the `/chat/:conversationId` URL by
@@ -39,6 +34,7 @@ export class ChatState extends HandoffState {
 	 * React Query `invalidateQueries({ queryKey: conversations.all })`.
 	 */
 	conversationsVersion = $state(0)
+	#conversationScrollPositions = new Map<string, number>()
 
 	#startNewChatHandler: (() => void) | null = null
 	// Synchronous bootstrap for a freshly-created guest conversation. Replaces
@@ -60,6 +56,14 @@ export class ChatState extends HandoffState {
 
 	setActiveConversationId(id: string | null): void {
 		this.activeConversationId = id
+	}
+
+	saveConversationScrollPosition(id: string, scrollTop: number): void {
+		this.#conversationScrollPositions.set(id, Math.max(0, scrollTop))
+	}
+
+	getConversationScrollPosition(id: string): number | null {
+		return this.#conversationScrollPositions.get(id) ?? null
 	}
 
 	// ==========================================================================

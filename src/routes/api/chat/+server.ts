@@ -42,6 +42,8 @@ import {
   runSharedChatTurn,
 } from '#features/chat/api/agent/shared-turn.server.ts'
 import { persistAssistantMessageV4 } from '#features/chat/api/agent/persist.ts'
+import { claimChatTurn, completeChatTurn, failChatTurn, getTurnAssistant } from '#features/chat/api/turns.server.ts'
+import { applyAuthoritativeTurn, mayRunProvider } from '#features/chat/api/turn-authority.ts'
 import {
   isDisplayableStatus,
   hintsFromMessages,
@@ -99,6 +101,12 @@ function createRateLimitResponse(resetTimestamp: number): Response {
   )
 }
 
+function publicChatError(error: unknown): string {
+	return error instanceof Error && error.message === 'Chat turn unavailable'
+		? error.message
+		: 'An error occurred while processing your message'
+}
+
 export const POST = async (event: RequestEvent): Promise<Response> => {
   const { request } = event
 
@@ -109,6 +117,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let conversationId: string | null
   let userClientMessageId: string | null
   let assistantClientMessageId: string | null
+  let turnId: string | null
+  let retryTurn = false
 
   try {
     const body = (await request.json()) as {
@@ -119,6 +129,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       conversationId?: string | null
       userClientMessageId?: string | null
       assistantClientMessageId?: string | null
+      turnId?: string | null
+      retry?: boolean
     }
 
     locale = body.locale === 'es' ? 'es' : 'en'
@@ -130,6 +142,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     conversationId = body.conversationId ?? null
     userClientMessageId = body.userClientMessageId ?? null
     assistantClientMessageId = body.assistantClientMessageId ?? null
+    turnId = body.turnId ?? null
+    retryTurn = body.retry === true
   } catch {
     return createErrorStream('Invalid request body')
   }
@@ -143,9 +157,40 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
   const userContext = await getUserToolContext(event)
   const requestId = generateId()
-  const normalizedTurn = normalizeChatTurn(getLastUserQuery(uiMessages), locale)
-  const originalQuery = normalizedTurn.originalQuery
-  locale = normalizedTurn.locale
+  let originalQuery: string
+  let authoritativeTurn: Awaited<ReturnType<typeof claimChatTurn>> | null = null
+  let replayAssistant: Awaited<ReturnType<typeof getTurnAssistant>> | null = null
+
+  if (userContext.isAuthenticated && turnId) {
+    if (!UUID_RE.test(turnId)) return createErrorStream('Invalid chat turn')
+    try {
+      authoritativeTurn = await claimChatTurn(event, turnId, requestId, retryTurn)
+    } catch {
+      return createErrorStream('Chat turn unavailable')
+    }
+    if (authoritativeTurn.status === 'completed') {
+      replayAssistant = await getTurnAssistant(event, authoritativeTurn)
+      if (!replayAssistant) return createErrorStream('Chat turn unavailable')
+    } else if (!mayRunProvider(authoritativeTurn, requestId)) {
+      return createErrorStream(
+        authoritativeTurn.status === 'interrupted' || authoritativeTurn.status === 'failed'
+          ? 'This turn needs an explicit retry.'
+          : 'This turn is already running in another tab.'
+      )
+    }
+    ({ conversationId, userClientMessageId, assistantClientMessageId, originalQuery, locale } =
+      applyAuthoritativeTurn({
+        conversationId,
+        userClientMessageId,
+        assistantClientMessageId,
+        originalQuery: '',
+        locale
+      }, authoritativeTurn))
+  } else {
+    const normalizedTurn = normalizeChatTurn(getLastUserQuery(uiMessages), locale)
+    originalQuery = normalizedTurn.originalQuery
+    locale = normalizedTurn.locale
+  }
 
   if (!userContext.isAuthenticated) {
     void persistGuestChatDebug({
@@ -201,10 +246,17 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         priorHints = hintsFromMessages(storedMessages)
         lastSearch = lastSearchContextFromMessages(storedMessages)
         recentMessages = buildAgentHistoryFromStoredMessages(storedMessages, originalQuery)
+		} else if (authoritativeTurn?.status === 'running' && turnId) {
+			await failChatTurn(event, turnId, requestId).catch(() => {})
+			return createErrorStream('Chat turn unavailable')
       }
     } catch (error) {
       historyLoadFailed = true
       console.error('[chat] failed to load conversation context:', error)
+		if (authoritativeTurn?.status === 'running' && turnId) {
+			await failChatTurn(event, turnId, requestId).catch(() => {})
+			return createErrorStream('Chat turn unavailable')
+      }
     }
   } else {
     priorHints = hintsFromUIMessages(uiMessages)
@@ -239,6 +291,19 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       }
 
       try {
+        const claimedTurn = authoritativeTurn
+
+        if (replayAssistant) {
+          writer.write({ type: 'start', messageId: replayAssistant.id })
+          writeStatus('persisting')
+          writer.write({ type: 'text-start', id: `replay:${replayAssistant.id}` })
+          writer.write({ type: 'text-delta', id: `replay:${replayAssistant.id}`, delta: replayAssistant.canonical.text })
+          writer.write({ type: 'text-end', id: `replay:${replayAssistant.id}` })
+          writer.write({ type: 'data-response', data: replayAssistant.canonical } as never)
+          writeStatus('done')
+          writer.write({ type: 'finish', finishReason: 'stop' })
+          return
+        }
         const messageId = generateId()
         assistantMessageId = messageId
 
@@ -268,7 +333,16 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
         // Server-side authoritative persistence for authenticated users.
         writeStatus('persisting')
-        if (userContext.isAuthenticated && conversationId && assistantClientMessageId) {
+        if (userContext.isAuthenticated && turnId && claimedTurn && assistantClientMessageId) {
+          await completeChatTurn(event, {
+            turnId,
+            claimId: requestId,
+            assistantClientMessageId,
+            content: canonical.text,
+            attachedData: { canonical },
+            executionTrace: result.executionTrace,
+          })
+        } else if (userContext.isAuthenticated && conversationId && assistantClientMessageId) {
           await persistAssistantMessageV4({
             event,
             conversationId,
@@ -330,12 +404,17 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
             }),
           ])
         }
-      } catch (error) {
-        console.error('[Chat API] Error:', error)
-        writeStatus('error')
-        writer.write({
-          type: 'error',
-          errorText: error instanceof Error ? error.message : 'An error occurred',
+		} catch (error) {
+			console.error('[Chat API] Error:', error)
+			if (userContext.isAuthenticated && turnId && authoritativeTurn?.status === 'running') {
+				await failChatTurn(event, turnId, requestId).catch((failError) => {
+					console.error('[Chat API] Failed to mark turn failed:', failError)
+				})
+			}
+			writeStatus('error')
+			writer.write({
+				type: 'error',
+				errorText: publicChatError(error),
         })
         writer.write({ type: 'finish', finishReason: 'error' })
         if (!userContext.isAuthenticated) {
@@ -348,7 +427,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
                 id: assistantMessageId ?? generateId(),
                 role: 'assistant',
                 parts: [{ type: 'text', text: '' }],
-                error: error instanceof Error ? error.message : 'An error occurred',
+					error: publicChatError(error),
               }),
               lastUserText: originalQuery || null,
             }),

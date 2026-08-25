@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
 	import { page } from '$app/state'
-	import { pushState, replaceState } from '$app/navigation'
+	import { goto } from '$app/navigation'
 	import ChatContainer from './ChatContainer.svelte'
-	import { getChatConversationId, getChatHandoffNavigation } from '#features/chat/lib/chat-navigation.ts'
+	import { getChatConversationId } from '#features/chat/lib/chat-navigation.ts'
 	import type { ChatEventPayload, ConversationWithMessages } from '#shared/lib/types.ts'
 
 	const isMarketingLanding = $derived(page.url.pathname === '/')
@@ -14,11 +14,7 @@
 	 * conversation is created, so every chat has a stable address.
 	 */
 	const conversationId = $derived(
-		getChatConversationId(
-			page.url.pathname,
-			page.params.conversationId as string | undefined,
-			page.state.chatConversationId
-		)
+		getChatConversationId(page.url.pathname, page.params.conversationId as string | undefined)
 	)
 
 	// The home route loads happening-soon events after first paint; the
@@ -26,10 +22,12 @@
 	// `conversation: null` from the server (their chats live in IndexedDB).
 	const data = $derived(page.data as {
 		conversation?: ConversationWithMessages | null
+		turns?: Array<{ id: string; status: string; content: string; user_client_message_id: string; assistant_client_message_id: string }>
 	})
 	let happeningSoonEvents = $state.raw<ChatEventPayload[]>([])
 	const happeningSoon = $derived(happeningSoonEvents)
 	const preloadedConversation = $derived(data.conversation ?? null)
+	const turns = $derived(data.turns ?? [])
 
 	onMount(() => {
 		if (!isMarketingLanding) return
@@ -46,10 +44,8 @@
 		return () => cancelAnimationFrame(frame)
 	})
 
-	function handleConversationChange(id: string, options?: { replace?: boolean }) {
-		const navigation = getChatHandoffNavigation(id, page.state)
-		const navigate = options?.replace ? replaceState : pushState
-		navigate(navigation.url, navigation.state)
+	async function handleConversationChange(id: string, options?: { replace?: boolean }) {
+		await goto(`/chat/${encodeURIComponent(id)}`, { replaceState: options?.replace ?? false })
 	}
 </script>
 
@@ -58,6 +54,7 @@
 		conversationId={conversationId}
 		happeningSoonEvents={happeningSoon}
 		preloadedConversation={preloadedConversation}
+		pendingTurns={turns}
 		showLanding={isMarketingLanding}
 		onConversationChange={handleConversationChange}
 	/>

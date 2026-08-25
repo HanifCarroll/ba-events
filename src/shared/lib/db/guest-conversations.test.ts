@@ -1,15 +1,20 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import {
   addGuestMessage,
+  bootstrapGuestTurn,
+  claimGuestTurn,
+  completeGuestTurn,
   createGuestConversation,
   deleteGuestConversation,
+  failGuestTurn,
   getGuestConversation,
   getGuestConversationWithMessages,
   listGuestConversations,
-  setGuestConversationTitle,
-  touchGuestConversation,
+	setGuestConversationTitle,
+	touchGuestConversation,
+	effectiveGuestTurnStatus,
 } from './guest-conversations.ts'
 
 describe('guest-conversations store', () => {
@@ -125,6 +130,84 @@ describe('guest-conversations store', () => {
 
   it('returns null for a missing conversation', async () => {
     expect(await getGuestConversationWithMessages('missing')).toBeNull()
+  })
+
+  it('bootstraps the user message and replays the exact immutable turn', async () => {
+    const input = {
+      conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1',
+      assistantClientMessageId: 'assistant-1', content: 'events tonight'
+    }
+    const first = await bootstrapGuestTurn(input)
+    const replay = await bootstrapGuestTurn(input)
+    expect(replay).toEqual(first)
+    const stored = await getGuestConversationWithMessages('conv-1')
+    expect(stored?.messages.map((message) => message.client_message_id)).toEqual(['user-1'])
+  })
+
+  it('serializes concurrent bootstrap and rejects reused message ids', async () => {
+    const input = {
+      conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1',
+      assistantClientMessageId: 'assistant-1', content: 'events tonight'
+    }
+    const results = await Promise.all([bootstrapGuestTurn(input), bootstrapGuestTurn(input)])
+    expect(results.every((turn) => turn.id === 'turn-1')).toBe(true)
+    await expect(bootstrapGuestTurn({ ...input, turnId: 'turn-2' })).rejects.toThrow('Turn conflict')
+    await expect(bootstrapGuestTurn({
+      ...input, turnId: 'turn-2', userClientMessageId: 'user-2'
+    })).rejects.toThrow('Turn conflict')
+  })
+
+  it('preserves an existing title when bootstrapping another turn', async () => {
+    await createGuestConversation('conv-1', 'Existing title')
+    await bootstrapGuestTurn({ conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1', assistantClientMessageId: 'assistant-1', content: 'events' })
+    expect((await getGuestConversation('conv-1'))?.title).toBe('Existing title')
+  })
+
+  it('rejects bootstrap conflicts and requires explicit retry after failure', async () => {
+    const input = {
+      conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1',
+      assistantClientMessageId: 'assistant-1', content: 'events tonight'
+    }
+		await bootstrapGuestTurn(input)
+		await expect(bootstrapGuestTurn({ ...input, content: 'different' })).rejects.toThrow('Turn conflict')
+		await expect(bootstrapGuestTurn({ ...input, userClientMessageId: 'other-user' })).rejects.toThrow('Turn conflict')
+		await expect(bootstrapGuestTurn({ ...input, assistantClientMessageId: 'other-assistant' })).rejects.toThrow('Turn conflict')
+    const firstClaim = await claimGuestTurn('turn-1', 'claim-1')
+    expect(firstClaim?.status).toBe('running')
+    await failGuestTurn('turn-1', 'claim-1')
+    expect((await claimGuestTurn('turn-1', 'claim-2'))?.status).toBe('failed')
+    expect((await claimGuestTurn('turn-1', 'claim-2', true))?.status).toBe('running')
+  })
+
+	it('reclaims an expired claim with one explicit retry', async () => {
+    const input = {
+      conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1',
+      assistantClientMessageId: 'assistant-1', content: 'events tonight'
+    }
+    await bootstrapGuestTurn(input)
+    const now = vi.spyOn(Date, 'now')
+    try {
+      now.mockReturnValue(1_000)
+      await claimGuestTurn('turn-1', 'claim-1')
+      now.mockReturnValue(121_001)
+      expect((await claimGuestTurn('turn-1', 'claim-2'))?.status).toBe('interrupted')
+      expect((await claimGuestTurn('turn-1', 'claim-3', true))?.status).toBe('running')
+    } finally {
+      now.mockRestore()
+    }
+	})
+
+	it('reports an expired running turn as interrupted without writing it', async () => {
+		const turn = { status: 'running', claimed_until: 1_000 } as never
+		expect(effectiveGuestTurnStatus(turn, 1_001)).toBe('interrupted')
+	})
+
+  it('completes with the same claim and stays idempotent', async () => {
+    await bootstrapGuestTurn({ conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1', assistantClientMessageId: 'assistant-1', content: 'events' })
+    await claimGuestTurn('turn-1', 'claim-1')
+    await completeGuestTurn('turn-1', 'claim-1')
+    await completeGuestTurn('turn-1', 'claim-1')
+    expect((await getGuestConversationWithMessages('conv-1'))?.turns?.[0].status).toBe('completed')
   })
 
   it('updates the title', async () => {
