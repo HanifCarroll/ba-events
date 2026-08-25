@@ -93,6 +93,41 @@ describe('Telegram turn processor', () => {
     expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' })
   })
 
+  it('serializes initial and trusted search drafts before final delivery', async () => {
+    let resolveInitial!: () => void
+    let resolveFound!: () => void
+    const deps = dependencies()
+    deps.sendDraft = vi.fn((_chatId: string, _draftId: number, text: string) => new Promise<void>((resolve) => {
+      if (text === 'Finding events…') resolveInitial = resolve
+      else resolveFound = resolve
+    }))
+    deps.runTurn = vi.fn(async (input: { onTrustedSearchProgress?: () => void }) => {
+      input.onTrustedSearchProgress?.()
+      return {
+        canonical: { text: 'canonical result' },
+        executionTrace: [],
+        reads: [],
+        providerRequestId: null,
+      }
+    }) as never
+    const turn = processTelegramTurn(payload({ chatId: '123', text: 'milongas' }), deps)
+
+    for (let index = 0; index < 12; index += 1) await Promise.resolve()
+    expect(deps.sendDraft).toHaveBeenCalledTimes(1)
+    expect(deps.sendDraft).toHaveBeenNthCalledWith(1, '123', 42, 'Finding events…')
+    expect(deps.sendMessage).not.toHaveBeenCalled()
+
+    resolveInitial()
+    for (let index = 0; index < 4; index += 1) await Promise.resolve()
+    expect(deps.sendDraft).toHaveBeenCalledTimes(2)
+    expect(deps.sendDraft).toHaveBeenNthCalledWith(2, '123', 42, 'Found events…')
+    expect(deps.sendMessage).not.toHaveBeenCalled()
+
+    resolveFound()
+    await turn
+    expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' })
+  })
+
   it('acknowledges legacy accept without restoring a consent gate, and deletes on decline', async () => {
     const accepted = dependencies()
     await processTelegramTurn(
@@ -159,16 +194,18 @@ describe('Telegram turn processor', () => {
     expect(deps.render).toHaveBeenCalledWith(expect.anything(), 'en')
   })
 
-  it('overlaps typing, user insert, and draft, but waits for all three before searching', async () => {
+  it('starts the agent alongside progress calls but waits for user persistence', async () => {
     let acceptTyping!: () => void
     let acceptUser!: (value: { id: string }) => void
     let acceptDraft!: () => void
+    let acceptAgent!: (value: { canonical: { text: string }; executionTrace: never[]; reads: never[]; providerRequestId: null }) => void
     const deps = dependencies()
     deps.sendTyping = vi.fn(() => new Promise<void>((resolve) => { acceptTyping = resolve }))
     deps.sendDraft = vi.fn(() => new Promise<void>((resolve) => { acceptDraft = resolve }))
     deps.insertMessage = vi.fn((input: { role: string }) => input.role === 'user'
       ? new Promise((resolve) => { acceptUser = resolve })
       : Promise.resolve({ id: 'assistant-row' })) as never
+    deps.runTurn = vi.fn(() => new Promise((resolve) => { acceptAgent = resolve })) as never
     const turn = processTelegramTurn(
       payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
       deps,
@@ -177,15 +214,17 @@ describe('Telegram turn processor', () => {
     for (let index = 0; index < 12; index += 1) await Promise.resolve()
     expect(deps.sendTyping).toHaveBeenCalledWith('123')
     expect(deps.sendDraft).toHaveBeenCalledWith('123', 42, 'Finding events…')
-    expect(deps.runTurn).not.toHaveBeenCalled()
+    expect(deps.runTurn).toHaveBeenCalledOnce()
+    expect(deps.insertMessage).toHaveBeenCalledTimes(1)
 
-    acceptTyping()
     acceptUser({ id: 'user-row' })
     await Promise.resolve()
-    expect(deps.runTurn).not.toHaveBeenCalled()
+    expect(deps.insertMessage).toHaveBeenCalledTimes(1)
+    acceptAgent({ canonical: { text: 'canonical result' }, executionTrace: [], reads: [], providerRequestId: null })
+    acceptTyping()
     acceptDraft()
     await turn
-    expect(deps.runTurn).toHaveBeenCalledOnce()
+    expect(deps.insertMessage).toHaveBeenCalledTimes(2)
   })
 
   it('stops typing refresh when user persistence fails', async () => {

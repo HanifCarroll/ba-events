@@ -90,21 +90,17 @@ describe('external conversation repository', () => {
     })
   })
 
-  it('bounds recent messages and restores deterministic turn order', async () => {
-    const authConversation = chain({ maybeSingle: { data: { id: conversation.id }, error: null } })
+  it('bounds recent messages, filters the related external conversation, and strips relation data', async () => {
     const messages = chain({
       awaited: {
         data: [
-          { id: 'assistant', role: 'assistant', turn_index: 0 },
-          { id: 'user', role: 'user', turn_index: 0 },
+          { id: 'assistant', role: 'assistant', turn_index: 0, conversations: { id: conversation.id } },
+          { id: 'user', role: 'user', turn_index: 0, conversations: { id: conversation.id } },
         ],
         error: null,
       },
     })
-    const tables = vi.fn((table: string) =>
-      table === 'conversations' ? authConversation : messages
-    )
-    const client = { from: tables } as never
+    const client = { from: vi.fn(() => messages) } as never
 
     await expect(
       loadExternalConversationMessages(
@@ -112,8 +108,17 @@ describe('external conversation repository', () => {
         client
       )
     ).resolves.toMatchObject([{ id: 'user' }, { id: 'assistant' }])
+    expect(messages.select).toHaveBeenCalledWith('*, conversations!inner(id)')
+    expect(messages.eq).toHaveBeenCalledWith('conversation_id', conversation.id)
+    expect(messages.eq).toHaveBeenCalledWith('conversations.channel', 'telegram')
+    expect(messages.is).toHaveBeenCalledWith('conversations.user_id', null)
+    expect(messages.is).toHaveBeenCalledWith('conversations.deleted_at', null)
     expect(messages.order).toHaveBeenCalledWith('sequence_number', { ascending: false })
     expect(messages.limit).toHaveBeenCalledWith(120)
+    expect((await loadExternalConversationMessages(
+      { channel: 'telegram', conversationId: conversation.id },
+      client
+    ))[0]).not.toHaveProperty('conversations')
   })
 
   it('merges conversation metadata', async () => {

@@ -110,15 +110,18 @@ export async function loadExternalConversationMessages(
   input: { channel: ExternalConversationChannel; conversationId: string },
   client: SupabaseClient = getSupabaseServiceRoleClient()
 ): Promise<Message[]> {
-  await requireExternalConversation(client, input.channel, input.conversationId)
   const { data, error } = await client
     .from('messages')
-    .select('*')
+    .select('*, conversations!inner(id)')
     .eq('conversation_id', input.conversationId)
+    .eq('conversations.channel', input.channel)
+    .is('conversations.user_id', null)
+    .is('conversations.deleted_at', null)
     .order('sequence_number', { ascending: false })
     .limit(120)
   if (error) throw new Error('Failed to load external conversation messages')
-  return sortMessagesByTurnOrderAsc((data ?? []) as Message[])
+  const messages = (data ?? []).map(({ conversations: _conversations, ...message }) => message as Message)
+  return sortMessagesByTurnOrderAsc(messages)
 }
 
 export async function insertExternalConversationMessage(

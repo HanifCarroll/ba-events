@@ -55,6 +55,7 @@ const COPY = {
     rateLimited: 'Too many requests right now. Please try again later. /help, /privacy, and /delete remain available.',
     unsupported: 'I did not recognize that command. Try /help.',
     draft: 'Finding events…',
+    found: 'Found events…',
   },
   es: {
     start: '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.',
@@ -75,6 +76,7 @@ const COPY = {
     rateLimited: 'Hay demasiadas solicitudes. Probá más tarde. /help, /privacy y /delete siguen disponibles.',
     unsupported: 'No reconocí ese comando. Probá /help.',
     draft: 'Buscando eventos…',
+    found: 'Encontré eventos…',
   },
 } as const
 
@@ -166,14 +168,17 @@ async function sendDraftBestEffort(
   chatId: string,
   draftId: number,
   text: string,
-  dependencies: TelegramTurnDependencies
+  dependencies: TelegramTurnDependencies,
+  phase: 'initial-draft' | 'found-draft',
+  canSend: () => boolean = () => true
 ) {
+  if (!canSend()) return
   const startedAt = performance.now()
   try {
     await dependencies.sendDraft(chatId, draftId, text)
-    logTiming('initial-draft', startedAt, 'success')
+    logTiming(phase, startedAt, 'success')
   } catch {
-    logTiming('initial-draft', startedAt, 'error')
+    logTiming(phase, startedAt, 'error')
     // Drafts are only a native progress hint; final delivery remains authoritative.
   }
 }
@@ -189,7 +194,7 @@ function logTiming(phase: string, startedAt: number, status: 'success' | 'error'
 function startTypingBestEffort(
   chatId: string,
   dependencies: TelegramTurnDependencies
-): { initial: Promise<void>; stop: () => void } {
+): { stop: () => void } {
   let active = true
   let sending = false
   const send = async (initial = false): Promise<void> => {
@@ -206,8 +211,8 @@ function startTypingBestEffort(
     }
   }
   const refresh = setInterval(() => void send(), 4_000)
+  void send(true)
   return {
-    initial: send(true),
     stop: () => {
       active = false
       clearInterval(refresh)
@@ -223,7 +228,15 @@ export async function processTelegramTurn(
   const conversationId = payload.queueKey
 
   try {
-    const key = await dependencies.getEnvelopeKey(payload.updateId)
+    const envelopeStarted = performance.now()
+    let key: string | null
+    try {
+      key = await dependencies.getEnvelopeKey(payload.updateId)
+      logTiming('envelope-key', envelopeStarted, 'success')
+    } catch (error) {
+      logTiming('envelope-key', envelopeStarted, 'error')
+      throw error
+    }
     if (key == null) return
     const input = telegramPlaintextPayloadSchema.parse(
       openTelegramEnvelope(payload.sealedEnvelope, key, payload.updateId, payload.queueKey)
@@ -354,42 +367,62 @@ export async function processTelegramTurn(
     }
 
     const typing = startTypingBestEffort(input.chatId, dependencies)
+    let draftsClosed = false
+    let draftChain = Promise.resolve()
+    const progressDraftId = telegramDraftIdFromUpdateId(payload.updateId)
+    const queueDraft = (text: string, phase: 'initial-draft' | 'found-draft') => {
+      if (draftsClosed) return
+      draftChain = draftChain.then(() => sendDraftBestEffort(
+        input.chatId,
+        progressDraftId,
+        text,
+        dependencies,
+        phase,
+        () => !draftsClosed,
+      ))
+    }
+    const userInsertStarted = performance.now()
     const userMessagePromise = dependencies.insertMessage({
       channel: 'telegram',
       conversationId,
       clientMessageId: `telegram:${payload.updateId}:user`,
       role: 'user',
       content: normalizedTurn.originalQuery,
+    }).then((message) => {
+      logTiming('user-insert', userInsertStarted, 'success')
+      return message
+    }, (error) => {
+      logTiming('user-insert', userInsertStarted, 'error')
+      throw error
     })
-    const draftPromise = sendDraftBestEffort(
-      input.chatId,
-      telegramDraftIdFromUpdateId(payload.updateId),
-      COPY[locale].draft,
-      dependencies
-    )
-    try {
-      const [, userMessage] = await Promise.all([
-        typing.initial,
-        userMessagePromise,
-        draftPromise,
-      ])
-      const agentStarted = performance.now()
-      let result: Awaited<ReturnType<TelegramTurnDependencies['runTurn']>>
-      try {
-        result = await dependencies.runTurn({
-          requestId: `telegram:${payload.updateId}`,
-          userContext: { userId: null, isAuthenticated: false },
-          text: normalizedTurn.originalQuery,
-          locale,
-          priorHints: hintsFromMessages(messages),
-          lastSearch: lastSearchContextFromMessages(messages),
-          recentMessages: buildAgentHistoryFromStoredMessages(messages, normalizedTurn.originalQuery),
-        })
-      } catch (error) {
-        logTiming('agent', agentStarted, 'error')
-        throw error
-      }
+    queueDraft(COPY[locale].draft, 'initial-draft')
+    const agentStarted = performance.now()
+    const agentPromise = dependencies.runTurn({
+      requestId: `telegram:${payload.updateId}`,
+      userContext: { userId: null, isAuthenticated: false },
+      text: normalizedTurn.originalQuery,
+      locale,
+      priorHints: hintsFromMessages(messages),
+      lastSearch: lastSearchContextFromMessages(messages),
+      recentMessages: buildAgentHistoryFromStoredMessages(messages, normalizedTurn.originalQuery),
+      onTrustedSearchProgress: () => queueDraft(COPY[locale].found, 'found-draft'),
+    }).then((result) => {
       logTiming('agent', agentStarted, 'success')
+      return result
+    }, (error) => {
+      logTiming('agent', agentStarted, 'error')
+      throw error
+    })
+    try {
+      const userMessage = await userMessagePromise.catch(async (error) => {
+        await Promise.all([agentPromise.catch(() => undefined), draftChain])
+        draftsClosed = true
+        throw error
+      })
+      const result = await agentPromise.finally(async () => {
+        await draftChain
+        draftsClosed = true
+      })
       const persistSendStarted = performance.now()
       try {
         await dependencies.insertMessage({

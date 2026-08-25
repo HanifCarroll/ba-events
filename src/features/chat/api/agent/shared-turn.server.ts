@@ -16,6 +16,7 @@ import {
 import { orchestrate, type OrchestrateResult } from './orchestrate.ts'
 import { currentDateInBuenosAires, type LastSearchContext } from './search-context.ts'
 import type { AgentHistoryMessage } from './history.ts'
+import { logger } from '#shared/lib/logger.ts'
 
 export interface SharedChatTurnInput {
   requestId: string
@@ -28,6 +29,7 @@ export interface SharedChatTurnInput {
   pin?: PinResolution
   pinFacts?: { name: string; venueName: string | null } | null
   recentMessages?: AgentHistoryMessage[]
+  onTrustedSearchProgress?: () => void
 }
 
 type SharedChatTurnDependencies = {
@@ -58,26 +60,40 @@ export async function runSharedChatTurn(
   let priorContext = EMPTY_PRIOR
 
   try {
+    const membershipIds = collectEventIds(input.priorHints)
+    const membershipStarted = performance.now()
     const membership = input.userContext.isAuthenticated
-      ? await getSavedMembership(input.userContext, collectEventIds(input.priorHints))
+      ? await getSavedMembership(input.userContext, membershipIds)
       : undefined
-    priorContext = await rehydratePriorContext(
-      input.priorHints,
-      fetchEventFacts,
-      membership
-    )
+    logger.info('[chat] pre-agent membership stage', {
+      durationMs: Math.round(performance.now() - membershipStarted),
+      requestedCount: membershipIds.length,
+      authenticated: input.userContext.isAuthenticated,
+      resultCount: membership?.status === 'complete' ? membership.savedIds.size : 0,
+    })
+
+    const rehydrateStarted = performance.now()
+    priorContext = await rehydratePriorContext(input.priorHints, fetchEventFacts, membership)
+    logger.info('[chat] pre-agent history stage', {
+      durationMs: Math.round(performance.now() - rehydrateStarted),
+      hintCount: input.priorHints.length,
+      eventCount: priorContext.groups.reduce((count, group) => count + group.events.length, 0),
+    })
 
     if (priorContext.groups.length === 0) {
       const homeHint = homeHintsFromIds(input.homeEventIds ?? [])
       if (homeHint) {
+        const homeIds = collectEventIds([homeHint])
+        const homeStarted = performance.now()
         const homeMembership = input.userContext.isAuthenticated
-          ? await getSavedMembership(input.userContext, collectEventIds([homeHint]))
+          ? await getSavedMembership(input.userContext, homeIds)
           : undefined
-        priorContext = await rehydratePriorContext(
-          [homeHint],
-          fetchEventFacts,
-          homeMembership
-        )
+        priorContext = await rehydratePriorContext([homeHint], fetchEventFacts, homeMembership)
+        logger.info('[chat] pre-agent home fallback stage', {
+          durationMs: Math.round(performance.now() - homeStarted),
+          requestedCount: homeIds.length,
+          eventCount: priorContext.groups.reduce((count, group) => count + group.events.length, 0),
+        })
       }
     }
   } catch (error) {
@@ -96,5 +112,6 @@ export async function runSharedChatTurn(
     pin: input.pin,
     pinFacts: input.pinFacts,
     recentMessages: input.recentMessages,
+    onTrustedSearchProgress: input.onTrustedSearchProgress,
   })
 }

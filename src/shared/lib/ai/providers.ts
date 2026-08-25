@@ -19,6 +19,20 @@ export const deepseek = createDeepSeek({
 
 export const textModel = deepseek(AI_MODEL)
 
+const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
+
+export function shouldUseDeepSeekFlashCanary(requestId: string, percentage = Number(process.env.DEEPSEEK_FLASH_CANARY_PERCENT ?? 0)): boolean {
+  if (!Number.isFinite(percentage) || percentage <= 0) return false
+  if (percentage >= 100) return true
+  let hash = 0
+  for (const character of requestId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0
+  return hash % 100 < percentage
+}
+
+export function textModelForRequest(requestId: string) {
+  return shouldUseDeepSeekFlashCanary(requestId) ? deepseek(DEEPSEEK_FLASH_MODEL) : textModel
+}
+
 export const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY })
 export const embeddingModel = openai.textEmbeddingModel(EMBEDDING_MODEL)
 
