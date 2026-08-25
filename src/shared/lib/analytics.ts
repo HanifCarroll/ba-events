@@ -10,6 +10,7 @@ export type AnalyticsEvent =
   | 'event:unsaved'
   | 'event:link_clicked'
   | 'feedback:submitted'
+  | 'telegram:link_clicked'
 
 // Lazy-loaded PostHog instance (client-side only)
 let posthogInstance: typeof import('posthog-js').default | null = null

@@ -9,7 +9,8 @@
 		Settings,
 		LogOut,
 		User,
-		MessageCircle
+		MessageCircle,
+		Send
 	} from 'lucide-svelte';
 	import { Button } from '#shared/ui/button/index.ts';
 	import SkipLink from '#shared/ui/SkipLink.svelte';
@@ -20,6 +21,7 @@
 	import FeedbackDialog from '#shared/ui/FeedbackDialog.svelte';
 	import InstallApp from '#shared/ui/InstallApp.svelte';
 	import * as m from '#paraglide/messages.js';
+	import { track } from '#shared/lib/analytics.ts';
 
 	interface NavItem {
 		to?: string;
@@ -44,6 +46,11 @@
 	function handleFeedback() {
 		feedbackOpen = true;
 		mobileMenuOpen = false;
+	}
+
+	function openTelegram(source: 'sidebar' | 'mobile') {
+		track('telegram:link_clicked', { source });
+		if (source === 'mobile') mobileMenuOpen = false;
 	}
 
 	async function handleNewChat() {
@@ -164,6 +171,17 @@
 					{@render navItem(item, true)}
 				{/each}
 				<InstallApp class="w-full justify-start gap-3 px-4 text-muted-foreground hover:text-foreground" />
+				<a
+					href="https://t.me/BAEventosBot?start=app"
+					target="_blank"
+					rel="noopener noreferrer"
+					onclick={() => openTelegram('mobile')}
+					class="flex min-h-11 items-center gap-3 rounded-lg px-4 text-muted-foreground hover:bg-muted hover:text-foreground"
+				>
+					<Send class="h-5 w-5" aria-hidden="true" />
+					<span>{m.telegram_open_bot()}</span>
+					<span class="sr-only">{m.telegram_external_link()}</span>
+				</a>
 				<div class="my-2 h-px bg-border"></div>
 				<LanguageSwitcher />
 				<a
@@ -237,6 +255,17 @@
 					{@render navItem(item, true)}
 				{/each}
 				<InstallApp class="w-full justify-start gap-3 px-4 text-muted-foreground hover:text-foreground" />
+				<a
+					href="https://t.me/BAEventosBot?start=app"
+					target="_blank"
+					rel="noopener noreferrer"
+					onclick={() => openTelegram('sidebar')}
+					class="flex min-h-11 items-center gap-3 rounded-lg px-4 text-muted-foreground hover:bg-muted hover:text-foreground"
+				>
+					<Send class="h-5 w-5" aria-hidden="true" />
+					<span>{m.telegram_open_bot()}</span>
+					<span class="sr-only">{m.telegram_external_link()}</span>
+				</a>
 			</div>
 
 			<!-- Conversation history (signed-in) -->

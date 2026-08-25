@@ -166,6 +166,28 @@ describe('Telegram webhook', () => {
     })
   })
 
+  it.each(['website', 'app'] as const)('stores a validated %s start source when creating a conversation', async (startSource) => {
+    const trigger = triggerMock()
+    const getOrCreateConversation = vi.fn(async () => ({ id: queueKey })) as never
+    const update = {
+      ...messageUpdate,
+      update_id: startSource === 'website' ? 44 : 45,
+      message: { ...messageUpdate.message, text: `/start ${startSource}` },
+    }
+
+    expect((await handleTelegramWebhook(request(update), {
+      ...base,
+      getOrCreateConversation,
+      trigger,
+    })).status).toBe(200)
+
+    expect(getOrCreateConversation).toHaveBeenCalledWith({
+      channel: 'telegram',
+      externalIdentityHash: expect.any(String),
+      metadata: { locale: 'es', startSource },
+    })
+  })
+
   it('starts conversation lookup and quota together after claim, and waits for both before trigger', async () => {
     const order: string[] = []
     let resolveConversation!: (value: { id: string }) => void

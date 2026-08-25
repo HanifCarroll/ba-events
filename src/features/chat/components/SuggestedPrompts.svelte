@@ -13,7 +13,8 @@
 		Search,
 		Sparkles,
 		Ticket,
-		User
+		User,
+		Send
 	} from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
@@ -38,6 +39,7 @@
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { signOut } from '#features/auth/api/auth.remote.ts'
 	import { goto } from '$app/navigation'
+	import { track } from '#shared/lib/analytics.ts'
 	import HappeningSoonEvents from './HappeningSoonEvents.svelte'
 
 	let {
@@ -385,6 +387,20 @@
 				</button>
 			</div>
 			<p data-hero-motion="reassurance" class="mt-7 text-sm text-white/80">{m.landing_reassurance()}</p>
+			<a
+				href="https://t.me/BAEventosBot?start=website"
+				target="_blank"
+				rel="noopener noreferrer"
+				onclick={() => track('telegram:link_clicked', { source: 'homepage' })}
+				class="mt-3 inline-flex min-h-11 flex-col items-center justify-center gap-0.5 text-sm text-white/80 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+			>
+				<span class="inline-flex items-center gap-2 font-medium">
+					<Send class="size-4" aria-hidden="true" />
+					{m.telegram_use_bot()}
+				</span>
+				<span class="text-xs text-white/60">{m.telegram_start_description()}</span>
+				<span class="sr-only">{m.telegram_external_link()}</span>
+			</a>
 		</div>
 	</section>
 

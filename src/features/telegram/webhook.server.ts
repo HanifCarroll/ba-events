@@ -123,6 +123,9 @@ export async function handleTelegramWebhook(
   const locale = source.from.language_code?.toLowerCase().startsWith('es') ? 'es' : 'en'
   const parsedText = 'message' in update ? parseTelegramText(update.message.text) : null
   if ('message' in update && !parsedText) return response()
+  const startSource = parsedText?.kind === 'command' && parsedText.command === 'start'
+    ? parsedText.payload === 'website' || parsedText.payload === 'app' ? parsedText.payload : undefined
+    : undefined
 
   let claim
   try {
@@ -145,7 +148,7 @@ export async function handleTelegramWebhook(
     )({
       channel: 'telegram',
       externalIdentityHash: identityHash,
-      metadata: { locale },
+      metadata: { locale, ...(startSource ? { startSource } : {}) }
     })
     const rateLimitPromise = shouldCheckRateLimit
       ? (dependencies.rateLimit ?? checkRateLimit)(identityHash)
