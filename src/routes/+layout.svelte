@@ -12,6 +12,9 @@
 	import EventPage from './events/[id]/+page.svelte'
 	import Toaster from '#shared/ui/sonner/sonner.svelte'
 	import type { LayoutProps } from './$types'
+	import { initInstallPrompt } from '#shared/lib/pwa/install.svelte.ts'
+
+	initInstallPrompt()
 
 	let { children, data }: LayoutProps = $props()
 

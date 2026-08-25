@@ -27,6 +27,7 @@
 	} from '#features/chat/lib/speech-recognition.ts'
 	import type { ChatEventPayload } from '#shared/lib/types.ts'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
+	import InstallApp from '#shared/ui/InstallApp.svelte'
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -261,6 +262,7 @@
 				<a href="#what-it-does" class="hidden hover:text-indigo-200 sm:inline">{m.landing_what_it_does()}</a>
 				<a href="#how-it-works" class="hidden hover:text-indigo-200 sm:inline">{m.landing_how_it_works()}</a>
 				<LanguageSwitcher compact />
+				<InstallApp compact class="border border-white/60 px-2.5 py-2 text-white hover:bg-white/10 sm:px-3" />
 				{#if auth.user}
 					<DropdownMenu>
 						<DropdownMenuTrigger>

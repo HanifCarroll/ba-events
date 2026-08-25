@@ -18,6 +18,7 @@
 	import { chatState } from '#features/chat/state/chat.svelte.ts';
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte';
 	import FeedbackDialog from '#shared/ui/FeedbackDialog.svelte';
+	import InstallApp from '#shared/ui/InstallApp.svelte';
 	import * as m from '#paraglide/messages.js';
 
 	interface NavItem {
@@ -162,6 +163,7 @@
 				{#each filteredMainNavItems as item (item.label)}
 					{@render navItem(item, true)}
 				{/each}
+				<InstallApp class="w-full justify-start gap-3 px-4 text-muted-foreground hover:text-foreground" />
 				<div class="my-2 h-px bg-border"></div>
 				<LanguageSwitcher />
 				<a
@@ -234,6 +236,7 @@
 				{#each filteredMainNavItems as item (item.label)}
 					{@render navItem(item, true)}
 				{/each}
+				<InstallApp class="w-full justify-start gap-3 px-4 text-muted-foreground hover:text-foreground" />
 			</div>
 
 			<!-- Conversation history (signed-in) -->
