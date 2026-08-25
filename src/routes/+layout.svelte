@@ -61,10 +61,17 @@
 					api_host: PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
 					defaults: '2025-05-24',
 					capture_pageview: true,
-					capture_pageleave: false,
-					autocapture: false,
+					capture_pageleave: true,
+					autocapture: true,
 					disable_surveys: true,
-					disable_session_recording: true,
+					disable_session_recording: false,
+					mask_all_text: true,
+					session_recording: {
+						maskAllInputs: true,
+						maskTextSelector: '*',
+						recordHeaders: false,
+						recordBody: false
+					},
 					respect_dnt: true,
 					loaded: (ph) => {
 						// Expose globally for debugging.

@@ -17,10 +17,12 @@ BA Eventos uses PostHog for a small, privacy-conscious product funnel. PostHog i
 
 Authenticated people are identified with their application user ID, locale, and admin status. Email stays in Supabase and is not sent to PostHog.
 
+PostHog also collects autocaptured interaction metadata, page-leave and scroll-depth data, heatmap positions, and privacy-masked session replays. All page text and input values are masked in replays, and element text is omitted from autocapture.
+
 ## What is deliberately not collected
 
-- Chat text, search text, feedback text, or error messages
-- Session recordings, autocaptured clicks, page-leave events, or PostHog surveys
+- Chat text, search text, feedback text, error messages, or input values
+- PostHog surveys
 - Localhost and preview traffic
 - Server-side agent, tool, fallback, or execution-trace telemetry
 

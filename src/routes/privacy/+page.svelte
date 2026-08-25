@@ -34,7 +34,7 @@
 				{
 					title: 'Product analytics',
 					body: [
-						'On baeventos.com, PostHog records page views and limited product events such as message length, response time, event clicks, saves, errors, and language. We do not send email addresses, chat text, search text, feedback text, or error messages to PostHog. Session recording and automatic click capture are disabled, and Do Not Track is respected.'
+						'On baeventos.com, PostHog records page views, interaction and scroll metadata, privacy-masked session replays, and limited product events such as message length, response time, event clicks, saves, errors, and language. Replay text and input values are masked. We do not send email addresses, chat text, search text, feedback text, or error messages to PostHog, and Do Not Track is respected.'
 					]
 				},
 				{
@@ -89,7 +89,7 @@
 				{
 					title: 'Analítica del producto',
 					body: [
-						'En baeventos.com, PostHog registra visitas de páginas y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, errores e idioma. No enviamos a PostHog correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error. La grabación de sesiones y la captura automática de clics están desactivadas, y respetamos Do Not Track.'
+						'En baeventos.com, PostHog registra visitas de páginas, metadatos de interacción y desplazamiento, repeticiones de sesión con privacidad protegida y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, errores e idioma. El texto y los valores de los campos se ocultan en las repeticiones. No enviamos a PostHog correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error, y respetamos Do Not Track.'
 					]
 				},
 				{
