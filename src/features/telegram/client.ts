@@ -91,7 +91,7 @@ export function createTelegramClient({
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       })
     },
-    sendMessageDraft(chatId: string, draftId: number, text = '') {
+    sendMessageDraft(chatId: string, draftId: number, text: string) {
       const numericChatId = Number(chatId)
       if (!/^-?\d+$/.test(chatId) || !Number.isSafeInteger(numericChatId)) {
         throw new Error('Telegram draft chat id must be a safe integer')

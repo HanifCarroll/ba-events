@@ -55,6 +55,7 @@ const COPY = {
     deleted: 'Your Telegram conversation data was deleted.',
     rateLimited: 'Too many requests right now. Please try again later. /help, /privacy, and /delete remain available.',
     unsupported: 'I did not recognize that command. Try /help.',
+    draft: 'Finding events…',
   },
   es: {
     start: '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.',
@@ -75,6 +76,7 @@ const COPY = {
     deleted: 'Eliminamos los datos de tu conversación de Telegram.',
     rateLimited: 'Hay demasiadas solicitudes. Probá más tarde. /help, /privacy y /delete siguen disponibles.',
     unsupported: 'No reconocí ese comando. Probá /help.',
+    draft: 'Buscando eventos…',
   },
 } as const
 
@@ -109,7 +111,7 @@ export interface TelegramTurnDependencies {
   render: typeof renderTelegramMessage
   sendMessage: (chatId: string, message: TelegramRenderedMessage) => Promise<unknown>
   sendTyping: (chatId: string) => Promise<unknown>
-  sendDraft: (chatId: string, draftId: number) => Promise<unknown>
+  sendDraft: (chatId: string, draftId: number, text: string) => Promise<unknown>
   answerCallback: (callbackId: string, text?: string) => Promise<unknown>
   markCompleted: typeof markTelegramUpdateCompleted
   markFailed: typeof markTelegramUpdateFailed
@@ -174,11 +176,12 @@ async function sendMessageBestEffort(
 async function sendDraftBestEffort(
   chatId: string,
   draftId: number,
+  text: string,
   dependencies: TelegramTurnDependencies
 ) {
   const startedAt = performance.now()
   try {
-    await dependencies.sendDraft(chatId, draftId)
+    await dependencies.sendDraft(chatId, draftId, text)
     logTiming('initial-draft', startedAt, 'success')
   } catch {
     logTiming('initial-draft', startedAt, 'error')
@@ -372,6 +375,7 @@ export async function processTelegramTurn(
     const draftPromise = sendDraftBestEffort(
       input.chatId,
       telegramDraftIdFromUpdateId(payload.updateId),
+      COPY[locale].draft,
       dependencies
     )
     try {

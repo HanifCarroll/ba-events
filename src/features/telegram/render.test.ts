@@ -78,12 +78,20 @@ describe('Telegram canonical renderer', () => {
     expect(renderTelegramMessage(response(), 'es').text.startsWith('Acá tenés 5 eventos:')).toBe(true)
     expect(rendered.text).not.toContain('Tango 0 is the perfect event for you.')
     expect(rendered.text.match(/Tango 0/g)).toHaveLength(1)
+    expect(rendered.text).toContain('Would you like more details or directions for any of them?')
+    const spanish = renderTelegramMessage(response({ text: 'Tango 0 es ideal para vos.' }), 'es').text
+    expect(spanish).toContain('¿Querés más detalles o indicaciones sobre alguno?')
+    expect(spanish.match(/Tango 0/g)).toHaveLength(1)
   })
 
-  it('preserves prose for non-recommendation responses with events', () => {
-    const rendered = renderTelegramMessage(response({ kind: 'event_details', text: 'Tango 0 is tonight.' }), 'en')
+  it('preserves prose paragraphs and bullets for non-recommendation responses', () => {
+    const rendered = renderTelegramMessage(response({
+      kind: 'event_details',
+      text: 'Tango 0 is tonight.\n\n- Doors open at 8\n- Bring cash\n\n<em>Enjoy the show.</em>',
+    }), 'en')
 
-    expect(rendered.text).toContain('Tango 0 is tonight.')
+    expect(rendered.text).toContain('Tango 0 is tonight.\n\n- Doors open at 8\n- Bring cash\n\nEnjoy the show.')
+    expect(rendered.text).not.toMatch(/\n{3,}/)
   })
 
   it('formats in the requested locale and Buenos Aires time zone', () => {

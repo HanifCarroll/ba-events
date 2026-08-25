@@ -176,7 +176,7 @@ describe('Telegram turn processor', () => {
 
     for (let index = 0; index < 12; index += 1) await Promise.resolve()
     expect(deps.sendTyping).toHaveBeenCalledWith('123')
-    expect(deps.sendDraft).toHaveBeenCalledWith('123', 42)
+    expect(deps.sendDraft).toHaveBeenCalledWith('123', 42, 'Finding events…')
     expect(deps.runTurn).not.toHaveBeenCalled()
 
     acceptTyping()

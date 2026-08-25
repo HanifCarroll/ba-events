@@ -22,6 +22,7 @@ const COPY = {
     venue: 'Venue',
     instagram: 'Instagram',
     eventsLead: (count: number) => `Here are ${count} events:`,
+    eventsFollowUp: 'Would you like more details or directions for any of them?',
   },
   es: {
     saveUnavailable: 'Todavía no se pueden guardar eventos desde Telegram.',
@@ -34,6 +35,7 @@ const COPY = {
     venue: 'Lugar',
     instagram: 'Instagram',
     eventsLead: (count: number) => `Acá tenés ${count} eventos:`,
+    eventsFollowUp: '¿Querés más detalles o indicaciones sobre alguno?',
   },
 } as const
 
@@ -41,8 +43,12 @@ function plain(value: string, max = 500): string {
   return value
     .replace(/<[^>]*>/g, '')
     .replace(/[\\*_`~#[\]>]/g, '')
+    .replace(/\r\n?/g, '\n')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
-    .replace(/\s+/g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
     .slice(0, max)
 }
@@ -128,8 +134,11 @@ export function renderTelegramMessage(
 ): TelegramRenderedMessage {
   const copy = COPY[locale]
   const events = response.events.slice(0, 5)
-  const sections = [lead(response, locale, events.length), ...events.map((event, index) => eventText(event, index, locale))]
-    .filter(Boolean)
+  const sections = [
+    lead(response, locale, events.length),
+    ...events.map((event, index) => eventText(event, index, locale)),
+    ...(response.kind === 'recommendations' && events.length ? [copy.eventsFollowUp] : []),
+  ].filter(Boolean)
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = []
 
   for (const [index, event] of events.entries()) {
