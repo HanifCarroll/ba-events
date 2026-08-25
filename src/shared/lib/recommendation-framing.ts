@@ -1,5 +1,3 @@
-import type { CanonicalChatEventPayload } from './types.ts'
-
 export interface RecommendationFraming {
   acknowledgement: string
   nextStep: string
@@ -9,16 +7,29 @@ const MAX_LINE = 240
 const URL = /(?:https?:\/\/|www\.)/i
 const MARKER = /^(ACK|NEXT)\s*:/i
 const BULLET = /^(?:[-*•]|\d+[.)])\s*/
+const DIGIT = /\d/
+const CURRENCY = /[$€£¥]|\b(?:ARS|USD)\b/i
 
 export function warmRecommendationFallback(locale: 'en' | 'es', count: number): RecommendationFraming {
-  return locale === 'es'
+  if (locale === 'es') {
+    return count === 1
+      ? {
+          acknowledgement: 'Encontré una opción que puede ir bien para este plan.',
+          nextStep: '¿Querés que te cuente más o te ayudo con indicaciones?',
+        }
+      : {
+          acknowledgement: `Encontré ${count} opciones que pueden ir bien para este plan.`,
+          nextStep: '¿Querés que te cuente más de alguna o te ayudo a elegir?',
+        }
+  }
+  return count === 1
     ? {
-        acknowledgement: count === 1 ? 'Encontré una opción que puede servirte.' : `Encontré ${count} opciones para vos.`,
-        nextStep: '¿Querés que te ayude con más detalles o indicaciones?',
+        acknowledgement: 'I found an option that could work well for this.',
+        nextStep: 'Want details on it, or should I help with directions?',
       }
     : {
-        acknowledgement: count === 1 ? 'I found an option that could work for you.' : `I found ${count} options for you.`,
-        nextStep: 'Would you like help with more details or directions?',
+        acknowledgement: `I found ${count} options that could work well for this.`,
+        nextStep: 'Want details on one, or should I help you narrow it down?',
       }
 }
 
@@ -26,21 +37,21 @@ function cleanLine(value: string): string {
   return value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/[ \t]+/g, ' ').trim()
 }
 
-function containsReturnedName(value: string, events: CanonicalChatEventPayload[], venueNames: string[]): boolean {
+function containsReturnedName(value: string, events: ReadonlyArray<{ name: string }>, venueNames: string[]): boolean {
   const lower = value.toLocaleLowerCase()
   return [...events.map((event) => event.name), ...venueNames]
     .filter((name) => name.trim().length > 0)
     .some((name) => lower.includes(name.toLocaleLowerCase()))
 }
 
-function validLine(value: string, events: CanonicalChatEventPayload[], venueNames: string[]): boolean {
-  return value.length > 0 && value.length <= MAX_LINE && !URL.test(value) && !BULLET.test(value) && !containsReturnedName(value, events, venueNames)
+function validLine(value: string, events: ReadonlyArray<{ name: string }>, venueNames: string[]): boolean {
+  return value.length > 0 && value.length <= MAX_LINE && !URL.test(value) && !DIGIT.test(value) && !CURRENCY.test(value) && !BULLET.test(value) && !containsReturnedName(value, events, venueNames)
 }
 
 /** Extracts the two final-step framing lines; everything else is rejected. */
 export function extractRecommendationFraming(
   text: string,
-  events: CanonicalChatEventPayload[],
+  events: ReadonlyArray<{ name: string }>,
   venueNames: string[] = [],
 ): RecommendationFraming | null {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
@@ -52,4 +63,11 @@ export function extractRecommendationFraming(
   return validLine(acknowledgement, events, venueNames) && validLine(nextStep, events, venueNames)
     ? { acknowledgement, nextStep }
     : null
+}
+
+export function removeFramingMarkers(value: string): string {
+  return value
+    .replace(/^(?:ACK|NEXT)\s*:\s*.*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }

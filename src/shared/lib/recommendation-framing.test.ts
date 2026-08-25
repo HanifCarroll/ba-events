@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { CanonicalChatEventPayload } from './types.ts'
 import { extractRecommendationFraming } from './recommendation-framing.ts'
 
-const events = [{ name: 'Tango Nights', venue_name: 'Club Sur' }] as CanonicalChatEventPayload[]
+const events = [{ name: 'Tango Nights', venue_name: 'Club Sur' }]
 
 describe('recommendation framing contract', () => {
   it.each([
@@ -20,6 +19,8 @@ describe('recommendation framing contract', () => {
     'ACK: one\nNEXT: question\nextra text',
     'ACK: one\nNEXT: https://baeventos.com/events/1',
     'ACK: one\nNEXT: - details or directions',
+    'ACK: Event starts at 8\nNEXT: question',
+    'ACK: one\nNEXT: ARS $5000',
     'ACK: Tango Nights could be fun\nNEXT: question',
     `ACK: ${'x'.repeat(241)}\nNEXT: question`,
   ])('rejects malformed or untrusted framing: %s', (text) => {

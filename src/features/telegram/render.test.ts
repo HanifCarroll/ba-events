@@ -74,12 +74,19 @@ describe('Telegram canonical renderer', () => {
   it('uses warm localized fallback framing when persisted framing is absent or invalid', () => {
     const rendered = renderTelegramMessage(response({ text: 'Tango 0 is the perfect event for you.' }), 'en')
 
-    expect(rendered.text.startsWith('I found 5 options for you.')).toBe(true)
+    expect(rendered.text.startsWith('I found 5 options that could work well for this.')).toBe(true)
     expect(rendered.text).not.toContain('Tango 0 is the perfect event for you.')
-    expect(rendered.text).toContain('Would you like help with more details or directions?')
+    expect(rendered.text).toContain('Want details on one, or should I help you narrow it down?')
     const spanish = renderTelegramMessage(response({ text: 'Tango 0 es ideal para vos.' }), 'es').text
-    expect(spanish.startsWith('Encontré 5 opciones para vos.')).toBe(true)
-    expect(spanish).toContain('¿Querés que te ayude con más detalles o indicaciones?')
+    expect(spanish.startsWith('Encontré 5 opciones que pueden ir bien para este plan.')).toBe(true)
+    expect(spanish).toContain('¿Querés que te cuente más de alguna o te ayudo a elegir?')
+  })
+
+  it('uses singular fallback wording without plural narrowing language', () => {
+    const rendered = renderTelegramMessage(response({ events: [event(0)] }), 'en').text
+    expect(rendered).toContain('I found an option that could work well for this.')
+    expect(rendered).toContain('Want details on it, or should I help with directions?')
+    expect(rendered).not.toContain('narrow it down')
   })
 
   it('places accepted framing around the trusted event list', () => {
