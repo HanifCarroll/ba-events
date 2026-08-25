@@ -11,6 +11,7 @@
 	import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract-visible-text.ts'
 	import {
 		flushMessagePersistenceOutbox,
+		getConversationTerminalFailures,
 		persistMessageWithOutbox,
 		type MessagePersistencePayload,
 		type MessagePersistenceResult
@@ -253,8 +254,12 @@
 		try {
 			const result = await flushMessagePersistenceOutbox(persistMessageToConversation)
 
-			if (result.terminalFailures.length > 0) {
-				const count = result.terminalFailures.length
+			const visibleFailures = getConversationTerminalFailures(
+				result.terminalFailures,
+				conversationId
+			)
+			if (visibleFailures.length > 0) {
+				const count = visibleFailures.length
 				toast.warning('Unable to sync some chat messages', {
 					description:
 						count === 1

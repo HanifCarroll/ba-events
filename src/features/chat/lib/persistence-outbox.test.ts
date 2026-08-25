@@ -5,6 +5,7 @@ import type { LocalOutboxItem } from '#shared/lib/db/local-outbox.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import {
   flushMessagePersistenceOutbox,
+  getConversationTerminalFailures,
   MAX_OUTBOX_ATTEMPTS,
   persistMessageWithOutbox,
 } from './persistence-outbox.ts'
@@ -141,6 +142,14 @@ describe('persistence outbox', () => {
         last_error: 'permanent failure',
       })
     )
+  })
+
+  it('only surfaces terminal failures for the visible conversation', () => {
+    const visible = makeOutboxItem({ conversation_id: 'visible' })
+    const other = makeOutboxItem({ id: 'outbox-2', conversation_id: 'other' })
+
+    expect(getConversationTerminalFailures([visible, other], null)).toEqual([])
+    expect(getConversationTerminalFailures([visible, other], 'visible')).toEqual([visible])
   })
 
   it('deletes outbox item after successful flush persistence', async () => {

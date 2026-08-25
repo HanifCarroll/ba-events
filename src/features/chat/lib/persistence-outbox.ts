@@ -40,6 +40,15 @@ export interface FlushOutboxResult {
   terminalFailures: LocalOutboxItem[]
 }
 
+export function getConversationTerminalFailures(
+  failures: LocalOutboxItem[],
+  conversationId: string | null
+): LocalOutboxItem[] {
+  return conversationId
+    ? failures.filter((failure) => failure.conversation_id === conversationId)
+    : []
+}
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message
