@@ -44,10 +44,12 @@ export const telegramUpdateSchema = z.union([
 export type TelegramUpdate = z.infer<typeof telegramUpdateSchema>
 export type TelegramCommand = 'start' | 'help' | 'new' | 'privacy' | 'delete'
 export type ParsedTelegramText =
-  | { kind: 'command'; command: TelegramCommand }
+  | { kind: 'command'; command: TelegramCommand; payload?: string }
   | { kind: 'text'; text: string }
 
-const COMMAND = /^\/(start|help|new|privacy|delete)(?:@[A-Za-z0-9_]{5,32})?$/
+const BOT_SUFFIX = '(?:@[A-Za-z0-9_]{5,32})?'
+const START_COMMAND = new RegExp(`^/start${BOT_SUFFIX}(?: ([A-Za-z0-9_-]{1,64}))?$`)
+const COMMAND = new RegExp(`^/(help|new|privacy|delete)${BOT_SUFFIX}$`)
 
 export function parseTelegramUpdate(input: unknown): TelegramUpdate | null {
   const parsed = telegramUpdateSchema.safeParse(input)
@@ -57,8 +59,14 @@ export function parseTelegramUpdate(input: unknown): TelegramUpdate | null {
 export function parseTelegramText(input: string): ParsedTelegramText | null {
   const text = input.trim()
   if (!text) return null
-  const match = COMMAND.exec(text)
-  if (match) return { kind: 'command', command: match[1] as TelegramCommand }
+  const start = START_COMMAND.exec(text)
+  if (start) {
+    return start[1]
+      ? { kind: 'command', command: 'start', payload: start[1] }
+      : { kind: 'command', command: 'start' }
+  }
+  const command = COMMAND.exec(text)
+  if (command) return { kind: 'command', command: command[1] as TelegramCommand }
   return text.startsWith('/') ? null : { kind: 'text', text }
 }
 

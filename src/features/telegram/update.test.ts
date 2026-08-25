@@ -56,6 +56,21 @@ describe('Telegram commands', () => {
     expect(parseTelegramText(`/${command}`)).toEqual({ kind: 'command', command })
   })
 
+  it('accepts bounded /start deep-link payloads', () => {
+    expect(parseTelegramText('/start website')).toEqual({
+      kind: 'command',
+      command: 'start',
+      payload: 'website',
+    })
+    expect(parseTelegramText('/start@BAEventosBot website_home')).toEqual({
+      kind: 'command',
+      command: 'start',
+      payload: 'website_home',
+    })
+    expect(parseTelegramText(`/start ${'a'.repeat(65)}`)).toBeNull()
+    expect(parseTelegramText('/start two words')).toBeNull()
+  })
+
   it('supports Telegram bot suffixes and ignores unknown slash forms', () => {
     expect(parseTelegramText('/help@ba_events_bot')).toEqual({ kind: 'command', command: 'help' })
     expect(parseTelegramText('/help now')).toBeNull()
