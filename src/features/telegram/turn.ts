@@ -24,7 +24,7 @@ import {
   redactTelegramIdentityClaims,
 } from './delivery.server.ts'
 import { openTelegramEnvelope } from './envelope.server.ts'
-import { telegramDraftIdFromUpdateId } from './client.ts'
+import { telegramDraftIdFromUpdateId, type TelegramReplyMarkup } from './client.ts'
 import { renderTelegramMessage, type TelegramRenderedMessage } from './render.ts'
 import {
   telegramPlaintextPayloadSchema,
@@ -38,8 +38,7 @@ const PRIVACY_URL = 'https://baeventos.com/privacy'
 const COPY = {
   en: {
     start: 'Hi! I use AI to help find Buenos Aires events. Chats may be stored for up to 30 days. Use /delete anytime. By continuing, you agree to the privacy policy.',
-    starter: 'Try one of these, or type your own:',
-    promptLabels: ['Chill tonight', 'This weekend', 'Free nearby', 'Live music'],
+
     promptQueries: {
       chill: 'Anything chill tonight?',
       weekend: "What's on this weekend?",
@@ -59,8 +58,7 @@ const COPY = {
   },
   es: {
     start: '¡Hola! Uso IA para ayudarte a encontrar eventos en Buenos Aires. Los chats pueden guardarse hasta 30 días. Usá /delete cuando quieras. Al continuar, aceptás la política de privacidad.',
-    starter: 'Probá una de estas opciones o escribí la tuya:',
-    promptLabels: ['Algo tranqui hoy', 'Este finde', 'Gratis cerca', 'Música en vivo'],
+
     promptQueries: {
       chill: '¿Algo tranqui para hoy?',
       weekend: '¿Qué hay este finde?',
@@ -84,19 +82,10 @@ const privacyKeyboard = (locale: 'en' | 'es') => ({
   inline_keyboard: [[{ text: COPY[locale].privacyButton, url: PRIVACY_URL }]],
 })
 
-const startKeyboard = (locale: 'en' | 'es') => ({
-  inline_keyboard: [
-    COPY[locale].promptLabels.slice(0, 2).map((text, index) => ({
-      text,
-      callback_data: `prompt:v1:${(['chill', 'weekend'] as const)[index]}`,
-    })),
-    COPY[locale].promptLabels.slice(2).map((text, index) => ({
-      text,
-      callback_data: `prompt:v1:${(['free', 'live'] as const)[index]}`,
-    })),
-    [{ text: COPY[locale].privacyButton, url: PRIVACY_URL }],
-  ],
-})
+interface TelegramOutgoingMessage {
+  text: string
+  replyMarkup?: TelegramReplyMarkup
+}
 
 export interface TelegramTurnDependencies {
   getEnvelopeKey: typeof getTelegramUpdateEnvelopeKey
@@ -109,7 +98,7 @@ export interface TelegramTurnDependencies {
   redactClaims: typeof redactTelegramIdentityClaims
   runTurn: typeof runSharedChatTurn
   render: typeof renderTelegramMessage
-  sendMessage: (chatId: string, message: TelegramRenderedMessage) => Promise<unknown>
+  sendMessage: (chatId: string, message: TelegramOutgoingMessage) => Promise<unknown>
   sendTyping: (chatId: string) => Promise<unknown>
   sendDraft: (chatId: string, draftId: number, text: string) => Promise<unknown>
   answerCallback: (callbackId: string, text?: string) => Promise<unknown>
@@ -329,8 +318,8 @@ export async function processTelegramTurn(
         await dependencies.sendMessage(input.chatId, { text: COPY[locale].fresh })
       } else {
         await dependencies.sendMessage(input.chatId, {
-          text: `${COPY[locale].start}\n\n${COPY[locale].starter}`,
-          replyMarkup: startKeyboard(locale),
+          text: `${COPY[locale].start}\n\n${PRIVACY_URL}`,
+          replyMarkup: { remove_keyboard: true },
         })
       }
       await dependencies.markCompleted(payload.updateId, conversationId)

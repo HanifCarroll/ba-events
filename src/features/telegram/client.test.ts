@@ -31,6 +31,21 @@ describe('Telegram Bot API client', () => {
     })
   })
 
+  it('can remove a legacy reply keyboard', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      telegramResponse({ ok: true, result: { message_id: 1 } }),
+    )
+    const client = createTelegramClient({ token: '123:secret', fetch: fetchMock as typeof fetch })
+
+    await client.sendMessage('99', 'hello', { remove_keyboard: true })
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      chat_id: '99',
+      text: 'hello',
+      reply_markup: { remove_keyboard: true },
+    })
+  })
+
   it('sends a visible native Telegram draft with bounded fields', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       telegramResponse({ ok: true, result: true }),

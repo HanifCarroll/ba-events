@@ -8,6 +8,12 @@ export interface TelegramInlineKeyboardMarkup {
   inline_keyboard: TelegramInlineKeyboardButton[][]
 }
 
+export interface TelegramReplyKeyboardRemove {
+  remove_keyboard: true
+}
+
+export type TelegramReplyMarkup = TelegramInlineKeyboardMarkup | TelegramReplyKeyboardRemove
+
 const TELEGRAM_DRAFT_ID_MAX = 2_147_483_647
 
 export function telegramDraftIdFromUpdateId(updateId: string): number {
@@ -84,7 +90,7 @@ export function createTelegramClient({
   }
 
   return {
-    sendMessage(chatId: string, text: string, replyMarkup?: TelegramInlineKeyboardMarkup) {
+    sendMessage(chatId: string, text: string, replyMarkup?: TelegramReplyMarkup) {
       return call<unknown>('sendMessage', {
         chat_id: chatId,
         text,

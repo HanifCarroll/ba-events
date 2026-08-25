@@ -303,39 +303,16 @@ describe('Telegram turn processor', () => {
     }
   )
 
-  it('sends one localized /start message with two-column inline prompts and privacy', async () => {
-    const start = dependencies()
-    await processTelegramTurn(payload({ chatId: '123', text: '/start' }), start)
-    expect(start.sendMessage).toHaveBeenCalledOnce()
-    expect(start.sendMessage).toHaveBeenCalledWith('123', {
-      text: expect.stringContaining('By continuing, you agree to the privacy policy.'),
-      replyMarkup: {
-        inline_keyboard: [
-          [
-            { text: 'Chill tonight', callback_data: 'prompt:v1:chill' },
-            { text: 'This weekend', callback_data: 'prompt:v1:weekend' },
-          ],
-          [
-            { text: 'Free nearby', callback_data: 'prompt:v1:free' },
-            { text: 'Live music', callback_data: 'prompt:v1:live' },
-          ],
-          [{ text: 'Privacy', url: 'https://baeventos.com/privacy' }],
-        ],
-      },
-    })
-
-    const spanish = dependencies()
-    await processTelegramTurn(payload({ chatId: '123', text: '/start', languageCode: 'es' }), spanish)
-    expect(spanish.sendMessage).toHaveBeenCalledOnce()
-    expect(spanish.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({
-      text: expect.stringContaining('Probá una de estas opciones o escribí la tuya:'),
-      replyMarkup: expect.objectContaining({
-        inline_keyboard: expect.arrayContaining([
-          [{ text: 'Algo tranqui hoy', callback_data: 'prompt:v1:chill' }, { text: 'Este finde', callback_data: 'prompt:v1:weekend' }],
-          [{ text: 'Gratis cerca', callback_data: 'prompt:v1:free' }, { text: 'Música en vivo', callback_data: 'prompt:v1:live' }],
-        ]),
-      }),
-    }))
+  it('removes the legacy chat keyboard on /start', async () => {
+    for (const languageCode of ['en', 'es'] as const) {
+      const deps = dependencies()
+      await processTelegramTurn(payload({ chatId: '123', text: '/start', languageCode }), deps)
+      expect(deps.sendMessage).toHaveBeenCalledOnce()
+      expect(deps.sendMessage).toHaveBeenCalledWith('123', {
+        text: expect.stringContaining('https://baeventos.com/privacy'),
+        replyMarkup: { remove_keyboard: true },
+      })
+    }
   })
 
   it('turns a prompt callback into the normal stored search turn', async () => {
