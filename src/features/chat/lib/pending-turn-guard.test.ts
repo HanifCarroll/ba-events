@@ -3,7 +3,9 @@ import {
 	findRetryTurn,
 	resetAttemptedTurnIds,
 	shouldAutoHandlePendingTurn,
-	shouldPersistUserMessage
+	shouldPersistUserMessage,
+	adoptedPendingConversationId,
+	ownsRunningGuestClaim
 } from './pending-turn-guard.ts'
 
 describe('pending turn guard', () => {
@@ -35,5 +37,17 @@ describe('pending turn guard', () => {
 	it('uses durable bootstrap as the only user persistence for new turns', () => {
 		expect(shouldPersistUserMessage(null)).toBe(true)
 		expect(shouldPersistUserMessage('turn')).toBe(false)
+	})
+
+	it('only preserves a first turn when the URL adopts its pending id', () => {
+		expect(adoptedPendingConversationId('conversation', 'conversation')).toBe(true)
+		expect(adoptedPendingConversationId('conversation', 'other')).toBe(false)
+		expect(adoptedPendingConversationId(null, 'conversation')).toBe(false)
+	})
+
+	it('requires both a running status and the exact guest claim owner', () => {
+		expect(ownsRunningGuestClaim({ status: 'running', claimId: 'claim-1', returnedClaimId: 'claim-1' })).toBe(true)
+		expect(ownsRunningGuestClaim({ status: 'running', claimId: 'claim-1', returnedClaimId: 'claim-2' })).toBe(false)
+		expect(ownsRunningGuestClaim({ status: 'failed', claimId: 'claim-1', returnedClaimId: 'claim-1' })).toBe(false)
 	})
 })

@@ -34,3 +34,18 @@ export function resetAttemptedTurnIds(
 export function shouldPersistUserMessage(turnId: string | null) {
 	return turnId === null
 }
+
+export function adoptedPendingConversationId(
+	pendingConversationId: string | null,
+	currentConversationId: string | null
+) {
+	return pendingConversationId !== null && pendingConversationId === currentConversationId
+}
+
+export function ownsRunningGuestClaim(input: {
+	status: string | undefined
+	claimId: string | null
+	returnedClaimId: string | null | undefined
+}) {
+	return input.status === 'running' && input.claimId !== null && input.claimId === input.returnedClaimId
+}

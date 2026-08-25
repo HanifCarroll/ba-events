@@ -404,7 +404,7 @@
 		</div>
 	</section>
 
-	<main class="mx-auto max-w-7xl px-5 py-12 sm:px-10 sm:py-16">
+	<div class="mx-auto max-w-7xl px-5 py-12 sm:px-10 sm:py-16">
 		<HappeningSoonEvents onSelectPrompt={onSelectPrompt} initialEvents={happeningSoonEvents} />
 
 		<section id="what-it-does" data-reveal="explanation" class="scroll-mt-8 grid gap-10 py-16 lg:grid-cols-2 lg:items-center" aria-labelledby="ask-heading">
@@ -469,7 +469,7 @@
 			</button>
 			<p class="mt-5 text-sm text-muted-foreground">{m.landing_reassurance()}</p>
 		</section>
-	</main>
+	</div>
 </div>
 
 <style>

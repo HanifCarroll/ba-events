@@ -32,7 +32,9 @@
 		findRetryTurn,
 		shouldAutoHandlePendingTurn,
 		resetAttemptedTurnIds,
-		shouldPersistUserMessage
+		shouldPersistUserMessage,
+		adoptedPendingConversationId,
+		ownsRunningGuestClaim
 	} from '#features/chat/lib/pending-turn-guard.ts'
 	import {
 		adaptStoredMessageToCanonical,
@@ -68,8 +70,7 @@
 
 	let {
 		conversationId = null as string | null,
-		onConversationChange = undefined as
-			((id: string, options?: { replace?: boolean }) => void) | undefined,
+		onConversationChange = undefined as ((id: string) => Promise<void>) | undefined,
 		happeningSoonEvents = undefined as ChatEventPayload[] | undefined,
 		preloadedConversation = null as ConversationWithMessages | null,
 		pendingTurns = [] as Array<{
@@ -82,7 +83,7 @@
 		showLanding = true
 	}: {
 		conversationId?: string | null
-		onConversationChange?: (id: string, options?: { replace?: boolean }) => void
+		onConversationChange?: (id: string) => Promise<void>
 		happeningSoonEvents?: ChatEventPayload[]
 		preloadedConversation?: ConversationWithMessages | null
 		pendingTurns?: Array<{
@@ -121,6 +122,7 @@
 	let pendingExecutionTraceByRequestIdRef = new Map<string, MessageExecutionStep[]>()
 	let executionTraceByAssistantIdRef = new Map<string, MessageExecutionStep[]>()
 	let prevConversationIdRef: string | null | undefined = untrack(() => conversationId)
+	let prevAuthModeRef = untrack(() => isAuthenticated)
 
 	let pendingHappeningSoonEventIdRef: string | null = null
 	let pendingHappeningSoonEventIdsRef: string[] | null = null
@@ -288,7 +290,6 @@
 				attachedData: payload.attachedData,
 				responseContractVersion: payload.responseContractVersion ?? CHAT_CONTRACT_VERSION
 			})
-			chatState.invalidateGuestConversation(payload.conversationId)
 			return { status: 'persisted', messageId: payload.clientMessageId }
 		}
 
@@ -442,6 +443,7 @@
 
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
+			pendingTurnClaimIdRef = null
 			pendingAssistantClientMessageIdRef = null
 			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
@@ -536,23 +538,19 @@
 			retry?: boolean
 		}
 	) {
-		if (options?.retry) {
+		const retry = options?.retry === true
+		if (requestPhaseRef !== 'idle' && !retry) return
+		if (retry) {
 			activeRetryTurnId = options.turnId ?? null
 			localRetryTurn = null
 		}
-			pendingHappeningSoonEventIdRef = options?.eventId ?? null
-		pendingHappeningSoonEventIdsRef =
-			options?.happeningSoonEventIds ??
-			happeningSoonEvents?.slice(0, 4).map((event) => event.id) ??
-			null
+		pendingHappeningSoonEventIdRef = options?.eventId ?? null
+		pendingHappeningSoonEventIdsRef = options?.happeningSoonEventIds ?? happeningSoonEvents?.slice(0, 4).map((event) => event.id) ?? null
 		error = null
 		resetRequestCorrelations()
 		eventsCountRef = 0
 		startTimeRef = Date.now()
-		track('chat:message_sent', {
-			message_length: content.length,
-			has_history: chat.messages.length > 0
-		})
+		track('chat:message_sent', { message_length: content.length, has_history: chat.messages.length > 0 })
 
 		pendingUserMessageRef = content
 		pendingUserPersistedMessageIdRef = null
@@ -561,25 +559,18 @@
 		pendingUserClientMessageIdRef = userClientMessageId
 		pendingAssistantClientMessageIdRef = assistantClientMessageId
 		pendingTurnIdRef = options?.turnId ?? null
-		pendingRetryRef = options?.retry === true
+		pendingRetryRef = retry
 		setRequestLifecyclePhase('preparing')
 
 		try {
-			let currentConversationId = conversationId ?? options?.conversationId ?? null
-			const turnId = options?.turnId ?? crypto.randomUUID()
+			let currentConversationId = (retry ? options?.conversationId : conversationId) ?? conversationId ?? options?.conversationId ?? pendingConversationIdRef
+			const turnId = options?.turnId ?? pendingTurnIdRef ?? crypto.randomUUID()
 			pendingTurnIdRef = turnId
+			if (!currentConversationId) currentConversationId = crypto.randomUUID()
 			pendingConversationIdRef = currentConversationId
-			if (!currentConversationId) {
-				currentConversationId = crypto.randomUUID()
-				pendingConversationIdRef = currentConversationId
-				await bootstrapTurn({
-					conversationId: currentConversationId,
-					turnId,
-					userClientMessageId,
-					assistantClientMessageId,
-					content
-				})
+			await bootstrapTurn({ conversationId: currentConversationId, turnId, userClientMessageId, assistantClientMessageId, content })
 
+			if (!conversationId && currentConversationId) {
 				chat.messages = [{
 					id: userClientMessageId,
 					role: 'user',
@@ -587,20 +578,18 @@
 					metadata: { createdAt: new Date().toISOString() }
 				} as ChatUIMessage]
 				await onConversationChange?.(currentConversationId)
-				return
+				if (!adoptedPendingConversationId(currentConversationId, conversationId)) {
+					throw new Error('Chat navigation did not adopt the new conversation')
+				}
 			}
 
-			await bootstrapTurn({
-				conversationId: currentConversationId,
-				turnId,
-				userClientMessageId,
-				assistantClientMessageId,
-				content
-			})
-			if (!isAuthenticated && pendingTurnIdRef) {
-				pendingTurnClaimIdRef = crypto.randomUUID()
-				const claimed = await claimGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef, options?.retry)
-				if (claimed?.status !== 'running') throw new Error('This turn is already running or needs explicit retry')
+			attemptedTurnIdsRef.add(turnId)
+			if (!isAuthenticated) {
+				pendingTurnClaimIdRef = pendingTurnClaimIdRef ?? crypto.randomUUID()
+				const claimed = await claimGuestTurn(turnId, pendingTurnClaimIdRef, retry)
+				if (!ownsRunningGuestClaim({ status: claimed?.status, claimId: pendingTurnClaimIdRef, returnedClaimId: claimed?.claim_id })) {
+					throw new Error('This turn is already running or needs explicit retry')
+				}
 			}
 
 			const userMessagePayload: MessagePersistencePayload = {
@@ -652,17 +641,40 @@
 		} catch (err) {
 			console.error('Failed to send message:', err)
 			const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
+			if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
+				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
+			}
+			const failedTurn = pendingTurnIdRef && pendingUserClientMessageIdRef && pendingAssistantClientMessageIdRef && pendingConversationIdRef
+				? {
+					id: pendingTurnIdRef,
+					conversation_id: pendingConversationIdRef,
+					content,
+					status: 'failed' as const,
+					claim_id: pendingTurnClaimIdRef,
+					user_client_message_id: pendingUserClientMessageIdRef,
+					assistant_client_message_id: pendingAssistantClientMessageIdRef
+				}
+				: null
+			localRetryTurn = failedTurn
 			setRequestLifecyclePhase('error')
 			error = errorMessage
 			toast.error('Failed to send message', {
 				description: errorMessage,
-				action: {
+				action: failedTurn ? {
 					label: 'Retry',
-					onClick: () => handleSendMessage(content, options)
-				}
+					onClick: () => handleSendMessage(content, {
+						...options,
+						conversationId: failedTurn.conversation_id,
+						turnId: failedTurn.id,
+						userClientMessageId: failedTurn.user_client_message_id,
+						assistantClientMessageId: failedTurn.assistant_client_message_id,
+						retry: true
+					})
+				} : undefined
 			})
 			pendingUserMessageRef = null
 			pendingConversationIdRef = null
+			pendingTurnClaimIdRef = null
 			pendingAssistantClientMessageIdRef = null
 			pendingUserClientMessageIdRef = null
 			pendingUserPersistencePromiseRef = null
@@ -675,10 +687,6 @@
 	// ==========================================================================
 	// Effects
 	// ==========================================================================
-	$effect(() => {
-		chatState.setActiveConversationId(conversationId ?? null)
-	})
-
 	$effect(() => {
 		const id = conversationId ?? null
 		if (isAuthenticated) {
@@ -707,12 +715,43 @@
 
 	$effect(() => {
 		const prev = prevConversationIdRef
+		const prevAuthMode = prevAuthModeRef
 		prevConversationIdRef = conversationId
+		prevAuthModeRef = isAuthenticated
+		const identityChanged = conversationId !== prev || isAuthenticated !== prevAuthMode
+		const adopting =
+			isAuthenticated === prevAuthMode &&
+			adoptedPendingConversationId(pendingConversationIdRef, conversationId)
+
+		if (identityChanged && !adopting) {
+			void chat.stop()
+			if (!prevAuthMode && pendingTurnIdRef && pendingTurnClaimIdRef) {
+				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
+			}
+			resetAttemptedTurnIds(attemptedTurnIdsRef, true)
+			activeRetryTurnId = null
+			localRetryTurn = null
+			chat.messages = []
+			messageTimestampsById.clear()
+			executionTraceByAssistantIdRef.clear()
+			persistedAssistantMessageIdsRef.clear()
+			isFirstExchangeRef = true
+			error = null
+			pendingUserMessageRef = null
+			pendingConversationIdRef = null
+			pendingTurnClaimIdRef = null
+			pendingAssistantClientMessageIdRef = null
+			pendingUserClientMessageIdRef = null
+			pendingUserPersistencePromiseRef = null
+			pendingUserPersistedMessageIdRef = null
+			pendingTurnIdRef = null
+			setRequestLifecyclePhase('idle')
+		}
 
 		const idle = requestPhaseRef === 'idle' || requestPhaseRef === 'error'
-		if (!idle) return
+		if (!idle && !adopting) return
 
-		if (!conversationId || conversationId !== prev) {
+		if ((!conversationId || conversationId !== prev) && !adopting) {
 			resetAttemptedTurnIds(attemptedTurnIdsRef, true)
 			activeRetryTurnId = null
 			localRetryTurn = null
@@ -727,6 +766,8 @@
 
 		const isLoadingTarget = isAuthenticated ? false : isLoadingGuestConversation
 		if (isLoadingTarget) return
+
+		if (adopting || (pendingConversationIdRef === conversationId && (requestPhaseRef !== 'idle' || pendingUserMessageRef !== null))) return
 
 		const sourceMessages = isAuthenticated
 			? preloadedConversation?.messages
@@ -791,8 +832,11 @@
 	})
 
 	$effect(() => {
-		chatState.registerStartNewChatHandler(() => {
+		const unregister = chatState.registerStartNewChatHandler(() => {
 			void chat.stop()
+			if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
+				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
+			}
 			chat.messages = []
 			messageTimestampsById.clear()
 			executionTraceByAssistantIdRef.clear()
@@ -806,8 +850,17 @@
 			pendingUserPersistedMessageIdRef = null
 			persistedAssistantMessageIdsRef.clear()
 			isFirstExchangeRef = true
+			pendingTurnIdRef = null
+			pendingTurnClaimIdRef = null
 			resetRequestCorrelations()
 		})
+		return () => {
+			unregister()
+			void chat.stop()
+			if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
+				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
+			}
+		}
 	})
 
 	$effect(() => {
@@ -1042,7 +1095,6 @@
 				<a
 					href="/"
 					class="text-sm font-medium text-primary hover:underline"
-					onclick={() => chatState.setActiveConversationId(null)}
 				>
 					{m.chat_start_new_chat()}
 				</a>
@@ -1065,11 +1117,13 @@
 
 	{#if !isHome}
 		<div class="shrink-0 bg-background">
-			<ChatInput
-				onSend={handleSendMessage}
-				disabled={isLoading || showConversationLoading}
-				emphasized={!hasMessages && requestPhase === 'idle' && !conversationId}
-			/>
+			{#key `${isAuthenticated}:${conversationId ?? ''}`}
+				<ChatInput
+					onSend={handleSendMessage}
+					disabled={isLoading || showConversationLoading}
+					emphasized={!hasMessages && requestPhase === 'idle' && !conversationId}
+				/>
+			{/key}
 		</div>
 	{/if}
 </div>

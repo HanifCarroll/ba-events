@@ -22,13 +22,6 @@ import type {
 } from '#shared/lib/types.ts'
 export class ChatState {
 	/**
-	 * ID of the currently active conversation (null = new conversation not yet
-	 * created). Kept in sync with the `/chat/:conversationId` URL by
-	 * ChatContainer; reactive so the sidebar highlight follows the URL.
-	 */
-	activeConversationId = $state<string | null>(null)
-
-	/**
 	 * Bumped after any conversation mutation (create/rename/delete/message/
 	 * title) so the signed-in history list re-fetches. Replaces the legacy
 	 * React Query `invalidateQueries({ queryKey: conversations.all })`.
@@ -37,25 +30,18 @@ export class ChatState {
 	#conversationScrollPositions = new Map<string, number>()
 
 	#startNewChatHandler: (() => void) | null = null
-	// Synchronous bootstrap for a freshly-created guest conversation. Replaces
-	// the legacy React Query `setQueryData(guestDetail(id), …)` seed: the
-	// remounted /chat/:id instance resolves the conversation instantly, with no
-	// IndexedDB read on the critical path and no full-pane loading spinner.
-	#seededGuestConversations = new Map<string, GuestConversationWithMessages>()
 
 	/** Register the handler called when `startNewChat` is invoked. */
-	registerStartNewChatHandler(handler: () => void): void {
+	registerStartNewChatHandler(handler: () => void): () => void {
 		this.#startNewChatHandler = handler
+		return () => {
+			if (this.#startNewChatHandler === handler) this.#startNewChatHandler = null
+		}
 	}
 
 	/** Start a new chat session — clears messages and resets state. */
 	startNewChat(): void {
-		this.activeConversationId = null
 		this.#startNewChatHandler?.()
-	}
-
-	setActiveConversationId(id: string | null): void {
-		this.activeConversationId = id
 	}
 
 	saveConversationScrollPosition(id: string, scrollTop: number): void {
@@ -101,29 +87,13 @@ export class ChatState {
 	}
 
 	/**
-	 * Seed a freshly-created guest conversation synchronously (before the
-	 * fire-and-forget IndexedDB write resolves) so the remounted instance
-	 * renders it immediately.
-	 */
-	seedGuestConversation(id: string, conversation: GuestConversationWithMessages): void {
-		this.#seededGuestConversations.set(id, conversation)
-	}
-
-	/** Drop the seed so a later read hits IndexedDB (which now has messages). */
-	invalidateGuestConversation(id: string): void {
-		this.#seededGuestConversations.delete(id)
-	}
-
-	/**
-	 * Read a guest conversation (with messages) from the seed or IndexedDB.
+	 * Read a guest conversation (with messages) from IndexedDB.
 	 * Fails safe: a read error (private mode, storage disabled) returns null
 	 * instead of throwing, so the chat UI never blocks on a persistence layer
 	 * the conversation can still run without.
 	 */
 	async getGuestConversation(id: string | null): Promise<GuestConversationWithMessages | null> {
 		if (!id) return null
-		const seeded = this.#seededGuestConversations.get(id)
-		if (seeded) return seeded
 		try {
 			return await getGuestConversationWithMessages(id)
 		} catch (readError) {

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte'
+	import { onDestroy } from 'svelte'
 	import { page } from '$app/state'
-	import { goto } from '$app/navigation'
+	import { afterNavigate, goto } from '$app/navigation'
 	import ChatContainer from './ChatContainer.svelte'
 	import { getChatConversationId } from '#features/chat/lib/chat-navigation.ts'
 	import type { ChatEventPayload, ConversationWithMessages } from '#shared/lib/types.ts'
@@ -29,23 +29,31 @@
 	const preloadedConversation = $derived(data.conversation ?? null)
 	const turns = $derived(data.turns ?? [])
 
-	onMount(() => {
-		if (!isMarketingLanding) return
+	let happeningSoonController: AbortController | null = null
+	let happeningSoonFrame: number | null = null
+	let requestedHappeningSoon = false
 
-		const frame = requestAnimationFrame(() => {
-			void fetch('/api/events/happening-soon')
+	afterNavigate(() => {
+		if (!isMarketingLanding || requestedHappeningSoon) return
+		requestedHappeningSoon = true
+		happeningSoonController = new AbortController()
+		happeningSoonFrame = requestAnimationFrame(() => {
+			void fetch('/api/events/happening-soon', { signal: happeningSoonController?.signal })
 				.then((response) => (response.ok ? response.json() : null))
 				.then((payload: { success?: boolean; data?: ChatEventPayload[] } | null) => {
 					if (payload?.success && Array.isArray(payload.data)) happeningSoonEvents = payload.data
 				})
 				.catch(() => {})
 		})
-
-		return () => cancelAnimationFrame(frame)
 	})
 
-	async function handleConversationChange(id: string, options?: { replace?: boolean }) {
-		await goto(`/chat/${encodeURIComponent(id)}`, { replaceState: options?.replace ?? false })
+	onDestroy(() => {
+		if (happeningSoonFrame !== null) cancelAnimationFrame(happeningSoonFrame)
+		happeningSoonController?.abort()
+	})
+
+	async function handleConversationChange(id: string): Promise<void> {
+		await goto(`/chat/${encodeURIComponent(id)}`)
 	}
 </script>
 

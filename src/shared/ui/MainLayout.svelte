@@ -39,6 +39,7 @@
 	}: { children: import('svelte').Snippet; backgroundInert?: boolean } = $props();
 
 	const auth = useAuthContext();
+	const isLanding = $derived(page.url.pathname === '/');
 	let mobileMenuOpen = $state(false);
 	let isSigningOut = $state(false);
 	let feedbackOpen = $state(false);
@@ -140,6 +141,7 @@
 >
 	<SkipLink />
 
+	{#if !isLanding}
 	<!-- Mobile header -->
 	<header
 		class="lg:hidden h-16 border-b bg-card flex items-center gap-3 px-4 shrink-0 z-30"
@@ -324,6 +326,8 @@
 		</div>
 	</aside>
 
+	{/if}
+
 	<!-- Main content -->
 	<main id="main-content" class="flex-1 min-h-0 relative flex flex-col">
 		<div class="relative flex-1 min-h-0">
@@ -331,6 +335,8 @@
 		</div>
 	</main>
 
-	<!-- Feedback Dialog -->
-	<FeedbackDialog open={feedbackOpen} onOpenChange={(o) => (feedbackOpen = o)} />
+	{#if !isLanding}
+		<!-- Feedback Dialog -->
+		<FeedbackDialog open={feedbackOpen} onOpenChange={(o) => (feedbackOpen = o)} />
+	{/if}
 </div>

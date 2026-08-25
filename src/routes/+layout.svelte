@@ -235,16 +235,17 @@
 	{/if}
 </svelte:head>
 
-{#if isExcludedPage || isLandingPage}
-	<!-- Atmospheric gradient overlay -->
-	<div
-		class="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0"
-	></div>
+{#if isExcludedPage}
 	<div class="h-full">
 		{@render children()}
 	</div>
 {:else}
 	<div class="relative h-full">
+		{#if isLandingPage}
+			<div
+				class="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0"
+			></div>
+		{/if}
 		<MainLayout backgroundInert={!!selectedEvent}>
 			{@render children()}
 		</MainLayout>

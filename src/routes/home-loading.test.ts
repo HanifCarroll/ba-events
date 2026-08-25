@@ -7,7 +7,7 @@ vi.mock('#features/events/api/crud.server.ts', () => ({ getHappeningSoonEventsFo
 
 describe('homepage event loading', () => {
 	it('does not load events in the homepage SSR loader', async () => {
-		const { load } = await import('./+page.server.ts')
+		const { load } = await import('./(chat)/+page.server.ts')
 
 		await expect(load({} as Parameters<typeof load>[0])).resolves.toEqual({})
 		expect(getHappeningSoonEventsForGrid).not.toHaveBeenCalled()
