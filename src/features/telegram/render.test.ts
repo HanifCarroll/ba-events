@@ -141,6 +141,19 @@ describe('Telegram canonical renderer', () => {
     }
   })
 
+  it('renders channel-safe share guidance from the canonical semantic key', () => {
+    const rendered = renderTelegramMessage(response({
+      kind: 'out_of_scope',
+      messageKey: 'share_guidance',
+      text: 'Use the share button on the event card.',
+      events: [],
+    }), 'en')
+
+    expect(rendered.text).toContain('Open the event link')
+    expect(rendered.text).not.toContain('web card')
+    expect(rendered.text).not.toContain('share button')
+  })
+
   it('replaces web-only saved-event instructions for the pilot', () => {
     const en = renderTelegramMessage(response({ messageKey: 'use_save_control' }), 'en').text
     const es = renderTelegramMessage(response({ messageKey: 'login_required' }), 'es').text

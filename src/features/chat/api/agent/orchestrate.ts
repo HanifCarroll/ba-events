@@ -130,6 +130,17 @@ interface PriorEventHint { handle: string; responseOrder: number; displayOrder: 
 function fallbackText(locale: 'en' | 'es'): string {
   return locale === 'es' ? 'Algo salió mal. Probá de nuevo.' : 'Something went wrong. Please try again.'
 }
+
+function isShareRequest(query: string): boolean {
+  const normalized = query.trim()
+  const asksHowToShare =
+    /\b(how|can|could|tell me how)\b[^?\n]*\bshare\b/i.test(normalized) ||
+    /\b(c[oó]mo|pod[eé]s decirme c[oó]mo|puedo)\b[^?\n]*\bcompart(?:ir|o|a|as)\b/i.test(normalized)
+  const namesSpecificEvent =
+    /\b(this|that|the) event\b/i.test(normalized) ||
+    /\b(este|ese|el) evento\b/i.test(normalized)
+  return asksHowToShare && namesSpecificEvent
+}
 function emptyProvenance(): CanonicalChatResponse['provenance'] {
   return { sourceToolCallIds: [], directionToolCallIds: [], venueToolCallIds: [], mutationToolCallIds: [], suggestionToolCallIds: [], emptySourceToolCallIds: [], retainedSourceToolCallIds: [], stageIds: [], searchAttemptToolCallIds: [], searchIncomplete: false, origin: 'validated', fallbackUsed: false, fallbackReason: null }
 }
@@ -239,7 +250,7 @@ function publicOutput(raw: RawToolOutput, callId: string, registerRef: (ref: str
 
 function failed(message: string): RawToolOutput { return { success: false, formatted: JSON.stringify({ success: false, error: message }), error: message } }
 
-function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, ledger: Map<string, LedgerRecord>, calls: { count: number; successfulSearch: boolean }, executors: ReadExecutors, onTrustedSearchProgress?: () => void) {
+function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, ledger: Map<string, LedgerRecord>, calls: { count: number; successfulSearch: boolean }, executors: ReadExecutors, onTrustedSearchProgress?: () => void, requestId?: string) {
   const execute = async (toolCallId: string, toolName: string, input: unknown, fn: () => Promise<RawToolOutput>): Promise<PublicToolOutput> => {
     if (calls.count >= MAX_TOOL_CALLS) {
       const raw = failed('tool_call_limit')
@@ -250,6 +261,7 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
     const record: LedgerRecord = { toolCallId, toolName, input, raw: failed('tool_pending') }
     ledger.set(toolCallId, record)
     let raw: RawToolOutput
+    const toolStartedAt = performance.now()
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const timeout = new Promise<RawToolOutput>((resolve) => {
@@ -259,6 +271,14 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
     } catch { raw = failed('tool_execution_error') }
     finally { if (timer) clearTimeout(timer) }
     record.raw = raw
+    logger.info('[chat] agent tool step', {
+      ...(requestId ? { requestId } : {}),
+      phase: 'tool',
+      outcome: raw.success ? 'success' : 'error',
+      toolCallId,
+      toolName,
+      durationMs: Math.round(performance.now() - toolStartedAt),
+    })
     return publicOutput(raw, toolCallId, (ref, value) => refs.set(ref, value))
   }
   const resolve = (ref: string, kind: 'eventId' | 'venueId'): string | null => {
@@ -300,10 +320,13 @@ async function runToolLoop(input: AgentInput): Promise<AgentRun> {
   const { CHAT_THINKING, textModelForRequest } = await import('#shared/lib/ai/providers.ts')
   const model = textModelForRequest(input.requestId ?? 'unknown')
   const promptSize = input.instructions.length + input.messages.reduce((total, message) => total + JSON.stringify(message.content).length, 0)
-  logger.info('[chat] agent generation started', { promptChars: promptSize, messageCount: input.messages.length, maxRetries: 1 })
+  logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: 1 })
   const agent = new ToolLoopAgent({
     model,
     onStepEnd: (step) => logger.info('[chat] agent model step', {
+      requestId: input.requestId,
+      phase: 'model',
+      outcome: 'success',
       step: step.stepNumber,
       durationMs: Math.round(step.performance.stepTimeMs),
       responseMs: Math.round(step.performance.responseTimeMs),
@@ -403,7 +426,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     if (pin.venueId) refs.set('pinned_venue', { venueId: pin.venueId })
   }
   const ledger = new Map<string, LedgerRecord>()
-  const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onTrustedSearchProgress)
+  const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onTrustedSearchProgress, input.requestId)
   const messages: ModelMessage[] = [
     ...(input.recentMessages ?? []).slice(-MAX_MESSAGES).map((message) => ({ role: message.role, content: [{ type: 'text', text: `UNTRUSTED DATA: ${message.content.slice(0, MAX_TEXT)}` }] } as ModelMessage)),
     { role: 'user', content: input.originalQuery },
@@ -426,6 +449,7 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   }
   const reads = orderedReads(run, ledger)
   const canonical = assemble(input, run, reads, saved)
+  if (reads.length === 0 && isShareRequest(input.originalQuery)) canonical.messageKey = 'share_guidance'
   if (!run.text.trim()) {
     canonical.text = fallbackText(input.locale)
     canonical.provenance.origin = 'fallback'

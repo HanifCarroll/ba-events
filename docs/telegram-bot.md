@@ -44,13 +44,13 @@ Local setup script environment:
 - `TELEGRAM_WEBHOOK_SECRET`;
 - `TELEGRAM_WEBHOOK_URL` (for example `https://baeventos.com/api/telegram`).
 
-Raw Telegram IDs, message text, and the stable identity HMAC never enter Trigger's retained payload or queue metadata. Trigger receives only the update ID, an opaque sealed envelope, and the random conversation UUID used as its queue key. The webhook encrypts the bounded transient handoff with a random per-update AES-256-GCM key stored only in the service-role-only `telegram_updates` row. The bot shows a privacy notice on `/start`; continued use indicates agreement, without requiring consent metadata or an Accept click. Completion clears the key, making the retained Trigger envelope undecryptable. Failed/pending deliveries retain the key for idempotent retry; retention deletes stale rows after 30 days. `/delete` or a legacy consent decline immediately deletes the conversation and HMAC identity, clears keys and identity links from all earlier delivery claims, and leaves only minimal nonidentifying delivery state until retention expires.
+Raw Telegram IDs, message text, and the stable identity HMAC never enter Trigger's retained payload or queue metadata. Trigger receives only the update ID, an opaque sealed envelope, and the random conversation UUID used as its queue key. The webhook encrypts the bounded transient handoff with a random per-update AES-256-GCM key stored only in the service-role-only `telegram_updates` row. The bot shows a privacy notice on `/start`; continued use indicates agreement, without requiring consent metadata or an Accept click. The hourly `telegram-health` task checks Telegram webhook-info shape, treats more than 100 pending updates or a webhook error from the last two hours as unhealthy, and checks failed delivery rows older than two hours (well beyond normal Trigger retries). Older Telegram errors are historical and do not fail the check. It logs only bounded counts/status and throws on unhealthy state, using Trigger's existing failed-run alert/dashboard path. Completion clears the key, making the retained Trigger envelope undecryptable. Failed/pending deliveries retain the key for idempotent retry; retention deletes stale rows after 30 days. `/delete` or a legacy consent decline immediately deletes the conversation and HMAC identity, clears keys and identity links from all earlier delivery claims, and leaves only minimal nonidentifying delivery state until retention expires.
 
 ## 3. Deployment order
 
 1. Apply `supabase/migrations/20260823130000_add_external_channel_conversations.sql`.
 2. Configure app and Trigger.dev environment variables.
-3. Deploy Trigger jobs, including `telegram-update` and `telegram-retention`.
+3. Deploy Trigger jobs, including `telegram-update`, `telegram-retention`, and the hourly `telegram-health` check.
 4. Deploy the web app.
 5. Configure the webhook only after both deployments are healthy:
 

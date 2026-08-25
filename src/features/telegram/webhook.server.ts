@@ -200,15 +200,21 @@ export async function handleTelegramWebhook(
       concurrencyKey: conversation.id,
     })
     logger.info('[telegram] webhook dispatch', {
+      channel: 'telegram',
+      updateId: update.update_id,
+      requestId: `telegram:${update.update_id}`,
       phase: 'dispatch',
       durationMs: Math.round(performance.now() - dispatchStarted),
-      status: 'success',
+      outcome: 'success',
     })
   } catch {
     logger.info('[telegram] webhook dispatch', {
+      channel: 'telegram',
+      updateId: update.update_id,
+      requestId: `telegram:${update.update_id}`,
       phase: 'dispatch',
       durationMs: Math.round(performance.now() - dispatchStarted),
-      status: 'error',
+      outcome: 'error',
     })
     try {
       await (dependencies.markFailed ?? markTelegramUpdateFailed)(update.update_id, 'dispatch_failed')

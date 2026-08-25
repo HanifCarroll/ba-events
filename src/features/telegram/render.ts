@@ -15,6 +15,7 @@ const COPY = {
     saveUnavailable: "Saving events isn't available in Telegram yet.",
     unsaveUnavailable: "Saved-event controls aren't available in Telegram yet.",
     loginUnavailable: "Saved events aren't linked to Telegram in this pilot.",
+    shareGuidance: 'Open the event link, then use your device’s share option to send it to a friend.',
     free: 'Free',
     timeTba: 'Time TBA',
     locationTba: 'Location TBA',
@@ -28,6 +29,7 @@ const COPY = {
     saveUnavailable: 'Todavía no se pueden guardar eventos desde Telegram.',
     unsaveUnavailable: 'Los controles de guardados todavía no están disponibles en Telegram.',
     loginUnavailable: 'En este piloto, los guardados no están vinculados con Telegram.',
+    shareGuidance: 'Abrí el enlace del evento y usá la opción de compartir de tu dispositivo para enviárselo a un amigo.',
     free: 'Gratis',
     timeTba: 'Horario a confirmar',
     locationTba: 'Ubicación a confirmar',
@@ -117,6 +119,7 @@ function lead(response: CanonicalChatResponse, locale: 'en' | 'es', eventCount: 
   if (response.messageKey === 'use_save_control') return COPY[locale].saveUnavailable
   if (response.messageKey === 'use_unsave_control') return COPY[locale].unsaveUnavailable
   if (response.messageKey === 'login_required') return COPY[locale].loginUnavailable
+  if (response.messageKey === 'share_guidance') return COPY[locale].shareGuidance
   if (response.kind === 'recommendations' && eventCount > 0) return COPY[locale].eventsLead(eventCount)
   return plain(response.text, 800)
 }

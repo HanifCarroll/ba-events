@@ -170,21 +170,29 @@ async function sendDraftBestEffort(
   text: string,
   dependencies: TelegramTurnDependencies,
   phase: 'initial-draft' | 'found-draft',
+  updateId: string,
   canSend: () => boolean = () => true
 ) {
   if (!canSend()) return
   const startedAt = performance.now()
   try {
     await dependencies.sendDraft(chatId, draftId, text)
-    logTiming(phase, startedAt, 'success')
+    logTiming(phase, startedAt, 'success', updateId)
   } catch {
-    logTiming(phase, startedAt, 'error')
+    logTiming(phase, startedAt, 'error', updateId)
     // Drafts are only a native progress hint; final delivery remains authoritative.
   }
 }
 
-function logTiming(phase: string, startedAt: number, status: 'success' | 'error') {
+function logTiming(
+  phase: string,
+  startedAt: number,
+  status: 'success' | 'error',
+  updateId?: string,
+) {
   logger.info('[telegram] stage timing', {
+    channel: 'telegram',
+    ...(updateId ? { updateId, requestId: `telegram:${updateId}` } : {}),
     phase,
     durationMs: Math.round(performance.now() - startedAt),
     status,
@@ -193,7 +201,8 @@ function logTiming(phase: string, startedAt: number, status: 'success' | 'error'
 
 function startTypingBestEffort(
   chatId: string,
-  dependencies: TelegramTurnDependencies
+  dependencies: TelegramTurnDependencies,
+  updateId: string,
 ): { stop: () => void } {
   let active = true
   let sending = false
@@ -203,9 +212,9 @@ function startTypingBestEffort(
     const startedAt = initial ? performance.now() : 0
     try {
       await dependencies.sendTyping(chatId)
-      if (initial) logTiming('initial-typing', startedAt, 'success')
+      if (initial) logTiming('initial-typing', startedAt, 'success', updateId)
     } catch {
-      if (initial) logTiming('initial-typing', startedAt, 'error')
+      if (initial) logTiming('initial-typing', startedAt, 'error', updateId)
     } finally {
       sending = false
     }
@@ -229,12 +238,14 @@ export async function processTelegramTurn(
 
   try {
     const envelopeStarted = performance.now()
+    const timing = (phase: string, startedAt: number, status: 'success' | 'error') =>
+      logTiming(phase, startedAt, status, payload.updateId)
     let key: string | null
     try {
       key = await dependencies.getEnvelopeKey(payload.updateId)
-      logTiming('envelope-key', envelopeStarted, 'success')
+      timing('envelope-key', envelopeStarted, 'success')
     } catch (error) {
-      logTiming('envelope-key', envelopeStarted, 'error')
+      timing('envelope-key', envelopeStarted, 'error')
       throw error
     }
     if (key == null) return
@@ -353,9 +364,9 @@ export async function processTelegramTurn(
     let messages: Message[]
     try {
       [, messages] = await Promise.all([metadataPromise, messagesPromise])
-      logTiming('natural-turn-setup', setupStarted, 'success')
+      timing('natural-turn-setup', setupStarted, 'success')
     } catch (error) {
-      logTiming('natural-turn-setup', setupStarted, 'error')
+      timing('natural-turn-setup', setupStarted, 'error')
       throw error
     }
     const assistantClientMessageId = `telegram:${payload.updateId}:assistant`
@@ -366,7 +377,7 @@ export async function processTelegramTurn(
       return
     }
 
-    const typing = startTypingBestEffort(input.chatId, dependencies)
+    const typing = startTypingBestEffort(input.chatId, dependencies, payload.updateId)
     let draftsClosed = false
     let draftChain = Promise.resolve()
     const progressDraftId = telegramDraftIdFromUpdateId(payload.updateId)
@@ -378,6 +389,7 @@ export async function processTelegramTurn(
         text,
         dependencies,
         phase,
+        payload.updateId,
         () => !draftsClosed,
       ))
     }
@@ -389,10 +401,10 @@ export async function processTelegramTurn(
       role: 'user',
       content: normalizedTurn.originalQuery,
     }).then((message) => {
-      logTiming('user-insert', userInsertStarted, 'success')
+      timing('user-insert', userInsertStarted, 'success')
       return message
     }, (error) => {
-      logTiming('user-insert', userInsertStarted, 'error')
+      timing('user-insert', userInsertStarted, 'error')
       throw error
     })
     queueDraft(COPY[locale].draft, 'initial-draft')
@@ -407,10 +419,10 @@ export async function processTelegramTurn(
       recentMessages: buildAgentHistoryFromStoredMessages(messages, normalizedTurn.originalQuery),
       onTrustedSearchProgress: () => queueDraft(COPY[locale].found, 'found-draft'),
     }).then((result) => {
-      logTiming('agent', agentStarted, 'success')
+      timing('agent', agentStarted, 'success')
       return result
     }, (error) => {
-      logTiming('agent', agentStarted, 'error')
+      timing('agent', agentStarted, 'error')
       throw error
     })
     try {
@@ -436,9 +448,9 @@ export async function processTelegramTurn(
           attachedData: { canonical: result.canonical },
         })
         await dependencies.sendMessage(input.chatId, dependencies.render(result.canonical, locale))
-        logTiming('persist-send', persistSendStarted, 'success')
+        timing('persist-send', persistSendStarted, 'success')
       } catch (error) {
-        logTiming('persist-send', persistSendStarted, 'error')
+        timing('persist-send', persistSendStarted, 'error')
         throw error
       }
       await dependencies.markCompleted(payload.updateId, conversationId)
