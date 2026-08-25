@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Download } from 'lucide-svelte'
+	import { Download, Share } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { Button } from '#shared/ui/button/index.ts'
 	import {
@@ -46,7 +46,12 @@
 			<DialogDescription>{m.install_ios_description()}</DialogDescription>
 		</DialogHeader>
 		<ol class="list-decimal space-y-2 pl-5 text-sm text-foreground">
-			<li>{m.install_ios_step_one()}</li>
+			<li>
+				<span class="inline-flex items-center gap-2">
+					<Share class="size-5 text-[#007aff]" aria-hidden="true" />
+					{m.install_ios_step_one()}
+				</span>
+			</li>
 			<li>{m.install_ios_step_two()}</li>
 		</ol>
 		<DialogFooter>
