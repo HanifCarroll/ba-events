@@ -229,9 +229,7 @@
 
 		<link rel="canonical" href={siteUrl} />
 
-		<svelte:element this={'script'} type="application/ld+json">
-			{@html webAppSchema}
-		</svelte:element>
+		{@html '<script type="application/ld+json">' + webAppSchema + '<' + '/script>'}
 	{/if}
 </svelte:head>
 
