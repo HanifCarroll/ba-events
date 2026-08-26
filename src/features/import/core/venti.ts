@@ -119,7 +119,7 @@ export async function processVentiImport(
   // Step 2: Filter to CABA + blocklist
   console.log('[venti] Filtering events...')
   const cabaEvents = filterCABAEvents(allEvents)
-  const blocklistEntries = await getBlocklistEntries('venti')
+  const blocklistEntries = await getBlocklistEntries('venti', client)
   const filteredEvents = filterBlockedEvents(cabaEvents, blocklistEntries)
   result.eventsFiltered = filteredEvents.length
   console.log(

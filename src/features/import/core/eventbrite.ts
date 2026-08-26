@@ -133,7 +133,7 @@ export async function processEventbriteImport(
 
   // Step 2: Filter events
   console.log('[eventbrite] Filtering events...')
-  const blocklistEntries = await getBlocklistEntries('eventbrite')
+  const blocklistEntries = await getBlocklistEntries('eventbrite', client)
   const inPersonEvents = filterInPersonEvents(allEvents)
   const nonBlockedEvents = filterBlockedEvents(inPersonEvents, blocklistEntries)
   const filteredEvents = filterByDateRange(nonBlockedEvents, startDate, endDate)

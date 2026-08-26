@@ -15,8 +15,9 @@ import type {
  * Get all blocklist entries, optionally filtered by source
  * When filtering by source, includes entries with source='all'
  */
-export async function getBlocklistEntries(source?: BlocklistSource) {
-  let query = getSupabase()
+export async function getBlocklistEntries(source?: BlocklistSource, client?: SupabaseClient) {
+  const db = client ?? getSupabase()
+  let query = db
     .from('import_blocklist')
     .select('*')
     .order('created_at', { ascending: false })

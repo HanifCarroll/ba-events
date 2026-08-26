@@ -119,7 +119,7 @@ export async function processLumaImport(
 
   // Step 2: Filter events (blocklist only - no date range filter for Luma)
   console.log('[luma] Filtering events...')
-  const blocklistEntries = await getBlocklistEntries('luma')
+  const blocklistEntries = await getBlocklistEntries('luma', client)
   const filteredEvents = filterBlockedEvents(allEvents, blocklistEntries)
   result.eventsFiltered = filteredEvents.length
   console.log(`[luma] Filtered to ${filteredEvents.length} events after blocklist`)

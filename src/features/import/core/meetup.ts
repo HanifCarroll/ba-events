@@ -337,7 +337,7 @@ export async function processMeetupImport(
 
   // Step 2: Filter events
   logger.info('[meetup] Filtering events')
-  const blocklistEntries = await getBlocklistEntries('meetup')
+  const blocklistEntries = await getBlocklistEntries('meetup', client)
   const inPersonEvents = filterInPersonEvents(allEvents)
   const nonBlockedEvents = filterBlockedEvents(inPersonEvents, blocklistEntries)
   const dateFilteredEvents = filterByDateRange(nonBlockedEvents, startDate, endDate)

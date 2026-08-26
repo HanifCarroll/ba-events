@@ -331,7 +331,7 @@ export async function processPasslineImport(
 
   // Step 2: Filter events
   logger.debug('[passline] Filtering events')
-  const blocklistEntries = await getBlocklistEntries('passline')
+  const blocklistEntries = await getBlocklistEntries('passline', client)
   const cabaEvents = filterCABAEvents(allEvents, blocklistEntries)
   const filteredEvents = filterByDateRange(cabaEvents, { startDate, endDate })
   result.eventsFiltered = filteredEvents.length

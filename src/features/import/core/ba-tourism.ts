@@ -135,7 +135,7 @@ export async function processBATourismImport(
 
   // Step 2: Apply blocklist filter
   console.log('[ba-tourism] Filtering events...')
-  const blocklistEntries = await getBlocklistEntries('ba_tourism')
+  const blocklistEntries = await getBlocklistEntries('ba_tourism', client)
   const filteredEvents = filterBlockedEvents(allEvents, blocklistEntries)
   result.eventsFiltered = filteredEvents.length
   console.log(`[ba-tourism] Filtered to ${filteredEvents.length} events after blocklist`)
