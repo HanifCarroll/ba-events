@@ -153,9 +153,9 @@
 	<meta name="twitter:image" content={data.meta.imageUrl} />
 	<meta name="twitter:image:alt" content={eventImageAlt} />
 	<link rel="canonical" href={data.meta.eventUrl} />
-	<script type="application/ld+json">
-		{JSON.stringify(data.meta.jsonLd)}
-	</script>
+	<svelte:element this={'script'} type="application/ld+json">
+		{@html JSON.stringify(data.meta.jsonLd).replace(/</g, '\\u003c')}
+	</svelte:element>
 </svelte:head>
 
 <div class="h-full overflow-y-auto">

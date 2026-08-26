@@ -176,7 +176,7 @@
 			name: 'BA Eventos',
 			url: siteUrl
 		}
-	})
+	}).replace(/</g, '\\u003c')
 
 	// Pages that should not have the main sidebar (auth pages only).
 	const EXCLUDED_ROUTES = ['/login', '/auth/callback']
@@ -229,9 +229,9 @@
 
 		<link rel="canonical" href={siteUrl} />
 
-		<script type="application/ld+json">
+		<svelte:element this={'script'} type="application/ld+json">
 			{@html webAppSchema}
-		</script>
+		</svelte:element>
 	{/if}
 </svelte:head>
 
