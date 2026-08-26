@@ -68,7 +68,7 @@ export function transformMeetupEvent(
     ticket_url: normalizeUrl(event.eventUrl),
     source: 'meetup',
     external_id: generateMeetupExternalId(event),
-    status: 'scheduled',
+    status: event.status,
   }
 }
 
@@ -128,7 +128,7 @@ export function transformMeetupEventWithExpansion(
       ticket_url: normalizeUrl(event.eventUrl),
       source: 'meetup',
       external_id: `meetup-${expandedId}`,
-      status: 'scheduled',
+      status: event.status,
     }
   })
 }

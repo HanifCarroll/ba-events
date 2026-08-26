@@ -13,8 +13,8 @@ import {
   filterInPersonEvents,
   filterByDateRange,
 } from '../scrapers/meetup/browser-scraper.ts'
-import { enrichMeetupEventsWithVenues } from '../scrapers/meetup/venue-enrichment.ts'
 import type { MeetupEvent } from '../scrapers/meetup/types.ts'
+import { enrichMeetupEventsWithDetails } from '../scrapers/meetup/detail.ts'
 import { logger } from '#shared/lib/logger.ts'
 import {
   transformMeetupEventWithExpansion,
@@ -238,6 +238,7 @@ async function processBatch(
             description_summary_en: eventWithEmbedding.description_summary_en,
             starts_at: eventWithEmbedding.starts_at,
             ends_at: eventWithEmbedding.ends_at,
+            status: eventWithEmbedding.status,
             venue_id: eventWithEmbedding.venue_id,
             categories: eventWithEmbedding.categories,
             price: eventWithEmbedding.price,
@@ -328,35 +329,10 @@ export async function processMeetupImport(
   result.eventsFetched = allEvents.length
   logger.info('[meetup] Scraped events', { count: allEvents.length })
 
-  // Step 1.5: Enrich events with venue data (fetches individual event pages)
-  // This is needed because venue data is not available in the list view
-  const eventsNeedingVenues = allEvents.filter((e) => !e.venue && !e.isOnline)
-  if (eventsNeedingVenues.length > 0) {
-    logger.info('[meetup] Enriching events with venue data', { count: eventsNeedingVenues.length })
-    const venueResults = await enrichMeetupEventsWithVenues(
-      eventsNeedingVenues.map((e) => ({ id: e.id, eventUrl: e.eventUrl })),
-      5, // concurrency
-      500 // delay between batches
-    )
-
-    // Apply venue data back to events
-    for (const venueResult of venueResults) {
-      if (venueResult.venue) {
-        const event = allEvents.find((e) => e.id === venueResult.eventId)
-        if (event) {
-          event.venue = {
-            name: venueResult.venue.name,
-            address: venueResult.venue.address,
-            city: null, // Don't assume Buenos Aires - let validation catch bad data
-            lat: null,
-            lng: null,
-          }
-        }
-      }
-    }
-
-    const enrichedCount = venueResults.filter((r) => r.venue).length
-    logger.info('[meetup] Venue enrichment complete', { enriched: enrichedCount, total: eventsNeedingVenues.length })
+  // Step 1.5: Fetch each detail page once for description, venue, dates, and status.
+  if (allEvents.length > 0) {
+    logger.info('[meetup] Enriching events from detail pages', { count: allEvents.length })
+    await enrichMeetupEventsWithDetails(allEvents)
   }
 
   // Step 2: Filter events

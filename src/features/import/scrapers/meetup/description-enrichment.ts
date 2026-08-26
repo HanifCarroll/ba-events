@@ -15,46 +15,12 @@ import type {
   DescriptionEnrichProgress,
   DescriptionEnrichComplete,
 } from '#shared/lib/streaming-types.ts'
-import {
-  extractNextData,
-  getNestedValue,
-  fetchHtml,
-} from '#shared/lib/html-parsing.ts'
+import { fetchMeetupEventDetail } from './detail.ts'
 
 export interface MeetupDescriptionResult {
   eventId: string
   description: string | null
   error?: string
-}
-
-/**
- * Extract description from Meetup's __NEXT_DATA__
- * Path: props.pageProps.event.description
- */
-function extractDescriptionFromNextData(nextData: unknown): string | null {
-  // Navigate to event description in Next.js props
-  const description = getNestedValue(nextData, 'props.pageProps.event.description')
-
-  if (typeof description === 'string' && description.trim()) {
-    return description.trim()
-  }
-
-  return null
-}
-
-/**
- * Extract description data from HTML content
- * Uses __NEXT_DATA__ which contains the complete event data
- *
- * Note: JSON-LD and meta descriptions are truncated on Meetup, so we only use __NEXT_DATA__
- */
-function extractDescriptionFromHtml(html: string): string | null {
-  const nextData = extractNextData(html)
-  if (nextData) {
-    return extractDescriptionFromNextData(nextData)
-  }
-
-  return null
 }
 
 /**
@@ -64,16 +30,7 @@ function extractDescriptionFromHtml(html: string): string | null {
 export async function fetchMeetupDescriptionFromDetailPage(
   eventUrl: string
 ): Promise<string | null> {
-  // Ensure URL is properly formed
-  let fullUrl = eventUrl
-  if (!fullUrl.startsWith('http')) {
-    fullUrl = `https://www.meetup.com${fullUrl.startsWith('/') ? '' : '/'}${fullUrl}`
-  }
-
-  const html = await fetchHtml(fullUrl)
-  if (!html) return null
-
-  return extractDescriptionFromHtml(html)
+  return (await fetchMeetupEventDetail(eventUrl))?.description ?? null
 }
 
 export interface DescriptionEnrichmentEvent {

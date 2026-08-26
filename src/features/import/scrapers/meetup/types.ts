@@ -1,3 +1,5 @@
+import type { EventStatus } from '#shared/lib/types.ts'
+
 /**
  * Types for Meetup Scraper
  *
@@ -65,6 +67,9 @@ export interface MeetupEvent {
 
   /** Is this an online-only event? */
   isOnline: boolean
+
+  /** Normalized status from Meetup detail data */
+  status: EventStatus
 
   /** Organizer group */
   group: MeetupGroup

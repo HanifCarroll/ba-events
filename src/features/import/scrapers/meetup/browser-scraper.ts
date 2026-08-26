@@ -189,6 +189,7 @@ function transformGraphQLEvent(gqlEvent: MeetupGraphQLEvent): MeetupEvent | null
     eventUrl: gqlEvent.eventUrl,
     imageUrl: gqlEvent.imageUrl || null,
     isOnline: gqlEvent.isOnline ?? false,
+    status: 'scheduled',
     venue,
     group: {
       name: gqlEvent.group?.name || 'Unknown Group',
@@ -414,6 +415,7 @@ async function scrapePageForEvents(
             eventUrl: domEvent.eventUrl,
             imageUrl: domEvent.imageUrl,
             isOnline: domEvent.isOnline,
+            status: 'scheduled',
             venue: domEvent.venueName
               ? {
                   name: domEvent.venueName,
