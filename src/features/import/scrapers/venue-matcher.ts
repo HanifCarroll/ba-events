@@ -5,7 +5,7 @@
  * Uses a three-tier approach: exact match, fuzzy match, no match.
  */
 
-import { getSupabase } from '#shared/lib/db/client.server.ts'
+import { getSupabase, type SupabaseClient } from '#shared/lib/db/client.server.ts'
 import type { Venue } from '#shared/lib/types.ts'
 
 export interface VenueMatchResult {
@@ -34,10 +34,10 @@ function normalizeVenueName(name: string): string {
 /**
  * Find a venue by exact name match (case-insensitive)
  */
-async function findExactMatch(venueName: string): Promise<Venue | null> {
+async function findExactMatch(venueName: string, client?: SupabaseClient): Promise<Venue | null> {
   const normalized = normalizeVenueName(venueName)
 
-  const { data, error } = await getSupabase()
+  const { data, error } = await (client ?? getSupabase())
     .from('venues')
     .select('*')
     .ilike('name', normalized)
@@ -53,9 +53,11 @@ async function findExactMatch(venueName: string): Promise<Venue | null> {
  */
 async function findFuzzyMatch(
   venueName: string,
-  threshold: number = 0.6
+  threshold: number = 0.6,
+  client?: SupabaseClient
 ): Promise<{ venue: Venue; similarity: number } | null> {
-  const { data, error } = await getSupabase().rpc('find_similar_venue', {
+  const db = client ?? getSupabase()
+  const { data, error } = await db.rpc('find_similar_venue', {
     search_name: venueName,
     similarity_threshold: threshold,
   })
@@ -65,7 +67,7 @@ async function findFuzzyMatch(
   const match = data[0]
 
   // Fetch full venue record
-  const { data: venue, error: venueError } = await getSupabase()
+  const { data: venue, error: venueError } = await db
     .from('venues')
     .select('*')
     .eq('id', match.id)
@@ -89,7 +91,8 @@ async function findFuzzyMatch(
  */
 export async function matchVenue(
   venueName: string,
-  fuzzyThreshold: number = 0.6
+  fuzzyThreshold: number = 0.6,
+  client?: SupabaseClient
 ): Promise<VenueMatchResult> {
   // Handle empty/null names
   if (!venueName || venueName.trim() === '') {
@@ -104,7 +107,7 @@ export async function matchVenue(
   const searchName = venueName.trim()
 
   // Try exact match first
-  const exactMatch = await findExactMatch(searchName)
+  const exactMatch = await findExactMatch(searchName, client)
   if (exactMatch) {
     return {
       venue: exactMatch,
@@ -115,7 +118,7 @@ export async function matchVenue(
   }
 
   // Try fuzzy match
-  const fuzzyMatch = await findFuzzyMatch(searchName, fuzzyThreshold)
+  const fuzzyMatch = await findFuzzyMatch(searchName, fuzzyThreshold, client)
   if (fuzzyMatch) {
     return {
       venue: fuzzyMatch.venue,
@@ -140,7 +143,8 @@ export async function matchVenue(
  */
 export async function matchVenues(
   venueNames: string[],
-  fuzzyThreshold: number = 0.6
+  fuzzyThreshold: number = 0.6,
+  client?: SupabaseClient
 ): Promise<Map<string, VenueMatchResult>> {
   const results = new Map<string, VenueMatchResult>()
 
@@ -149,7 +153,7 @@ export async function matchVenues(
 
   // Match each venue (could be parallelized, but keeping serial for now)
   for (const name of uniqueNames) {
-    const result = await matchVenue(name, fuzzyThreshold)
+    const result = await matchVenue(name, fuzzyThreshold, client)
     results.set(name, result)
   }
 

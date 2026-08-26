@@ -277,7 +277,7 @@ export async function settleVenue(
   }
 
   // Step 1: Try matching against existing venues (using resolved name if address was looked up)
-  const match = await matchVenue(resolvedVenueName, REVIEW_QUEUE_THRESHOLD)
+  const match = await matchVenue(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client)
 
   // Exact match - use it immediately
   if (match.matchType === 'exact') {
