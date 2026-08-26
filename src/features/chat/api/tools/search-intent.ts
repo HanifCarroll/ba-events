@@ -416,17 +416,18 @@ function dateRangeBounds(dateFrom?: string, dateTo?: string): {
     bounds.after = toUTCBound(dateFrom)
   }
   if (dateTo) {
-    bounds.before = toUTCBound(dateTo)
+    bounds.before = toUTCBound(dateTo, true)
   }
   return bounds
 }
 
-/** Parse a date-only or datetime string, treating bare dates as BA calendar dates. */
-function toUTCBound(value: string): string | undefined {
+/** Parse a date-only or datetime string; a bare end date includes that whole BA calendar day. */
+function toUTCBound(value: string, endOfDate = false): string | undefined {
   if (DATE_ONLY_RE.test(value)) {
-    // YYYY-MM-DD → BA midnight of that calendar day.
+    // Start dates use that day's midnight; inclusive end dates use the next midnight.
     const [y, m, d] = value.split('-').map(Number)
-    return baToUTC(startOfDay(new Date(y, m - 1, d)))
+    const day = startOfDay(new Date(y, m - 1, d))
+    return baToUTC(endOfDate ? addDays(day, 1) : day)
   }
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return undefined

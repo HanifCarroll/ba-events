@@ -106,6 +106,15 @@ describe('canonicalizeSearchIntent — date intent', () => {
     expect(intent.must.startsBefore! < intent.must.startsAfter!).toBe(true)
   })
 
+  it('includes the whole day when dateFrom and dateTo are the same bare date', async () => {
+    const intent = await canonicalizeSearchIntent(
+      { dateFrom: '2026-08-30', dateTo: '2026-08-30' },
+      WEDNESDAY_NOON
+    )
+    expect(intent.must.startsAfter).toBe(baToUTC(new Date(2026, 7, 30)))
+    expect(intent.must.startsBefore).toBe(baToUTC(new Date(2026, 7, 31)))
+  })
+
   it('keeps adjacent "Monday or Tuesday" as two exact day windows', async () => {
     const intent = await canonicalizeSearchIntent({ query: 'Monday or Tuesday' }, SUNDAY)
     expect(intent.must.weekdayWindows).toEqual([

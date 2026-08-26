@@ -159,6 +159,34 @@ export interface EventWithVenue extends Event {
   venue_address: string | null
 }
 
+/** Explicit public event read shape shared by transport adapters. */
+export type PublicEventRecord = Pick<
+  EventWithVenue,
+  | 'id'
+  | 'name'
+  | 'description_display_es'
+  | 'description_display_en'
+  | 'description_summary_es'
+  | 'description_summary_en'
+  | 'starts_at'
+  | 'ends_at'
+  | 'is_all_day'
+  | 'time_tba'
+  | 'venue_id'
+  | 'categories'
+  | 'price'
+  | 'is_free'
+  | 'min_age'
+  | 'image_url'
+  | 'link'
+  | 'ticket_url'
+  | 'status'
+  | 'location_hidden'
+  | 'venue_name'
+  | 'venue_neighborhood'
+  | 'venue_address'
+>
+
 // Event payload safe to send to chat clients and persist in chat attachments.
 // Embeddings are internal search infrastructure and must not cross this boundary.
 export type ChatEventPayload = Omit<EventWithVenue, 'embedding'> & {

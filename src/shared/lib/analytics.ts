@@ -11,6 +11,8 @@ export type AnalyticsEvent =
   | 'event:link_clicked'
   | 'feedback:submitted'
   | 'telegram:link_clicked'
+  | 'mcp:signpost_clicked'
+  | 'mcp:endpoint_copied'
 
 // Lazy-loaded PostHog instance (client-side only)
 let posthogInstance: typeof import('posthog-js').default | null = null

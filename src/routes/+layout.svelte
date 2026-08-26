@@ -185,6 +185,7 @@
 	)
 	const isLandingPage = $derived(page.url.pathname === '/')
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
+	const isMcpPage = $derived(page.url.pathname === '/mcp')
 	const eventId = $derived(page.url.searchParams.get('event'))
 	const selectedEvent = $derived(
 		page.state.selectedEvent ??
@@ -204,7 +205,7 @@
 	<meta name="theme-color" content="#fafaf8" />
 	<link rel="manifest" href="/manifest.json" />
 
-	{#if !isEventPage}
+	{#if !isEventPage && !isMcpPage}
 		<title>{seo.title}</title>
 		<meta name="description" content={seo.description} />
 

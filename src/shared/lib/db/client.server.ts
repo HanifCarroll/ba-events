@@ -11,6 +11,7 @@ import type {
   EventStatus,
   ChatEventPayload,
   EventFilters,
+  PublicEventRecord,
   Venue,
   VenueInsert,
 } from '../types.ts'
@@ -89,6 +90,12 @@ const EVENT_ADMIN_COLUMNS = `
 
 // Columns needed by chat tools and event cards. Excludes embedding so vectors do
 // not leave the database for chat display or message attachment paths.
+const PUBLIC_EVENT_COLUMNS = `
+  id, name, description_display_es, description_display_en, description_summary_es, description_summary_en,
+  starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url,
+  link, ticket_url, status, location_hidden, venue_name, venue_neighborhood, venue_address
+`
+
 const CHAT_EVENT_COLUMNS = `
   id, name, description_es, description_en, description_display_es, description_display_en,
   description_summary_es, description_summary_en, starts_at, ends_at, is_all_day, time_tba,
@@ -156,6 +163,19 @@ export async function getHappeningSoonEvents(limit = 8): Promise<ChatEventPayloa
 // ============================================================================
 // LIGHTWEIGHT ADMIN LIST QUERIES (Performance Optimized)
 // ============================================================================
+
+/** Public read boundary: only displayable statuses and explicit public columns. */
+export async function getDisplayableEventById(id: string): Promise<PublicEventRecord | null> {
+  const { data, error } = await getSupabase()
+    .from('events_with_venues')
+    .select(PUBLIC_EVENT_COLUMNS)
+    .eq('id', id)
+    .in('status', ['scheduled', 'past'])
+    .maybeSingle()
+
+  if (error) throw error
+  return (data as PublicEventRecord | null) ?? null
+}
 
 export async function getEventWithVenue(id: string) {
   const { data, error } = await getSupabase()

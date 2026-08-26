@@ -14,6 +14,8 @@ BA Eventos uses PostHog for a small, privacy-conscious product funnel. PostHog i
 | `event:saved` / `event:unsaved` | `event_id`, `source`, `locale` | Saved-event value |
 | `chat:error` | `error_type`, `locale` | Customer-visible chat failures |
 | `feedback:submitted` | `locale` | Feedback volume |
+| `mcp:signpost_clicked` | `source`, `locale` | Homepage MCP interest |
+| `mcp:endpoint_copied` | `locale` | MCP setup intent |
 
 Authenticated people are identified with their application user ID, locale, and admin status. Email stays in Supabase and is not sent to PostHog.
 
@@ -49,5 +51,14 @@ The core funnel is:
 1. `chat:message_sent`
 2. `chat:event_clicked`
 3. `event:saved` or `event:link_clicked`
+
+The MCP funnel is:
+
+1. `mcp:signpost_clicked`
+2. `/mcp` `$pageview`
+3. `mcp:endpoint_copied`
+4. Cloudflare Worker `mcp_tool_call`, split by `audience: dogfood | external`
+
+Internal Codex and live smoke-test clients send `X-BA-Eventos-Source: dogfood`. The custom `mcp_tool_call` record contains only the resulting audience label, tool name, success status, and duration. Cloudflare's separate request metadata and the shared search service retain their existing operational fields.
 
 Filter admin users from public-product reporting. Treat historical data as mixed with older local and broader tracking until the new production-only setup has accumulated enough data.

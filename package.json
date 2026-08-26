@@ -25,7 +25,10 @@
 		"trigger:dev": "bunx trigger.dev@4.5.11 dev",
 		"trigger:deploy": "bunx trigger.dev@4.5.11 deploy",
 		"telegram:dry-run": "wrangler deploy --config wrangler.telegram.jsonc --dry-run",
-		"telegram:deploy": "wrangler deploy --config wrangler.telegram.jsonc"
+		"telegram:deploy": "wrangler deploy --config wrangler.telegram.jsonc",
+		"mcp:types": "wrangler types worker-configuration.d.ts --config wrangler.mcp.jsonc --include-runtime false --env-file /dev/null",
+		"mcp:dry-run": "wrangler deploy --config wrangler.mcp.jsonc --dry-run",
+		"mcp:deploy": "wrangler deploy --config wrangler.mcp.jsonc"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20260825.1",
@@ -57,10 +60,12 @@
 		"@ai-sdk/openai": "^4.0.42",
 		"@ai-sdk/svelte": "^5.0.66",
 		"@browserbasehq/sdk": "^2.18.0",
+		"@modelcontextprotocol/server": "2.0.0",
 		"@supabase/ssr": "0.12.4",
 		"@supabase/supabase-js": "^2.112.3",
 		"@tailwindcss/vite": "^4.3.3",
 		"@trigger.dev/sdk": "4.5.11",
+		"agents": "0.21.0",
 		"ai": "^7.0.66",
 		"cheerio": "^1.2.0",
 		"class-variance-authority": "^0.7.1",

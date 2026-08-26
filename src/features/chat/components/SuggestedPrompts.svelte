@@ -468,6 +468,13 @@
 				{m.landing_cta()} <ArrowUp class="size-4" aria-hidden="true" />
 			</button>
 			<p class="mt-5 text-sm text-muted-foreground">{m.landing_reassurance()}</p>
+			<a
+				href="/mcp"
+				onclick={() => track('mcp:signpost_clicked', { source: 'homepage' })}
+				class="mt-8 inline-flex min-h-11 items-center text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			>
+				{m.mcp_signpost()}
+			</a>
 		</section>
 	</div>
 </div>
