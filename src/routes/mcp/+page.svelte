@@ -90,11 +90,6 @@
 				<h3 class="font-display mt-8 text-xl">{m.mcp_limits_title()}</h3>
 				<p class="mt-3 leading-7 text-muted-foreground">{m.mcp_limits()}</p>
 			</section>
-
-			<section aria-labelledby="trust-heading">
-				<h2 id="trust-heading" class="font-display text-2xl">{m.mcp_trust_title()}</h2>
-				<p class="mt-3 leading-7 text-muted-foreground">{m.mcp_trust()}</p>
-			</section>
 		</div>
 
 		<footer class="mt-14 flex flex-wrap gap-x-6 gap-y-3 border-t border-border/70 pt-6 text-sm">

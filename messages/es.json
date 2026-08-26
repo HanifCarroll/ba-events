@@ -166,9 +166,7 @@
   "mcp_example_title": "Probá pedir",
   "mcp_example": "Buscá música en vivo gratis en Palermo este viernes",
   "mcp_limits_title": "Alcance y límites",
-  "mcp_limits": "Solo lectura. No necesitás una cuenta de BA Eventos. Las búsquedas devuelven hasta 5 resultados. Límite: 10 llamadas a herramientas por minuto por IP. Sin acceso a eventos guardados ni a cuentas. Los esquemas y la disponibilidad de la beta pueden cambiar.",
-  "mcp_trust_title": "Un chequeo útil",
-  "mcp_trust": "Los detalles de los eventos pueden cambiar. Revisá el link de origen o entradas antes de ir. Las ubicaciones ocultas siguen ocultas.",
+  "mcp_limits": "Solo lectura. No necesitás una cuenta de BA Eventos. Las búsquedas devuelven hasta 5 resultados. Límite: 10 llamadas a herramientas por minuto por IP.",
   "mcp_back": "Volver a descubrir eventos",
   "mcp_privacy": "Privacidad",
   "mcp_signpost": "¿Construís con IA? Conectá el MCP de BA Eventos — Beta pública"
