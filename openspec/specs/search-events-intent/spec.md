@@ -55,3 +55,25 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 #### Scenario: Disabled reranking keeps retrieval order
 - **WHEN** hosted reranking is unavailable or disabled
 - **THEN** the search preserves the deterministic retrieval order while still applying the requested display cap and list-diversity behavior
+
+## Verification
+
+### Implementation anchors
+- `src/features/chat/api/tools/search-intent.ts`
+- `src/features/chat/api/tools/search-events.ts`
+- `src/features/chat/api/tools/search-ranking.ts`
+- `src/shared/lib/search/rerank.ts`
+
+### Deterministic tests
+- `src/features/chat/api/tools/search-intent.test.ts`
+- `src/features/chat/api/tools/search-events.test.ts`
+- `src/features/chat/api/tools/search-query-annotations.test.ts`
+- `src/shared/lib/search/rerank.test.ts`
+
+### Verification command
+```sh
+bunx vitest run src/features/chat/api/tools/search-intent.test.ts src/features/chat/api/tools/search-events.test.ts src/features/chat/api/tools/search-query-annotations.test.ts src/shared/lib/search/rerank.test.ts
+```
+
+### Advisory conformance review
+`$openspec-review-conformance search-events-intent` compares these requirements with implementation and deterministic evidence; the review is advisory rather than proof.

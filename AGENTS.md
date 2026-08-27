@@ -28,6 +28,12 @@ Unit tests never require real Supabase credentials: the Supabase clients are
 lazy-initialized and the agent orchestration is tested through dependency-
 injected, pure helpers.
 
+## OpenSpec
+
+- `openspec/config.yaml` selects `spec-driven`; the main specs under `openspec/specs/` are the canonical requirements for current product behavior. Before implementing a behavioral change, read the affected main specs and keep them aligned with code and deterministic tests.
+- Update the affected main spec when observable behavior, persisted shapes, security or compatibility rules, or channel, search, import, or agent contracts change. Implementation-only refactors do not need spec edits.
+- For planned contract changes, use `$openspec-propose`, then `$openspec-apply-change`; sync accepted deltas with `$openspec-sync-specs` before `$openspec-archive-change`. Run `openspec validate --specs --json`; `$openspec-review-conformance` is advisory and does not replace validation or tests.
+
 ## Chat Analysis
 
 When asked to analyze a chat URL, extract its `/chat/<conversationId>` value and inspect the stored transcript and execution trace with:
