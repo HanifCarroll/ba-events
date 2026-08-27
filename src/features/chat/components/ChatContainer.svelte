@@ -34,7 +34,8 @@
 		resetAttemptedTurnIds,
 		shouldPersistUserMessage,
 		adoptedPendingConversationId,
-		ownsRunningGuestClaim
+		ownsRunningGuestClaim,
+		markTurnAccepted
 	} from '#features/chat/lib/pending-turn-guard.ts'
 	import {
 		adaptStoredMessageToCanonical,
@@ -136,6 +137,7 @@
 	let pendingUserPersistencePromiseRef: Promise<MessagePersistenceResult> | null = null
 	let pendingUserPersistedMessageIdRef: string | null = null
 	let attemptedTurnIdsRef = new Set<string>()
+	let acceptedAnalyticsTurnIdsRef = new Set<string>()
 	let persistedAssistantMessageIdsRef = new Map<string, string>()
 	let isFirstExchangeRef = true
 	let isFlushingOutboxRef = false
@@ -550,8 +552,6 @@
 		resetRequestCorrelations()
 		eventsCountRef = 0
 		startTimeRef = Date.now()
-		track('chat:message_sent', { message_length: content.length, has_history: chat.messages.length > 0 })
-
 		pendingUserMessageRef = content
 		pendingUserPersistedMessageIdRef = null
 		const userClientMessageId = options?.userClientMessageId ?? crypto.randomUUID()
@@ -569,6 +569,10 @@
 			if (!currentConversationId) currentConversationId = crypto.randomUUID()
 			pendingConversationIdRef = currentConversationId
 			await bootstrapTurn({ conversationId: currentConversationId, turnId, userClientMessageId, assistantClientMessageId, content })
+
+			if (isAuthenticated && markTurnAccepted(acceptedAnalyticsTurnIdsRef, turnId)) {
+				track('chat:message_sent', { message_length: content.length, has_history: chat.messages.length > 0 })
+			}
 
 			if (!conversationId && currentConversationId) {
 				chat.messages = [{
@@ -590,6 +594,10 @@
 				if (!ownsRunningGuestClaim({ status: claimed?.status, claimId: pendingTurnClaimIdRef, returnedClaimId: claimed?.claim_id })) {
 					throw new Error('This turn is already running or needs explicit retry')
 				}
+			}
+
+			if (!isAuthenticated && markTurnAccepted(acceptedAnalyticsTurnIdsRef, turnId)) {
+				track('chat:message_sent', { message_length: content.length, has_history: chat.messages.length > 0 })
 			}
 
 			const userMessagePayload: MessagePersistencePayload = {
@@ -641,6 +649,9 @@
 		} catch (err) {
 			console.error('Failed to send message:', err)
 			const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
+			if (!pendingTurnIdRef || !acceptedAnalyticsTurnIdsRef.has(pendingTurnIdRef)) {
+				track('chat:error', { error_type: 'preflight_error' })
+			}
 			if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
 				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
 			}

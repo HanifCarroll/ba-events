@@ -35,6 +35,12 @@ export function shouldPersistUserMessage(turnId: string | null) {
 	return turnId === null
 }
 
+export function markTurnAccepted(acceptedTurnIds: Set<string>, turnId: string) {
+	if (acceptedTurnIds.has(turnId)) return false
+	acceptedTurnIds.add(turnId)
+	return true
+}
+
 export function adoptedPendingConversationId(
 	pendingConversationId: string | null,
 	currentConversationId: string | null

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
 	findRetryTurn,
+	markTurnAccepted,
 	resetAttemptedTurnIds,
 	shouldAutoHandlePendingTurn,
 	shouldPersistUserMessage,
@@ -32,6 +33,13 @@ describe('pending turn guard', () => {
 		]
 		expect(findRetryTurn(turns, null)?.id).toBe('turn-1')
 		expect(findRetryTurn(turns, 'turn-1')?.id).toBe('turn-2')
+	})
+
+	it('counts an accepted turn once, including explicit retries', () => {
+		const accepted = new Set<string>()
+		expect(markTurnAccepted(accepted, 'turn-1')).toBe(true)
+		expect(markTurnAccepted(accepted, 'turn-1')).toBe(false)
+		expect(accepted).toEqual(new Set(['turn-1']))
 	})
 
 	it('uses durable bootstrap as the only user persistence for new turns', () => {
