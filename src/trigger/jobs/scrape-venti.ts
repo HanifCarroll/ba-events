@@ -16,7 +16,6 @@ export const scrapeVenti = task({
   id: 'scrape-venti',
   // Catalog + availability fetches + embeddings can take a few minutes
   maxDuration: 1800, // 30 minutes
-  machine: 'medium-1x',
   run: async (payload: VentiJobPayload): Promise<VentiImportResult> => {
     console.log('[scrape-venti] Starting Venti import job')
 

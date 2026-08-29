@@ -9,8 +9,12 @@ Define source-specific event ingestion, duplicate handling, venue settlement, an
 Every imported event MUST retain its source and stable external identity where available. Existing source identities SHALL update the matching event instead of creating a duplicate.
 
 #### Scenario: Existing external event is imported again
-- **WHEN** source and external identity match a stored event
+- **WHEN** source and external identity match a stored event and source or embedding inputs changed
 - **THEN** the existing record is updated through the source-specific path
+
+#### Scenario: Existing external event is unchanged
+- **WHEN** source and external identity match a stored event with current embedding inputs and no mutable source changes
+- **THEN** the importer performs no write, categorization, presentation generation, or embedding
 
 ### Requirement: Source adapters preserve source semantics
 Each source SHALL use its registered transformer and enrichment capabilities. Source-specific time-TBA, hidden-location, description, ticket, category, and venue states MUST NOT be normalized into unsupported certainty.

@@ -45,12 +45,28 @@ export interface ExistingEventData {
   id: string
   external_id: string
   name: string
+  description_es: string | null
+  description_en: string | null
   starts_at: string
   ends_at: string | null
+  is_all_day: boolean
+  time_tba: boolean
   venue_id: string | null
+  categories: string[]
   price: number | null
+  is_free: boolean
+  min_age: number | null
   image_url: string | null
+  image_width: number | null
+  image_height: number | null
   link: string | null
+  ticket_url: string | null
+  status: EventInsert['status']
+  location_hidden: boolean
+  location_tba: boolean
+  description_unavailable: boolean
+  facets: NonNullable<EventInsert['facets']>
+  embedding_version: number | null
 }
 
 /**
@@ -134,7 +150,7 @@ export async function checkDuplicateEventsWithData(
   const db = client ?? getSupabase()
   const { data: existingEvents } = await db
     .from('events')
-    .select('id, external_id, name, starts_at, ends_at, venue_id, price, image_url, link')
+    .select('id, external_id, name, description_es, description_en, starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url, image_width, image_height, link, ticket_url, status, location_hidden, location_tba, description_unavailable, facets, embedding_version')
     .eq('source', source)
     .in('external_id', externalIds)
 

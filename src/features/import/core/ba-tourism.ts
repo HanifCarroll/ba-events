@@ -22,7 +22,8 @@ import {
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
-import { checkDuplicateEventsWithData } from '../api/duplicate-detection.ts'
+import { checkDuplicateEventsWithData, type ExistingEventData } from '../api/duplicate-detection.ts'
+import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
 import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
@@ -203,21 +204,33 @@ export async function processBATourismImport(
     : await checkDuplicateEventsWithData(externalIds, 'ba-tourism', client)
 
   // Build list of events to process with update status
-  const eventsToProcess: Array<{ transformed: EventInsert; sourceEvent: BATourismEvent; isUpdate: boolean }> = []
+  const eventsToProcess: Array<{
+    transformed: EventInsert
+    sourceEvent: BATourismEvent
+    existing?: ExistingEventData
+    updateKind?: ScraperUpdateKind
+  }> = []
   for (const transformed of transformedEvents) {
     const sourceEvent = eventSourceMap.get(transformed)!
     const existing = transformed.external_id ? existingEventsMap.get(transformed.external_id) : undefined
+    if (existing) {
+      transformed.description_es = existing.description_es
+      transformed.description_en = existing.description_en
+      transformed.categories = existing.categories
+      transformed.facets = existing.facets
+    }
     eventsToProcess.push({
       transformed,
       sourceEvent,
-      isUpdate: !!existing,
+      existing,
+      updateKind: existing ? classifyScraperUpdate(transformed, existing, CURRENT_EMBEDDING_VERSION) : undefined,
     })
   }
 
   // Step 6: Categorize events with AI
   console.log('[ba-tourism] Categorizing events...')
   const { categories, stats: catStats } = await categorizeEventsBatchWithStats(
-    eventsToProcess.map((e) => ({
+    eventsToProcess.filter((e) => !e.existing).map((e) => ({
       name: e.transformed.name,
       description: e.transformed.description_es,
     })),
@@ -227,19 +240,37 @@ export async function processBATourismImport(
   result.categorizationSuccessful = catStats.successful
   result.categorizationFallback = catStats.fallback
 
-  // Apply categories to events
-  for (let i = 0; i < eventsToProcess.length; i++) {
-    eventsToProcess[i].transformed.categories = [categories[i]]
+  const newEvents = eventsToProcess.filter((e) => !e.existing)
+  for (let i = 0; i < newEvents.length; i++) {
+    newEvents[i].transformed.categories = [categories[i]]
   }
 
   // Step 7: Generate embeddings and upsert
   console.log('[ba-tourism] Generating embeddings and upserting events...')
-  for (const { transformed, sourceEvent, isUpdate } of eventsToProcess) {
+  for (const { transformed, sourceEvent, existing, updateKind } of eventsToProcess) {
+    if (existing && updateKind === 'unchanged') continue
+
     try {
-      const presentationFields = await buildDescriptionPresentationFields({
-        description_es: transformed.description_es,
-        description_en: transformed.description_en,
-      })
+      if (existing && updateKind === 'mutable-only') {
+        const { error } = await client
+          .from('events')
+          .update(getChangedMutableFields(transformed, existing))
+          .eq('id', existing.id)
+        if (error) {
+          console.error(`[ba-tourism] Failed to update event: ${error.message}`)
+          result.eventsSkipped++
+        } else {
+          result.eventsUpdated++
+        }
+        continue
+      }
+
+      const presentationFields = !existing || sourceDescriptionsChanged(transformed, existing)
+        ? await buildDescriptionPresentationFields({
+            description_es: transformed.description_es,
+            description_en: transformed.description_en,
+          })
+        : {}
 
       // Generate embedding + search document together (they must not drift).
       // BA Tourism provides the venue name + neighborhood directly on the
@@ -266,30 +297,22 @@ export async function processBATourismImport(
         enrichment_status: 'pending' as const,
       }
 
-      if (isUpdate) {
-        // Update existing event
-        const existing = existingEventsMap.get(transformed.external_id!)
+      if (existing) {
         const { error } = await client
           .from('events')
           .update({
             name: eventWithEmbedding.name,
             description_es: eventWithEmbedding.description_es,
             description_en: eventWithEmbedding.description_en,
-            description_display_es: eventWithEmbedding.description_display_es,
-            description_display_en: eventWithEmbedding.description_display_en,
-            description_summary_es: eventWithEmbedding.description_summary_es,
-            description_summary_en: eventWithEmbedding.description_summary_en,
-            starts_at: eventWithEmbedding.starts_at,
-            ends_at: eventWithEmbedding.ends_at,
-            venue_id: eventWithEmbedding.venue_id,
+            ...presentationFields,
             categories: eventWithEmbedding.categories,
             is_free: eventWithEmbedding.is_free,
             embedding: eventWithEmbedding.embedding,
             search_document: eventWithEmbedding.search_document,
             embedding_version: eventWithEmbedding.embedding_version,
-            location_tba: eventWithEmbedding.location_tba ?? false,
+            ...getChangedMutableFields(eventWithEmbedding, existing),
           })
-          .eq('id', existing!.id)
+          .eq('id', existing.id)
 
         if (error) {
           console.error(`[ba-tourism] Failed to update event: ${error.message}`)

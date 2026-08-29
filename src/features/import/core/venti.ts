@@ -19,7 +19,8 @@ import {
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
-import { checkDuplicateEventsWithData } from '../api/duplicate-detection.ts'
+import { checkDuplicateEventsWithData, type ExistingEventData } from '../api/duplicate-detection.ts'
+import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
 import { settleVenues, getVenueIdFromResults, getVenueNeighborhoodFromResults, type VenueSettlementInput } from './venue-settlement.ts'
@@ -167,23 +168,36 @@ export async function processVentiImport(
 
   // Step 6: Transform events with venue IDs
   console.log('[venti] Transforming events...')
-  const eventsToProcess: Array<{ event: VentiEvent; transformed: EventInsert; isUpdate: boolean }> = []
+  const eventsToProcess: Array<{
+    event: VentiEvent
+    transformed: EventInsert
+    existing?: ExistingEventData
+    updateKind?: ScraperUpdateKind
+  }> = []
 
   for (const event of filteredEvents) {
     const venueName = getVenueName(event)
     const venueId = getVenueIdFromResults(venueResults, venueName)
     const availability = availabilityMap.get(event.id) ?? null
     const transformed = transformVentiEvent(event, venueId, availability)
-
     const existing = existingEventsMap.get(String(event.id))
-    eventsToProcess.push({ event, transformed, isUpdate: !!existing })
+    if (existing) {
+      transformed.facets = existing.facets
+      if (!(transformed.categories?.length)) transformed.categories = existing.categories
+    }
+    eventsToProcess.push({
+      event,
+      transformed,
+      existing,
+      updateKind: existing ? classifyScraperUpdate(transformed, existing, CURRENT_EMBEDDING_VERSION) : undefined,
+    })
   }
 
   // Step 7: Categorize events missing a native category mapping
   // Venti provides category natively (party/concert/festival/gastronomy),
   // so the AI categorizer only runs for events with unknown categories.
   const uncategorized = eventsToProcess.filter(
-    (e) => (e.transformed.categories ?? []).length === 0
+    (e) => (e.transformed.categories ?? []).length === 0 && (!e.existing || e.updateKind === 'search-input/stale-embedding')
   )
 
   if (uncategorized.length > 0) {
@@ -206,12 +220,30 @@ export async function processVentiImport(
 
   // Step 8: Generate embeddings and upsert
   console.log('[venti] Generating embeddings and upserting events...')
-  for (const { event, transformed, isUpdate } of eventsToProcess) {
+  for (const { event, transformed, existing, updateKind } of eventsToProcess) {
+    if (existing && updateKind === 'unchanged') continue
+
     try {
-      const presentationFields = await buildDescriptionPresentationFields({
-        description_es: transformed.description_es,
-        description_en: transformed.description_en,
-      })
+      if (existing && updateKind === 'mutable-only') {
+        const { error } = await client
+          .from('events')
+          .update(getChangedMutableFields(transformed, existing))
+          .eq('id', existing.id)
+        if (error) {
+          console.error(`[venti] Failed to update event: ${error.message}`)
+          result.eventsSkipped++
+        } else {
+          result.eventsUpdated++
+        }
+        continue
+      }
+
+      const presentationFields = !existing || sourceDescriptionsChanged(transformed, existing)
+        ? await buildDescriptionPresentationFields({
+            description_es: transformed.description_es,
+            description_en: transformed.description_en,
+          })
+        : {}
 
       // Generate embedding + search document together (they must not drift).
       // Venti provides the venue name on the source event; when the settlement
@@ -238,31 +270,23 @@ export async function processVentiImport(
         enrichment_status: 'pending' as const,
       }
 
-      if (isUpdate) {
-        // Update existing event
-        const existing = existingEventsMap.get(transformed.external_id!)
+      if (existing) {
         const { error } = await client
           .from('events')
           .update({
             name: eventWithEmbedding.name,
             description_es: eventWithEmbedding.description_es,
             description_en: eventWithEmbedding.description_en,
-            description_display_es: eventWithEmbedding.description_display_es,
-            description_display_en: eventWithEmbedding.description_display_en,
-            description_summary_es: eventWithEmbedding.description_summary_es,
-            description_summary_en: eventWithEmbedding.description_summary_en,
-            starts_at: eventWithEmbedding.starts_at,
-            ends_at: eventWithEmbedding.ends_at,
-            venue_id: eventWithEmbedding.venue_id,
+            ...presentationFields,
             categories: eventWithEmbedding.categories,
             price: eventWithEmbedding.price,
             is_free: eventWithEmbedding.is_free,
-            image_url: eventWithEmbedding.image_url,
             embedding: eventWithEmbedding.embedding,
             search_document: eventWithEmbedding.search_document,
             embedding_version: eventWithEmbedding.embedding_version,
+            ...getChangedMutableFields(eventWithEmbedding, existing),
           })
-          .eq('id', existing!.id)
+          .eq('id', existing.id)
 
         if (error) {
           console.error(`[venti] Failed to update event: ${error.message}`)

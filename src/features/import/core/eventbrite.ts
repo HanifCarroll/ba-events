@@ -24,7 +24,8 @@ import {
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
-import { checkDuplicateEventsWithData } from '../api/duplicate-detection.ts'
+import { checkDuplicateEventsWithData, type ExistingEventData } from '../api/duplicate-detection.ts'
+import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
 import { settleVenues, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
@@ -178,7 +179,12 @@ export async function processEventbriteImport(
 
   // Step 5: Transform events with venue IDs
   console.log('[eventbrite] Transforming events...')
-  const eventsToProcess: Array<{ event: EventbriteEvent; transformed: EventInsert; isUpdate: boolean }> = []
+  const eventsToProcess: Array<{
+    event: EventbriteEvent
+    transformed: EventInsert
+    existing?: ExistingEventData
+    updateKind?: ScraperUpdateKind
+  }> = []
 
   for (const event of filteredEvents) {
     const venueName = event.location?.name || null
@@ -193,13 +199,7 @@ export async function processEventbriteImport(
 
     const externalId = extractEventId(event.url)
     const existing = externalId ? existingEventsMap.get(externalId) : undefined
-    if (existing) {
-      // Event exists - check if we should update
-      eventsToProcess.push({ event, transformed, isUpdate: true })
-    } else {
-      // New event
-      eventsToProcess.push({ event, transformed, isUpdate: false })
-    }
+    eventsToProcess.push({ event, transformed, existing })
   }
 
   // Step 6: Enrich from detail pages (times, price, min_age)
@@ -239,10 +239,19 @@ export async function processEventbriteImport(
     }
   }
 
-  // Step 7: Categorize events with AI
+  for (const item of eventsToProcess) {
+    if (!item.existing) continue
+    item.transformed.description_es = item.existing.description_es
+    item.transformed.description_en = item.existing.description_en
+    item.transformed.categories = item.existing.categories
+    item.transformed.facets = item.existing.facets
+    item.updateKind = classifyScraperUpdate(item.transformed, item.existing, CURRENT_EMBEDDING_VERSION)
+  }
+
+  // Step 7: Categorize new events with AI
   console.log('[eventbrite] Categorizing events...')
   const { categories, stats: catStats } = await categorizeEventsBatchWithStats(
-    eventsToProcess.map((e) => ({
+    eventsToProcess.filter((e) => !e.existing).map((e) => ({
       name: e.transformed.name,
       description: e.transformed.description_es,
     })),
@@ -252,19 +261,37 @@ export async function processEventbriteImport(
   result.categorizationSuccessful = catStats.successful
   result.categorizationFallback = catStats.fallback
 
-  // Apply categories to events
-  for (let i = 0; i < eventsToProcess.length; i++) {
-    eventsToProcess[i].transformed.categories = [categories[i]]
+  const newEvents = eventsToProcess.filter((e) => !e.existing)
+  for (let i = 0; i < newEvents.length; i++) {
+    newEvents[i].transformed.categories = [categories[i]]
   }
 
   // Step 8: Generate embeddings and upsert
   console.log('[eventbrite] Generating embeddings and upserting events...')
-  for (const { event, transformed, isUpdate } of eventsToProcess) {
+  for (const { event, transformed, existing, updateKind } of eventsToProcess) {
+    if (existing && updateKind === 'unchanged') continue
+
     try {
-      const presentationFields = await buildDescriptionPresentationFields({
-        description_es: transformed.description_es,
-        description_en: transformed.description_en,
-      })
+      if (existing && updateKind === 'mutable-only') {
+        const { error } = await client
+          .from('events')
+          .update(getChangedMutableFields(transformed, existing))
+          .eq('id', existing.id)
+        if (error) {
+          console.error(`[eventbrite] Failed to update event: ${error.message}`)
+          result.eventsSkipped++
+        } else {
+          result.eventsUpdated++
+        }
+        continue
+      }
+
+      const presentationFields = !existing || sourceDescriptionsChanged(transformed, existing)
+        ? await buildDescriptionPresentationFields({
+            description_es: transformed.description_es,
+            description_en: transformed.description_en,
+          })
+        : {}
 
       // Generate embedding + search document together (they must not drift).
       // Eventbrite provides the venue name + address locality on the source
@@ -293,37 +320,23 @@ export async function processEventbriteImport(
         enrichment_status: 'pending' as const,
       }
 
-      if (isUpdate) {
-        // Update existing event
-        const existing = existingEventsMap.get(transformed.external_id!)
+      if (existing) {
         const { error } = await client
           .from('events')
           .update({
             name: eventWithEmbedding.name,
             description_es: eventWithEmbedding.description_es,
             description_en: eventWithEmbedding.description_en,
-            description_display_es: eventWithEmbedding.description_display_es,
-            description_display_en: eventWithEmbedding.description_display_en,
-            description_summary_es: eventWithEmbedding.description_summary_es,
-            description_summary_en: eventWithEmbedding.description_summary_en,
-            starts_at: eventWithEmbedding.starts_at,
-            ends_at: eventWithEmbedding.ends_at,
-            is_all_day: eventWithEmbedding.is_all_day,
-            time_tba: eventWithEmbedding.time_tba ?? false,
-            venue_id: eventWithEmbedding.venue_id,
+            ...presentationFields,
             categories: eventWithEmbedding.categories,
             price: eventWithEmbedding.price,
             is_free: eventWithEmbedding.is_free,
-            min_age: eventWithEmbedding.min_age ?? null,
-            image_url: eventWithEmbedding.image_url,
-            image_width: eventWithEmbedding.image_width ?? null,
-            image_height: eventWithEmbedding.image_height ?? null,
             embedding: eventWithEmbedding.embedding,
             search_document: eventWithEmbedding.search_document,
             embedding_version: eventWithEmbedding.embedding_version,
-            location_tba: eventWithEmbedding.location_tba ?? false,
+            ...getChangedMutableFields(eventWithEmbedding, existing),
           })
-          .eq('id', existing!.id)
+          .eq('id', existing.id)
 
         if (error) {
           console.error(`[eventbrite] Failed to update event: ${error.message}`)
