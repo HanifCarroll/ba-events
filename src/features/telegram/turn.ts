@@ -407,7 +407,7 @@ export async function processTelegramTurn(
         error instanceof Error ? error.name : 'unknown_error'
       )
     } catch {
-      // Preserve the original failure for Trigger retry handling.
+      // Preserve the original failure for Telegram Worker retry handling.
     }
     throw error
   }

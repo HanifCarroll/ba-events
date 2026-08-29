@@ -33,6 +33,13 @@ Enrichment SHALL use the registered source strategy, retain available source dat
 - **WHEN** a source already provides usable Spanish description text
 - **THEN** the translate-only path may create the English presentation without re-scraping for a replacement description
 
+### Requirement: Catch-up retries are bounded per scheduled chain
+The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
+
+#### Scenario: Failed event remains retryable without looping
+- **WHEN** an event selected in the first catch-up batch fails enrichment and another batch is chained
+- **THEN** the next batch excludes that failed event, while the event remains eligible for the next scheduled catch-up
+
 ## Verification
 
 ### Implementation anchors
@@ -41,16 +48,18 @@ Enrichment SHALL use the registered source strategy, retain available source dat
 - `src/features/import/api/duplicate-detection.ts`
 - `src/features/import/core/venue-settlement.ts`
 - `src/trigger/jobs/daily-scrape.ts`
+- `src/trigger/jobs/enrichment-catchup.ts`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
 - `src/features/import/api/duplicate-detection.test.ts`
 - `src/features/import/core/passline-existing.test.ts`
 - `src/trigger/jobs/daily-scrape-outcome.test.ts`
+- `src/trigger/jobs/enrichment-catchup.test.ts`
 
 ### Verification command
 ```sh
-bunx vitest run src/features/import/core/event-enrichment.test.ts src/features/import/api/duplicate-detection.test.ts src/features/import/core/passline-existing.test.ts src/trigger/jobs/daily-scrape-outcome.test.ts
+bunx vitest run src/features/import/core/event-enrichment.test.ts src/features/import/api/duplicate-detection.test.ts src/features/import/core/passline-existing.test.ts src/trigger/jobs/daily-scrape-outcome.test.ts src/trigger/jobs/enrichment-catchup.test.ts
 ```
 
 ### Advisory conformance review

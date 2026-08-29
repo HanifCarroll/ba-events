@@ -4,7 +4,7 @@ The bot supports anonymous one-to-one chats only. It does not link BA Eventos ac
 
 ## 1. Create bots in BotFather
 
-Create separate test and production bots, and connect each to its own matching app, Trigger.dev, and database environment (one bot token per deployment). In BotFather:
+Create separate test and production bots, and connect each to its own matching app, Telegram Worker, and database environment (one bot token per deployment). In BotFather:
 
 - disable group joins (`/setjoingroups` → Disable);
 - keep inline mode disabled;
@@ -50,7 +50,7 @@ Raw Telegram IDs, message text, and the stable identity HMAC never enter the Wor
 ## 3. Deployment order
 
 1. Apply `supabase/migrations/20260823130000_add_external_channel_conversations.sql`.
-2. Configure the app, Telegram Worker, and remaining Trigger.dev scraping environment variables.
+2. Configure the app and Telegram Worker secrets. Keep the separate Trigger.dev scraping environment configured for event imports.
 3. Deploy the web app.
 4. Dry-run and deploy the separate Telegram Worker:
 

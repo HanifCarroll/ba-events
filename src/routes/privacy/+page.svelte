@@ -40,7 +40,7 @@
 				{
 					title: 'Service providers',
 					body: [
-						'We use service providers to run BA Eventos: Supabase for authentication, stored account data, and Telegram pilot conversations; Trigger.dev for encrypted Telegram background processing; Google for optional sign-in; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
+						'We use service providers to run BA Eventos: Supabase for authentication, stored account data, and Telegram pilot conversations; Cloudflare Workers for the Telegram webhook and encrypted background processing; Google for optional sign-in; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
 					]
 				},
 				{
@@ -95,7 +95,7 @@
 				{
 					title: 'Proveedores',
 					body: [
-						'Usamos proveedores para operar BA Eventos: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Trigger.dev para el procesamiento cifrado de Telegram en segundo plano; Google para el acceso opcional; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
+						'Usamos proveedores para operar BA Eventos: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Cloudflare Workers para el webhook de Telegram y el procesamiento cifrado en segundo plano; Google para el acceso opcional; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
 					]
 				},
 				{

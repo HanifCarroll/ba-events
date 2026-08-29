@@ -12,6 +12,8 @@
  * Architecture:
  * - enrichmentCatchup (scheduled) triggers enrichmentBatch
  * - enrichmentBatch processes 50 events, then chains to itself if more remain
+ * - The first batch retries failed rows; later batches only process pending rows
+ *   so a failed row is attempted at most once in a scheduled chain.
  */
 import { schedules, task, tasks, metadata } from '@trigger.dev/sdk/v3'
 import { createServiceRoleClient } from '../utils/db-client.ts'
@@ -24,17 +26,30 @@ import {
 // Smaller batch size - each event takes 15-30 seconds due to API calls
 const BATCH_SIZE = 50
 
+export function catchupStatusesForBatch(batchNumber: number): Array<'pending' | 'failed'> {
+  return batchNumber === 1 ? ['pending', 'failed'] : ['pending']
+}
+
+export function shouldChainCatchupBatch(
+  pendingRemaining: number,
+  batchNumber: number,
+  maxBatches: number
+): boolean {
+  return pendingRemaining > 0 && batchNumber < maxBatches
+}
+
 /**
  * Get events needing enrichment (pending or failed status, have link).
  */
 async function getEventsForCatchup(
   client: ReturnType<typeof createServiceRoleClient>,
-  limit: number
+  limit: number,
+  statuses: Array<'pending' | 'failed'> = catchupStatusesForBatch(1)
 ) {
   const { data, error } = await client
     .from('events')
     .select('id, name, link, source, categories, venue_id')
-    .in('enrichment_status', ['pending', 'failed'])
+    .in('enrichment_status', statuses)
     .neq('status', 'canceled')
     .neq('status', 'past')
     .gte('starts_at', enrichmentStartsAtFloor())
@@ -53,11 +68,14 @@ async function getEventsForCatchup(
 /**
  * Get count of events needing enrichment.
  */
-async function getPendingCount(client: ReturnType<typeof createServiceRoleClient>) {
+async function getPendingCount(
+  client: ReturnType<typeof createServiceRoleClient>,
+  statuses: Array<'pending' | 'failed'> = ['pending', 'failed']
+) {
   const { count } = await client
     .from('events')
     .select('*', { count: 'exact', head: true })
-    .in('enrichment_status', ['pending', 'failed'])
+    .in('enrichment_status', statuses)
     .neq('status', 'canceled')
     .neq('status', 'past')
     .gte('starts_at', enrichmentStartsAtFloor())
@@ -93,7 +111,11 @@ export const enrichmentBatch = task({
     const client = createServiceRoleClient()
 
     // Get events needing enrichment
-    const events = await getEventsForCatchup(client, BATCH_SIZE)
+    const events = await getEventsForCatchup(
+      client,
+      BATCH_SIZE,
+      catchupStatusesForBatch(batchNumber)
+    )
 
     if (events.length === 0) {
       console.log('[enrichment-batch] No events need enrichment')
@@ -164,22 +186,24 @@ export const enrichmentBatch = task({
       },
     })
 
-    // Check remaining count
+    // Failed rows stay retryable for the next scheduled run, but must not keep
+    // this chain alive after their one attempt in the first batch.
+    const pendingRemaining = await getPendingCount(client, ['pending'])
     const remainingCount = await getPendingCount(client)
 
-    console.log(`[enrichment-batch] Batch #${batchNumber} completed: ${stats.enriched} enriched, ${stats.failed} failed, ${stats.canceled} canceled, ${remainingCount} remaining`)
+    console.log(`[enrichment-batch] Batch #${batchNumber} completed: ${stats.enriched} enriched, ${stats.failed} failed, ${stats.canceled} canceled, ${pendingRemaining} pending, ${remainingCount} remaining`)
 
     // Chain to next batch if there are more events and we haven't hit max batches
     let chainedNextBatch = false
-    if (remainingCount > 0 && batchNumber < maxBatches) {
+    if (shouldChainCatchupBatch(pendingRemaining, batchNumber, maxBatches)) {
       console.log(`[enrichment-batch] Triggering batch #${batchNumber + 1}`)
       await tasks.trigger<typeof enrichmentBatch>('enrichment-batch', {
         batchNumber: batchNumber + 1,
         maxBatches,
       })
       chainedNextBatch = true
-    } else if (remainingCount > 0) {
-      console.log(`[enrichment-batch] Reached max batches (${maxBatches}), ${remainingCount} events remaining for next run`)
+    } else if (pendingRemaining > 0) {
+      console.log(`[enrichment-batch] Reached max batches (${maxBatches}), ${pendingRemaining} pending events remaining for next run`)
     }
 
     return {
