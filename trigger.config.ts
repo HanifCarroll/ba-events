@@ -4,7 +4,7 @@ import { syncEnvVars } from '@trigger.dev/build/extensions/core'
 
 export const config: TriggerConfig = {
   project: 'proj_lqttmibcdepaslelatth',
-  runtime: 'node',
+  runtime: 'node-24',
   maxDuration: 3600, // 1 hour for long-running scraping jobs
   retries: {
     enabledInDev: true,
