@@ -4,7 +4,7 @@
  * Shared functions for geocoding and reverse geocoding using OpenStreetMap's Nominatim API.
  * Extracted for reuse in both server functions and Trigger.dev jobs.
  */
-import { z } from 'zod'
+import { Effect, Schema } from 'effect'
 import { mapToNeighborhood } from '#shared/lib/utils/neighborhood.ts'
 import type { Neighborhood } from '#shared/lib/types.ts'
 
@@ -12,43 +12,43 @@ import type { Neighborhood } from '#shared/lib/types.ts'
 // NOMINATIM API RESPONSE VALIDATION
 // ============================================================================
 
-const nominatimAddressSchema = z.object({
-  house_number: z.string().optional(),
-  road: z.string().optional(),
-  neighbourhood: z.string().optional(),
-  suburb: z.string().optional(),
-  city: z.string().optional(),
-  town: z.string().optional(),
-  village: z.string().optional(),
-  municipality: z.string().optional(),
-  state: z.string().optional(),
-  postcode: z.string().optional(),
-  country: z.string().optional(),
-  country_code: z.string().optional(),
-}).passthrough()
+const nominatimAddressSchema = Schema.Struct({
+  house_number: Schema.optional(Schema.String),
+  road: Schema.optional(Schema.String),
+  neighbourhood: Schema.optional(Schema.String),
+  suburb: Schema.optional(Schema.String),
+  city: Schema.optional(Schema.String),
+  town: Schema.optional(Schema.String),
+  village: Schema.optional(Schema.String),
+  municipality: Schema.optional(Schema.String),
+  state: Schema.optional(Schema.String),
+  postcode: Schema.optional(Schema.String),
+  country: Schema.optional(Schema.String),
+  country_code: Schema.optional(Schema.String),
+})
 
-const nominatimExtratagsSchema = z.object({
-  website: z.string().optional(),
-  'contact:website': z.string().optional(),
-  'contact:instagram': z.string().optional(),
-  instagram: z.string().optional(),
-}).passthrough()
+const nominatimExtratagsSchema = Schema.Struct({
+  website: Schema.optional(Schema.String),
+  'contact:website': Schema.optional(Schema.String),
+  'contact:instagram': Schema.optional(Schema.String),
+  instagram: Schema.optional(Schema.String),
+})
 
-const nominatimResultSchema = z.object({
-  place_id: z.number().optional(),
-  lat: z.string(),
-  lon: z.string(),
-  display_name: z.string(),
+const nominatimResultSchema = Schema.Struct({
+  place_id: Schema.optional(Schema.Number),
+  lat: Schema.String,
+  lon: Schema.String,
+  display_name: Schema.String,
   address: nominatimAddressSchema,
-  extratags: nominatimExtratagsSchema.optional(),
-}).passthrough()
+  extratags: Schema.optional(nominatimExtratagsSchema),
+})
 
-const nominatimResponseSchema = z.array(nominatimResultSchema)
+const nominatimResponseSchema = Schema.Array(nominatimResultSchema)
 
 // Types
-export type NominatimAddress = z.infer<typeof nominatimAddressSchema>
-export type NominatimExtratags = z.infer<typeof nominatimExtratagsSchema>
-export type NominatimResult = z.infer<typeof nominatimResultSchema>
+export type NominatimAddress = Schema.Schema.Type<typeof nominatimAddressSchema>
+export type NominatimExtratags = Schema.Schema.Type<typeof nominatimExtratagsSchema>
+export type NominatimResult = Schema.Schema.Type<typeof nominatimResultSchema>
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -59,6 +59,28 @@ export type NominatimResult = z.infer<typeof nominatimResultSchema>
  */
 export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export const delayEffect = (ms: number) => Effect.tryPromise({
+  try: () => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  catch: (error) => new NominatimRequestError(error instanceof Error ? error.message : String(error)),
+})
+
+class NominatimRequestError extends Error {
+  readonly _tag = 'NominatimRequestError'
+  constructor(message: string, readonly timeoutLike = false) {
+    super(message)
+    this.name = 'NominatimRequestError'
+  }
+}
+
+class NominatimApiError extends Error {
+  readonly _tag = 'NominatimApiError'
+}
+
+function timeoutLike(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+    || error instanceof Error && /timeout|aborted/i.test(error.message)
 }
 
 /**
@@ -115,7 +137,7 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
     return null
   }
 
-  const address: NominatimAddress = {}
+  const address: Record<string, string> = {}
 
   if (typeof result.address === 'object' && result.address !== null) {
     const rawAddress = result.address as Record<string, unknown>
@@ -126,7 +148,7 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
     if (typeof rawAddress.city === 'string') address.city = rawAddress.city
   }
 
-  let extratags: NominatimExtratags | undefined
+  let extratags: Record<string, string> | undefined
   if (typeof result.extratags === 'object' && result.extratags !== null) {
     const rawExtratags = result.extratags as Record<string, unknown>
     extratags = {}
@@ -138,7 +160,7 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
     lat: result.lat,
     lon: result.lon,
     display_name: result.display_name,
-    address,
+    address: address as NominatimAddress,
     extratags,
   }
 }
@@ -151,48 +173,51 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
  * Search for a venue using Nominatim API.
  * Includes required User-Agent header per Nominatim usage policy.
  */
-export async function searchNominatim(
-  query: string,
-  retries: number = 1
-): Promise<NominatimResult | null> {
+export function searchNominatimEffect(query: string, retries: number = 1): Effect.Effect<NominatimResult | null, NominatimApiError | NominatimRequestError> {
   const encodedQuery = encodeURIComponent(`${query} Buenos Aires Argentina`)
   const url = `https://nominatim.openstreetmap.org/search?q=${encodedQuery}&format=json&addressdetails=1&extratags=1&limit=1`
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'BAEventos/1.0 (baeventos.com)',
-      },
-      signal: AbortSignal.timeout(15000),
+  const attempt = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, {
+        headers: { 'User-Agent': 'BAEventos/1.0 (baeventos.com)' },
+        signal: AbortSignal.timeout(15000),
+      }),
+      catch: (error) => new NominatimRequestError(error instanceof Error ? error.message : 'Unknown error', timeoutLike(error)),
     })
-
     if (!response.ok) {
       if (response.status === 429) {
         console.warn(`[Nominatim] Rate limited for "${query}", skipping lookup`)
         return null
       }
-      throw new Error(`Nominatim API error: ${response.status} ${response.statusText}`)
+      return yield* Effect.fail(new NominatimApiError(`Nominatim API error: ${response.status} ${response.statusText}`))
     }
+    const rawData = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: (error) => new NominatimRequestError(error instanceof Error ? error.message : 'Unknown error', timeoutLike(error)),
+    })
+    const parsed = Schema.decodeUnknownResult(nominatimResponseSchema)(rawData)
+    return parsed._tag === 'Success'
+      ? parsed.success[0] ?? null
+      : extractPartialNominatimData(rawData)
+  })
+  return Effect.catchEager(attempt, (error) => {
+    if (!(error instanceof NominatimRequestError) || !error.timeoutLike || retries <= 0) return Effect.fail(error)
+    return Effect.gen(function* () {
+      yield* delayEffect(2000)
+      return yield* searchNominatimEffect(query, retries - 1)
+    })
+  })
+}
 
-    const rawData: unknown = await response.json()
-    const parseResult = nominatimResponseSchema.safeParse(rawData)
-
-    if (!parseResult.success) {
-      console.warn('[Nominatim] Schema validation failed, attempting partial extraction')
-      const partialResult = extractPartialNominatimData(rawData)
-      return partialResult
-    }
-
-    const results = parseResult.data
-    return results.length > 0 ? results[0] : null
+/** Promise compatibility adapter. The native AbortSignal timeout and one retry remain in the Effect program. */
+export async function searchNominatim(
+  query: string,
+  retries: number = 1
+): Promise<NominatimResult | null> {
+  try {
+    return await Effect.runPromise(searchNominatimEffect(query, retries))
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    if ((errorMsg.includes('timeout') || errorMsg.includes('aborted')) && retries > 0) {
-      console.warn(`[Nominatim] Timeout for "${query}", retrying... (${retries} retries left)`)
-      await delay(2000)
-      return searchNominatim(query, retries - 1)
-    }
-    if (errorMsg.includes('timeout') || errorMsg.includes('aborted')) {
+    if (error instanceof NominatimRequestError && error.timeoutLike) {
       console.warn(`[Nominatim] Timeout for "${query}", skipping lookup`)
       return null
     }
@@ -204,44 +229,45 @@ export async function searchNominatim(
  * Reverse geocode coordinates to get neighborhood.
  * More accurate than venue name search for venues with exact coordinates.
  */
+export function reverseGeocodeEffect(lat: number, lng: number, retries: number = 1): Effect.Effect<Neighborhood | null, NominatimRequestError> {
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`
+  const responseSchema = Schema.Struct({ address: nominatimAddressSchema })
+  const attempt = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, {
+        headers: { 'User-Agent': 'BAEventos/1.0 (baeventos.com)' },
+        signal: AbortSignal.timeout(15000),
+      }),
+      catch: (error) => new NominatimRequestError(error instanceof Error ? error.message : 'Unknown error', timeoutLike(error)),
+    })
+    if (!response.ok) return null
+    const raw = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: (error) => new NominatimRequestError(error instanceof Error ? error.message : 'Unknown error', timeoutLike(error)),
+    })
+    const parsed = Schema.decodeUnknownResult(responseSchema)(raw)
+    return parsed._tag === 'Success'
+      ? mapNominatimNeighborhood(parsed.success.address.neighbourhood, parsed.success.address.suburb)
+      : null
+  })
+  return Effect.catchEager(attempt, (error) => {
+    if (!error.timeoutLike || retries <= 0) return Effect.fail(error)
+    return Effect.gen(function* () {
+      yield* delayEffect(2000)
+      return yield* reverseGeocodeEffect(lat, lng, retries - 1)
+    })
+  })
+}
+
 export async function reverseGeocodeNeighborhood(
   lat: number,
   lng: number,
   retries: number = 1
 ): Promise<Neighborhood | null> {
-  const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`
-
   try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'BAEventos/1.0 (baeventos.com)',
-      },
-      signal: AbortSignal.timeout(15000),
-    })
-
-    if (!response.ok) {
-      console.warn(`[reverse-geocode] API error: ${response.status} ${response.statusText}`)
-      return null
-    }
-
-    const data = await response.json()
-
-    if (!data || !data.address) {
-      return null
-    }
-
-    return mapNominatimNeighborhood(
-      data.address.neighbourhood,
-      data.address.suburb
-    )
+    return await Effect.runPromise(reverseGeocodeEffect(lat, lng, retries))
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    if (errorMsg.includes('timeout') && retries > 0) {
-      console.warn(`[reverse-geocode] Timeout, retrying... (${retries} retries left)`)
-      await delay(2000)
-      return reverseGeocodeNeighborhood(lat, lng, retries - 1)
-    }
-    console.warn(`[reverse-geocode] Error: ${errorMsg}`)
+    console.warn(`[reverse-geocode] Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     return null
   }
 }
@@ -255,58 +281,79 @@ export async function reverseGeocodeNeighborhood(
  * 3. Address-enhanced Nominatim search - better than name alone
  * 4. Venue name only search (Passline fallback) - least reliable
  */
-export async function lookupNeighborhoodTiered(input: {
+function searchForLookupEffect(query: string) {
+  return Effect.catchEager(searchNominatimEffect(query), (error) => {
+    if (error instanceof NominatimRequestError && error.timeoutLike) {
+      return Effect.succeed(null)
+    }
+    return Effect.fail(error)
+  })
+}
+
+export function lookupNeighborhoodTieredEffect(input: {
   venueName: string
   neighborhood?: string | null
   coordinates?: { lat: number; lng: number } | null
   address?: string | null
-}): Promise<{ neighborhood: Neighborhood | null; method: string }> {
-  // Tier 1: Direct neighborhood field
-  if (input.neighborhood) {
-    const mapped = mapToNeighborhood(input.neighborhood)
-    if (mapped) {
-      return { neighborhood: mapped, method: 'direct' }
+}): Effect.Effect<{ neighborhood: Neighborhood | null; method: string }, NominatimApiError | NominatimRequestError> {
+  return Effect.gen(function* () {
+    // Tier 1: Direct neighborhood field
+    if (input.neighborhood) {
+      const mapped = mapToNeighborhood(input.neighborhood)
+      if (mapped) {
+        return { neighborhood: mapped, method: 'direct' }
+      }
     }
-  }
 
-  // Tier 2: Reverse geocode coordinates
-  if (input.coordinates) {
-    const neighborhood = await reverseGeocodeNeighborhood(
-      input.coordinates.lat,
-      input.coordinates.lng
-    )
-    if (neighborhood) {
-      return { neighborhood, method: 'coordinates' }
+    // Tier 2: Reverse geocode coordinates. Reverse geocoding has always been
+    // best-effort; failures fall through to the address/name tiers.
+    if (input.coordinates) {
+      const neighborhood = yield* Effect.catchEager(
+        reverseGeocodeEffect(input.coordinates.lat, input.coordinates.lng),
+        () => Effect.succeed(null)
+      )
+      if (neighborhood) {
+        return { neighborhood, method: 'coordinates' }
+      }
     }
-  }
 
-  // Tier 3: Address-enhanced search
-  if (input.address) {
-    const result = await searchNominatim(`${input.venueName} ${input.address}`)
+    // Tier 3: Address-enhanced search
+    if (input.address) {
+      const result = yield* searchForLookupEffect(`${input.venueName} ${input.address}`)
+      if (result) {
+        const neighborhood = mapNominatimNeighborhood(
+          result.address.neighbourhood,
+          result.address.suburb
+        )
+        if (neighborhood) {
+          return { neighborhood, method: 'address' }
+        }
+      }
+    }
+
+  // Tier 4: Venue name only search
+    const result = yield* searchForLookupEffect(input.venueName)
     if (result) {
       const neighborhood = mapNominatimNeighborhood(
         result.address.neighbourhood,
         result.address.suburb
       )
       if (neighborhood) {
-        return { neighborhood, method: 'address' }
+        return { neighborhood, method: 'name-only' }
       }
     }
-  }
 
-  // Tier 4: Venue name only search
-  const result = await searchNominatim(input.venueName)
-  if (result) {
-    const neighborhood = mapNominatimNeighborhood(
-      result.address.neighbourhood,
-      result.address.suburb
-    )
-    if (neighborhood) {
-      return { neighborhood, method: 'name-only' }
-    }
-  }
+    return { neighborhood: null, method: 'none' }
+  })
+}
 
-  return { neighborhood: null, method: 'none' }
+export async function lookupNeighborhoodTiered(input: {
+  venueName: string
+  neighborhood?: string | null
+  coordinates?: { lat: number; lng: number } | null
+  address?: string | null
+}): Promise<{ neighborhood: Neighborhood | null; method: string }> {
+  return Effect.runPromise(lookupNeighborhoodTieredEffect(input))
 }
 
 // ============================================================================
@@ -349,50 +396,59 @@ export function isAddressLikeVenueName(name: string): boolean {
  * This searches for the address and checks if Nominatim returns a POI (point of interest)
  * with a name different from just the address.
  */
-export async function lookupBusinessAtAddress(
+export function lookupBusinessAtAddressEffect(
   address: string
-): Promise<{ name: string | null; neighborhood: Neighborhood | null; fullAddress: string | null }> {
-  // Search Nominatim with the address
-  const result = await searchNominatim(address)
+): Effect.Effect<{ name: string | null; neighborhood: Neighborhood | null; fullAddress: string | null }, NominatimApiError | NominatimRequestError> {
+  return Effect.gen(function* () {
+    // Search Nominatim with the address. Timeouts are best-effort just like
+    // the legacy Promise adapter; HTTP/API failures remain typed failures.
+    const result = yield* searchForLookupEffect(address)
 
-  if (!result) {
-    return { name: null, neighborhood: null, fullAddress: null }
-  }
+    if (!result) {
+      return { name: null, neighborhood: null, fullAddress: null }
+    }
 
   // Extract neighborhood
-  const neighborhood = mapNominatimNeighborhood(
-    result.address.neighbourhood,
-    result.address.suburb
-  )
+    const neighborhood = mapNominatimNeighborhood(
+      result.address.neighbourhood,
+      result.address.suburb
+    )
 
   // Build the full address
-  const fullAddress = buildAddress(result.address)
+    const fullAddress = buildAddress(result.address)
 
   // Check if Nominatim found a named place (not just a street address)
   // The display_name often contains the business name at the start
   // Format is usually: "Business Name, Street, Neighborhood, City, ..."
-  const displayParts = result.display_name.split(',').map(p => p.trim())
+    const displayParts = result.display_name.split(',').map(p => p.trim())
 
   // The first part might be a business name if it's different from the road
-  const firstPart = displayParts[0]
-  const road = result.address.road
-  const houseNumber = result.address.house_number
+    const firstPart = displayParts[0]
+    const road = result.address.road
+    const houseNumber = result.address.house_number
 
   // If the first part is just the street address, there's no business name
-  const isJustAddress =
-    firstPart === road ||
-    firstPart === `${road} ${houseNumber}` ||
-    firstPart === `${houseNumber} ${road}` ||
-    firstPart === houseNumber ||
-    // Check if first part matches the search query (means no POI found)
-    firstPart.toLowerCase() === address.toLowerCase()
+    const isJustAddress =
+      firstPart === road ||
+      firstPart === `${road} ${houseNumber}` ||
+      firstPart === `${houseNumber} ${road}` ||
+      firstPart === houseNumber ||
+      // Check if first part matches the search query (means no POI found)
+      firstPart.toLowerCase() === address.toLowerCase()
 
-  if (isJustAddress) {
-    return { name: null, neighborhood, fullAddress }
-  }
+    if (isJustAddress) {
+      return { name: null, neighborhood, fullAddress }
+    }
 
-  // Found a business name!
-  return { name: firstPart, neighborhood, fullAddress }
+    // Found a business name!
+    return { name: firstPart, neighborhood, fullAddress }
+  })
+}
+
+export async function lookupBusinessAtAddress(
+  address: string
+): Promise<{ name: string | null; neighborhood: Neighborhood | null; fullAddress: string | null }> {
+  return Effect.runPromise(lookupBusinessAtAddressEffect(address))
 }
 
 /**

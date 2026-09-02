@@ -24,6 +24,7 @@
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
+import { Effect } from 'effect'
 import type { UIMessage } from 'ai'
 import { generateId, createUIMessageStream, createUIMessageStreamResponse } from 'ai'
 import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
@@ -39,10 +40,16 @@ import type {
 } from '#shared/lib/types.ts'
 import {
   normalizeChatTurn,
-  runSharedChatTurn,
+  runSharedChatTurnEffect,
 } from '#features/chat/api/agent/shared-turn.server.ts'
-import { persistAssistantMessageV4 } from '#features/chat/api/agent/persist.ts'
-import { claimChatTurn, completeChatTurn, failChatTurn, getTurnAssistant } from '#features/chat/api/turns.server.ts'
+import { persistAssistantMessageV4Effect } from '#features/chat/api/agent/persist.ts'
+import {
+  claimChatTurnEffect,
+  completeChatTurnEffect,
+  failChatTurnEffect,
+  getTurnAssistantEffect,
+  type ChatTurn,
+} from '#features/chat/api/turns.server.ts'
 import { applyAuthoritativeTurn, mayRunProvider } from '#features/chat/api/turn-authority.ts'
 import {
   isDisplayableStatus,
@@ -56,15 +63,16 @@ import {
   lastSearchContextFromUIMessages,
   type LastSearchContext,
 } from '#features/chat/api/agent/search-context.ts'
-import { getConversation } from '#features/chat/api/conversations.server.ts'
+import { getConversationEffect } from '#features/chat/api/conversations.server.ts'
 import {
   buildGuestDebugTranscript,
-  persistGuestChatDebug,
-  recordGuestRequestStarted,
-  recordGuestRequestTerminal,
+  persistGuestChatDebugEffect,
+  recordGuestRequestStartedEffect,
+  recordGuestRequestTerminalEffect,
 } from '#features/chat/api/guest-debug.server.ts'
 import { getLastUserQuery } from '#features/chat/lib/extract-visible-text.ts'
 import { buildAgentHistoryFromStoredMessages, buildAgentHistoryFromUIMessages } from '#features/chat/api/agent/history.ts'
+import { parseMainChatRequest } from '#features/chat/api/main-request.ts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -121,17 +129,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let retryTurn = false
 
   try {
-    const body = (await request.json()) as {
-      messages?: UIMessage[]
-      locale?: 'en' | 'es'
-      happeningSoonEventId?: string
-      happeningSoonEventIds?: unknown
-      conversationId?: string | null
-      userClientMessageId?: string | null
-      assistantClientMessageId?: string | null
-      turnId?: string | null
-      retry?: boolean
-    }
+    const body = parseMainChatRequest(await request.json())
+    if (!body) return createErrorStream('Invalid request body')
 
     locale = body.locale === 'es' ? 'es' : 'en'
     uiMessages = Array.isArray(body.messages) ? body.messages : []
@@ -158,18 +157,21 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   const userContext = await getUserToolContext(event)
   const requestId = crypto.randomUUID()
   let originalQuery: string
-  let authoritativeTurn: Awaited<ReturnType<typeof claimChatTurn>> | null = null
-  let replayAssistant: Awaited<ReturnType<typeof getTurnAssistant>> | null = null
+  let authoritativeTurn: ChatTurn | null = null
+  let replayAssistant: {
+    id: string
+    canonical: CanonicalChatResponse
+  } | null = null
 
   if (userContext.isAuthenticated && turnId) {
     if (!UUID_RE.test(turnId)) return createErrorStream('Invalid chat turn')
     try {
-      authoritativeTurn = await claimChatTurn(event, turnId, requestId, retryTurn)
+      authoritativeTurn = await Effect.runPromise(claimChatTurnEffect(event, turnId, requestId, retryTurn))
     } catch {
       return createErrorStream('Chat turn unavailable')
     }
     if (authoritativeTurn.status === 'completed') {
-      replayAssistant = await getTurnAssistant(event, authoritativeTurn)
+      replayAssistant = await Effect.runPromise(getTurnAssistantEffect(event, authoritativeTurn))
       if (!replayAssistant) return createErrorStream('Chat turn unavailable')
     } else if (!mayRunProvider(authoritativeTurn, requestId)) {
       return createErrorStream(
@@ -193,13 +195,13 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   }
 
   if (!userContext.isAuthenticated) {
-    void persistGuestChatDebug({
+    void Effect.runPromise(persistGuestChatDebugEffect({
       conversationId,
       locale,
       ip,
       messages: uiMessages,
       lastUserText: originalQuery || null,
-    })
+    }))
   }
 
   // Pinned event: validate the hint as a UUID, rehydrate from the DB, and
@@ -240,21 +242,21 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
   if (userContext.isAuthenticated && conversationId) {
     try {
-      const conversation = await getConversation(event, { id: conversationId })
+      const conversation = await Effect.runPromise(getConversationEffect(event, { id: conversationId }))
       if (conversation) {
         const storedMessages = (conversation.messages ?? []) as Message[]
         priorHints = hintsFromMessages(storedMessages)
         lastSearch = lastSearchContextFromMessages(storedMessages)
         recentMessages = buildAgentHistoryFromStoredMessages(storedMessages, originalQuery)
 		} else if (authoritativeTurn?.status === 'running' && turnId) {
-			await failChatTurn(event, turnId, requestId).catch(() => {})
+			await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch(() => {})
 			return createErrorStream('Chat turn unavailable')
       }
     } catch (error) {
       historyLoadFailed = true
       console.error('[chat] failed to load conversation context:', error)
 		if (authoritativeTurn?.status === 'running' && turnId) {
-			await failChatTurn(event, turnId, requestId).catch(() => {})
+			await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch(() => {})
 			return createErrorStream('Chat turn unavailable')
       }
     }
@@ -312,10 +314,10 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         writeStatus('thinking')
 
         if (!userContext.isAuthenticated) {
-          await recordGuestRequestStarted({ requestId, conversationId })
+          await Effect.runPromise(recordGuestRequestStartedEffect({ requestId, conversationId }))
         }
 
-        const result = await runSharedChatTurn({
+		const result = await Effect.runPromise(runSharedChatTurnEffect({
           requestId,
           userContext,
           locale,
@@ -326,7 +328,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           pin,
           pinFacts,
           recentMessages,
-        })
+		}))
 
         const canonical = result.canonical
         providerRequestId = result.providerRequestId
@@ -334,23 +336,23 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         // Server-side authoritative persistence for authenticated users.
         writeStatus('persisting')
         if (userContext.isAuthenticated && turnId && claimedTurn && assistantClientMessageId) {
-          await completeChatTurn(event, {
+          await Effect.runPromise(completeChatTurnEffect(event, {
             turnId,
             claimId: requestId,
             assistantClientMessageId,
             content: canonical.text,
             attachedData: { canonical },
             executionTrace: result.executionTrace,
-          })
+          }))
         } else if (userContext.isAuthenticated && conversationId && assistantClientMessageId) {
-          await persistAssistantMessageV4({
-            event,
+			await Effect.runPromise(persistAssistantMessageV4Effect({
+				event,
             conversationId,
             assistantClientMessageId,
             userClientMessageId,
             canonical,
             executionTrace: result.executionTrace,
-          })
+			}))
         }
 
         // Exactly one final text block.
@@ -378,7 +380,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
         if (!userContext.isAuthenticated) {
           await Promise.all([
-            persistGuestChatDebug({
+            Effect.runPromise(persistGuestChatDebugEffect({
               conversationId,
               locale,
               ip,
@@ -392,8 +394,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
                 executionTrace: result.executionTrace,
               }),
               lastUserText: originalQuery || null,
-            }),
-            recordGuestRequestTerminal({
+            })),
+            Effect.runPromise(recordGuestRequestTerminalEffect({
               requestId,
               conversationId,
               status: canonical.provenance.fallbackUsed
@@ -401,13 +403,13 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
                 : 'completed',
               errorType: canonical.provenance.fallbackReason,
               providerRequestId,
-            }),
+            })),
           ])
         }
 		} catch (error) {
 			console.error('[Chat API] Error:', error)
 			if (userContext.isAuthenticated && turnId && authoritativeTurn?.status === 'running') {
-				await failChatTurn(event, turnId, requestId).catch((failError) => {
+				await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch((failError) => {
 					console.error('[Chat API] Failed to mark turn failed:', failError)
 				})
 			}
@@ -419,7 +421,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         writer.write({ type: 'finish', finishReason: 'error' })
         if (!userContext.isAuthenticated) {
           await Promise.all([
-            persistGuestChatDebug({
+            Effect.runPromise(persistGuestChatDebugEffect({
               conversationId,
               locale,
               ip,
@@ -430,14 +432,14 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 					error: publicChatError(error),
               }),
               lastUserText: originalQuery || null,
-            }),
-            recordGuestRequestTerminal({
+            })),
+            Effect.runPromise(recordGuestRequestTerminalEffect({
               requestId,
               conversationId,
               status: 'errored',
               errorType: error instanceof Error ? error.name : 'unknown',
               providerRequestId,
-            }),
+            })),
           ])
         }
       }

@@ -4,6 +4,7 @@
  * HTTP-independent logic for importing Passline events.
  * Can be called from both manual import wizard and Trigger.dev jobs.
  */
+import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { addDays, format } from 'date-fns'
 import {
@@ -22,14 +23,14 @@ import {
 } from '#shared/lib/ai/embeddings.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import {
-  settleVenues,
+  settleVenuesEffect,
   getVenueIdFromResults,
   getVenueNeighborhoodFromResults,
   isPlaceholderResult,
   type VenueSettlementInput,
   type VenueSettlementResult,
 } from './venue-settlement.ts'
-import { delay } from './nominatim.ts'
+import { delayEffect } from './nominatim.ts'
 import type { EventInsert, Category } from '#shared/lib/types.ts'
 import { EMPTY_FACETS } from '#shared/lib/search-facets.ts'
 import {
@@ -38,8 +39,9 @@ import {
   type PasslineClassification,
   type VenueSettlement,
 } from './passline-classify.ts'
-import { fetchExistingPasslineEvents } from './passline-existing.ts'
+import { fetchExistingPasslineEventsEffect } from './passline-existing.ts'
 import { logger } from '#shared/lib/logger.ts'
+import { importTry, ImportOperationError } from './effect-utils.ts'
 
 // ============================================================================
 // TYPES
@@ -115,322 +117,282 @@ function scrapeUpdateFields(t: EventInsert) {
  * Process a single event. Returns true when an embedding call was made, so the
  * caller can rate-limit only those paths.
  */
-async function processPasslineItem(
+function passlineTry<A>(operation: string, run: () => PromiseLike<A>) {
+  return importTry(operation, run)
+}
+
+function asPasslineError(operation: string, error: unknown): ImportOperationError {
+  if (error instanceof ImportOperationError) return error
+  return new ImportOperationError({
+    operation,
+    message: error instanceof Error ? error.message : String(error),
+    cause: error,
+  })
+}
+
+function processPasslineItemEffect(
   client: SupabaseClient,
   item: PasslineItem,
   venueResults: Map<string, VenueSettlementResult>,
   result: PasslineImportResult
-): Promise<boolean> {
-  const { event, transformed, existing, venueSettlement, classification } = item
-  const venueNeighborhood = getVenueNeighborhoodFromResults(venueResults, event.lugar)
+): Effect.Effect<boolean, ImportOperationError> {
+  return Effect.gen(function* () {
+    const { event, transformed, existing, venueSettlement, classification } = item
+    const venueNeighborhood = getVenueNeighborhoodFromResults(venueResults, event.lugar)
 
-  if (classification.kind === 'unchanged') {
-    result.eventsUnchanged++
-    return false
-  }
-
-  if (classification.kind === 'new') {
-    const { embedding, searchDocument } = await embedEventWithDocument({
-      name: transformed.name,
-      description_es: transformed.description_es,
-      description_en: transformed.description_en,
-      categories: transformed.categories,
-      price: transformed.price,
-      is_free: transformed.is_free,
-      facets: EMPTY_FACETS,
-      venue_name: event.lugar || null,
-      venue_neighborhood: venueNeighborhood,
-    })
-
-    const { error } = await client.from('events').insert({
-      ...transformed,
-      embedding,
-      search_document: searchDocument,
-      embedding_version: CURRENT_EMBEDDING_VERSION,
-      enrichment_status: 'pending' as const,
-    })
-
-    if (error) {
-      logger.error('[passline] Failed to insert event', { error: error.message })
-      result.eventsSkipped++
-    } else {
-      result.eventsInserted++
+    if (classification.kind === 'unchanged') {
+      result.eventsUnchanged++
+      return false
     }
-    return true
-  }
 
-  // Existing event — classification is one of mutable-only | name-changed | search-input-changed.
-  // A resolved settlement writes the new venue id; an explicit placeholder clears
-  // the venue; an unresolved settlement leaves the existing venue untouched.
-  const venueUpdate =
-    venueSettlement.kind === 'resolved'
+    if (classification.kind === 'new') {
+      const { embedding, searchDocument } = yield* passlineTry('passline.embed-new', () =>
+        embedEventWithDocument({
+          name: transformed.name,
+          description_es: transformed.description_es,
+          description_en: transformed.description_en,
+          categories: transformed.categories,
+          price: transformed.price,
+          is_free: transformed.is_free,
+          facets: EMPTY_FACETS,
+          venue_name: event.lugar || null,
+          venue_neighborhood: venueNeighborhood,
+        })
+      )
+      const { error } = yield* passlineTry('passline.insert-event', () => client.from('events').insert({
+        ...transformed,
+        embedding,
+        search_document: searchDocument,
+        embedding_version: CURRENT_EMBEDDING_VERSION,
+        enrichment_status: 'pending' as const,
+      }))
+      if (error) {
+        logger.error('[passline] Failed to insert event', { error: error.message })
+        result.eventsSkipped++
+      } else {
+        result.eventsInserted++
+      }
+      return true
+    }
+
+    const venueUpdate = venueSettlement.kind === 'resolved'
       ? { venue_id: venueSettlement.venueId }
       : venueSettlement.kind === 'placeholder'
         ? { venue_id: null }
         : {}
 
-  if (classification.kind === 'mutable-only') {
-    const { error } = await client
-      .from('events')
-      .update({ ...scrapeUpdateFields(transformed), ...venueUpdate })
-      .eq('id', existing!.id)
+    if (classification.kind === 'mutable-only') {
+      const { error } = yield* passlineTry('passline.update-mutable', () => client
+        .from('events')
+        .update({ ...scrapeUpdateFields(transformed), ...venueUpdate })
+        .eq('id', existing!.id)
+      )
+      if (error) {
+        logger.error('[passline] Failed to update event', { error: error.message })
+        result.eventsSkipped++
+      } else {
+        result.eventsUpdated++
+      }
+      return false
+    }
 
+    const categories = classification.kind === 'name-changed'
+      ? item.category ? [item.category] : existing!.categories
+      : existing!.categories
+    const { embedding, searchDocument } = yield* passlineTry('passline.embed-update', () =>
+      embedEventWithDocument({
+        name: transformed.name,
+        description_es: existing!.description_es,
+        description_en: existing!.description_en,
+        categories,
+        price: transformed.price,
+        is_free: transformed.is_free,
+        facets: existing!.facets ?? EMPTY_FACETS,
+        venue_name: event.lugar || null,
+        venue_neighborhood: venueNeighborhood,
+      })
+    )
+    const { error } = yield* passlineTry('passline.update-search-event', () => client
+      .from('events')
+      .update({
+        ...scrapeUpdateFields(transformed),
+        ...venueUpdate,
+        ...(classification.kind === 'name-changed' ? { name: transformed.name, categories } : {}),
+        embedding,
+        search_document: searchDocument,
+        embedding_version: CURRENT_EMBEDDING_VERSION,
+      })
+      .eq('id', existing!.id)
+    )
     if (error) {
       logger.error('[passline] Failed to update event', { error: error.message })
       result.eventsSkipped++
     } else {
       result.eventsUpdated++
     }
-    return false
-  }
-
-  // name-changed | search-input-changed both re-embed using stored descriptions.
-  const categories =
-    classification.kind === 'name-changed'
-      ? item.category
-        ? [item.category]
-        : existing!.categories
-      : existing!.categories
-
-  const { embedding, searchDocument } = await embedEventWithDocument({
-    name: transformed.name,
-    description_es: existing!.description_es,
-    description_en: existing!.description_en,
-    categories,
-    price: transformed.price,
-    is_free: transformed.is_free,
-    facets: existing!.facets ?? EMPTY_FACETS,
-    venue_name: event.lugar || null,
-    venue_neighborhood: venueNeighborhood,
+    return true
   })
-
-  const { error } = await client
-    .from('events')
-    .update({
-      ...scrapeUpdateFields(transformed),
-      ...venueUpdate,
-      ...(classification.kind === 'name-changed'
-        ? { name: transformed.name, categories }
-        : {}),
-      embedding,
-      search_document: searchDocument,
-      embedding_version: CURRENT_EMBEDDING_VERSION,
-    })
-    .eq('id', existing!.id)
-
-  if (error) {
-    logger.error('[passline] Failed to update event', { error: error.message })
-    result.eventsSkipped++
-  } else {
-    result.eventsUpdated++
-  }
-  return true
 }
 
-async function processPasslineBatch(
+function processPasslineBatchEffect(
   client: SupabaseClient,
   batch: PasslineItem[],
   venueResults: Map<string, VenueSettlementResult>,
   result: PasslineImportResult
-): Promise<void> {
-  // Only new and name-changed events need AI categorization.
-  const toCategorize = batch.filter(
-    (item) => item.classification.kind === 'new' || item.classification.kind === 'name-changed'
-  )
-
-  if (toCategorize.length > 0) {
-    const { categories, stats } = await categorizeEventsBatchWithStats(
-      toCategorize.map((item) => ({
-        name: item.transformed.name,
-        description:
-          item.classification.kind === 'name-changed'
-            ? item.existing!.description_es
-            : null,
-      })),
-      100 // 100ms delay between requests
+): Effect.Effect<void, ImportOperationError> {
+  return Effect.gen(function* () {
+    const toCategorize = batch.filter(
+      (item) => item.classification.kind === 'new' || item.classification.kind === 'name-changed'
     )
-
-    result.categorizationSuccessful += stats.successful
-    result.categorizationFallback += stats.fallback
-
-    toCategorize.forEach((item, index) => {
-      item.category = categories[index]
-      item.transformed.categories = [categories[index]]
-    })
-  }
-
-  for (const item of batch) {
-    let didEmbed = false
-    try {
-      didEmbed = await processPasslineItem(client, item, venueResults, result)
-    } catch (error) {
-      logger.logError(`[passline] Error processing event ${item.transformed.name}`, error)
-      result.eventsSkipped++
+    if (toCategorize.length > 0) {
+      const { categories, stats } = yield* passlineTry(
+        'passline.categorize',
+        () => categorizeEventsBatchWithStats(
+          toCategorize.map((item) => ({
+            name: item.transformed.name,
+            description: item.classification.kind === 'name-changed'
+              ? item.existing!.description_es
+              : null,
+          })),
+          100
+        )
+      )
+      result.categorizationSuccessful += stats.successful
+      result.categorizationFallback += stats.fallback
+      toCategorize.forEach((item, index) => {
+        item.category = categories[index]
+        item.transformed.categories = [categories[index]]
+      })
     }
-    // Rate limiting for the embedding API — only after an embedding call.
-    if (didEmbed) {
-      await delay(100)
-    }
-  }
+
+    yield* Effect.forEach(batch, (item) => {
+      const itemProgram = processPasslineItemEffect(client, item, venueResults, result)
+      return Effect.catchEager(itemProgram, (error) => {
+        logger.logError(`[passline] Error processing event ${item.transformed.name}`, error)
+        result.eventsSkipped++
+        return Effect.succeed(false)
+      }).pipe(
+        Effect.flatMap((didEmbed) => didEmbed
+          ? delayEffect(100).pipe(Effect.mapError((error) => asPasslineError('passline.rate-limit-delay', error)), Effect.asVoid)
+          : Effect.succeed(undefined)
+        )
+      )
+    }, { concurrency: 1 })
+  })
 }
 
-// ============================================================================
-// MAIN IMPORT FUNCTION
-// ============================================================================
+/** Effect-native Passline coordinator with bounded progressive batches. */
+export function processPasslineImportEffect(
+  client: SupabaseClient,
+  options: PasslineImportOptions = {}
+): Effect.Effect<PasslineImportResult, ImportOperationError> {
+  return Effect.gen(function* () {
+    const daysAhead = options.daysAhead ?? 30
+    const startDate = options.startDate ?? format(new Date(), 'yyyy-MM-dd')
+    const endDate = options.endDate ?? format(addDays(new Date(), daysAhead), 'yyyy-MM-dd')
+    logger.info('[passline] Starting import', { startDate, endDate })
 
-/**
- * Process a full Passline import.
- *
- * Steps:
- * 1. Fetch events from Passline API
- * 2. Filter to CABA region, apply blocklist, filter by date range
- * 3. Settle venues (match, auto-create, or queue for review)
- * 4. Classify each event against its existing row (new / unchanged / mutable /
- *    name-changed / search-input-changed)
- * 5. Categorize + embed + write only what each classification needs, in bounded
- *    in-process batches written progressively.
- */
+    const result: PasslineImportResult = {
+      eventsFetched: 0,
+      eventsFiltered: 0,
+      eventsInserted: 0,
+      eventsUpdated: 0,
+      eventsSkipped: 0,
+      eventsUnchanged: 0,
+      venuesMatched: 0,
+      venuesAutoCreated: 0,
+      venuesQueuedReview: 0,
+      categorizationSuccessful: 0,
+      categorizationFallback: 0,
+    }
+
+    logger.info('[passline] Fetching events from API')
+    const fetchStart = performance.now()
+    const allEvents = yield* passlineTry(
+      'passline.fetch-events',
+      () => isBrowserbaseAvailable() ? fetchPasslineEventsWithBrowserbase() : fetchPasslineEvents()
+    )
+    result.eventsFetched = allEvents.length
+    logger.info('[passline] Fetch phase', { ms: Math.round(performance.now() - fetchStart), count: allEvents.length })
+
+    const blocklistEntries = yield* passlineTry('passline.load-blocklist', () => getBlocklistEntries('passline', client))
+    const cabaEvents = filterCABAEvents(allEvents, blocklistEntries)
+    const filteredEvents = filterByDateRange(cabaEvents, { startDate, endDate })
+    result.eventsFiltered = filteredEvents.length
+    logger.info('[passline] Filtered to CABA events in date range', { count: filteredEvents.length })
+    if (filteredEvents.length === 0) return result
+
+    const venueInputs: VenueSettlementInput[] = filteredEvents
+      .map((event) => event.lugar)
+      .filter((lugar, index, self) => lugar && self.indexOf(lugar) === index)
+      .map((lugar) => ({ name: lugar }))
+    const venueStart = performance.now()
+    const { results: venueResults, stats: venueStats } = yield* settleVenuesEffect(
+      client,
+      venueInputs,
+      { source: 'passline', scrapeRunId: options.scrapeRunId }
+    ).pipe(Effect.mapError((error) => asPasslineError('passline.settle-venues', error)))
+    logger.info('[passline] Venue settlement phase', { ms: Math.round(performance.now() - venueStart), ...venueStats })
+    result.venuesMatched = venueStats.matched
+    result.venuesAutoCreated = venueStats.autoCreated
+    result.venuesQueuedReview = venueStats.queuedReview
+
+    const classifyStart = performance.now()
+    const externalIds = filteredEvents.map((event) => event.id)
+    const existingEventsMap = options.skipDuplicateCheck
+      ? new Map<string, ExistingPasslineEvent>()
+      : yield* fetchExistingPasslineEventsEffect(client, externalIds).pipe(
+          Effect.mapError((error) => asPasslineError('passline.existing-events', error))
+        )
+    const items: PasslineItem[] = []
+    for (const event of filteredEvents) {
+      const settledVenueId = getVenueIdFromResults(venueResults, event.lugar)
+      const existing = existingEventsMap.get(event.id)
+      const venueSettlement: VenueSettlement = settledVenueId !== null
+        ? { kind: 'resolved', venueId: settledVenueId }
+        : isPlaceholderResult(venueResults, event.lugar)
+          ? { kind: 'placeholder' }
+          : { kind: 'unresolved' }
+      const transformed = transformPasslineEvent(event, settledVenueId)
+      if (venueSettlement.kind === 'placeholder') transformed.location_tba = true
+      const classification = existing
+        ? classifyPasslineEvent(transformed, existing, venueSettlement)
+        : ({ kind: 'new' } as const)
+      items.push({ event, transformed, venueSettlement, existing, classification, category: null })
+    }
+    logger.info('[passline] Existing lookup + classification phase', {
+      ms: Math.round(performance.now() - classifyStart),
+      existing: existingEventsMap.size,
+      total: items.length,
+    })
+
+    logger.info('[passline] Processing events in batches', { total: items.length })
+    const processStart = performance.now()
+    for (let start = 0; start < items.length; start += BATCH_SIZE) {
+      yield* processPasslineBatchEffect(client, items.slice(start, start + BATCH_SIZE), venueResults, result)
+      logger.info('[passline] Batch processed', {
+        offset: Math.min(start + BATCH_SIZE, items.length),
+        total: items.length,
+      })
+    }
+    logger.info('[passline] Processing phase', { ms: Math.round(performance.now() - processStart), total: items.length })
+    logger.info('[passline] Import complete', {
+      inserted: result.eventsInserted,
+      updated: result.eventsUpdated,
+      skipped: result.eventsSkipped,
+      unchanged: result.eventsUnchanged,
+    })
+    return result
+  })
+}
+
 export async function processPasslineImport(
   client: SupabaseClient,
   options: PasslineImportOptions = {}
 ): Promise<PasslineImportResult> {
-  const daysAhead = options.daysAhead ?? 30
-  const startDate = options.startDate ?? format(new Date(), 'yyyy-MM-dd')
-  const endDate = options.endDate ?? format(addDays(new Date(), daysAhead), 'yyyy-MM-dd')
-
-  logger.info('[passline] Starting import', { startDate, endDate })
-
-  // Initialize result
-  const result: PasslineImportResult = {
-    eventsFetched: 0,
-    eventsFiltered: 0,
-    eventsInserted: 0,
-    eventsUpdated: 0,
-    eventsSkipped: 0,
-    eventsUnchanged: 0,
-    venuesMatched: 0,
-    venuesAutoCreated: 0,
-    venuesQueuedReview: 0,
-    categorizationSuccessful: 0,
-    categorizationFallback: 0,
+  try {
+    return await Effect.runPromise(processPasslineImportEffect(client, options))
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error))
   }
-
-  // Step 1: Fetch events
-  // Use Browserbase (cloud browser, residential proxy) when available to bypass
-  // Passline's Cloudflare protection; otherwise fall back to plain HTTP (dev).
-  logger.info('[passline] Fetching events from API')
-  const fetchStart = performance.now()
-  const allEvents = isBrowserbaseAvailable()
-    ? await fetchPasslineEventsWithBrowserbase()
-    : await fetchPasslineEvents()
-  result.eventsFetched = allEvents.length
-  logger.info('[passline] Fetch phase', {
-    ms: Math.round(performance.now() - fetchStart),
-    count: allEvents.length,
-  })
-
-  // Step 2: Filter events
-  logger.debug('[passline] Filtering events')
-  const blocklistEntries = await getBlocklistEntries('passline', client)
-  const cabaEvents = filterCABAEvents(allEvents, blocklistEntries)
-  const filteredEvents = filterByDateRange(cabaEvents, { startDate, endDate })
-  result.eventsFiltered = filteredEvents.length
-  logger.info('[passline] Filtered to CABA events in date range', { count: filteredEvents.length })
-
-  if (filteredEvents.length === 0) {
-    logger.info('[passline] No events to import')
-    return result
-  }
-
-  // Step 3: Settle venues
-  logger.info('[passline] Settling venues')
-  const venueInputs: VenueSettlementInput[] = filteredEvents
-    .map((e) => e.lugar)
-    .filter((lugar, index, self) => lugar && self.indexOf(lugar) === index) // Dedupe
-    .map((lugar) => ({ name: lugar }))
-
-  const venueStart = performance.now()
-  const { results: venueResults, stats: venueStats } = await settleVenues(
-    client,
-    venueInputs,
-    { source: 'passline', scrapeRunId: options.scrapeRunId }
-  )
-  logger.info('[passline] Venue settlement phase', {
-    ms: Math.round(performance.now() - venueStart),
-    ...venueStats,
-  })
-
-  result.venuesMatched = venueStats.matched
-  result.venuesAutoCreated = venueStats.autoCreated
-  result.venuesQueuedReview = venueStats.queuedReview
-
-  // Step 4: Load existing rows and classify each event
-  const classifyStart = performance.now()
-  const externalIds = filteredEvents.map((e) => e.id)
-  const existingEventsMap = options.skipDuplicateCheck
-    ? new Map()
-    : await fetchExistingPasslineEvents(client, externalIds)
-
-  logger.info('[passline] Classifying events')
-  const items: PasslineItem[] = []
-
-  for (const event of filteredEvents) {
-    const settledVenueId = getVenueIdFromResults(venueResults, event.lugar)
-    const existing = existingEventsMap.get(event.id)
-
-    const venueSettlement: VenueSettlement = settledVenueId !== null
-      ? { kind: 'resolved', venueId: settledVenueId }
-      : isPlaceholderResult(venueResults, event.lugar)
-        ? { kind: 'placeholder' }
-        : { kind: 'unresolved' }
-
-    const transformed = transformPasslineEvent(event, settledVenueId)
-
-    if (venueSettlement.kind === 'placeholder') {
-      transformed.location_tba = true
-    }
-
-    const classification = existing
-      ? classifyPasslineEvent(transformed, existing, venueSettlement)
-      : ({ kind: 'new' } as const)
-
-    items.push({
-      event,
-      transformed,
-      venueSettlement,
-      existing,
-      classification,
-      category: null,
-    })
-  }
-  logger.info('[passline] Existing lookup + classification phase', {
-    ms: Math.round(performance.now() - classifyStart),
-    existing: existingEventsMap.size,
-    total: items.length,
-  })
-
-  // Step 5: Process in bounded batches, writing progressively.
-  logger.info('[passline] Processing events in batches', { total: items.length })
-  const processStart = performance.now()
-  for (let start = 0; start < items.length; start += BATCH_SIZE) {
-    const batch = items.slice(start, start + BATCH_SIZE)
-    await processPasslineBatch(client, batch, venueResults, result)
-    logger.info('[passline] Batch processed', {
-      offset: Math.min(start + BATCH_SIZE, items.length),
-      total: items.length,
-    })
-  }
-  logger.info('[passline] Processing phase', {
-    ms: Math.round(performance.now() - processStart),
-    total: items.length,
-  })
-
-  logger.info('[passline] Import complete', {
-    inserted: result.eventsInserted,
-    updated: result.eventsUpdated,
-    skipped: result.eventsSkipped,
-    unchanged: result.eventsUnchanged,
-  })
-
-  return result
 }

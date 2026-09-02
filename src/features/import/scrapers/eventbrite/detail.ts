@@ -14,6 +14,8 @@
  * caller keeps whatever the transformer defaulted to.
  */
 
+import { Effect } from 'effect'
+
 const EVENTBRITE_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
 
@@ -162,18 +164,34 @@ function readUint32(bytes: Uint8Array, offset: number): number {
   return bytes[offset] * 0x1000000 + (bytes[offset + 1] << 16) + (bytes[offset + 2] << 8) + bytes[offset + 3]
 }
 
-async function measureImage(url: string): Promise<{ width: number; height: number } | null> {
-  try {
-    const response = await fetch(url, { headers: { 'User-Agent': EVENTBRITE_UA }, signal: AbortSignal.timeout(10000), redirect: 'follow' })
+class EventbriteDetailError extends Error {
+  readonly _tag = 'EventbriteDetailError'
+}
+
+function measureImageEffect(url: string) {
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, { headers: { 'User-Agent': EVENTBRITE_UA }, signal: AbortSignal.timeout(10000), redirect: 'follow' }),
+      catch: (error) => new EventbriteDetailError(error instanceof Error ? error.message : String(error)),
+    })
     if (!response.ok) return null
     const contentLength = Number(response.headers.get('content-length'))
     if (contentLength > MAX_IMAGE_BYTES) return null
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    const bytes = yield* Effect.tryPromise({
+      try: () => response.arrayBuffer(),
+      catch: (error) => new EventbriteDetailError(error instanceof Error ? error.message : String(error)),
+    })
     if (bytes.byteLength > MAX_IMAGE_BYTES) return null
-    return readImageDimensions(bytes)
-  } catch {
-    return null
-  }
+    return readImageDimensions(new Uint8Array(bytes))
+  })
+  return Effect.match(program, {
+    onFailure: () => null,
+    onSuccess: (value) => value,
+  })
+}
+
+async function measureImage(url: string): Promise<{ width: number; height: number } | null> {
+  return Effect.runPromise(measureImageEffect(url))
 }
 
 /** Extract minimum age from page HTML. Returns null when no age restriction is present. */
@@ -223,61 +241,60 @@ function isFreeEvent(html: string): boolean {
  * Returns null on network error or non-200 (caller decides how to handle).
  */
 export async function fetchEventbriteDetail(url: string): Promise<EventbriteDetailInfo | null> {
-  let response: Response
-  try {
-    response = await fetch(url, {
-      headers: {
-        'User-Agent': EVENTBRITE_UA,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
-      },
-      signal: AbortSignal.timeout(20000),
-      redirect: 'follow',
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, {
+        headers: {
+          'User-Agent': EVENTBRITE_UA,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
+        },
+        signal: AbortSignal.timeout(20000),
+        redirect: 'follow',
+      }),
+      catch: (error) => new EventbriteDetailError(error instanceof Error ? error.message : String(error)),
     })
-  } catch {
-    return null
-  }
-  if (!response.ok) return null
+    if (!response.ok) return null
+    const html = yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (error) => new EventbriteDetailError(error instanceof Error ? error.message : String(error)),
+    })
 
-  const html = await response.text()
-
-  const startRaw = html.match(/start_time" content="([^"]+)"/)?.[1] ?? null
-  const endRaw = html.match(/end_time" content="([^"]+)"/)?.[1] ?? null
-
-  const startsAt = startRaw ? toUtcIso(startRaw) : null
-  let endsAt: string | null = null
-  if (endRaw) {
-    const end = toUtcIso(endRaw)
-    if (end && startsAt && new Date(end).getTime() > new Date(startsAt).getTime()) {
-      endsAt = end
+    const startRaw = html.match(/start_time" content="([^"]+)"/)?.[1] ?? null
+    const endRaw = html.match(/end_time" content="([^"]+)"/)?.[1] ?? null
+    const startsAt = startRaw ? toUtcIso(startRaw) : null
+    let endsAt: string | null = null
+    if (endRaw) {
+      const end = toUtcIso(endRaw)
+      if (end && startsAt && new Date(end).getTime() > new Date(startsAt).getTime()) endsAt = end
     }
-  }
 
-  const price = extractPrice(html)
-  const free = isFreeEvent(html)
-  const image = extractEventbriteDetailImage(html)
-  if (image.url && (!image.width || !image.height)) {
-    const measured = await measureImage(image.url)
-    if (measured) {
-      image.width ??= measured.width
-      image.height ??= measured.height
+    const price = extractPrice(html)
+    const free = isFreeEvent(html)
+    const image = extractEventbriteDetailImage(html)
+    if (image.url && (!image.width || !image.height)) {
+      const measured = yield* measureImageEffect(image.url)
+      if (measured) {
+        image.width ??= measured.width
+        image.height ??= measured.height
+      }
     }
-  }
-  // "hasPrice" is true only when the page explicitly says free or lists a paid price;
-  // a page with neither (no offersSchema, no badge) leaves the price unknown.
-  const hasPrice = free || price !== null
-
-  return {
-    starts_at: startsAt,
-    ends_at: endsAt,
-    price,
-    is_free: free,
-    hasPrice,
-    min_age: extractMinAge(html),
-    image_url: image.url,
-    image_width: image.width,
-    image_height: image.height,
-  }
+    return {
+      starts_at: startsAt,
+      ends_at: endsAt,
+      price,
+      is_free: free,
+      hasPrice: free || price !== null,
+      min_age: extractMinAge(html),
+      image_url: image.url,
+      image_width: image.width,
+      image_height: image.height,
+    }
+  })
+  return Effect.runPromise(Effect.match(program, {
+    onFailure: () => null,
+    onSuccess: (value) => value,
+  }))
 }
 
 export interface EventbriteDetailTarget {

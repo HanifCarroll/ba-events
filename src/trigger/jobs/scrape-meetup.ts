@@ -5,9 +5,10 @@
  * Uses browser automation (Browserbase cloud browser) to scrape day-by-day.
  */
 import { task } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
 import { browserbaseScraperQueue } from '../queues.ts'
-import { processMeetupImport, type MeetupImportResult } from '#features/import/core/meetup.ts'
+import { processMeetupImportEffect, type MeetupImportResult } from '#features/import/core/meetup.ts'
 
 export interface MeetupJobPayload {
   daysAhead?: number
@@ -34,10 +35,10 @@ export const scrapeMeetup = task({
 
     const client = createServiceRoleClient()
 
-    const result = await processMeetupImport(client, {
+    const result = await Effect.runPromise(processMeetupImportEffect(client, {
       daysAhead: payload.daysAhead ?? 14,
       scrapeRunId: payload.scrapeRunId,
-    })
+    }))
 
     console.log('[scrape-meetup] Job completed:', result)
     return result

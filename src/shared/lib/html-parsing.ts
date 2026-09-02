@@ -9,6 +9,7 @@
  */
 
 import { HttpError } from './errors.ts'
+import { Effect } from 'effect'
 
 /**
  * Extract all JSON-LD structured data from HTML
@@ -171,22 +172,33 @@ export const browserHeaders = {
  * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to distinguish error types.
  * Returns null only for network errors (no response received).
  */
+class HtmlFetchError extends Error {
+  readonly _tag = 'HtmlFetchError'
+}
+
 export async function fetchHtml(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, { headers: browserHeaders })
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, { headers: browserHeaders }),
+      catch: (error) => new HtmlFetchError(error instanceof Error ? error.message : String(error)),
+    })
 
     if (!response.ok) {
-      // Throw HttpError so callers can distinguish 404s from other errors
-      throw new HttpError(response.status, response.statusText, url)
+      return yield* Effect.fail(new HttpError(response.status, response.statusText, url))
     }
 
-    return await response.text()
+    return yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (error) => new HtmlFetchError(error instanceof Error ? error.message : String(error)),
+    })
+  })
+
+  try {
+    return await Effect.runPromise(program)
   } catch (error) {
-    // Re-throw HttpError as-is for upstream handling
-    if (error instanceof HttpError) {
-      throw error
-    }
-    // Network errors, timeouts, etc. - log and return null
+    // Re-throw HttpError as-is for upstream handling; network errors, timeouts,
+    // and body-read failures preserve the historical null fallback.
+    if (error instanceof HttpError) throw error
     console.log(`[HTML Fetch] Failed to fetch ${url}:`, error)
     return null
   }

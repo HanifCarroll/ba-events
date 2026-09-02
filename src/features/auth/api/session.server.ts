@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit'
+import { Data, Effect } from 'effect'
 import type { RequestEvent } from '@sveltejs/kit'
 import type { User } from '@supabase/supabase-js'
 import type { Profile } from '#shared/lib/types.ts'
@@ -10,70 +11,79 @@ export interface SessionUser {
 	isAdmin: boolean
 }
 
+class SessionLookupError extends Data.TaggedError('SessionLookupError')<{
+	readonly message: string
+	readonly cause?: unknown
+}> {}
+
 /**
  * Get the current authenticated user with their profile.
  * Returns null if not authenticated.
  */
-export async function getSessionUser(event: RequestEvent): Promise<SessionUser | null> {
-	const supabase = createSupabaseServerClient(event)
+export function getSessionUserEffect(event: RequestEvent): Effect.Effect<SessionUser | null, never> {
+	const program = Effect.gen(function* () {
+		const supabase = createSupabaseServerClient(event)
+		const {
+			data: { user },
+			error
+		} = yield* Effect.tryPromise({
+			try: () => supabase.auth.getUser(),
+			catch: (cause) => new SessionLookupError({ message: 'Failed to read authenticated user', cause }),
+		})
+		if (error || !user) return null
 
-	const {
-		data: { user },
-		error
-	} = await supabase.auth.getUser()
+		const profileResult = yield* Effect.match(
+			Effect.tryPromise({
+				try: () => supabase.from('profiles').select('*').eq('id', user.id).single(),
+				catch: () => new SessionLookupError({ message: 'Failed to read profile' }),
+			}),
+			{ onFailure: () => null, onSuccess: ({ data }) => data },
+		)
+		return { user, profile: profileResult as Profile | null, isAdmin: (profileResult as Profile | null)?.role === 'admin' }
+	})
+	return Effect.match(program, {
+		onFailure: () => null,
+		onSuccess: (session) => session,
+	})
+}
 
-	if (error || !user) {
-		return null
-	}
-
-	// Fetch profile for role information
-	const { data: profile } = await supabase
-		.from('profiles')
-		.select('*')
-		.eq('id', user.id)
-		.single()
-
-	return {
-		user,
-		profile: profile as Profile | null,
-		isAdmin: profile?.role === 'admin'
-	}
+export function getSessionUser(event: RequestEvent) {
+	return Effect.runPromise(getSessionUserEffect(event))
 }
 
 /**
  * Require authentication - throws redirect to /login if not authenticated.
  * Use this in load functions for protected routes.
  */
-export async function requireAuth(
+export function requireAuthEffect(
 	event: RequestEvent,
 	redirectTo?: string
-): Promise<SessionUser> {
-	const session = await getSessionUser(event)
+): Effect.Effect<SessionUser, never> {
+	return Effect.map(getSessionUserEffect(event), (session) => {
+		if (!session) throw redirect(303, redirectTo ? `/login?redirect=${redirectTo}` : '/login')
+		return session
+	})
+}
 
-	if (!session) {
-		throw redirect(303, redirectTo ? `/login?redirect=${redirectTo}` : '/login')
-	}
-
-	return session
+export function requireAuth(event: RequestEvent, redirectTo?: string) {
+	return Effect.runPromise(requireAuthEffect(event, redirectTo))
 }
 
 /**
  * Require admin role - throws redirect if not authenticated or not admin.
  * Use this in load functions for admin routes.
  */
-export async function requireAdmin(
+export function requireAdminEffect(
 	event: RequestEvent,
 	redirectTo?: string
-): Promise<SessionUser> {
-	const session = await getSessionUser(event)
+): Effect.Effect<SessionUser, never> {
+	return Effect.map(getSessionUserEffect(event), (session) => {
+		if (!session) throw redirect(303, redirectTo ? `/login?redirect=${redirectTo}` : '/login')
+		if (!session.isAdmin) throw redirect(303, '/')
+		return session
+	})
+}
 
-	if (!session) {
-		throw redirect(303, redirectTo ? `/login?redirect=${redirectTo}` : '/login')
-	}
-
-	if (!session.isAdmin) {
-		throw redirect(303, '/')
-	}
-
-	return session
+export function requireAdmin(event: RequestEvent, redirectTo?: string) {
+	return Effect.runPromise(requireAdminEffect(event, redirectTo))
 }

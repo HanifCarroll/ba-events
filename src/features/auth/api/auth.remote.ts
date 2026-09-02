@@ -1,4 +1,5 @@
 import { command, getRequestEvent } from '$app/server'
+import { Effect, Schema } from 'effect'
 import type { Locale } from '#shared/lib/types.ts'
 import * as server from '#features/auth/api/server.server.ts'
 
@@ -6,16 +7,24 @@ import * as server from '#features/auth/api/server.server.ts'
 // `getSessionUser` is intentionally NOT wrapped — the root layout's load data
 // covers it (see src/routes/+layout.server.ts).
 
-export const signOut = command(async () => server.signOut(getRequestEvent()))
+export const signOut = command(async () => Effect.runPromise(server.signOutEffect(getRequestEvent())))
 
-export const exchangeCode = command('unchecked', async (data: { code?: string; tokenHash?: string; type?: string }) =>
-	server.exchangeCode(getRequestEvent(), data)
+const exchangeCodeInput = Schema.toStandardSchemaV1(Schema.Struct({
+	code: Schema.optional(Schema.String),
+	tokenHash: Schema.optional(Schema.String),
+	type: Schema.optional(Schema.String),
+}))
+const localeInput = Schema.toStandardSchemaV1(Schema.Literals(['en', 'es']))
+const deleteAccountInput = Schema.toStandardSchemaV1(Schema.Struct({ userId: Schema.String }))
+
+export const exchangeCode = command(exchangeCodeInput, async (data: { code?: string; tokenHash?: string; type?: string }) =>
+	Effect.runPromise(server.exchangeCodeEffect(getRequestEvent(), data))
 )
 
-export const updateLocalePreference = command('unchecked', async (locale: Locale) =>
-	server.updateLocalePreference(getRequestEvent(), locale)
+export const updateLocalePreference = command(localeInput, async (locale: Locale) =>
+	Effect.runPromise(server.updateLocalePreferenceEffect(getRequestEvent(), locale))
 )
 
-export const deleteAccount = command('unchecked', async (data: { userId: string }) =>
-	server.deleteAccount(getRequestEvent(), data)
+export const deleteAccount = command(deleteAccountInput, async (data: { userId: string }) =>
+	Effect.runPromise(server.deleteAccountEffect(getRequestEvent(), data))
 )

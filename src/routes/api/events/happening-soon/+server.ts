@@ -1,9 +1,10 @@
-import { getHappeningSoonEventsForGrid } from '#features/events/api/crud.server.ts'
+import { Effect } from 'effect'
+import { getHappeningSoonEventsForGridEffect } from '#features/events/api/crud.server.ts'
 import { apiList, withCache } from '#shared/lib/api-response.ts'
 
 /** Public, bounded feed for the homepage's below-fold event cards. */
 export const GET = async (): Promise<Response> => {
-	const events = await getHappeningSoonEventsForGrid()
+	const events = await Effect.runPromise(getHappeningSoonEventsForGridEffect())
 	return Response.json(
 		apiList(events, events.length),
 		{ headers: withCache({ 'Content-Type': 'application/json' }, 'short') }

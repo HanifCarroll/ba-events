@@ -5,6 +5,7 @@
  */
 
 import * as cheerio from 'cheerio'
+import { Effect } from 'effect'
 import type { BATourismEvent, Coordinates, WeekContext } from './types.ts'
 import { parseWeekContext } from './date-parser.ts'
 
@@ -14,20 +15,33 @@ const BA_TOURISM_URL = 'https://turismo.buenosaires.gob.ar/es/article/que-hacer-
  * Fetch the BA Tourism events page HTML
  */
 export async function fetchBATourismPage(): Promise<string> {
-  const response = await fetch(BA_TOURISM_URL, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
-    },
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(BA_TOURISM_URL, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
+        },
+      }),
+      catch: (error) => new BATourismFetchError(error instanceof Error ? error.message : String(error)),
+    })
+    if (!response.ok) {
+      return yield* Effect.fail(new BATourismFetchError(
+        `Failed to fetch BA Tourism page: ${response.status} ${response.statusText}`
+      ))
+    }
+    return yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (error) => new BATourismFetchError(error instanceof Error ? error.message : String(error)),
+    })
   })
+  return Effect.runPromise(program)
+}
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch BA Tourism page: ${response.status} ${response.statusText}`)
-  }
-
-  return response.text()
+class BATourismFetchError extends Error {
+  readonly _tag = 'BATourismFetchError'
 }
 
 /**

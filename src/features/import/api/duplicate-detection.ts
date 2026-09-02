@@ -9,9 +9,11 @@
  * to ensure visibility of all events (bypasses RLS).
  */
 
+import { Effect } from 'effect'
 import { getSupabase, type SupabaseClient } from '#shared/lib/db/client.server.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import type { ImportSource } from '../adapters/types.ts'
+import { importTry, type ImportOperationError } from '../core/effect-utils.ts'
 
 // Fields we compare for detecting changes (initial scrape fields only, not enriched)
 export const DIFF_FIELDS = [
@@ -77,34 +79,50 @@ export interface ExistingEventData {
  * @param client - Optional Supabase client (use service role client in Trigger.dev jobs)
  * @returns Set of external IDs that already exist
  */
+export function checkDuplicateEventsEffect(
+  externalIds: string[],
+  source: ImportSource,
+  client?: SupabaseClient
+): Effect.Effect<Set<string>, ImportOperationError> {
+  if (externalIds.length === 0) return Effect.succeed(new Set<string>())
+
+  const db = client ?? getSupabase()
+  return importTry('duplicate-detection.lookup', () => db
+    .from('events')
+    .select('external_id')
+    .eq('source', source)
+    .in('external_id', externalIds)
+  ).pipe(
+    Effect.map(({ data: existingEvents }) => {
+      const existingIds = new Set<string>()
+      if (existingEvents) {
+        for (const event of existingEvents) {
+          if (event.external_id) {
+            existingIds.add(event.external_id)
+          }
+        }
+      }
+
+      if (existingIds.size > 0) {
+        console.log(`[duplicate-detection] Found ${existingIds.size} already imported ${source} events`)
+      }
+
+      return existingIds
+    })
+  )
+}
+
+/** Promise compatibility adapter for scripts and existing callers. */
 export async function checkDuplicateEvents(
   externalIds: string[],
   source: ImportSource,
   client?: SupabaseClient
 ): Promise<Set<string>> {
-  if (externalIds.length === 0) return new Set()
-
-  const db = client ?? getSupabase()
-  const { data: existingEvents } = await db
-    .from('events')
-    .select('external_id')
-    .eq('source', source)
-    .in('external_id', externalIds)
-
-  const existingIds = new Set<string>()
-  if (existingEvents) {
-    for (const event of existingEvents) {
-      if (event.external_id) {
-        existingIds.add(event.external_id)
-      }
-    }
-  }
-
-  if (existingIds.size > 0) {
-    console.log(`[duplicate-detection] Found ${existingIds.size} already imported ${source} events`)
-  }
-
-  return existingIds
+  return Effect.runPromise(
+    Effect.catchEager(checkDuplicateEventsEffect(externalIds, source, client), () =>
+      Effect.succeed(new Set<string>())
+    )
+  )
 }
 
 /**
@@ -140,37 +158,53 @@ export function extractExternalIds<T>(
  * @param client - Optional Supabase client (use service role client in Trigger.dev jobs)
  * @returns Map of external_id -> existing event data
  */
+export function checkDuplicateEventsWithDataEffect(
+  externalIds: string[],
+  source: ImportSource,
+  client?: SupabaseClient
+): Effect.Effect<Map<string, ExistingEventData>, ImportOperationError> {
+  if (externalIds.length === 0) return Effect.succeed(new Map<string, ExistingEventData>())
+
+  const db = client ?? getSupabase()
+  return importTry('duplicate-detection.lookup-with-data', () => db
+    .from('events')
+    .select('id, external_id, name, description_es, description_en, starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url, image_width, image_height, link, ticket_url, status, location_hidden, location_tba, description_unavailable, facets, embedding_version')
+    .eq('source', source)
+    .in('external_id', externalIds)
+  ).pipe(
+    Effect.map(({ data: existingEvents }) => {
+      const result = new Map<string, ExistingEventData>()
+
+      if (existingEvents) {
+        for (const event of existingEvents) {
+          if (event.external_id) {
+            result.set(event.external_id, event as ExistingEventData)
+          }
+        }
+      }
+
+      if (result.size > 0) {
+        console.log(
+          `[duplicate-detection] Found ${result.size} already imported ${source} events (with data for diff)`
+        )
+      }
+
+      return result
+    })
+  )
+}
+
+/** Promise compatibility adapter for existing import tests/callers. */
 export async function checkDuplicateEventsWithData(
   externalIds: string[],
   source: ImportSource,
   client?: SupabaseClient
 ): Promise<Map<string, ExistingEventData>> {
-  if (externalIds.length === 0) return new Map()
-
-  const db = client ?? getSupabase()
-  const { data: existingEvents } = await db
-    .from('events')
-    .select('id, external_id, name, description_es, description_en, starts_at, ends_at, is_all_day, time_tba, venue_id, categories, price, is_free, min_age, image_url, image_width, image_height, link, ticket_url, status, location_hidden, location_tba, description_unavailable, facets, embedding_version')
-    .eq('source', source)
-    .in('external_id', externalIds)
-
-  const result = new Map<string, ExistingEventData>()
-
-  if (existingEvents) {
-    for (const event of existingEvents) {
-      if (event.external_id) {
-        result.set(event.external_id, event as ExistingEventData)
-      }
-    }
-  }
-
-  if (result.size > 0) {
-    console.log(
-      `[duplicate-detection] Found ${result.size} already imported ${source} events (with data for diff)`
+  return Effect.runPromise(
+    Effect.catchEager(checkDuplicateEventsWithDataEffect(externalIds, source, client), () =>
+      Effect.succeed(new Map<string, ExistingEventData>())
     )
-  }
-
-  return result
+  )
 }
 
 /**

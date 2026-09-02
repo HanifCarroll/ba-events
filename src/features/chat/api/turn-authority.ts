@@ -1,6 +1,22 @@
 import type { ChatTurn } from './turns.server.ts'
+import { Schema } from 'effect'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const uuidV1ToV5 = Schema.String.pipe(
+	Schema.refine((value): value is string => UUID_RE.test(value), {
+		message: 'Expected an RFC variant UUID with version 1-5',
+	})
+)
+
+const chatTurnBootstrapSchema = Schema.Struct({
+	conversationId: uuidV1ToV5,
+	turnId: uuidV1ToV5,
+	userClientMessageId: uuidV1ToV5,
+	assistantClientMessageId: uuidV1ToV5,
+	content: Schema.String,
+	locale: Schema.Literals(['en', 'es']),
+})
 
 export type ChatTurnBootstrapInput = {
   conversationId: string
@@ -12,19 +28,8 @@ export type ChatTurnBootstrapInput = {
 }
 
 export function parseChatTurnBootstrapInput(body: unknown): ChatTurnBootstrapInput | null {
-  if (!body || typeof body !== 'object') return null
-  const input = body as Record<string, unknown>
-  if (
-    !UUID_RE.test(String(input.conversationId ?? '')) ||
-    !UUID_RE.test(String(input.turnId ?? '')) ||
-    !UUID_RE.test(String(input.userClientMessageId ?? '')) ||
-    !UUID_RE.test(String(input.assistantClientMessageId ?? '')) ||
-    typeof input.content !== 'string' ||
-    (input.locale !== 'en' && input.locale !== 'es')
-  ) {
-    return null
-  }
-  return input as ChatTurnBootstrapInput
+	const parsed = Schema.decodeUnknownResult(chatTurnBootstrapSchema)(body)
+	return parsed._tag === 'Success' ? parsed.success : null
 }
 
 export function applyAuthoritativeTurn(input: {

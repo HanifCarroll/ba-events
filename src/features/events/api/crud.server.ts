@@ -2,20 +2,40 @@ import {
   getHappeningSoonEvents,
   getEventWithVenue,
 } from '#shared/lib/db/client.server.ts'
+import { Data, Effect } from 'effect'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
+
+class EventReadError extends Data.TaggedError('EventReadError')<{
+  readonly message: string
+  readonly cause?: unknown
+}> {}
 
 /**
  * Next upcoming events for the chat home "Happening soon" grid.
  * Public — no auth, lightweight chat columns only.
  */
-export async function getHappeningSoonEventsForGrid(): Promise<ChatEventPayload[]> {
-  return getHappeningSoonEvents(8)
+export function getHappeningSoonEventsForGridEffect(): Effect.Effect<ChatEventPayload[], EventReadError> {
+  return Effect.tryPromise({
+    try: () => getHappeningSoonEvents(8),
+    catch: (cause) => new EventReadError({ message: 'Failed to load happening soon events', cause }),
+  })
+}
+
+export function getHappeningSoonEventsForGrid() {
+  return Effect.runPromise(getHappeningSoonEventsForGridEffect())
 }
 
 /**
  * Get a single event with its venue for the public event detail page.
  * Public — no auth.
  */
-export async function getEventWithVenueById(id: string) {
-  return getEventWithVenue(id)
+export function getEventWithVenueByIdEffect(id: string): Effect.Effect<Awaited<ReturnType<typeof getEventWithVenue>>, EventReadError> {
+  return Effect.tryPromise({
+    try: () => getEventWithVenue(id),
+    catch: (cause) => new EventReadError({ message: 'Failed to load event', cause }),
+  })
+}
+
+export function getEventWithVenueById(id: string) {
+  return Effect.runPromise(getEventWithVenueByIdEffect(id))
 }

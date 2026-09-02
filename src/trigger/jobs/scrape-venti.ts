@@ -5,8 +5,9 @@
  * Plain server-side fetches — no browser required.
  */
 import { task } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
-import { processVentiImport, type VentiImportResult } from '#features/import/core/venti.ts'
+import { processVentiImportEffect, type VentiImportResult } from '#features/import/core/venti.ts'
 
 export interface VentiJobPayload {
   scrapeRunId?: string | null
@@ -21,9 +22,9 @@ export const scrapeVenti = task({
 
     const client = createServiceRoleClient()
 
-    const result = await processVentiImport(client, {
+    const result = await Effect.runPromise(processVentiImportEffect(client, {
       scrapeRunId: payload.scrapeRunId,
-    })
+    }))
 
     console.log('[scrape-venti] Job completed:', result)
     return result

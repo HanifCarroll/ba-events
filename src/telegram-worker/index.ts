@@ -1,10 +1,11 @@
+import { Effect } from 'effect'
 import { createTelegramClient, TelegramApiError } from '#features/telegram/client.ts'
-import { defaultTelegramTurnDependencies, processTelegramTurn } from '#features/telegram/turn.ts'
-import { telegramTaskPayloadSchema, type TelegramTaskPayload } from '#features/telegram/task-payload.ts'
-import { handleTelegramWebhook } from '#features/telegram/webhook.server.ts'
+import { defaultTelegramTurnDependencies, processTelegramTurnEffect } from '#features/telegram/turn.ts'
+import { parseTelegramTaskPayload, type TelegramTaskPayload } from '#features/telegram/task-payload.ts'
+import { handleTelegramWebhookEffect } from '#features/telegram/webhook.server.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
-import { purgeTelegramRetention } from '#features/telegram/retention.ts'
-import { runTelegramHealthCheck } from '#features/telegram/health.ts'
+import { purgeTelegramRetentionEffect } from '#features/telegram/retention.ts'
+import { runTelegramHealthCheckEffect } from '#features/telegram/health.ts'
 
 const ITEM_PREFIX = 'item:'
 const SEEN_PREFIX = 'seen:'
@@ -61,13 +62,13 @@ function retryAfterMs(error: unknown): number | null {
 
 async function processItem(item: InboxItem, env: Env): Promise<void> {
   const client = createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN })
-  await processTelegramTurn(item.payload, {
+  await Effect.runPromise(processTelegramTurnEffect(item.payload, {
     ...defaultTelegramTurnDependencies,
     sendMessage: (chatId, message) => client.sendMessage(chatId, message.text, message.replyMarkup),
     sendTyping: (chatId) => client.sendChatAction(chatId),
     sendDraft: (chatId, draftId, text) => client.sendMessageDraft(chatId, draftId, text),
     answerCallback: (callbackId, text) => client.answerCallbackQuery(callbackId, text),
-  })
+  }))
 }
 
 export class TelegramInbox {
@@ -81,7 +82,9 @@ export class TelegramInbox {
     if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 })
     let payload: TelegramTaskPayload
     try {
-      payload = telegramTaskPayloadSchema.parse(await request.json())
+      const parsed = parseTelegramTaskPayload(await request.json())
+      if (!parsed) throw new Error('Invalid Telegram payload')
+      payload = parsed
     } catch {
       return new Response('Bad Request', { status: 400 })
     }
@@ -128,7 +131,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname !== '/api/telegram') return new Response('Not Found', { status: 404 })
-    return handleTelegramWebhook(request, {
+    return Effect.runPromise(handleTelegramWebhookEffect(request, {
       webhookSecret: env.TELEGRAM_WEBHOOK_SECRET,
       identitySecret: env.TELEGRAM_ID_HASH_SECRET,
       trigger: async (payload) => {
@@ -140,12 +143,12 @@ export default {
         })
         if (!response.ok) throw new Error('Telegram inbox rejected update')
       },
-    })
+    }))
   },
   async scheduled(controller: ScheduledControllerLike, env: Env, ctx: ExecutionContextLike): Promise<void> {
     const job = controller.cron === '0 * * * *'
-      ? runTelegramHealthCheck(createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN }), getSupabaseServiceRoleClient())
-      : purgeTelegramRetention(getSupabaseServiceRoleClient())
+      ? Effect.runPromise(runTelegramHealthCheckEffect(createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN }), getSupabaseServiceRoleClient()))
+      : Effect.runPromise(purgeTelegramRetentionEffect(getSupabaseServiceRoleClient()))
     ctx.waitUntil(job)
   },
 }

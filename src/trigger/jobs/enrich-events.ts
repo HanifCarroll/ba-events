@@ -21,11 +21,12 @@
  * `maxBatches * limit` events (default 1000) as a safety ceiling.
  */
 import { task, tasks, metadata } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
 import {
-  enrichEvents,
-  getEventsNeedingEnrichment,
-  countEventsNeedingEnrichment,
+  enrichEventsEffect,
+  getEventsNeedingEnrichmentEffect,
+  countEventsNeedingEnrichmentEffect,
   type EnrichmentStats,
 } from '#features/import/core/event-enrichment.ts'
 import { recordEnrichmentAudit, shouldChainNextBatch } from './daily-scrape-outcome.ts'
@@ -86,22 +87,22 @@ export const enrichEventsJob = task({
     // Get PENDING events needing enrichment (scoped to this import's
     // createdAfter). `pending`-only: failed rows are retried by the catch-up
     // job, not re-selected here (see the failure-loop guard above).
-    const events = await getEventsNeedingEnrichment(client, {
+    const events = await Effect.runPromise(Effect.catchEager(getEventsNeedingEnrichmentEffect(client, {
       source: payload.source,
       limit,
       createdAfter: payload.createdAfter,
       statuses: ['pending'],
-    })
+    }), () => Effect.succeed([])))
 
     if (events.length === 0) {
       console.log('[enrich-events] No pending events need enrichment')
       // Terminal batch with nothing to do: record the carried totals and the
       // still-eligible (pending + failed) remainder so the audit row always
       // gets a final write when a chain was started.
-      const remainingCount = await countEventsNeedingEnrichment(client, {
+      const remainingCount = await Effect.runPromise(Effect.catchEager(countEventsNeedingEnrichmentEffect(client, {
         source: payload.source,
         createdAfter: payload.createdAfter,
-      })
+      }), () => Effect.succeed(0)))
       if (payload.scrapeRunId) {
         await recordEnrichmentAudit(client, payload.scrapeRunId, {
           eligible: payload.eligible ?? 0,
@@ -150,7 +151,7 @@ export const enrichEventsJob = task({
     let venuesCreated = 0
 
     // Process with progress logging and metadata updates
-    const stats = await enrichEvents(client, events, {
+    const stats = await Effect.runPromise(enrichEventsEffect(client, events, {
       concurrency: 4,
       delayMs: 0,
       onProgress: (current, total, result) => {
@@ -198,17 +199,17 @@ export const enrichEventsJob = task({
           console.warn(`[enrich-events] Failed: ${result.eventId} - ${result.error}`)
         }
       },
-    })
+    }))
 
     // Count UNATTEMPTED pending rows remaining in this import's scope AFTER
     // this batch fully completed. Failed rows are excluded (they are no longer
     // pending), so a row this chain already attempted — whether it failed,
     // skipped, canceled, or succeeded — never keeps the chain alive.
-    const pendingRemaining = await countEventsNeedingEnrichment(client, {
+    const pendingRemaining = await Effect.runPromise(Effect.catchEager(countEventsNeedingEnrichmentEffect(client, {
       source: payload.source,
       createdAfter: payload.createdAfter,
       statuses: ['pending'],
-    })
+    }), () => Effect.succeed(0)))
 
     const totalEnriched = enrichedSoFar + stats.enriched
     const totalFailed = failedSoFar + stats.failed
@@ -238,10 +239,10 @@ export const enrichEventsJob = task({
       // `remaining` = eligible rows still needing enrichment after the chain:
       // the failures from this chain plus any unattempted rows left over at the
       // safety ceiling. Both are picked up by the 10:00 catch-up.
-      remainingCount = await countEventsNeedingEnrichment(client, {
+      remainingCount = await Effect.runPromise(Effect.catchEager(countEventsNeedingEnrichmentEffect(client, {
         source: payload.source,
         createdAfter: payload.createdAfter,
-      })
+      }), () => Effect.succeed(0)))
       if (payload.scrapeRunId) {
         await recordEnrichmentAudit(client, payload.scrapeRunId, {
           eligible,

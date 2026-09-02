@@ -1,3 +1,5 @@
+import { Effect } from 'effect'
+
 const RESEND_EMAILS_URL = 'https://api.resend.com/emails'
 
 export interface FeedbackAlertConfig {
@@ -19,6 +21,10 @@ function getConfig(): FeedbackAlertConfig {
 	}
 }
 
+class FeedbackAlertError extends Error {
+	readonly _tag = 'FeedbackAlertError'
+}
+
 export async function sendFeedbackAlert(
 	message: string,
 	config = getConfig(),
@@ -29,27 +35,32 @@ export async function sendFeedbackAlert(
 		return { delivered: false, reason: 'not_configured' }
 	}
 
-	try {
-		const response = await fetcher(RESEND_EMAILS_URL, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${config.apiKey}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				from: config.from,
-				to: [config.to],
-				subject: 'New BA Eventos feedback',
-				text: `New feedback received:\n\n${message}`,
+	const program = Effect.gen(function* () {
+		const response = yield* Effect.tryPromise({
+			try: () => fetcher(RESEND_EMAILS_URL, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${config.apiKey}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					from: config.from,
+					to: [config.to],
+					subject: 'New BA Eventos feedback',
+					text: `New feedback received:\n\n${message}`,
+				}),
 			}),
+			catch: (error) => new FeedbackAlertError(error instanceof Error ? error.message : String(error)),
 		})
 
 		if (!response.ok) {
-			console.error('[feedback] email alert failed:', response.status)
-			return { delivered: false, reason: 'provider_error' }
+			return yield* Effect.fail(new FeedbackAlertError(`provider returned ${response.status}`))
 		}
+		return { delivered: true as const }
+	})
 
-		return { delivered: true }
+	try {
+		return await Effect.runPromise(program)
 	} catch (error) {
 		console.error('[feedback] email alert failed:', error instanceof Error ? error.name : 'unknown')
 		return { delivered: false, reason: 'provider_error' }

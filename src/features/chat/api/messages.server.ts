@@ -1,9 +1,9 @@
 /**
- * Messages API
- *
- * Server functions for managing chat messages within conversations.
+ * Messages API. Supabase remains the persistence adapter; authorization,
+ * idempotency, and error classification are expressed in Effect programs.
  */
 
+import { Data, Effect } from 'effect'
 import type { RequestEvent } from '@sveltejs/kit'
 import type { Message, MessageAttachedData, MessageExecutionStep } from '#shared/lib/types.ts'
 import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
@@ -36,153 +36,134 @@ export function buildMessageRpcPayload(data: AddMessageInput) {
   }
 }
 
-/**
- * Add a message to a conversation.
- * Automatically sets sequence_number and updates conversation.updated_at.
- */
-export async function addMessage(event: RequestEvent, data: AddMessageInput) {
-  const supabase = createSupabaseServerClient(event)
+class MessagePersistenceError extends Data.TaggedError('MessagePersistenceError')<{
+  readonly message: string
+}> {}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+class MessageAuthError extends Data.TaggedError('MessageAuthError')<{
+  readonly message: string
+}> {}
 
-  if (!user) {
-    throw new Error('Not authenticated')
-  }
+const persistenceFailure = (message: string) => new MessagePersistenceError({ message })
+const authFailure = (message: string) => new MessageAuthError({ message })
 
-  // Verify user owns the conversation
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('id', data.conversationId)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!conv) {
-    throw new Error('Conversation not found')
-  }
-
-  // Idempotency for retry/outbox flows: if this client message already exists,
-  // return it instead of inserting a duplicate.
-  if (data.clientMessageId) {
-    const { data: existingMessage, error: existingError } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', data.conversationId)
-      .eq('client_message_id', data.clientMessageId)
-      .maybeSingle()
-
-    if (existingError) {
-      console.error('[addMessage] Existing message lookup error:', existingError)
-      throw new Error('Failed to add message')
-    }
-
-    if (existingMessage) {
-      return existingMessage as Message
-    }
-  }
-
-  // Insert via transactional RPC so turn assignment is deterministic.
-  const { data: rpcResult, error } = await supabase.rpc(
-    'insert_message_with_turn',
-    buildMessageRpcPayload(data)
-  )
-
-  const message = (Array.isArray(rpcResult) ? rpcResult[0] : rpcResult) as Message | null
-
-  if (error || !message) {
-    console.error('[addMessage] Error:', error)
-    throw new Error('Failed to add message')
-  }
-
-  return message as Message
+function getUserEffect(supabase: ReturnType<typeof createSupabaseServerClient>) {
+  return Effect.tryPromise({
+    try: () => supabase.auth.getUser(),
+    catch: () => persistenceFailure('Failed to read authenticated user'),
+  })
 }
 
-/**
- * Get all messages for a conversation.
- */
-export async function getMessages(event: RequestEvent, data: { conversationId: string }) {
-  const supabase = createSupabaseServerClient(event)
+/** Effect-native message insertion program. */
+export function addMessageEffect(event: RequestEvent, data: AddMessageInput) {
+  return Effect.gen(function* () {
+    const supabase = createSupabaseServerClient(event)
+    const { data: { user } } = yield* getUserEffect(supabase)
+    if (!user) return yield* Effect.fail(authFailure('Not authenticated'))
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    const conversationQuery = supabase.from('conversations').select('id').eq('id', data.conversationId).eq('user_id', user.id).single()
+    const { data: conversation } = yield* Effect.tryPromise({
+      try: () => conversationQuery,
+      catch: () => persistenceFailure('Failed to add message'),
+    })
+    if (!conversation) return yield* Effect.fail(persistenceFailure('Conversation not found'))
 
-  if (!user) {
-    return []
-  }
+    if (data.clientMessageId) {
+      const existingQuery = supabase.from('messages').select('*')
+        .eq('conversation_id', data.conversationId).eq('client_message_id', data.clientMessageId).maybeSingle()
+      const { data: existingMessage, error: existingError } = yield* Effect.tryPromise({
+        try: () => existingQuery,
+        catch: () => persistenceFailure('Failed to add message'),
+      })
+      if (existingError) {
+        console.error('[addMessage] Existing message lookup error:', existingError)
+        return yield* Effect.fail(persistenceFailure('Failed to add message'))
+      }
+      if (existingMessage) return existingMessage as Message
+    }
 
-  // Verify user owns the conversation
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('id', data.conversationId)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!conv) {
-    return []
-  }
-
-  const { data: rows, error } = await supabase
-    .from('messages')
-    .select('*')
-    .eq('conversation_id', data.conversationId)
-    .order('turn_index', { ascending: true })
-    .order('id', { ascending: true })
-
-  if (error) {
-    console.error('[getMessages] Error:', error)
-    throw new Error('Failed to get messages')
-  }
-
-  return sortMessagesByTurnOrderAsc((rows ?? []) as Message[])
+    const rpcQuery = supabase.rpc('insert_message_with_turn', buildMessageRpcPayload(data))
+    const { data: rpcResult, error } = yield* Effect.tryPromise({
+      try: () => rpcQuery,
+      catch: () => persistenceFailure('Failed to add message'),
+    })
+    const message = (Array.isArray(rpcResult) ? rpcResult[0] : rpcResult) as Message | null
+    if (error || !message) {
+      console.error('[addMessage] Error:', error)
+      return yield* Effect.fail(persistenceFailure('Failed to add message'))
+    }
+    return message
+  })
 }
 
-/**
- * Update a message's attached data.
- * Used to add events, suggestions, directions after assistant response.
- */
-export async function updateMessageAttachedData(
+/** Add a message, preserving the Promise contract used by Svelte remotes. */
+export function addMessage(event: RequestEvent, data: AddMessageInput) {
+  return Effect.runPromise(addMessageEffect(event, data))
+}
+
+/** Effect-native message list program. */
+export function getMessagesEffect(event: RequestEvent, data: { conversationId: string }) {
+  return Effect.gen(function* () {
+    const supabase = createSupabaseServerClient(event)
+    const { data: { user } } = yield* getUserEffect(supabase)
+    if (!user) return []
+    const conversationQuery = supabase.from('conversations').select('id').eq('id', data.conversationId).eq('user_id', user.id).single()
+    const { data: conversation } = yield* Effect.tryPromise({
+      try: () => conversationQuery,
+      catch: () => persistenceFailure('Failed to get messages'),
+    })
+    if (!conversation) return []
+    const query = supabase.from('messages').select('*').eq('conversation_id', data.conversationId)
+      .order('turn_index', { ascending: true }).order('id', { ascending: true })
+    const { data: rows, error } = yield* Effect.tryPromise({
+      try: () => query,
+      catch: () => persistenceFailure('Failed to get messages'),
+    })
+    if (error) {
+      console.error('[getMessages] Error:', error)
+      return yield* Effect.fail(persistenceFailure('Failed to get messages'))
+    }
+    return sortMessagesByTurnOrderAsc((rows ?? []) as Message[])
+  })
+}
+
+export function getMessages(event: RequestEvent, data: { conversationId: string }) {
+  return Effect.runPromise(getMessagesEffect(event, data))
+}
+
+/** Effect-native message attachment update program. */
+export function updateMessageAttachedDataEffect(
   event: RequestEvent,
-  data: { messageId: string; attachedData: MessageAttachedData }
+  data: { messageId: string; attachedData: MessageAttachedData },
 ) {
-  const supabase = createSupabaseServerClient(event)
+  return Effect.gen(function* () {
+    const supabase = createSupabaseServerClient(event)
+    const { data: { user } } = yield* getUserEffect(supabase)
+    if (!user) return yield* Effect.fail(authFailure('Not authenticated'))
+    const messageQuery = supabase.from('messages').select('id, conversation_id, conversations!inner(user_id)').eq('id', data.messageId).single()
+    const { data: message } = yield* Effect.tryPromise({
+      try: () => messageQuery,
+      catch: () => persistenceFailure('Failed to update message'),
+    })
+    if (!message || (message.conversations as unknown as { user_id: string }).user_id !== user.id) {
+      return yield* Effect.fail(persistenceFailure('Message not found'))
+    }
+    const query = supabase.from('messages').update({ attached_data: data.attachedData }).eq('id', data.messageId).select().single()
+    const { data: updated, error } = yield* Effect.tryPromise({
+      try: () => query,
+      catch: () => persistenceFailure('Failed to update message'),
+    })
+    if (error) {
+      console.error('[updateMessageAttachedData] Error:', error)
+      return yield* Effect.fail(persistenceFailure('Failed to update message'))
+    }
+    return updated as Message
+  })
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    throw new Error('Not authenticated')
-  }
-
-  // Get message and verify ownership through conversation
-  const { data: message } = await supabase
-    .from('messages')
-    .select('id, conversation_id, conversations!inner(user_id)')
-    .eq('id', data.messageId)
-    .single()
-
-  if (
-    !message ||
-    (message.conversations as unknown as { user_id: string }).user_id !== user.id
-  ) {
-    throw new Error('Message not found')
-  }
-
-  const { data: updated, error } = await supabase
-    .from('messages')
-    .update({ attached_data: data.attachedData })
-    .eq('id', data.messageId)
-    .select()
-    .single()
-
-  if (error) {
-    console.error('[updateMessageAttachedData] Error:', error)
-    throw new Error('Failed to update message')
-  }
-
-  return updated as Message
+export function updateMessageAttachedData(
+  event: RequestEvent,
+  data: { messageId: string; attachedData: MessageAttachedData },
+) {
+  return Effect.runPromise(updateMessageAttachedDataEffect(event, data))
 }

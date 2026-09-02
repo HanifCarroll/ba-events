@@ -7,8 +7,9 @@
  * Note: BA Tourism only shows events for the current week.
  */
 import { task } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
-import { processBATourismImport, type BATourismImportResult } from '#features/import/core/ba-tourism.ts'
+import { processBATourismImportEffect, type BATourismImportResult } from '#features/import/core/ba-tourism.ts'
 
 export interface BATourismJobPayload {
   scrapeRunId?: string | null
@@ -23,9 +24,9 @@ export const scrapeBATourism = task({
 
     const client = createServiceRoleClient()
 
-    const result = await processBATourismImport(client, {
+    const result = await Effect.runPromise(processBATourismImportEffect(client, {
       scrapeRunId: payload.scrapeRunId,
-    })
+    }))
 
     console.log('[scrape-ba-tourism] Job completed:', result)
     return result

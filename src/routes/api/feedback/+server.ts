@@ -1,10 +1,15 @@
 import { json, type RequestHandler } from '@sveltejs/kit'
+import { Schema } from 'effect'
 import { checkApiRateLimit } from '#features/auth/api/rate-limit.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { sendFeedbackAlert } from '#shared/lib/feedback/alert.server.ts'
 
 const MAX_FEEDBACK_LENGTH = 2000
+
+const feedbackRequestSchema = Schema.Struct({
+	message: Schema.optional(Schema.String),
+})
 
 export const POST: RequestHandler = async (event) => {
 	const ip =
@@ -20,8 +25,8 @@ export const POST: RequestHandler = async (event) => {
 	let message: string
 
   try {
-    const body = (await event.request.json()) as { message?: unknown }
-    message = typeof body.message === 'string' ? body.message.trim() : ''
+    const parsed = Schema.decodeUnknownResult(feedbackRequestSchema)(await event.request.json())
+    message = parsed._tag === 'Success' ? parsed.success.message?.trim() ?? '' : ''
   } catch {
     return json({ error: 'Feedback must be valid JSON.' }, { status: 400 })
   }

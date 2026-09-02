@@ -7,7 +7,7 @@
  *
  * Trust model:
  * - Client `data-response` parts and persisted canonical strings are UNTRUSTED.
- *   `parseDataResponseHint` applies a bounded Zod schema (v3-v5) and
+ *   `parseDataResponseHint` applies a bounded Effect Schema (v3-v5) and
  *   yields event/operation IDs only — never names.
  * - Rehydration re-fetches those IDs from the database in one bounded query and
  *   discards missing/non-displayable events. Only DB names/venue facts survive.
@@ -20,7 +20,7 @@
  *   database (one bounded membership query) and is authoritative.
  */
 
-import { z } from 'zod'
+import { Data, Effect, Schema } from 'effect'
 import type { UIMessage } from 'ai'
 import type {
   EventStatus,
@@ -113,6 +113,10 @@ export interface EventFact {
 
 export type FetchEventFacts = (ids: string[]) => Promise<EventFact[]>
 
+class PriorContextFetchError extends Data.TaggedError('PriorContextFetchError')<{
+  readonly message: string
+}> {}
+
 export interface VenueFact {
   venueId: string | null
   venueName: string | null
@@ -193,46 +197,48 @@ const MUTATION_OUTCOMES = [
   'failed',
 ] as const satisfies readonly MutationOutcome[]
 
-const savedSchema = z
-  .union([z.literal(true), z.literal(false), z.literal(null)])
-  .default(null)
+const eventId = Schema.String.pipe(Schema.check(Schema.isPattern(UUID_RE)))
+const savedSchema = Schema.Union([Schema.Literal(true), Schema.Literal(false), Schema.Null])
 
-const hintEventSchema = z.object({
-  id: z.string().uuid(),
-  saved: savedSchema,
+const hintEventSchema = Schema.Struct({
+  id: eventId,
+  saved: Schema.optional(savedSchema),
 })
 
-const hintOperationSchema = z.object({
-  toolName: z.enum(['save_event', 'unsave_event']),
-  eventId: z.string().uuid(),
-  outcome: z.enum(MUTATION_OUTCOMES),
+const hintOperationSchema = Schema.Struct({
+  toolName: Schema.Literals(['save_event', 'unsave_event']),
+  eventId,
+  outcome: Schema.Literals(MUTATION_OUTCOMES),
 })
 
 /**
- * Bounded Zod schema for an untrusted data-response hint. Unknown fields are
+ * Bounded Effect schema for an untrusted data-response hint. Unknown fields are
  * stripped (default object behavior); only the validated fields survive.
  * Invalid contract versions, malformed UUID event ids, bad saved values, and
  * oversized arrays/strings are rejected.
  */
-export const dataResponseHintSchema = z.object({
-  contractVersion: z.union([z.literal(3), z.literal(4), z.literal(5)]),
-  requestId: z.string().min(1).max(MAX_ID_STRING),
-  kind: z.enum(RESPONSE_KINDS),
-  events: z.array(hintEventSchema).max(MAX_HINT_EVENTS).default([]),
-  operations: z.array(hintOperationSchema).max(MAX_HINT_OPERATIONS).default([]),
+export const dataResponseHintSchema = Schema.Struct({
+  contractVersion: Schema.Literals([3, 4, 5]),
+  requestId: Schema.String.pipe(
+    Schema.check(Schema.isMinLength(1)),
+    Schema.check(Schema.isMaxLength(MAX_ID_STRING)),
+  ),
+  kind: Schema.Literals(RESPONSE_KINDS),
+  events: Schema.optional(Schema.Array(hintEventSchema).pipe(Schema.check(Schema.isMaxLength(MAX_HINT_EVENTS)))),
+  operations: Schema.optional(Schema.Array(hintOperationSchema).pipe(Schema.check(Schema.isMaxLength(MAX_HINT_OPERATIONS)))),
 })
 
 export function parseDataResponseHint(data: unknown): DataResponseHint | null {
-  const parsed = dataResponseHintSchema.safeParse(data)
-  if (!parsed.success) return null
-  const requestId = sanitizeText(parsed.data.requestId, MAX_ID_STRING)
+  const parsed = Schema.decodeUnknownResult(dataResponseHintSchema)(data)
+  if (parsed._tag !== 'Success') return null
+  const requestId = sanitizeText(parsed.success.requestId, MAX_ID_STRING)
   if (!requestId) return null
   return {
-    contractVersion: parsed.data.contractVersion,
+    contractVersion: parsed.success.contractVersion,
     requestId,
-    kind: parsed.data.kind,
-    events: parsed.data.events.map((e) => ({ eventId: e.id, saved: e.saved })),
-    operations: parsed.data.operations,
+    kind: parsed.success.kind,
+    events: (parsed.success.events ?? []).map((e) => ({ eventId: e.id, saved: e.saved ?? null })),
+    operations: [...(parsed.success.operations ?? [])],
   }
 }
 
@@ -444,13 +450,28 @@ export function buildPriorContext(
  * (one bounded query). Guest and auth paths share this exact pipeline; the auth
  * path additionally supplies authoritative saved membership.
  */
-export async function rehydratePriorContext(
+/** Effect-native bounded rehydration program. */
+export function rehydratePriorContextEffect(
   responses: PriorResponseHint[],
   fetchByIds: FetchEventFacts,
   savedMembership?: SavedMembershipResult
-): Promise<PriorContext> {
+): Effect.Effect<PriorContext, PriorContextFetchError> {
   const ids = collectEventIds(responses)
-  if (ids.length === 0) return { groups: [], venueByEventId: new Map() }
-  const facts = await fetchByIds(ids)
-  return buildPriorContext(responses, facts, savedMembership)
+  if (ids.length === 0) return Effect.succeed({ groups: [], venueByEventId: new Map() })
+  return Effect.map(
+    Effect.tryPromise({
+      try: () => fetchByIds(ids),
+      catch: () => new PriorContextFetchError({ message: 'Failed to rehydrate prior context' }),
+    }),
+    (facts) => buildPriorContext(responses, facts, savedMembership),
+  )
+}
+
+/** Promise compatibility adapter retained for direct callers and tests. */
+export function rehydratePriorContext(
+  responses: PriorResponseHint[],
+  fetchByIds: FetchEventFacts,
+  savedMembership?: SavedMembershipResult
+) {
+  return Effect.runPromise(rehydratePriorContextEffect(responses, fetchByIds, savedMembership))
 }

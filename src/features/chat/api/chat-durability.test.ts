@@ -6,12 +6,12 @@ const migration = readFileSync(new URL('../../../../supabase/migrations/20260825
 
 describe('durable chat turn guardrails', () => {
 	 it('claims before building authenticated query or history inputs', () => {
-		expect(route.indexOf('authoritativeTurn = await claimChatTurn')).toBeLessThan(
+		expect(route.indexOf('authoritativeTurn = await Effect.runPromise(claimChatTurnEffect')).toBeLessThan(
 			route.indexOf('getLastUserQuery(uiMessages)')
 		)
 		expect(route).toContain("authoritativeTurn.status === 'completed'")
 		expect(route).toContain('if (replayAssistant)')
-		expect(route.indexOf('if (replayAssistant)')).toBeLessThan(route.indexOf('runSharedChatTurn({'))
+		expect(route.indexOf('if (replayAssistant)')).toBeLessThan(route.indexOf('runSharedChatTurnEffect({'))
 	})
 
 	it('does not let completion substitute a different assistant client id', () => {

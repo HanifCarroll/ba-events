@@ -7,6 +7,7 @@
 
 import { isBlockedByEntries } from '../shared/blocklist-filter.ts'
 import type { ImportBlocklistEntry } from '#shared/lib/types.ts'
+import { Effect, Schema } from 'effect'
 
 // Passline event structure from their API
 export interface PasslineEvent {
@@ -31,8 +32,40 @@ export interface PasslineEvent {
   promocion: string
 }
 
-interface PasslineAPIResponse {
-  BillboardByCountry: PasslineEvent[]
+const passlineEventSchema = Schema.Struct({
+  id: Schema.String,
+  nombre: Schema.String,
+  lugar: Schema.String,
+  fecha_inicio: Schema.String,
+  fecha_termino: Schema.String,
+  hora_inicio: Schema.String,
+  hora_termino: Schema.String,
+  nombre_region: Schema.String,
+  nombre_communa: Schema.String,
+  category_name: Schema.String,
+  artistas: Schema.String,
+  precio_min: Schema.NullOr(Schema.String),
+  url: Schema.String,
+  miniatura: Schema.String,
+  recorte: Schema.String,
+  slug: Schema.String,
+  agotado: Schema.String,
+  disponibles: Schema.String,
+  promocion: Schema.String,
+})
+const passlineResponseSchema = Schema.Struct({
+  BillboardByCountry: Schema.Array(passlineEventSchema),
+})
+
+class PasslineApiError extends Error {
+  readonly _tag = 'PasslineApiError'
+}
+
+export function parsePasslineApiResponse(input: unknown): PasslineEvent[] | null {
+  const parsed = Schema.decodeUnknownResult(passlineResponseSchema)(input)
+  return parsed._tag === 'Success'
+    ? parsed.success.BillboardByCountry.map((event) => event as unknown as PasslineEvent)
+    : null
 }
 
 export const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
@@ -43,21 +76,30 @@ export const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByB
  * Works when called from browser context (admin UI manual import).
  */
 export async function fetchPasslineEvents(): Promise<PasslineEvent[]> {
-  const response = await fetch(PASSLINE_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({ country: 'argentina' }),
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(PASSLINE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ country: 'argentina' }),
+      }),
+      catch: (error) => new PasslineApiError(error instanceof Error ? error.message : String(error)),
+    })
+    if (!response.ok) {
+      return yield* Effect.fail(new PasslineApiError(`Passline API error: ${response.status} ${response.statusText}`))
+    }
+    const raw = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: (error) => new PasslineApiError(error instanceof Error ? error.message : String(error)),
+    })
+    const events = parsePasslineApiResponse(raw)
+    if (!events) return yield* Effect.fail(new PasslineApiError('Passline API returned malformed data'))
+    return events
   })
-
-  if (!response.ok) {
-    throw new Error(`Passline API error: ${response.status} ${response.statusText}`)
-  }
-
-  const data: PasslineAPIResponse = await response.json()
-  return data.BillboardByCountry || []
+  return Effect.runPromise(program)
 }
 
 /**

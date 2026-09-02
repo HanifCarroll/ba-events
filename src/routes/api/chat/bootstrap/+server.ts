@@ -1,8 +1,9 @@
 import { json } from '@sveltejs/kit'
+import { Effect } from 'effect'
 import type { RequestHandler } from './$types'
 import { normalizeChatTurn } from '#features/chat/api/agent/shared-turn.server.ts'
 import { parseChatTurnBootstrapInput } from '#features/chat/api/turn-authority.ts'
-import { bootstrapChatTurn } from '#features/chat/api/turns.server.ts'
+import { bootstrapChatTurnEffect } from '#features/chat/api/turns.server.ts'
 
 export const POST: RequestHandler = async (event) => {
   if (!event.locals.user) return json({ error: 'Not authenticated' }, { status: 401 })
@@ -16,14 +17,14 @@ export const POST: RequestHandler = async (event) => {
   if (!normalized.originalQuery) return json({ error: 'Invalid request' }, { status: 400 })
 
   try {
-    const turn = await bootstrapChatTurn(event, {
+    const turn = await Effect.runPromise(bootstrapChatTurnEffect(event, {
       conversationId: input.conversationId,
       turnId: input.turnId,
       userClientMessageId: input.userClientMessageId,
       assistantClientMessageId: input.assistantClientMessageId,
       content: normalized.originalQuery,
       locale: normalized.locale,
-    })
+    }))
     return json({ turn })
   } catch {
     return json({ error: 'Unable to save chat turn' }, { status: 409 })

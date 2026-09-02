@@ -7,15 +7,17 @@
  * - 0.60-0.84: Queue for admin review
  * - < 0.60 or no match: Auto-create with neighborhood lookup
  */
+import { Data, Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { matchVenue } from '../scrapers/venue-matcher.ts'
+import { matchVenueEffect, type VenueMatchResult } from '../scrapers/venue-matcher.ts'
 import {
-  lookupNeighborhoodTiered,
-  delay,
+  lookupNeighborhoodTieredEffect,
+  delayEffect,
   isAddressLikeVenueName,
-  lookupBusinessAtAddress,
+  lookupBusinessAtAddressEffect,
 } from './nominatim.ts'
 import type { Venue, Neighborhood, VenueInsert } from '#shared/lib/types.ts'
+import { importTry } from './effect-utils.ts'
 
 // ============================================================================
 // CONSTANTS
@@ -133,6 +135,26 @@ export interface VenueSettlementStats {
   placeholder: number
 }
 
+export class VenueSettlementError extends Data.TaggedError('VenueSettlementError')<{
+  readonly operation: string
+  readonly message: string
+  readonly cause?: unknown
+}> {}
+
+const settlementError = (operation: string, message: string, cause?: unknown) =>
+  new VenueSettlementError({ operation, message, cause })
+
+const settlementDelay = (ms: number) => delayEffect(ms).pipe(
+  Effect.mapError((error) => settlementError('venue-settlement.delay', error.message, error))
+)
+
+const noVenueMatch = (searchName: string): VenueMatchResult => ({
+  venue: null,
+  matchType: 'none',
+  confidence: 0,
+  searchName,
+})
+
 // ============================================================================
 // VENUE CREATION
 // ============================================================================
@@ -140,12 +162,12 @@ export interface VenueSettlementStats {
 /**
  * Create a new venue with the given data.
  */
-async function createVenue(
+function createVenueEffect(
   client: SupabaseClient,
   venue: VenueInsert,
   addressCheckStatus: 'pending' | 'flagged' | 'not_flagged' = 'pending'
-): Promise<Venue> {
-  const { data, error } = await client
+): Effect.Effect<Venue, VenueSettlementError> {
+  return importTry('venue-settlement.create', () => client
     .from('venues')
     .insert({
       name: venue.name,
@@ -156,23 +178,28 @@ async function createVenue(
     })
     .select()
     .single()
-
-  if (error) {
-    throw new Error(`Failed to create venue: ${error.message}`)
-  }
-
-  return data as Venue
+  ).pipe(
+    Effect.flatMap(({ data, error }) => error
+      ? Effect.fail(settlementError('venue-settlement.create', `Failed to create venue: ${error.message}`, error))
+      : data
+        ? Effect.succeed(data as Venue)
+        : Effect.fail(settlementError('venue-settlement.create', 'Failed to create venue'))
+    ),
+    Effect.mapError((error) => error instanceof VenueSettlementError
+      ? error
+      : settlementError(error.operation, error.message, error.cause))
+  )
 }
 
 /**
  * Queue a venue for admin review.
  */
-async function queueVenueForReview(
+function queueVenueForReviewEffect(
   client: SupabaseClient,
   scrapeRunId: string | null,
   entry: VenueReviewQueueEntry
-): Promise<void> {
-  const { error } = await client
+): Effect.Effect<void> {
+  const queued = importTry('venue-settlement.queue-review', () => client
     .from('venue_review_queue')
     .insert({
       scrape_run_id: scrapeRunId,
@@ -185,10 +212,19 @@ async function queueVenueForReview(
       source_event_ids: entry.source_event_ids || [],
       status: 'pending',
     })
-
-  if (error) {
+  ).pipe(
+    Effect.flatMap(({ error }) => error
+      ? Effect.fail(settlementError('venue-settlement.queue-review', error.message, error))
+      : Effect.succeed(undefined)
+    ),
+    Effect.mapError((error) => error instanceof VenueSettlementError
+      ? error
+      : settlementError(error.operation, error.message, error.cause))
+  )
+  return Effect.catchEager(queued, (error) => {
     console.error('[venue-settlement] Failed to queue venue for review:', error)
-  }
+    return Effect.succeed(undefined)
+  })
 }
 
 // ============================================================================
@@ -206,7 +242,7 @@ async function queueVenueForReview(
  *    - confidence < 0.6 or no match → auto-create
  * 3. For auto-create: lookup neighborhood using tiered approach
  */
-export async function settleVenue(
+export function settleVenueEffect(
   client: SupabaseClient,
   input: VenueSettlementInput,
   options: {
@@ -214,104 +250,110 @@ export async function settleVenue(
     scrapeRunId?: string | null
     eventIds?: string[]
   }
-): Promise<VenueSettlementResult> {
-  // Handle empty/null names
-  if (!input.name || input.name.trim() === '') {
-    return {
+): Effect.Effect<VenueSettlementResult, VenueSettlementError> {
+  return Effect.gen(function* () {
+    // Handle empty/null names
+    if (!input.name || input.name.trim() === '') {
+      return {
       venueId: null,
       action: 'skipped',
       confidence: 0,
       venueName: input.name || '',
+      } satisfies VenueSettlementResult
     }
-  }
 
-  const venueName = input.name.trim()
+    const venueName = input.name.trim()
 
   // Check for placeholder addresses (e.g., "Register to See Address")
   // These should not create venues - the event should be marked with location_hidden instead
-  if (isPlaceholderVenue(venueName) || isPlaceholderVenue(input.address)) {
-    console.log(`[venue-settlement] Detected placeholder venue: "${venueName}"`)
-    return {
+    if (isPlaceholderVenue(venueName) || isPlaceholderVenue(input.address)) {
+      console.log(`[venue-settlement] Detected placeholder venue: "${venueName}"`)
+      return {
       venueId: null,
       action: 'placeholder',
       confidence: 0,
       venueName,
       isPlaceholder: true,
+      } satisfies VenueSettlementResult
     }
-  }
 
   // Check for garbage/invalid venue names (AI-generated explanations, etc.)
   // These should not create venues
-  if (isGarbageVenueName(venueName)) {
-    console.log(`[venue-settlement] Detected garbage venue name: "${venueName}"`)
-    return {
+    if (isGarbageVenueName(venueName)) {
+      console.log(`[venue-settlement] Detected garbage venue name: "${venueName}"`)
+      return {
       venueId: null,
       action: 'skipped',
       confidence: 0,
       venueName,
+      } satisfies VenueSettlementResult
     }
-  }
 
   // Check if venue name looks like a street address
-  const isAddressLike = isAddressLikeVenueName(venueName)
-  let resolvedVenueName = venueName
-  let addressLookupNeighborhood: Neighborhood | null = null
+    const isAddressLike = isAddressLikeVenueName(venueName)
+    let resolvedVenueName = venueName
+    let addressLookupNeighborhood: Neighborhood | null = null
 
-  if (isAddressLike) {
-    console.log(`[venue-settlement] Detected address-like venue name: "${venueName}", looking up business...`)
+    if (isAddressLike) {
+      console.log(`[venue-settlement] Detected address-like venue name: "${venueName}", looking up business...`)
 
     // Rate limit: wait before Nominatim call
-    await delay(1000)
+      yield* settlementDelay(1000)
 
     // Try to find the real business name at this address via Nominatim
-    const businessLookup = await lookupBusinessAtAddress(venueName)
+      const businessLookup = yield* lookupBusinessAtAddressEffect(venueName).pipe(
+        Effect.mapError((error) => settlementError('venue-settlement.business-lookup', error.message, error))
+      )
 
-    if (businessLookup.name) {
-      console.log(`[venue-settlement] Found business "${businessLookup.name}" at address "${venueName}"`)
-      resolvedVenueName = businessLookup.name
-      addressLookupNeighborhood = businessLookup.neighborhood
-    } else {
-      console.log(`[venue-settlement] No business found at address "${venueName}", will use address as venue name`)
-      addressLookupNeighborhood = businessLookup.neighborhood
+      if (businessLookup.name) {
+        console.log(`[venue-settlement] Found business "${businessLookup.name}" at address "${venueName}"`)
+        resolvedVenueName = businessLookup.name
+        addressLookupNeighborhood = businessLookup.neighborhood
+      } else {
+        console.log(`[venue-settlement] No business found at address "${venueName}", will use address as venue name`)
+        addressLookupNeighborhood = businessLookup.neighborhood
+      }
     }
-  }
 
-  // Step 1: Try matching against existing venues (using resolved name if address was looked up)
-  const match = await matchVenue(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client)
+    // Step 1: Try matching against existing venues (using resolved name if address was looked up)
+    const match = yield* Effect.catchEager(
+      matchVenueEffect(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client),
+      () => Effect.succeed(noVenueMatch(resolvedVenueName))
+    )
 
   // Exact match - use it immediately
-  if (match.matchType === 'exact') {
-    if (isAddressLike && resolvedVenueName !== venueName) {
-      console.log(`[venue-settlement] Address "${venueName}" resolved to existing venue "${match.venue!.name}"`)
-    }
-    return {
+    if (match.matchType === 'exact') {
+      if (isAddressLike && resolvedVenueName !== venueName) {
+        console.log(`[venue-settlement] Address "${venueName}" resolved to existing venue "${match.venue!.name}"`)
+      }
+      return {
       venueId: match.venue!.id,
       action: 'matched',
       confidence: 1,
       method: 'exact',
       venueName: match.venue!.name, // Use the matched venue's actual name
       neighborhood: match.venue!.neighborhood,
+      } satisfies VenueSettlementResult
     }
-  }
 
   // High-confidence fuzzy match - auto-use
-  if (match.matchType === 'fuzzy' && match.confidence >= AUTO_USE_THRESHOLD) {
-    if (isAddressLike) {
-      console.log(`[venue-settlement] Address "${venueName}" fuzzy-matched to existing venue "${match.venue!.name}"`)
-    }
-    return {
+    if (match.matchType === 'fuzzy' && match.confidence >= AUTO_USE_THRESHOLD) {
+      if (isAddressLike) {
+        console.log(`[venue-settlement] Address "${venueName}" fuzzy-matched to existing venue "${match.venue!.name}"`)
+      }
+      return {
       venueId: match.venue!.id,
       action: 'matched',
       confidence: match.confidence,
       method: 'fuzzy',
       venueName: match.venue!.name, // Use the matched venue's actual name
       neighborhood: match.venue!.neighborhood,
+      } satisfies VenueSettlementResult
     }
-  }
 
   // Low-confidence fuzzy match - queue for review
-  if (match.matchType === 'fuzzy') {
-    await queueVenueForReview(client, options.scrapeRunId || null, {
+    if (match.matchType === 'fuzzy') {
+      yield* queueVenueForReviewEffect(client, options.scrapeRunId || null, {
       source: options.source,
       source_venue_name: venueName, // Original name for review context
       source_address: input.address,
@@ -319,36 +361,38 @@ export async function settleVenue(
       best_match_venue_id: match.venue?.id,
       match_confidence: match.confidence,
       source_event_ids: options.eventIds,
-    })
+      })
 
     // Still use the fuzzy match for now, but flag for review
-    return {
+      return {
       venueId: match.venue!.id,
       action: 'queued-review',
       confidence: match.confidence,
       method: 'fuzzy',
       venueName: match.venue!.name,
       neighborhood: match.venue!.neighborhood,
+      } satisfies VenueSettlementResult
     }
-  }
 
   // No match - auto-create with neighborhood lookup
   console.log(`[venue-settlement] No match for "${resolvedVenueName}", looking up neighborhood...`)
 
   // Use neighborhood from address lookup if available, otherwise do tiered lookup
-  let neighborhood: Neighborhood | null = addressLookupNeighborhood
-  let method: string = 'address-lookup'
+    let neighborhood: Neighborhood | null = addressLookupNeighborhood
+    let method: string = 'address-lookup'
 
-  if (!neighborhood) {
-    const lookup = await lookupNeighborhoodTiered({
+    if (!neighborhood) {
+      const lookup = yield* lookupNeighborhoodTieredEffect({
       venueName: resolvedVenueName,
       neighborhood: input.neighborhood,
       coordinates: input.coordinates,
       address: input.address,
-    })
-    neighborhood = lookup.neighborhood
-    method = lookup.method
-  }
+      }).pipe(
+        Effect.mapError((error) => settlementError('venue-settlement.neighborhood-lookup', error.message, error))
+      )
+      neighborhood = lookup.neighborhood
+      method = lookup.method
+    }
 
   // Determine the address to store
   // If we resolved an address-like name to a business, use the original address
@@ -363,11 +407,11 @@ export async function settleVenue(
     : 'not_flagged'
 
   // Create the venue with the resolved name
-  const newVenue = await createVenue(client, {
+    const newVenue = yield* createVenueEffect(client, {
     name: resolvedVenueName,
     address: addressToStore,
     neighborhood: neighborhood,
-  }, addressCheckStatus)
+    }, addressCheckStatus)
 
   if (isAddressLike && resolvedVenueName !== venueName) {
     console.log(`[venue-settlement] Created venue "${resolvedVenueName}" (resolved from address "${venueName}") with neighborhood: ${neighborhood || 'unknown'}`)
@@ -375,13 +419,31 @@ export async function settleVenue(
     console.log(`[venue-settlement] Created venue "${resolvedVenueName}" with neighborhood: ${neighborhood || 'unknown'}`)
   }
 
-  return {
+    return {
     venueId: newVenue.id,
     action: 'auto-created',
     confidence: neighborhood ? 0.8 : 0.5, // Higher confidence if we found neighborhood
     method: method as VenueSettlementResult['method'],
     venueName: resolvedVenueName,
     neighborhood,
+    } satisfies VenueSettlementResult
+  })
+}
+
+/** Promise compatibility adapter for Trigger tests and legacy scripts. */
+export async function settleVenue(
+  client: SupabaseClient,
+  input: VenueSettlementInput,
+  options: {
+    source: string
+    scrapeRunId?: string | null
+    eventIds?: string[]
+  }
+): Promise<VenueSettlementResult> {
+  try {
+    return await Effect.runPromise(settleVenueEffect(client, input, options))
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error))
   }
 }
 
@@ -389,6 +451,80 @@ export async function settleVenue(
  * Settle multiple venues with rate limiting.
  * Returns a map from venue name to settlement result.
  */
+export function settleVenuesEffect(
+  client: SupabaseClient,
+  venues: VenueSettlementInput[],
+  options: {
+    source: string
+    scrapeRunId?: string | null
+  }
+): Effect.Effect<{
+  results: Map<string, VenueSettlementResult>
+  stats: VenueSettlementStats
+}, VenueSettlementError> {
+  return Effect.gen(function* () {
+    const results = new Map<string, VenueSettlementResult>()
+    const stats: VenueSettlementStats = {
+    matched: 0,
+    autoCreated: 0,
+    queuedReview: 0,
+    skipped: 0,
+    placeholder: 0,
+    }
+
+  // Dedupe venues by name
+    const uniqueVenues = new Map<string, VenueSettlementInput>()
+    for (const venue of venues) {
+      if (venue.name && venue.name.trim()) {
+        const key = venue.name.trim().toLowerCase()
+        if (!uniqueVenues.has(key)) {
+          uniqueVenues.set(key, venue)
+        }
+      }
+    }
+
+  console.log(`[venue-settlement] Settling ${uniqueVenues.size} unique venues...`)
+
+    let i = 0
+    for (const [, venue] of uniqueVenues) {
+      const result = yield* settleVenueEffect(client, venue, options)
+      results.set(venue.name.trim().toLowerCase(), result)
+
+    // Update stats
+      switch (result.action) {
+        case 'matched':
+          stats.matched++
+          break
+        case 'auto-created':
+          stats.autoCreated++
+          break
+        case 'queued-review':
+          stats.queuedReview++
+          break
+        case 'skipped':
+          stats.skipped++
+          break
+        case 'placeholder':
+          stats.placeholder++
+          break
+      }
+
+      // Rate limiting for API calls (only needed if we hit Nominatim)
+      if (result.action === 'auto-created' && i < uniqueVenues.size - 1) {
+        yield* settlementDelay(1000) // 1 second between Nominatim calls
+      }
+
+      i++
+    }
+
+    console.log(
+      `[venue-settlement] Completed: ${stats.matched} matched, ${stats.autoCreated} created, ${stats.queuedReview} queued, ${stats.skipped} skipped, ${stats.placeholder} placeholder`
+    )
+
+    return { results, stats }
+  })
+}
+
 export async function settleVenues(
   client: SupabaseClient,
   venues: VenueSettlementInput[],
@@ -400,65 +536,11 @@ export async function settleVenues(
   results: Map<string, VenueSettlementResult>
   stats: VenueSettlementStats
 }> {
-  const results = new Map<string, VenueSettlementResult>()
-  const stats: VenueSettlementStats = {
-    matched: 0,
-    autoCreated: 0,
-    queuedReview: 0,
-    skipped: 0,
-    placeholder: 0,
+  try {
+    return await Effect.runPromise(settleVenuesEffect(client, venues, options))
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error))
   }
-
-  // Dedupe venues by name
-  const uniqueVenues = new Map<string, VenueSettlementInput>()
-  for (const venue of venues) {
-    if (venue.name && venue.name.trim()) {
-      const key = venue.name.trim().toLowerCase()
-      if (!uniqueVenues.has(key)) {
-        uniqueVenues.set(key, venue)
-      }
-    }
-  }
-
-  console.log(`[venue-settlement] Settling ${uniqueVenues.size} unique venues...`)
-
-  let i = 0
-  for (const [, venue] of uniqueVenues) {
-    const result = await settleVenue(client, venue, options)
-    results.set(venue.name.trim().toLowerCase(), result)
-
-    // Update stats
-    switch (result.action) {
-      case 'matched':
-        stats.matched++
-        break
-      case 'auto-created':
-        stats.autoCreated++
-        break
-      case 'queued-review':
-        stats.queuedReview++
-        break
-      case 'skipped':
-        stats.skipped++
-        break
-      case 'placeholder':
-        stats.placeholder++
-        break
-    }
-
-    // Rate limiting for API calls (only needed if we hit Nominatim)
-    if (result.action === 'auto-created' && i < uniqueVenues.size - 1) {
-      await delay(1000) // 1 second between Nominatim calls
-    }
-
-    i++
-  }
-
-  console.log(
-    `[venue-settlement] Completed: ${stats.matched} matched, ${stats.autoCreated} created, ${stats.queuedReview} queued, ${stats.skipped} skipped, ${stats.placeholder} placeholder`
-  )
-
-  return { results, stats }
 }
 
 /**

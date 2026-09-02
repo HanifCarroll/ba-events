@@ -130,4 +130,32 @@ describe('Telegram Bot API client', () => {
     expect(error.message).not.toContain(token)
     expect(error.message).toContain('[REDACTED]')
   })
+
+  it('rejects malformed JSON and envelopes without a result', async () => {
+    const malformed = createTelegramClient({
+      token: '123:secret',
+      fetch: vi.fn(async () => new Response('{not-json', { status: 502 })) as typeof fetch,
+    })
+    await expect(malformed.getWebhookInfo()).rejects.toThrow('invalid response (502)')
+
+    const missingResult = createTelegramClient({
+      token: '123:secret',
+      fetch: vi.fn(async () => telegramResponse({ ok: true })) as typeof fetch,
+    })
+    await expect(missingResult.getWebhookInfo()).rejects.toThrow('invalid response (200)')
+  })
+
+  it('rejects invalid envelopes and preserves generic successful results', async () => {
+    const invalidEnvelope = createTelegramClient({
+      token: '123:secret',
+      fetch: vi.fn(async () => telegramResponse({ ok: 'yes', result: true })) as typeof fetch,
+    })
+    await expect(invalidEnvelope.deleteWebhook()).rejects.toThrow('invalid response (200)')
+
+    const generic = createTelegramClient({
+      token: '123:secret',
+      fetch: vi.fn(async () => telegramResponse({ ok: true, result: { ok: 'generic' } })) as typeof fetch,
+    })
+    await expect(generic.sendChatAction('99')).resolves.toEqual({ ok: 'generic' })
+  })
 })

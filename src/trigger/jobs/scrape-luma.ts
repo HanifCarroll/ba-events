@@ -4,8 +4,9 @@
  * Imports events from Luma Buenos Aires page.
  */
 import { task } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
-import { processLumaImport, type LumaImportResult } from '#features/import/core/luma.ts'
+import { processLumaImportEffect, type LumaImportResult } from '#features/import/core/luma.ts'
 
 export interface LumaJobPayload {
   scrapeRunId?: string | null
@@ -18,9 +19,9 @@ export const scrapeLuma = task({
 
     const client = createServiceRoleClient()
 
-    const result = await processLumaImport(client, {
+    const result = await Effect.runPromise(processLumaImportEffect(client, {
       scrapeRunId: payload.scrapeRunId,
-    })
+    }))
 
     console.log('[scrape-luma] Job completed:', result)
     return result

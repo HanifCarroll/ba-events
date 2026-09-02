@@ -1,3 +1,5 @@
+import { Data, Effect, Schema } from 'effect'
+
 export interface TelegramInlineKeyboardButton {
   text: string
   url?: string
@@ -21,19 +23,21 @@ export function telegramDraftIdFromUpdateId(updateId: string): number {
   return Number(value % BigInt(TELEGRAM_DRAFT_ID_MAX)) || 1
 }
 
-export class TelegramApiError extends Error {
+class TelegramApiErrorBase extends Data.TaggedError('TelegramApiError')<{
+  readonly message: string
+  readonly errorCode?: number
+  readonly retryAfter?: number
+}> {}
+
+export class TelegramApiError extends TelegramApiErrorBase {
   constructor(
     message: string,
     readonly errorCode?: number,
     readonly retryAfter?: number,
   ) {
-    super(message)
+    super({ message, errorCode, retryAfter })
     this.name = 'TelegramApiError'
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 interface TelegramClientOptions {
@@ -41,6 +45,16 @@ interface TelegramClientOptions {
   fetch?: typeof fetch
   timeoutMs?: number
 }
+
+const telegramEnvelopeSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  result: Schema.optional(Schema.Any),
+  description: Schema.optional(Schema.String),
+  error_code: Schema.optional(Schema.Number),
+  parameters: Schema.optional(Schema.Struct({
+    retry_after: Schema.optional(Schema.Number),
+  })),
+})
 
 export function createTelegramClient({
   token,
@@ -55,38 +69,40 @@ export function createTelegramClient({
     String(value).replaceAll(token, '[REDACTED]').replaceAll(encodeURIComponent(token), '[REDACTED]')
 
   async function call<T>(method: string, body?: Record<string, unknown>): Promise<T> {
-    let response: Response
-    try {
-      response = await fetchImpl(endpoint(method), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(timeoutMs),
+    const program = Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () => fetchImpl(endpoint(method), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: body ? JSON.stringify(body) : undefined,
+          // Telegram owns the native timeout contract. Keep this signal
+          // unchanged so Worker retry/cancellation behavior remains intact.
+          signal: AbortSignal.timeout(timeoutMs),
+        }),
+        catch: (error) => new TelegramApiError(`Telegram request failed: ${redact(error)}`),
       })
-    } catch (error) {
-      throw new TelegramApiError(`Telegram request failed: ${redact(error)}`)
-    }
 
-    let raw: unknown
-    try {
-      raw = await response.json()
-    } catch {
-      throw new TelegramApiError(`Telegram returned an invalid response (${response.status})`)
-    }
-    if (!isRecord(raw) || typeof raw.ok !== 'boolean') {
-      throw new TelegramApiError(`Telegram returned an invalid response (${response.status})`)
-    }
-    if (raw.ok && Object.hasOwn(raw, 'result')) return raw.result as T
+      const raw = yield* Effect.tryPromise({
+        try: () => response.json() as Promise<unknown>,
+        catch: () => new TelegramApiError(`Telegram returned an invalid response (${response.status})`),
+      })
+      const parsed = Schema.decodeUnknownResult(telegramEnvelopeSchema)(raw)
+      if (parsed._tag !== 'Success') {
+        return yield* Effect.fail(new TelegramApiError(`Telegram returned an invalid response (${response.status})`))
+      }
 
-    if (!raw.ok) {
-      const parameters = isRecord(raw.parameters) ? raw.parameters : null
-      throw new TelegramApiError(
-        redact(typeof raw.description === 'string' ? raw.description : `Telegram request failed (${response.status})`),
-        typeof raw.error_code === 'number' ? raw.error_code : undefined,
-        typeof parameters?.retry_after === 'number' ? parameters.retry_after : undefined,
-      )
-    }
-    throw new TelegramApiError(`Telegram returned an invalid response (${response.status})`)
+      const envelope = parsed.success
+      if (envelope.ok && Object.hasOwn(envelope, 'result')) return envelope.result as T
+      if (!envelope.ok) {
+        return yield* Effect.fail(new TelegramApiError(
+          redact(envelope.description ?? `Telegram request failed (${response.status})`),
+          envelope.error_code,
+          envelope.parameters?.retry_after,
+        ))
+      }
+      return yield* Effect.fail(new TelegramApiError(`Telegram returned an invalid response (${response.status})`))
+    })
+    return Effect.runPromise(program)
   }
 
   return {

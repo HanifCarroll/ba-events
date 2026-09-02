@@ -1,3 +1,4 @@
+import { Data, Effect } from 'effect'
 import type { PinResolution } from '#shared/lib/types.ts'
 import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
 import {
@@ -8,12 +9,12 @@ import { detectResponseLanguage, MAX_USER_TEXT } from './context.ts'
 import {
   collectEventIds,
   homeHintsFromIds,
-  rehydratePriorContext,
+  rehydratePriorContextEffect,
   sanitizeText,
   type PriorContext,
   type PriorResponseHint,
 } from './follow-up.ts'
-import { orchestrate, type OrchestrateResult } from './orchestrate.ts'
+import { orchestrateEffect, type OrchestrateResult } from './orchestrate.ts'
 import { currentDateInBuenosAires, type LastSearchContext } from './search-context.ts'
 import type { AgentHistoryMessage } from './history.ts'
 import { logger } from '#shared/lib/logger.ts'
@@ -33,14 +34,19 @@ export interface SharedChatTurnInput {
   onTrustedSearchProgress?: () => void
 }
 
-type SharedChatTurnDependencies = {
+export type SharedChatTurnDependencies = {
   fetchEventFacts?: typeof getEventFactsByIds
   getSavedMembership?: typeof getSavedMembershipForIds
-  orchestrateFn?: typeof orchestrate
+  orchestrateFn?: (input: Parameters<typeof orchestrateEffect>[0]) => Promise<OrchestrateResult>
   currentDateInBA?: string
 }
 
 const EMPTY_PRIOR: PriorContext = { groups: [], venueByEventId: new Map() }
+
+class SharedChatTurnError extends Data.TaggedError('SharedChatTurnError')<{
+  readonly message: string
+  readonly cause?: unknown
+}> {}
 
 export function normalizeChatTurn(text: string, fallbackLocale: 'en' | 'es') {
   const originalQuery = sanitizeText(text, MAX_USER_TEXT)
@@ -50,70 +56,96 @@ export function normalizeChatTurn(text: string, fallbackLocale: 'en' | 'es') {
   }
 }
 
-/** Channel-neutral server entry point after channel-specific history parsing and pin resolution. */
-export async function runSharedChatTurn(
+/** Effect-native channel-neutral turn program after channel-specific parsing. */
+export function runSharedChatTurnEffect(
   input: SharedChatTurnInput,
   dependencies: SharedChatTurnDependencies = {}
-): Promise<OrchestrateResult> {
+): Effect.Effect<OrchestrateResult, SharedChatTurnError> {
   const fetchEventFacts = dependencies.fetchEventFacts ?? getEventFactsByIds
   const getSavedMembership = dependencies.getSavedMembership ?? getSavedMembershipForIds
-  const normalized = normalizeChatTurn(input.text, input.locale)
-  let priorContext = EMPTY_PRIOR
+  return Effect.gen(function* () {
+    const normalized = normalizeChatTurn(input.text, input.locale)
+    const contextProgram = Effect.gen(function* () {
+      const membershipIds = collectEventIds(input.priorHints)
+      const membershipStarted = performance.now()
+      const membership = input.userContext.isAuthenticated
+        ? yield* Effect.tryPromise({
+            try: () => getSavedMembership(input.userContext, membershipIds),
+            catch: (cause) => new SharedChatTurnError({ message: 'Failed to load saved membership', cause }),
+          })
+        : undefined
+      logger.info('[chat] pre-agent membership stage', {
+        durationMs: Math.round(performance.now() - membershipStarted),
+        requestedCount: membershipIds.length,
+        authenticated: input.userContext.isAuthenticated,
+        resultCount: membership?.status === 'complete' ? membership.savedIds.size : 0,
+      })
 
-  try {
-    const membershipIds = collectEventIds(input.priorHints)
-    const membershipStarted = performance.now()
-    const membership = input.userContext.isAuthenticated
-      ? await getSavedMembership(input.userContext, membershipIds)
-      : undefined
-    logger.info('[chat] pre-agent membership stage', {
-      durationMs: Math.round(performance.now() - membershipStarted),
-      requestedCount: membershipIds.length,
-      authenticated: input.userContext.isAuthenticated,
-      resultCount: membership?.status === 'complete' ? membership.savedIds.size : 0,
-    })
+      const rehydrateStarted = performance.now()
+      let priorContext = yield* rehydratePriorContextEffect(input.priorHints, fetchEventFacts, membership)
+      logger.info('[chat] pre-agent history stage', {
+        durationMs: Math.round(performance.now() - rehydrateStarted),
+        hintCount: input.priorHints.length,
+        eventCount: priorContext.groups.reduce((count, group) => count + group.events.length, 0),
+      })
 
-    const rehydrateStarted = performance.now()
-    priorContext = await rehydratePriorContext(input.priorHints, fetchEventFacts, membership)
-    logger.info('[chat] pre-agent history stage', {
-      durationMs: Math.round(performance.now() - rehydrateStarted),
-      hintCount: input.priorHints.length,
-      eventCount: priorContext.groups.reduce((count, group) => count + group.events.length, 0),
-    })
-
-    if (priorContext.groups.length === 0) {
-      const homeHint = homeHintsFromIds(input.homeEventIds ?? [])
-      if (homeHint) {
-        const homeIds = collectEventIds([homeHint])
-        const homeStarted = performance.now()
-        const homeMembership = input.userContext.isAuthenticated
-          ? await getSavedMembership(input.userContext, homeIds)
-          : undefined
-        priorContext = await rehydratePriorContext([homeHint], fetchEventFacts, homeMembership)
-        logger.info('[chat] pre-agent home fallback stage', {
-          durationMs: Math.round(performance.now() - homeStarted),
-          requestedCount: homeIds.length,
-          eventCount: priorContext.groups.reduce((count, group) => count + group.events.length, 0),
-        })
+      if (priorContext.groups.length === 0) {
+        const homeHint = homeHintsFromIds(input.homeEventIds ?? [])
+        if (homeHint) {
+          const homeIds = collectEventIds([homeHint])
+          const homeStarted = performance.now()
+          const homeMembership = input.userContext.isAuthenticated
+            ? yield* Effect.tryPromise({
+                try: () => getSavedMembership(input.userContext, homeIds),
+                catch: (cause) => new SharedChatTurnError({ message: 'Failed to load saved membership', cause }),
+              })
+            : undefined
+          priorContext = yield* rehydratePriorContextEffect([homeHint], fetchEventFacts, homeMembership)
+          logger.info('[chat] pre-agent home fallback stage', {
+            durationMs: Math.round(performance.now() - homeStarted),
+            requestedCount: homeIds.length,
+            eventCount: priorContext.groups.reduce((count, group) => count + group.events.length, 0),
+          })
+        }
       }
-    }
-  } catch (error) {
-    console.error('[chat] failed to build prior context:', error)
-  }
+      return priorContext
+    })
+    const priorContext = yield* Effect.match(contextProgram, {
+      onFailure: (error) => {
+        console.error('[chat] failed to build prior context:', error)
+        return EMPTY_PRIOR
+      },
+      onSuccess: (value) => value,
+    })
 
-  return (dependencies.orchestrateFn ?? orchestrate)({
-    requestId: input.requestId,
-    userContext: input.userContext,
-    locale: normalized.locale,
-    originalQuery: normalized.originalQuery,
-    priorDisplayedEvents: priorContext.groups,
-    venueByEventId: priorContext.venueByEventId,
-    lastSearch: input.lastSearch,
-    currentDateInBA: dependencies.currentDateInBA ?? currentDateInBuenosAires(),
-    pin: input.pin,
-    pinFacts: input.pinFacts,
-    recentMessages: input.recentMessages,
-    onSearchStart: input.onSearchStart,
-    onTrustedSearchProgress: input.onTrustedSearchProgress,
+    const orchestrationInput = {
+      requestId: input.requestId,
+      userContext: input.userContext,
+      locale: normalized.locale,
+      originalQuery: normalized.originalQuery,
+      priorDisplayedEvents: priorContext.groups,
+      venueByEventId: priorContext.venueByEventId,
+      lastSearch: input.lastSearch,
+      currentDateInBA: dependencies.currentDateInBA ?? currentDateInBuenosAires(),
+      pin: input.pin,
+      pinFacts: input.pinFacts,
+      recentMessages: input.recentMessages,
+      onSearchStart: input.onSearchStart,
+      onTrustedSearchProgress: input.onTrustedSearchProgress,
+    }
+    return yield* dependencies.orchestrateFn
+      ? Effect.tryPromise({
+          try: () => dependencies.orchestrateFn!(orchestrationInput),
+          catch: (cause) => new SharedChatTurnError({ message: 'Chat orchestration failed', cause }),
+        })
+      : orchestrateEffect(orchestrationInput)
   })
+}
+
+/** Promise compatibility adapter for SvelteKit and Telegram route callers. */
+export function runSharedChatTurn(
+  input: SharedChatTurnInput,
+  dependencies: SharedChatTurnDependencies = {},
+) {
+  return Effect.runPromise(runSharedChatTurnEffect(input, dependencies))
 }

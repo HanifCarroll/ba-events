@@ -12,6 +12,7 @@
 
 import { generateObject, generateText } from 'ai'
 import { z } from 'zod'
+import { Effect } from 'effect'
 import { textModel, NO_THINKING } from './providers.ts'
 import { HttpError } from '../errors.ts'
 
@@ -178,29 +179,35 @@ Examples that should return null:
  * Throws HttpError for HTTP errors (404, 500, etc.) to allow callers to distinguish error types.
  * Returns null only for network errors (no response received).
  */
+class JinaFetchError extends Error {
+  readonly _tag = 'JinaFetchError'
+}
+
 export async function fetchWithJina(url: string): Promise<string | null> {
   const jinaUrl = `https://r.jina.ai/${url}`
 
-  try {
-    const response = await fetch(jinaUrl, {
-      headers: {
-        Accept: 'text/markdown',
-      },
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(jinaUrl, { headers: { Accept: 'text/markdown' } }),
+      catch: (error) => new JinaFetchError(error instanceof Error ? error.message : String(error)),
     })
 
     if (!response.ok) {
-      // Jina returns HTTP errors that reflect the original page status
-      // Throw HttpError so callers can detect 404s and mark events as canceled
-      throw new HttpError(response.status, response.statusText, url)
+      return yield* Effect.fail(new HttpError(response.status, response.statusText, url))
     }
 
-    const markdown = await response.text()
-    return markdown
+    return yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (error) => new JinaFetchError(error instanceof Error ? error.message : String(error)),
+    })
+  })
+
+  try {
+    return await Effect.runPromise(program)
   } catch (error) {
-    // Re-throw HttpError as-is for upstream handling
-    if (error instanceof HttpError) {
-      throw error
-    }
+    // Re-throw HttpError as-is for upstream handling. Network/body failures
+    // retain the null fallback used by the enrichment pipeline.
+    if (error instanceof HttpError) throw error
     console.error(`Jina fetch error for ${url}:`, error)
     return null
   }

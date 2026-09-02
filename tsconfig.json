@@ -2,7 +2,19 @@
 	"extends": "$app/tsconfig",
 	"compilerOptions": {
 		"sourceMap": true,
-		"strict": true
+		"strict": true,
+		"plugins": [
+			{ "name": "typescript-svelte-plugin" },
+			{
+				"name": "@effect/language-service",
+				"diagnostics": true,
+				"diagnosticsName": true,
+				"diagnosticSeverity": {
+					"floatingEffect": "error",
+					"outdatedApi": "error"
+				}
+			}
+		]
 	},
 	"include": [
 		".svelte-kit/types/**/$types.d.ts",

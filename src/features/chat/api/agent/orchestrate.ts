@@ -1,5 +1,6 @@
 /** ToolLoopAgent concierge orchestration. */
 import { ToolLoopAgent, isStepCount, tool } from 'ai'
+import { Data, Effect } from 'effect'
 import type { ModelMessage, ToolSet } from 'ai'
 import { z } from 'zod'
 import type {
@@ -37,6 +38,11 @@ const MAX_TEXT = MAX_AGENT_HISTORY_TEXT
 const AGENT_TIMEOUT = { totalMs: 60_000, stepMs: 20_000 } as const
 const TOOL_TIMEOUT_MS = 7_000
 const POST_SEARCH_TOOLS = ['get_event_details', 'get_directions', 'get_venue_details', 'list_saved_events', 'ask_clarification', 'recommendations_mismatch'] as const
+
+class PlannerExecutionError extends Data.TaggedError('PlannerExecutionError')<{
+  readonly message: string
+  readonly cause?: unknown
+}> {}
 
 const agentSearchSchema = searchEventsInputSchema
   .omit({ venueIds: true, objective: true })
@@ -464,7 +470,9 @@ function assemble(input: OrchestrateInput, run: AgentRun, reads: LedgerRecord[],
   return canonical
 }
 
-export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateResult> {
+/** Effect-native planner and response assembly program. */
+export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<OrchestrateResult, never> {
+  return Effect.gen(function* () {
   const pin = input.pin ?? { requested: false }
   if (pin.requested && pin.status !== 'resolved') return { canonical: errorResponse(input.requestId, input.locale, 'unknown_event_id'), executionTrace: [], reads: [], providerRequestId: null }
   const { hints, refs, saved } = priorState(input.priorDisplayedEvents, input.venueByEventId)
@@ -478,22 +486,31 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
     ...(input.recentMessages ?? []).slice(-MAX_MESSAGES).map((message) => ({ role: message.role, content: [{ type: 'text', text: `UNTRUSTED DATA: ${message.content.slice(0, MAX_TEXT)}` }] } as ModelMessage)),
     { role: 'user', content: input.originalQuery },
   ]
-  let run: AgentRun
-  try { run = await (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId }) }
-  catch (error) {
-    console.error('[chat] tool-loop failed:', error)
-    const partialReads = [...ledger.values()]
-    if (partialReads.some((read) => read.raw.success)) {
-      const partialRun: AgentRun = { text: '', steps: [], responseId: null }
-      const canonical = assemble(input, partialRun, partialReads, saved)
-      if (canonical.kind !== 'recommendations' || canonical.events.length === 0) canonical.text = fallbackText(input.locale)
-      canonical.provenance.origin = 'fallback'
-      canonical.provenance.fallbackUsed = true
-      canonical.provenance.fallbackReason = 'planner_error'
-      return { canonical, executionTrace: [], reads: partialReads.map((read) => ({ toolCallId: read.toolCallId, toolName: read.toolName, input: read.input, success: read.raw.success, eventIds: (read.raw.events ?? []).map((event) => event.id) })), providerRequestId: null }
-    }
-    return { canonical: errorResponse(input.requestId, input.locale, 'planner_error'), executionTrace: [], reads: [], providerRequestId: null }
-  }
+  const agentResult = yield* Effect.match(
+    Effect.tryPromise({
+      try: () => (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId }),
+      catch: (cause) => new PlannerExecutionError({ message: 'Tool loop failed', cause }),
+    }),
+    {
+      onFailure: (error) => {
+        console.error('[chat] tool-loop failed:', error.cause ?? error)
+        const partialReads = [...ledger.values()]
+        if (partialReads.some((read) => read.raw.success)) {
+          const partialRun: AgentRun = { text: '', steps: [], responseId: null }
+          const canonical = assemble(input, partialRun, partialReads, saved)
+          if (canonical.kind !== 'recommendations' || canonical.events.length === 0) canonical.text = fallbackText(input.locale)
+          canonical.provenance.origin = 'fallback'
+          canonical.provenance.fallbackUsed = true
+          canonical.provenance.fallbackReason = 'planner_error'
+          return { _tag: 'Failure' as const, result: { canonical, executionTrace: [], reads: partialReads.map((read) => ({ toolCallId: read.toolCallId, toolName: read.toolName, input: read.input, success: read.raw.success, eventIds: (read.raw.events ?? []).map((event) => event.id) })), providerRequestId: null } }
+        }
+        return { _tag: 'Failure' as const, result: { canonical: errorResponse(input.requestId, input.locale, 'planner_error'), executionTrace: [], reads: [], providerRequestId: null } }
+      },
+      onSuccess: (run) => ({ _tag: 'Success' as const, run }),
+    },
+  )
+  if (agentResult._tag === 'Failure') return agentResult.result
+  const run = agentResult.run
   const reads = orderedReads(run, ledger)
   const canonical = assemble(input, run, reads, saved)
   if (reads.length === 0 && isShareRequest(input.originalQuery)) canonical.messageKey = 'share_guidance'
@@ -509,4 +526,10 @@ export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateR
   const readSummaries = reads.map((read) => ({ toolCallId: read.toolCallId, toolName: read.toolName, input: read.input, success: read.raw.success, eventIds: (read.raw.events ?? []).map((event) => event.id) }))
   const rawSteps: RawStep[] = run.steps.map((step) => ({ finishReason: step.finishReason, toolCalls: step.toolCalls, toolResults: step.toolResults }))
   return { canonical, executionTrace: buildSanitizedTrace(rawSteps), reads: readSummaries, providerRequestId: run.responseId }
+  })
+}
+
+/** Promise compatibility adapter for the SvelteKit/AI route boundary. */
+export function orchestrate(input: OrchestrateInput) {
+  return Effect.runPromise(orchestrateEffect(input))
 }

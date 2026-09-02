@@ -28,6 +28,28 @@ describe('authenticated chat turn authority', () => {
     expect(parseChatTurnBootstrapInput({ ...input, locale: 'fr' })).toBeNull()
   })
 
+  it('keeps the legacy RFC variant/version range and strips excess fields', () => {
+    const input = {
+      conversationId: '11111111-1111-1111-8111-111111111111',
+      turnId: '22222222-2222-5111-9111-222222222222',
+      userClientMessageId: '33333333-3333-3111-a111-333333333333',
+      assistantClientMessageId: '44444444-4444-4111-b111-444444444444',
+      content: 'events tonight',
+      locale: 'es',
+      forged: 'ignored',
+    }
+    expect(parseChatTurnBootstrapInput(input)).toEqual({
+      conversationId: input.conversationId,
+      turnId: input.turnId,
+      userClientMessageId: input.userClientMessageId,
+      assistantClientMessageId: input.assistantClientMessageId,
+      content: input.content,
+      locale: input.locale,
+    })
+    expect(parseChatTurnBootstrapInput({ ...input, conversationId: '11111111-1111-6111-8111-111111111111' })).toBeNull()
+    expect(parseChatTurnBootstrapInput({ ...input, conversationId: '11111111-1111-4111-7111-111111111111' })).toBeNull()
+  })
+
   it('overwrites every client identity and prompt field', () => {
     expect(applyAuthoritativeTurn({
       conversationId: 'forged-conversation', userClientMessageId: 'forged-user',

@@ -6,9 +6,10 @@
  * Cloudflare protection, which blocks plain server-side HTTP requests.
  */
 import { task } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
 import { browserbaseScraperQueue } from '../queues.ts'
-import { processPasslineImport, type PasslineImportResult } from '#features/import/core/passline.ts'
+import { processPasslineImportEffect, type PasslineImportResult } from '#features/import/core/passline.ts'
 
 export interface PasslineJobPayload {
   daysAhead?: number
@@ -35,10 +36,10 @@ export const scrapePassline = task({
 
     const client = createServiceRoleClient()
 
-    const result = await processPasslineImport(client, {
+    const result = await Effect.runPromise(processPasslineImportEffect(client, {
       daysAhead: payload.daysAhead ?? 30,
       scrapeRunId: payload.scrapeRunId,
-    })
+    }))
 
     console.log('[scrape-passline] Job completed:', result)
     return result

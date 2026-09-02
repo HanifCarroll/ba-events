@@ -6,7 +6,7 @@
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
-import { z } from 'zod'
+import { Schema, SchemaIssue } from 'effect'
 import { createEvent, getEventsWithVenues } from '#shared/lib/db/client.server.ts'
 import {
   embedEventWithDocument,
@@ -18,44 +18,64 @@ import { apiSuccess, apiList, apiError, CachePresets, withCache } from '#shared/
 import { CATEGORIES, EVENT_STATUSES } from '#shared/lib/types.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 
-// Zod schema for validating incoming event submission requests
-const eventSubmissionSchema = z.object({
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const isoDate = (requiredMessage: string, invalidMessage: string) => Schema.String.pipe(
+	Schema.check(Schema.isMinLength(1, { message: requiredMessage })),
+	Schema.refine((value): value is string => !Number.isNaN(Date.parse(value)), { message: invalidMessage })
+)
+const validDate = (message: string) => Schema.String.pipe(
+	Schema.refine((value): value is string => !Number.isNaN(Date.parse(value)), { message })
+)
+const eventName = Schema.String.pipe(
+	Schema.check(Schema.isMinLength(1, { message: 'name is required' })),
+	Schema.check(Schema.isMaxLength(255, { message: 'name must be 255 characters or less' })),
+	Schema.annotateKey({ messageMissingKey: 'name is required' })
+)
+const venueId = Schema.String.pipe(
+	Schema.refine((value): value is string => UUID_RE.test(value), { message: 'venue_id must be a valid UUID' })
+)
+const url = (message: string) => Schema.String.pipe(
+	Schema.refine((value): value is string => {
+		try { new URL(value); return true } catch { return false }
+	}, { message })
+)
+
+// Effect Schema validates this repository-owned request body. The AI SDK and
+// MCP SDK schemas remain third-party-owned Zod contracts elsewhere.
+const eventSubmissionSchema = Schema.Struct({
   // Required fields
-  name: z.string().min(1, 'name is required').max(255, 'name must be 255 characters or less'),
-  starts_at: z.string().min(1, 'starts_at is required').refine(
-    (val) => !isNaN(Date.parse(val)),
-    'starts_at must be a valid ISO date string'
-  ),
+  name: eventName,
+  starts_at: isoDate('starts_at is required', 'starts_at must be a valid ISO date string').pipe(
+	  Schema.annotateKey({ messageMissingKey: 'starts_at is required' })
+	),
 
   // Optional fields
-  description_es: z.string().nullable().optional(),
-  description_en: z.string().nullable().optional(),
-  description_display_es: z.string().nullable().optional(),
-  description_display_en: z.string().nullable().optional(),
-  description_summary_es: z.string().nullable().optional(),
-  description_summary_en: z.string().nullable().optional(),
-  ends_at: z.string().nullable().optional().refine(
-    (val) => val === null || val === undefined || !isNaN(Date.parse(val)),
-    'ends_at must be a valid ISO date string'
-  ),
-  is_all_day: z.boolean().optional().default(false),
-  venue_id: z.string().uuid('venue_id must be a valid UUID').nullable().optional(),
-  categories: z.array(z.enum(CATEGORIES)).optional().default([]),
-  price: z.number().min(0, 'price must be a positive number').nullable().optional(),
-  is_free: z.boolean().optional().default(false),
-  image_url: z.string().url('image_url must be a valid URL').nullable().optional(),
-  link: z.string().url('link must be a valid URL').nullable().optional(),
-  ticket_url: z.string().url('ticket_url must be a valid URL').nullable().optional(),
-  source: z.string().optional().default('api'),
-  external_id: z.string().nullable().optional(),
-  status: z.enum(EVENT_STATUSES).optional().default('scheduled'),
+  description_es: Schema.optional(Schema.NullOr(Schema.String)),
+  description_en: Schema.optional(Schema.NullOr(Schema.String)),
+  description_display_es: Schema.optional(Schema.NullOr(Schema.String)),
+  description_display_en: Schema.optional(Schema.NullOr(Schema.String)),
+  description_summary_es: Schema.optional(Schema.NullOr(Schema.String)),
+  description_summary_en: Schema.optional(Schema.NullOr(Schema.String)),
+  ends_at: Schema.optional(Schema.NullOr(validDate('ends_at must be a valid ISO date string'))),
+  is_all_day: Schema.optional(Schema.Boolean),
+  venue_id: Schema.optional(Schema.NullOr(venueId)),
+  categories: Schema.optional(Schema.Array(Schema.Literals(CATEGORIES))),
+  price: Schema.optional(Schema.NullOr(Schema.Number.pipe(
+	Schema.check(Schema.isGreaterThanOrEqualTo(0, { message: 'price must be a positive number' }))
+  ))),
+  is_free: Schema.optional(Schema.Boolean),
+  image_url: Schema.optional(Schema.NullOr(url('image_url must be a valid URL'))),
+  link: Schema.optional(Schema.NullOr(url('link must be a valid URL'))),
+  ticket_url: Schema.optional(Schema.NullOr(url('ticket_url must be a valid URL'))),
+  source: Schema.optional(Schema.String),
+  external_id: Schema.optional(Schema.NullOr(Schema.String)),
+  status: Schema.optional(Schema.Literals(EVENT_STATUSES)),
 })
 
-// Helper to format Zod validation errors
-function formatZodErrors(error: z.ZodError<unknown>): string {
-  return error.issues
-    .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-    .join('; ')
+function formatSchemaErrors(issue: SchemaIssue.Issue): string {
+	return SchemaIssue.makeFormatterStandardSchemaV1()(issue).issues
+		.map((entry) => `${entry.path?.join('.') ?? ''}: ${entry.message}`)
+		.join('; ')
 }
 
 // Simple API key auth - set ADMIN_API_KEY in your .env
@@ -180,16 +200,15 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   try {
     const body = await request.json()
 
-    // Validate request body with Zod
-    const parseResult = eventSubmissionSchema.safeParse(body)
-    if (!parseResult.success) {
+    const parseResult = Schema.decodeUnknownResult(eventSubmissionSchema)(body)
+    if (parseResult._tag !== 'Success') {
       return Response.json(
-        apiError(formatZodErrors(parseResult.error), 'VALIDATION_ERROR'),
+        apiError(formatSchemaErrors(parseResult.failure.issue), 'VALIDATION_ERROR'),
         { status: 400 }
       )
     }
 
-    const validated = parseResult.data
+    const validated = parseResult.success
 
     // Build event data
     const eventData: EventInsert = {
@@ -198,16 +217,16 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       description_en: validated.description_en ?? null,
       starts_at: validated.starts_at,
       ends_at: validated.ends_at ?? null,
-      is_all_day: validated.is_all_day,
+      is_all_day: validated.is_all_day ?? false,
       venue_id: validated.venue_id ?? null,
-      categories: validated.categories,
+      categories: validated.categories ? [...validated.categories] : [],
       price: validated.price ?? null,
-      is_free: validated.is_free,
+      is_free: validated.is_free ?? false,
       image_url: validated.image_url ?? null,
       link: validated.link ?? null,
       ticket_url: validated.ticket_url ?? null,
-      source: validated.source,
-      status: validated.status,
+      source: validated.source ?? 'api',
+      status: validated.status ?? 'scheduled',
     }
 
     // Generate embedding + search document together (they must not drift)

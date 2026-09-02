@@ -5,8 +5,10 @@
  * Uses a three-tier approach: exact match, fuzzy match, no match.
  */
 
+import { Data, Effect } from 'effect'
 import { getSupabase, type SupabaseClient } from '#shared/lib/db/client.server.ts'
 import type { Venue } from '#shared/lib/types.ts'
+import { importTry } from '../core/effect-utils.ts'
 
 export interface VenueMatchResult {
   venue: Venue | null
@@ -14,6 +16,12 @@ export interface VenueMatchResult {
   confidence: number // 0-1, 1 being perfect match
   searchName: string // Original search name
 }
+
+export class VenueMatchError extends Data.TaggedError('VenueMatchError')<{
+  readonly operation: string
+  readonly message: string
+  readonly cause?: unknown
+}> {}
 
 /**
  * Normalize a venue name for comparison
@@ -34,51 +42,61 @@ function normalizeVenueName(name: string): string {
 /**
  * Find a venue by exact name match (case-insensitive)
  */
-async function findExactMatch(venueName: string, client?: SupabaseClient): Promise<Venue | null> {
+function findExactMatchEffect(venueName: string, client?: SupabaseClient) {
   const normalized = normalizeVenueName(venueName)
 
-  const { data, error } = await (client ?? getSupabase())
+  return importTry('venue-matcher.exact', () => (client ?? getSupabase())
     .from('venues')
     .select('*')
     .ilike('name', normalized)
     .limit(1)
     .single()
-
-  if (error || !data) return null
-  return data as Venue
+  ).pipe(
+    Effect.map(({ data, error }) => (error || !data ? null : data as Venue)),
+    Effect.mapError((error) => new VenueMatchError({
+      operation: error.operation,
+      message: error.message,
+      cause: error.cause,
+    }))
+  )
 }
 
 /**
  * Find a venue by fuzzy match using pg_trgm
  */
-async function findFuzzyMatch(
+function findFuzzyMatchEffect(
   venueName: string,
   threshold: number = 0.6,
   client?: SupabaseClient
-): Promise<{ venue: Venue; similarity: number } | null> {
+): Effect.Effect<{ venue: Venue; similarity: number } | null, VenueMatchError> {
   const db = client ?? getSupabase()
-  const { data, error } = await db.rpc('find_similar_venue', {
-    search_name: venueName,
-    similarity_threshold: threshold,
+  return Effect.gen(function* () {
+    const { data, error } = yield* importTry('venue-matcher.fuzzy-rpc', () => db.rpc('find_similar_venue', {
+      search_name: venueName,
+      similarity_threshold: threshold,
+    })).pipe(Effect.mapError((cause) => new VenueMatchError({
+      operation: cause.operation,
+      message: cause.message,
+      cause: cause.cause,
+    })))
+
+    if (error || !data || data.length === 0) return null
+
+    const match = data[0]
+    const { data: venue, error: venueError } = yield* importTry('venue-matcher.fuzzy-venue', () => db
+      .from('venues')
+      .select('*')
+      .eq('id', match.id)
+      .single()
+    ).pipe(Effect.mapError((cause) => new VenueMatchError({
+      operation: cause.operation,
+      message: cause.message,
+      cause: cause.cause,
+    })))
+
+    if (venueError || !venue) return null
+    return { venue: venue as Venue, similarity: match.similarity }
   })
-
-  if (error || !data || data.length === 0) return null
-
-  const match = data[0]
-
-  // Fetch full venue record
-  const { data: venue, error: venueError } = await db
-    .from('venues')
-    .select('*')
-    .eq('id', match.id)
-    .single()
-
-  if (venueError || !venue) return null
-
-  return {
-    venue: venue as Venue,
-    similarity: match.similarity,
-  }
 }
 
 /**
@@ -89,73 +107,99 @@ async function findFuzzyMatch(
  * 2. Try fuzzy match using pg_trgm with similarity threshold
  * 3. Return no match if nothing found
  */
+export function matchVenueEffect(
+  venueName: string,
+  fuzzyThreshold: number = 0.6,
+  client?: SupabaseClient
+): Effect.Effect<VenueMatchResult, VenueMatchError> {
+  // Handle empty/null names
+  if (!venueName || venueName.trim() === '') {
+    return Effect.succeed({
+      venue: null,
+      matchType: 'none',
+      confidence: 0,
+      searchName: venueName || '',
+    })
+  }
+
+  const searchName = venueName.trim()
+
+  return Effect.gen(function* () {
+    // Try exact match first
+    const exactMatch = yield* findExactMatchEffect(searchName, client)
+    if (exactMatch) {
+      return {
+        venue: exactMatch,
+        matchType: 'exact' as const,
+        confidence: 1,
+        searchName,
+      }
+    }
+
+    // Try fuzzy match
+    const fuzzyMatch = yield* findFuzzyMatchEffect(searchName, fuzzyThreshold, client)
+    if (fuzzyMatch) {
+      return {
+        venue: fuzzyMatch.venue,
+        matchType: 'fuzzy' as const,
+        confidence: fuzzyMatch.similarity,
+        searchName,
+      }
+    }
+
+    return {
+      venue: null,
+      matchType: 'none' as const,
+      confidence: 0,
+      searchName,
+    }
+  })
+}
+
+/** Promise compatibility adapter; legacy matching treats lookup errors as no match. */
 export async function matchVenue(
   venueName: string,
   fuzzyThreshold: number = 0.6,
   client?: SupabaseClient
 ): Promise<VenueMatchResult> {
-  // Handle empty/null names
-  if (!venueName || venueName.trim() === '') {
-    return {
+  return Effect.runPromise(
+    Effect.catchEager(matchVenueEffect(venueName, fuzzyThreshold, client), () => Effect.succeed({
       venue: null,
-      matchType: 'none',
+      matchType: 'none' as const,
       confidence: 0,
-      searchName: venueName || '',
-    }
-  }
-
-  const searchName = venueName.trim()
-
-  // Try exact match first
-  const exactMatch = await findExactMatch(searchName, client)
-  if (exactMatch) {
-    return {
-      venue: exactMatch,
-      matchType: 'exact',
-      confidence: 1,
-      searchName,
-    }
-  }
-
-  // Try fuzzy match
-  const fuzzyMatch = await findFuzzyMatch(searchName, fuzzyThreshold, client)
-  if (fuzzyMatch) {
-    return {
-      venue: fuzzyMatch.venue,
-      matchType: 'fuzzy',
-      confidence: fuzzyMatch.similarity,
-      searchName,
-    }
-  }
-
-  // No match found
-  return {
-    venue: null,
-    matchType: 'none',
-    confidence: 0,
-    searchName,
-  }
+      searchName: venueName?.trim() ?? '',
+    }))
+  )
 }
 
 /**
  * Batch match multiple venue names
  * Returns a map from venue name to match result
  */
+export function matchVenuesEffect(
+  venueNames: string[],
+  fuzzyThreshold: number = 0.6,
+  client?: SupabaseClient
+): Effect.Effect<Map<string, VenueMatchResult>, VenueMatchError> {
+  return Effect.gen(function* () {
+    const results = new Map<string, VenueMatchResult>()
+    const uniqueNames = [...new Set(venueNames.filter(Boolean))]
+    for (const name of uniqueNames) {
+      const result = yield* matchVenueEffect(name, fuzzyThreshold, client)
+      results.set(name, result)
+    }
+    return results
+  })
+}
+
 export async function matchVenues(
   venueNames: string[],
   fuzzyThreshold: number = 0.6,
   client?: SupabaseClient
 ): Promise<Map<string, VenueMatchResult>> {
-  const results = new Map<string, VenueMatchResult>()
-
-  // Dedupe venue names
-  const uniqueNames = [...new Set(venueNames.filter(Boolean))]
-
-  // Match each venue (could be parallelized, but keeping serial for now)
-  for (const name of uniqueNames) {
-    const result = await matchVenue(name, fuzzyThreshold, client)
-    results.set(name, result)
-  }
-
-  return results
+  return Effect.runPromise(
+    Effect.catchEager(matchVenuesEffect(venueNames, fuzzyThreshold, client), () =>
+      Effect.succeed(new Map<string, VenueMatchResult>())
+    )
+  )
 }

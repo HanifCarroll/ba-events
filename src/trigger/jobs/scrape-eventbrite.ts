@@ -4,8 +4,9 @@
  * Imports events from Eventbrite JSON-LD page.
  */
 import { task } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
-import { processEventbriteImport, type EventbriteImportResult } from '#features/import/core/eventbrite.ts'
+import { processEventbriteImportEffect, type EventbriteImportResult } from '#features/import/core/eventbrite.ts'
 
 export interface EventbriteJobPayload {
   daysAhead?: number
@@ -19,10 +20,10 @@ export const scrapeEventbrite = task({
 
     const client = createServiceRoleClient()
 
-    const result = await processEventbriteImport(client, {
+    const result = await Effect.runPromise(processEventbriteImportEffect(client, {
       daysAhead: payload.daysAhead ?? 30,
       scrapeRunId: payload.scrapeRunId,
-    })
+    }))
 
     console.log('[scrape-eventbrite] Job completed:', result)
     return result

@@ -1,25 +1,15 @@
 /**
- * Server functions for agent user tools.
- *
- * These functions allow the AI agent to perform actions on behalf of authenticated users.
- * User identity is derived from server-side session cookies - never from client input or the LLM.
- *
- * Security model:
- * - User identity comes from `getSessionUser()` (reads HTTP cookies)
- * - The LLM never sees user IDs or tokens
- * - Supabase RLS provides additional database-level protection
- * - Graceful degradation for anonymous users (return error, don't crash)
+ * Server-side agent user tools. Session identity is derived from the request;
+ * Supabase calls are leaves while authorization and result mapping remain in
+ * Effect programs.
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
-import { getSessionUser } from '#features/auth/api/session.server.ts'
+import { Data, Effect } from 'effect'
+import { getSessionUserEffect } from '#features/auth/api/session.server.ts'
 import { getEventWithVenue } from '#shared/lib/db/client.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import type { ChatEventPayload, EventWithVenue, SavedMembershipResult } from '#shared/lib/types.ts'
-
-// ============================================================================
-// TYPES
-// ============================================================================
 
 export interface UserToolContext {
   userId: string | null
@@ -61,362 +51,256 @@ export interface CheckEventSavedResult {
   error?: 'not_authenticated' | 'unknown_error'
 }
 
-// ============================================================================
-// HELPER: Get User Tool Context
-// ============================================================================
+class UserToolError extends Data.TaggedError('UserToolError')<{
+  readonly message: string
+  readonly cause?: unknown
+}> {}
 
-/**
- * Bounded authoritative saved-membership query for a set of prior event ids.
- * Returns a complete result (absent ids are saved:false) or unavailable.
- * Used by authenticated prior-context rehydration; never trusts client input.
- */
-export async function getSavedMembershipForIds(
+const userToolFailure = (message: string, cause?: unknown) => new UserToolError({ message, cause })
+
+function promiseEffect<A>(run: () => PromiseLike<A>, fallbackMessage: string) {
+  return Effect.tryPromise({
+    try: run,
+    catch: (cause) => userToolFailure(
+      cause instanceof Error && cause.message ? cause.message : fallbackMessage,
+      cause,
+    ),
+  })
+}
+
+/** Effect-native bounded authoritative saved-membership query. */
+export function getSavedMembershipForIdsEffect(
   ctx: UserToolContext,
-  ids: string[]
-): Promise<SavedMembershipResult> {
-  if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) return { status: 'unavailable' }
-  if (ids.length === 0) return { status: 'complete', savedIds: new Set<string>() }
-  try {
-    const client = createSupabaseServerClient(ctx.event)
-    const { data, error } = await client
-      .from('saved_events')
-      .select('event_id')
-      .eq('user_id', ctx.userId)
-      .in('event_id', ids)
-      .limit(ids.length)
-    if (error) return { status: 'unavailable' }
-    const savedIds = new Set<string>(
-      (data ?? []).map((row: { event_id: string }) => row.event_id)
+  ids: string[],
+): Effect.Effect<SavedMembershipResult, never> {
+  if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) return Effect.succeed({ status: 'unavailable' })
+  if (ids.length === 0) return Effect.succeed({ status: 'complete', savedIds: new Set<string>() })
+  const program = Effect.gen(function* () {
+    const client = createSupabaseServerClient(ctx.event!)
+    const { data, error } = yield* promiseEffect(
+      () => client
+        .from('saved_events')
+        .select('event_id')
+        .eq('user_id', ctx.userId!)
+        .in('event_id', ids)
+        .limit(ids.length),
+      'Failed to load saved event membership',
     )
-    return { status: 'complete', savedIds }
-  } catch (error) {
-    console.error('[getSavedMembershipForIds] Error:', error)
-    return { status: 'unavailable' }
-  }
+    if (error) return { status: 'unavailable' as const }
+    const savedIds = new Set<string>((data ?? []).map((row: { event_id: string }) => row.event_id))
+    return { status: 'complete' as const, savedIds }
+  })
+  return Effect.match(program, {
+    onFailure: (error) => {
+      console.error('[getSavedMembershipForIds] Error:', error)
+      return { status: 'unavailable' as const }
+    },
+    onSuccess: (result) => result,
+  })
 }
 
-/**
- * Get the user context for tool execution.
- * This is called once at the start of the agent loop and passed to tool executors.
- */
-export async function getUserToolContext(event: RequestEvent): Promise<UserToolContext> {
-  const session = await getSessionUser(event)
-  return {
-    userId: session?.user?.id ?? null,
-    isAuthenticated: !!session,
-    event,
-  }
+export function getSavedMembershipForIds(ctx: UserToolContext, ids: string[]) {
+  return Effect.runPromise(getSavedMembershipForIdsEffect(ctx, ids))
 }
 
-// ============================================================================
-// TOOL IMPLEMENTATIONS
-// ============================================================================
+/** Effect-native request session lookup. */
+export function getUserToolContextEffect(event: RequestEvent): Effect.Effect<UserToolContext, UserToolError> {
+  return Effect.map(
+    getSessionUserEffect(event),
+    (session) => ({ userId: session?.user?.id ?? null, isAuthenticated: !!session, event }),
+  )
+}
 
-/**
- * Save an event to the user's saved events list.
- * Requires authentication.
- */
-export async function saveEventForUser(
-  eventId: string,
-  ctx: UserToolContext
-): Promise<SaveEventResult> {
+export function getUserToolContext(event: RequestEvent) {
+  return Effect.runPromise(getUserToolContextEffect(event))
+}
+
+/** Effect-native save operation. */
+export function saveEventForUserEffect(eventId: string, ctx: UserToolContext): Effect.Effect<SaveEventResult, never> {
   if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) {
-    return {
+    return Effect.succeed({
       success: false,
       error: 'not_authenticated',
       message: 'You need to be logged in to save events. Would you like me to help you find the login page?',
-    }
-  }
-
-  try {
-    const client = createSupabaseServerClient(ctx.event)
-
-    // First check if the event exists
-    const { data: event, error: eventError } = await client
-      .from('events')
-      .select('id, name')
-      .eq('id', eventId)
-      .single()
-
-    if (eventError || !event) {
-      return {
-        success: false,
-        error: 'event_not_found',
-        message: "I couldn't find that event. It may have been removed.",
-      }
-    }
-
-    // Try to save the event
-    const { error } = await client.from('saved_events').insert({
-      user_id: ctx.userId,
-      event_id: eventId,
     })
-
-    if (error) {
-      // Handle duplicate (already saved)
-      if (error.code === '23505') {
-        return {
-          success: true, // Still successful from user's perspective
-          error: 'already_saved',
-          message: `"${event.name}" is already in your saved events.`,
-        }
-      }
-      console.error('[saveEventForUser] Error:', error)
-      return {
-        success: false,
-        error: 'unknown_error',
-        message: 'Something went wrong saving the event. Please try again.',
-      }
-    }
-
-    return {
-      success: true,
-      message: `Saved "${event.name}" to your list.`,
-    }
-  } catch (error) {
-    console.error('[saveEventForUser] Unexpected error:', error)
-    return {
-      success: false,
-      error: 'unknown_error',
-      message: 'Something went wrong. Please try again.',
-    }
   }
+  const program = Effect.gen(function* () {
+    const client = createSupabaseServerClient(ctx.event!)
+    const { data: event, error: eventError } = yield* promiseEffect(
+      () => client.from('events').select('id, name').eq('id', eventId).single(),
+      'Failed to read event',
+    )
+    if (eventError || !event) {
+      return { success: false as const, error: 'event_not_found' as const, message: "I couldn't find that event. It may have been removed." }
+    }
+    const { error } = yield* promiseEffect(
+      () => client.from('saved_events').insert({ user_id: ctx.userId!, event_id: eventId }),
+      'Failed to save event',
+    )
+    if (error?.code === '23505') {
+      return { success: true as const, error: 'already_saved' as const, message: `"${event.name}" is already in your saved events.` }
+    }
+    if (error) {
+      console.error('[saveEventForUser] Error:', error)
+      return { success: false as const, error: 'unknown_error' as const, message: 'Something went wrong saving the event. Please try again.' }
+    }
+    return { success: true as const, message: `Saved "${event.name}" to your list.` }
+  })
+  return Effect.match(program, {
+    onFailure: (error) => {
+      console.error('[saveEventForUser] Unexpected error:', error)
+      return { success: false, error: 'unknown_error', message: 'Something went wrong. Please try again.' } satisfies SaveEventResult
+    },
+    onSuccess: (result) => result,
+  })
 }
 
-/**
- * Remove an event from the user's saved events list.
- * Requires authentication.
- */
-export async function unsaveEventForUser(
-  eventId: string,
-  ctx: UserToolContext
-): Promise<UnsaveEventResult> {
+export function saveEventForUser(eventId: string, ctx: UserToolContext) {
+  return Effect.runPromise(saveEventForUserEffect(eventId, ctx))
+}
+
+/** Effect-native unsave operation. */
+export function unsaveEventForUserEffect(eventId: string, ctx: UserToolContext): Effect.Effect<UnsaveEventResult, never> {
   if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) {
-    return {
-      success: false,
-      error: 'not_authenticated',
-      message: 'You need to be logged in to manage saved events.',
-    }
+    return Effect.succeed({ success: false, error: 'not_authenticated', message: 'You need to be logged in to manage saved events.' })
   }
-
-  try {
-    const client = createSupabaseServerClient(ctx.event)
-
-    // Get event name for confirmation message
-    const { data: event } = await client
-      .from('events')
-      .select('name')
-      .eq('id', eventId)
-      .single()
-
-    const { error, count } = await client
-      .from('saved_events')
-      .delete()
-      .eq('user_id', ctx.userId)
-      .eq('event_id', eventId)
-
+  const program = Effect.gen(function* () {
+    const client = createSupabaseServerClient(ctx.event!)
+    const { data: event } = yield* promiseEffect(
+      () => client.from('events').select('name').eq('id', eventId).single(),
+      'Failed to read event',
+    )
+    const { error, count } = yield* promiseEffect(
+      () => client.from('saved_events').delete().eq('user_id', ctx.userId!).eq('event_id', eventId),
+      'Failed to remove saved event',
+    )
     if (error) {
       console.error('[unsaveEventForUser] Error:', error)
-      return {
-        success: false,
-        error: 'unknown_error',
-        message: 'Something went wrong removing the event. Please try again.',
-      }
+      return { success: false as const, error: 'unknown_error' as const, message: 'Something went wrong removing the event. Please try again.' }
     }
-
-    // Check if anything was actually deleted
-    if (count === 0) {
-      return {
-        success: false,
-        error: 'not_saved',
-        message: "That event wasn't in your saved list.",
-      }
-    }
-
-    return {
-      success: true,
-      message: event?.name
-        ? `Removed "${event.name}" from your saved events.`
-        : 'Event removed from your saved list.',
-    }
-  } catch (error) {
-    console.error('[unsaveEventForUser] Unexpected error:', error)
-    return {
-      success: false,
-      error: 'unknown_error',
-      message: 'Something went wrong. Please try again.',
-    }
-  }
+    if (count === 0) return { success: false as const, error: 'not_saved' as const, message: "That event wasn't in your saved list." }
+    return { success: true as const, message: event?.name ? `Removed "${event.name}" from your saved events.` : 'Event removed from your saved list.' }
+  })
+  return Effect.match(program, {
+    onFailure: (error) => {
+      console.error('[unsaveEventForUser] Unexpected error:', error)
+      return { success: false, error: 'unknown_error', message: 'Something went wrong. Please try again.' } satisfies UnsaveEventResult
+    },
+    onSuccess: (result) => result,
+  })
 }
 
-/**
- * Get the user's saved events.
- * Requires authentication.
- */
-export async function listSavedEventsForUser(
+export function unsaveEventForUser(eventId: string, ctx: UserToolContext) {
+  return Effect.runPromise(unsaveEventForUserEffect(eventId, ctx))
+}
+
+type SavedEventRow = {
+  event_id: string
+  created_at: string
+  events_with_venues: EventWithVenue | null
+}
+
+/** Effect-native saved-event list operation. */
+export function listSavedEventsForUserEffect(
   filter: 'all' | 'upcoming' | 'past' = 'all',
-  ctx: UserToolContext
-): Promise<ListSavedEventsResult> {
+  ctx: UserToolContext,
+): Effect.Effect<ListSavedEventsResult, never> {
   if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) {
-    return {
+    return Effect.succeed({
       success: false,
       error: 'not_authenticated',
       events: [],
       message: 'You need to be logged in to see your saved events.',
-    } as ListSavedEventsResult & { message: string }
+    } as ListSavedEventsResult & { message: string })
   }
-
-  try {
-    const client = createSupabaseServerClient(ctx.event)
+  const program = Effect.gen(function* () {
+    const client = createSupabaseServerClient(ctx.event!)
     const now = new Date().toISOString()
-
-    // Query saved_events joined with events_with_venues view
-    let query = client
-      .from('saved_events')
-      .select(`
+    const { data, error } = yield* promiseEffect(
+      () => client
+        .from('saved_events')
+        .select(`
         event_id,
         created_at,
         events_with_venues (*)
       `)
-      .eq('user_id', ctx.userId)
-      .order('created_at', { ascending: false })
-
-    const { data, error } = await query
-
+        .eq('user_id', ctx.userId!)
+        .order('created_at', { ascending: false }),
+      'Failed to list saved events',
+    )
     if (error) {
       console.error('[listSavedEventsForUser] Error:', error)
-      return {
-        success: false,
-        error: 'unknown_error',
-        events: [],
-      }
+      return { success: false as const, error: 'unknown_error' as const, events: [] }
     }
-
-    // Transform and filter the results
-    type SavedEventRow = {
-      event_id: string
-      created_at: string
-      events_with_venues: EventWithVenue | null
-    }
-
     const rows = (data || []) as unknown as SavedEventRow[]
-    const allEvents = rows
-      .map((item) => item.events_with_venues)
-      .filter((event): event is EventWithVenue => event !== null)
-
-    // Count upcoming vs past
-    const upcomingEvents = allEvents.filter(e => new Date(e.starts_at) >= new Date(now))
-    const pastEvents = allEvents.filter(e => new Date(e.starts_at) < new Date(now))
-
-    // Apply filter
-    let filteredEvents: EventWithVenue[]
-    switch (filter) {
-      case 'upcoming':
-        filteredEvents = upcomingEvents
-        break
-      case 'past':
-        filteredEvents = pastEvents
-        break
-      default:
-        filteredEvents = allEvents
-    }
-
-    return {
-      success: true,
-      events: filteredEvents,
-      count: allEvents.length,
-      upcomingCount: upcomingEvents.length,
-      pastCount: pastEvents.length,
-    }
-  } catch (error) {
-    console.error('[listSavedEventsForUser] Unexpected error:', error)
-    return {
-      success: false,
-      error: 'unknown_error',
-      events: [],
-    }
-  }
+    const allEvents = rows.map((item) => item.events_with_venues).filter((event): event is EventWithVenue => event !== null)
+    const upcomingEvents = allEvents.filter((event) => new Date(event.starts_at) >= new Date(now))
+    const pastEvents = allEvents.filter((event) => new Date(event.starts_at) < new Date(now))
+    const filteredEvents = filter === 'upcoming' ? upcomingEvents : filter === 'past' ? pastEvents : allEvents
+    return { success: true as const, events: filteredEvents, count: allEvents.length, upcomingCount: upcomingEvents.length, pastCount: pastEvents.length }
+  })
+  return Effect.match(program, {
+    onFailure: (error) => {
+      console.error('[listSavedEventsForUser] Unexpected error:', error)
+      return { success: false, error: 'unknown_error', events: [] } satisfies ListSavedEventsResult
+    },
+    onSuccess: (result) => result,
+  })
 }
 
-/**
- * Get full details for a specific event.
- * Does not require authentication (events are public).
- */
-export async function getEventDetailsForUser(
-  eventId: string
-): Promise<GetEventDetailsResult> {
-  try {
-    const event = await getEventWithVenue(eventId)
-
-    if (!event) {
-      return {
-        success: false,
-        error: 'not_found',
-      }
-    }
-
-    // Embeddings are internal search infrastructure and must not cross to the
-    // client — strip the vector before returning the event to the chat.
-    const { embedding: _embedding, ...eventWithoutEmbedding } = event
-
-    return {
-      success: true,
-      event: eventWithoutEmbedding,
-    }
-  } catch (error) {
-    console.error('[getEventDetailsForUser] Error:', error)
-    return {
-      success: false,
-      error: 'not_found',
-    }
-  }
+export function listSavedEventsForUser(filter: 'all' | 'upcoming' | 'past' = 'all', ctx: UserToolContext) {
+  return Effect.runPromise(listSavedEventsForUserEffect(filter, ctx))
 }
 
-/**
- * Check if a specific event is saved by the user.
- * Requires authentication.
- */
-export async function checkEventSavedForUser(
-  eventId: string,
-  ctx: UserToolContext
-): Promise<CheckEventSavedResult> {
+/** Effect-native public event-details lookup. */
+export function getEventDetailsForUserEffect(eventId: string): Effect.Effect<GetEventDetailsResult, never> {
+  const program = Effect.map(
+    promiseEffect(() => getEventWithVenue(eventId), 'Failed to read event details'),
+    (event) => {
+      if (!event) return { success: false as const, error: 'not_found' as const }
+      const { embedding: _embedding, ...eventWithoutEmbedding } = event
+      return { success: true as const, event: eventWithoutEmbedding }
+    },
+  )
+  return Effect.match(program, {
+    onFailure: (error) => {
+      console.error('[getEventDetailsForUser] Error:', error)
+      return { success: false, error: 'not_found' } satisfies GetEventDetailsResult
+    },
+    onSuccess: (result) => result,
+  })
+}
+
+export function getEventDetailsForUser(eventId: string) {
+  return Effect.runPromise(getEventDetailsForUserEffect(eventId))
+}
+
+/** Effect-native saved-state lookup. */
+export function checkEventSavedForUserEffect(eventId: string, ctx: UserToolContext): Effect.Effect<CheckEventSavedResult, never> {
   if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) {
-    return {
-      success: false,
-      isSaved: false,
-      error: 'not_authenticated',
-    }
+    return Effect.succeed({ success: false, isSaved: false, error: 'not_authenticated' })
   }
-
-  try {
-    const client = createSupabaseServerClient(ctx.event)
-
-    const { data, error } = await client
-      .from('saved_events')
-      .select('id')
-      .eq('user_id', ctx.userId)
-      .eq('event_id', eventId)
-      .maybeSingle()
-
+  const program = Effect.gen(function* () {
+    const client = createSupabaseServerClient(ctx.event!)
+    const { data, error } = yield* promiseEffect(
+      () => client.from('saved_events').select('id').eq('user_id', ctx.userId!).eq('event_id', eventId).maybeSingle(),
+      'Failed to check saved event',
+    )
     if (error) {
       console.error('[checkEventSavedForUser] Error:', error)
-      return {
-        success: false,
-        isSaved: false,
-        error: 'unknown_error',
-      }
+      return { success: false as const, isSaved: false, error: 'unknown_error' as const }
     }
+    return { success: true as const, isSaved: data !== null }
+  })
+  return Effect.match(program, {
+    onFailure: (error) => {
+      console.error('[checkEventSavedForUser] Unexpected error:', error)
+      return { success: false, isSaved: false, error: 'unknown_error' } satisfies CheckEventSavedResult
+    },
+    onSuccess: (result) => result,
+  })
+}
 
-    return {
-      success: true,
-      isSaved: data !== null,
-    }
-  } catch (error) {
-    console.error('[checkEventSavedForUser] Unexpected error:', error)
-    return {
-      success: false,
-      isSaved: false,
-      error: 'unknown_error',
-    }
-  }
+export function checkEventSavedForUser(eventId: string, ctx: UserToolContext) {
+  return Effect.runPromise(checkEventSavedForUserEffect(eventId, ctx))
 }

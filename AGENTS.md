@@ -49,3 +49,10 @@ Use this service-role database read as the primary evidence; do not rely on `fet
 ### AI APIs
 
 - `VOYAGE_API_KEY` — Voyage AI hosted reranker key for `search_events` stage-2 (optional; search falls back to retrieval order without it).
+
+## Effect 4
+
+The repository uses the exact `effect@4.0.0-rc.112` package installed in
+`node_modules/effect`; read its `AGENTS.md`, `ai-docs/`, and `src/` for
+version-matched guidance. The boundary policy and deliberate exceptions are
+documented in `docs/effect-4.md`.

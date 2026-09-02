@@ -13,6 +13,7 @@
  */
 
 import type { EventSearchPrefer } from '#features/chat/api/tools/search-intent.ts'
+import { Effect, Schema } from 'effect'
 
 const VOYAGE_RERANK_URL = 'https://api.voyageai.com/v1/rerank'
 const RERANK_TIMEOUT_MS = 1200
@@ -159,10 +160,10 @@ export function buildRerankDocument(e: RerankDocumentEvent): string {
  * numeric relevance_score per entry. Anything else is malformed.
  */
 function isValidRerankData(
-  data: unknown,
+  data: ReadonlyArray<{ index: number; relevance_score: number }>,
   n: number
-): data is Array<{ index: number; relevance_score: number }> {
-  if (!Array.isArray(data) || data.length !== n) return false
+): boolean {
+  if (data.length !== n) return false
   const seen = new Set<number>()
   for (const item of data) {
     if (!item || typeof item !== 'object') return false
@@ -174,6 +175,19 @@ function isValidRerankData(
     seen.add(index)
   }
   return seen.size === n
+}
+
+const rerankResponseSchema = Schema.Struct({
+  data: Schema.Array(Schema.Struct({
+    index: Schema.Int,
+    relevance_score: Schema.Number,
+  })),
+  model: Schema.optional(Schema.String),
+  usage: Schema.optional(Schema.Struct({ total_tokens: Schema.optional(Schema.Number) })),
+})
+
+class RerankError extends Error {
+  readonly _tag = 'RerankError'
 }
 
 // ============================================================================
@@ -200,37 +214,39 @@ export async function rerankEvents<T extends { id: string }>(
   }
 
   const startedAt = performance.now()
-  try {
-    const model = process.env.VOYAGE_RERANK_MODEL ?? DEFAULT_MODEL
-    const documents = candidates.map((c) => buildRerankDocument(c as unknown as RerankDocumentEvent))
+  const model = process.env.VOYAGE_RERANK_MODEL ?? DEFAULT_MODEL
+  const documents = candidates.map((c) => buildRerankDocument(c as unknown as RerankDocumentEvent))
 
-    const response = await fetch(VOYAGE_RERANK_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: builtQuery, documents, model }),
-      signal: AbortSignal.timeout(RERANK_TIMEOUT_MS),
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(VOYAGE_RERANK_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: builtQuery, documents, model }),
+        signal: AbortSignal.timeout(RERANK_TIMEOUT_MS),
+      }),
+      catch: (error) => new RerankError(error instanceof Error ? error.message : String(error)),
     })
 
     const latencyMs = Math.round(performance.now() - startedAt)
 
     if (!response.ok) {
-      return {
-        ordered: [...candidates],
-        meta: { status: 'failed', latencyMs, error: `Voyage rerank HTTP ${response.status}` },
-      }
+      return yield* Effect.fail(new RerankError(`Voyage rerank HTTP ${response.status}`))
     }
 
-    const json = (await response.json()) as Record<string, unknown>
-    const data = json.data
-    if (!isValidRerankData(data, candidates.length)) {
-      return {
-        ordered: [...candidates],
-        meta: { status: 'failed', latencyMs, error: 'Voyage rerank returned malformed data' },
-      }
+    const raw = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: (error) => new RerankError(error instanceof Error ? error.message : String(error)),
+    })
+    const parsed = Schema.decodeUnknownResult(rerankResponseSchema)(raw)
+    if (parsed._tag !== 'Success' || !isValidRerankData(parsed.success.data, candidates.length)) {
+      return yield* Effect.fail(new RerankError('Voyage rerank returned malformed data'))
     }
+    const json = parsed.success
+    const data = json.data
 
     const rerankerRankByInputIndex = new Map<number, number>()
     const scoreByInputIndex = new Map<number, number>()
@@ -261,26 +277,27 @@ export async function rerankEvents<T extends { id: string }>(
       })
     })
 
-    const usage = json.usage as { total_tokens?: number } | undefined
     return {
       ordered: ranked.map((entry) => entry.event),
       meta: {
-        status: 'applied',
-        model: (json.model as string | undefined) ?? model,
+        status: 'applied' as const,
+        model: json.model ?? model,
         latencyMs,
-        totalTokens: usage?.total_tokens,
+        totalTokens: json.usage?.total_tokens,
         ranks,
       },
     }
-  } catch (error) {
-    const latencyMs = Math.round(performance.now() - startedAt)
-    return {
+  })
+
+  return Effect.runPromise(Effect.match(program, {
+    onFailure: (error) => ({
       ordered: [...candidates],
       meta: {
-        status: 'failed',
-        latencyMs,
+        status: 'failed' as const,
+        latencyMs: Math.round(performance.now() - startedAt),
         error: error instanceof Error ? error.message : String(error),
       },
-    }
-  }
+    }),
+    onSuccess: (value) => value,
+  }))
 }

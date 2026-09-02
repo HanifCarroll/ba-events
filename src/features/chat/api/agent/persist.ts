@@ -9,7 +9,8 @@
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
-import { addMessage } from '../messages.server.ts'
+import { Data, Effect } from 'effect'
+import { addMessageEffect } from '../messages.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { CHAT_CONTRACT_VERSION, type CanonicalChatResponse, type MessageExecutionStep } from '#shared/lib/types.ts'
 
@@ -27,25 +28,37 @@ export interface PersistAssistantResult {
   messageId?: string
 }
 
-export async function persistAssistantMessageV4(
+class AssistantPersistenceError extends Data.TaggedError('AssistantPersistenceError')<{
+  readonly message: string
+}> {}
+
+const persistenceFailure = (message: string) => new AssistantPersistenceError({ message })
+
+/** Effect-native assistant persistence program. It deliberately fails open. */
+export function persistAssistantMessageV4Effect(
   input: PersistAssistantInput
-): Promise<PersistAssistantResult> {
-  const supabase = createSupabaseServerClient(input.event)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+): Effect.Effect<PersistAssistantResult, AssistantPersistenceError> {
+  const program = Effect.gen(function* () {
+    const supabase = createSupabaseServerClient(input.event)
+    const {
+      data: { user },
+    } = yield* Effect.tryPromise({
+      try: () => supabase.auth.getUser(),
+      catch: () => persistenceFailure('Failed to read authenticated user'),
+    })
+    if (!user) return { persisted: false } satisfies PersistAssistantResult
 
-  if (!user) return { persisted: false }
-
-  try {
     let parentMessageId: string | null = null
     if (input.userClientMessageId) {
-      const { data } = await supabase
-        .from('messages')
-        .select('id')
-        .eq('conversation_id', input.conversationId)
-        .eq('client_message_id', input.userClientMessageId)
-        .maybeSingle()
+      const { data } = yield* Effect.tryPromise({
+        try: () => supabase
+          .from('messages')
+          .select('id')
+          .eq('conversation_id', input.conversationId)
+          .eq('client_message_id', input.userClientMessageId)
+          .maybeSingle(),
+        catch: () => persistenceFailure('Failed to find triggering user message'),
+      })
       if (data?.id) {
         parentMessageId = data.id as string
       } else {
@@ -53,11 +66,11 @@ export async function persistAssistantMessageV4(
         // assistant against a stale/previous turn is worse than not inserting
         // at all — fail open and let the client outbox retry against the same
         // idempotency key once the user message lands.
-        return { persisted: false }
+        return { persisted: false } satisfies PersistAssistantResult
       }
     }
 
-    const message = await addMessage(input.event, {
+    const message = yield* addMessageEffect(input.event, {
       conversationId: input.conversationId,
       parentMessageId,
       role: 'assistant',
@@ -69,9 +82,19 @@ export async function persistAssistantMessageV4(
       attachedData: { canonical: input.canonical },
     })
 
-    return { persisted: true, messageId: message.id }
-  } catch (error) {
-    console.error('[persist] server assistant persistence failed:', error)
-    return { persisted: false }
-  }
+    return { persisted: true, messageId: message.id } satisfies PersistAssistantResult
+  })
+
+  return Effect.match(program, {
+    onFailure: (error) => {
+      console.error('[persist] server assistant persistence failed:', error)
+      return { persisted: false } satisfies PersistAssistantResult
+    },
+    onSuccess: (result) => result,
+  })
+}
+
+/** Promise compatibility adapter for the SvelteKit chat route. */
+export function persistAssistantMessageV4(input: PersistAssistantInput) {
+  return Effect.runPromise(persistAssistantMessageV4Effect(input))
 }

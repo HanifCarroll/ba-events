@@ -8,6 +8,7 @@
  */
 
 import type { LumaEvent, LumaVenue, LumaHost } from './types.ts'
+import { Effect } from 'effect'
 
 const LUMA_BUENOS_AIRES_URL = 'https://luma.com/buenos-aires'
 
@@ -15,20 +16,31 @@ const LUMA_BUENOS_AIRES_URL = 'https://luma.com/buenos-aires'
  * Fetch Luma listing page HTML
  */
 async function fetchLumaPage(url: string = LUMA_BUENOS_AIRES_URL): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
-    },
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
+        },
+      }),
+      catch: (error) => new LumaFetchError(error instanceof Error ? error.message : String(error)),
+    })
+    if (!response.ok) {
+      return yield* Effect.fail(new LumaFetchError(`Luma fetch failed: ${response.status} ${response.statusText}`))
+    }
+    return yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (error) => new LumaFetchError(error instanceof Error ? error.message : String(error)),
+    })
   })
+  return Effect.runPromise(program)
+}
 
-  if (!response.ok) {
-    throw new Error(`Luma fetch failed: ${response.status} ${response.statusText}`)
-  }
-
-  return response.text()
+class LumaFetchError extends Error {
+  readonly _tag = 'LumaFetchError'
 }
 
 /**

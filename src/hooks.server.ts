@@ -1,35 +1,23 @@
 import { sequence, type Handle } from '@sveltejs/kit/hooks';
+import { Effect } from 'effect';
 import { getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
-import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts';
-import type { Profile } from '#shared/lib/types.ts';
+import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 
 // (a) Supabase handle — create a per-request server client, load the
 // authenticated user and their profile, and expose them via `event.locals`.
 const handleSupabase: Handle = async ({ event, resolve }) => {
-	const supabase = createSupabaseServerClient(event);
-
-	const {
-		data: { user },
-		error
-	} = await supabase.auth.getUser();
-
-	if (error || !user) {
+	const session = await Effect.runPromise(getSessionUserEffect(event));
+	if (!session) {
 		event.locals.user = null;
 		event.locals.profile = null;
 		event.locals.isAdmin = false;
 		return resolve(event);
 	}
 
-	event.locals.user = user;
+	event.locals.user = session.user;
 
-	const { data: profile } = await supabase
-		.from('profiles')
-		.select('*')
-		.eq('id', user.id)
-		.single();
-
-	const profileData = (profile as Profile | null) ?? null;
+	const profileData = session.profile;
 	event.locals.profile = profileData;
 	event.locals.isAdmin = profileData?.role === 'admin';
 

@@ -11,6 +11,7 @@
  * policies, so only the service-role client can read or write it.
  */
 
+import { Data, Effect } from 'effect'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { logger } from '#shared/lib/logger.ts'
 
@@ -33,18 +34,25 @@ export type GuestRequestTerminalStatus =
   | 'completed_with_fallback'
   | 'errored'
 
-export async function persistGuestChatDebug(input: {
+class GuestDebugPersistenceError extends Data.TaggedError('GuestDebugPersistenceError')<{
+  readonly message: string
+  readonly cause?: unknown
+}> {}
+
+const guestDebugFailure = (message: string, cause?: unknown) => new GuestDebugPersistenceError({ message, cause })
+
+export function persistGuestChatDebugEffect(input: {
   conversationId: string | null
   locale: 'en' | 'es'
   ip: string
   messages: unknown
   lastUserText: string | null
-}): Promise<void> {
+}): Effect.Effect<void, never> {
   const conversationId = input.conversationId
-  if (!conversationId) return
+  if (!conversationId) return Effect.succeed(undefined)
 
-  try {
-    await runWithTimeout(() =>
+  const program = Effect.tryPromise({
+    try: () => runWithTimeout(() =>
       upsertGuestChatDebug({
         conversationId,
         locale: input.locale,
@@ -52,13 +60,28 @@ export async function persistGuestChatDebug(input: {
         messages: input.messages,
         lastUserText: input.lastUserText,
       })
-    )
-  } catch (error) {
-    logger.warn('[guest-debug] Guest transcript write timed out', {
-      conversationId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-  }
+    ),
+    catch: (cause) => guestDebugFailure('Guest transcript write timed out', cause),
+  })
+  return Effect.match(program, {
+    onFailure: (error) => {
+      logger.warn('[guest-debug] Guest transcript write timed out', {
+        conversationId,
+        error: error.cause instanceof Error ? error.cause.message : String(error.cause ?? error),
+      })
+    },
+    onSuccess: () => undefined,
+  })
+}
+
+export function persistGuestChatDebug(input: {
+  conversationId: string | null
+  locale: 'en' | 'es'
+  ip: string
+  messages: unknown
+  lastUserText: string | null
+}) {
+  return Effect.runPromise(persistGuestChatDebugEffect(input))
 }
 
 export function buildGuestDebugTranscript(
@@ -68,20 +91,19 @@ export function buildGuestDebugTranscript(
   return [...uiMessages, assistant]
 }
 
-export async function upsertGuestChatDebug(input: {
+export function upsertGuestChatDebugEffect(input: {
   conversationId: string
   locale: 'en' | 'es'
   ip: string
   messages: unknown
   lastUserText: string | null
-}): Promise<void> {
-  if (!input.conversationId) {
-    return
-  }
+}): Effect.Effect<void, never> {
+  if (!input.conversationId) return Effect.succeed(undefined)
 
-  try {
+  const program = Effect.gen(function* () {
     const client = getSupabaseServiceRoleClient()
-    const { error } = await client.from('guest_chat_debug').upsert(
+    const { error } = yield* Effect.tryPromise({
+      try: () => client.from('guest_chat_debug').upsert(
       {
         conversation_id: input.conversationId,
         locale: input.locale,
@@ -91,7 +113,9 @@ export async function upsertGuestChatDebug(input: {
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'conversation_id' }
-    )
+      ),
+      catch: (cause) => guestDebugFailure('Failed to persist guest chat debug row', cause),
+    })
 
     if (error) {
       logger.warn('[guest-debug] Failed to persist guest chat debug row', {
@@ -99,12 +123,27 @@ export async function upsertGuestChatDebug(input: {
         error: error.message,
       })
     }
-  } catch (error) {
+  })
+  return Effect.match(program, {
+    onFailure: (error) => {
+      const cause = error.cause
     logger.warn('[guest-debug] Failed to persist guest chat debug row', {
       conversationId: input.conversationId,
-      error: error instanceof Error ? error.message : String(error),
+      error: cause instanceof Error ? cause.message : String(cause ?? error),
     })
-  }
+    },
+    onSuccess: () => undefined,
+  })
+}
+
+export function upsertGuestChatDebug(input: {
+  conversationId: string
+  locale: 'en' | 'es'
+  ip: string
+  messages: unknown
+  lastUserText: string | null
+}) {
+  return Effect.runPromise(upsertGuestChatDebugEffect(input))
 }
 
 /**
@@ -139,29 +178,38 @@ function runWithTimeout(run: () => Promise<unknown>): Promise<void> {
  * in `started` is evidence the process died before reaching a terminal state.
  * Fail-open: never throws to the caller.
  */
-export async function recordGuestRequestStarted(input: {
+export function recordGuestRequestStartedEffect(input: {
   requestId: string
   conversationId: string | null
-}): Promise<void> {
-  if (!input.requestId) return
+}): Effect.Effect<void, never> {
+  if (!input.requestId) return Effect.succeed(undefined)
 
-  try {
-    const client = getSupabaseServiceRoleClient()
-    await runWithTimeout(async () => {
-      const { error } = await client.from('guest_request_lifecycle').insert({
+  const program = Effect.tryPromise({
+    try: () => {
+      const client = getSupabaseServiceRoleClient()
+      return runWithTimeout(async () => {
+        const { error } = await client.from('guest_request_lifecycle').insert({
         request_id: input.requestId,
         conversation_id: input.conversationId,
         status: 'started',
         started_at: new Date().toISOString(),
+        })
+        if (error) throw error
       })
-      if (error) throw error
-    })
-  } catch (error) {
-    logger.warn('[guest-debug] Failed to record guest request start', {
+    },
+    catch: (cause) => guestDebugFailure('Failed to record guest request start', cause),
+  })
+  return Effect.match(program, {
+    onFailure: (error) => logger.warn('[guest-debug] Failed to record guest request start', {
       requestId: input.requestId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-  }
+      error: error.cause instanceof Error ? error.cause.message : String(error.cause ?? error),
+    }),
+    onSuccess: () => undefined,
+  })
+}
+
+export function recordGuestRequestStarted(input: { requestId: string; conversationId: string | null }) {
+  return Effect.runPromise(recordGuestRequestStartedEffect(input))
 }
 
 /**
@@ -169,18 +217,19 @@ export async function recordGuestRequestStarted(input: {
  * so a terminal state is durable even when the `started` insert never landed
  * or was lost. Fail-open: never throws to the caller.
  */
-export async function recordGuestRequestTerminal(input: {
+export function recordGuestRequestTerminalEffect(input: {
   requestId: string
   conversationId: string | null
   status: GuestRequestTerminalStatus
   errorType?: string | null
   providerRequestId?: string | null
-}): Promise<void> {
-  if (!input.requestId) return
+}): Effect.Effect<void, never> {
+  if (!input.requestId) return Effect.succeed(undefined)
 
-  try {
-    const client = getSupabaseServiceRoleClient()
-    await runWithTimeout(async () => {
+  const program = Effect.tryPromise({
+    try: () => {
+      const client = getSupabaseServiceRoleClient()
+      return runWithTimeout(async () => {
       // `started_at` is intentionally omitted: on conflict the original start
       // time is preserved, and on insert the column's `DEFAULT now()` supplies
       // a defensible timestamp for the terminal-only row.
@@ -198,12 +247,26 @@ export async function recordGuestRequestTerminal(input: {
           { onConflict: 'request_id' }
         )
       if (error) throw error
-    })
-  } catch (error) {
-    logger.warn('[guest-debug] Failed to record guest request terminal state', {
+      })
+    },
+    catch: (cause) => guestDebugFailure('Failed to record guest request terminal state', cause),
+  })
+  return Effect.match(program, {
+    onFailure: (error) => logger.warn('[guest-debug] Failed to record guest request terminal state', {
       requestId: input.requestId,
       status: input.status,
-      error: error instanceof Error ? error.message : String(error),
-    })
-  }
+      error: error.cause instanceof Error ? error.cause.message : String(error.cause ?? error),
+    }),
+    onSuccess: () => undefined,
+  })
+}
+
+export function recordGuestRequestTerminal(input: {
+  requestId: string
+  conversationId: string | null
+  status: GuestRequestTerminalStatus
+  errorType?: string | null
+  providerRequestId?: string | null
+}) {
+  return Effect.runPromise(recordGuestRequestTerminalEffect(input))
 }

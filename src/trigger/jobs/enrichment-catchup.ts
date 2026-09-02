@@ -16,10 +16,12 @@
  *   so a failed row is attempted at most once in a scheduled chain.
  */
 import { schedules, task, tasks, metadata } from '@trigger.dev/sdk/v3'
+import { Effect } from 'effect'
 import { createServiceRoleClient } from '../utils/db-client.ts'
 import {
-  enrichEvents,
-  enrichmentStartsAtFloor,
+  enrichEventsEffect,
+  getEventsNeedingEnrichmentEffect,
+  countEventsNeedingEnrichmentEffect,
   type EnrichmentStats,
 } from '#features/import/core/event-enrichment.ts'
 
@@ -41,47 +43,22 @@ export function shouldChainCatchupBatch(
 /**
  * Get events needing enrichment (pending or failed status, have link).
  */
-async function getEventsForCatchup(
+function getEventsForCatchupEffect(
   client: ReturnType<typeof createServiceRoleClient>,
   limit: number,
   statuses: Array<'pending' | 'failed'> = catchupStatusesForBatch(1)
 ) {
-  const { data, error } = await client
-    .from('events')
-    .select('id, name, link, source, categories, venue_id')
-    .in('enrichment_status', statuses)
-    .neq('status', 'canceled')
-    .neq('status', 'past')
-    .gte('starts_at', enrichmentStartsAtFloor())
-    .not('link', 'is', null)
-    .order('starts_at', { ascending: true })
-    .limit(limit)
-
-  if (error) {
-    console.error('[enrichment-catchup] Failed to get events:', error)
-    return []
-  }
-
-  return data || []
+  return getEventsNeedingEnrichmentEffect(client, { limit, statuses })
 }
 
 /**
  * Get count of events needing enrichment.
  */
-async function getPendingCount(
+function getPendingCountEffect(
   client: ReturnType<typeof createServiceRoleClient>,
   statuses: Array<'pending' | 'failed'> = ['pending', 'failed']
 ) {
-  const { count } = await client
-    .from('events')
-    .select('*', { count: 'exact', head: true })
-    .in('enrichment_status', statuses)
-    .neq('status', 'canceled')
-    .neq('status', 'past')
-    .gte('starts_at', enrichmentStartsAtFloor())
-    .not('link', 'is', null)
-
-  return count ?? 0
+  return countEventsNeedingEnrichmentEffect(client, { statuses })
 }
 
 export interface EnrichmentBatchPayload {
@@ -111,11 +88,14 @@ export const enrichmentBatch = task({
     const client = createServiceRoleClient()
 
     // Get events needing enrichment
-    const events = await getEventsForCatchup(
+    const events = await Effect.runPromise(Effect.catchEager(getEventsForCatchupEffect(
       client,
       BATCH_SIZE,
       catchupStatusesForBatch(batchNumber)
-    )
+    ), (error) => {
+      console.error('[enrichment-catchup] Failed to get events:', error)
+      return Effect.succeed([])
+    }))
 
     if (events.length === 0) {
       console.log('[enrichment-batch] No events need enrichment')
@@ -151,7 +131,7 @@ export const enrichmentBatch = task({
     let canceledCount = 0
 
     // Process events
-    const stats = await enrichEvents(client, events, {
+    const stats = await Effect.runPromise(enrichEventsEffect(client, events, {
       concurrency: 4,
       delayMs: 0,
       onProgress: (current, total, result) => {
@@ -184,12 +164,18 @@ export const enrichmentBatch = task({
           console.warn(`[enrichment-batch] Failed: ${result.eventId} - ${result.error}`)
         }
       },
-    })
+    }))
 
     // Failed rows stay retryable for the next scheduled run, but must not keep
     // this chain alive after their one attempt in the first batch.
-    const pendingRemaining = await getPendingCount(client, ['pending'])
-    const remainingCount = await getPendingCount(client)
+    const pendingRemaining = await Effect.runPromise(Effect.catchEager(
+      getPendingCountEffect(client, ['pending']),
+      () => Effect.succeed(0)
+    ))
+    const remainingCount = await Effect.runPromise(Effect.catchEager(
+      getPendingCountEffect(client),
+      () => Effect.succeed(0)
+    ))
 
     console.log(`[enrichment-batch] Batch #${batchNumber} completed: ${stats.enriched} enriched, ${stats.failed} failed, ${stats.canceled} canceled, ${pendingRemaining} pending, ${remainingCount} remaining`)
 
@@ -230,7 +216,10 @@ export const enrichmentCatchup = schedules.task({
     console.log(`[enrichment-catchup] Scheduled time: ${payload.timestamp}`)
 
     const client = createServiceRoleClient()
-    const pendingCount = await getPendingCount(client)
+    const pendingCount = await Effect.runPromise(Effect.catchEager(
+      getPendingCountEffect(client),
+      () => Effect.succeed(0)
+    ))
 
     if (pendingCount === 0) {
       console.log('[enrichment-catchup] No events need enrichment')

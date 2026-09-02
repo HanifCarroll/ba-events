@@ -7,6 +7,8 @@
  * No API key required - uses publicly available data.
  */
 
+import { Effect } from 'effect'
+
 // JSON-LD Address structure
 export interface EventbriteAddress {
   '@type': 'PostalAddress'
@@ -63,20 +65,33 @@ const EVENTBRITE_BUENOS_AIRES_URL =
  * Fetch Eventbrite listing page HTML
  */
 async function fetchEventbritePage(url: string = EVENTBRITE_BUENOS_AIRES_URL): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
-    },
+  const program = Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
+        },
+      }),
+      catch: (error) => new EventbriteFetchError(error instanceof Error ? error.message : String(error)),
+    })
+    if (!response.ok) {
+      return yield* Effect.fail(new EventbriteFetchError(
+        `Eventbrite fetch failed: ${response.status} ${response.statusText}`
+      ))
+    }
+    return yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: (error) => new EventbriteFetchError(error instanceof Error ? error.message : String(error)),
+    })
   })
+  return Effect.runPromise(program)
+}
 
-  if (!response.ok) {
-    throw new Error(`Eventbrite fetch failed: ${response.status} ${response.statusText}`)
-  }
-
-  return response.text()
+class EventbriteFetchError extends Error {
+  readonly _tag = 'EventbriteFetchError'
 }
 
 /**
