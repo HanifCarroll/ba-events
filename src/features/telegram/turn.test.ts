@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Effect } from 'effect'
 import type { TelegramTurnDependencies } from './turn.ts'
 import { processTelegramTurn } from './turn.ts'
 import { sealTelegramEnvelope } from './envelope.server.ts'
@@ -80,6 +81,21 @@ describe('Telegram turn processor', () => {
 
     expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({ text: 'milongas', locale: 'es' }))
     expect(deps.insertMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the Effect capability implementation when one is provided', async () => {
+    const deps = dependencies()
+    const getEnvelopeKeyEffect = vi.fn(() => Effect.succeed(key))
+    deps.getEnvelopeKeyEffect = getEnvelopeKeyEffect as never
+    deps.getEnvelopeKey = vi.fn(async () => { throw new Error('Promise fallback should not run') }) as never
+
+    await processTelegramTurn(
+      payload({ chatId: '123', text: 'milongas' }),
+      deps,
+    )
+
+    expect(getEnvelopeKeyEffect).toHaveBeenCalledWith('42')
+    expect(deps.getEnvelopeKey).not.toHaveBeenCalled()
   })
 
   it('does not let a failed draft block the agent or final answer', async () => {

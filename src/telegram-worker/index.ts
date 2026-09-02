@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { createTelegramClient, TelegramApiError } from '#features/telegram/client.ts'
-import { defaultTelegramTurnDependencies, processTelegramTurnEffect } from '#features/telegram/turn.ts'
+import { defaultTelegramTurnDependencies, processTelegramTurnEffect, telegramTurnLayer } from '#features/telegram/turn.ts'
 import { parseTelegramTaskPayload, type TelegramTaskPayload } from '#features/telegram/task-payload.ts'
 import { handleTelegramWebhookEffect } from '#features/telegram/webhook.server.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
@@ -62,13 +62,13 @@ function retryAfterMs(error: unknown): number | null {
 
 async function processItem(item: InboxItem, env: Env): Promise<void> {
   const client = createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN })
-  await Effect.runPromise(processTelegramTurnEffect(item.payload, {
+  await Effect.runPromise(Effect.provide(processTelegramTurnEffect(item.payload), telegramTurnLayer({
     ...defaultTelegramTurnDependencies,
     sendMessage: (chatId, message) => client.sendMessage(chatId, message.text, message.replyMarkup),
     sendTyping: (chatId) => client.sendChatAction(chatId),
     sendDraft: (chatId, draftId, text) => client.sendMessageDraft(chatId, draftId, text),
     answerCallback: (callbackId, text) => client.answerCallbackQuery(callbackId, text),
-  }))
+  })))
 }
 
 export class TelegramInbox {

@@ -16,14 +16,20 @@ orchestration is represented by `Effect.gen` programs, with typed expected
 failures and explicit sequencing/concurrency. Existing dependency injection
 stays in place.
 
+The Telegram turn graph is the one runtime-local service exception: a
+per-invocation `TelegramTurnService` `Context.Service`/`Layer` normalizes its
+injected Promise and Effect implementations before the graph runs. It is
+provided at the turn boundary and does not create a process-global runtime.
+
 The canonical application exports are the `*Effect` programs. A small number
 of Promise functions remain as compatibility adapters for existing tests and
 non-Effect callers; those adapters call `Effect.runPromise` and are listed
 below. Framework callbacks and direct SDK/platform calls are also Promise
-boundaries. No application-wide Effect runtime, `Layer`, `Context`, service
-container, `Effect` schedule, Effect HTTP server/client, Atom adapter, or
-`effect/unstable/*` module is introduced. The unstable-module allowlist is
-empty.
+boundaries. No application-wide Effect runtime, Layer graph, or service
+container is introduced; the runtime-local Telegram service above is the
+deliberate exception. Effect schedules, Effect HTTP server/client, Atom
+adapters, and `effect/unstable/*` modules remain out of scope. The
+unstable-module allowlist is empty.
 
 Repository-owned request/response JSON is decoded once with Effect Schema.
 Schemas preserve the old nullable, default, bounding, status-code, and error

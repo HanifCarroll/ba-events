@@ -1,4 +1,4 @@
-import { Data, Effect } from 'effect'
+import { Context, Data, Effect, Layer } from 'effect'
 import type { CanonicalChatResponse, Message } from '#shared/lib/types.ts'
 import { logger } from '#shared/lib/logger.ts'
 import { adaptStoredMessageToCanonical } from '#features/chat/lib/canonical.ts'
@@ -82,6 +82,36 @@ export interface TelegramTurnDependencies {
   markFailedEffect?: typeof markTelegramUpdateFailedEffect
 }
 
+export class TelegramTurnError extends Data.TaggedError('TelegramTurnError')<{
+  readonly message: string
+  readonly cause?: unknown
+}> {}
+
+type TelegramTurnEffectKey =
+  | 'getEnvelopeKey'
+  | 'getConversation'
+  | 'loadMessages'
+  | 'insertMessage'
+  | 'updateMetadata'
+  | 'clearMessages'
+  | 'deleteConversation'
+  | 'redactClaims'
+  | 'runTurn'
+  | 'markCompleted'
+  | 'markFailed'
+type EffectMethod<Method> = Method extends (...args: infer Args) => Promise<infer Result>
+  ? (...args: Args) => Effect.Effect<Result, TelegramTurnError>
+  : never
+type TelegramTurnServiceShape = {
+  readonly [Key in TelegramTurnEffectKey]: EffectMethod<TelegramTurnDependencies[Key]>
+} & Pick<TelegramTurnDependencies, 'render' | 'sendMessage' | 'sendTyping' | 'sendDraft' | 'answerCallback'>
+
+/** Runtime-local Telegram capability bundle for the Effect turn graph. */
+export class TelegramTurnService extends Context.Service<
+  TelegramTurnService,
+  TelegramTurnServiceShape
+>()('ba-events/features/telegram/TelegramTurnService') {}
+
 export const defaultTelegramTurnDependencies: Omit<
   TelegramTurnDependencies,
   'sendMessage' | 'sendTyping' | 'sendDraft' | 'answerCallback'
@@ -111,36 +141,123 @@ export const defaultTelegramTurnDependencies: Omit<
   markFailedEffect: markTelegramUpdateFailedEffect,
 }
 
-class TelegramTurnError extends Data.TaggedError('TelegramTurnError')<{
-  readonly message: string
-  readonly cause?: unknown
-}> {}
-
 const turnFailure = (message: string, cause?: unknown) => new TelegramTurnError({ message, cause })
 
 function dependencyEffect<A>(run: () => Promise<A>, fallbackMessage: string) {
   return Effect.tryPromise({
     try: run,
-    catch: (cause) => turnFailure(
-      cause instanceof Error && cause.message ? cause.message : fallbackMessage,
-      cause,
-    ),
+    catch: (cause) => turnFailureFromCause(cause, fallbackMessage),
   })
 }
 
-function optionalEffect<A>(
+function turnFailureFromCause(cause: unknown, fallbackMessage: string) {
+  return turnFailure(
+    cause instanceof Error && cause.message ? cause.message : fallbackMessage,
+    cause,
+  )
+}
+
+function effectFromDependency<A>(
   effectRun: (() => Effect.Effect<A, unknown>) | undefined,
   promiseRun: () => Promise<A>,
   fallbackMessage: string,
 ): Effect.Effect<A, TelegramTurnError> {
   if (effectRun) {
-    return Effect.mapError(effectRun(), (cause) => turnFailure(
-      cause instanceof Error && cause.message ? cause.message : fallbackMessage,
-      cause,
-    ))
+    return Effect.suspend(effectRun).pipe(Effect.mapError((cause) => turnFailureFromCause(cause, fallbackMessage)))
   }
   return dependencyEffect(promiseRun, fallbackMessage)
 }
+
+function telegramTurnService(dependencies: TelegramTurnDependencies): TelegramTurnService['Service'] {
+  return TelegramTurnService.of({
+    getEnvelopeKey: (updateId) => effectFromDependency(
+      dependencies.getEnvelopeKeyEffect
+        ? () => dependencies.getEnvelopeKeyEffect!(updateId)
+        : undefined,
+      () => dependencies.getEnvelopeKey(updateId),
+      'Failed to load Telegram envelope key',
+    ),
+    getConversation: (input) => effectFromDependency(
+      dependencies.getConversationEffect
+        ? () => dependencies.getConversationEffect!(input)
+        : undefined,
+      () => dependencies.getConversation(input),
+      'Failed to get external conversation',
+    ),
+    loadMessages: (input) => effectFromDependency(
+      dependencies.loadMessagesEffect
+        ? () => dependencies.loadMessagesEffect!(input)
+        : undefined,
+      () => dependencies.loadMessages(input),
+      'Failed to load external conversation messages',
+    ),
+    insertMessage: (input) => effectFromDependency(
+      dependencies.insertMessageEffect
+        ? () => dependencies.insertMessageEffect!(input)
+        : undefined,
+      () => dependencies.insertMessage(input),
+      'Failed to insert external conversation message',
+    ),
+    updateMetadata: (input) => effectFromDependency(
+      dependencies.updateMetadataEffect
+        ? () => dependencies.updateMetadataEffect!(input)
+        : undefined,
+      () => dependencies.updateMetadata(input),
+      'Failed to update external conversation metadata',
+    ),
+    clearMessages: (input) => effectFromDependency(
+      dependencies.clearMessagesEffect
+        ? () => dependencies.clearMessagesEffect!(input)
+        : undefined,
+      () => dependencies.clearMessages(input),
+      'Failed to clear external conversation messages',
+    ),
+    deleteConversation: (input) => effectFromDependency(
+      dependencies.deleteConversationEffect
+        ? () => dependencies.deleteConversationEffect!(input)
+        : undefined,
+      () => dependencies.deleteConversation(input),
+      'Failed to delete external conversation',
+    ),
+    redactClaims: (input) => effectFromDependency(
+      dependencies.redactClaimsEffect
+        ? () => dependencies.redactClaimsEffect!(input)
+        : undefined,
+      () => dependencies.redactClaims(input),
+      'Failed to redact Telegram identity claims',
+    ),
+    runTurn: (input) => effectFromDependency(
+      dependencies.runTurnEffect
+        ? () => dependencies.runTurnEffect!(input)
+        : undefined,
+      () => dependencies.runTurn(input),
+      'Failed to run Telegram chat turn',
+    ),
+    markCompleted: (updateId, conversationId) => effectFromDependency(
+      dependencies.markCompletedEffect
+        ? () => dependencies.markCompletedEffect!(updateId, conversationId)
+        : undefined,
+      () => dependencies.markCompleted(updateId, conversationId),
+      'Failed to complete Telegram update claim',
+    ),
+    markFailed: (updateId, errorCode) => effectFromDependency(
+      dependencies.markFailedEffect
+        ? () => dependencies.markFailedEffect!(updateId, errorCode)
+        : undefined,
+      () => dependencies.markFailed(updateId, errorCode),
+      'Failed to mark Telegram update failed',
+    ),
+    render: dependencies.render,
+    sendMessage: dependencies.sendMessage,
+    sendTyping: dependencies.sendTyping,
+    sendDraft: dependencies.sendDraft,
+    answerCallback: dependencies.answerCallback,
+  })
+}
+
+/** Build the per-turn service layer; no process-global runtime is introduced. */
+export const telegramTurnLayer = (dependencies: TelegramTurnDependencies) =>
+  Layer.succeed(TelegramTurnService, telegramTurnService(dependencies))
 
 function settle<A>(effect: Effect.Effect<A, TelegramTurnError>) {
   return Effect.match(effect, {
@@ -159,10 +276,10 @@ function persistedCanonical(messages: Message[], clientMessageId: string): Canon
 async function answerCallbackBestEffort(
   callbackId: string,
   text: string | undefined,
-  dependencies: TelegramTurnDependencies
+  service: TelegramTurnService['Service']
 ) {
   try {
-    await dependencies.answerCallback(callbackId, text)
+    await service.answerCallback(callbackId, text)
   } catch {
     // Telegram expires callback queries quickly; the durable action must still finish.
   }
@@ -171,10 +288,10 @@ async function answerCallbackBestEffort(
 async function sendMessageBestEffort(
   chatId: string,
   message: TelegramRenderedMessage,
-  dependencies: TelegramTurnDependencies
+  service: TelegramTurnService['Service']
 ) {
   try {
-    await dependencies.sendMessage(chatId, message)
+    await service.sendMessage(chatId, message)
   } catch {
     // Erasure is complete; delivery failure must not restore identity material.
   }
@@ -184,7 +301,7 @@ async function sendDraftBestEffort(
   chatId: string,
   draftId: number,
   text: string,
-  dependencies: TelegramTurnDependencies,
+  service: TelegramTurnService['Service'],
   phase: 'initial-draft' | 'found-draft',
   updateId: string,
   canSend: () => boolean = () => true
@@ -192,7 +309,7 @@ async function sendDraftBestEffort(
   if (!canSend()) return
   const startedAt = performance.now()
   try {
-    await dependencies.sendDraft(chatId, draftId, text)
+    await service.sendDraft(chatId, draftId, text)
     logTiming(phase, startedAt, 'success', updateId)
   } catch {
     logTiming(phase, startedAt, 'error', updateId)
@@ -217,7 +334,7 @@ function logTiming(
 
 function startTypingBestEffort(
   chatId: string,
-  dependencies: TelegramTurnDependencies,
+  service: TelegramTurnService['Service'],
   updateId: string,
 ): { stop: () => void } {
   let active = true
@@ -227,7 +344,7 @@ function startTypingBestEffort(
     sending = true
     const startedAt = initial ? performance.now() : 0
     try {
-      await dependencies.sendTyping(chatId)
+      await service.sendTyping(chatId)
       if (initial) logTiming('initial-typing', startedAt, 'success', updateId)
     } catch {
       if (initial) logTiming('initial-typing', startedAt, 'error', updateId)
@@ -248,84 +365,15 @@ function startTypingBestEffort(
 /** Effect-native Telegram turn graph. Bot API callbacks remain Promise leaves. */
 export function processTelegramTurnEffect(
   rawPayload: TelegramTaskPayload,
-  dependencies: TelegramTurnDependencies,
-): Effect.Effect<void, TelegramTurnError> {
+): Effect.Effect<void, TelegramTurnError, TelegramTurnService> {
   const payload = parseTelegramTaskPayload(rawPayload)
   if (!payload) return Effect.fail(turnFailure('Invalid Telegram payload'))
   const conversationId = payload.queueKey
-  const getConversation = (input: Parameters<typeof getExternalConversation>[0]) => optionalEffect(
-    dependencies.getConversationEffect
-      ? () => dependencies.getConversationEffect!(input)
-      : undefined,
-    () => dependencies.getConversation(input),
-    'Failed to get external conversation',
-  )
-  const insertMessage = (input: Parameters<typeof insertExternalConversationMessage>[0]) => optionalEffect(
-    dependencies.insertMessageEffect
-      ? () => dependencies.insertMessageEffect!(input)
-      : undefined,
-    () => dependencies.insertMessage(input),
-    'Failed to insert external conversation message',
-  )
-  const updateMetadata = (input: Parameters<typeof updateExternalConversationMetadata>[0]) => optionalEffect(
-    dependencies.updateMetadataEffect
-      ? () => dependencies.updateMetadataEffect!(input)
-      : undefined,
-    () => dependencies.updateMetadata(input),
-    'Failed to update external conversation metadata',
-  )
-  const loadMessages = (input: Parameters<typeof loadExternalConversationMessages>[0]) => optionalEffect(
-    dependencies.loadMessagesEffect
-      ? () => dependencies.loadMessagesEffect!(input)
-      : undefined,
-    () => dependencies.loadMessages(input),
-    'Failed to load external conversation messages',
-  )
-  const clearMessages = (input: Parameters<typeof clearExternalConversationMessages>[0]) => optionalEffect(
-    dependencies.clearMessagesEffect
-      ? () => dependencies.clearMessagesEffect!(input)
-      : undefined,
-    () => dependencies.clearMessages(input),
-    'Failed to clear external conversation messages',
-  )
-  const deleteConversation = (input: Parameters<typeof hardDeleteExternalConversation>[0]) => optionalEffect(
-    dependencies.deleteConversationEffect
-      ? () => dependencies.deleteConversationEffect!(input)
-      : undefined,
-    () => dependencies.deleteConversation(input),
-    'Failed to delete external conversation',
-  )
-  const redactClaims = (input: string) => optionalEffect(
-    dependencies.redactClaimsEffect
-      ? () => dependencies.redactClaimsEffect!(input)
-      : undefined,
-    () => dependencies.redactClaims(input),
-    'Failed to redact Telegram identity claims',
-  )
-  const markCompleted = (updateId: string, conversationId: string | null) => optionalEffect(
-    dependencies.markCompletedEffect
-      ? () => dependencies.markCompletedEffect!(updateId, conversationId)
-      : undefined,
-    () => dependencies.markCompleted(updateId, conversationId),
-    'Failed to complete Telegram update claim',
-  )
-  const markFailed = (updateId: string, errorCode: string) => optionalEffect(
-    dependencies.markFailedEffect
-      ? () => dependencies.markFailedEffect!(updateId, errorCode)
-      : undefined,
-    () => dependencies.markFailed(updateId, errorCode),
-    'Failed to mark Telegram update failed',
-  )
 
   const program = Effect.gen(function* () {
+    const service = yield* TelegramTurnService
     const envelopeStarted = performance.now()
-    const keyResult = yield* settle(optionalEffect(
-      dependencies.getEnvelopeKeyEffect
-        ? () => dependencies.getEnvelopeKeyEffect!(payload.updateId)
-        : undefined,
-      () => dependencies.getEnvelopeKey(payload.updateId),
-      'Failed to load Telegram envelope key',
-    ))
+    const keyResult = yield* settle(service.getEnvelopeKey(payload.updateId))
     if (!keyResult.ok) {
       logTiming('envelope-key', envelopeStarted, 'error', payload.updateId)
       return yield* Effect.fail(keyResult.error)
@@ -352,31 +400,31 @@ export function processTelegramTurnEffect(
       const action = parseConsentCallback(input.callbackData)
       const prompt = parsePromptCallback(input.callbackData)
       if (action === 'decline') {
-        yield* deleteConversation({ channel: 'telegram', conversationId })
-        yield* redactClaims(input.identityHash)
+        yield* service.deleteConversation({ channel: 'telegram', conversationId })
+        yield* service.redactClaims(input.identityHash)
         yield* Effect.tryPromise({
-          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].declined, dependencies),
+          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].declined, service),
           catch: (cause) => turnFailure('Failed to answer Telegram callback', cause),
         })
         yield* Effect.tryPromise({
-          try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].declined }, dependencies),
+          try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].declined }, service),
           catch: (cause) => turnFailure('Failed to send Telegram message', cause),
         })
         return
       }
 
       if (action === 'accept') {
-        conversation = yield* getConversation({ channel: 'telegram', conversationId })
+        conversation = yield* service.getConversation({ channel: 'telegram', conversationId })
         locale = localeFrom(input.languageCode, conversation.metadata.locale)
         yield* Effect.tryPromise({
-          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].legacyAccepted, dependencies),
+          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].legacyAccepted, service),
           catch: (cause) => turnFailure('Failed to answer Telegram callback', cause),
         })
         yield* dependencyEffect(
-          () => dependencies.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted }),
           'Failed to send Telegram message',
         )
-        yield* markCompleted(payload.updateId, conversationId)
+        yield* service.markCompleted(payload.updateId, conversationId)
         return
       }
 
@@ -385,18 +433,18 @@ export function processTelegramTurnEffect(
         try: () => answerCallbackBestEffort(
           input.callbackId!,
           input.rateLimited ? COPY[locale].rateLimited : undefined,
-          dependencies,
+          service,
         ),
         catch: (cause) => turnFailure('Failed to answer Telegram callback', cause),
       })
-      conversation = yield* getConversation({ channel: 'telegram', conversationId })
+      conversation = yield* service.getConversation({ channel: 'telegram', conversationId })
       locale = localeFrom(input.languageCode, conversation.metadata.locale)
       if (input.rateLimited) {
         yield* dependencyEffect(
-          () => dependencies.sendMessage(input.chatId, { text: COPY[locale].rateLimited }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].rateLimited }),
           'Failed to send Telegram message',
         )
-        yield* markCompleted(payload.updateId, conversationId)
+        yield* service.markCompleted(payload.updateId, conversationId)
         return
       }
       promptText = COPY[locale].promptQueries[prompt]
@@ -404,40 +452,40 @@ export function processTelegramTurnEffect(
 
     if (input.rateLimited) {
       yield* dependencyEffect(
-        () => dependencies.sendMessage(input.chatId, { text: COPY[locale].rateLimited }),
+        () => service.sendMessage(input.chatId, { text: COPY[locale].rateLimited }),
         'Failed to send Telegram message',
       )
-      yield* markCompleted(payload.updateId, conversationId)
+      yield* service.markCompleted(payload.updateId, conversationId)
       return
     }
 
     const parsed = parseTelegramText(promptText ?? input.text ?? '')
     if (!parsed) {
       yield* dependencyEffect(
-        () => dependencies.sendMessage(input.chatId, { text: COPY[locale].unsupported }),
+        () => service.sendMessage(input.chatId, { text: COPY[locale].unsupported }),
         'Failed to send Telegram message',
       )
-      yield* markCompleted(payload.updateId, conversationId)
+      yield* service.markCompleted(payload.updateId, conversationId)
       return
     }
 
     if (parsed.kind === 'command' && parsed.command === 'delete') {
-      yield* deleteConversation({ channel: 'telegram', conversationId })
-      yield* redactClaims(input.identityHash)
+      yield* service.deleteConversation({ channel: 'telegram', conversationId })
+      yield* service.redactClaims(input.identityHash)
       yield* Effect.tryPromise({
-        try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].deleted }, dependencies),
+        try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].deleted }, service),
         catch: (cause) => turnFailure('Failed to send Telegram message', cause),
       })
       return
     }
 
-    conversation ??= yield* getConversation({ channel: 'telegram', conversationId })
+    conversation ??= yield* service.getConversation({ channel: 'telegram', conversationId })
     locale = localeFrom(input.languageCode, conversation.metadata.locale)
 
     if (parsed.kind === 'command') {
       if (parsed.command === 'privacy') {
         yield* dependencyEffect(
-          () => dependencies.sendMessage(input.chatId, {
+          () => service.sendMessage(input.chatId, {
             text: COPY[locale].privacy,
             replyMarkup: privacyKeyboard(locale),
           }),
@@ -445,30 +493,30 @@ export function processTelegramTurnEffect(
         )
       } else if (parsed.command === 'help') {
         yield* dependencyEffect(
-          () => dependencies.sendMessage(input.chatId, { text: COPY[locale].help }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].help }),
           'Failed to send Telegram message',
         )
       } else if (parsed.command === 'new') {
-        yield* clearMessages({ channel: 'telegram', conversationId })
-        yield* updateMetadata({
+        yield* service.clearMessages({ channel: 'telegram', conversationId })
+        yield* service.updateMetadata({
             channel: 'telegram',
             conversationId,
             metadataPatch: { locale },
           })
         yield* dependencyEffect(
-          () => dependencies.sendMessage(input.chatId, { text: COPY[locale].fresh }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].fresh }),
           'Failed to send Telegram message',
         )
       } else {
         yield* dependencyEffect(
-          () => dependencies.sendMessage(input.chatId, {
+          () => service.sendMessage(input.chatId, {
             text: `${COPY[locale].start}\n\n${PRIVACY_URL}`,
             replyMarkup: { remove_keyboard: true },
           }),
           'Failed to send Telegram message',
         )
       }
-      yield* markCompleted(payload.updateId, conversationId)
+      yield* service.markCompleted(payload.updateId, conversationId)
       return
     }
 
@@ -476,13 +524,13 @@ export function processTelegramTurnEffect(
     locale = normalizedTurn.locale
     const setupStarted = performance.now()
     const metadataEffect = conversation.metadata.locale !== locale
-      ? updateMetadata({
+      ? service.updateMetadata({
             channel: 'telegram',
             conversationId,
             metadataPatch: { locale },
           })
       : Effect.succeed(conversation)
-    const messagesEffect = loadMessages({ channel: 'telegram', conversationId })
+    const messagesEffect = service.loadMessages({ channel: 'telegram', conversationId })
     const [metadataResult, messagesResult] = yield* Effect.all([
       settle(metadataEffect),
       settle(messagesEffect),
@@ -501,18 +549,18 @@ export function processTelegramTurnEffect(
     const existingCanonical = persistedCanonical(messages, assistantClientMessageId)
     if (existingCanonical) {
       const rendered = yield* Effect.tryPromise({
-        try: () => Promise.resolve(dependencies.render(existingCanonical, locale)),
+        try: () => Promise.resolve(service.render(existingCanonical, locale)),
         catch: (cause) => turnFailure('Failed to render Telegram message', cause),
       })
       yield* dependencyEffect(
-        () => dependencies.sendMessage(input.chatId, rendered),
+        () => service.sendMessage(input.chatId, rendered),
         'Failed to send Telegram message',
       )
-      yield* markCompleted(payload.updateId, conversationId)
+      yield* service.markCompleted(payload.updateId, conversationId)
       return
     }
 
-    const typing = startTypingBestEffort(input.chatId, dependencies, payload.updateId)
+    const typing = startTypingBestEffort(input.chatId, service, payload.updateId)
     const naturalProgram = Effect.gen(function* () {
       let draftsClosed = false
       let draftChain = Promise.resolve()
@@ -523,14 +571,14 @@ export function processTelegramTurnEffect(
           input.chatId,
           progressDraftId,
           text,
-          dependencies,
+          service,
           phase,
           payload.updateId,
           () => !draftsClosed,
         ))
       }
       const userInsertStarted = performance.now()
-      const userMessageEffect = insertMessage({
+      const userMessageEffect = service.insertMessage({
           channel: 'telegram',
           conversationId,
           clientMessageId: `telegram:${payload.updateId}:user`,
@@ -552,13 +600,7 @@ export function processTelegramTurnEffect(
           onSearchStart: () => queueDraft(COPY[locale].draft, 'initial-draft'),
           onTrustedSearchProgress: () => queueDraft(COPY[locale].found, 'found-draft'),
       }
-      const agentEffect = optionalEffect(
-        dependencies.runTurnEffect
-          ? () => dependencies.runTurnEffect!(agentInput)
-          : undefined,
-        () => dependencies.runTurn(agentInput),
-        'Failed to run Telegram chat turn',
-      ).pipe(Effect.tap((result) => {
+      const agentEffect = service.runTurn(agentInput).pipe(Effect.tap((result) => {
         logTiming('agent', agentStarted, 'success', payload.updateId)
         return Effect.succeed(result)
       }))
@@ -589,10 +631,10 @@ export function processTelegramTurnEffect(
       draftsClosed = true
       const persistSendStarted = performance.now()
       const rendered = yield* Effect.tryPromise({
-        try: () => Promise.resolve(dependencies.render(agentResult.value.canonical, locale)),
+        try: () => Promise.resolve(service.render(agentResult.value.canonical, locale)),
         catch: (cause) => turnFailure('Failed to render Telegram message', cause),
       })
-      yield* insertMessage({
+      yield* service.insertMessage({
           channel: 'telegram',
           conversationId,
           parentMessageId: userResult.value.id,
@@ -601,25 +643,27 @@ export function processTelegramTurnEffect(
           content: agentResult.value.canonical.text,
           executionTrace: agentResult.value.executionTrace,
           attachedData: { canonical: agentResult.value.canonical },
-        })
+      })
       yield* dependencyEffect(
-        () => dependencies.sendMessage(input.chatId, rendered),
+        () => service.sendMessage(input.chatId, rendered),
         'Failed to send Telegram message',
       )
       logTiming('persist-send', persistSendStarted, 'success', payload.updateId)
-      yield* markCompleted(payload.updateId, conversationId)
+      yield* service.markCompleted(payload.updateId, conversationId)
     })
     yield* Effect.ensuring(naturalProgram, Effect.sync(() => typing.stop()))
   })
 
-  return Effect.catchEager(program, (error) => Effect.gen(function* () {
+  const handled = Effect.catchEager(program, (error) => Effect.gen(function* () {
+    const service = yield* TelegramTurnService
     const errorCode = error.cause instanceof Error ? error.cause.name : error.name
     yield* Effect.match(
-      markFailed(payload.updateId, errorCode),
+      service.markFailed(payload.updateId, errorCode),
       { onFailure: () => undefined, onSuccess: () => undefined },
     )
     return yield* Effect.fail(error)
   }))
+  return handled
 }
 
 /** Promise compatibility adapter for the Durable Object processor/tests. */
@@ -627,5 +671,8 @@ export function processTelegramTurn(
   rawPayload: TelegramTaskPayload,
   dependencies: TelegramTurnDependencies,
 ) {
-  return Effect.runPromise(processTelegramTurnEffect(rawPayload, dependencies))
+  return Effect.runPromise(Effect.provide(
+    processTelegramTurnEffect(rawPayload),
+    telegramTurnLayer(dependencies),
+  ))
 }
