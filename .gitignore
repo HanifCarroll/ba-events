@@ -15,6 +15,7 @@ node_modules
 # Server logs and agent scratch
 logs/
 .pi-tasks/
+.context/compound-engineering/
 .mcp.json
 supabase/.temp/
 

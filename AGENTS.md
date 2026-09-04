@@ -28,11 +28,19 @@ Unit tests never require real Supabase credentials: the Supabase clients are
 lazy-initialized and the agent orchestration is tested through dependency-
 injected, pure helpers.
 
+## Compound Engineering
+
+- Compound Engineering owns the `brainstorm -> plan -> work -> simplify -> review -> compound` workflow. Use the smallest appropriate CE skill; do not force the full loop for trivial or mechanical work.
+- Plans for behavior changes must read and name the affected canonical `openspec/specs/`; code, tests, and specs must align before completion.
+- docs/solutions/ contains documented solutions to past problems (bugs, best practices, and workflow patterns), organized by category with YAML frontmatter such as module, tags, and problem_type.
+
+After a solved, verified problem, offer once to invoke the `ce-compound` skill at the completion checkpoint only when the work produced durable project reasoning that is not readily recoverable from the final code, tests, types, comments, or existing documentation, and losing it would plausibly cause recurrence, material risk, or substantial rediscovery. Apply this counterfactual: if the learning document disappeared, would a future engineer reading the final implementation still be likely to repeat the mistake or redo substantial investigation? If not, do not offer. Completion, effort, and diff size alone are not enough. Offer at the checkpoint so a qualifying learning can ship in the PR that produced it, and only where the repository treats captured learnings as tracked, committed knowledge.
+
 ## OpenSpec
 
 - `openspec/config.yaml` selects `spec-driven`; the main specs under `openspec/specs/` are the canonical requirements for current product behavior. Before implementing a behavioral change, read the affected main specs and keep them aligned with code and deterministic tests.
 - Update the affected main spec when observable behavior, persisted shapes, security or compatibility rules, or channel, search, import, or agent contracts change. Implementation-only refactors do not need spec edits.
-- For planned contract changes, use `$openspec-propose`, then `$openspec-apply-change`; sync accepted deltas with `$openspec-sync-specs` before `$openspec-archive-change`. Run `openspec validate --specs --json`; `$openspec-review-conformance` is advisory and does not replace validation or tests.
+- CE owns planning and implementation; canonical main specs remain current product truth. For CE-planned behavior changes, update affected main specs after verified implementation in the same branch; validate OpenSpec; do not create duplicate OpenSpec proposal/design/task artifacts. Preserve existing active OpenSpec changes; they may finish under their current lifecycle. Run `openspec validate --specs --json`; `$openspec-review-conformance` is advisory and does not replace validation or tests.
 
 ## Chat Analysis
 
