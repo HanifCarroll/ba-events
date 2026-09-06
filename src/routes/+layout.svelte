@@ -7,7 +7,7 @@
 	import { initAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
-	import { isAnalyticsEnabled } from '#shared/lib/analytics.ts'
+	import { initializeGoogleAnalytics, isAnalyticsEnabled } from '#shared/lib/analytics.ts'
 	import MainLayout from '#shared/ui/MainLayout.svelte'
 	import EventPage from './events/[id]/+page.svelte'
 	import Toaster from '#shared/ui/sonner/sonner.svelte'
@@ -92,6 +92,10 @@
 		return () => {
 			cancelled = true
 		}
+	})
+
+	$effect(() => {
+		initializeGoogleAnalytics(page.url.href)
 	})
 
 	// Identify users when auth state changes (legacy PostHogIdentify). The saved

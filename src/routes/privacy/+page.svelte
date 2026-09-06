@@ -7,7 +7,7 @@
 			title: 'Privacy policy',
 			intro:
 				'This policy explains what BA Eventos collects, why we use it, and the choices available to you.',
-			updated: 'Last updated: August 24, 2026',
+			updated: 'Last updated: September 6, 2026',
 			sections: [
 				{
 					title: 'Information we collect',
@@ -34,13 +34,13 @@
 				{
 					title: 'Product analytics',
 					body: [
-						'On baeventos.com, PostHog records page views, interaction and scroll metadata, privacy-masked session replays, and limited product events such as message length, response time, event clicks, saves, errors, and language. Replay text and input values are masked. We do not send email addresses, chat text, search text, feedback text, or error messages to PostHog, and Do Not Track is respected.'
+						'On baeventos.com, PostHog records page views, interaction and scroll metadata, privacy-masked session replays, and limited product events such as message length, response time, event clicks, saves, errors, and language. Google Analytics records acquisition, redacted page paths, and the same limited product outcomes without user IDs. Replay text and input values are masked. We do not send email addresses, chat text, search text, feedback text, or error messages to either analytics service, and Do Not Track is respected.'
 					]
 				},
 				{
 					title: 'Service providers',
 					body: [
-						'We use service providers to run BA Eventos: Supabase for authentication, stored account data, and Telegram pilot conversations; Cloudflare Workers for the Telegram webhook and encrypted background processing; Google for optional sign-in; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
+						'We use service providers to run BA Eventos: Supabase for authentication, stored account data, and Telegram pilot conversations; Cloudflare Workers for the Telegram webhook and encrypted background processing; Google for optional sign-in and limited analytics; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
 					]
 				},
 				{
@@ -62,7 +62,7 @@
 			title: 'Política de privacidad',
 			intro:
 				'Esta política explica qué recopila BA Eventos, para qué lo usamos y qué opciones tenés.',
-			updated: 'Última actualización: 24 de agosto de 2026',
+			updated: 'Última actualización: 6 de septiembre de 2026',
 			sections: [
 				{
 					title: 'Información que recopilamos',
@@ -89,13 +89,13 @@
 				{
 					title: 'Analítica del producto',
 					body: [
-						'En baeventos.com, PostHog registra visitas de páginas, metadatos de interacción y desplazamiento, repeticiones de sesión con privacidad protegida y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, errores e idioma. El texto y los valores de los campos se ocultan en las repeticiones. No enviamos a PostHog correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error, y respetamos Do Not Track.'
+						'En baeventos.com, PostHog registra visitas de páginas, metadatos de interacción y desplazamiento, repeticiones de sesión con privacidad protegida y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, errores e idioma. Google Analytics registra la adquisición, rutas de página protegidas y los mismos resultados limitados del producto sin identificadores de usuario. El texto y los valores de los campos se ocultan en las repeticiones. No enviamos correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error a ninguno de los dos servicios, y respetamos Do Not Track.'
 					]
 				},
 				{
 					title: 'Proveedores',
 					body: [
-						'Usamos proveedores para operar BA Eventos: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Cloudflare Workers para el webhook de Telegram y el procesamiento cifrado en segundo plano; Google para el acceso opcional; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
+						'Usamos proveedores para operar BA Eventos: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Cloudflare Workers para el webhook de Telegram y el procesamiento cifrado en segundo plano; Google para el acceso opcional y analítica limitada; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
 					]
 				},
 				{

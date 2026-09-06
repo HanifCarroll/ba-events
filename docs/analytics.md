@@ -44,7 +44,7 @@ If delivery fails, the feedback remains saved and the person sees a successful s
 
 ## Reporting
 
-Use PostHog directly. Do not build a second analytics dashboard or add GA4.
+Use PostHog directly for detailed product behavior. GA4 is limited to acquisition, page paths, and the existing browser outcome events so OpenSEO can report the acquisition-to-outcome funnel. Do not build a second analytics dashboard.
 
 The core funnel is:
 
