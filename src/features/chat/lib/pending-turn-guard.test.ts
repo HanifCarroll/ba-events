@@ -2,14 +2,21 @@ import { describe, expect, it } from 'vitest'
 import {
 	findRetryTurn,
 	markTurnAccepted,
+	ownsConversationSnapshot,
 	resetAttemptedTurnIds,
 	shouldAutoHandlePendingTurn,
-	shouldPersistUserMessage,
 	adoptedPendingConversationId,
 	ownsRunningGuestClaim
 } from './pending-turn-guard.ts'
 
 describe('pending turn guard', () => {
+	it('rejects history and pending-turn snapshots for another account or conversation', () => {
+		const snapshot = { id: 'conversation-a', user_id: 'account-a' }
+		expect(ownsConversationSnapshot(snapshot, 'conversation-a', 'account-a')).toBe(true)
+		expect(ownsConversationSnapshot(snapshot, 'conversation-a', 'account-b')).toBe(false)
+		expect(ownsConversationSnapshot(snapshot, 'conversation-b', 'account-a')).toBe(false)
+		expect(ownsConversationSnapshot(snapshot, 'conversation-a', null)).toBe(false)
+	})
 	it('handles a pending turn once and ignores stale props afterward', () => {
 		const attempted = new Set<string>()
 		const input = { conversationId: 'conversation', pendingTurnId: 'turn', requestPhase: 'idle' as const, chatReady: true, attemptedTurnIds: attempted }
@@ -40,11 +47,6 @@ describe('pending turn guard', () => {
 		expect(markTurnAccepted(accepted, 'turn-1')).toBe(true)
 		expect(markTurnAccepted(accepted, 'turn-1')).toBe(false)
 		expect(accepted).toEqual(new Set(['turn-1']))
-	})
-
-	it('uses durable bootstrap as the only user persistence for new turns', () => {
-		expect(shouldPersistUserMessage(null)).toBe(true)
-		expect(shouldPersistUserMessage('turn')).toBe(false)
 	})
 
 	it('only preserves a first turn when the URL adopts its pending id', () => {

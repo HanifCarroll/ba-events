@@ -31,14 +31,18 @@ export function resetAttemptedTurnIds(
 	if (conversationIdChanged) attemptedTurnIds.clear()
 }
 
-export function shouldPersistUserMessage(turnId: string | null) {
-	return turnId === null
-}
-
 export function markTurnAccepted(acceptedTurnIds: Set<string>, turnId: string) {
 	if (acceptedTurnIds.has(turnId)) return false
 	acceptedTurnIds.add(turnId)
 	return true
+}
+
+export function ownsConversationSnapshot(
+	snapshot: { id: string; user_id: string | null } | null,
+	conversationId: string | null,
+	userId: string | null
+) {
+	return userId !== null && snapshot?.id === conversationId && snapshot.user_id === userId
 }
 
 export function adoptedPendingConversationId(

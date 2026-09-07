@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import type {
+  CanonicalChatResponse,
   MessageAttachedData,
   MessageExecutionStep,
   MessageRole,
@@ -146,21 +147,29 @@ export async function addGuestMessage(
     responseContractVersion?: number
   }
 ): Promise<void> {
-  const now = new Date().toISOString()
-  await getGuestConversationsDB().messages.put({
-    id: message.id,
-    conversation_id: conversationId,
-    client_message_id: message.clientMessageId,
-    parent_message_id: message.parentMessageId ?? null,
-    role: message.role,
-    content: message.content,
-    visible_content: message.visibleContent ?? message.content,
-    execution_trace: message.executionTrace ?? [],
-    attached_data: message.attachedData ?? {},
-    response_contract_version: message.responseContractVersion ?? CHAT_CONTRACT_VERSION,
-    created_at: now,
+  const database = getGuestConversationsDB()
+  await database.transaction('rw', database.messages, database.turns, database.conversations, async () => {
+    const turns = await database.turns.where('conversation_id').equals(conversationId).toArray()
+    if (turns.some((turn) => turn.assistant_client_message_id === message.id ||
+      turn.assistant_client_message_id === message.clientMessageId)) {
+      throw new Error('Use turn completion to save an assistant reply')
+    }
+    const now = new Date().toISOString()
+    await database.messages.put({
+      id: message.id,
+      conversation_id: conversationId,
+      client_message_id: message.clientMessageId,
+      parent_message_id: message.parentMessageId ?? null,
+      role: message.role,
+      content: message.content,
+      visible_content: message.visibleContent ?? message.content,
+      execution_trace: message.executionTrace ?? [],
+      attached_data: message.attachedData ?? {},
+      response_contract_version: message.responseContractVersion ?? CHAT_CONTRACT_VERSION,
+      created_at: now,
+    })
+    await touchGuestConversation(conversationId)
   })
-  await touchGuestConversation(conversationId)
 }
 
 export async function bootstrapGuestTurn(input: {
@@ -262,13 +271,35 @@ export async function claimGuestTurn(turnId: string, claimId: string, retry = fa
   })
 }
 
-export async function completeGuestTurn(turnId: string, claimId: string): Promise<void> {
+export async function completeGuestTurn(turnId: string, claimId: string, result: {
+  canonical: CanonicalChatResponse
+  executionTrace: MessageExecutionStep[]
+}): Promise<void> {
   const database = getGuestConversationsDB()
-  await database.transaction('rw', database.turns, async () => {
+  await database.transaction('rw', database.turns, database.messages, database.conversations, async () => {
     const turn = await database.turns.get(turnId)
-    if (!turn || turn.status === 'completed') return
-    if (turn.claim_id !== claimId) throw new Error('Turn claim lost')
+    if (!turn || !claimId || turn.claim_id !== claimId) throw new Error('Turn claim lost')
+    if (turn.status === 'completed') return
+    if (turn.status !== 'running' || (turn.claimed_until ?? 0) <= Date.now()) {
+      throw new Error('Turn claim lost')
+    }
+    if (!(await database.conversations.get(turn.conversation_id))) throw new Error('Conversation missing')
+    const now = new Date().toISOString()
+    await database.messages.put({
+      id: turn.assistant_client_message_id,
+      conversation_id: turn.conversation_id,
+      client_message_id: turn.assistant_client_message_id,
+      parent_message_id: turn.user_client_message_id,
+      role: 'assistant',
+      content: result.canonical.text,
+      visible_content: result.canonical.text,
+      execution_trace: result.executionTrace,
+      attached_data: { canonical: result.canonical },
+      response_contract_version: result.canonical.contractVersion,
+      created_at: now,
+    })
     await database.turns.put({ ...turn, status: 'completed', claimed_until: undefined })
+    await database.conversations.update(turn.conversation_id, { updated_at: now })
   })
 }
 
@@ -276,7 +307,8 @@ export async function failGuestTurn(turnId: string, claimId: string): Promise<vo
   const database = getGuestConversationsDB()
   await database.transaction('rw', database.turns, async () => {
     const turn = await database.turns.get(turnId)
-    if (!turn || turn.status === 'completed' || turn.claim_id !== claimId) return
+    if (!turn || !claimId || turn.status !== 'running' || turn.claim_id !== claimId ||
+      (turn.claimed_until ?? 0) <= Date.now()) return
     await database.turns.put({ ...turn, status: 'failed', claimed_until: undefined, last_error: 'execution_failed' })
   })
 }

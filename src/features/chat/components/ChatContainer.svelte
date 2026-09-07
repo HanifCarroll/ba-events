@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte'
 	import { Chat } from '@ai-sdk/svelte'
-	import { DefaultChatTransport, generateId, type UIMessage } from 'ai'
+	import { DefaultChatTransport, type UIMessage } from 'ai'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import * as m from '#paraglide/messages.js'
@@ -13,47 +13,40 @@
 	import {
 		flushMessagePersistenceOutbox,
 		getConversationTerminalFailures,
-		persistMessageWithOutbox,
-		type MessagePersistencePayload,
-		type MessagePersistenceResult
+		type MessagePersistencePayload
 	} from '#features/chat/lib/persistence-outbox.ts'
 	import {
-		addGuestMessage,
 		bootstrapGuestTurn,
 		claimGuestTurn,
-		completeGuestTurn,
-		failGuestTurn,
 		setGuestConversationTitle
 	} from '#shared/lib/db/guest-conversations.ts'
-	import type { GuestConversationWithMessages } from '#shared/lib/db/guest-conversations.ts'
+	import type { GuestConversationWithMessages, GuestMessage } from '#shared/lib/db/guest-conversations.ts'
 	import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
 	import { resolveMessageTimestamp } from '#features/chat/lib/message-timestamps.ts'
 	import {
 		findRetryTurn,
 		shouldAutoHandlePendingTurn,
 		resetAttemptedTurnIds,
-		shouldPersistUserMessage,
 		adoptedPendingConversationId,
 		ownsRunningGuestClaim,
+		ownsConversationSnapshot,
 		markTurnAccepted
 	} from '#features/chat/lib/pending-turn-guard.ts'
 	import {
 		adaptStoredMessageToCanonical,
-		canonicalFromDataResponse,
 		canonicalToRender
 	} from '#features/chat/lib/canonical.ts'
+	import { canonicalFromParts, createTurnLifecycle, ownsClientTurn, type ClientTurn, type RequestPhase } from '#features/chat/lib/turn-lifecycle.ts'
+	import { getFallbackConversationTitle } from '#features/chat/lib/title.ts'
 	import MessageList from './MessageList.svelte'
 	import ChatInput from './ChatInput.svelte'
 	import SuggestedPrompts from './SuggestedPrompts.svelte'
 	import {
 		CHAT_CONTRACT_VERSION,
-		type CanonicalChatResponse,
 		type ChatEventPayload,
 		type ChatMessage,
-		type ChatStreamStatusPhase,
 		type ConversationWithMessages,
-		type Message,
-		type MessageExecutionStep
+		type Message
 	} from '#shared/lib/types.ts'
 
 	interface ChatMessageMetadata {
@@ -61,13 +54,6 @@
 	}
 
 	type ChatUIMessage = UIMessage<ChatMessageMetadata>
-
-	type RequestPhase =
-		| 'idle'
-		| 'preparing'
-		| 'thinking'
-		| 'persisting'
-		| 'error'
 
 	let {
 		conversationId = null as string | null,
@@ -98,7 +84,11 @@
 	} = $props()
 
 	const auth = useAuthContext()
-	const isAuthenticated = $derived(!!auth.user)
+	const userId = $derived(auth.user?.id ?? null)
+	const isAuthenticated = $derived(userId !== null)
+	const authenticatedConversation = $derived(
+		ownsConversationSnapshot(preloadedConversation, conversationId, userId) ? preloadedConversation : null
+	)
 
 	// ==========================================================================
 	// Rendered state
@@ -113,36 +103,18 @@
 	// Non-rendered refs
 	// ==========================================================================
 	let messageTimestampsById = new Map<string, Date>()
-	let startTimeRef = 0
-	let eventsCountRef = 0
-
-
-	let requestPhaseRef: RequestPhase = 'idle'
-
-	let activeRequestIdRef: string | null = null
-	let pendingExecutionTraceByRequestIdRef = new Map<string, MessageExecutionStep[]>()
-	let executionTraceByAssistantIdRef = new Map<string, MessageExecutionStep[]>()
-	let prevConversationIdRef: string | null | undefined = untrack(() => conversationId)
-	let prevAuthModeRef = untrack(() => isAuthenticated)
-
-	let pendingHappeningSoonEventIdRef: string | null = null
-	let pendingHappeningSoonEventIdsRef: string[] | null = null
-	let pendingUserMessageRef: string | null = null
-	let pendingConversationIdRef: string | null = null
-	let pendingAssistantClientMessageIdRef: string | null = null
-	let pendingTurnIdRef: string | null = null
-	let pendingTurnClaimIdRef: string | null = null
-	let pendingRetryRef = false
-	let pendingUserClientMessageIdRef: string | null = null
-	let pendingUserPersistencePromiseRef: Promise<MessagePersistenceResult> | null = null
-	let pendingUserPersistedMessageIdRef: string | null = null
+	let activeTurn: ClientTurn | null = null
+	let activeLifecycle: ReturnType<typeof createTurnLifecycle> | null = null
+	let prevConversationIdRef: string | null = untrack(() => conversationId)
+	let prevUserIdRef = untrack(() => userId)
 	let attemptedTurnIdsRef = new Set<string>()
 	let acceptedAnalyticsTurnIdsRef = new Set<string>()
-	let persistedAssistantMessageIdsRef = new Map<string, string>()
 	let isFirstExchangeRef = true
 	let isFlushingOutboxRef = false
 	let restoredScrollConversationIdRef: string | null = null
-	const durableTurns = $derived(isAuthenticated ? pendingTurns : (guestConversation?.turns ?? []))
+	const durableTurns = $derived(isAuthenticated
+		? (authenticatedConversation ? pendingTurns : [])
+		: (guestConversation?.conversation.id === conversationId ? guestConversation.turns ?? [] : []))
 	let activeRetryTurnId = $state<string | null>(null)
 	let localRetryTurn = $state<{
 		id: string
@@ -159,31 +131,18 @@
 	// ==========================================================================
 	// Pure helpers
 	// ==========================================================================
-	function mapStatusPhaseToRequestPhase(phase: ChatStreamStatusPhase): RequestPhase {
-		switch (phase) {
-			case 'thinking':
-				return 'thinking'
-			case 'persisting':
-				return 'persisting'
-			case 'done':
-				return 'persisting'
-			case 'error':
-				return 'error'
-			default:
-				return 'thinking'
-		}
-	}
-
-	function canonicalFromParts(
-		parts: Array<{ type?: string; data?: unknown }> | undefined
-	): CanonicalChatResponse | null {
-		if (!parts) return null
-		for (const part of parts) {
-			if (part.type === 'data-response') {
-				return canonicalFromDataResponse(part.data)
-			}
-		}
-		return null
+	function storedMessagesToUI(messages: ReadonlyArray<Message | GuestMessage>): ChatUIMessage[] {
+		return messages.map((message) => ({
+			id: message.client_message_id ?? message.id,
+			role: message.role as 'user' | 'assistant',
+			metadata: { createdAt: message.created_at },
+			parts: [
+				{ type: 'text' as const, text: message.visible_content ?? message.content },
+				...(message.role === 'assistant'
+					? [{ type: 'data-response' as const, data: adaptStoredMessageToCanonical(message) }]
+					: [])
+			]
+		}))
 	}
 
 	type AssistantVisibilityMessage = Pick<
@@ -219,40 +178,29 @@
 	// ==========================================================================
 	// Request lifecycle / correlations
 	// ==========================================================================
-	function setRequestLifecyclePhase(phase: RequestPhase) {
-		requestPhaseRef = phase
-		requestPhase = phase
+	function isCurrentTurn(turn: ClientTurn) {
+		return ownsClientTurn(turn, { activeTurn, conversationId, userId })
 	}
 
-	function resetRequestCorrelations() {
-		activeRequestIdRef = null
-		pendingExecutionTraceByRequestIdRef.clear()
-	}
-
-	async function bootstrapTurn(input: {
-		conversationId: string
-		turnId: string
-		userClientMessageId: string
-		assistantClientMessageId: string
-		content: string
-	}) {
-		if (isAuthenticated) {
+	async function bootstrapTurn(turn: ClientTurn) {
+		const input = {
+			conversationId: turn.conversationId,
+			turnId: turn.turnId,
+			userClientMessageId: turn.userClientMessageId,
+			assistantClientMessageId: turn.assistantClientMessageId,
+			content: turn.content,
+			locale: turn.locale
+		}
+		if (turn.userId !== null) {
 			const response = await fetch('/api/chat/bootstrap', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					...input,
-					locale: getLocale().startsWith('es') ? 'es' : 'en'
-				})
+				body: JSON.stringify(input)
 			})
 			if (!response.ok) throw new Error('Failed to save chat turn')
-			const body = (await response.json()) as { turn?: { user_message_id?: string } }
-			pendingUserPersistedMessageIdRef = body.turn?.user_message_id ?? input.userClientMessageId
-			return
+		} else {
+			await bootstrapGuestTurn(input)
 		}
-
-		await bootstrapGuestTurn(input)
-		pendingUserPersistedMessageIdRef = input.userClientMessageId
 	}
 
 
@@ -275,27 +223,6 @@
 		})
 
 		return typeof savedMessage?.id === 'string' ? { id: savedMessage.id } : undefined
-	}
-
-	async function persistMessageResiliently(
-		payload: MessagePersistencePayload
-	): Promise<MessagePersistenceResult> {
-		if (!isAuthenticated) {
-			await addGuestMessage(payload.conversationId, {
-				id: payload.clientMessageId,
-				clientMessageId: payload.clientMessageId,
-				parentMessageId: payload.parentMessageId,
-				role: payload.role,
-				content: payload.content,
-				visibleContent: payload.visibleContent ?? payload.content,
-				executionTrace: payload.executionTrace,
-				attachedData: payload.attachedData,
-				responseContractVersion: payload.responseContractVersion ?? CHAT_CONTRACT_VERSION
-			})
-			return { status: 'persisted', messageId: payload.clientMessageId }
-		}
-
-		return persistMessageWithOutbox(persistMessageToConversation, payload)
 	}
 
 	async function flushOutboxNow() {
@@ -329,205 +256,27 @@
 	// ==========================================================================
 	// Streaming client
 	// ==========================================================================
-	const chat = new Chat<ChatUIMessage>({
-		id: 'ba-events-chat',
-		transport: new DefaultChatTransport<ChatUIMessage>({
-			api: '/api/chat',
-			body: () => {
-				const happeningSoonEventId = pendingHappeningSoonEventIdRef
-				pendingHappeningSoonEventIdRef = null
-				const happeningSoonEventIds = !chat.messages.some((message) => message.role === 'assistant')
-					? (pendingHappeningSoonEventIdsRef ??
-						happeningSoonEvents?.slice(0, 4).map((event) => event.id))
-					: undefined
-				pendingHappeningSoonEventIdsRef = null
-				const retry = pendingRetryRef
-				pendingRetryRef = false
-				return {
-					locale: getLocale() as 'en' | 'es',
-					conversationId: pendingConversationIdRef ?? conversationId ?? null,
-					userClientMessageId: pendingUserClientMessageIdRef,
-					assistantClientMessageId: pendingAssistantClientMessageIdRef,
-					turnId: pendingTurnIdRef,
-					retry,
-					...(happeningSoonEventId ? { happeningSoonEventId } : {}),
-					...(happeningSoonEventIds?.length ? { happeningSoonEventIds } : {})
-				}
-			}
-		}),
-		onFinish: async ({ message }) => {
-			track('chat:response_received', {
-				duration_ms: Date.now() - startTimeRef,
-				events_returned: eventsCountRef
-			})
+	let chat = $state.raw(new Chat<ChatUIMessage>({ id: 'ba-events-chat' }))
 
-			setRequestLifecyclePhase('persisting')
+	function cancelActiveTurn() {
+		activeTurn = null
+		activeLifecycle?.cancel()
+		activeLifecycle = null
+		void chat.stop()
+	}
 
-			const parts = message.parts as Array<{ type?: string; text?: string; data?: unknown }>
-			const canonical = canonicalFromParts(parts)
-			const textContent = canonical?.text?.trim() || extractVisibleTextFromUIMessageParts(parts)
+	function resetConversationState() {
+		cancelActiveTurn()
+		// A stopped SDK request may still finish; keep it attached to its old Chat instance.
+		chat = new Chat<ChatUIMessage>({ id: 'ba-events-chat' })
+		messageTimestampsById.clear()
+		activeRetryTurnId = null
+		localRetryTurn = null
+		isFirstExchangeRef = true
+		requestPhase = 'idle'
+		error = null
+	}
 
-			const resolvedConversationId = pendingConversationIdRef ?? conversationId ?? null
-			if (resolvedConversationId) {
-				if (pendingUserPersistencePromiseRef) {
-					try {
-						const userPersistResult = await pendingUserPersistencePromiseRef
-						if (userPersistResult.messageId) {
-							pendingUserPersistedMessageIdRef = userPersistResult.messageId
-						}
-					} catch (persistError) {
-						console.error('Failed awaiting user persistence before assistant save:', persistError)
-					}
-				}
-
-				const activeRequestId = activeRequestIdRef
-				const executionTrace =
-					executionTraceByAssistantIdRef.get(message.id) ??
-					(activeRequestId
-						? (pendingExecutionTraceByRequestIdRef.get(activeRequestId) ?? [])
-						: [])
-				const assistantClientMessageId = pendingAssistantClientMessageIdRef ?? generateId()
-
-				const persistPayload: MessagePersistencePayload = {
-					conversationId: resolvedConversationId,
-					parentMessageId: pendingUserPersistedMessageIdRef,
-					clientMessageId: assistantClientMessageId,
-					role: 'assistant',
-					content: textContent,
-					visibleContent: textContent,
-					executionTrace,
-					responseContractVersion: CHAT_CONTRACT_VERSION,
-					attachedData: canonical ? { canonical } : {}
-				}
-
-				try {
-					const assistantPersistResult = isAuthenticated && pendingTurnIdRef
-						? { status: 'persisted' as const, messageId: message.id }
-						: await persistMessageResiliently(persistPayload)
-					if (!isAuthenticated && pendingTurnIdRef) {
-						await completeGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef ?? '')
-						guestConversation = await chatState.getGuestConversation(resolvedConversationId)
-					}
-					localRetryTurn = null
-					if (assistantPersistResult.messageId) {
-						persistedAssistantMessageIdsRef.set(message.id, assistantPersistResult.messageId)
-					}
-
-					if (isFirstExchangeRef && pendingUserMessageRef) {
-						isFirstExchangeRef = false
-						void chatState.generateTitle({
-							conversationId: resolvedConversationId,
-							firstMessage: pendingUserMessageRef
-						}).then(({ title }) => {
-							if (!isAuthenticated) return setGuestConversationTitle(resolvedConversationId, title)
-						})
-					}
-				} catch (err) {
-					console.error('Failed to persist assistant message:', err)
-					if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
-						void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
-					}
-					setRequestLifecyclePhase('error')
-					toast.error('Failed to save response', {
-						description: 'Your conversation may not be saved properly',
-						action: {
-							label: 'Retry',
-							onClick: () => persistMessageResiliently(persistPayload)
-						}
-					})
-				}
-			}
-
-			if (activeRequestIdRef) {
-				pendingExecutionTraceByRequestIdRef.delete(activeRequestIdRef)
-			}
-			executionTraceByAssistantIdRef.delete(message.id)
-
-			pendingUserMessageRef = null
-			pendingConversationIdRef = null
-			pendingTurnClaimIdRef = null
-			pendingAssistantClientMessageIdRef = null
-			pendingUserClientMessageIdRef = null
-			pendingUserPersistencePromiseRef = null
-			pendingUserPersistedMessageIdRef = null
-			resetRequestCorrelations()
-
-			if (requestPhaseRef !== 'error') {
-				setRequestLifecyclePhase('idle')
-			}
-			void flushOutboxNow()
-		},
-		onError: (err) => {
-			console.error('Chat error:', err)
-			setRequestLifecyclePhase('error')
-			error = err.message || 'An error occurred. Please try again.'
-			if (
-				pendingConversationIdRef &&
-				pendingTurnIdRef &&
-				pendingUserClientMessageIdRef &&
-				pendingAssistantClientMessageIdRef &&
-				pendingUserMessageRef
-			) {
-				localRetryTurn = {
-					id: pendingTurnIdRef,
-					conversation_id: pendingConversationIdRef,
-					content: pendingUserMessageRef,
-					status: 'failed',
-					claim_id: pendingTurnClaimIdRef,
-					user_client_message_id: pendingUserClientMessageIdRef,
-					assistant_client_message_id: pendingAssistantClientMessageIdRef
-				}
-				if (!isAuthenticated && pendingTurnClaimIdRef && pendingConversationIdRef) {
-					const failedConversationId = pendingConversationIdRef
-					void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef)
-						.then(() => chatState.getGuestConversation(failedConversationId).then((value) => { guestConversation = value }))
-						.catch(() => {})
-				}
-			}
-			track('chat:error', {
-				error_type: 'client_error'
-			})
-			pendingUserMessageRef = null
-			pendingConversationIdRef = null
-			pendingAssistantClientMessageIdRef = null
-			pendingUserClientMessageIdRef = null
-			pendingUserPersistencePromiseRef = null
-			pendingUserPersistedMessageIdRef = null
-			pendingTurnClaimIdRef = null
-			resetRequestCorrelations()
-		},
-		onData: (dataPart) => {
-			if (dataPart.type === 'data-status') {
-				const statusData = dataPart.data as {
-					phase: ChatStreamStatusPhase
-					requestId: string
-					assistantMessageId?: string
-				}
-				activeRequestIdRef = statusData.requestId
-
-				setRequestLifecyclePhase(mapStatusPhaseToRequestPhase(statusData.phase))
-				return
-			}
-
-			if (dataPart.type === 'data-execution-trace') {
-				const traceData = dataPart.data as {
-					requestId: string
-					assistantMessageId?: string
-					steps: MessageExecutionStep[]
-				}
-				activeRequestIdRef = traceData.requestId
-				if (traceData.assistantMessageId) {
-					executionTraceByAssistantIdRef.set(traceData.assistantMessageId, traceData.steps)
-				} else {
-					pendingExecutionTraceByRequestIdRef.set(traceData.requestId, traceData.steps)
-				}
-			}
-		}
-	})
-
-	// ==========================================================================
-	// Send message
-	// ==========================================================================
 	async function handleSendMessage(
 		content: string,
 		options?: {
@@ -541,157 +290,135 @@
 		}
 	) {
 		const retry = options?.retry === true
-		if (requestPhaseRef !== 'idle' && !retry) return
-		if (retry) {
-			activeRetryTurnId = options.turnId ?? null
-			localRetryTurn = null
+		if (activeTurn || (requestPhase !== 'idle' && !retry)) return
+		const turn: ClientTurn = {
+			conversationId: (retry ? options?.conversationId : conversationId) ?? conversationId ?? options?.conversationId ?? crypto.randomUUID(),
+			startingConversationId: conversationId,
+			turnId: options?.turnId ?? crypto.randomUUID(),
+			userClientMessageId: options?.userClientMessageId ?? crypto.randomUUID(),
+			assistantClientMessageId: options?.assistantClientMessageId ?? crypto.randomUUID(),
+			claimId: crypto.randomUUID(),
+			userId,
+			content,
+			locale: getLocale().startsWith('es') ? 'es' : 'en'
 		}
-		pendingHappeningSoonEventIdRef = options?.eventId ?? null
-		pendingHappeningSoonEventIdsRef = options?.happeningSoonEventIds ?? happeningSoonEvents?.slice(0, 4).map((event) => event.id) ?? null
+		const startedAt = Date.now()
+		const hasHistory = chat.messages.length > 0
+		const homeEventIds = !chat.messages.some((message) => message.role === 'assistant')
+			? options?.happeningSoonEventIds ?? happeningSoonEvents?.slice(0, 4).map((event) => event.id)
+			: undefined
+		activeTurn = turn
+		attemptedTurnIdsRef.add(turn.turnId)
+		activeRetryTurnId = retry ? turn.turnId : null
+		localRetryTurn = null
 		error = null
-		resetRequestCorrelations()
-		eventsCountRef = 0
-		startTimeRef = Date.now()
-		pendingUserMessageRef = content
-		pendingUserPersistedMessageIdRef = null
-		const userClientMessageId = options?.userClientMessageId ?? crypto.randomUUID()
-		const assistantClientMessageId = options?.assistantClientMessageId ?? crypto.randomUUID()
-		pendingUserClientMessageIdRef = userClientMessageId
-		pendingAssistantClientMessageIdRef = assistantClientMessageId
-		pendingTurnIdRef = options?.turnId ?? null
-		pendingRetryRef = retry
-		setRequestLifecyclePhase('preparing')
+		requestPhase = 'preparing'
+
+		async function showCompletedTurn(canonical: NonNullable<ReturnType<typeof canonicalFromParts>>) {
+			const stored = turn.userId === null ? await chatState.getGuestConversation(turn.conversationId) : null
+			if (!isCurrentTurn(turn)) return
+			if (turn.userId === null) guestConversation = stored
+			track('chat:response_received', { duration_ms: Date.now() - startedAt, events_returned: canonical.events.length })
+			if (isFirstExchangeRef) {
+				isFirstExchangeRef = false
+				const title = turn.userId === null
+					? setGuestConversationTitle(turn.conversationId, getFallbackConversationTitle(turn.content))
+					: chatState.generateTitle({ conversationId: turn.conversationId, firstMessage: turn.content })
+				void title.catch((error) => console.error('[chat] Failed to generate title:', error))
+			}
+			localRetryTurn = null
+			activeTurn = null
+			activeLifecycle = null
+			requestPhase = 'idle'
+			void flushOutboxNow()
+		}
+
+		const lifecycle = createTurnLifecycle(turn, {
+			isCurrent: () => isCurrentTurn(turn),
+			onPhase: (phase) => { requestPhase = phase },
+			onComplete: showCompletedTurn,
+			onFailure: (failure) => {
+				localRetryTurn = {
+					id: turn.turnId,
+					conversation_id: turn.conversationId,
+					content: turn.content,
+					status: 'failed',
+					claim_id: turn.claimId,
+					user_client_message_id: turn.userClientMessageId,
+					assistant_client_message_id: turn.assistantClientMessageId
+				}
+				activeTurn = null
+				activeLifecycle = null
+				requestPhase = 'error'
+				error = failure.message
+				track('chat:error', { error_type: acceptedAnalyticsTurnIdsRef.has(turn.turnId) ? 'client_error' : 'preflight_error' })
+				toast.error('Failed to complete message', { description: failure.message })
+			}
+		})
+		activeLifecycle = lifecycle
+		const turnChat = new Chat<ChatUIMessage>({
+			id: turn.turnId,
+			messages: [...chat.messages],
+			transport: new DefaultChatTransport<ChatUIMessage>({ api: '/api/chat' }),
+			...lifecycle.callbacks
+		})
+		chat = turnChat
+		function stillCurrent() {
+			if (isCurrentTurn(turn)) return true
+			lifecycle.cancel()
+			return false
+		}
 
 		try {
-			let currentConversationId = (retry ? options?.conversationId : conversationId) ?? conversationId ?? options?.conversationId ?? pendingConversationIdRef
-			const turnId = options?.turnId ?? pendingTurnIdRef ?? crypto.randomUUID()
-			pendingTurnIdRef = turnId
-			if (!currentConversationId) currentConversationId = crypto.randomUUID()
-			pendingConversationIdRef = currentConversationId
-			await bootstrapTurn({ conversationId: currentConversationId, turnId, userClientMessageId, assistantClientMessageId, content })
-
-			if (isAuthenticated && markTurnAccepted(acceptedAnalyticsTurnIdsRef, turnId)) {
-				track('chat:message_sent', { message_length: content.length, has_history: chat.messages.length > 0 })
-			}
-
-			if (!conversationId && currentConversationId) {
-				chat.messages = [{
-					id: userClientMessageId,
-					role: 'user',
-					parts: [{ type: 'text', text: content }],
-					metadata: { createdAt: new Date().toISOString() }
-				} as ChatUIMessage]
-				await onConversationChange?.(currentConversationId)
-				if (!adoptedPendingConversationId(currentConversationId, conversationId)) {
+			await bootstrapTurn(turn)
+			if (!stillCurrent()) return
+			if (!conversationId) {
+				turnChat.messages = [{ id: turn.userClientMessageId, role: 'user', parts: [{ type: 'text', text: content }], metadata: { createdAt: new Date().toISOString() } }]
+				await onConversationChange?.(turn.conversationId)
+				if (!stillCurrent()) return
+				if (!adoptedPendingConversationId(turn.conversationId, conversationId)) {
 					throw new Error('Chat navigation did not adopt the new conversation')
 				}
 			}
-
-			attemptedTurnIdsRef.add(turnId)
-			if (!isAuthenticated) {
-				pendingTurnClaimIdRef = pendingTurnClaimIdRef ?? crypto.randomUUID()
-				const claimed = await claimGuestTurn(turnId, pendingTurnClaimIdRef, retry)
-				if (!ownsRunningGuestClaim({ status: claimed?.status, claimId: pendingTurnClaimIdRef, returnedClaimId: claimed?.claim_id })) {
+			if (turn.userId === null) {
+				const claimed = await claimGuestTurn(turn.turnId, turn.claimId, retry)
+				if (!stillCurrent()) return
+				if (claimed?.status === 'completed') {
+					const stored = await chatState.getGuestConversation(turn.conversationId)
+					if (!stillCurrent()) return
+					const assistant = stored?.messages.find((message) => message.client_message_id === turn.assistantClientMessageId)
+					if (!stored || !assistant) throw new Error('The saved response is unavailable')
+					turnChat.messages = storedMessagesToUI(stored.messages)
+					await showCompletedTurn(adaptStoredMessageToCanonical(assistant))
+					return
+				}
+				if (!ownsRunningGuestClaim({ status: claimed?.status, claimId: turn.claimId, returnedClaimId: claimed?.claim_id })) {
 					throw new Error('This turn is already running or needs explicit retry')
 				}
 			}
-
-			if (!isAuthenticated && markTurnAccepted(acceptedAnalyticsTurnIdsRef, turnId)) {
-				track('chat:message_sent', { message_length: content.length, has_history: chat.messages.length > 0 })
+			if (markTurnAccepted(acceptedAnalyticsTurnIdsRef, turn.turnId)) {
+				track('chat:message_sent', { message_length: content.length, has_history: hasHistory })
 			}
-
-			const userMessagePayload: MessagePersistencePayload = {
-				conversationId: currentConversationId,
-				parentMessageId: null,
-				clientMessageId: userClientMessageId,
-				role: 'user',
-				content,
-				visibleContent: content,
-				responseContractVersion: CHAT_CONTRACT_VERSION
+			const body = {
+				conversationId: turn.conversationId,
+				turnId: turn.turnId,
+				userClientMessageId: turn.userClientMessageId,
+				assistantClientMessageId: turn.assistantClientMessageId,
+				locale: turn.locale,
+				retry,
+				...(options?.eventId ? { happeningSoonEventId: options.eventId } : {}),
+				...(homeEventIds?.length ? { happeningSoonEventIds: homeEventIds } : {})
 			}
-
-			const userPersistencePromise = shouldPersistUserMessage(pendingTurnIdRef)
-				? persistMessageResiliently(userMessagePayload)
-					.then((result) => {
-						if (result.messageId) pendingUserPersistedMessageIdRef = result.messageId
-						return result
-					})
-					.catch((persistError) => {
-						console.error('Failed to persist user message:', persistError)
-						return { status: 'queued' } as MessagePersistenceResult
-					})
-				: Promise.resolve({ status: 'persisted', messageId: pendingUserPersistedMessageIdRef ?? userClientMessageId } as MessagePersistenceResult)
-
-			pendingUserPersistencePromiseRef = userPersistencePromise
-
-			// Server-side assistant persistence resolves the parent by
-			// userClientMessageId — ensure the user message is persisted first.
-			if (isAuthenticated) {
-				await userPersistencePromise
-			}
-
-			const messageMetadata = { createdAt: new Date().toISOString() }
-			if (chat.messages.some((message) => message.id === userClientMessageId)) {
-				await chat.sendMessage({
-					text: content,
-					messageId: userClientMessageId,
-					metadata: messageMetadata
-				})
+			const metadata = { createdAt: new Date().toISOString() }
+			if (turnChat.messages.some((message) => message.id === turn.userClientMessageId)) {
+				await turnChat.sendMessage({ text: content, messageId: turn.userClientMessageId, metadata }, { body })
 			} else {
-				await chat.sendMessage({
-					id: userClientMessageId,
-					role: 'user',
-					parts: [{ type: 'text', text: content }],
-					metadata: messageMetadata
-				})
+				await turnChat.sendMessage({ id: turn.userClientMessageId, role: 'user', parts: [{ type: 'text', text: content }], metadata }, { body })
 			}
-			await userPersistencePromise
-		} catch (err) {
-			console.error('Failed to send message:', err)
-			const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
-			if (!pendingTurnIdRef || !acceptedAnalyticsTurnIdsRef.has(pendingTurnIdRef)) {
-				track('chat:error', { error_type: 'preflight_error' })
-			}
-			if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
-				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
-			}
-			const failedTurn = pendingTurnIdRef && pendingUserClientMessageIdRef && pendingAssistantClientMessageIdRef && pendingConversationIdRef
-				? {
-					id: pendingTurnIdRef,
-					conversation_id: pendingConversationIdRef,
-					content,
-					status: 'failed' as const,
-					claim_id: pendingTurnClaimIdRef,
-					user_client_message_id: pendingUserClientMessageIdRef,
-					assistant_client_message_id: pendingAssistantClientMessageIdRef
-				}
-				: null
-			localRetryTurn = failedTurn
-			setRequestLifecyclePhase('error')
-			error = errorMessage
-			toast.error('Failed to send message', {
-				description: errorMessage,
-				action: failedTurn ? {
-					label: 'Retry',
-					onClick: () => handleSendMessage(content, {
-						...options,
-						conversationId: failedTurn.conversation_id,
-						turnId: failedTurn.id,
-						userClientMessageId: failedTurn.user_client_message_id,
-						assistantClientMessageId: failedTurn.assistant_client_message_id,
-						retry: true
-					})
-				} : undefined
-			})
-			pendingUserMessageRef = null
-			pendingConversationIdRef = null
-			pendingTurnClaimIdRef = null
-			pendingAssistantClientMessageIdRef = null
-			pendingUserClientMessageIdRef = null
-			pendingUserPersistencePromiseRef = null
-			pendingUserPersistedMessageIdRef = null
-			persistedAssistantMessageIdsRef.clear()
-			resetRequestCorrelations()
+			await lifecycle.settled()
+		} catch (failure) {
+			lifecycle.fail(failure instanceof Error ? failure : new Error('Failed to send message'))
+			await lifecycle.settled()
 		}
 	}
 
@@ -711,6 +438,7 @@
 			return
 		}
 
+		guestConversation = null
 		isLoadingGuestConversation = true
 		let cancelled = false
 		chatState.getGuestConversation(id).then(async (result) => {
@@ -725,63 +453,22 @@
 	})
 
 	$effect(() => {
-		const prev = prevConversationIdRef
-		const prevAuthMode = prevAuthModeRef
+		const identityChanged = conversationId !== prevConversationIdRef || userId !== prevUserIdRef
+		const adopting = userId === prevUserIdRef &&
+			adoptedPendingConversationId(activeTurn?.conversationId ?? null, conversationId)
 		prevConversationIdRef = conversationId
-		prevAuthModeRef = isAuthenticated
-		const identityChanged = conversationId !== prev || isAuthenticated !== prevAuthMode
-		const adopting =
-			isAuthenticated === prevAuthMode &&
-			adoptedPendingConversationId(pendingConversationIdRef, conversationId)
-
+		prevUserIdRef = userId
 		if (identityChanged && !adopting) {
-			void chat.stop()
-			if (!prevAuthMode && pendingTurnIdRef && pendingTurnClaimIdRef) {
-				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
-			}
 			resetAttemptedTurnIds(attemptedTurnIdsRef, true)
-			activeRetryTurnId = null
-			localRetryTurn = null
-			chat.messages = []
-			messageTimestampsById.clear()
-			executionTraceByAssistantIdRef.clear()
-			persistedAssistantMessageIdsRef.clear()
-			isFirstExchangeRef = true
-			error = null
-			pendingUserMessageRef = null
-			pendingConversationIdRef = null
-			pendingTurnClaimIdRef = null
-			pendingAssistantClientMessageIdRef = null
-			pendingUserClientMessageIdRef = null
-			pendingUserPersistencePromiseRef = null
-			pendingUserPersistedMessageIdRef = null
-			pendingTurnIdRef = null
-			setRequestLifecyclePhase('idle')
+			untrack(resetConversationState)
 		}
-
-		const idle = requestPhaseRef === 'idle' || requestPhaseRef === 'error'
-		if (!idle && !adopting) return
-
-		if ((!conversationId || conversationId !== prev) && !adopting) {
-			resetAttemptedTurnIds(attemptedTurnIdsRef, true)
-			activeRetryTurnId = null
-			localRetryTurn = null
-			chat.messages = []
-			messageTimestampsById.clear()
-			executionTraceByAssistantIdRef.clear()
-			persistedAssistantMessageIdsRef.clear()
-			isFirstExchangeRef = true
-		}
-
-		if (!conversationId) return
-
-		const isLoadingTarget = isAuthenticated ? false : isLoadingGuestConversation
-		if (isLoadingTarget) return
-
-		if (adopting || (pendingConversationIdRef === conversationId && (requestPhaseRef !== 'idle' || pendingUserMessageRef !== null))) return
+		// Finishing a stream must not reload the pre-request server snapshot over its reply.
+		const phase = untrack(() => requestPhase)
+		if (phase !== 'idle' && phase !== 'error') return
+		if (!conversationId || activeTurn || (!isAuthenticated && isLoadingGuestConversation)) return
 
 		const sourceMessages = isAuthenticated
-			? preloadedConversation?.messages
+			? authenticatedConversation?.messages
 			: guestConversation?.messages
 		if (!sourceMessages || sourceMessages.length === 0) return
 
@@ -789,39 +476,9 @@
 			? sortMessagesByTurnOrderAsc(sourceMessages as Message[])
 			: [...sourceMessages].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
 
-		const uiMessages: ChatUIMessage[] = sortedMessages.map((storedMessage) => {
-			const canonical = adaptStoredMessageToCanonical(storedMessage as Message)
-			const parts: Array<{ type: string; text?: string; data?: unknown }> = [
-				{
-					type: 'text',
-					text: (storedMessage as Message).visible_content ?? storedMessage.content
-				}
-			]
-			if (storedMessage.role === 'assistant') {
-				parts.push({ type: 'data-response', data: canonical })
-			}
-			return {
-				id: storedMessage.client_message_id ?? storedMessage.id,
-				role: storedMessage.role as 'user' | 'assistant',
-				metadata: { createdAt: storedMessage.created_at },
-				parts
-			} as ChatUIMessage
-		})
+		chat.messages = storedMessagesToUI(sortedMessages)
 
-		chat.messages = uiMessages
-
-		const persistedAssistantIds = new Map<string, string>()
-		for (const storedMessage of sortedMessages) {
-			if (storedMessage.role === 'assistant') {
-				persistedAssistantIds.set(
-					storedMessage.client_message_id ?? storedMessage.id,
-					storedMessage.id
-				)
-			}
-		}
-		persistedAssistantMessageIdsRef = persistedAssistantIds
-
-		const title = isAuthenticated ? preloadedConversation?.title : guestConversation?.conversation.title
+		const title = isAuthenticated ? authenticatedConversation?.title : guestConversation?.conversation.title
 		isFirstExchangeRef = sortedMessages.length <= 1 && (!title || title === 'New conversation')
 	})
 
@@ -843,34 +500,10 @@
 	})
 
 	$effect(() => {
-		const unregister = chatState.registerStartNewChatHandler(() => {
-			void chat.stop()
-			if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
-				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
-			}
-			chat.messages = []
-			messageTimestampsById.clear()
-			executionTraceByAssistantIdRef.clear()
-			setRequestLifecyclePhase('idle')
-			error = null
-			pendingUserMessageRef = null
-			pendingConversationIdRef = null
-			pendingAssistantClientMessageIdRef = null
-			pendingUserClientMessageIdRef = null
-			pendingUserPersistencePromiseRef = null
-			pendingUserPersistedMessageIdRef = null
-			persistedAssistantMessageIdsRef.clear()
-			isFirstExchangeRef = true
-			pendingTurnIdRef = null
-			pendingTurnClaimIdRef = null
-			resetRequestCorrelations()
-		})
+		const unregister = chatState.registerStartNewChatHandler(resetConversationState)
 		return () => {
 			unregister()
-			void chat.stop()
-			if (!isAuthenticated && pendingTurnIdRef && pendingTurnClaimIdRef) {
-				void failGuestTurn(pendingTurnIdRef, pendingTurnClaimIdRef).catch(() => {})
-			}
+			cancelActiveTurn()
 		}
 	})
 
@@ -879,7 +512,7 @@
 		if (!shouldAutoHandlePendingTurn({
 			conversationId,
 			pendingTurnId: pending?.id ?? null,
-			requestPhase: requestPhaseRef,
+			requestPhase: requestPhase,
 			chatReady: chat.status === 'ready',
 			attemptedTurnIds: attemptedTurnIdsRef
 		})) return
@@ -954,9 +587,6 @@
 							render.events.length
 						).nextStep
 					: undefined
-			if (canonical) {
-				eventsCountRef = canonical.events.length
-			}
 
 			return {
 				id: message.id,
@@ -1038,7 +668,7 @@
 		!!(
 			conversationId &&
 			!(isAuthenticated ? false : isLoadingGuestConversation) &&
-			!(isAuthenticated ? !!preloadedConversation : !!guestConversation) &&
+			!(isAuthenticated ? !!authenticatedConversation : !!guestConversation) &&
 			requestPhase === 'idle' &&
 			!hasMessages
 		)
@@ -1046,8 +676,8 @@
 
 	function dismissError() {
 		error = null
-		if (requestPhaseRef === 'error') {
-			setRequestLifecyclePhase('idle')
+		if (requestPhase === 'error') {
+			requestPhase = 'idle'
 		}
 	}
 </script>
@@ -1075,7 +705,7 @@
 				type="button"
 				class="rounded-md bg-primary px-3 py-1 text-primary-foreground"
 					onclick={() => handleSendMessage(visibleRetryTurn.content, {
-						conversationId: conversationId ?? undefined,
+						conversationId: localRetryTurn?.conversation_id ?? conversationId ?? undefined,
 						turnId: visibleRetryTurn.id,
 						userClientMessageId: visibleRetryTurn.user_client_message_id,
 						assistantClientMessageId: visibleRetryTurn.assistant_client_message_id,

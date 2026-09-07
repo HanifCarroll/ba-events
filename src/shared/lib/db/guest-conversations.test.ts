@@ -1,6 +1,9 @@
 import 'fake-indexeddb/auto'
+import assert from 'node:assert/strict'
+import Dexie from 'dexie'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
+import { adaptStoredMessageToCanonical } from '#features/chat/lib/canonical.ts'
 import {
   addGuestMessage,
   bootstrapGuestTurn,
@@ -16,6 +19,11 @@ import {
 	touchGuestConversation,
 	effectiveGuestTurnStatus,
 } from './guest-conversations.ts'
+
+const reply = {
+  canonical: adaptStoredMessageToCanonical({ id: 'assistant-1', content: 'Saved reply' }),
+  executionTrace: [],
+}
 
 describe('guest-conversations store', () => {
   beforeEach(async () => {
@@ -205,9 +213,61 @@ describe('guest-conversations store', () => {
   it('completes with the same claim and stays idempotent', async () => {
     await bootstrapGuestTurn({ conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1', assistantClientMessageId: 'assistant-1', content: 'events' })
     await claimGuestTurn('turn-1', 'claim-1')
-    await completeGuestTurn('turn-1', 'claim-1')
-    await completeGuestTurn('turn-1', 'claim-1')
-    expect((await getGuestConversationWithMessages('conv-1'))?.turns?.[0].status).toBe('completed')
+    await completeGuestTurn('turn-1', 'claim-1', reply)
+    const completed = await getGuestConversationWithMessages('conv-1')
+    await completeGuestTurn('turn-1', 'claim-1', { ...reply, canonical: { ...reply.canonical, text: 'Changed reply' } })
+    expect(await getGuestConversationWithMessages('conv-1')).toEqual(completed)
+    expect(completed?.turns?.[0].status).toBe('completed')
+    expect(completed?.messages.find((message) => message.role === 'assistant')).toMatchObject({
+      id: 'assistant-1', parent_message_id: 'user-1', content: 'Saved reply',
+      attached_data: { canonical: reply.canonical }, response_contract_version: CHAT_CONTRACT_VERSION,
+    })
+  })
+
+  it('rejects failed, expired and reclaimed claims without saving or replacing replies', async () => {
+    await bootstrapGuestTurn({ conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1', assistantClientMessageId: 'assistant-1', content: 'events' })
+    await claimGuestTurn('turn-1', 'claim-1')
+    await failGuestTurn('turn-1', 'claim-1')
+    // Bun's rejects matcher can hang across repeated Dexie aborts; node:assert works in both runners.
+    await assert.rejects(completeGuestTurn('turn-1', 'claim-1', reply), /Turn claim lost/)
+    await claimGuestTurn('turn-1', 'claim-2', true)
+    const database = new Dexie('ba-events-guest-conversations')
+    try {
+      await database.open()
+      await database.table('turns').update('turn-1', { claimed_until: Date.now() - 1 })
+      await assert.rejects(completeGuestTurn('turn-1', 'claim-2', reply), /Turn claim lost/)
+      await failGuestTurn('turn-1', 'claim-2')
+      expect((await getGuestConversationWithMessages('conv-1'))?.turns?.[0].status).toBe('interrupted')
+    } finally {
+      database.close()
+    }
+    await assert.rejects(completeGuestTurn('turn-1', 'claim-1', reply), /Turn claim lost/)
+    expect((await getGuestConversationWithMessages('conv-1'))?.messages).toHaveLength(1)
+    await claimGuestTurn('turn-1', 'claim-3', true)
+    await completeGuestTurn('turn-1', 'claim-3', reply)
+    const completed = await getGuestConversationWithMessages('conv-1')
+    await assert.rejects(completeGuestTurn('turn-1', 'claim-1', reply), /Turn claim lost/)
+    await assert.rejects(addGuestMessage('conv-1', { id: 'assistant-1', clientMessageId: 'assistant-1', role: 'assistant', content: 'Stale overwrite' }), /Use turn completion/)
+    expect(await getGuestConversationWithMessages('conv-1')).toEqual(completed)
+  })
+
+  it('rolls back the whole completion if the reply cannot be stored', async () => {
+    await bootstrapGuestTurn({ conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1', assistantClientMessageId: 'assistant-1', content: 'events' })
+    await claimGuestTurn('turn-1', 'claim-1')
+    const before = await getGuestConversationWithMessages('conv-1')
+    await assert.rejects(completeGuestTurn('turn-1', 'claim-1', { ...reply, executionTrace: [() => {}] as never }))
+    expect(await getGuestConversationWithMessages('conv-1')).toEqual(before)
+  })
+
+  it('lets the current claim replace a partial reply left by the old client', async () => {
+    await createGuestConversation('conv-1')
+    await addGuestMessage('conv-1', { id: 'assistant-1', clientMessageId: 'assistant-1', role: 'assistant', content: 'Old partial reply' })
+    await bootstrapGuestTurn({ conversationId: 'conv-1', turnId: 'turn-1', userClientMessageId: 'user-1', assistantClientMessageId: 'assistant-1', content: 'events' })
+    await claimGuestTurn('turn-1', 'claim-1')
+    await completeGuestTurn('turn-1', 'claim-1', reply)
+    const stored = await getGuestConversationWithMessages('conv-1')
+    expect(stored?.messages.filter((message) => message.role === 'assistant').map((message) => message.content)).toEqual(['Saved reply'])
+    expect(stored?.turns?.[0].status).toBe('completed')
   })
 
   it('updates the title', async () => {
