@@ -4,6 +4,14 @@ import { getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 
+export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
+	if (event.url.protocol === 'https:' && event.url.hostname === 'baeventos.com') return resolve(event);
+	const destination = new URL(event.url);
+	destination.protocol = 'https:';
+	destination.hostname = 'baeventos.com';
+	return Response.redirect(destination, 301);
+};
+
 // (a) Supabase handle — create a per-request server client, load the
 // authenticated user and their profile, and expose them via `event.locals`.
 const handleSupabase: Handle = async ({ event, resolve }) => {
@@ -53,4 +61,4 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		)
 	);
 
-export const handle = sequence(handleSupabase, handleLocaleSync, handleParaglide);
+export const handle = sequence(handleCanonicalOrigin, handleSupabase, handleLocaleSync, handleParaglide);
