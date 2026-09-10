@@ -37,6 +37,14 @@ When adding a new decision, use this format:
 
 ## Decisions
 
+### Use DeepSeek V4.1 Flash for text generation
+
+**Date:** 2026-09-10
+
+**Decision:** Use the canonical `deepseek-flash` model for all DeepSeek text generation. Keep the existing request-stable canary routing compatible with the same model ID.
+
+**Rationale:** DeepSeek V4.1 Flash replaces the previous Flash and Vision variants, exceeds V4 Pro on DeepSeek's published results, and is the provider's supported canonical model ID.
+
 ### Historical (superseded): bounded concierge MVP planner/executor
 
 **Date:** 2026-08-17

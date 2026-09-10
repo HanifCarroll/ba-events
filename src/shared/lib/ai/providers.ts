@@ -5,7 +5,7 @@ import { AI_BASE_URL, AI_MODEL, EMBEDDING_MODEL } from './constants.ts'
 /**
  * AI SDK providers.
  *
- * Text generation runs on DeepSeek V4 Pro through its OpenAI-compatible
+ * Text generation runs on DeepSeek V4.1 Flash through its OpenAI-compatible
  * endpoint (@ai-sdk/deepseek). Embeddings stay on OpenAI (@ai-sdk/openai) —
  * DeepSeek has no embeddings API.
  */
@@ -19,7 +19,7 @@ export const deepseek = createDeepSeek({
 
 export const textModel = deepseek(AI_MODEL)
 
-const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
+const DEEPSEEK_FLASH_MODEL = 'deepseek-flash'
 
 export function shouldUseDeepSeekFlashCanary(requestId: string, percentage = Number(process.env.DEEPSEEK_FLASH_CANARY_PERCENT ?? 0)): boolean {
   if (!Number.isFinite(percentage) || percentage <= 0) return false
