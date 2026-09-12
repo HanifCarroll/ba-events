@@ -67,15 +67,6 @@
 					capture_pageleave: true,
 					autocapture: true,
 					disable_surveys: true,
-					disable_session_recording: false,
-					mask_all_text: true,
-					session_recording: {
-						maskAllInputs: true,
-						maskTextSelector: '*',
-						recordHeaders: false,
-						recordBody: false
-					},
-					respect_dnt: true,
 					loaded: (ph) => {
 						// Expose globally for debugging.
 						;(window as unknown as Record<string, unknown>).posthog = ph
