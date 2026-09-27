@@ -66,6 +66,7 @@
 					capture_pageview: true,
 					capture_pageleave: true,
 					autocapture: true,
+					respect_dnt: true,
 					disable_surveys: true,
 					loaded: (ph) => {
 						// Expose globally for debugging.

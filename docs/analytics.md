@@ -1,6 +1,7 @@
 # BA Eventos analytics
 
 BA Eventos uses PostHog for a small, privacy-conscious product funnel. PostHog is enabled only on `baeventos.com` and `www.baeventos.com`.
+PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.
 
 ## What is collected
 
