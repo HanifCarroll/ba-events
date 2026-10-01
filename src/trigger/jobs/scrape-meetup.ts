@@ -1,3 +1,4 @@
+import { withAcquisitionRun } from '#features/import/acquisition/run.ts'
 /**
  * Meetup Scraper Job
  *
@@ -30,7 +31,7 @@ export const scrapeMeetup = task({
       machine: 'large-1x', // 4 vCPU, 8GB RAM
     },
   },
-  run: async (payload: MeetupJobPayload): Promise<MeetupImportResult> => {
+  run: async (payload: MeetupJobPayload, { ctx }): Promise<MeetupImportResult> => withAcquisitionRun(ctx.run.id, async () => {
     console.log('[scrape-meetup] Starting Meetup import job')
 
     const client = createServiceRoleClient()
@@ -42,5 +43,5 @@ export const scrapeMeetup = task({
 
     console.log('[scrape-meetup] Job completed:', result)
     return result
-  },
+  }),
 })

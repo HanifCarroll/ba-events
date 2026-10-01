@@ -29,39 +29,29 @@ export function fetchExistingPasslineEventsEffect(
 ): Effect.Effect<Map<string, ExistingPasslineEvent>, PasslineExistingEventsError> {
   if (externalIds.length === 0) return Effect.succeed(new Map<string, ExistingPasslineEvent>())
 
-  return importTry('passline-existing.lookup', () => client
-    .from('events')
-    .select(
-      'id, external_id, name, starts_at, ends_at, is_all_day, venue_id, price, is_free, time_tba, ticket_url, location_tba, image_url, link, description_es, description_en, categories, facets'
-    )
-    .eq('source', 'passline')
-    .in('external_id', externalIds)
-  ).pipe(
-    Effect.flatMap(({ data, error }) => {
-      if (error) {
-        return Effect.fail(new PasslineExistingEventsError({
-          message: `Failed to fetch existing Passline events: ${error.message}`,
-          cause: error,
-        }))
-      }
-
-      const result = new Map<string, ExistingPasslineEvent>()
+  return Effect.gen(function* () {
+    const result = new Map<string, ExistingPasslineEvent>()
+    const ids = [...new Set(externalIds)]
+    // Below PostgREST's default row ceiling and URL-size limit; never classify
+    // truncated existing identities as new after restoring country pagination.
+    for (let offset = 0; offset < ids.length; offset += 250) {
+      const { data, error } = yield* importTry('passline-existing.lookup', () => client
+        .from('events')
+        .select('id, external_id, name, starts_at, ends_at, is_all_day, venue_id, price, is_free, time_tba, ticket_url, location_tba, image_url, link, description_es, description_en, categories, facets')
+        .eq('source', 'passline')
+        .in('external_id', ids.slice(offset, offset + 250)))
+      if (error) return yield* new PasslineExistingEventsError({
+        message: `Failed to fetch existing Passline events: ${error.message}`, cause: error,
+      })
       for (const event of data ?? []) {
-        if (event.external_id) {
-          result.set(event.external_id, event as ExistingPasslineEvent)
-        }
+        if (event.external_id) result.set(event.external_id, event as ExistingPasslineEvent)
       }
+    }
+    if (result.size) logger.info('[passline] Found existing events', { count: result.size })
+    return result
+  }).pipe(Effect.mapError(error => error instanceof PasslineExistingEventsError
+    ? error : new PasslineExistingEventsError({ message: error.message, cause: error.cause })))
 
-      if (result.size > 0) {
-        logger.info('[passline] Found existing events', { count: result.size })
-      }
-
-      return Effect.succeed(result)
-    }),
-    Effect.mapError((error) => error instanceof PasslineExistingEventsError
-      ? error
-      : new PasslineExistingEventsError({ message: error.message, cause: error.cause }))
-  )
 }
 
 /** Promise compatibility adapter preserving the legacy error text. */

@@ -1,7 +1,7 @@
+import { fetchRevalidatedHtml } from '../../acquisition/http.ts'
 import {
   extractJsonLd,
   extractNextData,
-  fetchHtml,
   getNestedValue,
 } from '#shared/lib/html-parsing.ts'
 import type { EventStatus } from '#shared/lib/types.ts'
@@ -116,7 +116,7 @@ export async function fetchMeetupEventDetail(eventUrl: string): Promise<MeetupDe
   const fullUrl = eventUrl.startsWith('http')
     ? eventUrl
     : `https://www.meetup.com${eventUrl.startsWith('/') ? '' : '/'}${eventUrl}`
-  const html = await fetchHtml(fullUrl)
+  const html = await fetchRevalidatedHtml(fullUrl)
   return html ? extractMeetupDetailFromHtml(html) : null
 }
 

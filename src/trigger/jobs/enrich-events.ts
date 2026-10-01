@@ -1,3 +1,5 @@
+import { browserbaseScraperQueue } from '../queues.ts'
+import { withAcquisitionRun } from '#features/import/acquisition/run.ts'
 /**
  * Event Enrichment Job
  *
@@ -71,10 +73,11 @@ export const DEFAULT_ENRICHMENT_MAX_BATCHES = 10 // 1000-event safety ceiling
 
 export const enrichEventsJob = task({
   id: 'enrich-events',
+  queue: browserbaseScraperQueue,
   // Enrichment is slow (1 second per event + API calls); each batch is its own
   // run, so this budget applies per batch, not to the whole chain.
   maxDuration: 1800, // 30 minutes
-  run: async (payload: EnrichEventsJobPayload): Promise<EnrichEventsJobResult> => {
+  run: async (payload: EnrichEventsJobPayload, { ctx }): Promise<EnrichEventsJobResult> => withAcquisitionRun(ctx.run.id, async () => {
     console.log('[enrich-events] Starting event enrichment job')
 
     const client = createServiceRoleClient()
@@ -268,5 +271,5 @@ export const enrichEventsJob = task({
       remainingCount,
       chainedNextBatch,
     }
-  },
+  }),
 })

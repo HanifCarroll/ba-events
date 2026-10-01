@@ -47,4 +47,17 @@ describe('fetchExistingPasslineEvents', () => {
     expect(result.get('1')?.id).toBe('row-1')
     expect(result.get('2')?.id).toBe('row-2')
   })
+  it('looks up the complete restored catalog in bounded chunks instead of truncating at a database row cap', async () => {
+    const groups: string[][] = []
+    const client = { from: () => ({ select: () => ({ eq: () => ({ in: async (_column: string, ids: string[]) => {
+      groups.push(ids)
+      return { data: ids.map(external_id => ({ external_id, id: `row-${external_id}` })), error: null }
+    } }) }) }) } as unknown as SupabaseClient
+    const ids = Array.from({ length: 1245 }, (_, index) => String(index))
+    const result = await fetchExistingPasslineEvents(client, ids)
+    expect(groups.map(group => group.length)).toEqual([250, 250, 250, 250, 245])
+    expect(result.size).toBe(1245)
+    expect(result.get('1244')?.id).toBe('row-1244')
+  })
+
 })

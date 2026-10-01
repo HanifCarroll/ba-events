@@ -15,43 +15,14 @@
 
 import type { EnrichmentAdapter, DescriptionExtractionResult, VenueExtractionResult, ServerEnrichmentResult } from '../enrichment-types.ts'
 import { EnrichmentSkippedError } from '../enrichment-types.ts'
-import type { Browser } from 'playwright'
-import { chromium } from 'playwright'
-import { createBrowserbaseSession, isBrowserbaseAvailable } from '#shared/lib/browser/index.ts'
+import { isBrowserbaseAvailable } from '#shared/lib/browser/index.ts'
+import { openPasslineBrowser, configurePasslineResources } from '#shared/lib/browser/managed.ts'
+import { reuseDailyAcquisition, serializeAcquisition, withOwnedBrowser } from '../../acquisition/run.ts'
 import { fetchPasslineDescriptionFromDetailPage } from '../../scrapers/passline/description-enrichment.ts'
 import {
   extractPasslineEventsBatchClient,
   type PasslineEnrichmentResult,
 } from '../../scrapers/passline/client-enrichment.ts'
-
-// One Browserbase session per Trigger worker. Opening a session per event
-// was the catch-up bottleneck (~10s of session spin-up each). Concurrent
-// enrichments share the browser and each open their own page.
-let sharedBrowser: Browser | null = null
-let connecting: Promise<Browser> | null = null
-
-async function getPasslineBrowser(): Promise<Browser> {
-  if (sharedBrowser?.isConnected()) {
-    return sharedBrowser
-  }
-  if (connecting) {
-    return connecting
-  }
-
-  connecting = (async () => {
-    const { sessionId, connectUrl } = await createBrowserbaseSession()
-    console.log(`[passline] Browserbase session created for enrichment: ${sessionId}`)
-    const browser = await chromium.connectOverCDP(connectUrl)
-    sharedBrowser = browser
-    return browser
-  })()
-
-  try {
-    return await connecting
-  } finally {
-    connecting = null
-  }
-}
 
 export const passlineEnrichmentAdapter: EnrichmentAdapter = {
   source: 'passline',
@@ -126,43 +97,39 @@ export const passlineEnrichmentAdapter: EnrichmentAdapter = {
       )
     }
 
-    const browser = await getPasslineBrowser()
-    const ctx = browser.contexts()[0]
-    if (!ctx) {
-      throw new Error('Browserbase session has no browser context')
-    }
-    const page = await ctx.newPage()
-
-    try {
-      const result = await fetchPasslineDescriptionFromDetailPage(page, link, link)
-
-      if (!result.description) {
-        // A Cloudflare challenge (already bounded by the fetch helper) or a
-        // clean page with no description are both terminal for the server job.
-        if (!result.error || /cloudflare/i.test(result.error)) {
-          throw new EnrichmentSkippedError(
-            result.error ?? 'passline description not found on detail page'
-          )
-        }
-        // Transient fetch failure — surface as a normal error so the row stays
-        // `failed` and retryable on the next catch-up run.
-        throw new Error(result.error)
-      }
-
-      let venueName: string | null = null
-      if (options?.extractVenue) {
-        const html = await page.content()
-        venueName = extractVenueNameFromHtml(html)
-      }
-
-      return {
-        description_es: result.description,
-        description_en: null,
-        venue_name: venueName,
-      }
-    } finally {
-      await page.close()
-    }
+    return reuseDailyAcquisition(`passline:detail:v1:${link}:venue=${Boolean(options?.extractVenue)}`, () =>
+      serializeAcquisition('passline:detail', () =>
+        withOwnedBrowser('passline:detail', () => openPasslineBrowser(true), async browser => {
+          const context = browser.contexts()[0]
+          if (!context) throw new Error('Browserbase session has no browser context')
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const page = await context.newPage()
+            try {
+              const result = await fetchPasslineDescriptionFromDetailPage(page, link, link)
+              if (!result.description) {
+                if (!result.error) throw new EnrichmentSkippedError('passline description not found on detail page')
+                throw new Error(result.error)
+              }
+              const venueName = options?.extractVenue ? extractVenueNameFromHtml(await page.content()) : null
+              console.info('[passline] Detail acquisition completed', { profile: attempt ? 'standard' : 'thin' })
+              return { description_es: result.description, description_en: null, venue_name: venueName }
+            } catch (error) {
+              if (error instanceof EnrichmentSkippedError || attempt === 1) throw error
+              console.warn('[passline] Thin detail acquisition failed; one bounded standard-profile retry')
+              await context.unrouteAll({ behavior: 'wait' })
+              await configurePasslineResources(context, false)
+            } finally {
+              await page.close().catch(() => {})
+              if (attempt === 1) {
+                await context.unrouteAll({ behavior: 'wait' })
+                await configurePasslineResources(context, true)
+              }
+            }
+          }
+          throw new Error('Passline detail retry exhausted')
+        })
+      )
+    )
   },
 }
 

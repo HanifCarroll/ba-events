@@ -1,3 +1,5 @@
+import { reuseAcquisition, withOwnedBrowser } from '../../acquisition/run.ts'
+import { isCloudflareBrowserAvailable, openCloudflareBrowser, openBrowserbaseBrowser } from '#shared/lib/browser/managed.ts'
 /**
  * Meetup Browser Scraper
  *
@@ -10,9 +12,10 @@
 
 import type { Browser, Page } from 'playwright'
 import { parseISO, eachDayOfInterval } from 'date-fns'
+import { fromZonedTime } from 'date-fns-tz'
 import type { MeetupEvent, MeetupGraphQLEvent } from './types.ts'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser.ts'
-import { isBrowserbaseAvailable, createBrowserbaseSession } from '#shared/lib/browser/index.ts'
+import { isBrowserbaseAvailable } from '#shared/lib/browser/index.ts'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import { sanitizeError } from '#shared/lib/security.ts'
 import { logger } from '#shared/lib/logger.ts'
@@ -355,6 +358,7 @@ async function scrapePageForEvents(
   collectedEvents: MeetupEvent[]
 ): Promise<void> {
   // Set up GraphQL interception for this page
+  const attemptedSeen = new Set(seenIds)
   const pageEvents: MeetupEvent[] = []
 
   const responseHandler = async (response: { url: () => string; json: () => Promise<unknown> }) => {
@@ -364,8 +368,8 @@ async function scrapePageForEvents(
         const json = await response.json()
         const events = parseGraphQLResponse(json)
         for (const event of events) {
-          if (!seenIds.has(event.id)) {
-            seenIds.add(event.id)
+          if (!attemptedSeen.has(event.id)) {
+            attemptedSeen.add(event.id)
             pageEvents.push(event)
           }
         }
@@ -378,10 +382,12 @@ async function scrapePageForEvents(
   page.on('response', responseHandler)
 
   try {
-    await page.goto(url, {
+    const navigation = await page.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: 60000,
     })
+
+    if (navigation && !navigation.ok()) throw new Error(`Meetup discovery HTTP ${navigation.status()}`)
 
     // Wait for content to load
     await page.waitForTimeout(3000)
@@ -403,8 +409,8 @@ async function scrapePageForEvents(
     if (pageEvents.length < 3) {
       const domEvents = (await page.evaluate(domExtractionScript)) as DOMExtractionResult[]
       for (const domEvent of domEvents) {
-        if (!seenIds.has(domEvent.id)) {
-          seenIds.add(domEvent.id)
+        if (!attemptedSeen.has(domEvent.id)) {
+          attemptedSeen.add(domEvent.id)
           pageEvents.push({
             id: domEvent.id,
             name: domEvent.name,
@@ -441,8 +447,12 @@ async function scrapePageForEvents(
       }
     }
 
+    if (!pageEvents.length && /<title[^>]*>\s*(Just a moment|Access denied)|verify you are human|cf-chl-/i.test(await page.content())) {
+      throw new Error('Meetup discovery blocked by a challenge')
+    }
     // Add to main collection
     collectedEvents.push(...pageEvents)
+    for (const event of pageEvents) seenIds.add(event.id)
   } finally {
     page.off('response', responseHandler)
   }
@@ -478,6 +488,7 @@ async function scrapeWithBrowserInstance(
   const dates = getDateRange(options.startDate, options.endDate)
   logger.info(`[Meetup] Scraping ${dates.length} days`, { startDate: options.startDate, endDate: options.endDate, daysCount: dates.length })
 
+  try {
   for (let i = 0; i < dates.length; i++) {
     const date = dates[i]
     const url = buildMeetupUrlForDate(date)
@@ -501,8 +512,8 @@ async function scrapeWithBrowserInstance(
           await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
           page = await context.newPage()
         } else {
-          // Non-frame error or max retries reached - log and continue
-          logger.error(`[Meetup] Error scraping date`, { date: dateStr, error: sanitizeError(error) })
+          logger.error(`[Meetup] Incomplete discovery date`, { date: dateStr, error: sanitizeError(error) })
+          throw error
         }
       }
     }
@@ -517,6 +528,7 @@ async function scrapeWithBrowserInstance(
 
   logger.info(`[Meetup] Finished scraping`, { totalEvents: collectedEvents.length })
   return collectedEvents
+  } finally { await context.close().catch(() => {}) }
 }
 
 /**
@@ -540,37 +552,19 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
 /**
  * Scrape events using a Browserbase cloud browser for a date range
  */
-async function scrapeWithBrowserbase(options: ScraperOptions): Promise<MeetupEvent[]> {
-  const { chromium } = await import('playwright')
-
-  const { sessionId, connectUrl } = await createBrowserbaseSession()
-  logger.info('[Meetup] Browserbase session created', { sessionId })
-
-  const browser = await chromium.connectOverCDP(connectUrl)
-
-  try {
-    return await scrapeWithBrowserInstance(browser, options)
-  } finally {
-    await browser.close()
-  }
-}
-
-/**
- * Main scraper function.
- *
- * Uses Browserbase (cloud browser) when BROWSERBASE_API_KEY is set,
- * otherwise falls back to local Playwright (development).
- *
- * @param options - Date range to scrape (startDate and endDate required)
- */
 export async function scrapeMeetupEvents(options: ScraperOptions): Promise<MeetupEvent[]> {
-  if (isBrowserbaseAvailable()) {
-    logger.info('[Meetup] Using Browserbase for scraping')
-    return scrapeWithBrowserbase(options)
-  }
-
-  logger.info('[Meetup] Using local Playwright for scraping')
-  return scrapeWithPlaywright(options)
+  return reuseAcquisition(`meetup:catalog:v1:${options.startDate}:${options.endDate}`, async () => {
+    if (isCloudflareBrowserAvailable()) {
+      logger.info('[Meetup] Using Cloudflare Browser Rendering for daily discovery')
+      return withOwnedBrowser('meetup:cloudflare', openCloudflareBrowser, browser => scrapeWithBrowserInstance(browser, options))
+    }
+    if (isBrowserbaseAvailable()) {
+      logger.warn('[Meetup] Cloudflare is unconfigured; retaining explicit legacy Browserbase routing')
+      return withOwnedBrowser('meetup:browserbase', () => openBrowserbaseBrowser('meetup'), browser => scrapeWithBrowserInstance(browser, options))
+    }
+    logger.info('[Meetup] Using local Playwright for scraping')
+    return scrapeWithPlaywright(options)
+  })
 }
 
 /**
@@ -589,8 +583,8 @@ export function filterByDateRange(
   startDate: string,
   endDate: string
 ): MeetupEvent[] {
-  const start = new Date(startDate)
-  const end = new Date(endDate)
+  const start = fromZonedTime(`${startDate}T00:00:00`, BA_TIMEZONE)
+  const end = fromZonedTime(`${endDate}T23:59:59.999`, BA_TIMEZONE)
 
   return events.filter((event) => {
     const eventDate = new Date(event.dateTime)

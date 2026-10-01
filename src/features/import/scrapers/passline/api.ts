@@ -7,7 +7,7 @@
 
 import { isBlockedByEntries } from '../shared/blocklist-filter.ts'
 import type { ImportBlocklistEntry } from '#shared/lib/types.ts'
-import { Effect, Schema } from 'effect'
+import { Schema } from 'effect'
 
 // Passline event structure from their API
 export interface PasslineEvent {
@@ -68,38 +68,47 @@ export function parsePasslineApiResponse(input: unknown): PasslineEvent[] | null
     : null
 }
 
-export const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
+export const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetBillboardByCountry'
+export const PASSLINE_PAGE_SIZE = 200
 
-/**
- * Fetch all events from Passline for Argentina
- * Note: This may fail with Cloudflare protection when called server-side.
- * Works when called from browser context (admin UI manual import).
- */
-export async function fetchPasslineEvents(): Promise<PasslineEvent[]> {
-  const program = Effect.gen(function* () {
-    const response = yield* Effect.tryPromise({
-      try: () => fetch(PASSLINE_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ country: 'argentina' }),
-      }),
-      catch: (error) => new PasslineApiError(error instanceof Error ? error.message : String(error)),
-    })
-    if (!response.ok) {
-      return yield* Effect.fail(new PasslineApiError(`Passline API error: ${response.status} ${response.statusText}`))
+/** Empty terminal page proves exhaustion; a short page alone does not. */
+export async function collectPasslinePages(
+  readPage: (offset: number, size: number) => Promise<unknown>,
+  maxPages = 500
+): Promise<PasslineEvent[]> {
+  const byId = new Map<string, PasslineEvent>()
+  let offset = 0
+  for (let page = 0; page < maxPages; page++) {
+    const raw = await readPage(offset, PASSLINE_PAGE_SIZE)
+    const events = parsePasslineApiResponse({ BillboardByCountry: raw })
+    if (!events) throw new PasslineApiError(`Malformed Passline page at offset ${offset}`)
+    if (!events.length) {
+      console.info('[passline] Complete country acquisition', { pages: page + 1, rawRows: offset, distinctIds: byId.size })
+      return [...byId.values()]
     }
-    const raw = yield* Effect.tryPromise({
-      try: () => response.json() as Promise<unknown>,
-      catch: (error) => new PasslineApiError(error instanceof Error ? error.message : String(error)),
+    for (const event of events) {
+      const existing = byId.get(event.id)
+      if (existing && JSON.stringify(existing) !== JSON.stringify(event)) {
+        throw new PasslineApiError(`Conflicting Passline identity during pagination: ${event.id}`)
+      }
+      byId.set(event.id, event)
+    }
+    offset += events.length
+  }
+  throw new PasslineApiError('Passline pagination exhausted its safety bound before an empty terminal page')
+}
+
+export async function fetchPasslineEvents(): Promise<PasslineEvent[]> {
+  return collectPasslinePages(async (offset, size) => {
+    const response = await fetch(PASSLINE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ country: 'argentina', limit: `${offset},${size}` }),
+      signal: AbortSignal.timeout(30000),
     })
-    const events = parsePasslineApiResponse(raw)
-    if (!events) return yield* Effect.fail(new PasslineApiError('Passline API returned malformed data'))
-    return events
+    if (!response.ok) throw new PasslineApiError(`Passline API error: ${response.status}`)
+    return response.json() as Promise<unknown>
   })
-  return Effect.runPromise(program)
 }
 
 /**

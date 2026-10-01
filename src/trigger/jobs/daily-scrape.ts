@@ -1,3 +1,4 @@
+import { pruneAcquisitionCache } from '#features/import/acquisition/cache.ts'
 /**
  * Daily Scrape Orchestrator
  *
@@ -129,6 +130,7 @@ export const dailyScrape = schedules.task({
   },
   maxDuration: 3600, // 1 hour for full scrape
   run: async (payload, { ctx }): Promise<DailyScrapeResult> => {
+    await pruneAcquisitionCache().catch(() => console.warn('[daily-scrape] Cache retention unavailable'))
     console.log('[daily-scrape] Starting daily scrape orchestration')
     console.log(`[daily-scrape] Scheduled time: ${payload.timestamp}`)
 
@@ -231,7 +233,7 @@ export const dailyScrape = schedules.task({
 
       // Trigger the async enrichment chain (fire-and-forget: the parent does
       // not wait). The chain drains eligible events in bounded batches
-      // (100/batch, 1000-event ceiling) and writes final counts back to this
+      // (100/batch, ceiling sized to the full eligible set) and writes final counts back to this
       // scrape run's metadata.
       if (enrichmentEligible > 0) {
         console.log(`[daily-scrape] Triggering enrichment chain for ${enrichmentEligible} eligible events...`)
@@ -241,7 +243,7 @@ export const dailyScrape = schedules.task({
               limit: DEFAULT_ENRICHMENT_BATCH_SIZE,
               createdAfter: startedAt,
               batchNumber: 1,
-              maxBatches: DEFAULT_ENRICHMENT_MAX_BATCHES,
+              maxBatches: Math.max(DEFAULT_ENRICHMENT_MAX_BATCHES, Math.ceil(enrichmentEligible / DEFAULT_ENRICHMENT_BATCH_SIZE) + 1),
               scrapeRunId: runId,
               eligible: enrichmentEligible,
             })

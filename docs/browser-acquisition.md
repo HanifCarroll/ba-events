@@ -1,0 +1,29 @@
+# Daily browser acquisition
+
+The daily 06:00 Buenos Aires discovery schedule and its source horizons remain intact. Passline uses the published `GetBillboardByCountry` offset/count endpoint through Browserbase until an empty page; the home billboard is not a completeness signal. Identical duplicate IDs collapse; malformed pages, conflicting identities, or exhaustion of the safety bound fail the source. Existing CABA/date/blocklist rules and source field transforms still apply. Existing-event lookup is chunked below the database row ceiling.
+
+Meetup discovery uses Cloudflare Browser Rendering when `CLOUDFLARE_BROWSER_TOKEN` or the existing `CLOUDFLARE_AUDIT_TOKEN` is configured. A Cloudflare failure does not silently spend on Browserbase. Without Cloudflare configuration the explicit logged legacy Browserbase route remains available; without either provider development uses local Playwright. Every requested day must succeed. The final date includes the entire Buenos Aires calendar day.
+
+Passline keeps Browserbase for challenges. Only Passline domains are proxied. Images, fonts, media, and known trackers are blocked; detail pages also block scripts/styles except challenge resources. A failed thin read receives one standard-profile retry. The original JSON-LD/meta-description and venue extractors remain authoritative. A clean page without a description is skipped; a remaining challenge/transient failure stays retryable.
+
+Browser-consuming batches share one queue. Catalog sessions close before database/AI processing. Protected details reuse a browser within a run, rotating after 32 reads or eight minutes; all sessions have provider deadlines and explicit release verification. Release logs include session IDs and proxy bytes, with a warning that immediate usage metadata may lag. A zero at release is not proof of zero bytes.
+
+Anonymous source observations are kept in the private `source-acquisitions` Supabase Storage bucket. The bucket contains no API keys, cookies, auth headers, or user data. Completed observations are reused across attempts of the same Trigger run; failed reads are not cached. Successful protected details can also be reused by a same-day catch-up run, with a Buenos Aires date partition. A new daily catalog read is always fresh. Meetup detail HTTP requests revalidate ETag/Last-Modified and reuse a body only on 304; 200 replaces it. Missing validators cause a full fresh GET. Successfully stored event descriptions retain the existing translate-only reuse policy, not an asserted daily refresh of every historical detail page.
+
+Memory holds at most 256 entries. Retry entries expire after 48 hours and HTTP validator entries after seven days. The daily task removes expired bucket objects older than seven days in bounded batches. Storage errors degrade reuse with a warning rather than deferring discovery. A database/AI retry does not require a new paid read when its observation survives.
+
+The daily enrichment ceiling scales to the observed eligible population; no proxy quota stops new-event acquisition. Failed rows remain excluded from later batches of that chain and are retried by the scheduled catch-up.
+
+## Measured validation and capacity limits
+
+October 1, 2026 experiments acquired exactly matching 3,015 country rows / 3,000 distinct IDs with the old and optimized resource profiles: 20,432,211 versus 599,295 proxy bytes (97.1% less). The production transformer accepted all required fields, with 1,245 distinct CABA/date-eligible IDs before the private blocklist. 1,119 of those were absent from the capped home feed; this is an acquisition omission count, not proof of 1,119 new database events.
+
+Six sampled detail pages matched the production descriptions and venues exactly under the thin profile: 13,872,075 versus 132,101 bytes (99.05% less). Two descriptions were rich source text and four were the existing meta fallback. The standard optimized profile had one navigation race, recovered by one targeted retry. The six-page sample does not establish parity for every future challenge or page variant, hence the bounded standard-profile retry.
+
+A conservative model using measured six-read sessions rounded up to 1 MB, 31 daily 1 MB catalogs, a 50 MB retry reserve, and a **planning target** of 250 MB for Casamo totals 579 MB/month at 47 fresh details/day and 827 MB at 94/day. Casamo's September display was 769 MB; substituting that unchanged usage totals 1,098 MB at 47/day. Sharing up to 32 reads/session should reduce rounding overhead, but that larger-batch capacity is a projection, not a measured guarantee. Booking/manual/other-project traffic consumes the same allowance. This implementation lowers BA acquisition costs; it cannot guarantee zero organization overage from unbounded traffic or unchanged Casamo usage.
+
+## Deployment and rollback
+
+Keep provider and database credentials in Trigger's existing Production secret store. Deploying no longer syncs Browserbase credentials from a developer `.env`. The pre-change Trigger production version is `20260927.1`, and the source baseline is `ebae29fadbae4b479bbb8a7ea6f58315b2b15aef`. To roll back, promote that existing Trigger version and revert the acquisition commit on main; use the recorded pre-rollout Cloudflare Worker versions for any web Worker rollback. Leave the private cache bucket in place during rollback; the old code ignores it.
+
+`browser-acquisition-check` is an unscheduled, explicitly approved source-only verification task. It runs the production Meetup window, direct detail samples, the full Passline country catalog, private blocklist/existing-identity reads, and six production detail samples. It does not import events or invoke categorization/embedding. It has one attempt, one acquisition queue slot, and a 450-second runtime ceiling; callers must separately authorize metered tests. A source-only check does not claim that database/AI writes have completed for a daily run.

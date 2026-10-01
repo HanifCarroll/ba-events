@@ -1,3 +1,4 @@
+import { withAcquisitionRun } from '#features/import/acquisition/run.ts'
 /**
  * Passline Scraper Job
  *
@@ -31,7 +32,7 @@ export const scrapePassline = task({
       machine: 'large-1x', // 4 vCPU, 8GB RAM
     },
   },
-  run: async (payload: PasslineJobPayload): Promise<PasslineImportResult> => {
+  run: async (payload: PasslineJobPayload, { ctx }): Promise<PasslineImportResult> => withAcquisitionRun(ctx.run.id, async () => {
     console.log('[scrape-passline] Starting Passline import job')
 
     const client = createServiceRoleClient()
@@ -43,5 +44,5 @@ export const scrapePassline = task({
 
     console.log('[scrape-passline] Job completed:', result)
     return result
-  },
+  }),
 })

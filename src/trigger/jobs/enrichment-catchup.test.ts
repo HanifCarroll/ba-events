@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@trigger.dev/sdk/v3', () => ({
   metadata: { set: vi.fn() },
+  queue: (definition: unknown) => definition,
   schedules: { task: (definition: unknown) => definition },
   task: (definition: unknown) => definition,
   tasks: { trigger: vi.fn() },

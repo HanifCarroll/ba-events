@@ -1,3 +1,5 @@
+import { browserbaseScraperQueue } from '../queues.ts'
+import { withAcquisitionRun } from '#features/import/acquisition/run.ts'
 /**
  * Enrichment Catchup Job
  *
@@ -79,8 +81,9 @@ export interface EnrichmentBatchResult extends EnrichmentStats {
  */
 export const enrichmentBatch = task({
   id: 'enrichment-batch',
+  queue: browserbaseScraperQueue,
   maxDuration: 3600, // 1 hour per batch (should take ~25 min for 50 events)
-  run: async (payload: EnrichmentBatchPayload): Promise<EnrichmentBatchResult> => {
+  run: async (payload: EnrichmentBatchPayload, { ctx }): Promise<EnrichmentBatchResult> => withAcquisitionRun(ctx.run.id, async () => {
     const { batchNumber, maxBatches = 10 } = payload
 
     console.log(`[enrichment-batch] Starting batch #${batchNumber}`)
@@ -198,7 +201,7 @@ export const enrichmentBatch = task({
       remainingCount,
       chainedNextBatch,
     }
-  },
+  }),
 })
 
 /**
@@ -232,10 +235,10 @@ export const enrichmentCatchup = schedules.task({
     console.log(`[enrichment-catchup] Found ${pendingCount} events needing enrichment, triggering batch processing`)
 
     // Trigger the first batch
-    // Allow up to 20 batches (1000 events) per scheduled run
+    // Size the bounded chain to the complete observed backlog; failed rows are never looped.
     await tasks.trigger<typeof enrichmentBatch>('enrichment-batch', {
       batchNumber: 1,
-      maxBatches: 20,
+      maxBatches: Math.max(20, Math.ceil(pendingCount / BATCH_SIZE) + 1),
     })
 
     return {
