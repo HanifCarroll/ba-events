@@ -6,45 +6,13 @@
  */
 
 import type { PasslineEvent, DateRange } from './api.ts'
-import { parsePasslineApiResponse } from './api.ts'
+import { fetchPasslineEvents } from './api.ts'
 import { isBlockedByEntries } from '../shared/blocklist-filter.ts'
 import type { ImportBlocklistEntry } from '#shared/lib/types.ts'
-import { Effect } from 'effect'
 
-const PASSLINE_API_URL = 'https://api.passline.com/v1/event/GetCountryByBillboardHome'
-
-/**
- * Fetch events from Passline API (client-side only)
- */
+/** The admin browser uses the same complete published pagination as the daily importer. */
 export async function fetchPasslineEventsClient(): Promise<PasslineEvent[]> {
-  const program = Effect.gen(function* () {
-    const response = yield* Effect.tryPromise({
-      try: () => fetch(PASSLINE_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ country: 'argentina' }),
-      }),
-      catch: (error) => new PasslineClientError(error instanceof Error ? error.message : String(error)),
-    })
-    if (!response.ok) {
-      return yield* Effect.fail(new PasslineClientError(`Passline API error: ${response.status} ${response.statusText}`))
-    }
-    const raw = yield* Effect.tryPromise({
-      try: () => response.json() as Promise<unknown>,
-      catch: (error) => new PasslineClientError(error instanceof Error ? error.message : String(error)),
-    })
-    const events = parsePasslineApiResponse(raw)
-    if (!events) return yield* Effect.fail(new PasslineClientError('Passline API returned malformed data'))
-    return events
-  })
-  return Effect.runPromise(program)
-}
-
-class PasslineClientError extends Error {
-  readonly _tag = 'PasslineClientError'
+  return fetchPasslineEvents()
 }
 
 /**
