@@ -15,6 +15,7 @@
 
 	let {
 		eventId,
+		responseId,
 		eventName,
 		initialSaved = false,
 		onSaveChange,
@@ -24,6 +25,7 @@
 		source = 'chat'
 	}: {
 		eventId: string;
+		responseId?: string;
 		/** Event name for analytics tracking */
 		eventName?: string;
 		initialSaved?: boolean;
@@ -77,10 +79,10 @@
 		try {
 			if (newSavedState) {
 				await saveEvent(eventId);
-				track('event:saved', { event_id: eventId, source });
+				track('event:saved', { event_id: eventId, source, ...(responseId ? { response_id: responseId } : {}) });
 			} else {
 				await unsaveEvent(eventId);
-				track('event:unsaved', { event_id: eventId, source });
+				track('event:unsaved', { event_id: eventId, source, ...(responseId ? { response_id: responseId } : {}) });
 			}
 			onSaveChange?.(newSavedState);
 		} catch (error) {

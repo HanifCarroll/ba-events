@@ -289,6 +289,12 @@ export interface ChatMessage {
   clarificationQuestions?: ClarificationQuestion[]
   timestamp: Date
   isStreaming?: boolean
+  /** Browser analytics context for a completed reply; never persisted as AI output. */
+  responseFeedback?: {
+    responseId: string
+    responseKind: CanonicalChatResponse['kind']
+    eventsReturned: number
+  }
 }
 
 export interface ChatState {

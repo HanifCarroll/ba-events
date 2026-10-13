@@ -10,6 +10,7 @@
 	import RefinementSuggestions from './RefinementSuggestions.svelte'
 	import DirectionsCard from './DirectionsCard.svelte'
 	import VenueDetailsCard from './VenueDetailsCard.svelte'
+	import ResponseFeedback from './ResponseFeedback.svelte'
 
 	let {
 		message,
@@ -107,7 +108,7 @@
 			<!-- Event results for assistant messages -->
 			{#if !isUser && events.length > 0}
 				<div class={hasContent ? 'mt-4' : ''}>
-					<EventList events={events} />
+					<EventList events={events} responseId={message.responseFeedback?.responseId} />
 				</div>
 			{/if}
 
@@ -165,6 +166,12 @@
 					onSelect={onSuggestionSelect}
 					disabled={suggestionsDisabled}
 				/>
+			{/if}
+
+			{#if !isUser && !message.isStreaming && message.responseFeedback}
+				{#key message.responseFeedback.responseId}
+					<ResponseFeedback context={message.responseFeedback} />
+				{/key}
 			{/if}
 
 			<!-- Timestamp - only show when there's content or message is complete -->

@@ -20,6 +20,7 @@
 	import { getEventUrl, resolveSiteUrl } from '#shared/lib/utils/url.ts';
 	import { openMapsUrl } from '#shared/lib/utils/maps.ts';
 	import { track } from '#shared/lib/analytics.ts';
+	import { getEventResponseId } from '#features/events/lib/event-detail-navigation.ts';
 	import { getLocale } from '#paraglide/runtime.js';
 	import { pickDisplayDescription } from '#features/events/lib/description-presentation.ts';
 	import {
@@ -40,6 +41,7 @@
 	}: PageProps & { isChatOverlay?: boolean } = $props();
 
 	const event = $derived(data.event);
+	const responseId = $derived(getEventResponseId(page.state, event.id));
 	const locale = getLocale() as 'en' | 'es';
 	const ogLocale = locale === 'es' ? 'es_AR' : 'en_US';
 	const ogAlternateLocale = locale === 'es' ? 'en_US' : 'es_AR';
@@ -107,6 +109,7 @@
 	const handleExternalLink = () => {
 		if (!externalEventUrl) return;
 		track('event:link_clicked', {
+			...(responseId ? { response_id: responseId } : {}),
 			event_id: event.id,
 			link_type: getExternalLinkType(externalActionKind)
 		});
@@ -275,6 +278,7 @@
 
 						<div class="grid grid-cols-3 gap-2">
 							<SaveEventButton
+								{responseId}
 								eventId={event.id}
 								eventName={event.name}
 								source="event_detail"

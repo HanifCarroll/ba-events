@@ -4,10 +4,12 @@
 
 	let {
 		events,
+		responseId,
 		commentary,
 		tips
 	}: {
 		events: EventWithVenue[];
+		responseId?: string;
 		/** Commentary for hero card (single recommendation mode) */
 		commentary?: string;
 		/** Tips for hero card (single recommendation mode) */
@@ -21,6 +23,7 @@
 			event={events[0]}
 			position={0}
 			source="chat"
+			{responseId}
 			variant="hero"
 			commentary={commentary}
 			tips={tips}
@@ -30,7 +33,7 @@
 	<div class="stagger-children space-y-3 sm:space-y-0">
 		{#each events as event, index (event.id)}
 			<div>
-				<EventCard event={event} position={index} source="chat" variant="default" />
+				<EventCard event={event} position={index} source="chat" variant="default" {responseId} />
 			</div>
 		{/each}
 	</div>

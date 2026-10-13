@@ -14,6 +14,7 @@ declare global {
 		// interface PageData {}
 		interface PageState {
 			selectedEvent?: import('./routes/events/[id]/$types').PageData;
+			chatResponse?: { eventId: string; responseId: string };
 		}
 		// interface Platform {}
 	}
