@@ -1,10 +1,12 @@
 import { sequence, type Handle } from '@sveltejs/kit/hooks';
+import { dev } from '$app/env';
 import { Effect } from 'effect';
 import { getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 
 export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
+	if (dev) return resolve(event);
 	if (event.url.protocol === 'https:' && event.url.hostname === 'baeventos.com') return resolve(event);
 	const destination = new URL(event.url);
 	destination.protocol = 'https:';
