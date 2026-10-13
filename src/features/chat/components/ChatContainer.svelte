@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte'
+	import { RotateCw } from 'lucide-svelte'
 	import { Chat } from '@ai-sdk/svelte'
 	import { type UIMessage } from 'ai'
 	import { createClientDelivery, saveClientDelivery, loadClientDelivery, clearClientDelivery, deliveryTransport, stopClientDelivery, type ClientDelivery } from '#features/chat/lib/delivery.ts'
@@ -769,24 +770,18 @@
 		)
 	)
 
-	function dismissError() {
-		error = null
-		if (requestPhase === 'error') {
-			requestPhase = 'idle'
-		}
-	}
 </script>
 
 {#snippet responseNotice()}
 	<div
 		role={error && !noticeIsStopped ? 'alert' : 'status'}
-		class="rounded-lg border p-3 text-sm flex flex-wrap items-center gap-3 {error && !noticeIsStopped ? 'bg-destructive/10 border-destructive/30' : 'bg-muted border-border'}"
+		class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[13px] text-muted-foreground"
 	>
-		<span class="min-w-0 flex-1">{error ?? m.chat_retry_needed()}</span>
+		<span class="min-w-0">{error ?? m.chat_retry_needed()}</span>
 		{#if visibleRetryTurn && !isLoading}
 			<button
 				type="button"
-				class="min-h-11 shrink-0 rounded-md bg-primary px-3 py-2 text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				class="-mr-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				onclick={() => handleSendMessage(visibleRetryTurn.content, {
 					conversationId: localRetryTurn?.conversation_id ?? conversationId ?? undefined,
 					turnId: visibleRetryTurn.id,
@@ -795,17 +790,8 @@
 					retry: true
 				})}
 			>
+				<RotateCw class="size-4" aria-hidden="true" />
 				{m.chat_retry()}
-			</button>
-		{/if}
-		{#if error}
-			<button
-				type="button"
-				onclick={dismissError}
-				class="size-11 shrink-0 rounded-md text-lg leading-none hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-				aria-label={m.chat_dismiss_notice()}
-				>
-				×
 			</button>
 		{/if}
 	</div>

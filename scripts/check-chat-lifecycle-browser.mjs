@@ -10,7 +10,7 @@ const { compile, compileModule } = await import(Bun.resolveSync('svelte/compiler
 const { chromium } = await import(Bun.resolveSync('playwright', root))
 const stubs = {
   auth: 'export const auth = $state({user:null}); export const useAuthContext=()=>auth;',
-  messages: 'export const chat_status_preparing=()=>"Preparing", chat_status_thinking=()=>"Thinking", chat_status_persisting=()=>"Saving", chat_status_error=()=>"Error", chat_thinking=()=>"Thinking", chat_conversation_not_found=()=>"Missing", chat_guest_conversation_not_found=()=>"Missing guest", chat_start_new_chat=()=>"New chat", chat_response_stopped=()=>"Response stopped. You can retry this message.", chat_error_generic=()=>"We could not complete the response. Please try again.", chat_retry_needed=()=>"Retry this message to continue.", chat_retry=()=>"Retry", chat_dismiss_notice=()=>"Dismiss notice", chat_messages_label=()=>"Chat messages";',
+  messages: 'export const chat_status_preparing=()=>"Preparing", chat_status_thinking=()=>"Thinking", chat_status_persisting=()=>"Saving", chat_status_error=()=>"Error", chat_thinking=()=>"Thinking", chat_conversation_not_found=()=>"Missing", chat_guest_conversation_not_found=()=>"Missing guest", chat_start_new_chat=()=>"New chat", chat_response_stopped=()=>"Response stopped", chat_error_generic=()=>"Could not finish", chat_retry_needed=()=>"Response interrupted", chat_retry=()=>"Retry", chat_dismiss_notice=()=>"Dismiss notice", chat_messages_label=()=>"Chat messages";',
   locale: 'export const getLocale=()=>"en";',
   analytics: 'export const track=(name,data)=>window.analytics.push({name,data});',
   toast: 'export const toast={error:(...args)=>window.toasts.push(args),warning:(...args)=>window.toasts.push(args)};',
@@ -97,6 +97,8 @@ try {
  await stoppedNotice.getByRole('status').getByRole('button',{name:'Retry',exact:true}).waitFor();
  assert.equal(await page.getByRole('log',{name:'Chat messages'}).getByRole('status').count(),1);
  assert.equal(await page.locator('[data-message-notice-for]').count(),1);
+ assert.equal(await stoppedNotice.getByRole('button').count(),1);
+ assert.match(await stoppedNotice.innerText(), /^Response stopped\s+Retry$/);
  assert.equal(await stoppedNotice.evaluate((notice,id)=>notice.previousElementSibling?.getAttribute('data-message-id')===id,stoppedRequest.userClientMessageId),true);
 
  await pendingRoute.fulfill({status:200,contentType:'text/event-stream',headers:{'x-vercel-ai-ui-message-stream':'v1'},body:response()}).catch(()=>{});pendingRoute=undefined;

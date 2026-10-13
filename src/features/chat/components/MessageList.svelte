@@ -139,7 +139,7 @@
 				isLast={!isLoading && index === messages.length - 1}
 			/>
 			{#if message.role === 'user' && message.id === noticeMessageId && messageNotice}
-				<div class="-mt-1 mb-6 flex justify-end sm:-mt-5" data-message-notice-for={message.id}>
+				<div class="-mt-3 mb-6 flex justify-end sm:-mt-8" data-message-notice-for={message.id}>
 					<div class="w-full max-w-[88%] sm:max-w-[52%]">
 						{@render messageNotice()}
 					</div>

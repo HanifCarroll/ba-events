@@ -179,7 +179,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   const failureNotice = page.getByRole('alert');
   await failureNotice.getByRole('button', { name: 'Retry', exact: true }).waitFor({ timeout: 20_000 });
-  assert.match(await failureNotice.innerText(), /could not complete the response/i);
+  assert.match(await failureNotice.innerText(), /could not finish/i);
   if (process.env.CHAT_DOGFOOD_EVIDENCE_DIR) {
    await mkdir(process.env.CHAT_DOGFOOD_EVIDENCE_DIR, { recursive: true });
    await page.screenshot({ path: resolve(process.env.CHAT_DOGFOOD_EVIDENCE_DIR, 'exhausted-recovery-retry.png'), fullPage: true });

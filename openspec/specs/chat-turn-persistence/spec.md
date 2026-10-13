@@ -135,6 +135,8 @@ The composer SHALL have a localized accessible name and SHALL NOT submit Enter w
 #### Scenario: User stops a follow-up after an earlier completed response
 - **WHEN** the user stops the follow-up response
 - **THEN** the stopped notice and Retry appear directly below the follow-up question
+- **AND** the feedback is a compact, right-aligned text row with a short localized status and icon-labeled Retry, without a filled notice box or dismiss control
+- **AND** Retry retains a minimum forty-four-pixel touch target and visible keyboard focus
 - **AND** earlier questions and responses remain unchanged
 - **AND** Retry preserves the original turn and message identifiers
 
