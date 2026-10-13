@@ -9,10 +9,12 @@ PostHog respects Do Not Track and Global Privacy Control. Google Analytics respe
 | --- | --- | --- |
 | `$pageview` | PostHog standard page properties | Which production pages people reach |
 | `chat:message_sent` | `message_length`, `has_history`, `locale` | Chat demand |
-| `chat:response_received` | `duration_ms`, `events_returned`, `locale` | Response quality and speed |
-| `chat:event_clicked` | `event_id`, `position`, `source`, `locale` | Recommendation relevance |
-| `event:link_clicked` | `event_id`, `link_type`, `locale` | Ticket or RSVP intent |
-| `event:saved` / `event:unsaved` | `event_id`, `source`, `locale` | Saved-event value |
+| `chat:response_received` | `duration_ms`, `events_returned`, `response_id`, `response_kind`, `locale` | Completed replies and speed |
+| `chat:feedback_shown` | `response_id`, `response_kind`, `events_returned`, `locale` | Completed replies with a visible feedback offer |
+| `chat:helpfulness_rated` | `response_id`, `response_kind`, `events_returned`, `rating`, `previous_rating`, `locale` | Explicit helpful/not-helpful feedback |
+| `chat:event_clicked` | `event_id`, `position`, `source`, optional `response_id`, `locale` | Recommendation engagement |
+| `event:link_clicked` | `event_id`, `link_type`, optional `response_id`, `locale` | Ticket or RSVP intent |
+| `event:saved` / `event:unsaved` | `event_id`, `source`, optional `response_id`, `locale` | Saved-event value |
 | `chat:error` | `error_type`, `locale` | Customer-visible chat failures |
 | `feedback:submitted` | `locale` | Feedback volume |
 | `mcp:signpost_clicked` | `source`, `locale` | Homepage MCP interest |
@@ -30,6 +32,45 @@ PostHog also collects autocaptured interaction metadata, page-leave and scroll-d
 - Server-side agent, tool, fallback, or execution-trace telemetry
 
 Feedback text is stored separately in the first-party `product_feedback` table when a person explicitly submits the form. It is not sent to PostHog.
+
+## Response helpfulness
+
+Completed web replies offer “Was this helpful?” / “¿Te sirvió esta respuesta?”
+with two optional choices. Streaming, stopped, failed, and not-yet-persisted
+replies cannot be rated. The control records its first viewport exposure and
+explicit votes separately. Selecting the current choice does nothing; changing
+it records the new and previous choice. Up to 200 selections/exposures are kept
+in the current browser tab's session storage, surviving reloads. Restricted
+storage falls back to the current component state. This is best-effort product
+analytics, not durable first-party feedback submission or a cross-device ballot.
+
+Use the opaque canonical `response_id` to join votes with completed responses
+and their card clicks, saves and external-link actions in PostHog. Custom events
+include actions in event details opened from that reply. Attribution is scoped
+to the selected event in browser navigation state and never enters link URLs;
+unrelated details clear it. Direct links/new tabs may lack that browser context.
+Custom events
+honor Do Not Track and Global Privacy Control. Ratings contain no prose, free-text
+feedback, source content or credentials and are excluded from GA4. Telegram and
+external MCP clients do not currently collect this web feedback.
+
+For each reporting cohort, exclude admins and use unique response IDs, never raw
+event counts. Use the **latest** vote per response (ordered by event timestamp)
+so corrections replace earlier votes. Report these measures separately, with
+their numerator, denominator, sample size, date range and English/Spanish split:
+
+- Helpfulness: latest helpful votes / all rated responses.
+- Rating coverage: rated responses / responses with a visible feedback offer.
+- Offer coverage: responses with a visible feedback offer / completed responses.
+- Click, save and external-action rates: responses with the action / completed
+  responses. For a satisfaction comparison, also show the same actions within
+  rated replies, split by latest vote, rather than assuming unrated replies agree.
+
+Deduplicate even when session storage is unavailable, an old entry was evicted,
+or someone returns in another session. Keep unrated replies unknown, not positive
+or negative. A ticket/RSVP link click measures intent; purchases/attendance are
+unobserved and must not be labeled conversion. No production satisfaction rates
+are established until this change is released and real users provide ratings.
 
 ## Feedback alerts
 

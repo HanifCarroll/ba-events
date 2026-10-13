@@ -38,6 +38,7 @@
 
 	let {
 		event,
+		responseId,
 		position,
 		source = 'chat',
 		variant = 'default',
@@ -45,6 +46,7 @@
 		tips
 	}: {
 		event: EventWithVenue;
+		responseId?: string;
 		/** Position in the list (0-indexed) for analytics */
 		position?: number;
 		/** Source context for analytics */
@@ -113,6 +115,7 @@
 
 	const handleExternalClick = () => {
 		track('event:link_clicked', {
+			...(responseId ? { response_id: responseId } : {}),
 			event_id: event.id,
 			link_type: getExternalLinkType(externalActionKind)
 		});
@@ -120,6 +123,7 @@
 
 	const handleDetailsClick = async (click: MouseEvent) => {
 		track('chat:event_clicked', {
+			...(responseId ? { response_id: responseId } : {}),
 			event_id: event.id,
 			position,
 			source
@@ -132,7 +136,7 @@
 		click.preventDefault();
 		await goto(
 			detailsHref,
-			getEventDetailsGotoOptions(buildEventDetailData(event), page.state)
+			getEventDetailsGotoOptions(buildEventDetailData(event), page.state, responseId)
 		);
 	};
 </script>
@@ -209,6 +213,7 @@
 
 				<div class="mt-6 flex flex-wrap items-center gap-1.5">
 					<SaveEventButton
+						{responseId}
 						eventId={event.id}
 						eventName={event.name}
 						size="sm"
@@ -270,6 +275,7 @@
 				</p>
 				<div class="flex shrink-0 items-center gap-1">
 					<SaveEventButton
+						{responseId}
 						eventId={event.id}
 						eventName={event.name}
 						size="sm"
@@ -328,6 +334,7 @@
 
 			<div class="mt-3 flex flex-wrap items-center gap-1.5">
 				<SaveEventButton
+					{responseId}
 					eventId={event.id}
 					eventName={event.name}
 					size="sm"

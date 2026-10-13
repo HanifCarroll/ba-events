@@ -1,4 +1,8 @@
 {
+  "chat_helpfulness_question": "Was this helpful?",
+  "chat_helpfulness_yes": "Helpful",
+  "chat_helpfulness_no": "Not helpful",
+  "chat_helpfulness_thanks": "Thanks for your feedback.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "nav_new_chat": "New Chat",
   "nav_saved": "Saved Events",

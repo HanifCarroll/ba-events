@@ -17,7 +17,7 @@ const stubs = {
   state: `import {getGuestConversationWithMessages} from '${root}/src/shared/lib/db/guest-conversations.ts';
   export const chatState={getGuestConversation:getGuestConversationWithMessages,addMessage:async()=>({id:'legacy'}),generateTitle:async()=>({title:'Title'}),registerStartNewChatHandler(fn){window.startNew=fn;return()=>{}},getConversationScrollPosition:()=>null,saveConversationScrollPosition:()=>{}};`,
   input: '<script>let {onSend,disabled,onStop,canStop}=$props();let value=$state("")</script><form onsubmit={e=>{e.preventDefault();void onSend(value);value=""}}><input aria-label="Message" bind:value disabled={disabled}/>{#if canStop}<button type="button" onclick={onStop}>Stop response</button>{:else}<button disabled={disabled}>Send</button>{/if}</form>',
-  message: '<script>let {message}=$props()</script><div data-message-id={message.id}><p data-role={message.role}>{message.content}</p>{#each message.events??[] as event}<article data-event-id={event.id}>{event.name}</article>{/each}</div>',
+  message: '<script>let {message}=$props()</script><div data-message-id={message.id}><p data-role={message.role}>{message.content}</p>{#if message.responseFeedback}<span data-feedback-response={message.responseFeedback.responseId}></span>{/if}{#each message.events??[] as event}<article data-event-id={event.id}>{event.name}</article>{/each}</div>',
   prompts: '<script>let {onSelectPrompt}=$props()</script><button onclick={()=>onSelectPrompt(window.dogfoodPrompt??"First question")}>Start</button>',
 }
 await Bun.write(`${temp}/Harness.svelte`, `<script>
@@ -104,6 +104,7 @@ try {
  await pendingRoute.fulfill({status:200,contentType:'text/event-stream',headers:{'x-vercel-ai-ui-message-stream':'v1'},body:response()}).catch(()=>{});pendingRoute=undefined;
  const stopped=await page.evaluate(async()=>window.getStored(window.routeId()));
  assert.equal(stopped.messages.filter(m=>m.role==='assistant').length,1);assert.equal(stopped.turns.find(t=>t.id===stoppedRequest.turnId).status,'failed');
+ assert.equal(await page.locator('[data-feedback-response]').count(),1,'only the earlier completed reply may offer feedback after Stop');
  await page.getByRole('button',{name:'Retry',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('[data-role="assistant"]').length===2);
  assert.equal(requests.at(-1).turnId,stoppedRequest.turnId);assert.equal(requests.at(-1).assistantClientMessageId,stoppedRequest.assistantClientMessageId);
@@ -118,6 +119,8 @@ try {
  await page.locator(`[data-message-notice-for="${requests.at(-1).userClientMessageId}"]`).getByRole('alert').getByRole('button',{name:'Retry',exact:true}).waitFor();
  const failed=await page.evaluate(async()=>({stored:await window.getStored(window.routeId()),analytics:window.analytics}));
  assert.equal(failed.stored.messages.filter(m=>m.role==='assistant').length,1);assert.equal(failed.analytics.filter(e=>e.name==='chat:response_received').length,1);
+ assert.equal(await page.locator('[data-feedback-response]').count(),1,'error followed by finish cannot enable feedback for the failed reply');
+ assert.equal(failed.analytics.find(e=>e.name==='chat:response_received').data.response_id,canonical.requestId);
  await page.getByRole('button',{name:'Retry',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('[data-role="assistant"]').length===2);
  assert.equal(requests[1].turnId,requests[2].turnId);assert.equal(requests[1].assistantClientMessageId,requests[2].assistantClientMessageId);

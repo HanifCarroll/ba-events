@@ -45,7 +45,14 @@ The scheduled catch-up SHALL include retryable `failed` events in its first batc
 - **THEN** the next batch excludes that failed event, while the event remains eligible for the next scheduled catch-up
 
 ### Requirement: Daily discovery exhausts the source window
-Daily imports SHALL acquire the full configured discovery window without deferring new events to satisfy a proxy quota. Passline SHALL use its published country pagination until an empty terminal page, validate every page, deduplicate identical source identities, and fail incomplete observations rather than treating a capped home feed as a complete country catalog. Daily enrichment chains SHALL be sized to their observed eligible set. Meetup date filtering SHALL include the complete last calendar day in Buenos Aires time.
+
+Daily imports SHALL acquire the full configured discovery window without deferring new events to satisfy a proxy quota.
+
+#### Scenario: Daily discovery acquires its complete configured source window
+- **WHEN** daily discovery acquires its complete configured source window
+- **THEN** Passline SHALL use its published country pagination until an empty terminal page, validate every page, deduplicate identical source identities, and fail incomplete observations rather than treating a capped home feed as a complete country catalog.
+- **AND** Daily enrichment chains SHALL be sized to their observed eligible set.
+- **AND** Meetup date filtering SHALL include the complete last calendar day in Buenos Aires time.
 
 #### Scenario: Passline home feed is capped
 - **WHEN** more events exist than the home feed exposes
@@ -56,7 +63,17 @@ Daily imports SHALL acquire the full configured discovery window without deferri
 - **THEN** the source reports failure rather than success with an incomplete observation
 
 ### Requirement: Browser acquisition has explicit ownership and retry reuse
-Production Meetup discovery SHALL use configured Cloudflare Browser Rendering, retain direct HTTP detail reads, and SHALL NOT silently fall back to a paid provider after a Cloudflare failure. Passline SHALL retain Browserbase for challenged pages, proxy only Passline domains, block nonessential resources, and retry a failed thin detail profile once with its standard resource profile. Every owned browser SHALL be released and its provider closure checked. Successful anonymous source acquisitions SHALL be reused within the same Trigger run and across its retries, while a new daily run SHALL make fresh source observations. Failed acquisitions SHALL NOT be cached as success. A successful protected detail MAY also be reused by another same-day catch-up run after a downstream failure; its day partition SHALL reset at Buenos Aires midnight. Browser-consuming enrichment batches SHALL share the acquisition queue.
+
+Production Meetup discovery SHALL use configured Cloudflare Browser Rendering, retain direct HTTP detail reads, and SHALL NOT silently fall back to a paid provider after a Cloudflare failure.
+
+#### Scenario: A production source acquisition opens, retries, closes, or reuses a browser
+- **WHEN** a production source acquisition opens, retries, closes, or reuses a browser
+- **THEN** Passline SHALL retain Browserbase for challenged pages, proxy only Passline domains, block nonessential resources, and retry a failed thin detail profile once with its standard resource profile.
+- **AND** Every owned browser SHALL be released and its provider closure checked.
+- **AND** Successful anonymous source acquisitions SHALL be reused within the same Trigger run and across its retries, while a new daily run SHALL make fresh source observations.
+- **AND** Failed acquisitions SHALL NOT be cached as success.
+- **AND** A successful protected detail MAY also be reused by another same-day catch-up run after a downstream failure; its day partition SHALL reset at Buenos Aires midnight.
+- **AND** Browser-consuming enrichment batches SHALL share the acquisition queue.
 
 #### Scenario: Database or AI processing fails after a complete acquisition
 - **WHEN** the same Trigger run retries with a valid retained acquisition

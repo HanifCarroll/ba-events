@@ -7,7 +7,7 @@
 			title: 'Privacy policy',
 			intro:
 				'This policy explains what BA Eventos collects, why we use it, and the choices available to you.',
-			updated: 'Last updated: September 6, 2026',
+			updated: 'Last updated: October 13, 2026',
 			sections: [
 				{
 					title: 'Information we collect',
@@ -34,7 +34,7 @@
 				{
 					title: 'Product analytics',
 					body: [
-						'On baeventos.com, PostHog records page views, interaction and scroll metadata, session replays, and limited product events such as message length, response time, event clicks, saves, errors, and language. Replay privacy and masking follow the settings configured for the project in PostHog. Google Analytics records acquisition, redacted page paths, and the same limited product outcomes without user IDs. We do not include email addresses, chat text, search text, feedback text, or error messages in custom analytics events. PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.'
+						'On baeventos.com, PostHog records page views, interaction and scroll metadata, session replays, and limited product events such as message length, response time, event clicks, saves, optional helpfulness ratings linked by an opaque response identifier, errors, and language. Replay privacy and masking follow the settings configured for the project in PostHog. Google Analytics records acquisition, redacted page paths, and the same limited product outcomes without user IDs. We do not include email addresses, chat text, search text, feedback text, or error messages in custom analytics events. PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.'
 					]
 				},
 				{
@@ -62,7 +62,7 @@
 			title: 'Política de privacidad',
 			intro:
 				'Esta política explica qué recopila BA Eventos, para qué lo usamos y qué opciones tenés.',
-			updated: 'Última actualización: 6 de septiembre de 2026',
+			updated: 'Última actualización: 13 de octubre de 2026',
 			sections: [
 				{
 					title: 'Información que recopilamos',
@@ -89,7 +89,7 @@
 				{
 					title: 'Analítica del producto',
 					body: [
-						'En baeventos.com, PostHog registra visitas de páginas, metadatos de interacción y desplazamiento, repeticiones de sesión y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, errores e idioma. La privacidad y el ocultamiento de las repeticiones siguen la configuración del proyecto en PostHog. Google Analytics registra la adquisición, rutas de página protegidas y los mismos resultados limitados del producto sin identificadores de usuario. No incluimos correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error en eventos de analítica personalizados. Google Analytics respeta Do Not Track.'
+						'En baeventos.com, PostHog registra visitas de páginas, metadatos de interacción y desplazamiento, repeticiones de sesión y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, valoraciones opcionales de utilidad vinculadas por un identificador opaco de respuesta, errores e idioma. La privacidad y el ocultamiento de las repeticiones siguen la configuración del proyecto en PostHog. Google Analytics registra la adquisición, rutas de página protegidas y los mismos resultados limitados del producto sin identificadores de usuario. No incluimos correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error en eventos de analítica personalizados. Google Analytics respeta Do Not Track.'
 					]
 				},
 				{

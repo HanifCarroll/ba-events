@@ -78,7 +78,14 @@ The chat SHALL expose an accessible, localized Stop control during preparation a
 - **AND** the browser waits for that decision before treating terminal callbacks as stopped or completed
 
 ### Requirement: Delivery reconnects to the same bounded attempt
-The web channel SHALL keep a workflow-owned attempt independent of browser subscribers and a bounded ordered replay log for ten minutes. Browser reconnection SHALL reuse stable identifiers without another provider call or claim acquisition. Every attach and Stop SHALL revalidate the current identity and an unguessable capability. Duplicate submissions SHALL be deduplicated; changed input, identity or capability SHALL be rejected. Raw capabilities and session credentials SHALL NOT enter the durable log. Recovery credentials MAY be stored in a separate authenticated encrypted envelope, bound to the attempt and deleted at termination or expiry.
+The web channel SHALL keep a workflow-owned attempt independent of browser subscribers and a bounded ordered replay log for ten minutes. Browser reconnection SHALL reuse stable identifiers without another provider call or claim acquisition. Attachment, cancellation, deduplication and recovery credentials SHALL preserve the original attempt's identity and authority.
+
+#### Scenario: A browser attaches, stops or repeats a submission
+- **WHEN** a browser attaches to, stops or repeats an existing delivery attempt
+- **THEN** every attach and Stop revalidate the current identity and an unguessable capability
+- **AND** duplicate submissions are deduplicated; changed input, identity or capability is rejected
+- **AND** raw capabilities and session credentials do not enter the durable log
+- **AND** recovery credentials may be stored in a separate authenticated encrypted envelope, bound to the attempt and deleted at termination or expiry
 
 #### Scenario: A browser connection drops midway through a response
 - **WHEN** its connection ends without a terminal delivery event
@@ -125,12 +132,13 @@ The web channel SHALL keep a workflow-owned attempt independent of browser subsc
 - **AND** guest completion on later replay still requires the original unexpired local claim
 
 ### Requirement: Chat feedback and input are accessible in the active locale
-The composer SHALL have a localized accessible name and SHALL NOT submit Enter while text composition is active. Errors and retry guidance SHALL share one nonoverlapping notice in normal document flow with localized controls. When the owning user question is visible, its notice and Retry SHALL appear directly below that question inside the conversation, rather than above the chat. Failures SHALL be announced as alerts using generic user-facing text; intentional stops SHALL be announced as status updates.
+The composer SHALL have a localized accessible name and SHALL NOT submit Enter while text composition is active. Errors and retry guidance SHALL share one nonoverlapping notice in normal document flow with localized controls. Failures SHALL be announced as alerts using generic user-facing text; intentional stops SHALL be announced as status updates.
 
 #### Scenario: Response fails on a narrow screen
 - **WHEN** the response fails and Retry is available
 - **THEN** the error and Retry appear together without covering the conversation or composer
 - **AND** the notice is announced and all controls have localized accessible names
+- **AND** when the owning user question is visible, its notice and Retry appear directly below that question inside the conversation, rather than above the chat
 
 #### Scenario: User stops a follow-up after an earlier completed response
 - **WHEN** the user stops the follow-up response
@@ -151,6 +159,43 @@ New assistant messages MUST persist the server-produced canonical response, visi
 - **WHEN** history is read later
 - **THEN** the stored canonical response remains the rendering authority
 
+### Requirement: Completed web responses collect optional helpfulness feedback
+Completed web assistant responses SHALL offer localized, accessible Helpful and Not helpful controls. Progressive, streaming, stopped, failed, or not-yet-persisted responses SHALL NOT offer a rating. Ratings SHALL NOT mutate canonical responses, saved-event membership, or retry state. The browser SHALL retain up to 200 selections in session storage when available; unavailable storage or analytics SHALL NOT disrupt chat.
+
+#### Scenario: A completed response comes into view
+- **WHEN** the feedback controls for a completed canonical response enter the viewport
+- **THEN** an eligible analytics session records a feedback offer without assuming satisfaction
+- **AND** the controls have localized accessible names and pressed states
+
+#### Scenario: A person corrects their rating
+- **WHEN** a person selects Not helpful after previously selecting Helpful
+- **THEN** the selection changes and an eligible analytics session records the new and previous ratings under the same response identifier
+- **AND** repeated selection of the current rating or a remount within the retained browser session does not create another vote
+- **AND** session storage retains the latest 200 selections and visible offers across reloads, independently for each opaque response identifier
+
+#### Scenario: A response is interrupted or persistence fails
+- **WHEN** a response is still streaming, stopped, or waiting for successful canonical persistence
+- **THEN** no feedback controls or feedback analytics are emitted for that unfinished response
+
+#### Scenario: Browser storage or analytics is unavailable
+- **WHEN** a person rates a completed reply while storage or analytics is unavailable
+- **THEN** the current view shows the selected rating without interrupting chat
+- **AND** analytics is best effort and does not claim durable submission
+
+### Requirement: Helpfulness and engagement analytics use limited correlated metadata
+Analytics SHALL record visible feedback offers separately from explicit ratings. Feedback events SHALL contain only an opaque canonical response identifier, response kind, event count, locale, and selected/previous ratings. Completed replies and their card interactions SHALL share the response identifier. Custom feedback analytics SHALL honor Do Not Track and Global Privacy Control. Ratings SHALL NOT be forwarded to Google Analytics.
+
+#### Scenario: A person interacts with a rated reply's card
+- **WHEN** a card click, successful save or unsave, or external-link click belongs to a completed chat response
+- **THEN** its analytics event includes the same opaque canonical response identifier as the helpfulness rating
+- **AND** neither feedback event includes chat text, feedback text, source content, or credentials
+- **AND** opening its event details preserves attribution only for that event in browser navigation state, without adding the response identifier to any URL
+- **AND** opening unrelated details clears inherited attribution
+
+#### Scenario: A person opts out of analytics
+- **WHEN** Do Not Track or Global Privacy Control is enabled
+- **THEN** selecting a helpfulness rating updates the current view without emitting custom analytics
+
 ### Requirement: Historical contracts adapt without rewriting rows
 Supported historical message contracts SHALL be adapted at read time to the current render shape. Unknown or malformed canonical data MUST NOT be cast as current.
 
@@ -170,6 +215,8 @@ Supported historical message contracts SHALL be adapted at read time to the curr
 - `src/features/chat/components/ChatContainer.svelte`
 - `src/features/chat/components/ChatInput.svelte`
 - `src/features/chat/components/MessageList.svelte`
+- `src/features/chat/components/ResponseFeedback.svelte`
+- `src/features/chat/lib/response-feedback.ts`
 - `src/chat-delivery-worker/index.ts`
 - `src/features/chat/api/delivery.server.ts`
 - `src/features/chat/api/execute.server.ts`
@@ -184,6 +231,7 @@ Supported historical message contracts SHALL be adapted at read time to the curr
 - `src/features/chat/lib/canonical.test.ts`
 - `src/shared/lib/db/guest-conversations.test.ts`
 - `src/features/chat/lib/turn-lifecycle.test.ts`
+- `src/features/chat/lib/response-feedback.test.ts`
 
 ### Verification command
 ```sh

@@ -8,6 +8,7 @@
 	import { getLocale } from '#paraglide/runtime.js'
 	import * as m from '#paraglide/messages.js'
 	import { track } from '#shared/lib/analytics.ts'
+	import { responseFeedbackContext } from '#features/chat/lib/response-feedback.ts'
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { chatState } from '#features/chat/state/chat.svelte.ts'
 	import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract-visible-text.ts'
@@ -355,7 +356,7 @@
 			const stored = turn.userId === null ? await chatState.getGuestConversation(turn.conversationId) : null
 			if (!isCurrentTurn(turn)) return
 			if (turn.userId === null) guestConversation = stored
-			track('chat:response_received', { duration_ms: Date.now() - startedAt, events_returned: canonical.events.length })
+			track('chat:response_received', { duration_ms: Date.now() - startedAt, events_returned: canonical.events.length, response_id: canonical.requestId, response_kind: canonical.kind })
 			if (isFirstExchangeRef) {
 				isFirstExchangeRef = false
 				const title = turn.userId === null
@@ -680,6 +681,7 @@
 				content: canonical?.text ?? textContent,
 				timestamp: resolveMessageTimestamp(message, messageTimestampsById),
 				isStreaming,
+				responseFeedback: responseFeedbackContext(completedCanonical, isStreaming || (isLastAssistant && requestPhase !== 'idle')),
 				events: render.events.length > 0 ? render.events : undefined,
 				suggestions: render.suggestions.length > 0 ? render.suggestions : undefined,
 				directions: render.directions ?? undefined,

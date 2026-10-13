@@ -4,6 +4,8 @@ import { browser } from '$app/env'
 export type AnalyticsEvent =
   | 'chat:message_sent'
   | 'chat:response_received'
+  | 'chat:feedback_shown'
+  | 'chat:helpfulness_rated'
   | 'chat:event_clicked'
   | 'chat:error'
   | 'event:saved'
@@ -94,6 +96,7 @@ export function track(
   properties?: Record<string, unknown>
 ) {
   if (!isAnalyticsEnabled()) return
+  if (navigator.doNotTrack === '1' || (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl) return
 
   if (navigator.doNotTrack !== '1' && isGoogleAnalyticsOutcome(event)) {
     ;(window as AnalyticsWindow).gtag?.('event', event.replaceAll(':', '_'), {
@@ -109,5 +112,5 @@ export function track(
         locale: getLocale(),
       })
     }
-  })
+  }).catch(() => { /* Analytics outages must not interrupt product controls. */ })
 }

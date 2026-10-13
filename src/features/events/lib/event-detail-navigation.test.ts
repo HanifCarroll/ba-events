@@ -4,6 +4,7 @@ import { buildEventDetailData } from './event-detail-data.ts'
 import {
 	getChatEventHref,
 	getEventDetailsGotoOptions,
+	getEventResponseId,
 	shouldInterceptChatEventClick
 } from './event-detail-navigation.ts'
 
@@ -41,6 +42,22 @@ describe('event detail shallow navigation', () => {
 
 	it('intercepts ordinary chat clicks for every card variant', () => {
 		expect(shouldInterceptChatEventClick('chat', click())).toBe(true)
+	})
+
+	it('carries reply attribution into its event details without changing URLs', () => {
+		const selected = buildEventDetailData({ id: 'event-1', name: 'A show' } as EventWithVenue)
+		const options = getEventDetailsGotoOptions(selected, {}, 'response-1')
+		expect(getEventResponseId(options.state, 'event-1')).toBe('response-1')
+		expect(getEventResponseId(options.state, 'event-2')).toBeUndefined()
+		expect(getChatEventHref('/chat/conversation-1', 'event-1')).toBe('/chat/conversation-1?event=event-1')
+	})
+
+	it('clears inherited attribution when another event opens without reply context', () => {
+		const original: App.PageState = { chatResponse: { eventId: 'event-1', responseId: 'response-1' } }
+		const selected = buildEventDetailData({ id: 'event-2', name: 'Another show' } as EventWithVenue)
+		const options = getEventDetailsGotoOptions(selected, original)
+		expect(options.state.chatResponse).toBeUndefined()
+		expect(original.chatResponse?.responseId).toBe('response-1')
 	})
 
 	it('leaves saved-page and modified clicks native', () => {

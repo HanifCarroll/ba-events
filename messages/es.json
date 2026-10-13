@@ -1,4 +1,8 @@
 {
+  "chat_helpfulness_question": "¿Te sirvió esta respuesta?",
+  "chat_helpfulness_yes": "Me sirvió",
+  "chat_helpfulness_no": "No me sirvió",
+  "chat_helpfulness_thanks": "Gracias por tu opinión.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "nav_new_chat": "Nuevo Chat",
   "nav_saved": "Eventos Guardados",
