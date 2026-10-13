@@ -68,6 +68,40 @@ The chat SHALL expose an accessible, localized Stop control during preparation a
 - **THEN** the old attempt cannot start a provider request after preparation settles
 - **AND** any late running guest claim is released without losing the retry path
 
+#### Scenario: Stop arrives before the delayed submission
+- **WHEN** Stop reaches delivery before its original submission
+- **THEN** delivery records cancellation and the delayed submission cannot start generation
+
+#### Scenario: Stop races canonical persistence
+- **WHEN** Stop and the persistence gate race for the same attempt
+- **THEN** one serialized decision determines whether cancellation or persistence wins
+- **AND** the browser waits for that decision before treating terminal callbacks as stopped or completed
+
+### Requirement: Delivery reconnects to the same bounded attempt
+The web channel SHALL keep one producer independent of browser subscribers and a bounded ordered replay log for ten minutes. Reconnection SHALL reuse stable identifiers without another provider call or claim acquisition. Every attach and Stop SHALL revalidate the current identity and an unguessable capability. Duplicate submissions SHALL be deduplicated; changed input, identity or capability SHALL be rejected. Raw capabilities and session credentials SHALL NOT enter the durable log.
+
+#### Scenario: A browser connection drops midway through a response
+- **WHEN** its connection ends without a terminal delivery event
+- **THEN** the client reconnects from the last complete event offset and ignores duplicate prefix events
+- **AND** the existing producer and turn claim continue independently
+- **AND** previews never cause assistant persistence or success bookkeeping
+
+#### Scenario: The page is refreshed or the user returns to the conversation
+- **WHEN** the same browser session retains a valid attempt capability and the owning turn remains eligible
+- **THEN** it can replay and attach to that attempt under its original identifiers
+- **AND** changing accounts cannot attach to the previous account's delivery
+
+#### Scenario: A delivery worker restarts or the replay window expires
+- **WHEN** no producer can continue the stored attempt or the replay window has expired
+- **THEN** delivery fails closed without silently rerunning the provider
+- **AND** recovery retains the explicit retry path and existing active-claim validation
+- **AND** expired logs are removed while a small tombstone prevents a delayed duplicate submission from rerunning the attempt
+
+#### Scenario: User leaves the page without activating Stop
+- **WHEN** navigation or account changes detach the browser subscriber
+- **THEN** the server attempt continues independently and old callbacks cannot update the new view
+- **AND** guest completion on later replay still requires the original unexpired local claim
+
 ### Requirement: Chat feedback and input are accessible in the active locale
 The composer SHALL have a localized accessible name and SHALL NOT submit Enter while text composition is active. Errors and retry guidance SHALL share one nonoverlapping notice in normal document flow with localized controls. Failures SHALL be announced as alerts using generic user-facing text; intentional stops SHALL be announced as status updates.
 
@@ -106,8 +140,14 @@ Supported historical message contracts SHALL be adapted at read time to the curr
 - `src/features/chat/components/ChatContainer.svelte`
 - `src/features/chat/components/ChatInput.svelte`
 - `src/features/chat/components/MessageList.svelte`
+- `src/chat-delivery-worker/index.ts`
+- `src/features/chat/api/delivery.server.ts`
+- `src/features/chat/api/execute.server.ts`
+- `src/features/chat/lib/delivery.ts`
 
 ### Deterministic tests
+- `src/chat-delivery-worker/index.test.ts`
+- `src/features/chat/lib/delivery.test.ts`
 - `src/features/chat/api/turns.server.test.ts`
 - `src/features/chat/api/turn-authority.test.ts`
 - `src/features/chat/api/chat-durability.test.ts`

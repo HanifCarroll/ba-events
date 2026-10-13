@@ -6,10 +6,10 @@
 	"scripts": {
 		"dev": "vite dev --port 3001",
 		"build": "vite build",
-		"deploy": "bun run build && wrangler deploy",
+		"deploy": "bun run build && wrangler deploy --config wrangler.chat.jsonc && wrangler deploy",
 		"cloudflare:ci": "bun run paraglide:compile && bun test && bun run test && bun run check && bunx tsc --noEmit && git diff --check",
 		"cloudflare:build": "bun install --frozen-lockfile && bun run cloudflare:ci && bun run build",
-		"cloudflare:deploy": "env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.telegram.jsonc && env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.mcp.jsonc && wrangler deploy --config wrangler.jsonc",
+		"cloudflare:deploy": "env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.telegram.jsonc && env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.mcp.jsonc && env -u WRANGLER_CI_MATCH_TAG -u WRANGLER_CI_OVERRIDE_NAME wrangler deploy --config wrangler.chat.jsonc && wrangler deploy --config wrangler.jsonc",
 		"preview": "vite preview",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"prepare": "svelte-kit sync || echo ''",
@@ -33,9 +33,13 @@
 		"mcp:types": "wrangler types worker-configuration.d.ts --config wrangler.mcp.jsonc --include-runtime false --env-file /dev/null",
 		"mcp:dry-run": "wrangler deploy --config wrangler.mcp.jsonc --dry-run",
 		"mcp:deploy": "wrangler deploy --config wrangler.mcp.jsonc",
+		"chat:dry-run": "wrangler deploy --config wrangler.chat.jsonc --dry-run",
+		"chat:deploy": "wrangler deploy --config wrangler.chat.jsonc",
 		"storybook": "bun run paraglide:compile && storybook dev -p 6006 --no-open",
 		"build:storybook": "bun run paraglide:compile && storybook build",
-		"test:storybook": "bun run paraglide:compile && vitest run --config vitest.storybook.config.ts"
+		"test:storybook": "bun run paraglide:compile && vitest run --config vitest.storybook.config.ts",
+		"chat:browser": "bun scripts/check-chat-lifecycle-browser.mjs",
+		"chat:dogfood": "bun run build && bun scripts/check-chat-lifecycle-browser.mjs --live --production"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20260901.1",
@@ -59,6 +63,7 @@
 		"typescript": "^6.0.3",
 		"vite": "^8.2.2",
 		"vitest": "^4.1.11",
+		"workerd": "1.20261013.1",
 		"wrangler": "^4.127.1"
 	},
 	"imports": {

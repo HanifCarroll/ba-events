@@ -26,6 +26,9 @@
     }
   },
   "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "CHAT_DELIVERY", "class_name": "ChatDelivery", "script_name": "baeventos-chat-delivery" }]
+  },
   "preview_urls": false,
   "routes": [
     {

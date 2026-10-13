@@ -21,6 +21,37 @@ const priorEvent = (id: string, name: string) => ({
 }) as unknown as ChatEventPayload
 
 describe('recommendation follow-ups', () => {
+  it('publishes successful server reads before final generation and keeps model text from creating cards', async () => {
+    const previews: Array<{ text: string; ids: string[] }> = []
+    let finalReturned = false
+    const result = await orchestrate({
+      ...base, originalQuery: 'Tell me about this event',
+      priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+        events: [{ eventId: 'verified-id', displayIndex: 0, name: 'Verified event', saved: null }] }],
+      readExecutors: { eventDetails: async () => ({ success: true, events: [priorEvent('verified-id', 'Verified event')], formatted: '{}' }) },
+      onProgress: (response) => { expect(finalReturned).toBe(false); previews.push({ text: response.text, ids: response.events.map(({ id }) => id) }) },
+      runAgentFn: async (input): Promise<AgentRun> => {
+        const details = input.tools.get_event_details as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        await details.execute({ eventRef: 'prior:event_0', purpose: 'details' }, { toolCallId: 'detail' })
+        expect(previews.some(({ ids }) => ids[0] === 'verified-id')).toBe(true)
+        input.onText?.('Here is')
+        input.onText?.('Here is the event. Invented event id: forged-id')
+        finalReturned = true
+        return { text: 'Here is the event.', steps: [{ toolResults: [{ toolCallId: 'detail', toolName: 'get_event_details' }] }], responseId: null }
+      },
+    })
+    expect(previews.every(({ ids }) => ids.every((id) => id === 'verified-id'))).toBe(true)
+    expect(previews.some(({ text }) => text === 'Here is')).toBe(true)
+    expect(result.canonical.events.map(({ id }) => id)).toEqual(['verified-id'])
+    expect(result.canonical.text).toBe('Here is the event.')
+  })
+
+  it('does not publish a tool result after cancellation', async () => {
+    const controller = new AbortController(); const previews: unknown[] = []
+    await orchestrate({ ...base, abortSignal: controller.signal, onProgress: (response) => previews.push(response),
+      runAgentFn: async (input) => { controller.abort(); input.onText?.('Late text'); throw new Error('Aborted') } })
+    expect(previews).toEqual([])
+  })
   it('signals a mismatch when inspected descriptions do not support the requested criterion', async () => {
     const result = await orchestrate({
       ...base,

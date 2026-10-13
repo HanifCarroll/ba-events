@@ -50,6 +50,31 @@ async function setup(claim = true) {
 }
 
 describe('browser turn lifecycle with the real chat SDK and guest store', () => {
+	it('defers terminal callbacks while Stop races the authoritative commit gate', async () => {
+		const stopped = await setup(); expect(stopped.lifecycle.beginStop()).toBe(true)
+		stopped.lifecycle.callbacks.onError?.(new Error('Response stopped'))
+		stopped.lifecycle.callbacks.onFinish?.({ message: { id: 'reply', role: 'assistant', parts: [{ type: 'data-response', data: canonical }] }, messages: [], isAbort: false, isError: false, isDisconnect: false, finishReason: 'stop' })
+		expect(stopped.outcomes).toEqual([])
+		stopped.lifecycle.endStop(true); await stopped.lifecycle.settled()
+		expect(stopped.outcomes).toEqual(['failure'])
+		expect((await getGuestConversationWithMessages(stopped.turn.conversationId))?.messages.length).toBe(1)
+		const committed = await setup(); committed.lifecycle.beginStop()
+		committed.lifecycle.callbacks.onFinish?.({ message: { id: 'reply', role: 'assistant', parts: [{ type: 'data-response', data: canonical }] }, messages: [], isAbort: false, isError: false, isDisconnect: false, finishReason: 'stop' })
+		committed.lifecycle.endStop(false); await committed.lifecycle.settled()
+		expect(committed.outcomes).toEqual(['persisting', 'success'])
+	})
+	it('detaching preserves a guest claim for replay and suppresses callbacks in the new view', async () => {
+		const { turn, lifecycle, outcomes } = await setup()
+		lifecycle.detach(); lifecycle.callbacks.onError?.(new Error('Browser disconnected')); await lifecycle.settled()
+		expect((await getGuestConversationWithMessages(turn.conversationId))?.turns?.[0].status).toBe('running')
+		expect(outcomes).toEqual([])
+	})
+	it('an intentional Stop that is acknowledged after navigation still releases only its own guest claim', async () => {
+		const { turn, lifecycle, outcomes } = await setup()
+		lifecycle.beginStop(); lifecycle.detach(); lifecycle.endStop(true); await lifecycle.settled()
+		expect((await getGuestConversationWithMessages(turn.conversationId))?.turns?.[0].status).toBe('failed')
+		expect(outcomes).toEqual([])
+	})
 	it('releases a guest claim that arrives after a preparation stop', async () => {
 		const { turn, lifecycle, outcomes } = await setup(false)
 		lifecycle.stop()

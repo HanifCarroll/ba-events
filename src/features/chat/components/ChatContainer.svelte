@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte'
 	import { Chat } from '@ai-sdk/svelte'
-	import { DefaultChatTransport, type UIMessage } from 'ai'
+	import { type UIMessage } from 'ai'
+	import { createClientDelivery, saveClientDelivery, loadClientDelivery, clearClientDelivery, deliveryTransport, stopClientDelivery, type ClientDelivery } from '#features/chat/lib/delivery.ts'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import * as m from '#paraglide/messages.js'
@@ -46,7 +47,8 @@
 		type ChatEventPayload,
 		type ChatMessage,
 		type ConversationWithMessages,
-		type Message
+		type Message,
+		type CanonicalChatResponse
 	} from '#shared/lib/types.ts'
 
 	interface ChatMessageMetadata {
@@ -96,6 +98,7 @@
 	let error = $state<string | null>(null)
 	let noticeIsStopped = $state(false)
 	let requestPhase = $state<RequestPhase>('idle')
+	let progressiveResponse = $state<CanonicalChatResponse | null>(null)
 	let guestConversation = $state<GuestConversationWithMessages | null>(null)
 	let isLoadingGuestConversation = $state(false)
 	let scrollContainerRef = $state<HTMLDivElement | null>(null)
@@ -106,6 +109,7 @@
 	let messageTimestampsById = new Map<string, Date>()
 	let activeTurn: ClientTurn | null = null
 	let activeLifecycle: ReturnType<typeof createTurnLifecycle> | null = null
+	let activeDelivery: ClientDelivery | null = null
 	let prevConversationIdRef: string | null = untrack(() => conversationId)
 	let prevUserIdRef = untrack(() => userId)
 	let attemptedTurnIdsRef = new Set<string>()
@@ -260,16 +264,35 @@
 	let chat = $state.raw(new Chat<ChatUIMessage>({ id: 'ba-events-chat' }))
 
 	function cancelActiveTurn() {
+		if (activeDelivery) activeLifecycle?.detach()
+		else activeLifecycle?.cancel()
 		activeTurn = null
-		activeLifecycle?.cancel()
 		activeLifecycle = null
+		activeDelivery = null
+		progressiveResponse = null
 		void chat.stop()
 	}
 
 	async function handleStopResponse() {
 		const lifecycle = activeLifecycle
 		const requestChat = chat
-		if (!lifecycle?.stop()) return
+		const delivery = activeDelivery
+		const stoppedTurn = activeTurn
+		if (delivery) {
+			if (!lifecycle?.beginStop()) return
+			try {
+				const approved = await stopClientDelivery(delivery)
+				lifecycle.endStop(approved)
+				if (!approved) return
+				clearClientDelivery(delivery)
+			} catch {
+				lifecycle.endStop(false)
+				if (stoppedTurn && isCurrentTurn(stoppedTurn)) error = m.chat_error_generic()
+				return
+			}
+		} else {
+			if (!lifecycle?.stop()) return
+		}
 		await Promise.all([requestChat.stop(), lifecycle.settled()])
 	}
 
@@ -296,11 +319,13 @@
 			assistantClientMessageId?: string
 			turnId?: string
 			retry?: boolean
+			delivery?: ClientDelivery
 		}
 	) {
 		const retry = options?.retry === true
+		const resuming = options?.delivery
 		if (activeTurn || (requestPhase !== 'idle' && !retry)) return
-		const turn: ClientTurn = {
+		const turn: ClientTurn = resuming ? { ...resuming.turn, startingConversationId: conversationId } : {
 			conversationId: (retry ? options?.conversationId : conversationId) ?? conversationId ?? options?.conversationId ?? crypto.randomUUID(),
 			startingConversationId: conversationId,
 			turnId: options?.turnId ?? crypto.randomUUID(),
@@ -317,6 +342,7 @@
 			? options?.happeningSoonEventIds ?? happeningSoonEvents?.slice(0, 4).map((event) => event.id)
 			: undefined
 		activeTurn = turn
+		progressiveResponse = null
 		attemptedTurnIdsRef.add(turn.turnId)
 		activeRetryTurnId = retry ? turn.turnId : null
 		localRetryTurn = null
@@ -337,6 +363,8 @@
 				void title.catch((error) => console.error('[chat] Failed to generate title:', error))
 			}
 			localRetryTurn = null
+			if (activeDelivery) clearClientDelivery(activeDelivery)
+			activeDelivery = null
 			activeTurn = null
 			activeLifecycle = null
 			requestPhase = 'idle'
@@ -347,6 +375,7 @@
 			isCurrent: () => isCurrentTurn(turn),
 			onPhase: (phase) => { requestPhase = phase },
 			onComplete: showCompletedTurn,
+			onProgress: (response) => { if (isCurrentTurn(turn)) progressiveResponse = response },
 			onFailure: (failure) => {
 				// Preparation can fail or be stopped before the SDK adds the user message.
 				if (!chat.messages.some((message) => message.id === turn.userClientMessageId)) {
@@ -367,6 +396,8 @@
 				}
 				activeTurn = null
 				activeLifecycle = null
+				if (activeDelivery) clearClientDelivery(activeDelivery)
+				activeDelivery = null
 				requestPhase = 'error'
 				noticeIsStopped = failure instanceof ChatTurnStoppedError
 				error = noticeIsStopped ? m.chat_response_stopped() : m.chat_error_generic()
@@ -376,20 +407,37 @@
 			}
 		})
 		activeLifecycle = lifecycle
+		const delivery = resuming ?? createClientDelivery(turn)
 		const turnChat = new Chat<ChatUIMessage>({
 			id: turn.turnId,
 			messages: [...chat.messages],
-			transport: new DefaultChatTransport<ChatUIMessage>({ api: '/api/chat' }),
+			transport: deliveryTransport<ChatUIMessage>(delivery),
 			...lifecycle.callbacks
 		})
 		chat = turnChat
+		if (resuming) activeDelivery = delivery
 		function stillCurrent() {
 			if (isCurrentTurn(turn)) return true
-			lifecycle.cancel()
+			if (resuming) lifecycle.detach()
+			else lifecycle.cancel()
 			return false
 		}
 
 		try {
+			if (resuming) {
+				if (turn.userId === null) {
+					const stored = await chatState.getGuestConversation(turn.conversationId)
+					if (!stillCurrent()) return
+					const claimed = stored?.turns?.find((item) => item.id === turn.turnId)
+					if (claimed?.status === 'completed') { clearClientDelivery(delivery); activeDelivery = null; requestPhase = 'idle'; activeTurn = null; activeLifecycle = null; return }
+					if (!ownsRunningGuestClaim({ status: claimed?.status, claimId: turn.claimId, returnedClaimId: claimed?.claim_id })) throw new Error('Chat claim expired or superseded')
+				}
+				activeDelivery = delivery
+				requestPhase = 'thinking'
+				await turnChat.resumeStream()
+				await lifecycle.settled()
+				return
+			}
 			await bootstrapTurn(turn)
 			if (!stillCurrent()) return
 			if (!conversationId) {
@@ -430,6 +478,9 @@
 				...(homeEventIds?.length ? { happeningSoonEventIds: homeEventIds } : {})
 			}
 			const metadata = { createdAt: new Date().toISOString() }
+			activeDelivery = delivery
+			saveClientDelivery(delivery)
+			requestPhase = 'thinking'
 			if (turnChat.messages.some((message) => message.id === turn.userClientMessageId)) {
 				await turnChat.sendMessage({ text: content, messageId: turn.userClientMessageId, metadata }, { body })
 			} else {
@@ -528,6 +579,19 @@
 	})
 
 	$effect(() => {
+		if (!conversationId || activeTurn || isLoadingGuestConversation ||
+			(isAuthenticated && !authenticatedConversation) || requestPhase !== 'idle') return
+		const delivery = loadClientDelivery(conversationId, userId)
+		if (!delivery || attemptedTurnIdsRef.has(delivery.turn.turnId)) return
+		if (durableTurns.some((turn) => turn.id === delivery.turn.turnId && turn.status === 'completed')) {
+			clearClientDelivery(delivery)
+			return
+		}
+		attemptedTurnIdsRef.add(delivery.turn.turnId)
+		untrack(() => void handleSendMessage(delivery.turn.content, { delivery }))
+	})
+
+	$effect(() => {
 		const pending = durableTurns.find((turn) => turn.status === 'pending')
 		if (!shouldAutoHandlePendingTurn({
 			conversationId,
@@ -587,7 +651,8 @@
 			const isLastAssistant =
 				message.role === 'assistant' && index === chat.messages.length - 1
 			const isStreaming = isLastAssistant && chat.status === 'streaming'
-			const canonical = message.role === 'assistant' ? canonicalFromParts(parts) : null
+			const completedCanonical = message.role === 'assistant' ? canonicalFromParts(parts) : null
+			const canonical = completedCanonical ?? (isLastAssistant ? progressiveResponse : null)
 			const render = canonical
 				? canonicalToRender(canonical)
 				: {
@@ -611,7 +676,7 @@
 			return {
 				id: message.id,
 				role: message.role as 'user' | 'assistant',
-				content: textContent,
+				content: canonical?.text ?? textContent,
 				timestamp: resolveMessageTimestamp(message, messageTimestampsById),
 				isStreaming,
 				events: render.events.length > 0 ? render.events : undefined,
@@ -654,7 +719,6 @@
 			chat.status === 'streaming' ||
 			(requestPhase !== 'idle' && requestPhase !== 'error')
 	)
-
 	const canStop = $derived(isLoading && requestPhase !== 'persisting' && requestPhase !== 'error')
 
 	const loadingLabel = $derived.by(() => {

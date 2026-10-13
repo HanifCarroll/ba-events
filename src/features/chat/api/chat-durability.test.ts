@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const route = readFileSync(new URL('../../../routes/api/chat/+server.ts', import.meta.url), 'utf8')
+const route = readFileSync(new URL('./execute.server.ts', import.meta.url), 'utf8')
 const migration = readFileSync(new URL('../../../../supabase/migrations/20260825120000_add_chat_turn_execution.sql', import.meta.url), 'utf8')
 
 describe('durable chat turn guardrails', () => {

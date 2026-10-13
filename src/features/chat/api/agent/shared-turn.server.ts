@@ -32,6 +32,8 @@ export interface SharedChatTurnInput {
   recentMessages?: AgentHistoryMessage[]
   onSearchStart?: () => void
   onTrustedSearchProgress?: () => void
+  onProgress?: (response: import('#shared/lib/types.ts').CanonicalChatResponse) => void
+  abortSignal?: AbortSignal
 }
 
 export type SharedChatTurnDependencies = {
@@ -132,6 +134,8 @@ export function runSharedChatTurnEffect(
       recentMessages: input.recentMessages,
       onSearchStart: input.onSearchStart,
       onTrustedSearchProgress: input.onTrustedSearchProgress,
+      onProgress: input.onProgress,
+      abortSignal: input.abortSignal,
     }
     return yield* dependencies.orchestrateFn
       ? Effect.tryPromise({

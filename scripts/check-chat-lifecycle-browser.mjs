@@ -17,22 +17,22 @@ const stubs = {
   state: `import {getGuestConversationWithMessages} from '${root}/src/shared/lib/db/guest-conversations.ts';
   export const chatState={getGuestConversation:getGuestConversationWithMessages,addMessage:async()=>({id:'legacy'}),generateTitle:async()=>({title:'Title'}),registerStartNewChatHandler(fn){window.startNew=fn;return()=>{}},getConversationScrollPosition:()=>null,saveConversationScrollPosition:()=>{}};`,
   input: '<script>let {onSend,disabled,onStop,canStop}=$props();let value=$state("")</script><form onsubmit={e=>{e.preventDefault();void onSend(value);value=""}}><input aria-label="Message" bind:value disabled={disabled}/>{#if canStop}<button type="button" onclick={onStop}>Stop response</button>{:else}<button disabled={disabled}>Send</button>{/if}</form>',
-  list: '<script>let {messages,isLoading}=$props()</script><div data-testid="messages">{#each messages as message}<p data-role={message.role}>{message.content}</p>{/each}{#if isLoading}<span>Loading</span>{/if}</div>',
-  prompts: '<script>let {onSelectPrompt}=$props()</script><button onclick={()=>onSelectPrompt("First question")}>Start</button>',
+  list: '<script>let {messages,isLoading}=$props()</script><div data-testid="messages">{#each messages as message}<p data-role={message.role}>{message.content}</p>{#each message.events??[] as event}<article data-event-id={event.id}>{event.name}</article>{/each}{/each}{#if isLoading}<span>Loading</span>{/if}</div>',
+  prompts: '<script>let {onSelectPrompt}=$props()</script><button onclick={()=>onSelectPrompt(window.dogfoodPrompt??"First question")}>Start</button>',
 }
 await Bun.write(`${temp}/Harness.svelte`, `<script>
 import {tick} from 'svelte';
 import ChatContainer from '${root}/src/features/chat/components/ChatContainer.svelte';
 import {auth} from 'test-auth';
 import {bootstrapGuestTurn,claimGuestTurn,completeGuestTurn,getGuestConversationWithMessages} from '${root}/src/shared/lib/db/guest-conversations.ts';
-let conversationId=$state(null);let preloadedConversation=$state(null);let pendingTurns=$state([]);
+let conversationId=$state(sessionStorage.getItem('browser-conversation'));let preloadedConversation=$state(null);let pendingTurns=$state([]);
 window.loadConversation=async(id,preloaded=null,turns=[])=>{conversationId=id;preloadedConversation=preloaded;pendingTurns=turns;await tick()};
 window.setUser=async(id)=>{auth.user=id?{id}:null;await tick()};
 window.getStored=getGuestConversationWithMessages;
 window.completeElsewhere=async(turnId,canonical)=>{const claimId=crypto.randomUUID();await claimGuestTurn(turnId,claimId,true);await completeGuestTurn(turnId,claimId,{canonical,executionTrace:[]})};
 window.seed=async(id)=>{await bootstrapGuestTurn({conversationId:id,turnId:crypto.randomUUID(),userClientMessageId:crypto.randomUUID(),assistantClientMessageId:crypto.randomUUID(),content:'Existing question'})};
 window.routeId=()=>conversationId;
-</script><ChatContainer {conversationId} {preloadedConversation} {pendingTurns} showLanding={true} onConversationChange={async id=>{conversationId=id;await tick()}}/>`)
+</script><ChatContainer {conversationId} {preloadedConversation} {pendingTurns} showLanding={true} onConversationChange={async id=>{conversationId=id;sessionStorage.setItem('browser-conversation',id);await tick()}}/>`)
 await Bun.write(`${temp}/entry.ts`, `import {mount} from 'svelte';import Harness from './Harness.svelte';window.analytics=[];window.toasts=[];mount(Harness,{target:document.body});`)
 const output = await Bun.build({
   entrypoints:[`${temp}/entry.ts`], target:'browser', conditions:['browser','svelte'], minify:false,
@@ -70,6 +70,7 @@ try {
  await page.route('**/*',async route=>{
   const url=new URL(route.request().url());
   if(url.pathname==='/api/chat/bootstrap') return route.fulfill({json:{turn:{}}});
+  if(/^\/api\/chat\/[^/]+\/stop$/.test(url.pathname)) return route.fulfill({status:204});
   if(url.pathname==='/api/chat') {
    requests.push(route.request().postDataJSON());
    if(holdNext){holdNext=false;pendingRoute=route;return;}
@@ -153,4 +154,6 @@ try {
  assert.equal(await page.getByRole('textbox',{name:'Message'}).isEnabled(),true);
  assert.deepEqual(errors,[]);
  console.log('PASS browser account/navigation cancellation cannot overwrite the new view or retry state');
+ const { dogfoodChatDelivery } = await import('./dogfood-chat-delivery.mjs');
+ await dogfoodChatDelivery({browser,script,temp,root,live:process.argv.includes('--live')});
 } finally {await browser.close();await rm(temp,{recursive:true,force:true})}

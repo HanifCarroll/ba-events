@@ -99,7 +99,7 @@ type LedgerRecord = { toolCallId: string; toolName: string; input: unknown; raw:
 type AgentStep = { finishReason?: string; toolCalls?: Array<Record<string, unknown>>; toolResults?: Array<Record<string, unknown>> }
 
 export interface AgentRun { text: string; steps: AgentStep[]; responseId: string | null }
-export interface AgentInput { messages: ModelMessage[]; instructions: string; tools: ToolSet; requestId?: string }
+export interface AgentInput { messages: ModelMessage[]; instructions: string; tools: ToolSet; requestId?: string; abortSignal?: AbortSignal; onText?: (text: string) => void }
 export type AgentRunner = (input: AgentInput) => Promise<AgentRun>
 
 export interface ReadExecutors {
@@ -126,6 +126,9 @@ export interface OrchestrateInput {
   readExecutors?: ReadExecutors
   onSearchStart?: () => void
   onTrustedSearchProgress?: () => void
+  /** Provisional server-assembled snapshots, never completion or persistence authority. */
+  onProgress?: (response: CanonicalChatResponse) => void
+  abortSignal?: AbortSignal
 }
 
 export interface OrchestrateResult {
@@ -263,8 +266,9 @@ function publicOutput(raw: RawToolOutput, callId: string, registerRef: (ref: str
 
 function failed(message: string): RawToolOutput { return { success: false, formatted: JSON.stringify({ success: false, error: message }), error: message } }
 
-function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, ledger: Map<string, LedgerRecord>, calls: { count: number; successfulSearch: boolean }, executors: ReadExecutors, onSearchStart?: () => void, onTrustedSearchProgress?: () => void, requestId?: string) {
+function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, ledger: Map<string, LedgerRecord>, calls: { count: number; successfulSearch: boolean }, executors: ReadExecutors, onSearchStart?: () => void, onTrustedSearchProgress?: () => void, requestId?: string, onRead?: () => void, abortSignal?: AbortSignal) {
   const execute = async (toolCallId: string, toolName: string, input: unknown, fn: () => Promise<RawToolOutput>): Promise<PublicToolOutput> => {
+    abortSignal?.throwIfAborted()
     if (calls.count >= MAX_TOOL_CALLS) {
       const raw = failed('tool_call_limit')
       ledger.set(toolCallId, { toolCallId, toolName, input, raw })
@@ -284,6 +288,8 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
     } catch { raw = failed('tool_execution_error') }
     finally { if (timer) clearTimeout(timer) }
     record.raw = raw
+    abortSignal?.throwIfAborted()
+    if (raw.success) onRead?.()
     logger.info('[chat] agent tool step', {
       ...(requestId ? { requestId } : {}),
       phase: 'tool',
@@ -371,7 +377,23 @@ async function runToolLoop(input: AgentInput): Promise<AgentRun> {
     timeout: AGENT_TIMEOUT,
     ...CHAT_THINKING,
   })
-  const result = await agent.generate({ messages: input.messages })
+  if (input.onText) {
+    const result = await agent.stream({ messages: input.messages, abortSignal: input.abortSignal })
+    let text = ''
+    let lastTextAt = 0
+    for await (const part of result.stream) {
+      if (part.type === 'error') throw part.error
+      if (part.type === 'start-step') { text = ''; lastTextAt = 0; input.onText(text) }
+      if (part.type === 'text-delta') {
+        text += part.text
+        // Bound cumulative preview traffic while preserving every final token.
+        if (performance.now() - lastTextAt >= 50) { input.onText(text); lastTextAt = performance.now() }
+      }
+    }
+    input.onText(text)
+    return { text: await result.text, steps: await result.steps as unknown as AgentStep[], responseId: (await result.response)?.id ?? null }
+  }
+  const result = await agent.generate({ messages: input.messages, abortSignal: input.abortSignal })
   return { text: result.text, steps: result.steps as unknown as AgentStep[], responseId: result.response?.id ?? null }
 }
 
@@ -481,14 +503,32 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
     if (pin.venueId) refs.set('pinned_venue', { venueId: pin.venueId })
   }
   const ledger = new Map<string, LedgerRecord>()
-  const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId)
+  let progressiveText = ''
+  let lastProgress = ''
+  const publishProgress = () => {
+    if (!input.onProgress || input.abortSignal?.aborted) return
+    const response = assemble(input, { text: progressiveText, steps: [], responseId: null }, [...ledger.values()], saved)
+    // Keep incomplete marker lines private. Recommendation framing remains validated as a whole.
+    const prefix = response.text.trim().toUpperCase()
+    if (['ACK', 'NEXT', 'REASON_'].some((marker) => prefix.length > 0 && marker.startsWith(prefix)) ||
+      /^(?:ACK|NEXT|REASON_\d*)\s*:?$/i.test(prefix) ||
+      /(?:^|\n)(?:ACK|NEXT|REASON_\d+)\s*:/i.test(response.text)) response.text = ''
+    if (response.kind === 'error' && !response.text && !response.events.length) return
+    const serialized = JSON.stringify(response)
+    if (serialized === lastProgress) return
+    lastProgress = serialized
+    input.onProgress(response)
+  }
+  const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId, publishProgress, input.abortSignal)
   const messages: ModelMessage[] = [
     ...(input.recentMessages ?? []).slice(-MAX_MESSAGES).map((message) => ({ role: message.role, content: [{ type: 'text', text: `UNTRUSTED DATA: ${message.content.slice(0, MAX_TEXT)}` }] } as ModelMessage)),
     { role: 'user', content: input.originalQuery },
   ]
   const agentResult = yield* Effect.match(
     Effect.tryPromise({
-      try: () => (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId }),
+      try: () => (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, abortSignal: input.abortSignal,
+        ...(input.onProgress ? { onText: (text: string) => { progressiveText = text; publishProgress() } } : {}),
+      }),
       catch: (cause) => new PlannerExecutionError({ message: 'Tool loop failed', cause }),
     }),
     {

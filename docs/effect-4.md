@@ -207,6 +207,14 @@ be added here with its owning runtime and behavior.
    return Promises because AI SDK/MCP registration and execution consume those
    contracts. SDK-owned Zod schemas remain untouched. MCP rate limits and
    timeouts stay in the Worker handler.
+   `src/chat-delivery-worker/index.ts` is a Cloudflare Durable Object root:
+   serialized storage, service-binding streaming, subscribers, abort signals
+   and alarms retain native Promise contracts. `delivery-auth.server.ts` is
+   a Web Crypto leaf; `beginChatDeliveryCommit` is a direct binding leaf called
+   by the SDK stream callback. The public bridge uses
+   `forwardChatDeliveryEffect` for session, forwarding and claim cleanup.
+   Browser `delivery.ts` is a fetch/ReadableStream transport boundary beneath
+   the SDK parser. Reconnection retries delivery, never model execution.
 7. **Auth/browser integrations.** `src/features/auth/api/client.ts`, auth
    callbacks, Web Crypto/session helpers, PostHog in `shared/lib/analytics.ts`,
    speech recognition, PWA install/update, Svelte remote calls, and browser

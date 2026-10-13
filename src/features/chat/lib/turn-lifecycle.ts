@@ -2,6 +2,7 @@ import type { ChatInit, UIMessage } from 'ai'
 import { completeGuestTurn, failGuestTurn } from '#shared/lib/db/guest-conversations.ts'
 import type { CanonicalChatResponse, MessageExecutionStep } from '#shared/lib/types.ts'
 import { canonicalFromDataResponse } from './canonical.ts'
+import { applyProgressText } from './progress.ts'
 
 export type RequestPhase = 'idle' | 'preparing' | 'thinking' | 'persisting' | 'error'
 
@@ -45,10 +46,14 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 	onPhase: (phase: RequestPhase) => void
 	onFailure: (error: Error) => void
 	onComplete: (canonical: CanonicalChatResponse) => void | Promise<void>
+	onProgress?: (canonical: CanonicalChatResponse | null) => void
 }) {
 	let terminal = false
 	let settled = Promise.resolve()
 	let executionTrace: MessageExecutionStep[] = []
+	let progress: CanonicalChatResponse | null = null
+	let stopping = false
+	let deferred: Array<() => void> = []
 	const isCurrent = () => !terminal && handlers.isCurrent()
 
 	async function recordFailure() {
@@ -64,6 +69,7 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 	function fail(error: Error) {
 		if (terminal) return
 		terminal = true
+		handlers.onProgress?.(null)
 		settled = recordFailure().then(() => {
 			if (handlers.isCurrent()) handlers.onFailure(error)
 		})
@@ -78,10 +84,20 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 			} else if (part.type === 'data-execution-trace') {
 				const steps = (part.data as { steps?: MessageExecutionStep[] }).steps
 				if (Array.isArray(steps)) executionTrace = steps
+			} else if (part.type === 'data-progress') {
+				progress = canonicalFromDataResponse(part.data)
+				if (progress) handlers.onProgress?.(progress)
+			} else if (part.type === 'data-progress-text' && progress) {
+				const next = applyProgressText(progress, part.data)
+				if (next) { progress = next; handlers.onProgress?.(progress) }
 			}
 		},
-		onError: (error) => fail(error),
+		onError: (error) => { if (stopping) deferred.push(() => fail(error)); else fail(error) },
 		onFinish({ message, isAbort, isError, isDisconnect, finishReason }) {
+			if (stopping) {
+				deferred.push(() => callbacks.onFinish?.({ message, isAbort, isError, isDisconnect, finishReason, messages: [message] }))
+				return
+			}
 			if (!isCurrent()) return
 			if (isAbort || isError || isDisconnect || finishReason !== 'stop') {
 				fail(new Error('The response was interrupted. Please retry this turn.'))
@@ -93,6 +109,7 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 				return
 			}
 			terminal = true
+			handlers.onProgress?.(null)
 			handlers.onPhase('persisting')
 			// The SDK does not await onFinish; expose its persistence to the send owner.
 			settled = (async () => {
@@ -114,6 +131,15 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 	return {
 		callbacks,
 		fail,
+		beginStop: () => { if (terminal) return false; stopping = true; return true },
+		endStop: (approved: boolean) => {
+			stopping = false
+			const pending = deferred
+			deferred = []
+			if (approved && terminal) settled = settled.then(recordFailure)
+			else if (approved) fail(new ChatTurnStoppedError())
+			else for (const callback of pending) callback()
+		},
 		stop: () => {
 			// Once canonical persistence begins, stopping cannot undo completion.
 			if (terminal) return false
@@ -125,6 +151,7 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 			// Cancellation can race bootstrap/claim; repeated cleanup releases a late claim too.
 			settled = settled.then(recordFailure)
 		},
+		detach: () => { terminal = true },
 		settled: () => settled
 	}
 }

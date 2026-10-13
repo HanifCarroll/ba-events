@@ -23,6 +23,19 @@ Cards, links, directions, venue facts, provenance, and clarification data MUST b
 - **WHEN** final prose contains a fact absent from successful reads or active server facts
 - **THEN** that prose does not add the fact to canonical structured output
 
+### Requirement: Progressive web previews preserve the canonical trust boundary
+The web channel SHALL publish transient previews using the final response's server assembler after successful reads and during model prose generation. Previews SHALL retain existing artifact, framing and reason validation and SHALL NOT be stored as completed responses. Exactly one final canonical response SHALL be published after the persistence gate and any required authoritative commit.
+
+#### Scenario: Search completes while final generation is still running
+- **WHEN** a successful read produces event cards before the final model step completes
+- **THEN** the browser can render those server-derived cards progressively
+- **AND** later prose cannot add, reorder, or replace their structured facts
+- **AND** model reasoning, raw tool payloads, reference bookkeeping and incomplete framing markers are not exposed
+
+#### Scenario: Model generation continues after a browser Stop
+- **WHEN** the running attempt has been cancelled before the persistence gate
+- **THEN** late reads and text cannot publish a final canonical response
+
 ### Requirement: References are server-owned and fail closed
 Prior results MUST be rehydrated into bounded server-owned handles, same-turn reads MUST use opaque references, and unknown references MUST NOT resolve to raw event or venue identifiers.
 
@@ -44,6 +57,8 @@ If final generation fails after successful reads, the response SHALL retain vali
 - `src/features/chat/api/agent/shared-turn.server.ts`
 - `src/features/chat/api/agent/follow-up.ts`
 - `src/features/chat/api/agent/trace.ts`
+- `src/features/chat/api/execute.server.ts`
+- `src/features/chat/lib/progress.ts`
 - `src/shared/lib/types.ts`
 
 ### Deterministic tests
