@@ -5,7 +5,7 @@ import { reuseAcquisition } from './run.ts'
 
 const observationSchema = Schema.Struct({ html: Schema.String, etag: Schema.NullOr(Schema.String), modified: Schema.NullOr(Schema.String) })
 
-interface HttpAcquisitionDependencies {
+export interface HttpAcquisitionDependencies {
   read: (key: string) => Promise<unknown>
   write: (key: string, value: unknown, ttlMs: number) => Promise<void>
   fetch: typeof fetch

@@ -1,4 +1,4 @@
-import { fetchRevalidatedHtml } from '../../acquisition/http.ts'
+import { fetchRevalidatedHtml, type HttpAcquisitionDependencies } from '../../acquisition/http.ts'
 import {
   extractJsonLd,
   extractNextData,
@@ -112,11 +112,14 @@ export function extractMeetupDetailFromHtml(html: string): MeetupDetail {
   return event ? detailFromEvent(event) : { description: null, venue: null, dateTime: null, endTime: null, status: null }
 }
 
-export async function fetchMeetupEventDetail(eventUrl: string): Promise<MeetupDetail | null> {
+export async function fetchMeetupEventDetail(
+  eventUrl: string,
+  dependencies?: HttpAcquisitionDependencies
+): Promise<MeetupDetail | null> {
   const fullUrl = eventUrl.startsWith('http')
     ? eventUrl
     : `https://www.meetup.com${eventUrl.startsWith('/') ? '' : '/'}${eventUrl}`
-  const html = await fetchRevalidatedHtml(fullUrl)
+  const html = await fetchRevalidatedHtml(fullUrl, dependencies)
   return html ? extractMeetupDetailFromHtml(html) : null
 }
 

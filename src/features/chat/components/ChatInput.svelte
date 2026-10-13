@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Mic, Send } from 'lucide-svelte'
+	import { Mic, Send, Square } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
@@ -13,10 +13,14 @@
 
 	let {
 		onSend,
+		onStop,
+		canStop = false,
 		disabled = false,
 		emphasized = false
 	}: {
 		onSend: (message: string) => void
+		onStop?: () => void
+		canStop?: boolean
 		disabled?: boolean
 		emphasized?: boolean
 	} = $props()
@@ -111,7 +115,7 @@
 
 	function handleKeyDown(e: KeyboardEvent) {
 		// Enter to send, Shift+Enter for newline
-		if (e.key === 'Enter' && !e.shiftKey) {
+		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 			e.preventDefault()
 			handleSubmit()
 		}
@@ -171,7 +175,7 @@
 				>
 					<textarea
 						bind:this={textareaRef}
-							bind:value={value}
+						bind:value={value}
 						{...autocorrectAttrs}
 						onkeydown={handleKeyDown}
 						onfocus={() => (isFocused = true)}
@@ -186,6 +190,7 @@
 						data-lpignore="true"
 						data-1p-ignore="true"
 						aria-autocomplete="none"
+						aria-label={m.chat_input_label()}
 						class="col-start-1 col-end-2 row-start-1 row-end-2 resize-none overflow-y-auto max-h-40 min-h-[46px] bg-transparent px-4 py-3 text-base sm:text-sm text-foreground leading-normal placeholder:text-muted-foreground/60 focus:outline-none disabled:cursor-not-allowed"
 					></textarea>
 				</div>
@@ -209,17 +214,28 @@
 					</span>
 				</button>
 
-				<button
-					type="button"
-					onclick={handleSubmit}
-					disabled={!canSubmit}
-					class="mr-0.5 mb-0.5 size-11 rounded-full shrink-0 flex items-center justify-center transition-colors duration-200 {canSubmit
-						? 'bg-primary text-primary-foreground hover:bg-primary/90'
-						: 'bg-muted text-muted-foreground cursor-not-allowed'}"
-				>
-					<Send class="h-4 w-4" />
-					<span class="sr-only">{m.chat_send()}</span>
-				</button>
+				{#if canStop && onStop}
+					<button
+						type="button"
+						onclick={onStop}
+						aria-label={m.chat_stop_response()}
+						class="mr-0.5 mb-0.5 size-11 rounded-full shrink-0 flex items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<Square class="h-4 w-4" aria-hidden="true" />
+					</button>
+				{:else}
+					<button
+						type="button"
+						onclick={handleSubmit}
+						disabled={!canSubmit}
+						class="mr-0.5 mb-0.5 size-11 rounded-full shrink-0 flex items-center justify-center transition-colors duration-200 {canSubmit
+							? 'bg-primary text-primary-foreground hover:bg-primary/90'
+							: 'bg-muted text-muted-foreground cursor-not-allowed'}"
+					>
+						<Send class="h-4 w-4" />
+						<span class="sr-only">{m.chat_send()}</span>
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>

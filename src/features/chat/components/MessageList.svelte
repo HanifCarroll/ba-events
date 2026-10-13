@@ -125,7 +125,7 @@
 		class="max-w-[860px] mx-auto"
 		role="log"
 		aria-live="polite"
-		aria-label="Chat messages"
+		aria-label={m.chat_messages_label()}
 	>
 		{#each messages as message, index (message.id)}
 			<ChatMessage

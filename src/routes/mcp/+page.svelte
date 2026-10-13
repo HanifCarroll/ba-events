@@ -69,11 +69,30 @@
 				</p>
 			</section>
 
+			<section aria-labelledby="claude-heading">
+				<h2 id="claude-heading" class="font-display text-2xl">{m.mcp_claude_title()}</h2>
+				<ol class="mt-4 list-decimal space-y-3 pl-6 leading-7 text-muted-foreground">
+					<li>{m.mcp_claude_step_open()}</li>
+					<li>{m.mcp_claude_step_add()}</li>
+					<li>{m.mcp_claude_step_url()}</li>
+					<li>{m.mcp_claude_step_auth()}</li>
+					<li>{m.mcp_claude_step_enable()}</li>
+				</ol>
+				<p class="mt-4 text-sm leading-6 text-muted-foreground">{m.mcp_claude_workspace_note()}</p>
+				<a href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp" class="mt-2 inline-flex min-h-11 items-center text-sm text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{m.mcp_claude_guide()}</a>
+			</section>
+
 			<section aria-labelledby="connect-heading">
 				<h2 id="connect-heading" class="font-display text-2xl">{m.mcp_connect_title()}</h2>
-				<p class="mt-3 leading-7 text-muted-foreground">{m.mcp_connect_body()}</p>
-				<pre class="mt-4 overflow-x-auto rounded-xl bg-[#11152d] p-4 text-sm leading-7 text-white"><code>codex mcp add baeventos --url {endpoint}</code></pre>
-				<p class="mt-3 text-sm text-muted-foreground">{m.mcp_tested_with_codex()}</p>
+				<ol class="mt-4 list-decimal space-y-3 pl-6 leading-7 text-muted-foreground">
+					<li>{m.mcp_chatgpt_step_open()}</li>
+					<li>{m.mcp_chatgpt_step_add()}</li>
+					<li>{m.mcp_chatgpt_step_auth()}</li>
+					<li>{m.mcp_chatgpt_step_install()}</li>
+					<li>{m.mcp_chatgpt_step_enable()}</li>
+				</ol>
+				<p class="mt-4 text-sm leading-6 text-muted-foreground">{m.mcp_chatgpt_workspace_note()}</p>
+				<a href="https://developers.openai.com/plugins/quickstart" class="mt-2 inline-flex min-h-11 items-center text-sm text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{m.mcp_chatgpt_guide()}</a>
 			</section>
 
 			<section aria-labelledby="tools-heading">

@@ -54,6 +54,32 @@ Each attempt SHALL capture its conversation, authenticated identity, turn, claim
 - **WHEN** an authenticated browser reconnects with existing queued messages
 - **THEN** those items retain their recovery path while new submissions use durable turns
 
+### Requirement: Users can stop and retry an unfinished response
+The chat SHALL expose an accessible, localized Stop control during preparation and response generation. Stopping SHALL preserve the user message and original turn identifiers, prevent partial assistant persistence and success bookkeeping, and expose an explicit Retry action. Once canonical persistence begins, Stop SHALL no longer be available and SHALL NOT undo completion.
+
+#### Scenario: User stops while the response is running
+- **WHEN** the user activates Stop before canonical persistence begins
+- **THEN** the browser aborts its SDK request and shows a localized stopped notice with Retry
+- **AND** late completion callbacks cannot persist an assistant reply or report success
+- **AND** Retry reuses the original turn and user and assistant message identifiers
+
+#### Scenario: User stops during preparation
+- **WHEN** the user activates Stop before bootstrap or claim completes
+- **THEN** the old attempt cannot start a provider request after preparation settles
+- **AND** any late running guest claim is released without losing the retry path
+
+### Requirement: Chat feedback and input are accessible in the active locale
+The composer SHALL have a localized accessible name and SHALL NOT submit Enter while text composition is active. Errors and retry guidance SHALL share one nonoverlapping notice in normal document flow with localized controls. Failures SHALL be announced as alerts using generic user-facing text; intentional stops SHALL be announced as status updates.
+
+#### Scenario: Response fails on a narrow screen
+- **WHEN** the response fails and Retry is available
+- **THEN** the error and Retry appear together without covering the conversation or composer
+- **AND** the notice is announced and all controls have localized accessible names
+
+#### Scenario: User confirms composed text
+- **WHEN** Enter is pressed during IME composition
+- **THEN** the composer retains the draft without sending a message
+
 ### Requirement: Canonical responses are stored without reconstruction
 New assistant messages MUST persist the server-produced canonical response, visible text, contract version, and sanitized execution trace. Guest and authenticated storage MUST NOT reconstruct canonical artifacts from client callbacks.
 
@@ -77,6 +103,9 @@ Supported historical message contracts SHALL be adapted at read time to the curr
 - `src/features/chat/lib/canonical.ts`
 - `src/shared/lib/db/guest-conversations.ts`
 - `src/features/chat/lib/turn-lifecycle.ts`
+- `src/features/chat/components/ChatContainer.svelte`
+- `src/features/chat/components/ChatInput.svelte`
+- `src/features/chat/components/MessageList.svelte`
 
 ### Deterministic tests
 - `src/features/chat/api/turns.server.test.ts`

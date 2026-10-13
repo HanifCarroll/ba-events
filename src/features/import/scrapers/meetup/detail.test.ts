@@ -1,9 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fetchMeetupEventDetail, mergeMeetupDetail, extractMeetupDetailFromHtml } from './detail.ts'
 import { transformMeetupEvent } from './transformer.ts'
 import type { MeetupEvent } from './types.ts'
-
-afterEach(() => vi.unstubAllGlobals())
 
 const event: MeetupEvent = {
   id: '123',
@@ -38,9 +36,13 @@ describe('Meetup detail extraction', () => {
       location: { '@type': 'Place', name: 'Fallback Place' },
     })}</script>`
     const fetchMock = vi.fn().mockResolvedValue(new Response(html))
-    vi.stubGlobal('fetch', fetchMock)
+    const dependencies = {
+      read: async () => undefined,
+      write: async () => {},
+      fetch: fetchMock,
+    }
 
-    await expect(fetchMeetupEventDetail(event.eventUrl)).resolves.toMatchObject({
+    await expect(fetchMeetupEventDetail(event.eventUrl, dependencies)).resolves.toMatchObject({
       description: 'Full source description',
       venue: { name: 'Casa Uno', address: 'Calle 1', lat: -34.6, lng: -58.4 },
     })

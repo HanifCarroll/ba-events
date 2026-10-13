@@ -178,9 +178,9 @@
 					target="_blank"
 					rel="noopener noreferrer"
 					onclick={() => openTelegram('mobile')}
-					class="flex min-h-11 items-center gap-3 rounded-lg px-4 text-muted-foreground hover:bg-muted hover:text-foreground"
+					class="flex min-h-11 items-center gap-3 rounded-lg px-3.5 py-2.5 text-muted-foreground hover:bg-muted hover:text-foreground"
 				>
-					<Send class="h-5 w-5" aria-hidden="true" />
+					<Send class="h-5 w-5 shrink-0" aria-hidden="true" />
 					<span>{m.telegram_open_bot()}</span>
 					<span class="sr-only">{m.telegram_external_link()}</span>
 				</a>
@@ -262,9 +262,9 @@
 					target="_blank"
 					rel="noopener noreferrer"
 					onclick={() => openTelegram('sidebar')}
-					class="flex min-h-11 items-center gap-3 rounded-lg px-4 text-muted-foreground hover:bg-muted hover:text-foreground"
+					class="flex min-h-11 items-center gap-3 rounded-lg px-3.5 py-2.5 text-muted-foreground hover:bg-muted hover:text-foreground"
 				>
-					<Send class="h-5 w-5" aria-hidden="true" />
+					<Send class="h-5 w-5 shrink-0" aria-hidden="true" />
 					<span>{m.telegram_open_bot()}</span>
 					<span class="sr-only">{m.telegram_external_link()}</span>
 				</a>

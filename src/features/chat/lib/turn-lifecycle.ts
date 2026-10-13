@@ -5,6 +5,13 @@ import { canonicalFromDataResponse } from './canonical.ts'
 
 export type RequestPhase = 'idle' | 'preparing' | 'thinking' | 'persisting' | 'error'
 
+export class ChatTurnStoppedError extends Error {
+	constructor() {
+		super('Response stopped by the user')
+		this.name = 'ChatTurnStoppedError'
+	}
+}
+
 export interface ClientTurn {
 	readonly conversationId: string
 	readonly startingConversationId: string | null
@@ -107,6 +114,12 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 	return {
 		callbacks,
 		fail,
+		stop: () => {
+			// Once canonical persistence begins, stopping cannot undo completion.
+			if (terminal) return false
+			fail(new ChatTurnStoppedError())
+			return true
+		},
 		cancel: () => {
 			terminal = true
 			// Cancellation can race bootstrap/claim; repeated cleanup releases a late claim too.

@@ -24,7 +24,7 @@
 	const ratio = $derived(aspectRatio ?? getArtworkAspectRatio(imageWidth, imageHeight))
 </script>
 
-<div class={`flex items-center justify-center overflow-hidden rounded-xl bg-muted ${className}`} style:aspect-ratio={ratio}>
+<div class={`flex items-center justify-center overflow-hidden rounded-xl bg-muted/40 ${className}`} style:aspect-ratio={ratio}>
 	<img
 		src={imageUrl}
 		{alt}

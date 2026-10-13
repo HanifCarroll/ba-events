@@ -4,7 +4,7 @@ import type { Chat as ChatClass } from '@ai-sdk/svelte'
 import type { UIMessageChunk, ChatTransport, UIMessage } from 'ai'
 import { bootstrapGuestTurn, claimGuestTurn, getGuestConversationWithMessages } from '#shared/lib/db/guest-conversations.ts'
 import { adaptStoredMessageToCanonical } from './canonical.ts'
-import { createTurnLifecycle, ownsClientTurn, type ClientTurn } from './turn-lifecycle.ts'
+import { ChatTurnStoppedError, createTurnLifecycle, ownsClientTurn, type ClientTurn } from './turn-lifecycle.ts'
 
 const canonical = adaptStoredMessageToCanonical({ id: 'reply', content: 'A complete reply' })
 const success: UIMessageChunk[] = [
@@ -29,7 +29,7 @@ function transport(chunks: UIMessageChunk[]): ChatTransport<UIMessage> {
 	}
 }
 
-async function setup() {
+async function setup(claim = true) {
 	const turn: ClientTurn = {
 		conversationId: crypto.randomUUID(), startingConversationId: null,
 		turnId: crypto.randomUUID(), claimId: crypto.randomUUID(),
@@ -37,7 +37,7 @@ async function setup() {
 		content: 'Events tonight', locale: 'en', userId: null,
 	}
 	await bootstrapGuestTurn(turn)
-	await claimGuestTurn(turn.turnId, turn.claimId)
+	if (claim) await claimGuestTurn(turn.turnId, turn.claimId)
 	const owner = { activeTurn: turn as ClientTurn | null, conversationId: turn.conversationId as string | null, userId: null as string | null }
 	const outcomes: string[] = []
 	const lifecycle = createTurnLifecycle(turn, {
@@ -50,6 +50,88 @@ async function setup() {
 }
 
 describe('browser turn lifecycle with the real chat SDK and guest store', () => {
+	it('releases a guest claim that arrives after a preparation stop', async () => {
+		const { turn, lifecycle, outcomes } = await setup(false)
+		lifecycle.stop()
+		await lifecycle.settled()
+		expect(outcomes).toEqual(['failure'])
+		const lateClaim = await claimGuestTurn(turn.turnId, turn.claimId)
+		expect(lateClaim?.status).toBe('running')
+		// The send owner's stillCurrent check releases a claim that settled late.
+		lifecycle.cancel()
+		await lifecycle.settled()
+		const stored = await getGuestConversationWithMessages(turn.conversationId)
+		expect(stored?.turns?.[0].status).toBe('failed')
+		expect(stored?.messages.map((message) => message.role)).toEqual(['user'])
+		expect(outcomes).toEqual(['failure'])
+	})
+
+	it('stops an active SDK request without persisting a partial assistant and retries the original turn', async () => {
+		const { turn, lifecycle, outcomes } = await setup()
+		const Chat = await loadChat()
+		let started!: () => void
+		const ready = new Promise<void>((resolve) => { started = resolve })
+		const chat = new Chat({ ...lifecycle.callbacks, transport: {
+			sendMessages: async () => new ReadableStream({ start(controller) {
+				controller.enqueue({ type: 'start', messageId: turn.assistantClientMessageId })
+				controller.enqueue({ type: 'text-start', id: 'partial' })
+				controller.enqueue({ type: 'text-delta', id: 'partial', delta: 'Incomplete reply' })
+				started()
+			} }),
+			reconnectToStream: async () => null,
+		} })
+		const request = chat.sendMessage({ id: turn.userClientMessageId, role: 'user', parts: [{ type: 'text', text: turn.content }] })
+		await ready
+		expect(lifecycle.stop()).toBe(true)
+		expect(lifecycle.stop()).toBe(false)
+		await chat.stop()
+		await request
+		await lifecycle.settled()
+		const stopped = await getGuestConversationWithMessages(turn.conversationId)
+		expect(outcomes).toEqual(['failure'])
+		expect(stopped?.messages.map((message) => message.role)).toEqual(['user'])
+		expect(stopped?.turns?.[0].status).toBe('failed')
+
+		const retry = { ...turn, claimId: crypto.randomUUID() }
+		await bootstrapGuestTurn(retry)
+		await claimGuestTurn(retry.turnId, retry.claimId, true)
+		const retryLifecycle = createTurnLifecycle(retry, {
+			isCurrent: () => true, onPhase: () => {}, onFailure: () => outcomes.push('retry failure'), onComplete: () => { outcomes.push('success') },
+		})
+		await new Chat({ ...retryLifecycle.callbacks, transport: transport(success) }).sendMessage({ text: turn.content })
+		await retryLifecycle.settled()
+		const stored = await getGuestConversationWithMessages(turn.conversationId)
+		expect(outcomes).toEqual(['failure', 'success'])
+		expect(stored?.messages.map((message) => message.id).sort()).toEqual([turn.userClientMessageId, turn.assistantClientMessageId].sort())
+	})
+
+	it('preserves a stopped outcome when a late completion arrives', async () => {
+		const { lifecycle, outcomes, turn } = await setup()
+		let failure: Error | undefined
+		const stopped = createTurnLifecycle(turn, {
+			isCurrent: () => true, onPhase: () => {}, onFailure: (error) => { failure = error }, onComplete: () => { outcomes.push('late success') },
+		})
+		stopped.stop()
+		await stopped.settled()
+		const Chat = await loadChat()
+		await new Chat({ ...stopped.callbacks, transport: transport(success) }).sendMessage({ text: turn.content })
+		await stopped.settled()
+		expect(failure).toBeInstanceOf(ChatTurnStoppedError)
+		expect(outcomes).toEqual([])
+		expect((await getGuestConversationWithMessages(turn.conversationId))?.messages).toHaveLength(1)
+		lifecycle.cancel()
+	})
+
+	it('does not stop after canonical persistence has begun', async () => {
+		const { lifecycle, outcomes, turn } = await setup()
+		const Chat = await loadChat()
+		await new Chat({ ...lifecycle.callbacks, transport: transport(success) }).sendMessage({ text: turn.content })
+		expect(lifecycle.stop()).toBe(false)
+		await lifecycle.settled()
+		expect(outcomes).toEqual(['persisting', 'success'])
+		expect((await getGuestConversationWithMessages(turn.conversationId))?.turns?.[0].status).toBe('completed')
+	})
+
 	it('handles error followed by finish once, without saving an assistant', async () => {
 		const { turn, lifecycle, outcomes } = await setup()
 		const Chat = await loadChat()

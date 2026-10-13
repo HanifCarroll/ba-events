@@ -36,7 +36,7 @@
 		adaptStoredMessageToCanonical,
 		canonicalToRender
 	} from '#features/chat/lib/canonical.ts'
-	import { canonicalFromParts, createTurnLifecycle, ownsClientTurn, type ClientTurn, type RequestPhase } from '#features/chat/lib/turn-lifecycle.ts'
+	import { canonicalFromParts, ChatTurnStoppedError, createTurnLifecycle, ownsClientTurn, type ClientTurn, type RequestPhase } from '#features/chat/lib/turn-lifecycle.ts'
 	import { getFallbackConversationTitle } from '#features/chat/lib/title.ts'
 	import MessageList from './MessageList.svelte'
 	import ChatInput from './ChatInput.svelte'
@@ -94,6 +94,7 @@
 	// Rendered state
 	// ==========================================================================
 	let error = $state<string | null>(null)
+	let noticeIsStopped = $state(false)
 	let requestPhase = $state<RequestPhase>('idle')
 	let guestConversation = $state<GuestConversationWithMessages | null>(null)
 	let isLoadingGuestConversation = $state(false)
@@ -265,6 +266,13 @@
 		void chat.stop()
 	}
 
+	async function handleStopResponse() {
+		const lifecycle = activeLifecycle
+		const requestChat = chat
+		if (!lifecycle?.stop()) return
+		await Promise.all([requestChat.stop(), lifecycle.settled()])
+	}
+
 	function resetConversationState() {
 		cancelActiveTurn()
 		// A stopped SDK request may still finish; keep it attached to its old Chat instance.
@@ -275,6 +283,7 @@
 		isFirstExchangeRef = true
 		requestPhase = 'idle'
 		error = null
+		noticeIsStopped = false
 	}
 
 	async function handleSendMessage(
@@ -312,6 +321,7 @@
 		activeRetryTurnId = retry ? turn.turnId : null
 		localRetryTurn = null
 		error = null
+		noticeIsStopped = false
 		requestPhase = 'preparing'
 
 		async function showCompletedTurn(canonical: NonNullable<ReturnType<typeof canonicalFromParts>>) {
@@ -338,6 +348,14 @@
 			onPhase: (phase) => { requestPhase = phase },
 			onComplete: showCompletedTurn,
 			onFailure: (failure) => {
+				// Preparation can fail or be stopped before the SDK adds the user message.
+				if (!chat.messages.some((message) => message.id === turn.userClientMessageId)) {
+					chat.messages = [...chat.messages, {
+						id: turn.userClientMessageId, role: 'user',
+						parts: [{ type: 'text', text: turn.content }],
+						metadata: { createdAt: new Date().toISOString() }
+					}]
+				}
 				localRetryTurn = {
 					id: turn.turnId,
 					conversation_id: turn.conversationId,
@@ -350,9 +368,11 @@
 				activeTurn = null
 				activeLifecycle = null
 				requestPhase = 'error'
-				error = failure.message
-				track('chat:error', { error_type: acceptedAnalyticsTurnIdsRef.has(turn.turnId) ? 'client_error' : 'preflight_error' })
-				toast.error('Failed to complete message', { description: failure.message })
+				noticeIsStopped = failure instanceof ChatTurnStoppedError
+				error = noticeIsStopped ? m.chat_response_stopped() : m.chat_error_generic()
+				if (!noticeIsStopped) {
+					track('chat:error', { error_type: acceptedAnalyticsTurnIdsRef.has(turn.turnId) ? 'client_error' : 'preflight_error' })
+				}
 			}
 		})
 		activeLifecycle = lifecycle
@@ -635,6 +655,8 @@
 			(requestPhase !== 'idle' && requestPhase !== 'error')
 	)
 
+	const canStop = $derived(isLoading && requestPhase !== 'persisting' && requestPhase !== 'error')
+
 	const loadingLabel = $derived.by(() => {
 		switch (requestPhase) {
 			case 'preparing':
@@ -683,37 +705,37 @@
 </script>
 
 <div class="relative h-full min-h-0 flex flex-col">
-	{#if error}
+	{#if error || (visibleRetryTurn && !isLoading)}
 		<div
-			class="absolute top-4 left-4 right-4 z-50 max-w-3xl mx-auto p-3 bg-destructive/20 border border-destructive rounded-lg text-sm flex items-center justify-between animate-fade-in-up"
+			role={error && !noticeIsStopped ? 'alert' : 'status'}
+			class="shrink-0 mx-4 mt-4 rounded-lg border p-3 text-sm flex flex-wrap items-center gap-3 {error && !noticeIsStopped ? 'bg-destructive/10 border-destructive/30' : 'bg-muted border-border'}"
 		>
-			<span>{error}</span>
-			<button
-				type="button"
-				onclick={dismissError}
-				class="ml-2 text-lg leading-none hover:opacity-70"
-				aria-label="Dismiss error"
-			>
-				×
-			</button>
-		</div>
-	{/if}
-	{#if visibleRetryTurn && !isLoading}
-		<div class="absolute top-4 left-4 right-4 z-40 max-w-3xl mx-auto p-3 bg-muted border rounded-lg text-sm flex items-center justify-between">
-			<span>This turn needs a retry before it can continue.</span>
-			<button
-				type="button"
-				class="rounded-md bg-primary px-3 py-1 text-primary-foreground"
+			<span class="min-w-0 flex-1">{error ?? m.chat_retry_needed()}</span>
+			{#if visibleRetryTurn && !isLoading}
+				<button
+					type="button"
+					class="min-h-11 shrink-0 rounded-md bg-primary px-3 py-2 text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					onclick={() => handleSendMessage(visibleRetryTurn.content, {
 						conversationId: localRetryTurn?.conversation_id ?? conversationId ?? undefined,
 						turnId: visibleRetryTurn.id,
 						userClientMessageId: visibleRetryTurn.user_client_message_id,
 						assistantClientMessageId: visibleRetryTurn.assistant_client_message_id,
-					retry: true
-				})}
-			>
-				Retry
-			</button>
+						retry: true
+					})}
+				>
+					{m.chat_retry()}
+				</button>
+			{/if}
+			{#if error}
+				<button
+					type="button"
+					onclick={dismissError}
+					class="size-11 shrink-0 rounded-md text-lg leading-none hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					aria-label={m.chat_dismiss_notice()}
+					>
+					×
+				</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -761,6 +783,8 @@
 			{#key `${isAuthenticated}:${conversationId ?? ''}`}
 				<ChatInput
 					onSend={handleSendMessage}
+					onStop={handleStopResponse}
+					{canStop}
 					disabled={isLoading || showConversationLoading}
 					emphasized={!hasMessages && requestPhase === 'idle' && !conversationId}
 				/>

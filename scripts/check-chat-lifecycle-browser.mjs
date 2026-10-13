@@ -10,13 +10,13 @@ const { compile, compileModule } = await import(Bun.resolveSync('svelte/compiler
 const { chromium } = await import(Bun.resolveSync('playwright', root))
 const stubs = {
   auth: 'export const auth = $state({user:null}); export const useAuthContext=()=>auth;',
-  messages: 'export const chat_status_preparing=()=>"Preparing", chat_status_thinking=()=>"Thinking", chat_status_persisting=()=>"Saving", chat_status_error=()=>"Error", chat_thinking=()=>"Thinking", chat_conversation_not_found=()=>"Missing", chat_guest_conversation_not_found=()=>"Missing guest", chat_start_new_chat=()=>"New chat";',
+  messages: 'export const chat_status_preparing=()=>"Preparing", chat_status_thinking=()=>"Thinking", chat_status_persisting=()=>"Saving", chat_status_error=()=>"Error", chat_thinking=()=>"Thinking", chat_conversation_not_found=()=>"Missing", chat_guest_conversation_not_found=()=>"Missing guest", chat_start_new_chat=()=>"New chat", chat_response_stopped=()=>"Response stopped. You can retry this message.", chat_error_generic=()=>"We could not complete the response. Please try again.", chat_retry_needed=()=>"Retry this message to continue.", chat_retry=()=>"Retry", chat_dismiss_notice=()=>"Dismiss notice";',
   locale: 'export const getLocale=()=>"en";',
   analytics: 'export const track=(name,data)=>window.analytics.push({name,data});',
   toast: 'export const toast={error:(...args)=>window.toasts.push(args),warning:(...args)=>window.toasts.push(args)};',
   state: `import {getGuestConversationWithMessages} from '${root}/src/shared/lib/db/guest-conversations.ts';
   export const chatState={getGuestConversation:getGuestConversationWithMessages,addMessage:async()=>({id:'legacy'}),generateTitle:async()=>({title:'Title'}),registerStartNewChatHandler(fn){window.startNew=fn;return()=>{}},getConversationScrollPosition:()=>null,saveConversationScrollPosition:()=>{}};`,
-  input: '<script>let {onSend,disabled}=$props();let value=$state("")</script><form onsubmit={e=>{e.preventDefault();void onSend(value);value=""}}><input aria-label="Message" bind:value disabled={disabled}/><button disabled={disabled}>Send</button></form>',
+  input: '<script>let {onSend,disabled,onStop,canStop}=$props();let value=$state("")</script><form onsubmit={e=>{e.preventDefault();void onSend(value);value=""}}><input aria-label="Message" bind:value disabled={disabled}/>{#if canStop}<button type="button" onclick={onStop}>Stop response</button>{:else}<button disabled={disabled}>Send</button>{/if}</form>',
   list: '<script>let {messages,isLoading}=$props()</script><div data-testid="messages">{#each messages as message}<p data-role={message.role}>{message.content}</p>{/each}{#if isLoading}<span>Loading</span>{/if}</div>',
   prompts: '<script>let {onSelectPrompt}=$props()</script><button onclick={()=>onSelectPrompt("First question")}>Start</button>',
 }
@@ -85,6 +85,24 @@ try {
  const initial=await page.evaluate(async()=>({id:window.routeId(),stored:await window.getStored(window.routeId()),analytics:window.analytics}));
  assert.equal(initial.stored.messages.length,2);assert.equal(initial.stored.turns[0].status,'completed');assert.equal(initial.analytics.filter(e=>e.name==='chat:response_received').length,1);
  console.log('PASS browser guest first submission, URL adoption, atomic persistence and visible response');
+ holdNext=true;
+ await page.getByRole('textbox',{name:'Message'}).fill('Stop this response');await page.getByRole('button',{name:'Send',exact:true}).click();
+ await page.getByRole('button',{name:'Stop response',exact:true}).waitFor();
+ for(let i=0;!pendingRoute&&i<100;i++) await new Promise(r=>setTimeout(r,10));assert.ok(pendingRoute);
+ const stoppedRequest=requests.at(-1);
+ await page.getByRole('button',{name:'Stop response',exact:true}).click();
+ await page.getByRole('status').getByRole('button',{name:'Retry',exact:true}).waitFor();
+ await pendingRoute.fulfill({status:200,contentType:'text/event-stream',headers:{'x-vercel-ai-ui-message-stream':'v1'},body:response()}).catch(()=>{});pendingRoute=undefined;
+ const stopped=await page.evaluate(async()=>window.getStored(window.routeId()));
+ assert.equal(stopped.messages.filter(m=>m.role==='assistant').length,1);assert.equal(stopped.turns.find(t=>t.id===stoppedRequest.turnId).status,'failed');
+ await page.getByRole('button',{name:'Retry',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('[data-role="assistant"]').length===2);
+ assert.equal(requests.at(-1).turnId,stoppedRequest.turnId);assert.equal(requests.at(-1).assistantClientMessageId,stoppedRequest.assistantClientMessageId);
+ console.log('PASS browser user stop, late response rejection, accessible retry and stable identifiers');
+ await page.evaluate(async()=>{window.startNew();await window.loadConversation(null)});
+ requests.length=0;await page.evaluate(()=>{window.analytics=[]});
+ await page.getByRole('button',{name:'Start',exact:true}).click();
+ await page.getByText('Verified browser reply',{exact:true}).waitFor();
  failNext=true;
  await page.getByRole('textbox',{name:'Message'}).fill('Second question');await page.getByRole('button',{name:'Send',exact:true}).click();
  await page.getByRole('button',{name:'Retry',exact:true}).waitFor();
