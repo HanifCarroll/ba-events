@@ -37,6 +37,14 @@ Account deletion MUST require the authenticated account and MUST NOT trust a mis
 - **WHEN** the supplied identifier differs from the session user
 - **THEN** deletion is denied
 
+### Requirement: Saved controls preserve localized accessible names
+Save controls SHALL use the active UI locale. When a saved control has visible text, its accessible name SHALL include that text and describe the remove action.
+
+#### Scenario: A signed-in user sees a labeled saved control
+- **WHEN** a saved event card renders in English or Spanish with its saved label visible
+- **THEN** its accessible name includes the localized saved label and remove action
+- **AND** its pressed state indicates saved membership
+
 ## Verification
 
 ### Implementation anchors
@@ -45,14 +53,17 @@ Account deletion MUST require the authenticated account and MUST NOT trust a mis
 - `src/features/chat/api/user-tools.server.ts`
 - `src/features/chat/api/tools/list-saved-events.ts`
 - `src/routes/saved/+page.server.ts`
+- `src/features/events/components/SaveEventButton.svelte`
 
 ### Deterministic tests
 - `src/features/chat/api/agent/orchestrate.test.ts`
 - `src/features/chat/api/agent/shared-turn.server.test.ts`
+- `src/features/events/components/EventCard.stories.ts` (Chromium stories and accessibility checks in both locales)
 
 ### Verification command
 ```sh
 bunx vitest run src/features/chat/api/agent/orchestrate.test.ts src/features/chat/api/agent/shared-turn.server.test.ts
+bun run test:storybook
 ```
 
 ### Advisory conformance review

@@ -126,7 +126,9 @@
 		size={showLabel ? 'default' : 'icon'}
 		onclick={handleToggle}
 		disabled={isUpdating}
-		aria-label={isSaved ? m.event_remove_from_saved() : m.event_save()}
+		aria-label={isSaved
+			? showLabel ? `${m.event_saved()}: ${m.event_remove_from_saved()}` : m.event_remove_from_saved()
+			: m.event_save()}
 		aria-pressed={isSaved}
 		class={`${buttonSize} transition-all duration-200 ${isSaved ? 'text-primary hover:text-primary/80 hover:bg-primary/10' : 'text-muted-foreground hover:text-primary hover:bg-primary/10'} ${isUpdating ? 'opacity-50' : ''} ${className}`}
 	>

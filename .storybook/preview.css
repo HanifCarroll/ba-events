@@ -1,0 +1,2 @@
+/* The app scrolls its own layout; isolated stories need document scrolling. */
+html, body { height: auto; min-height: 100%; overflow: auto; }

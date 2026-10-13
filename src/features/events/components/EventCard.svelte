@@ -316,7 +316,7 @@
 			{/if}
 
 			{#if contextSegments.length > 0}
-				<p class="mt-1.5 text-xs text-muted-foreground/75">
+				<p class="mt-1.5 text-xs text-muted-foreground">
 					{#each contextSegments as segment, index (segment)}
 						{#if index > 0}
 							<span aria-hidden="true" class="mx-1.5 text-muted-foreground/40">·</span>
