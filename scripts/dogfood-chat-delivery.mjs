@@ -15,12 +15,14 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
  const { POST: executeDelivery } = await import(`${root}/src/routes/api/chat/execute/+server.ts`);
  const { ChatEventDecoder, eventData } = await import(`${root}/src/features/chat/lib/delivery-protocol.ts`);
  const secret = crypto.randomUUID() + crypto.randomUUID();
+ const { workflowRequest } = await import(`${root}/src/chat-delivery-worker/recovery.ts`);
+ const { saveChatDeliveryCheckpoint, getChatDeliveryCheckpoint, beginChatDeliveryCommit } = await import(`${root}/src/features/chat/api/delivery.server.ts`);
  const entry = `${temp}/delivery-worker.ts`;
- await Bun.write(entry, `export { ChatDelivery } from '${root}/src/chat-delivery-worker/index.ts';
- export default { fetch(request,env){const name=request.headers.get('x-chat-turn')+':'+request.headers.get('x-chat-attempt');return env.CHAT_DELIVERY.get(env.CHAT_DELIVERY.idFromName(name)).fetch(request)} };`);
- const bundle = await Bun.build({ entrypoints: [entry], target: 'browser', format: 'esm', minify: true });
+ await Bun.write(entry, `export { ChatResponseWorkflow } from '${root}/src/chat-delivery-worker/workflow.ts';\n export { ChatDelivery } from '${root}/src/chat-delivery-worker/index.ts';
+ export default { fetch(request,env){const name=new URL(request.url).searchParams.get('name')??(request.headers.get('x-chat-turn')+':'+request.headers.get('x-chat-attempt'));return env.CHAT_DELIVERY.get(env.CHAT_DELIVERY.idFromName(name)).fetch(request)} };`);
+ const bundle = await Bun.build({ entrypoints: [entry], target: 'browser', format: 'esm', minify: true, external: ['cloudflare:workers'] });
  assert.equal(bundle.success, true, JSON.stringify(bundle.logs));
- let mf; let production; let executions = 0; let mode = 'fixture'; let release; let cutNext = false; let resumes = [];
+ let mf; let production; let executions = 0; let commitCalls = 0; let holdCommitOnce = false; let releaseHeldCommit; let mode = 'fixture'; let release; let cutNext = false; let resumes = [];
  const observed = [];
  const namespace = { idFromName: name => name, get: () => ({ async fetch(request) {
   return mf.dispatchFetch(request.url, { method: request.method, headers: request.headers,
@@ -31,21 +33,20 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   cookies: { getAll: () => [], get: () => undefined, set: () => {} }, locals: {},
   getClientAddress: () => '127.0.0.1', isDataRequest: false, isSubRequest: false });
  async function execution(request) {
-  executions++;
+  const stage = request.headers.get('x-chat-execution-stage'); if(stage === 'generate') executions++;
   const nativeRequest = new Request(request.url, { method: 'POST', headers: request.headers, body: await request.text(), signal: request.signal });
   if (mode === 'live') return executeDelivery(event(nativeRequest));
   if (mode === 'production') return productionResponse(nativeRequest);
   const body = await nativeRequest.clone().json();
   const canonical = { ...adaptStoredMessageToCanonical({ id: body.assistantClientMessageId, content: 'Completed after replay' }),
    requestId: nativeRequest.headers.get('x-chat-attempt') };
+  if(stage === 'commit') { commitCalls++; const checkpoint = await getChatDeliveryCheckpoint(event(nativeRequest)); await beginChatDeliveryCommit(event(nativeRequest)); if(holdCommitOnce){holdCommitOnce=false;await new Promise(resolve=>{releaseHeldCommit=resolve})} return createUIMessageStreamResponse({stream:createUIMessageStream({execute:({writer})=>{writer.write({type:'start',messageId:body.assistantClientMessageId});writer.write({type:'data-response',data:checkpoint.canonical});writer.write({type:'finish',finishReason:'stop'})}})}) }
   const gate = new Promise(resolve => { release = resolve });
   return createUIMessageStreamResponse({ stream: createUIMessageStream({ execute: async ({ writer }) => {
    writer.write({ type: 'start', messageId: body.assistantClientMessageId });
    writer.write({ type: 'data-progress', transient: true, data: { ...canonical, text: 'Server-validated preview' } });
    await gate;
-   const committed = await namespace.get().fetch(new Request('http://delivery/commit', { method: 'POST', headers: nativeRequest.headers }));
-   if (!committed.ok) { writer.write({ type: 'error', errorText: 'Response stopped' }); writer.write({ type: 'finish', finishReason: 'error' }); return }
-   writer.write({ type: 'data-response', data: canonical }); writer.write({ type: 'finish', finishReason: 'stop' });
+   await saveChatDeliveryCheckpoint(event(nativeRequest),{canonical,executionTrace:[]});
   } }) });
  }
  // Copy service callback responses into Miniflare's Response implementation.
@@ -53,6 +54,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
  mf = new Miniflare(convertV4MiniflareOptions({ modules: true, script: await bundle.outputs[0].text(),
   compatibilityDate: '2026-10-01', compatibilityFlags: ['nodejs_compat'],
   durableObjects: { CHAT_DELIVERY: { className: 'ChatDelivery', useSQLite: true } },
+  workflows: { CHAT_RESPONSE_WORKFLOW: { name: 'fixture-chat-response', className: 'ChatResponseWorkflow' } },
   bindings: { CHAT_DELIVERY_SECRET: secret },
   serviceBindings: { CHAT_EXECUTION: async request => {
    const result = await execution(request);
@@ -154,6 +156,21 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   assert.equal(stored.messages.filter(message => message.role === 'assistant').length, 3);
   assert.equal(stored.turns.find(turn => turn.content === 'Stop this attempt').status, 'failed');
   console.log('PASS Cloudflare delivery: explicit Stop prevents final publication and leaves an accessible retry');
+  for (const recoveryStage of ['generate','commit']) {
+   const before=executions; const beforeCommit=commitCalls;
+   if(recoveryStage==='commit')holdCommitOnce=true;
+   await page.evaluate(async stage=>{window.startNew();sessionStorage.removeItem('browser-conversation');await window.loadConversation(null);window.dogfoodPrompt='Recover after '+stage},recoveryStage);await page.getByRole('button',{name:'Start',exact:true}).click();
+   await page.getByText('Server-validated preview',{exact:true}).last().waitFor();
+   stored=await page.evaluate(()=>window.getStored(window.routeId()));const turn=stored.turns.at(-1);const name=turn.id+':'+turn.claim_id;
+   if(recoveryStage==='commit'){release();for(let i=0;commitCalls===beforeCommit&&i<1000;i++)await new Promise(r=>setTimeout(r,10));assert.equal(commitCalls,beforeCommit+1)}
+   const interrupted=await namespace.get().fetch(await workflowRequest(secret,name,'interrupt')).catch(()=>null);assert.ok(!interrupted||interrupted.status>=500);
+   if(recoveryStage==='generate'){for(let i=0;executions<before+2&&i<1000;i++)await new Promise(r=>setTimeout(r,10));assert.equal(executions,before+2);release()}
+   await page.waitForFunction(()=>!document.querySelector('input').disabled,{timeout:20_000});
+   releaseHeldCommit?.();releaseHeldCommit=undefined;
+   stored=await page.evaluate(()=>window.getStored(window.routeId()));assert.equal(stored.turns.at(-1).status,'completed');assert.equal(stored.messages.filter(m=>m.role==='assistant'&&m.client_message_id===turn.assistant_client_message_id).length,1);
+   if(recoveryStage==='commit'){assert.equal(executions,before+1);assert.equal(commitCalls,beforeCommit+2)}
+   console.log('PASS real workflow recovery after native Durable Object reset during '+recoveryStage+': original turn, one canonical completion, fenced restart and checkpoint reuse');
+  }
   if (live) {
    assert.ok(process.env.DEEPSEEK_API_KEY && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY, 'Live dogfood needs configured model and database credentials');
    mode = 'live'; observed.length = 0;

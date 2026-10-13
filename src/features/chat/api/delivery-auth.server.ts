@@ -2,12 +2,15 @@ import {
 	DELIVERY_AUTH_HEADER, DELIVERY_OWNER_HEADER, DELIVERY_TIME_HEADER, DELIVERY_TURN_HEADER,
 	parseDeliveryIdentity,
 } from '#features/chat/lib/delivery-protocol.ts'
+import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER } from '../../../chat-delivery-worker/recovery.ts'
 
 function signedValue(headers: Headers): string {
 	const identity = parseDeliveryIdentity(headers.get(DELIVERY_TURN_HEADER), headers)
 	if (!identity) throw new Error('Invalid chat delivery identity')
-	return JSON.stringify([identity.turnId, identity.attemptId, identity.token,
-		headers.get(DELIVERY_OWNER_HEADER), headers.get(DELIVERY_TIME_HEADER)])
+	const value: unknown[] = [identity.turnId, identity.attemptId, identity.token,
+		headers.get(DELIVERY_OWNER_HEADER), headers.get(DELIVERY_TIME_HEADER)]
+	if (headers.has(EXECUTION_FENCE_HEADER)) value.push(headers.get(EXECUTION_FENCE_HEADER), headers.get(EXECUTION_STAGE_HEADER))
+	return JSON.stringify(value)
 }
 
 async function key(secret: string) {

@@ -4,10 +4,10 @@ The repository has one production Workers Build. It runs the existing clean-chec
 
 1. `baeventos-telegram` (`wrangler.telegram.jsonc`)
 2. `baeventos-mcp` (`wrangler.mcp.jsonc`)
-3. `baeventos-chat-delivery` (`wrangler.chat.jsonc`)
-4. `baeventos` (`wrangler.jsonc`)
+3. `baeventos` (`wrangler.jsonc`)
+4. `baeventos-chat-delivery` (`wrangler.chat.jsonc`)
 
-The deploy script uses `&&`, so a failed Worker stops the remaining deploys. Workers Builds pins the connected `baeventos` identity in Wrangler; the three explicit secondary deployments unset that per-build identity guard, while the final public deployment keeps it.
+The deploy script uses `&&`, so a failed Worker stops the remaining deploys. Workers Builds pins the connected `baeventos` identity in Wrangler; the three explicit secondary deployments unset that per-build identity guard, while the public deployment keeps it. The web release precedes the workflow delivery release so the staged private execution endpoint is ready before new workflows start. See [chat streaming](chat-streaming.md) for first-time provisioning.
 
 ## Dashboard setup
 

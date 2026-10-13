@@ -215,6 +215,14 @@ be added here with its owning runtime and behavior.
    `forwardChatDeliveryEffect` for session, forwarding and claim cleanup.
    Browser `delivery.ts` is a fetch/ReadableStream transport boundary beneath
    the SDK parser. Reconnection retries delivery, never model execution.
+   `chat-delivery-worker/workflow.ts` is a native Cloudflare Workflow root:
+   `step.do` owns retry/checkpoint semantics for separate generation and
+   publication stages. Interrupted read-only generation may retry under the
+   original claim; publication reuses the server checkpoint. `recovery.ts`
+   owns authenticated encryption, binding-request HMAC and decoded checkpoint
+   boundaries. Request fences, atomic final batches, bounded alarms and
+   credential cleanup remain platform contracts. The SvelteKit SDK callback's
+   checkpoint helpers are direct binding leaves, like its commit gate.
 7. **Auth/browser integrations.** `src/features/auth/api/client.ts`, auth
    callbacks, Web Crypto/session helpers, PostHog in `shared/lib/analytics.ts`,
    speech recognition, PWA install/update, Svelte remote calls, and browser

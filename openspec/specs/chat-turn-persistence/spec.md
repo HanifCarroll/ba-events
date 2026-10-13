@@ -78,7 +78,7 @@ The chat SHALL expose an accessible, localized Stop control during preparation a
 - **AND** the browser waits for that decision before treating terminal callbacks as stopped or completed
 
 ### Requirement: Delivery reconnects to the same bounded attempt
-The web channel SHALL keep one producer independent of browser subscribers and a bounded ordered replay log for ten minutes. Reconnection SHALL reuse stable identifiers without another provider call or claim acquisition. Every attach and Stop SHALL revalidate the current identity and an unguessable capability. Duplicate submissions SHALL be deduplicated; changed input, identity or capability SHALL be rejected. Raw capabilities and session credentials SHALL NOT enter the durable log.
+The web channel SHALL keep a workflow-owned attempt independent of browser subscribers and a bounded ordered replay log for ten minutes. Browser reconnection SHALL reuse stable identifiers without another provider call or claim acquisition. Every attach and Stop SHALL revalidate the current identity and an unguessable capability. Duplicate submissions SHALL be deduplicated; changed input, identity or capability SHALL be rejected. Raw capabilities and session credentials SHALL NOT enter the durable log. Recovery credentials MAY be stored in a separate authenticated encrypted envelope, bound to the attempt and deleted at termination or expiry.
 
 #### Scenario: A browser connection drops midway through a response
 - **WHEN** its connection ends without a terminal delivery event
@@ -91,11 +91,33 @@ The web channel SHALL keep one producer independent of browser subscribers and a
 - **THEN** it can replay and attach to that attempt under its original identifiers
 - **AND** changing accounts cannot attach to the previous account's delivery
 
-#### Scenario: A delivery worker restarts or the replay window expires
-- **WHEN** no producer can continue the stored attempt or the replay window has expired
-- **THEN** delivery fails closed without silently rerunning the provider
-- **AND** recovery retains the explicit retry path and existing active-claim validation
-- **AND** expired logs are removed while a small tombstone prevents a delayed duplicate submission from rerunning the attempt
+#### Scenario: A runtime restarts during generation
+- **WHEN** a runtime interruption prevents completion of the generation workflow step
+- **THEN** bounded workflow recovery MAY rerun interrupted read-only generation under the original turn, attempt and unexpired claim
+- **AND** a monotonically increasing execution fence rejects stale checkpoint, commit and publication writes
+- **AND** the ordered replay prefix remains available and recovery cannot acquire or extend turn ownership
+- **AND** recovered artifacts still come only from validated successful reads
+
+#### Scenario: A runtime restarts before workflow admission is confirmed
+- **WHEN** the bounded request is durable but workflow creation has not been confirmed
+- **THEN** an alarm reconciles admission using the original workflow ID
+- **AND** recovery neither creates a second attempt nor depends on the browser staying connected
+
+#### Scenario: A runtime restarts during final persistence or publication
+- **WHEN** a validated final response is already checkpointed
+- **THEN** recovery reuses that checkpoint without another provider call
+- **AND** the original claim and current authenticated identity are revalidated before authoritative persistence
+- **AND** final text, canonical response, execution trace and finish are atomically added to the durable replay log exactly once
+- **AND** Stop remains serialized against the persistence gate
+
+#### Scenario: Recovery exhausts its budget or ownership expires
+- **WHEN** generation exceeds its original ninety-second budget, publication exceeds its twenty-second budget, the original claim is no longer eligible, or recovery retries are exhausted
+- **THEN** the attempt fails closed and retains explicit Retry under the original turn identifiers
+- **AND** generation plus publication never extends beyond the original two-minute claim
+
+#### Scenario: The replay window expires
+- **WHEN** the ten-minute replay window expires
+- **THEN** response content and recovery credentials are removed while a small tombstone prevents delayed duplicate submission from rerunning the attempt
 
 #### Scenario: User leaves the page without activating Stop
 - **WHEN** navigation or account changes detach the browser subscriber

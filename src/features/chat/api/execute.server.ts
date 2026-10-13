@@ -73,7 +73,8 @@ import {
 import { getLastUserQuery } from '#features/chat/lib/extract-visible-text.ts'
 import { buildAgentHistoryFromStoredMessages, buildAgentHistoryFromUIMessages } from '#features/chat/api/agent/history.ts'
 import { parseMainChatRequest } from '#features/chat/api/main-request.ts'
-import { beginChatDeliveryCommit } from './delivery.server.ts'
+import { beginChatDeliveryCommit, getChatDeliveryCheckpoint, saveChatDeliveryCheckpoint } from './delivery.server.ts'
+import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER } from '../../../chat-delivery-worker/recovery.ts'
 import { DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER, parseDeliveryIdentity } from '#features/chat/lib/delivery-protocol.ts'
 import { progressArtifactKey, progressText } from '#features/chat/lib/progress.ts'
 
@@ -122,6 +123,7 @@ function publicChatError(error: unknown): string {
 
 export const POST = async (event: RequestEvent): Promise<Response> => {
   const { request } = event
+  const stage = request.headers.get(EXECUTION_STAGE_HEADER)
 
   let uiMessages: UIMessage[]
   let locale: 'en' | 'es'
@@ -153,7 +155,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   }
 
   const ip = getClientIP(event)
-  const { success, reset } = await checkRateLimit(ip)
+  const { success, reset } = stage === 'commit' || stage === 'fail' || Number(request.headers.get(EXECUTION_FENCE_HEADER)) > 1
+    ? { success: true, reset: 0 } : await checkRateLimit(ip)
   if (!success) {
     console.log(`[RATE LIMIT] IP ${ip} exceeded rate limit, reset at ${new Date(reset).toISOString()}`)
     return createRateLimitResponse(reset)
@@ -164,6 +167,13 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       event.request.headers.get(DELIVERY_TURN_HEADER) !== turnId) return new Response(null, { status: 403 })
   request.signal.throwIfAborted()
   const requestId = parseDeliveryIdentity(turnId, request.headers)!.attemptId
+  if (stage === 'fail') {
+    if (userContext.isAuthenticated && turnId) await Effect.runPromise(failChatTurnEffect(event, turnId, requestId))
+    else await Effect.runPromise(recordGuestRequestTerminalEffect({ requestId, conversationId, status: 'errored', errorType: 'runtime_interruption', providerRequestId: null }))
+    return new Response(null, { status: 204 })
+  }
+  const checkpoint = stage === 'commit' ? await getChatDeliveryCheckpoint(event) : null
+  if (stage === 'commit' && !checkpoint) return createErrorStream('Chat response checkpoint unavailable')
   let originalQuery: string
   let authoritativeTurn: ChatTurn | null = null
   let replayAssistant: {
@@ -188,10 +198,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
           : 'This turn is already running in another tab.'
       )
     }
-    if (request.signal.aborted && authoritativeTurn.status === 'running') {
-      await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch(() => {})
-      return createErrorStream('Response stopped')
-    }
+    request.signal.throwIfAborted();
     ({ conversationId, userClientMessageId, assistantClientMessageId, originalQuery, locale } =
       applyAuthoritativeTurn({
         conversationId,
@@ -309,7 +316,11 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         const claimedTurn = authoritativeTurn
 
         if (replayAssistant) {
-          writer.write({ type: 'start', messageId: replayAssistant.id })
+          writer.write({ type: 'start', messageId: assistantClientMessageId ?? replayAssistant.id })
+          if (stage === 'generate') {
+            await saveChatDeliveryCheckpoint(event, { canonical: replayAssistant.canonical, executionTrace: [] })
+            return
+          }
           await beginChatDeliveryCommit(event)
           writeStatus('persisting')
           writer.write({ type: 'text-start', id: `replay:${replayAssistant.id}` })
@@ -327,11 +338,11 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         writer.write({ type: 'start', messageId })
         writeStatus('thinking')
 
-        if (!userContext.isAuthenticated) {
+        if (!userContext.isAuthenticated && stage !== 'commit') {
           await Effect.runPromise(recordGuestRequestStartedEffect({ requestId, conversationId }))
         }
 
-		const result = await Effect.runPromise(runSharedChatTurnEffect({
+		const result = checkpoint ?? await Effect.runPromise(runSharedChatTurnEffect({
           requestId,
           userContext,
           locale,
@@ -355,7 +366,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 		}))
 
         const canonical = result.canonical
-        providerRequestId = result.providerRequestId
+        providerRequestId = result.providerRequestId ?? null
+        if (stage === 'generate') {
+          request.signal.throwIfAborted()
+          await saveChatDeliveryCheckpoint(event, { canonical, executionTrace: result.executionTrace, providerRequestId: providerRequestId ?? undefined })
+          return
+        }
 
         // Server-side authoritative persistence for authenticated users.
         request.signal.throwIfAborted()
@@ -434,6 +450,12 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
         }
 		} catch (error) {
 			console.error('[Chat API] Error:', error)
+			// Runtime interruption and commit transport failures belong to workflow recovery.
+			// Explicit Stop already owns cancellation in delivery and the public bridge.
+			if (stage === 'commit' || request.signal.aborted) return
+			let ownsFence = true
+			if (stage) { try { await getChatDeliveryCheckpoint(event) } catch { ownsFence = false } }
+			if (!ownsFence) return
 			if (userContext.isAuthenticated && turnId && authoritativeTurn?.status === 'running') {
 				await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch((failError) => {
 					console.error('[Chat API] Failed to mark turn failed:', failError)

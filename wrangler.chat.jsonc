@@ -1,13 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baeventos-chat-delivery",
-  "main": "src/chat-delivery-worker/index.ts",
+  "main": "src/chat-delivery-worker/worker.ts",
   "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "services": [{ "binding": "CHAT_EXECUTION", "service": "baeventos" }],
   "durable_objects": { "bindings": [{ "name": "CHAT_DELIVERY", "class_name": "ChatDelivery" }] },
+  "workflows": [{ "binding": "CHAT_RESPONSE_WORKFLOW", "name": "baeventos-chat-response", "class_name": "ChatResponseWorkflow" }],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatDelivery"] }],
   "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": true } }
 }

@@ -36,6 +36,12 @@ The web channel SHALL publish transient previews using the final response's serv
 - **WHEN** the running attempt has been cancelled before the persistence gate
 - **THEN** late reads and text cannot publish a final canonical response
 
+#### Scenario: Workflow recovery follows a server restart
+- **WHEN** generation is interrupted by a runtime restart
+- **THEN** only read-only generation may be retried under the same eligible turn claim
+- **AND** the recovered result passes the same server assembler and validation as an uninterrupted result
+- **AND** a checkpointed final canonical response is reused without rerunning generation
+
 ### Requirement: References are server-owned and fail closed
 Prior results MUST be rehydrated into bounded server-owned handles, same-turn reads MUST use opaque references, and unknown references MUST NOT resolve to raw event or venue identifiers.
 
