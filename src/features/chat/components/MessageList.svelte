@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte'
+	import { untrack, type Snippet } from 'svelte'
 	import { Sparkles } from 'lucide-svelte'
 	import ChatMessage from './ChatMessage.svelte'
 	import type { ChatMessage as ChatMessageType } from '#shared/lib/types.ts'
@@ -19,12 +19,16 @@
 
 	let {
 		messages,
+		noticeMessageId = null,
+		messageNotice,
 		isLoading = false,
 		loadingPhase = 'idle' as LoadingPhase,
 		loadingLabel = undefined as string | undefined,
 		onSuggestionSelect = undefined as ((prompt: string) => void) | undefined
 	}: {
 		messages: ChatMessageType[]
+		noticeMessageId?: string | null
+		messageNotice?: Snippet
 		isLoading?: boolean
 		loadingPhase?: LoadingPhase
 		loadingLabel?: string
@@ -134,6 +138,13 @@
 				suggestionsDisabled={isLoading}
 				isLast={!isLoading && index === messages.length - 1}
 			/>
+			{#if message.role === 'user' && message.id === noticeMessageId && messageNotice}
+				<div class="-mt-1 mb-6 flex justify-end sm:-mt-5" data-message-notice-for={message.id}>
+					<div class="w-full max-w-[88%] sm:max-w-[52%]">
+						{@render messageNotice()}
+					</div>
+				</div>
+			{/if}
 		{/each}
 
 		<!-- Loading indicator -->

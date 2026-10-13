@@ -125,12 +125,18 @@ The web channel SHALL keep a workflow-owned attempt independent of browser subsc
 - **AND** guest completion on later replay still requires the original unexpired local claim
 
 ### Requirement: Chat feedback and input are accessible in the active locale
-The composer SHALL have a localized accessible name and SHALL NOT submit Enter while text composition is active. Errors and retry guidance SHALL share one nonoverlapping notice in normal document flow with localized controls. Failures SHALL be announced as alerts using generic user-facing text; intentional stops SHALL be announced as status updates.
+The composer SHALL have a localized accessible name and SHALL NOT submit Enter while text composition is active. Errors and retry guidance SHALL share one nonoverlapping notice in normal document flow with localized controls. When the owning user question is visible, its notice and Retry SHALL appear directly below that question inside the conversation, rather than above the chat. Failures SHALL be announced as alerts using generic user-facing text; intentional stops SHALL be announced as status updates.
 
 #### Scenario: Response fails on a narrow screen
 - **WHEN** the response fails and Retry is available
 - **THEN** the error and Retry appear together without covering the conversation or composer
 - **AND** the notice is announced and all controls have localized accessible names
+
+#### Scenario: User stops a follow-up after an earlier completed response
+- **WHEN** the user stops the follow-up response
+- **THEN** the stopped notice and Retry appear directly below the follow-up question
+- **AND** earlier questions and responses remain unchanged
+- **AND** Retry preserves the original turn and message identifiers
 
 #### Scenario: User confirms composed text
 - **WHEN** Enter is pressed during IME composition

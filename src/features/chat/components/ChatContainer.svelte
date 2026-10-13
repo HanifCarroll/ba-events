@@ -721,6 +721,15 @@
 	)
 	const canStop = $derived(isLoading && requestPhase !== 'persisting' && requestPhase !== 'error')
 
+	const showNotice = $derived(Boolean(error || (visibleRetryTurn && !isLoading)))
+	const noticeMessageId = $derived.by(() => {
+		const id = visibleRetryTurn?.user_client_message_id
+		if (!showNotice || !id) return null
+		return displayMessages.some((message) => message.role === 'user' && message.id === id)
+			? id
+			: null
+	})
+
 	const loadingLabel = $derived.by(() => {
 		switch (requestPhase) {
 			case 'preparing':
@@ -768,38 +777,44 @@
 	}
 </script>
 
-<div class="relative h-full min-h-0 flex flex-col">
-	{#if error || (visibleRetryTurn && !isLoading)}
-		<div
-			role={error && !noticeIsStopped ? 'alert' : 'status'}
-			class="shrink-0 mx-4 mt-4 rounded-lg border p-3 text-sm flex flex-wrap items-center gap-3 {error && !noticeIsStopped ? 'bg-destructive/10 border-destructive/30' : 'bg-muted border-border'}"
-		>
-			<span class="min-w-0 flex-1">{error ?? m.chat_retry_needed()}</span>
-			{#if visibleRetryTurn && !isLoading}
-				<button
-					type="button"
-					class="min-h-11 shrink-0 rounded-md bg-primary px-3 py-2 text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					onclick={() => handleSendMessage(visibleRetryTurn.content, {
-						conversationId: localRetryTurn?.conversation_id ?? conversationId ?? undefined,
-						turnId: visibleRetryTurn.id,
-						userClientMessageId: visibleRetryTurn.user_client_message_id,
-						assistantClientMessageId: visibleRetryTurn.assistant_client_message_id,
-						retry: true
-					})}
+{#snippet responseNotice()}
+	<div
+		role={error && !noticeIsStopped ? 'alert' : 'status'}
+		class="rounded-lg border p-3 text-sm flex flex-wrap items-center gap-3 {error && !noticeIsStopped ? 'bg-destructive/10 border-destructive/30' : 'bg-muted border-border'}"
+	>
+		<span class="min-w-0 flex-1">{error ?? m.chat_retry_needed()}</span>
+		{#if visibleRetryTurn && !isLoading}
+			<button
+				type="button"
+				class="min-h-11 shrink-0 rounded-md bg-primary px-3 py-2 text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				onclick={() => handleSendMessage(visibleRetryTurn.content, {
+					conversationId: localRetryTurn?.conversation_id ?? conversationId ?? undefined,
+					turnId: visibleRetryTurn.id,
+					userClientMessageId: visibleRetryTurn.user_client_message_id,
+					assistantClientMessageId: visibleRetryTurn.assistant_client_message_id,
+					retry: true
+				})}
+			>
+				{m.chat_retry()}
+			</button>
+		{/if}
+		{#if error}
+			<button
+				type="button"
+				onclick={dismissError}
+				class="size-11 shrink-0 rounded-md text-lg leading-none hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				aria-label={m.chat_dismiss_notice()}
 				>
-					{m.chat_retry()}
-				</button>
-			{/if}
-			{#if error}
-				<button
-					type="button"
-					onclick={dismissError}
-					class="size-11 shrink-0 rounded-md text-lg leading-none hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					aria-label={m.chat_dismiss_notice()}
-					>
-					×
-				</button>
-			{/if}
+				×
+			</button>
+		{/if}
+	</div>
+{/snippet}
+
+<div class="relative h-full min-h-0 flex flex-col">
+	{#if showNotice && !noticeMessageId}
+		<div class="shrink-0 mx-4 mt-4">
+			{@render responseNotice()}
 		</div>
 	{/if}
 
@@ -829,6 +844,8 @@
 		{:else if hasMessages || requestPhase !== 'idle'}
 			<MessageList
 				messages={displayMessages}
+				{noticeMessageId}
+				messageNotice={responseNotice}
 				isLoading={showLoading}
 				loadingPhase={requestPhase}
 				loadingLabel={loadingLabel}
