@@ -27,6 +27,13 @@ The desktop sidebar and mobile menu SHALL align the Telegram icon with the other
 - **THEN** its icon remains 20 pixels wide and aligned with the New Chat and Feedback icons
 - **AND** the full translated label remains visible
 
+### Requirement: Chat navigation omits the Privacy link
+The desktop chat sidebar and mobile menu SHALL NOT display a Privacy navigation link.
+
+#### Scenario: Visitor opens chat navigation
+- **WHEN** the chat sidebar or mobile menu renders in any supported locale
+- **THEN** it contains no Privacy navigation link
+
 ### Requirement: The MCP entry addresses AI assistant users
 The homepage link to MCP setup SHALL address people using AI assistants without implying that building software is required, and SHALL retain the public beta label.
 
