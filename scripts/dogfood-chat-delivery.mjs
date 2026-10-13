@@ -34,6 +34,8 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   getClientAddress: () => '127.0.0.1', isDataRequest: false, isSubRequest: false });
  async function execution(request) {
   const stage = request.headers.get('x-chat-execution-stage'); if(stage === 'generate') executions++;
+  if (mode === 'unrecoverable' && stage === 'generate') throw new Error('Fixture generation unavailable');
+  if (stage === 'fail' && mode !== 'live' && mode !== 'production') return new Response(null, { status: 204 });
   const nativeRequest = new Request(request.url, { method: 'POST', headers: request.headers, body: await request.text(), signal: request.signal });
   if (mode === 'live') return executeDelivery(event(nativeRequest));
   if (mode === 'production') return productionResponse(nativeRequest);
@@ -58,6 +60,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   bindings: { CHAT_DELIVERY_SECRET: secret },
   serviceBindings: { CHAT_EXECUTION: async request => {
    const result = await execution(request);
+   if (!result.body) return new RuntimeResponse(null, { status: result.status, headers: result.headers });
    const reader = result.body.getReader(); const decoder = new TextDecoder(); const events = new ChatEventDecoder();
    return new RuntimeResponse(new ReadableStream({ async pull(controller) {
     const { done, value } = await reader.read(); if (done) { controller.close(); return }
@@ -171,6 +174,31 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
    if(recoveryStage==='commit'){assert.equal(executions,before+1);assert.equal(commitCalls,beforeCommit+2)}
    console.log('PASS real workflow recovery after native Durable Object reset during '+recoveryStage+': original turn, one canonical completion, fenced restart and checkpoint reuse');
   }
+  mode = 'unrecoverable'; const beforeFailure = executions;
+  await page.evaluate(async () => { window.startNew(); sessionStorage.removeItem('browser-conversation'); await window.loadConversation(null); window.dogfoodPrompt = 'Retry after recovery is exhausted' });
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  const failureNotice = page.getByRole('alert');
+  await failureNotice.getByRole('button', { name: 'Retry', exact: true }).waitFor({ timeout: 20_000 });
+  assert.match(await failureNotice.innerText(), /could not complete the response/i);
+  if (process.env.CHAT_DOGFOOD_EVIDENCE_DIR) {
+   await mkdir(process.env.CHAT_DOGFOOD_EVIDENCE_DIR, { recursive: true });
+   await page.screenshot({ path: resolve(process.env.CHAT_DOGFOOD_EVIDENCE_DIR, 'exhausted-recovery-retry.png'), fullPage: true });
+  }
+  stored = await page.evaluate(() => window.getStored(window.routeId())); const failedTurn = stored.turns.at(-1);
+  assert.equal(executions, beforeFailure + 3);
+  assert.equal(failedTurn.status, 'failed'); assert.equal(stored.messages.length, 1);
+  mode = 'fixture';
+  await failureNotice.getByRole('button', { name: 'Retry', exact: true }).click();
+  await page.getByText('Server-validated preview', { exact: true }).waitFor(); release();
+  await page.waitForFunction(() => !document.querySelector('input').disabled);
+  stored = await page.evaluate(() => window.getStored(window.routeId())); const retriedTurn = stored.turns.at(-1);
+  assert.equal(stored.turns.length, 1); assert.equal(stored.messages.length, 2);
+  assert.equal(retriedTurn.id, failedTurn.id); assert.equal(retriedTurn.status, 'completed');
+  assert.equal(retriedTurn.user_client_message_id, failedTurn.user_client_message_id);
+  assert.equal(retriedTurn.assistant_client_message_id, failedTurn.assistant_client_message_id);
+  assert.notEqual(retriedTurn.claim_id, failedTurn.claim_id);
+  assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0);
+  console.log('PASS exhausted workflow recovery: clear alert and Retry, same question and message identifiers, fresh attempt and exactly one response');
   if (live) {
    assert.ok(process.env.DEEPSEEK_API_KEY && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY, 'Live dogfood needs configured model and database credentials');
    mode = 'live'; observed.length = 0;
