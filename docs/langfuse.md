@@ -116,3 +116,34 @@ References: [Custom dashboards](https://langfuse.com/docs/metrics/features/custo
 
 References: [AI SDK 7 integration](https://langfuse.com/integrations/frameworks/vercel-ai-sdk),
 [experiment runner](https://langfuse.com/docs/evaluation/experiments/experiments-via-sdk).
+
+## Operational measurement sources
+
+Use production GENERATION observations in Langfuse for model-span count, latency,
+input/output/cache usage and reported-response token estimates. Do not sum SDK
+agent roots with their child generations. The v2 Metrics API reports latency in
+milliseconds. The same production/time filters apply to model-error views.
+
+Canonical fallback is a different outcome from a failed model request. BA’s
+existing guest_request_lifecycle table records completed_with_fallback and the
+closed fallback reason. Divide that status by completed + completed_with_fallback
+for the recorded guest-web completion denominator; retain started and errored
+separately. Writes are best effort, so missing records, signed-in web and Telegram
+are outside that denominator. Keep synthetic setup checks separate from user
+satisfaction and graded quality. No second ledger or runtime collector is needed.
+
+At the 2026-10-14 21:09 UTC read, the production Metrics API contains 10 BA
+generations (40,190 tokens; mean model-span latency 2,661 ms, p95 4,703 ms). Only
+the two responses after the aggregate-price correction have totals; older
+unpriced/component-only observations remain unknown. The guest ledger contains
+four recorded completions and no fallback, all within the setup-check period.
+This is measurement coverage, not a customer-health baseline.
+
+Casamo’s same-day production read contains 11 generations, 26,113 tokens,
+mean model-span latency 2,384 ms and p95 3,413 ms. Eight responses in the new
+production canary have explicit cost totals. Model latency is distinct from
+whole-scan latency, provider acquisition completeness and independently graded
+decision quality. The existing model meter retains response metadata; an empty
+legacy provider-attempt table does not establish zero acquisition or fallback.
+
+References: [Metrics API](https://langfuse.com/docs/metrics/features/metrics-api).
