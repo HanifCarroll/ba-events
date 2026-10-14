@@ -28,6 +28,14 @@ OpenTelemetry provider with AsyncLocalStorage, supported by Workers'
 request IDs and conversation sessions. Inputs and outputs include chat text and
 model-facing tool facts, including saved-list results; authentication tokens,
 delivery capabilities, credentials and raw user-tool context are not attached.
+The export boundary redacts a copy of all span attributes, error events/status
+and links, including raw AI/GenAI fields. It masks common emails, international
+phone numbers, explicit credential fields and token patterns, and strips URL
+queries/fragments. Useful chat/tool facts, usage and correlation IDs remain;
+model inputs and application responses are not changed. If redaction fails, the
+span is omitted. Pattern redaction does not anonymize names, addresses or every
+possible secret, and does not rewrite historical traces. Casamo audit tracing
+retains its separate metadata-only policy.
 Keep project access and retention appropriate for this data. A turn's bounded
 export is explicitly flushed after both streaming and non-streaming generation,
 including errors, rather than relying on a Worker staying awake.

@@ -126,6 +126,13 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **AND** the fingerprint excludes messages, credentials and per-user context
 - **AND** the prompt revision and application release distinguish template/code changes without changing model execution
 
+#### Scenario: Chat and tool content is retained with redaction
+- **WHEN** a configured turn exports chat, tool, model or error spans
+- **THEN** an export-only copy masks common email/international-phone patterns, credential fields/tokens and URL queries/fragments across Langfuse and raw AI attributes, events and links
+- **AND** model inputs, tool results, application responses, usage and correlation identifiers remain unchanged
+- **AND** redaction failure omits the span without repeating model execution
+- **AND** pattern redaction is not represented as anonymizing names, addresses, arbitrary secrets or historical traces
+
 #### Scenario: Langfuse is unavailable
 - **WHEN** tracing is unconfigured or its exporter fails
 - **THEN** the concierge retains the same execution, fallback and canonical-artifact rules

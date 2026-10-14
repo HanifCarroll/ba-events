@@ -1,4 +1,5 @@
 import type { TelemetryOptions } from 'ai'
+import { redactingSpanProcessor } from './trace-redaction.ts'
 
 export interface ConciergeTraceContext {
   requestId?: string
@@ -45,7 +46,7 @@ export async function initializeLangfuse(): Promise<Runtime | undefined> {
       // Explicitly flush at the request/CLI boundary; do not rely on an idle Worker timer.
       flushInterval: 60,
     })
-    const provider = new BasicTracerProvider({ spanProcessors: [processor] })
+    const provider = new BasicTracerProvider({ spanProcessors: [redactingSpanProcessor(processor)] })
     context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable())
     trace.setGlobalTracerProvider(provider)
     return { processor, tracing, integration: new LangfuseVercelAiSdkIntegration() }

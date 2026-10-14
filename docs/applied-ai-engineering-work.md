@@ -207,9 +207,14 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [x] Add and run BA Eventos real-model malicious-source and multilingual injection evaluations.
 - [x] Add and run corresponding Casamo multilingual review/photo-source injection evaluations.
 - [ ] Define and verify telemetry redaction, sampling, access, and retention.
-  - BA currently exports chat/tool input and model output. The optional production-content policy question is pending; trace content has not been changed by the replay fix. Langfuse’s Hobby access window must not be represented as confirmed automatic deletion.
+  - [x] Implement the owner's content-with-redaction policy for BA in an export-only copy of all span attributes, status/errors, events and links, covering Langfuse and raw AI/GenAI fields. Retain useful chat/tool facts, usage and correlation IDs; leave model inputs/application responses unchanged. Common emails/international phones, credential fields/tokens and URL queries/fragments are masked. Six focused checks pass in both runners; a real SDK/default OTLP loopback capture verifies three mocked generations with redacted payloads and identical application outputs, with zero paid/external model calls. Redaction failures omit the span. Names, addresses, arbitrary secrets and historical data are not claimed anonymized. Casamo retains metadata-only audit tracing.
+  - [ ] Verify deployed payloads and settle project sampling/access/retention. Langfuse's Hobby access window is not proof of automatic deletion.
 - [ ] Verify replay masking and independent protection when database rate limiting fails.
   - [x] Set explicit PostHog replay masking of all text and inputs in both browser initializers, using the existing SDK. Both application checks and canonical specs pass. Document that URL/attribute/custom-event surfaces are separate; do not treat the configuration check as a deployed recording inspection.
+  - [x] Separately mask automatic interaction text and element attributes and disable copied-text capture in both existing PostHog initializers. Keep page views and named outcome events. Both primary application checks pass with no errors/warnings; primary and release specs validate (Casamo release retains its four pre-existing archive INFO notices). This is a configuration/type check, not an inspected network payload or deployed recording; replay DOM attributes, URL and custom-property review remain open.
+  - [x] Enable built-in replay DOM-attribute masking and captured URL-fragment stripping, and omit PostHog page titles in both projects. Replace Casamo’s dynamic GA4 title with `Casamo`, so private report destinations/listing names are no longer supplied as page titles. Record reduced replay styling/image fidelity. Both Svelte checks pass without errors/warnings and canonical/release specs validate. No SDK upgrade, new filtering layer or paid eval run. Named event callers reviewed supply bounded IDs/counts/enums rather than prose or source URLs; this is a source/configuration review, not deployed payload proof.
+  - [ ] Review URL query/referrer handling and verify effective deployed payloads; existing/historical telemetry is not retroactively redacted.
+    - [x] Configure SDK masking for declared sensitive auth/search/intake URL query names (including Casamo retry requirements and listing URLs), disable referrer collection and deny referrer event properties. Both Svelte checks and release specs pass after shortening the Casamo requirement that triggered the >500-character warning. Exact-name masking requires review when introducing new query fields; replay/network URL coverage and deployed payload checks remain open.
   - [ ] Inspect effective deployed replay masking and review URL/attribute/event-property surfaces after release.
   - [x] Fail closed when BA’s shared Supabase limiter errors, returns absent/malformed data or stalls beyond three seconds. Preserve known quota outcomes; distinguish outages with retry guidance in web/events/feedback, and verify Telegram’s existing 503/no-dispatch behavior. No extra rate-limit service or spending ledger. Twenty-eight transport/web/Telegram checks pass in both runners, plus an isolated real events-read/events-write/feedback route probe returning 503 before payload or backend work. TypeScript and 10 canonical specs pass. Preserve the existing signed recovery/commit stages’ original admission in the release branch; deployed outage testing remains open.
 - [x] Rotate and revoke the original exposed BA Langfuse setup key; verify its replacement.
@@ -222,6 +227,8 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [ ] Release Casamo Q&A removal and apply its deletion migration after backup.
 - [ ] Release Casamo’s locally verified audit context-budget, title-translation and scan-profiler fixes; their separate release scope remains visible after the thin tracing release.
 - [ ] Add an explicit AI-quality release gate and reproducible release receipts.
+  - [x] Add a short manual owner checkpoint and PR template to both projects, using the existing tests and frozen eval reports. Define the receipt fields and rollback references without adding a CI platform or harness. This documents a merge checkpoint; it does not enforce branch protection or establish current-head quality.
+  - [ ] Complete the applicable review and release receipts for each actual release.
 - [ ] Record code, prompt, model, configuration, corpus, results, and rollback details.
 - [x] Reconcile four informational Casamo spec archive notices before archiving changes; also reconcile the later reuse/freshness notice while preserving all three current scenarios (strict validation is clean).
 
@@ -811,3 +818,14 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - A temporary one-hour staging-backup download URL appeared in setup output.
   The saved export log was redacted and the backup remained private; its issued
   expiry was `2026-10-13T22:30:42Z`. No production database was exported.
+
+- Section 11 content policy checkpoint (2026-10-14): the owner's chat/tool-content
+  policy is implemented as export-only redaction. Six focused checks pass in both
+  runners in the release checkout; TypeScript passes in primary and release. The
+  actual AI SDK/default OTLP loopback receipt
+  `results/langfuse/redaction-probe.json` records three mocked generations, zero
+  external provider requests, retained useful text and unchanged app outputs.
+  Ten release specs validate. Production payload/access/retention checks remain
+  open. Casamo's query/referrer configuration is pushed; shortening its privacy
+  requirement resolves the new length warning (18 primary/19 release items pass,
+  with the release's four existing archive INFO notices retained).
