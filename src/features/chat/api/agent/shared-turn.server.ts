@@ -125,6 +125,7 @@ export function runSharedChatTurnEffect(
       requestId: input.requestId,
       sessionId: input.sessionId,
       channel: input.channel,
+      retainTask: input.retainTask,
       userContext: input.userContext,
       locale: normalized.locale,
       originalQuery: normalized.originalQuery,

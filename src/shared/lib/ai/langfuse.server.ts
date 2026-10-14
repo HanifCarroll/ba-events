@@ -7,6 +7,7 @@ export interface ConciergeTraceContext {
   channel?: 'web' | 'telegram' | 'eval'
   promptVersion?: string
   configurationId?: string
+  retainTask?: (task: Promise<unknown>) => void
 }
 
 type Runtime = {
@@ -75,7 +76,18 @@ export async function flushLangfuse(): Promise<void> {
 }
 
 /** AI SDK leaf; observability never retries or changes the application result. */
-export async function traceConcierge<T extends { text: string; steps: unknown[] }>(
+export function traceConcierge<T extends { text: string; steps: unknown[] }>(
+  input: ConciergeTraceContext & { messages: unknown[] },
+  run: (telemetry?: TelemetryOptions) => Promise<T>,
+): Promise<T> {
+  const execution = traceConciergeRun(input, run)
+  // Effect interruption can finish before this Promise's trace flush finishes.
+  try { input.retainTask?.(execution.then(() => undefined, () => undefined)) }
+  catch { console.warn('[langfuse] cleanup retention failed') }
+  return execution
+}
+
+async function traceConciergeRun<T extends { text: string; steps: unknown[] }>(
   input: ConciergeTraceContext & { messages: unknown[] },
   run: (telemetry?: TelemetryOptions) => Promise<T>,
 ): Promise<T> {
