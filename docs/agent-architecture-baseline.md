@@ -32,7 +32,9 @@ rather than establishing today's quality.
 
 The refreshed run `1287e549-6745-43fe-8815-b9c090184f98` completed all 24 trials
 and 72 turns with the unchanged corpus, cases and deterministic graders. Its
-orchestration fingerprint matches current code. The automatic result is 23/24
+orchestration fingerprint matched the Section 2 checkpoint. Subsequent bounded
+execution/output-limit and performance-adapter changes mean it does not certify
+the current release head. The original automatic result is 23/24
 conversations: `newest-list-es`, trial 2, turn 1 failed the language heuristic.
 The saved response is “Dale, buscamos noches gratis por Palermo y aparecieron
 tres opciones.” Inspection identifies Spanish despite the heuristic's English
