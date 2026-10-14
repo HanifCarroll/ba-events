@@ -3,9 +3,10 @@ import type { ModelMessage } from 'ai'
 import { orchestrate, type AgentInput, type AgentRunner } from './orchestrate.ts'
 import { frozenDependencies, frozenEvents, frozenReadExecutors, CORPUS_HASH, FROZEN_DATE } from '../../../../../evals/concierge/frozen-corpus.ts'
 import { CONVERSATIONS } from '../../../../../evals/concierge/conversations.ts'
-import { runConversation, scoreConversationTurn, summarizeConversations } from '../../../../../evals/concierge/conversation-runner.ts'
+import { captureModelUsage, runConversation, scoreConversationTurn, summarizeConversations } from '../../../../../evals/concierge/conversation-runner.ts'
 import { parseMultiTurnOptions, experimentScoresMatch } from '../../../../../evals/concierge/multi-turn.ts'
 import { MAX_AGENT_HISTORY_TOTAL_TEXT } from './history.ts'
+import { runConcierge } from '../../../../../evals/lib/run-agent.ts'
 
 type PublicEvents = { events: Array<{ eventRef: string }> }
 type Executable = { execute: (input: unknown, options: { toolCallId: string; messages: ModelMessage[] }) => Promise<unknown> }
@@ -46,6 +47,34 @@ describe('frozen concierge conversation evaluations', () => {
     expect(inputs[1].instructions).toContain(`${inputs[0].requestId}:event_1`)
     expect(inputs[1].instructions).toContain('Palermo')
     expect(inputs[1].instructions).toContain('"isFree":true')
+  })
+
+  it('measures grounded progress without counting placeholder prose as useful output', async () => {
+    const scripted = scriptedAgent()
+    const run = await runConcierge('Find events tonight.', 'en', { capturePerformance: true }, frozenDependencies(async input => {
+      input.onText?.('Working on your request...')
+      await new Promise(resolve => setTimeout(resolve, 20))
+      return scripted(input)
+    }))
+    expect(run.cardsGrounded).toBe(true)
+    expect(run.timing?.transport).toBe('stream')
+    expect(run.timing?.firstUsefulMs).toBeGreaterThanOrEqual(10)
+    expect(run.timing?.completionMs).toBeGreaterThanOrEqual(run.timing!.firstUsefulMs!)
+  })
+
+  it('retains real zero usage and model identity without treating missing counters as zero', () => {
+    const usage = captureModelUsage({ text: '', responseId: null, steps: [
+      { finishReason: 'stop', usage: { inputTokens: 0, outputTokens: 0, inputTokenDetails: { cacheReadTokens: 0 }, outputTokenDetails: { reasoningTokens: 0 } }, model: { provider: 'deepseek.chat', modelId: 'deepseek-flash' } },
+      { finishReason: 'stop' },
+      { finishReason: 'stop', usage: { inputTokens: 0, outputTokens: 0, inputTokenDetails: { cacheReadTokens: 0 }, outputTokenDetails: { reasoningTokens: 0 }, raw: {} } },
+      { finishReason: 'stop', usage: { inputTokens: -1, outputTokens: 1.5, inputTokenDetails: { cacheReadTokens: Infinity }, outputTokenDetails: { reasoningTokens: NaN } } },
+    ] } as never)
+    expect(usage).toEqual([
+      { provider: 'deepseek.chat', model: 'deepseek-flash', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0 },
+      { provider: null, model: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
+      { provider: null, model: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
+      { provider: null, model: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
+    ])
   })
 
   it('pins corpus content and returns independent copies', () => {

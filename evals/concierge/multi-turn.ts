@@ -63,6 +63,9 @@ async function main() {
     runId, suiteVersion: 'concierge-multi-v1', evaluatorVersion: 'conversation-deterministic-v2',
     replyLanguageVersion: REPLY_LANGUAGE_VERSION,
     modelEvidenceVersion: 'model-evidence-v1',
+    performanceVersion: 'conversation-performance-v1', modelTransport: 'stream',
+    performanceSourceHash: hash((await readFile(new URL('./conversation-runner.ts', import.meta.url), 'utf8')) +
+      (await readFile(new URL('../lib/run-agent.ts', import.meta.url), 'utf8'))),
     corpusVersion: CORPUS_VERSION, corpusHash: CORPUS_HASH, frozenNow: FROZEN_NOW,
     casesHash: hash(JSON.stringify(cases)), orchestrationSourceHash: hash(source),
     configuredModel: AI_MODEL, canaryPercent: process.env.DEEPSEEK_FLASH_CANARY_PERCENT ?? '0',

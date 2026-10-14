@@ -135,6 +135,14 @@ evaluation gate; model variability SHALL remain visible in per-trial results.
 - **THEN** its report retains the per-trial failures and aggregate pass rate
 - **AND** the suite fails instead of reporting only the best trial
 
+#### Scenario: A conversation evaluation records performance
+- **WHEN** the repeated conversation adapter measures a turn through the existing streaming progress path
+- **THEN** its report identifies the measurement version and transport and records first useful grounded artifact or clarification separately from completion and grading duration
+- **AND** placeholder prose does not count as first useful output
+- **AND** returned model steps retain model/provider identity and input, cache, output and reasoning counters, with absent or invalid measurements unknown and real zero preserved
+- **AND** raw DeepSeek counters do not inherit normalized SDK defaults for missing fields
+- **AND** historical generation-only receipts remain unchanged and unreported failed attempts are not priced as zero
+
 #### Scenario: Prose quality is evaluated separately from card provenance
 - **WHEN** a model evaluation grades factuality, suitability, explanation accuracy or usefulness
 - **THEN** the grade uses the actual model-visible read evidence and active state from that run

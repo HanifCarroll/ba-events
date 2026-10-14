@@ -11,6 +11,32 @@ import type { ConversationCase, TurnExpectation } from './conversations.ts'
 import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
 import { captureModelEvidence, type ModelEvidence } from './quality.ts'
 
+export interface ModelStepUsage {
+  provider: string | null
+  model: string | null
+  inputTokens: number | null
+  cacheReadTokens: number | null
+  outputTokens: number | null
+  reasoningTokens: number | null
+}
+
+/** Returned SDK usage only; missing counters and failed attempts remain unknown. */
+export function captureModelUsage(run: import('#features/chat/api/agent/orchestrate.ts').AgentRun): ModelStepUsage[] {
+  const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+  return run.steps.map(raw => {
+    const step = raw as typeof raw & { model?: { provider?: string; modelId?: string }; usage?: {
+      inputTokens?: number; outputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number };
+      outputTokenDetails?: { reasoningTokens?: number }; raw?: { prompt_tokens?: number; prompt_cache_hit_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } }
+    } }
+    const rawUsage = step.usage?.raw
+    return { provider: step.model?.provider ?? null, model: step.model?.modelId ?? null,
+      inputTokens: count(rawUsage ? rawUsage.prompt_tokens : step.usage?.inputTokens),
+      cacheReadTokens: count(rawUsage ? rawUsage.prompt_cache_hit_tokens : step.usage?.inputTokenDetails?.cacheReadTokens),
+      outputTokens: count(rawUsage ? rawUsage.completion_tokens : step.usage?.outputTokens),
+      reasoningTokens: count(rawUsage ? rawUsage.completion_tokens_details?.reasoning_tokens : step.usage?.outputTokenDetails?.reasoningTokens) }
+  })
+}
+
 export interface TurnResult {
   index: number
   message: string
@@ -18,6 +44,7 @@ export interface TurnResult {
   failures: string[]
   run?: AgentRun
   durationMs: number
+  modelUsage?: { steps: ModelStepUsage[]; inputOutputComplete: boolean }
 }
 export interface ConversationResult {
   caseId: string
@@ -83,7 +110,8 @@ export async function runConversation(
 ): Promise<ConversationResult> {
   const sessionId = options.sessionId ?? `eval-${scenario.id}-${trial}-${randomUUID()}`
   let evidence: ModelEvidence | undefined
-  const dependencies = options.dependencies ?? frozenDependencies(undefined, (input, run) => { evidence = captureModelEvidence(input, run) })
+  let modelSteps: ModelStepUsage[] = []
+  const dependencies = options.dependencies ?? frozenDependencies(undefined, (input, run) => { evidence = captureModelEvidence(input, run); modelSteps = captureModelUsage(run) })
   const runTurn = options.runTurn ?? runConcierge
   const priorHints: PriorResponseHint[] = []
   const recentMessages: AgentHistoryMessage[] = options.historyStress ? structuredClone(HISTORY_STRESS_MESSAGES) : []
@@ -95,14 +123,16 @@ export async function runConversation(
     const started = performance.now()
     try {
       evidence = undefined
+      modelSteps = []
       const context: Partial<ConciergeEvalContext> = {
-        sessionId, currentDateInBA: FROZEN_DATE, priorHints: structuredClone(priorHints),
+        sessionId, currentDateInBA: FROZEN_DATE, capturePerformance: true, priorHints: structuredClone(priorHints),
         recentMessages: structuredClone(recentMessages), lastSearch: structuredClone(lastSearch),
       }
       const run = await runTurn(turn.message, scenario.locale, context, dependencies)
       if (evidence) run.modelEvidence = evidence
       const failures = await scoreConversationTurn(`${scenario.id}/turn-${index + 1}`, turn.message, scenario.locale, turn.expect, run, previousResults)
-      turns.push({ index, message: turn.message, run, pass: !failures.length, failures, durationMs: Math.round(performance.now() - started) })
+      turns.push({ index, message: turn.message, run, pass: !failures.length, failures, durationMs: Math.round(performance.now() - started),
+        modelUsage: { steps: modelSteps, inputOutputComplete: modelSteps.length > 0 && modelSteps.every(step => step.inputTokens !== null && step.outputTokens !== null) } })
       previousResults.push(run)
 
       // Carry actual output through the same parsers and bounds used by production.

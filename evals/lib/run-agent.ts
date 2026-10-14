@@ -31,11 +31,12 @@ export interface AgentRun {
   cardsGrounded: boolean
   /** Eval-only model-visible evidence; never persisted by the application. */
   modelEvidence?: ModelEvidence
+  timing?: { transport: 'stream'; firstUsefulMs: number | null; completionMs: number }
 }
 
 export type ConciergeEvalContext = Pick<SharedChatTurnInput,
   'priorHints' | 'recentMessages' | 'lastSearch' | 'homeEventIds' | 'pin' | 'pinFacts' | 'sessionId'
-> & { currentDateInBA?: string }
+> & { currentDateInBA?: string; capturePerformance?: boolean }
 
 export async function runConcierge(
   message: string,
@@ -43,7 +44,16 @@ export async function runConcierge(
   context: Partial<ConciergeEvalContext> = {},
   dependencies: SharedChatTurnDependencies = {},
 ): Promise<AgentRun> {
-  const { currentDateInBA, ...turnContext } = context
+  const { currentDateInBA, capturePerformance, ...turnContext } = context
+  const started = performance.now()
+  let firstUsefulMs: number | null = null
+  const observeProgress = (response: CanonicalChatResponse) => {
+    if (firstUsefulMs !== null) return
+    if (response.events.length || response.directions || response.venue ||
+      response.kind === 'clarification' && response.clarificationQuestions.length) {
+      firstUsefulMs = Math.round(performance.now() - started)
+    }
+  }
   const result = await runSharedChatTurn({
     requestId: generateId(),
     userContext: ANON_CONTEXT,
@@ -52,7 +62,11 @@ export async function runConcierge(
     priorHints: [],
     ...turnContext,
     channel: 'eval',
+    ...(capturePerformance ? { onProgress: observeProgress } : {}),
   }, { ...dependencies, ...(currentDateInBA ? { currentDateInBA } : {}) })
+
+  if (capturePerformance) observeProgress(result.canonical)
+  const completionMs = Math.round(performance.now() - started)
 
   const toolCalls: AgentToolCall[] = result.reads.map((r) => ({
     toolName: r.toolName,
@@ -77,5 +91,6 @@ export async function runConcierge(
     stepCount: result.executionTrace.length,
     canonical: result.canonical,
     cardsGrounded,
+    ...(capturePerformance ? { timing: { transport: 'stream' as const, firstUsefulMs, completionMs } } : {}),
   }
 }

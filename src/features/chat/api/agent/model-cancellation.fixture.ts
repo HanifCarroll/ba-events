@@ -1,9 +1,11 @@
 /** Isolated, no-network fixture for the real AI SDK production model leaf. */
 import { orchestrate, runToolLoop } from './orchestrate.ts'
+import { captureModelUsage } from '../../../../../evals/concierge/conversation-runner.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
 
 const streaming = process.argv[2] === 'stream'
 const contextBudget = process.argv[2] === 'context-budget'
+const usageProbe = process.argv[2] === 'usage'
 const controller = new AbortController()
 let received: AbortSignal | undefined
 let calls = 0
@@ -15,6 +17,11 @@ globalThis.fetch = async (_input, init) => {
   calls++
   maxOutputTokens = JSON.parse(String(init?.body)).max_tokens
   received = init?.signal ?? undefined
+  if (usageProbe) return Response.json({
+    id: 'usage-probe', object: 'chat.completion', created: 1, model: 'deepseek-flash',
+    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'Hello' } }],
+    usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16, prompt_cache_hit_tokens: 7, completion_tokens_details: { reasoning_tokens: 1 } },
+  })
   if (contextBudget) return Response.json({
     id: 'test-completion', object: 'chat.completion', created: 1, model: 'deepseek-flash',
     choices: [{ index: 0, finish_reason: 'tool_calls', message: { role: 'assistant', content: null,
@@ -45,6 +52,11 @@ if (contextBudget) {
     } },
   })
   console.log(JSON.stringify({ calls, maxOutputTokens, businessReads, eventIds: result.canonical.events.map(event => event.id), fallbackUsed: result.canonical.provenance.fallbackUsed }))
+  process.exit(0)
+}
+if (usageProbe) {
+  const run = await runToolLoop({ instructions: 'Answer briefly.', messages: [{ role: 'user', content: 'Hello' }], tools: {} })
+  console.log(JSON.stringify(captureModelUsage(run)))
   process.exit(0)
 }
 const running = runToolLoop({

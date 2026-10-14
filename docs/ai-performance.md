@@ -12,7 +12,7 @@ measured production service levels or a promise to the traveler.
 | Cost per independently reviewed success | Unmeasured; monetary target pending budget choice | Unmeasured; monetary target pending budget choice |
 
 Count first useful BA output as a grounded event preview or a complete
-clarification, not typing or generic progress. For Casamo, count acquired provider
+clarification or authoritative directions/venue artifact, not typing or generic progress. For Casamo, count acquired provider
 evidence or a persisted meaningful stage update, not queue admission. Measure queue
 wait separately. Include failures in latency reporting rather than dropping slow
 requests. Report sample counts and observation dates with every percentile.
@@ -24,7 +24,9 @@ contains eight conversations, three independent trials and 72 turns at concurren
 two. Complete-turn latency was p50 **5,116 ms**, p95 **9,005 ms** and maximum
 **13,044 ms**, using nearest-rank percentiles over all turns. These are historical
 API timings with controlled event reads, before the new output cap; they exclude
-real catalog retrieval and do not establish production performance. First useful
+real catalog retrieval and do not establish production performance. Those
+receipts used generation-only transport; future performance receipts explicitly
+identify the streaming path. First useful
 output and complete model usage were not recorded in that receipt.
 
 The original automatic contract result remains 23/24; the separately documented
@@ -32,6 +34,14 @@ language-detector correction does not replace the original report. Independent
 prose labels are pending, so cost per reviewed success remains unknown. Casamo's
 review/photo experiments do not measure end-to-end scan completion. Do not use
 their timings as whole-scan latency or their label agreement as customer success.
+
+The existing conversation adapter now captures first useful grounded output and
+completion timing through the production progress callback and retains model-step
+usage. It does not launch new model runs. Missing usage stays null; raw DeepSeek
+usage avoids the SDK's zero defaults for omitted fields. Usage on returned steps
+is not proof of total provider spending when failed requests or retries may have
+been charged. Future comparison receipts identify this measurement version and
+streaming transport; historical reports remain unchanged.
 
 ## Existing controls and the small remaining gaps
 
