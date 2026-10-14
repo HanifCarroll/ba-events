@@ -4,6 +4,8 @@ export interface ConciergeTraceContext {
   requestId?: string
   sessionId?: string
   channel?: 'web' | 'telegram' | 'eval'
+  promptVersion?: string
+  configurationId?: string
 }
 
 type Runtime = {
@@ -85,7 +87,11 @@ export async function traceConcierge<T extends { text: string; steps: unknown[] 
     return await propagateAttributes({
       sessionId: input.sessionId,
       tags: ['concierge', input.channel ?? 'web'],
-      metadata: { requestId: input.requestId ?? 'unknown', channel: input.channel ?? 'web' },
+      metadata: {
+        requestId: input.requestId ?? 'unknown', channel: input.channel ?? 'web',
+        promptVersion: input.promptVersion ?? 'unrecorded',
+        configurationId: input.configurationId ?? 'unrecorded',
+      },
     }, () => startActiveObservation('ba-eventos.concierge', async (span) => {
       span.update({ input: input.messages })
       started = true

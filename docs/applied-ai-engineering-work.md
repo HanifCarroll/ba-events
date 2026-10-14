@@ -19,18 +19,14 @@ independent-label dependencies visible, use focused checks for each change, and
 reserve full release gates for release checkpoints. Broader provider coverage
 remains recorded below as deferred work, rather than being marked complete.
 
-Current focus: Section 7 — Casamo review/photo experiments are connected and
-cloud export is verified. Review cases passed; the photo run completed with one
-false positive and six missed signals, so its safety gate failed. The recorded false positive conflicts with the current workspace policy: a
-backed chair at a dedicated desk qualifies, while the old fixture says false.
-The fixture and failed gate remain unchanged pending independent label review.
-Section 8’s BA release is prepared in the existing isolated checkout. Its
-813 Bun tests, 798 Vitest tests, type checks and 10 specs pass; the production
-build passes with existing Supabase configuration and local PostHog stand-ins.
-Draft PR #6 (https://github.com/HanifCarroll/ba-events/pull/6) contains the
-prepared release. Four Langfuse settings are configured privately on baeventos.
-Database migration application awaits a signed-in Supabase session; no code
-release or migration has been applied yet.
+Current focus: Section 8 — BA draft PR #6 and Casamo draft PR #5 are prepared
+and their release checks pass. Both production Workers have project-specific
+Langfuse settings; the tracing code remains undeployed. BA’s migrations await
+Supabase sign-in. Casamo’s staging scan verification awaits a separate Langfuse
+staging key; the existing read-only canary verifies the Access boundary only.
+Record these dependencies and continue with the remaining views/alerts item
+while awaiting input. Casamo’s photo label conflict and failed gate remain
+unchanged pending independent review.
 
 Earlier engineering work and its receipts are recorded under each section.
 Real-user satisfaction and independent human labels remain external dependencies;
@@ -162,9 +158,19 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [x] Instrument Casamo scan/model audit execution locally with optional, metadata-only tracing.
 - [ ] Configure Casamo project keys and verify cloud traces, staging scans and production execution.
   - [x] Save the project key in ignored local .env and verify review/photo experiment traces and scores in Casamo Cloud.
-  - [ ] Configure environment secrets and verify staging scans and production execution.
+  - [x] Prepare isolated Casamo draft PR #5 (https://github.com/HanifCarroll/casamo/pull/5) for metadata-only tracing and the existing eval adapter; full native release gate, build and staging scan Worker packaging pass. Existing Q&A/context-budget changes remain separate pending releases.
+  - [x] Configure project-specific Langfuse credentials, US base URL and production environment on Casamo’s private scan Worker.
+  - [ ] Configure a separate staging Langfuse key and obtain authenticated staging canary access; existing unauthenticated staging check confirms the Access login redirect only.
+  - [ ] Verify staging scan/action cloud traces, release production code and verify production execution.
 - [ ] Configure quality, latency, fallback, errors, usage, and cost views and alerts.
+  - [x] Reuse the existing Langfuse Home, Agent, Latency, Cost and Usage dashboards in both projects; save and reopen a project-specific production-error widget in each (production + ERROR + GENERATION). No dashboard framework, runtime code or model reruns were added.
+  - [ ] Link an existing notification automation and save one production model-error alert per project (count > 0 over one hour, missing data NO_DATA, renotify off). BA’s prepared form cannot save without an automation; no alerts or notification integration have been created. Destination is an external input dependency.
+  - [ ] Verify deployed metric coverage, fallback measurement and cost/model-price mappings; empty production views do not establish healthy traffic, measured quality or total provider spending. Keep human-calibrated quality rates under Section 7.
 - [ ] Attach prompt/configuration identifiers and promote reviewed failures into regression cases.
+  - [x] Add BA’s explicit prompt revision and a fingerprint of selected model/provider, contract, supplied tools, limits, retries and thinking options. A real-SDK local export probe verifies stable identity across different messages and changed identity across selected models; no external model calls. Thirty focused orchestration/cancellation checks, TypeScript and 10 specs pass.
+  - [x] Add Casamo’s declared request-configuration fingerprint alongside existing prompt/schema revisions and available hashes. Real Workers SDK export, metadata-only exclusion checks, nine native tracing/SDK checks, Worker TypeScript and strict 18-item validation pass.
+  - [x] Retain reviewed deterministic failures as regression cases: BA paid-only serialization, bilingual live-music exclusions, nullable enrichment output and grounding/cancellation cases already have direct checks. Do not relabel Casamo’s disputed photo fixture or unreviewed prose as accepted regressions.
+  - [ ] Verify identifiers on deployed traces and promote independently reviewed quality failures after labels arrive.
 
 ## 9. Reliability and recovery
 
@@ -177,6 +183,7 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 
 - [ ] Set first-useful-result, complete-response, and cost-per-success targets.
 - [ ] Benchmark model/configuration choices against the same quality suite.
+  - Record the installed SDK’s reported mapping of configured thinking adaptive to wire enabled when comparing modes; the local identifier probe exposed this compatibility alias. No thinking behavior was changed.
 - [ ] Add appropriate spending and concurrency controls.
 
 ## 11. Security and privacy
@@ -193,9 +200,10 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [x] Restore passing local tests, type checks, builds, and strict spec validation.
 - [ ] Commit and release BA Eventos tracing/evaluation changes; verify production.
 - [ ] Release Casamo Q&A removal and apply its deletion migration after backup.
+- [ ] Release Casamo’s locally verified audit context-budget, title-translation and scan-profiler fixes; their separate release scope remains visible after the thin tracing release.
 - [ ] Add an explicit AI-quality release gate and reproducible release receipts.
 - [ ] Record code, prompt, model, configuration, corpus, results, and rollback details.
-- [x] Reconcile four informational Casamo spec archive notices before archiving changes.
+- [x] Reconcile four informational Casamo spec archive notices before archiving changes; also reconcile the later reuse/freshness notice while preserving all three current scenarios (strict validation is clean).
 
 ## Verification receipts
 

@@ -1,6 +1,7 @@
 /** ToolLoopAgent concierge orchestration. */
 import { ToolLoopAgent, isStepCount, tool } from 'ai'
 import { Data, Effect } from 'effect'
+import { createHash } from 'node:crypto'
 import type { ModelMessage, ToolSet, ToolExecutionOptions } from 'ai'
 import { z } from 'zod'
 import type {
@@ -36,6 +37,9 @@ import { boundedRead, ReadTimeoutError } from './bounded-read.ts'
 import { extractRecommendationFraming, extractRecommendationReasons, extractRecommendationResponse, isValidRecommendationReason, removeFramingMarkers, warmRecommendationFallback } from '#shared/lib/recommendation-framing.ts'
 
 const MAX_STEPS = 5
+const MODEL_MAX_RETRIES = 1
+// Bump when instruction templates or tool descriptions change; release identifies the code.
+export const CONCIERGE_PROMPT_VERSION = 'concierge-prompt-v1'
 const MAX_TOOL_CALLS = 8
 const MAX_CONTEXT_INPUT_TOKENS = 16_000
 const AGENT_TIMEOUT = { totalMs: 60_000, stepMs: 20_000 } as const
@@ -362,14 +366,27 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
 
 /** Production model runner; eval adapters may observe its inputs and results. */
 export async function runToolLoop(input: AgentInput): Promise<AgentRun> {
-  return traceConcierge(input, (telemetry) => generateToolLoop(input, telemetry))
-}
-
-async function generateToolLoop(input: AgentInput, telemetry?: TelemetryOptions): Promise<AgentRun> {
   const { CHAT_THINKING, textModelForRequest } = await import('#shared/lib/ai/providers.ts')
   const model = textModelForRequest(input.requestId ?? 'unknown')
+  // Identity contains only server-owned settings, never messages, credentials or context.
+  const configurationId = createHash('sha256').update(JSON.stringify({
+    version: 'concierge-config-v1', contract: CHAT_CONTRACT_VERSION,
+    provider: model.provider, model: model.modelId,
+    maxSteps: MAX_STEPS, maxToolCalls: MAX_TOOL_CALLS, maxInputTokens: MAX_CONTEXT_INPUT_TOKENS,
+    timeout: AGENT_TIMEOUT, toolTimeoutMs: TOOL_TIMEOUT_MS, maxRetries: MODEL_MAX_RETRIES,
+    thinking: CHAT_THINKING, postSearchTools: POST_SEARCH_TOOLS,
+    tools: Object.keys(input.tools).sort(),
+  })).digest('hex')
+  return traceConcierge({ ...input, promptVersion: CONCIERGE_PROMPT_VERSION, configurationId },
+    (telemetry) => generateToolLoop(input, model, CHAT_THINKING, telemetry))
+}
+
+async function generateToolLoop(input: AgentInput,
+  model: ReturnType<typeof import('#shared/lib/ai/providers.ts').textModelForRequest>,
+  thinking: typeof import('#shared/lib/ai/providers.ts').CHAT_THINKING,
+  telemetry?: TelemetryOptions): Promise<AgentRun> {
   const promptSize = input.instructions.length + input.messages.reduce((total, message) => total + JSON.stringify(message.content).length, 0)
-  logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: 1, contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS })
+  logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: MODEL_MAX_RETRIES, contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS })
   const agent = new ToolLoopAgent({
     model,
     telemetry,
@@ -409,9 +426,9 @@ async function generateToolLoop(input: AgentInput, telemetry?: TelemetryOptions)
       })
       return searched ? { activeTools: POST_SEARCH_TOOLS } : undefined
     },
-    maxRetries: 1,
+    maxRetries: MODEL_MAX_RETRIES,
     timeout: AGENT_TIMEOUT,
-    ...CHAT_THINKING,
+    ...thinking,
   })
   if (input.onText) {
     const result = await agent.stream({ messages: input.messages, abortSignal: input.abortSignal })

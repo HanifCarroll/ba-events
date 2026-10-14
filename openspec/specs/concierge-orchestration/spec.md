@@ -72,12 +72,6 @@ The web channel SHALL publish transient previews using the final response's serv
 - **WHEN** the running attempt has been cancelled before the persistence gate
 - **THEN** late reads and text cannot publish a final canonical response
 
-#### Scenario: Workflow recovery follows a server restart
-- **WHEN** generation is interrupted by a runtime restart
-- **THEN** only read-only generation may be retried under the same eligible turn claim
-- **AND** the recovered result passes the same server assembler and validation as an uninterrupted result
-- **AND** a checkpointed final canonical response is reused without rerunning generation
-
 ### Requirement: References are server-owned and fail closed
 Prior results MUST be rehydrated into bounded server-owned handles, same-turn reads MUST use opaque references, and unknown references MUST NOT resolve to raw event or venue identifiers.
 
@@ -98,6 +92,13 @@ when server credentials are configured. Trace context SHALL contain request and
 conversation identifiers without authentication credentials, delivery capabilities,
 or raw user-tool context. Missing credentials and export failures MUST NOT retry
 model execution or change the turn result. Export waiting SHALL be bounded.
+
+#### Scenario: A configured turn identifies its prompt and model configuration
+- **WHEN** the production model runner exports a configured turn
+- **THEN** trace metadata includes an explicit instruction-template revision
+- **AND** a configuration fingerprint identifies the selected model/provider, canonical contract, supplied tool names, execution/context limits, retries and thinking settings
+- **AND** the fingerprint excludes messages, credentials and per-user context
+- **AND** the prompt revision and application release distinguish template/code changes without changing model execution
 
 #### Scenario: Langfuse is unavailable
 - **WHEN** tracing is unconfigured or its exporter fails
