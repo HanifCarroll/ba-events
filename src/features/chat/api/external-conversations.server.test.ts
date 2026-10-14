@@ -19,7 +19,7 @@ const conversation = {
 
 function chain(terminal: Record<string, unknown> = {}) {
   const query: Record<string, unknown> = {}
-  for (const method of ['select', 'eq', 'is', 'order', 'limit', 'update', 'delete', 'insert']) {
+  for (const method of ['abortSignal', 'select', 'eq', 'is', 'order', 'limit', 'update', 'delete', 'insert']) {
     query[method] = vi.fn(() => query)
   }
   query.maybeSingle = vi.fn(async () => terminal.maybeSingle)
@@ -61,7 +61,7 @@ describe('external conversation repository', () => {
       client_message_id: 'telegram:update:42:user',
       role: 'user',
     }
-    const rpc = vi.fn().mockResolvedValue({ data: message, error: null })
+    const rpc = vi.fn(() => chain({ awaited: { data: message, error: null } }))
     const client = { from: vi.fn(() => conversations), rpc } as never
 
     await expect(

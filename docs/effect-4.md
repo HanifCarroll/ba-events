@@ -245,7 +245,11 @@ be added here with its owning runtime and behavior.
 
 - Nominatim keeps native `AbortSignal.timeout` cancellation and its existing
   single timeout retry. Effect does not add a schedule.
-- Telegram keeps Bot API `retry_after`, update claim/retry caps, DO storage
+- Telegram owns one scoped interruption signal for final sends, callbacks, typing
+  and drafts. Bot API fetch and body consumption share one Promise leaf; external
+  conversation and delivery-claim queries pass the fiber signal to PostgREST.
+  Interrupted programs cannot advance, while already committed writes remain durable.
+  Telegram keeps Bot API `retry_after`, update claim/retry caps, DO storage
   keys, alarms, and ack ordering.
 - Trigger keeps task retry policies, queue ownership, schedules, and batch
   checkpoints. A failed Effect task still fails the Trigger task so its

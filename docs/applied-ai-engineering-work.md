@@ -182,7 +182,8 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [ ] Verify cancellation of remaining BA channel requests and Casamo model/provider operations.
   - [x] Reject already-cancelled and late-completing BA event/venue/directions reads before returning facts or starting a venue-name fallback; 11 cases reproduce the old failures and pass in both runners.
   - [x] Replace MCP’s response-only timeout race with the existing owned-read cancellation boundary; propagate HTTP/protocol cancellation and the 20-second deadline into search and public detail reads. Two old-protocol regressions reproduce missing reader cancellation; all 34 focused MCP/direct-read/presentation/transport checks pass in Vitest and Bun, with TypeScript and 10 specs green.
-  - [ ] Finish Telegram dependency and Casamo provider/model cancellation checks; verify deployed behavior after release.
+  - [x] Connect Telegram turn cancellation to final Bot API sends, callback answers, typing and progress drafts, including response-body reads. Pass native Effect interruption into external conversation and delivery-claim database requests. Twelve new cases cover stalled/previously cancelled delivery, late progress and actual PostgREST read/RPC/write cancellation; all 118 focused channel/storage checks pass in Vitest and Bun. TypeScript and canonical spec validation pass.
+  - [ ] Finish Casamo provider/model cancellation checks; verify deployed Telegram/Casamo behavior after release.
 - [ ] Exercise model, tool, persistence, and delivery failures.
 
 ## 10. Latency and cost

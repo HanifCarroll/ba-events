@@ -68,52 +68,61 @@ export function createTelegramClient({
   const redact = (value: unknown) =>
     String(value).replaceAll(token, '[REDACTED]').replaceAll(encodeURIComponent(token), '[REDACTED]')
 
-  async function call<T>(method: string, body?: Record<string, unknown>): Promise<T> {
-    const program = Effect.gen(function* () {
-      const response = yield* Effect.tryPromise({
-        try: () => fetchImpl(endpoint(method), {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: body ? JSON.stringify(body) : undefined,
-          // Telegram owns the native timeout contract. Keep this signal
-          // unchanged so Worker retry/cancellation behavior remains intact.
-          signal: AbortSignal.timeout(timeoutMs),
-        }),
-        catch: (error) => new TelegramApiError(`Telegram request failed: ${redact(error)}`),
-      })
+  async function call<T>(method: string, body?: Record<string, unknown>, abortSignal?: AbortSignal): Promise<T> {
+    abortSignal?.throwIfAborted()
+    // Keep fetch and body consumption inside the same interruption scope.
+    const program = Effect.tryPromise({
+      try: async (signal) => {
+        let response: Response
+        try {
+          response = await fetchImpl(endpoint(method), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined,
+            signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+          })
+        } catch (error) {
+          throw new TelegramApiError(`Telegram request failed: ${redact(error)}`)
+        }
 
-      const raw = yield* Effect.tryPromise({
-        try: () => response.json() as Promise<unknown>,
-        catch: () => new TelegramApiError(`Telegram returned an invalid response (${response.status})`),
-      })
-      const parsed = Schema.decodeUnknownResult(telegramEnvelopeSchema)(raw)
-      if (parsed._tag !== 'Success') {
-        return yield* Effect.fail(new TelegramApiError(`Telegram returned an invalid response (${response.status})`))
-      }
-
-      const envelope = parsed.success
-      if (envelope.ok && Object.hasOwn(envelope, 'result')) return envelope.result as T
-      if (!envelope.ok) {
-        return yield* Effect.fail(new TelegramApiError(
-          redact(envelope.description ?? `Telegram request failed (${response.status})`),
-          envelope.error_code,
-          envelope.parameters?.retry_after,
-        ))
-      }
-      return yield* Effect.fail(new TelegramApiError(`Telegram returned an invalid response (${response.status})`))
+        let raw: unknown
+        try {
+          raw = await response.json()
+        } catch {
+          throw new TelegramApiError(`Telegram returned an invalid response (${response.status})`)
+        }
+        signal.throwIfAborted()
+        const parsed = Schema.decodeUnknownResult(telegramEnvelopeSchema)(raw)
+        if (parsed._tag !== 'Success') {
+          throw new TelegramApiError(`Telegram returned an invalid response (${response.status})`)
+        }
+        const envelope = parsed.success
+        if (envelope.ok && Object.hasOwn(envelope, 'result')) return envelope.result as T
+        if (!envelope.ok) {
+          throw new TelegramApiError(
+            redact(envelope.description ?? `Telegram request failed (${response.status})`),
+            envelope.error_code,
+            envelope.parameters?.retry_after,
+          )
+        }
+        throw new TelegramApiError(`Telegram returned an invalid response (${response.status})`)
+      },
+      catch: (error) => error instanceof TelegramApiError
+        ? error
+        : new TelegramApiError(`Telegram request failed: ${redact(error)}`),
     })
-    return Effect.runPromise(program)
+    return Effect.runPromise(program, { signal: abortSignal })
   }
 
   return {
-    sendMessage(chatId: string, text: string, replyMarkup?: TelegramReplyMarkup) {
+    sendMessage(chatId: string, text: string, replyMarkup?: TelegramReplyMarkup, abortSignal?: AbortSignal) {
       return call<unknown>('sendMessage', {
         chat_id: chatId,
         text,
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-      })
+      }, abortSignal)
     },
-    sendMessageDraft(chatId: string, draftId: number, text: string) {
+    sendMessageDraft(chatId: string, draftId: number, text: string, abortSignal?: AbortSignal) {
       const numericChatId = Number(chatId)
       if (!/^-?\d+$/.test(chatId) || !Number.isSafeInteger(numericChatId)) {
         throw new Error('Telegram draft chat id must be a safe integer')
@@ -122,16 +131,16 @@ export function createTelegramClient({
         throw new Error('Telegram draft id must be a positive safe 31-bit integer')
       }
       if (text.length > 4096) throw new Error('Telegram draft text is too long')
-      return call<unknown>('sendMessageDraft', { chat_id: numericChatId, draft_id: draftId, text })
+      return call<unknown>('sendMessageDraft', { chat_id: numericChatId, draft_id: draftId, text }, abortSignal)
     },
-    sendChatAction(chatId: string, action: 'typing' = 'typing') {
-      return call<unknown>('sendChatAction', { chat_id: chatId, action })
+    sendChatAction(chatId: string, action: 'typing' = 'typing', abortSignal?: AbortSignal) {
+      return call<unknown>('sendChatAction', { chat_id: chatId, action }, abortSignal)
     },
-    answerCallbackQuery(callbackQueryId: string, text?: string) {
+    answerCallbackQuery(callbackQueryId: string, text?: string, abortSignal?: AbortSignal) {
       return call<unknown>('answerCallbackQuery', {
         callback_query_id: callbackQueryId,
         ...(text ? { text: text.slice(0, 200) } : {}),
-      })
+      }, abortSignal)
     },
     setWebhook(url: string, secretToken?: string) {
       try {
