@@ -22,8 +22,9 @@ remains recorded below as deferred work, rather than being marked complete.
 Current focus: release prerequisites and waiting review/data inputs. BA PR #6
 passes the full runtime release gate. Casamo PR #5 prepares tracing, PR #6 removes
 Q&A, and PR #7 carries audit context/title/profiler fixes; their local checks are
-recorded below. These releases remain undeployed. Supabase installation is confirmed and the owner reports connection, but its
-database tools are not available in the current chat; the migrations remain unapplied. Casamo still needs
+recorded below. These releases remain undeployed. BA’s two Supabase migrations are applied and live paid/free/unrestricted search
+checks pass. The owner authorized continuing the release on 2026-10-14; independent
+quality labels remain unknown and their checklist items stay open. Casamo still needs
 its staging key and authenticated staging access. No current browser connection
 is available in this session. Independent labels, an alert destination and a
 monthly spending choice remain open. Avoid repeated gates on unchanged runtime.
@@ -153,10 +154,10 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [ ] Deploy BA Eventos tracing and verify real web/Telegram sessions.
   - [x] Prepare isolated draft PR #6 on current main; 813 Bun/798 Vitest tests, Svelte/TypeScript checks, 10 specs and the production build pass. Preserve deployed chat recovery/feedback and exclude private diagnostics.
   - [x] Configure BA’s project-specific Langfuse keys, US base URL and production environment on the application Worker; code deployment/real traces remain pending.
-  - [ ] Apply the prepared migrations before merging. Supabase is installed and the owner reports connection; database tools have not loaded in the current chat. No migration has been applied.
+  - [x] Apply the prepared migrations before merging. Both applied on 2026-10-14 through the connected Supabase integration; local filenames match the recorded remote versions. Twelve live semantic/lexical paid/free/unrestricted checks pass with no wrong-status results. The additive jsonb column exists and both functions retain security-invoker execution. Original function definitions and migration/verification receipts are private under `results/releases/langfuse-current/`. Existing advisor notices remain, including mutable search paths; no new grants or privileged execution were introduced.
     - Read-only live check on 2026-10-14 confirms the `enrichment_provenance` column is absent (42703). The lexical RPC returns an existing paid event without a free-status constraint and zero results with explicit false. The prepared migration is still required; no schema write occurred. Private receipts: `results/releases/access-refresh/database.json` and `lexical-filter.json` in the primary checkout.
-  - [ ] Apply BA's additive `20261014000000_add_enrichment_provenance.sql` migration and release/verify the import/enrichment pipeline with tracing; older rows remain unknown, with no speculative backfill.
-  - [ ] Apply `20261014010000_fix_paid_only_search_filters.sql` before the changed search client, and verify paid/free/unrestricted searches through the deployed functions.
+  - [ ] Apply BA's additive `20261014144351_add_enrichment_provenance.sql` migration and release/verify the import/enrichment pipeline with tracing; older rows remain unknown, with no speculative backfill.
+  - [x] Apply `20261014144355_fix_paid_only_search_filters.sql` before the changed search client, and verify paid/free/unrestricted searches through the deployed functions.
 - [x] Instrument Casamo scan/model audit execution locally with optional, metadata-only tracing.
 - [ ] Configure Casamo project keys and verify cloud traces, staging scans and production execution.
   - [x] Save the project key in ignored local .env and verify review/photo experiment traces and scores in Casamo Cloud.

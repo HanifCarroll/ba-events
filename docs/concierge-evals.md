@@ -72,7 +72,7 @@ are still pending; do not score missing labels as zero.
 Paid-only retrieval has a separate serialized-request regression in
 `src/shared/lib/db/search-filters.test.ts`. The current SQL functions also needed
 a correction: their previous true-only predicates rejected explicit false.
-`20261014010000_fix_paid_only_search_filters.sql` preserves both current function
+`20261014144355_fix_paid_only_search_filters.sql` preserves both current function
 signatures/result shapes and changes only those predicates. An isolated
 PostgreSQL/pgvector check executes the unchanged migration, reproduces the old
 failure and passes paid/free/unrestricted subsets for both functions plus
