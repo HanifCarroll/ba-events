@@ -21,6 +21,7 @@ describe('DeepSeek trace cost estimates', () => {
     expect(costs.input).toBeCloseTo(0.00006, 12)
     expect(costs.input_cached_tokens).toBeCloseTo(0.0000018, 12)
     expect(costs.output).toBeCloseTo(0.00012, 12)
+    expect(costs.total).toBeCloseTo(0.0001818, 12)
     expect(result!['langfuse.observation.metadata.costEstimatePeriod']).toBe('off_peak')
     expect(span.attributes['langfuse.observation.cost_details']).toBeUndefined()
   })
@@ -54,7 +55,7 @@ describe('DeepSeek trace cost estimates', () => {
       'gen_ai.usage.input_tokens': 0, 'gen_ai.usage.cache_read.input_tokens': 0, 'gen_ai.usage.output_tokens': 0,
     }))
     expect(JSON.parse(result!['langfuse.observation.cost_details'] as string))
-      .toEqual({ input: 0, input_cached_tokens: 0, output: 0 })
+      .toEqual({ input: 0, input_cached_tokens: 0, output: 0, total: 0 })
     for (const span of [modelSpan('2026-09-10T03:00:00Z'),
       modelSpan('2026-10-14T00:59:59Z', {}, '2026-10-14T01:00:01Z')]) {
       expect(deepseekCostEstimateAttributes(span)).toBeUndefined()
