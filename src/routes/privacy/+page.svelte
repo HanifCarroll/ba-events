@@ -34,7 +34,7 @@
 				{
 					title: 'Product analytics',
 					body: [
-						'On baeventos.com, PostHog records page views, interaction and scroll metadata, session replays, and limited product events such as message length, response time, event clicks, saves, optional helpfulness ratings linked by an opaque response identifier, errors, and language. Replay privacy and masking follow the settings configured for the project in PostHog. Google Analytics records acquisition, redacted page paths, and the same limited product outcomes without user IDs. We do not include email addresses, chat text, search text, feedback text, or error messages in custom analytics events. PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.'
+						'On baeventos.com, PostHog records page views, interaction and scroll metadata, session replays, and limited product events such as message length, response time, event clicks, saves, optional helpfulness ratings linked by an opaque response identifier, errors, and language. Session replay records page text, attributes and entered values without masking. People with access to our PostHog recordings can view that content. Google Analytics records acquisition, redacted page paths, and the same limited product outcomes without user IDs. We do not include email addresses, chat text, search text, feedback text, or error messages in custom analytics events. PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.'
 					]
 				},
 				{

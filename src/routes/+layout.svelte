@@ -80,7 +80,7 @@
 					],
 					respect_dnt: true,
 					disable_surveys: true,
-					session_recording: { maskAllInputs: true, maskTextSelector: '*', maskAllElementAttributes: true },
+					session_recording: { maskAllInputs: false, maskInputOptions: { password: false }, maskTextSelector: '', maskAllElementAttributes: false },
 					loaded: (ph) => {
 						// Expose globally for debugging.
 						;(window as unknown as Record<string, unknown>).posthog = ph

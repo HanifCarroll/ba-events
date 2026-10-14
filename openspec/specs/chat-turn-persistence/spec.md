@@ -203,13 +203,13 @@ Supported historical message contracts SHALL be adapted at read time to the curr
 - **WHEN** a v2 or v3 row is read
 - **THEN** it is adapted with legacy provenance while the stored row remains unchanged
 
-### Requirement: Product session replay masks text and inputs
+### Requirement: Product session replay records unmasked content
 
-The browser analytics SDK SHALL explicitly mask all replay text and input values locally. Replay masking SHALL preserve the first-party interface and named outcome measurement. URL properties, DOM attributes and separately captured event properties remain separate privacy surfaces and MUST NOT be represented as covered by text/input masking.
+Under the owner-approved replay policy, the browser analytics SDK SHALL explicitly disable replay text, input (including password-type input) and DOM-attribute masking. New recordings can contain page content and entered values. Automatic interaction events, named outcomes, URL redaction and AI trace redaction remain separate policies.
 
 #### Scenario: A recording captures a page with private text and form values
 - **WHEN** browser analytics initializes session replay
-- **THEN** local SDK configuration masks all text elements and all inputs before replay transmission
+- **THEN** local SDK configuration disables text, input and DOM-attribute masking before replay transmission
 - **AND** the rendered interface and explicit outcome events retain their existing behavior
 
 ### Requirement: Automatic interactions exclude content
@@ -221,13 +221,13 @@ Browser automatic interaction capture SHALL mask element text and element attrib
 - **THEN** local SDK configuration excludes element text and attributes, with copied-text capture disabled
 - **AND** named outcome measurement retains its existing behavior
 
-### Requirement: Browser telemetry excludes replay attributes, URL fragments and page titles
+### Requirement: Browser event telemetry excludes sensitive URLs and titles
 
-The browser SDK SHALL mask replay attributes and declared sensitive query names, strip captured URL fragments, omit PostHog page titles and disable referrer collection. Named outcomes and the first-party interface SHALL remain unchanged. New query fields SHALL receive privacy review. Reduced replay fidelity, arbitrary query keys and historical data remain explicit limits.
+The browser SDK SHALL mask declared sensitive query names, strip captured URL fragments, omit PostHog page titles and disable referrer collection. Named outcomes and the first-party interface SHALL remain unchanged. These event controls do not imply replay-content masking. New query fields SHALL receive privacy review; historical telemetry remains unchanged.
 
 #### Scenario: A private page contains descriptive attributes or a fragment
 - **WHEN** browser analytics initializes
-- **THEN** SDK configuration masks replay attributes, strips captured URL fragments and excludes page titles from PostHog events
+- **THEN** SDK configuration leaves replay attributes unmasked, strips captured URL fragments and excludes page titles from PostHog events
 - **AND** named sensitive query masking and referrer exclusion are configured, while deployed payload verification remains a separate check
 
 ## Verification
