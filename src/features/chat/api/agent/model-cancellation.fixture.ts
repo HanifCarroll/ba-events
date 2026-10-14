@@ -7,11 +7,13 @@ const contextBudget = process.argv[2] === 'context-budget'
 const controller = new AbortController()
 let received: AbortSignal | undefined
 let calls = 0
+let maxOutputTokens: number | undefined
 let bodyAborted = false
 let started: () => void = () => {}
 const ready = new Promise<void>((resolve) => { started = resolve })
 globalThis.fetch = async (_input, init) => {
   calls++
+  maxOutputTokens = JSON.parse(String(init?.body)).max_tokens
   received = init?.signal ?? undefined
   if (contextBudget) return Response.json({
     id: 'test-completion', object: 'chat.completion', created: 1, model: 'deepseek-flash',
@@ -42,7 +44,7 @@ if (contextBudget) {
         venue_neighborhood: null, price: null, is_free: false } as ChatEventPayload] }
     } },
   })
-  console.log(JSON.stringify({ calls, businessReads, eventIds: result.canonical.events.map(event => event.id), fallbackUsed: result.canonical.provenance.fallbackUsed }))
+  console.log(JSON.stringify({ calls, maxOutputTokens, businessReads, eventIds: result.canonical.events.map(event => event.id), fallbackUsed: result.canonical.provenance.fallbackUsed }))
   process.exit(0)
 }
 const running = runToolLoop({

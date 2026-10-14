@@ -45,6 +45,12 @@ The concierge MUST use a bounded ToolLoopAgent with only search, event detail, v
 - **THEN** the model receives a contiguous suffix of recent bounded messages
 - **AND** the current user request, server-rehydrated references and previous search constraints remain separate from dialogue truncation
 
+#### Scenario: A model request reaches its output limit
+- **WHEN** the concierge sends a model request for a turn
+- **THEN** the SDK request includes an explicit maximum of 8,192 output tokens per model call
+- **AND** the request configuration fingerprint identifies that limit alongside existing step, input, retry and timeout settings
+- **AND** this per-call limit does not claim to cap aggregate account spending, auxiliary model/tool costs or unreported provider usage
+
 #### Scenario: A completed model request exceeds the observed input-token budget
 - **WHEN** the provider reports more than sixteen thousand input tokens including instructions, schemas and accumulated model context
 - **THEN** the next model step is prevented and usage telemetry identifies the budget excess

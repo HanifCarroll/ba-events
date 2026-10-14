@@ -42,6 +42,7 @@ const MODEL_MAX_RETRIES = 1
 export const CONCIERGE_PROMPT_VERSION = 'concierge-prompt-v1'
 const MAX_TOOL_CALLS = 8
 const MAX_CONTEXT_INPUT_TOKENS = 16_000
+const MAX_OUTPUT_TOKENS = 8_192
 const AGENT_TIMEOUT = { totalMs: 60_000, stepMs: 20_000 } as const
 const TOOL_TIMEOUT_MS = 7_000
 const POST_SEARCH_TOOLS = ['get_event_details', 'get_directions', 'get_venue_details', 'list_saved_events', 'ask_clarification', 'recommendations_mismatch'] as const
@@ -372,7 +373,7 @@ export async function runToolLoop(input: AgentInput): Promise<AgentRun> {
   const configurationId = createHash('sha256').update(JSON.stringify({
     version: 'concierge-config-v1', contract: CHAT_CONTRACT_VERSION,
     provider: model.provider, model: model.modelId,
-    maxSteps: MAX_STEPS, maxToolCalls: MAX_TOOL_CALLS, maxInputTokens: MAX_CONTEXT_INPUT_TOKENS,
+    maxSteps: MAX_STEPS, maxToolCalls: MAX_TOOL_CALLS, maxInputTokens: MAX_CONTEXT_INPUT_TOKENS, maxOutputTokens: MAX_OUTPUT_TOKENS,
     timeout: AGENT_TIMEOUT, toolTimeoutMs: TOOL_TIMEOUT_MS, maxRetries: MODEL_MAX_RETRIES,
     thinking: CHAT_THINKING, postSearchTools: POST_SEARCH_TOOLS,
     tools: Object.keys(input.tools).sort(),
@@ -386,7 +387,7 @@ async function generateToolLoop(input: AgentInput,
   thinking: typeof import('#shared/lib/ai/providers.ts').CHAT_THINKING,
   telemetry?: TelemetryOptions): Promise<AgentRun> {
   const promptSize = input.instructions.length + input.messages.reduce((total, message) => total + JSON.stringify(message.content).length, 0)
-  logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: MODEL_MAX_RETRIES, contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS })
+  logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: MODEL_MAX_RETRIES, contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS, maxOutputTokens: MAX_OUTPUT_TOKENS })
   const agent = new ToolLoopAgent({
     model,
     telemetry,
@@ -427,6 +428,7 @@ async function generateToolLoop(input: AgentInput,
       return searched ? { activeTools: POST_SEARCH_TOOLS } : undefined
     },
     maxRetries: MODEL_MAX_RETRIES,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
     timeout: AGENT_TIMEOUT,
     ...thinking,
   })

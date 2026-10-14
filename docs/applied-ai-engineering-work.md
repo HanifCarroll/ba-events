@@ -192,9 +192,13 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 ## 10. Latency and cost
 
 - [ ] Set first-useful-result, complete-response, and cost-per-success targets.
+  - [x] Define provisional first-useful/completion targets and their denominators in `docs/ai-performance.md`. Reuse the saved 72-turn frozen-corpus receipt (p50 5,116 ms; p95 9,005 ms; maximum 13,044 ms), with first-useful latency and reviewed cost explicitly unmeasured. No new model calls.
+  - [ ] Choose the monthly monetary budget and cost-per-reviewed-success targets; the optional budget question remains pending.
 - [ ] Benchmark model/configuration choices against the same quality suite.
   - Record the installed SDK’s reported mapping of configured thinking adaptive to wire enabled when comparing modes; the local identifier probe exposed this compatibility alias. No thinking behavior was changed.
 - [ ] Add appropriate spending and concurrency controls.
+  - [x] Add BA’s explicit 8,192-token per-model-call output cap and include it in configuration identity; the existing real-SDK transport check verifies `max_tokens=8192`. Thirty focused tests pass in Vitest and Bun, with TypeScript and 10 specs green. Retain existing step/input/retry/time/tool controls. Casamo’s existing output defaults, captured deadlines and action-resource permits are inventoried in `docs/ai-performance.md`.
+  - [ ] Verify budget/usage coverage and tune existing numerical limits against reviewed quality and measured production throughput; per-call limits are not a monthly dollar cap.
 
 ## 11. Security and privacy
 

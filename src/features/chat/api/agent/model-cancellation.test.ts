@@ -12,7 +12,7 @@ describe('production model runner cancellation', () => {
       env: { PATH: process.env.PATH, AI_API_KEY: 'test-only-key', DEEPSEEK_API_KEY: 'test-only-key', LANGFUSE_TRACING_ENABLED: 'false' },
     })
     expect(JSON.parse(stdout.trim().split('\n').at(-1)!)).toEqual({
-      calls: 1, businessReads: 1, eventIds: ['kept-event'], fallbackUsed: true,
+      calls: 1, maxOutputTokens: 8192, businessReads: 1, eventIds: ['kept-event'], fallbackUsed: true,
     })
   })
 
