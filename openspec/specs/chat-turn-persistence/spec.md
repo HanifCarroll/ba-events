@@ -212,6 +212,15 @@ The browser analytics SDK SHALL explicitly mask all replay text and input values
 - **THEN** local SDK configuration masks all text elements and all inputs before replay transmission
 - **AND** the rendered interface and explicit outcome events retain their existing behavior
 
+### Requirement: Automatic interactions exclude content
+
+Browser automatic interaction capture SHALL mask element text and element attributes, and SHALL disable copied-text capture. Named outcome events and page views SHALL remain available. These controls SHALL NOT be described as covering replay DOM attributes, URL properties or separately supplied custom properties.
+
+#### Scenario: A person interacts with private page content
+- **WHEN** automatic interaction capture observes a click or form interaction
+- **THEN** local SDK configuration excludes element text and attributes, with copied-text capture disabled
+- **AND** named outcome measurement retains its existing behavior
+
 ## Verification
 
 ### Implementation anchors
