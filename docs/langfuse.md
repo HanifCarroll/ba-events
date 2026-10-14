@@ -106,8 +106,9 @@ automation, and an existing destination has not been selected. No Slack, webhook
 receiver or GitHub Actions integration was created. Hobby allows two alerts per
 organization, so reserve one per project.
 
-Production rollout/coverage, fallback measurement and dollar-cost/model-price
-mappings remain unverified. Curated cost views do not prove total provider spend.
+Production model timing and usage were inspected for six observed BA generations on October 14. Their dollar-cost fields were empty, and none of the 190 available model definitions matched DeepSeek. The export boundary now estimates DeepSeek Flash token costs from valid reported total input/cache/output counters using the [published peak/off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/). Rates are versioned `deepseek-flash-2026-09-10`; cached tokens are subtracted from total input before charging uncached input. Reasoning is already included in provider output totals and is not charged again. The estimate uses model-span start time; calls whose endpoints have different price periods are left unpriced. Missing/inconsistent counters, other models and previously supplied costs are preserved. Estimates exclude embeddings, reranking, acquisition, proxies and infrastructure and do not certify an invoice or cost per independently reviewed success. Update the small rate table when provider prices change; no pricing service or spending ledger was added.
+
+Deployment, fresh production cost visibility and fallback measurement remain separate checkpoints. Curated cost views do not prove total provider spend.
 Experiments retain diagnostic scores separately from human-calibrated quality.
 
 References: [Custom dashboards](https://langfuse.com/docs/metrics/features/custom-dashboards),
