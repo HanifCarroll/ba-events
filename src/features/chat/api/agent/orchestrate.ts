@@ -587,7 +587,7 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
         executionSignal = input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal
         executionSignal.throwIfAborted()
         const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId, publishProgress, executionSignal)
-        return (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, sessionId: input.sessionId, channel: input.channel, abortSignal: executionSignal,
+        return (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, sessionId: input.sessionId, channel: input.channel, abortSignal: executionSignal, retainTask: input.retainTask,
         ...(input.onProgress ? { onText: (text: string) => { progressiveText = text; publishProgress() } } : {}),
         })
       },

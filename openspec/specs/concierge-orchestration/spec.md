@@ -149,7 +149,7 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 
 #### Scenario: Stop closes the model stream before trace cleanup finishes
 - **WHEN** Stop aborts a deployed web turn and closes its response stream
-- **THEN** the Worker retains the execution promise for its bounded cancellation cleanup and best-effort trace export
+- **THEN** the Worker retains the tracing leaf promise for its bounded cancellation cleanup and best-effort trace export, even if the owning Effect finishes interruption first
 - **AND** retaining cleanup does not remove model cancellation, restart execution or permit a stopped response to commit
 
 #### Scenario: Langfuse is unavailable

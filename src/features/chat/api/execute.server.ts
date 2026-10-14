@@ -355,6 +355,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
           requestId,
           sessionId: conversationId ?? undefined,
           channel: 'web',
+          retainTask: task => event.platform?.context?.waitUntil(task),
           userContext,
           locale,
           text: originalQuery,
