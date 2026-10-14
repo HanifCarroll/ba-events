@@ -1,4 +1,4 @@
-/** Native cancellation boundary for AI SDK tool callbacks. */
+/** Native cancellation boundary for owned tool requests. */
 export class ReadTimeoutError extends Error {
   override name = 'ReadTimeoutError'
 }

@@ -24,8 +24,11 @@ and their release checks pass. Both production Workers have project-specific
 Langfuse settings; the tracing code remains undeployed. BA’s migrations await
 Supabase sign-in. Casamo’s staging scan verification awaits a separate Langfuse
 staging key; the existing read-only canary verifies the Access boundary only.
-Record these dependencies and continue with the remaining views/alerts item
-while awaiting input. Casamo’s photo label conflict and failed gate remain
+Saved production-error views and existing curated views are recorded below.
+Alerts await an existing notification destination. Prompt/request-configuration
+identifiers are implemented and locally verified in both release branches.
+Continue Section 9’s remaining cancellation/recovery work while the deployment
+and reviewer dependencies remain open. Casamo’s photo label conflict and failed gate remain
 unchanged pending independent review.
 
 Earlier engineering work and its receipts are recorded under each section.
@@ -177,6 +180,9 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [ ] Verify deployed interruption, cancellation, replay, and recovery behavior.
 - [x] Propagate BA concierge cancellation through model, history, context and read-tool requests (local verification).
 - [ ] Verify cancellation of remaining BA channel requests and Casamo model/provider operations.
+  - [x] Reject already-cancelled and late-completing BA event/venue/directions reads before returning facts or starting a venue-name fallback; 11 cases reproduce the old failures and pass in both runners.
+  - [x] Replace MCP’s response-only timeout race with the existing owned-read cancellation boundary; propagate HTTP/protocol cancellation and the 20-second deadline into search and public detail reads. Two old-protocol regressions reproduce missing reader cancellation; all 34 focused MCP/direct-read/presentation/transport checks pass in Vitest and Bun, with TypeScript and 10 specs green.
+  - [ ] Finish Telegram dependency and Casamo provider/model cancellation checks; verify deployed behavior after release.
 - [ ] Exercise model, tool, persistence, and delivery failures.
 
 ## 10. Latency and cost

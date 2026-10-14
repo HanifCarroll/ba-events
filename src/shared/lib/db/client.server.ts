@@ -166,14 +166,15 @@ export async function getHappeningSoonEvents(limit = 8): Promise<ChatEventPayloa
 // ============================================================================
 
 /** Public read boundary: only displayable statuses and explicit public columns. */
-export async function getDisplayableEventById(id: string): Promise<PublicEventRecord | null> {
-  const { data, error } = await getSupabase()
+export async function getDisplayableEventById(id: string, abortSignal?: AbortSignal): Promise<PublicEventRecord | null> {
+  const { data, error } = await withReadSignal(getSupabase()
     .from('events_with_venues')
     .select(PUBLIC_EVENT_COLUMNS)
     .eq('id', id)
-    .in('status', ['scheduled', 'past'])
+    .in('status', ['scheduled', 'past']), abortSignal)
     .maybeSingle()
 
+  abortSignal?.throwIfAborted()
   if (error) throw error
   return (data as PublicEventRecord | null) ?? null
 }

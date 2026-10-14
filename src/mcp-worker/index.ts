@@ -6,6 +6,7 @@ import { createMcpHandler } from 'agents/mcp/server'
 import { searchEventsTool } from '#features/chat/api/tools/search-events.ts'
 import { isDisplayableStatus } from '#features/chat/api/agent/follow-up.ts'
 import { getDisplayableEventById } from '#shared/lib/db/client.server.ts'
+import { boundedRead, ReadTimeoutError } from '#features/chat/api/agent/bounded-read.ts'
 import { publicOutput, publicOutputSchema, publicSearchInputSchema, type PublicSearchInput } from './public.ts'
 import type { PublicEventRecord } from '#shared/lib/types.ts'
 
@@ -20,33 +21,27 @@ const ALLOWED_ORIGIN_HOSTNAMES = [
   '127.0.0.1',
 ]
 
-type SearchExecutor = (input: PublicSearchInput) => Promise<{ success: boolean; events?: PublicEventRecord[]; note?: string; error?: string }>
-type GetExecutor = (id: string) => Promise<PublicEventRecord | null>
+type SearchExecutor = (input: PublicSearchInput, signal?: AbortSignal) => Promise<{ success: boolean; events?: PublicEventRecord[]; note?: string; error?: string }>
+type GetExecutor = (id: string, signal?: AbortSignal) => Promise<PublicEventRecord | null>
 type McpExecutionContext = Parameters<ReturnType<typeof createMcpHandler>>[2]
 type McpAudience = 'dogfood' | 'external'
-type McpDeps = { search?: SearchExecutor; get?: GetExecutor; audience?: McpAudience }
+type McpDeps = { search?: SearchExecutor; get?: GetExecutor; audience?: McpAudience; abortSignal?: AbortSignal; toolTimeoutMs?: number }
 
-async function runTool<T>(name: string, audience: McpAudience, execute: () => Promise<T>): Promise<T> {
+async function runTool<T>(name: string, audience: McpAudience, execute: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, timeoutMs = TOOL_TIMEOUT_MS): Promise<T> {
   const startedAt = performance.now()
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('tool_timeout')), TOOL_TIMEOUT_MS)
-    })
-    const result = await Promise.race([execute(), timeout])
+    const result = await boundedRead(execute, signal, timeoutMs)
     console.log(JSON.stringify({ event: 'mcp_tool_call', audience, tool: name, success: true, durationMs: Math.round(performance.now() - startedAt) }))
     return result
   } catch (error) {
-    console.error(JSON.stringify({ event: 'mcp_tool_call', audience, tool: name, success: false, durationMs: Math.round(performance.now() - startedAt), error: error instanceof Error ? error.message : 'unknown_error' }))
+    console.error(JSON.stringify({ event: 'mcp_tool_call', audience, tool: name, success: false, durationMs: Math.round(performance.now() - startedAt), error: error instanceof ReadTimeoutError ? 'tool_timeout' : error instanceof Error ? error.message : 'unknown_error' }))
     throw error
-  } finally {
-    if (timer) clearTimeout(timer)
   }
 }
 
 export function createMcpServer(deps: McpDeps = {}) {
-  const search = deps.search ?? (async (input) => {
-    const result = await searchEventsTool.execute(input, { locale: 'en', userContext: { userId: null, isAuthenticated: false } })
+  const search = deps.search ?? (async (input, abortSignal) => {
+    const result = await searchEventsTool.execute(input, { locale: 'en', userContext: { userId: null, isAuthenticated: false }, abortSignal })
     const formatted = JSON.parse(result.formatted) as { note?: unknown }
     return { success: result.success, events: result.events, note: typeof formatted.note === 'string' ? formatted.note : undefined, error: result.error }
   })
@@ -59,9 +54,10 @@ export function createMcpServer(deps: McpDeps = {}) {
     inputSchema: publicSearchInputSchema,
     outputSchema: publicOutputSchema,
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
-  }, async (input) => {
+  }, async (input, context) => {
     try {
-      const result = await runTool('search_events', deps.audience ?? 'external', () => search(input))
+      const signal = deps.abortSignal ? AbortSignal.any([deps.abortSignal, context.mcpReq.signal]) : context.mcpReq.signal
+      const result = await runTool('search_events', deps.audience ?? 'external', readSignal => search(input, readSignal), signal, deps.toolTimeoutMs)
       const output = result.success
         ? publicOutput(result.events ?? [], undefined, result.note)
         : publicOutput([], 'Search failed; please try again.')
@@ -82,9 +78,10 @@ export function createMcpServer(deps: McpDeps = {}) {
     inputSchema: z.object({ eventId: z.string().uuid() }).strict(),
     outputSchema: publicOutputSchema,
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
-  }, async ({ eventId }) => {
+  }, async ({ eventId }, context) => {
     try {
-      const event = await runTool('get_event', deps.audience ?? 'external', () => get(eventId))
+      const signal = deps.abortSignal ? AbortSignal.any([deps.abortSignal, context.mcpReq.signal]) : context.mcpReq.signal
+      const event = await runTool('get_event', deps.audience ?? 'external', readSignal => get(eventId, readSignal), signal, deps.toolTimeoutMs)
       const displayable = event && isDisplayableStatus(event.status) ? event : null
       const output = displayable
         ? publicOutput([displayable])
@@ -113,9 +110,10 @@ async function isToolCall(request: Request): Promise<boolean> {
   return !!payload && typeof payload === 'object' && 'method' in payload && payload.method === 'tools/call'
 }
 
-export function createWorkerHandler(deps?: { search?: SearchExecutor; get?: GetExecutor }) {
+export function createWorkerHandler(deps?: Pick<McpDeps, 'search' | 'get' | 'toolTimeoutMs'>) {
   const mcp = createMcpHandler(({ requestInfo }) => createMcpServer({
     ...deps,
+    abortSignal: requestInfo?.signal,
     audience: requestInfo?.headers.get('X-BA-Eventos-Source') === 'dogfood' ? 'dogfood' : 'external',
   }), {
     route: '/mcp',

@@ -80,6 +80,42 @@ async function rpc(
 }
 
 describe('public MCP boundary', () => {
+  for (const tool of ['search_events', 'get_event'] as const) {
+    it(`${tool} cancels its reader and excludes late results when the HTTP caller stops`, async () => {
+      const controller = new AbortController()
+      let received: AbortSignal | undefined
+      let started!: () => void, release!: () => void
+      const began = new Promise<void>(resolve => { started = resolve })
+      const pending = new Promise<void>(resolve => { release = resolve })
+      const read = async (signal?: AbortSignal) => { received = signal; started(); await pending }
+      const handler = createWorkerHandler({
+        search: async (_input, signal) => { await read(signal); return { success: true, events: [event] } },
+        get: async (_id, signal) => { await read(signal); return event },
+      })
+      const request = new Request(rpcRequest('tools/call', { name: tool,
+        arguments: tool === 'get_event' ? { eventId: EVENT_ID } : { query: 'music' } }), { signal: controller.signal })
+      const running = handler(request, env(), ctx)
+      await began
+      controller.abort(new Error('Caller stopped'))
+      release()
+      const response = await running
+      expect(received?.aborted).toBe(true)
+      expect(await response.text()).not.toContain('Public show')
+    })
+
+    it(`${tool} aborts its owned read at the deadline without retrying`, async () => {
+      let received: AbortSignal | undefined, calls = 0
+      const read = (signal?: AbortSignal) => { received = signal; calls++; return new Promise<never>(() => {}) }
+      const handler = createWorkerHandler({ toolTimeoutMs: 5,
+        search: async (_input, signal) => read(signal), get: async (_id, signal) => read(signal) })
+      const { body } = await rpc(handler, 'tools/call', { name: tool,
+        arguments: tool === 'get_event' ? { eventId: EVENT_ID } : { query: 'music' } })
+      expect(received?.aborted).toBe(true)
+      expect(calls).toBe(1)
+      expect((body.result as { isError: boolean }).isError).toBe(true)
+    })
+  }
+
   it('lists exactly the two public read tools', async () => {
     const handler = createWorkerHandler()
     const { response, body } = await rpc(handler, 'tools/list', {})
@@ -182,8 +218,10 @@ describe('public MCP boundary', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const handler = createWorkerHandler({ search: async () => ({ success: true, events: [] }) })
 
-    await handler(rpcRequest('tools/call', { name: 'search_events', arguments: {} }, 1, 'https://chatgpt.com', 'dogfood'), env(), ctx)
-    await handler(rpcRequest('tools/call', { name: 'search_events', arguments: {} }), env(), ctx)
+    const tagged = await handler(rpcRequest('tools/call', { name: 'search_events', arguments: {} }, 1, 'https://chatgpt.com', 'dogfood'), env(), ctx)
+    await tagged.text()
+    const untagged = await handler(rpcRequest('tools/call', { name: 'search_events', arguments: {} }), env(), ctx)
+    await untagged.text()
 
     const calls = log.mock.calls
       .map(([entry]) => JSON.parse(String(entry)) as { event?: string; audience?: string })

@@ -62,6 +62,7 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
 
   execute: async (input, context) => {
     try {
+      context.abortSignal?.throwIfAborted()
       // Validate that at least one ID is provided
       if (!input.eventId && !input.venueId) {
         return {
@@ -84,6 +85,7 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
       // Get venue info from event or directly
       if (input.eventId) {
         const event = await readers.getEventWithVenue(input.eventId, context.abortSignal)
+        context.abortSignal?.throwIfAborted()
         if (!event) {
           return {
             success: false,
@@ -111,6 +113,7 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
         venueNeighborhood = event.venue_neighborhood
       } else {
         const venue = await readers.getVenueById(input.venueId!, context.abortSignal)
+        context.abortSignal?.throwIfAborted()
         if (!venue) {
           return {
             success: false,

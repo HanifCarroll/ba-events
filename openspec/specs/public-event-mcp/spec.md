@@ -36,6 +36,12 @@ Tool calls SHALL use the configured anonymous rate limiter. A rejected limit or 
 ### Requirement: Transport is bounded
 The worker SHALL reject oversized requests, unknown routes, and disallowed host origins and SHALL apply a fixed tool timeout.
 
+#### Scenario: A read times out or its caller cancels
+- **WHEN** a public MCP read reaches its deadline or its HTTP/protocol caller cancels
+- **THEN** its search/database requests receive the combined cancellation signal
+- **AND** late successful data cannot become a public result
+- **AND** the existing bounded tool-error response is retained without retrying the read
+
 #### Scenario: Request exceeds the byte limit
 - **WHEN** Content-Length is above the configured maximum
 - **THEN** the worker returns 413 before MCP execution

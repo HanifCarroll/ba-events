@@ -30,6 +30,12 @@ The concierge MUST use a bounded ToolLoopAgent with only search, event detail, v
 - **THEN** the read scope cancels the remaining request without cancelling the whole turn
 - **AND** a failed branch cannot leave paid or database work running after its read is over
 
+#### Scenario: A direct read returns after caller cancellation
+- **WHEN** an event-details, venue-details or directions reader returns after its caller has cancelled
+- **THEN** the tool rejects that late result before formatting or returning facts or directions
+- **AND** a cancelled venue lookup cannot start a name-search fallback
+- **AND** an already-cancelled call starts no reader request
+
 #### Scenario: User asks to save an event
 - **WHEN** save or unsave intent is detected
 - **THEN** the agent may retrieve the event for display but provides no mutation tool
