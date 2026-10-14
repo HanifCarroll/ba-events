@@ -224,6 +224,7 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 
 - [x] Restore passing local tests, type checks, builds, and strict spec validation.
 - [ ] Commit and release BA Eventos tracing/evaluation changes; verify production.
+  - [x] Pass the full existing release gate at runtime commit `e296a00`: 865 Bun and 850 Vitest tests, Svelte/TypeScript checks and production build, with no errors/warnings (86 Effect INFO messages). No new paid eval run. Private receipt: `results/releases/langfuse-current/gate.json` in the release checkout. Receipt-only documentation commits do not require repeating the runtime gate. Migration access, quality acceptance and deployed checks remain open.
 - [ ] Release Casamo Q&A removal and apply its deletion migration after backup.
 - [ ] Release Casamo’s locally verified audit context-budget, title-translation and scan-profiler fixes; their separate release scope remains visible after the thin tracing release.
 - [ ] Add an explicit AI-quality release gate and reproducible release receipts.

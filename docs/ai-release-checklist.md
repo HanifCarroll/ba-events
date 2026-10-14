@@ -53,8 +53,9 @@ part of a code rollback.
 ## Current draft
 
 [PR #6](https://github.com/HanifCarroll/ba-events/pull/6) is open and undeployed.
-The prepared full gate predates later focused fixes. Current-head release checks,
-Supabase migrations/access, applicable quality acceptance
-and deployed smoke checks remain open. The owner chose content with redaction;
+The full existing release gate passes at runtime commit `e296a00`: 865 Bun and
+850 Vitest tests, Svelte/TypeScript checks and the production build. Subsequent
+receipt-only documentation does not change that tested runtime. Supabase
+migrations/access, applicable quality acceptance and deployed smoke checks remain open. The owner chose content with redaction;
 local export checks pass, while deployed payload verification remains open. Historical baseline receipts remain
 diagnostic evidence for their recorded code/configuration.
