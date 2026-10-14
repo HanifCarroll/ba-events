@@ -1,6 +1,7 @@
 import type { Attributes, AttributeValue } from '@opentelemetry/api'
 import type { ReadableSpan, SpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { sanitizeError } from '../security.ts'
+import { deepseekCostEstimateAttributes } from './trace-cost.ts'
 
 const PRIVATE_FIELDS = new Set([
   'authorization', 'cookie', 'set-cookie', 'password', 'secret', 'token',
@@ -71,7 +72,7 @@ function redactSpan(span: ReadableSpan): ReadableSpan {
     spanContext: () => span.spanContext(), parentSpanContext: span.parentSpanContext,
     startTime: span.startTime, endTime: span.endTime,
     status: { ...span.status, message: span.status.message ? redactTraceText(span.status.message) : undefined },
-    attributes: redactAttributes(span.attributes),
+    attributes: redactAttributes({ ...span.attributes, ...deepseekCostEstimateAttributes(span) }),
     links: span.links.map((link) => ({ ...link, attributes: link.attributes ? redactAttributes(link.attributes) : undefined })),
     events: span.events.map((event) => ({ ...event, name: redactTraceText(event.name), attributes: event.attributes ? redactAttributes(event.attributes) : undefined })),
     duration: span.duration, ended: span.ended, resource: span.resource,

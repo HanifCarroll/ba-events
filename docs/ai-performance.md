@@ -79,8 +79,7 @@ embeddings, reranking, browser acquisition and infrastructure.
 
 Use reported cache/input/output counters for an estimate and retain the rate
 date. Missing counters remain unknown; do not silently price them as zero or
-report an estimate as an invoice. Current Langfuse model-price mappings and
-deployed usage coverage still need verification under section 8.
+report an estimate as an invoice. BA’s trace exporter now maps reported DeepSeek Flash counters to the published peak/off-peak token-rate estimate, with explicit estimate/rate/time-basis metadata and unknown values preserved. This excludes other providers and infrastructure. New deployed cost visibility, Casamo’s corresponding mapping and fallback/usage coverage remain under section 8.
 
 For the next model/configuration comparison, reuse the frozen conversation
 corpus and existing repeated-trial adapter. Record selected and returned model,

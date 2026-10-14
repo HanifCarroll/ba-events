@@ -138,6 +138,14 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **THEN** its credential-shaped value is masked even without a field label
 - **AND** the original model input and application output remain unchanged
 
+#### Scenario: Reported DeepSeek usage receives a token-cost estimate
+- **WHEN** a DeepSeek Flash generation exports valid total input, cached input and output counts under the published price revision
+- **THEN** the export estimates USD using separate cached/uncached rates and the UTC peak/off-peak period
+- **AND** metadata identifies the rate revision, estimate status and model-span-start time basis
+- **AND** missing or inconsistent counters, unknown models, earlier rates and calls crossing a pricing-period boundary retain unknown cost
+- **AND** supplied cost, original SDK spans, model requests and application responses remain unchanged
+- **AND** estimated token cost is not represented as an invoice, other-provider spending or cost per independently reviewed success
+
 #### Scenario: Langfuse is unavailable
 - **WHEN** tracing is unconfigured or its exporter fails
 - **THEN** the concierge retains the same execution, fallback and canonical-artifact rules
