@@ -19,19 +19,14 @@ independent-label dependencies visible, use focused checks for each change, and
 reserve full release gates for release checkpoints. Broader provider coverage
 remains recorded below as deferred work, rather than being marked complete.
 
-Current focus: Section 11 — local Section 9 cancellation/failure exercises are complete;
-Section 10 has provisional targets and measurements, with budget/review decisions open.
-Section 8 release prerequisites remain open: BA draft PR #6 and Casamo draft PR #5 are prepared
-and their release checks pass. Both production Workers have project-specific
-Langfuse settings; the tracing code remains undeployed. BA’s migrations await
-Supabase sign-in. Casamo’s staging scan verification awaits a separate Langfuse
-staging key; the existing read-only canary verifies the Access boundary only.
-Saved production-error views and existing curated views are recorded below.
-Alerts await an existing notification destination. Prompt/request-configuration
-identifiers are implemented and locally verified in both release branches.
-Continue Section 11’s telemetry/replay privacy and limiter-outage protection while
-deployment, budget and reviewer dependencies remain open. Casamo’s photo label conflict and failed gate remain
-unchanged pending independent review.
+Current focus: release prerequisites and waiting review/data inputs. BA PR #6
+passes the full runtime release gate. Casamo PR #5 prepares tracing, PR #6 removes
+Q&A, and PR #7 carries audit context/title/profiler fixes; their local checks are
+recorded below. These releases remain undeployed. BA needs database-management
+access; Supabase is available as an unconnected integration. Casamo still needs
+its staging key and authenticated staging access. No current browser connection
+is available in this session. Independent labels, an alert destination and a
+monthly spending choice remain open. Avoid repeated gates on unchanged runtime.
 
 Earlier engineering work and its receipts are recorded under each section.
 Real-user satisfaction and independent human labels remain external dependencies;
@@ -52,6 +47,7 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
     - [x] Release and verify Casamo production collection, including the SDK-startup fix and explicit browser-blocking limits.
     - [x] Inspect declared real-user reporting cohorts in both projects; keep absent ratings unknown.
     - [ ] Revisit satisfaction and engagement reporting when non-canary user observations arrive (external dependency; initial cohorts are empty).
+  - [x] Refresh available PostHog feedback observations on 2026-10-14. The broader window has BA 13 reply observations/three offers/four votes and Casamo two views/four offers/six votes. Excluding marked setup traffic leaves zero ratings in both projects (BA also excludes known admins/test accounts). Nine BA reply observations and one unpaired Casamo offer are not a rated-outcome baseline. Typed daily buckets and a strict timestamp-bounded metadata read do not establish eligible response coverage; retain this limitation rather than infer a rate. No purchases, attendance or satisfaction rate is observed. No new dashboard or collection code was added.
 - [x] Define corresponding success measures for Casamo scan decisions, with explicit denominators and failure categories.
 
 ## 2. Agent architecture
