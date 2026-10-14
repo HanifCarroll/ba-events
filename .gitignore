@@ -41,3 +41,4 @@ project.inlang/cache/
 results/langfuse/
 results/evals/
 results/source-health/
+results/releases/
