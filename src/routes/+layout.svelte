@@ -68,9 +68,11 @@
 					autocapture: { capture_copied_text: false },
 					mask_all_text: true,
 					mask_all_element_attributes: true,
+					disable_capture_url_hashes: true,
+					property_denylist: ['$title'],
 					respect_dnt: true,
 					disable_surveys: true,
-					session_recording: { maskAllInputs: true, maskTextSelector: '*' },
+					session_recording: { maskAllInputs: true, maskTextSelector: '*', maskAllElementAttributes: true },
 					loaded: (ph) => {
 						// Expose globally for debugging.
 						;(window as unknown as Record<string, unknown>).posthog = ph
