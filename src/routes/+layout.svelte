@@ -68,6 +68,7 @@
 					autocapture: true,
 					respect_dnt: true,
 					disable_surveys: true,
+					session_recording: { maskAllInputs: true, maskTextSelector: '*' },
 					loaded: (ph) => {
 						// Expose globally for debugging.
 						;(window as unknown as Record<string, unknown>).posthog = ph

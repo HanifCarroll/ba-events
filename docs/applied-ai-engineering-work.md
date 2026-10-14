@@ -19,7 +19,8 @@ independent-label dependencies visible, use focused checks for each change, and
 reserve full release gates for release checkpoints. Broader provider coverage
 remains recorded below as deferred work, rather than being marked complete.
 
-Current focus: Section 10 — local Section 9 cancellation/failure exercises are complete.
+Current focus: Section 11 — local Section 9 cancellation/failure exercises are complete;
+Section 10 has provisional targets and measurements, with budget/review decisions open.
 Section 8 release prerequisites remain open: BA draft PR #6 and Casamo draft PR #5 are prepared
 and their release checks pass. Both production Workers have project-specific
 Langfuse settings; the tracing code remains undeployed. BA’s migrations await
@@ -28,8 +29,8 @@ staging key; the existing read-only canary verifies the Access boundary only.
 Saved production-error views and existing curated views are recorded below.
 Alerts await an existing notification destination. Prompt/request-configuration
 identifiers are implemented and locally verified in both release branches.
-Continue Section 10’s performance targets and spending controls while deployment
-and reviewer dependencies remain open. Casamo’s photo label conflict and failed gate remain
+Continue Section 11’s telemetry/replay privacy and limiter-outage protection while
+deployment, budget and reviewer dependencies remain open. Casamo’s photo label conflict and failed gate remain
 unchanged pending independent review.
 
 Earlier engineering work and its receipts are recorded under each section.
@@ -206,7 +207,11 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [x] Add and run BA Eventos real-model malicious-source and multilingual injection evaluations.
 - [x] Add and run corresponding Casamo multilingual review/photo-source injection evaluations.
 - [ ] Define and verify telemetry redaction, sampling, access, and retention.
+  - BA currently exports chat/tool input and model output. The optional production-content policy question is pending; trace content has not been changed by the replay fix. Langfuse’s Hobby access window must not be represented as confirmed automatic deletion.
 - [ ] Verify replay masking and independent protection when database rate limiting fails.
+  - [x] Set explicit PostHog replay masking of all text and inputs in both browser initializers, using the existing SDK. Both application checks and canonical specs pass. Document that URL/attribute/custom-event surfaces are separate; do not treat the configuration check as a deployed recording inspection.
+  - [ ] Inspect effective deployed replay masking and review URL/attribute/event-property surfaces after release.
+  - [ ] Protect BA model execution during Supabase rate-limiter outages; its current fallback allows requests.
 - [x] Rotate and revoke the original exposed BA Langfuse setup key; verify its replacement.
 - [ ] Revoke Casamo’s first setup key after confirmation; its encoded credential appeared in setup output. A privately saved replacement has verified cloud exports.
 

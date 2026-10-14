@@ -203,6 +203,15 @@ Supported historical message contracts SHALL be adapted at read time to the curr
 - **WHEN** a v2 or v3 row is read
 - **THEN** it is adapted with legacy provenance while the stored row remains unchanged
 
+### Requirement: Product session replay masks text and inputs
+
+The browser analytics SDK SHALL explicitly mask all replay text and input values locally. Replay masking SHALL preserve the first-party interface and named outcome measurement. URL properties, DOM attributes and separately captured event properties remain separate privacy surfaces and MUST NOT be represented as covered by text/input masking.
+
+#### Scenario: A recording captures a page with private text and form values
+- **WHEN** browser analytics initializes session replay
+- **THEN** local SDK configuration masks all text elements and all inputs before replay transmission
+- **AND** the rendered interface and explicit outcome events retain their existing behavior
+
 ## Verification
 
 ### Implementation anchors
