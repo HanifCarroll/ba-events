@@ -5,6 +5,7 @@ import {
   type TelegramTaskPayload,
 } from './task-payload.ts'
 import { handleTelegramWebhook } from './webhook.server.ts'
+import { RateLimitUnavailableError } from '../auth/api/rate-limit.server.ts'
 
 const key = Buffer.alloc(32, 7).toString('base64')
 const queueKey = '11111111-1111-4111-8111-111111111111'
@@ -300,6 +301,20 @@ describe('Telegram webhook', () => {
     const rateLimit = vi.fn()
     await handleTelegramWebhook(request(command), { ...base, rateLimit, trigger })
     expect(rateLimit).not.toHaveBeenCalled()
+  })
+
+  it('retries a limiter outage without dispatching a model turn or claiming an exhausted quota', async () => {
+    const trigger = triggerMock()
+    const attachConversation = vi.fn(async () => undefined)
+    const markFailed = vi.fn(async () => undefined)
+    const response = await handleTelegramWebhook(request(messageUpdate), {
+      ...base, trigger, attachConversation, markFailed,
+      rateLimit: vi.fn(async () => { throw new RateLimitUnavailableError() }),
+    })
+    expect(response.status).toBe(503)
+    expect(trigger).not.toHaveBeenCalled()
+    expect(attachConversation).not.toHaveBeenCalled()
+    expect(markFailed).toHaveBeenCalledWith('42', 'dispatch_failed')
   })
 
   it('acknowledges unsupported and completed updates, but retries failed dispatch', async () => {

@@ -26,6 +26,11 @@ Each conversation SHALL process its inbox head in order, honor Telegram retry gu
 - **WHEN** a send is rate limited
 - **THEN** delivery waits for the supplied interval before retrying
 
+#### Scenario: The shared admission limiter is unavailable
+- **WHEN** an ordinary Telegram text/prompt update cannot establish rate-limit admission
+- **THEN** the webhook returns HTTP 503 and records dispatch failure without attaching or dispatching a model turn
+- **AND** Telegram retry retains the existing encrypted-envelope/idempotency path, while privacy commands retain their existing bypass
+
 ### Requirement: Bot API delivery honors caller cancellation
 Telegram turns SHALL own a scoped cancellation signal and propagate it into final messages, callback answers, typing refreshes and progress drafts. Bot API delivery calls SHALL accept that owning cancellation signal. Cancellation SHALL stop waiting and reach the underlying fetch during both request and response-body consumption, while retaining the existing ten-second timeout and Telegram error redaction and retry metadata.
 

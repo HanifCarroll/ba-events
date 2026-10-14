@@ -211,7 +211,7 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [ ] Verify replay masking and independent protection when database rate limiting fails.
   - [x] Set explicit PostHog replay masking of all text and inputs in both browser initializers, using the existing SDK. Both application checks and canonical specs pass. Document that URL/attribute/custom-event surfaces are separate; do not treat the configuration check as a deployed recording inspection.
   - [ ] Inspect effective deployed replay masking and review URL/attribute/event-property surfaces after release.
-  - [ ] Protect BA model execution during Supabase rate-limiter outages; its current fallback allows requests.
+  - [x] Fail closed when BA’s shared Supabase limiter errors, returns absent/malformed data or stalls beyond three seconds. Preserve known quota outcomes; distinguish outages with retry guidance in web/events/feedback, and verify Telegram’s existing 503/no-dispatch behavior. No extra rate-limit service or spending ledger. Twenty-eight transport/web/Telegram checks pass in both runners, plus an isolated real events-read/events-write/feedback route probe returning 503 before payload or backend work. TypeScript and 10 canonical specs pass. Preserve the existing signed recovery/commit stages’ original admission in the release branch; deployed outage testing remains open.
 - [x] Rotate and revoke the original exposed BA Langfuse setup key; verify its replacement.
 - [ ] Revoke Casamo’s first setup key after confirmation; its encoded credential appeared in setup output. A privately saved replacement has verified cloud exports.
 

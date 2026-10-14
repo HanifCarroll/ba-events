@@ -1,6 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit'
 import { Schema } from 'effect'
-import { checkApiRateLimit } from '#features/auth/api/rate-limit.server.ts'
+import { checkApiRateLimit, RATE_LIMIT_RETRY_SECONDS } from '#features/auth/api/rate-limit.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { sendFeedbackAlert } from '#shared/lib/feedback/alert.server.ts'
@@ -17,7 +17,13 @@ export const POST: RequestHandler = async (event) => {
 		event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
 		event.request.headers.get('x-real-ip') ||
 		'unknown'
-	const limit = await checkApiRateLimit(ip)
+	let limit: Awaited<ReturnType<typeof checkApiRateLimit>>
+	try { limit = await checkApiRateLimit(ip) }
+	catch {
+		return json({ error: 'Feedback is temporarily unavailable. Please try again.' }, {
+			status: 503, headers: { 'Retry-After': String(RATE_LIMIT_RETRY_SECONDS) },
+		})
+	}
 	if (!limit.success) {
 		return json({ error: 'Please wait before sending more feedback.' }, { status: 429 })
 	}

@@ -57,6 +57,20 @@ The concierge MUST use a bounded ToolLoopAgent with only search, event detail, v
 - **AND** successful reads retain canonical artifacts under the existing final-generation failure rules
 - **AND** this observed-usage guard does not claim to prevent the completed request's initial overshoot
 
+### Requirement: Uncertain rate-limit admission does not start paid work
+
+The shared chat/public-API limiter SHALL reject backend errors, malformed or absent results and requests pending beyond three seconds. It SHALL preserve normal quota decisions and hashed identifiers. Admission failure SHALL stop paid model/tool work rather than grant an unmeasured quota allowance, and raw backend errors SHALL NOT enter public errors or limiter logs.
+
+#### Scenario: The web limiter cannot establish admission
+- **WHEN** the shared limiter is unavailable before a web turn starts
+- **THEN** the existing localized error stream offers retry guidance without accessing identity/persistence or starting model work
+- **AND** the response does not claim that a known quota was exhausted
+
+#### Scenario: An events or feedback API cannot establish admission
+- **WHEN** the shared public-API limiter is unavailable
+- **THEN** requests return HTTP 503 with retry guidance before reading/writing event or feedback data or generating embeddings/presentation
+- **AND** a genuine exhausted quota retains HTTP 429 behavior
+
 ### Requirement: Canonical artifacts come from successful reads
 Cards, links, directions, venue facts, provenance, and clarification data MUST be assembled from validated successful tool results. Model prose MUST NOT create or alter canonical artifacts.
 
