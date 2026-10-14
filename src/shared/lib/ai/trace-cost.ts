@@ -37,11 +37,15 @@ export function deepseekCostEstimateAttributes(span: Pick<ReadableSpan, 'attribu
   // Calls straddling a price boundary are unknown rather than assigned one rate.
   if (prices.period !== pricesAt(end).period) return undefined
 
+  const costs = {
+    input: (input - cached) * prices.input / 1_000_000,
+    input_cached_tokens: cached * prices.cached / 1_000_000,
+    output: output * prices.output / 1_000_000,
+  }
+  // Raw OTLP cost export needs an explicit total for aggregate cost views.
   return {
     'langfuse.observation.cost_details': JSON.stringify({
-      input: (input - cached) * prices.input / 1_000_000,
-      input_cached_tokens: cached * prices.cached / 1_000_000,
-      output: output * prices.output / 1_000_000,
+      ...costs, total: costs.input + costs.input_cached_tokens + costs.output,
     }),
     'langfuse.observation.metadata.costEstimateKind': 'published_token_rates',
     'langfuse.observation.metadata.costEstimateVersion': PRICE_VERSION,

@@ -142,6 +142,7 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **WHEN** a DeepSeek Flash generation exports valid total input, cached input and output counts under the published price revision
 - **THEN** the export estimates USD using separate cached/uncached rates and the UTC peak/off-peak period
 - **AND** metadata identifies the rate revision, estimate status and model-span-start time basis
+- **AND** the exported aggregate total equals the sum of priced token buckets, counted once
 - **AND** missing or inconsistent counters, unknown models, earlier rates and calls crossing a pricing-period boundary retain unknown cost
 - **AND** supplied cost, original SDK spans, model requests and application responses remain unchanged
 - **AND** estimated token cost is not represented as an invoice, other-provider spending or cost per independently reviewed success
