@@ -223,12 +223,12 @@ Browser automatic interaction capture SHALL mask element text and element attrib
 
 ### Requirement: Browser telemetry excludes replay attributes, URL fragments and page titles
 
-The browser SDK SHALL mask all string-valued replay DOM attributes, strip automatically captured URL fragments, and omit PostHog page titles. Replay fidelity MAY be reduced; the first-party interface and named outcomes SHALL remain unchanged. These controls SHALL NOT be described as removing URL query parameters or historical telemetry.
+The browser SDK SHALL mask all string-valued replay DOM attributes, strip automatically captured URL fragments, and omit PostHog page titles. Replay fidelity MAY be reduced; the first-party interface and named outcomes SHALL remain unchanged. The SDK SHALL mask the declared sensitive auth/intake query parameter names and disable referrer collection. New URL query fields SHALL receive privacy review; these controls SHALL NOT be described as masking arbitrary query keys or removing historical telemetry.
 
 #### Scenario: A private page contains descriptive attributes or a fragment
 - **WHEN** browser analytics initializes
 - **THEN** SDK configuration masks replay attributes, strips captured URL fragments and excludes page titles from PostHog events
-- **AND** URL query handling and deployed payload verification remain separate checks
+- **AND** named sensitive query masking and referrer exclusion are configured, while deployed payload verification remains a separate check
 
 ## Verification
 
