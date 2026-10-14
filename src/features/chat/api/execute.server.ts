@@ -294,7 +294,8 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
   }
 
   const stream = createUIMessageStream({
-    execute: async ({ writer }) => {
+    execute: ({ writer }) => {
+      const execution = (async () => {
       let assistantMessageId: string | undefined
       let providerRequestId: string | null = null
       let lastProgressArtifacts: string | null = null
@@ -501,6 +502,10 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
           ])
         }
       }
+      })()
+      // Stop aborts model work; retain its bounded cleanup/trace flush after the stream closes.
+      event.platform?.context?.waitUntil(execution)
+      return execution
     },
     onError: (error) => {
       console.error('[Chat API] Stream error:', error)
