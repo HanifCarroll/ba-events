@@ -22,7 +22,7 @@ describe('production model runner cancellation', () => {
       env: { PATH: process.env.PATH, AI_API_KEY: 'test-only-key', DEEPSEEK_API_KEY: 'test-only-key', LANGFUSE_TRACING_ENABLED: 'false' },
     })
     expect(JSON.parse(stdout.trim().split('\n').at(-1)!)).toEqual([
-      { provider: 'deepseek.chat', model: 'deepseek-flash', inputTokens: 12, cacheReadTokens: 7, outputTokens: 4, reasoningTokens: 1 },
+      { provider: 'deepseek.chat', model: 'deepseek-flash', responseModel: 'deepseek-returned-test', inputTokens: 12, cacheReadTokens: 7, outputTokens: 4, reasoningTokens: 1 },
     ])
   })
 

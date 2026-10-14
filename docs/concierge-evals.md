@@ -90,7 +90,7 @@ record `performanceVersion=conversation-performance-v1` and
 `modelTransport=stream`. Each completed turn retains first useful artifact/clarification
 latency and model completion latency separately from the existing duration, which
 also includes grading. Placeholder prose and typing do not count as useful output.
-The report retains per-step model/provider identity and SDK input, cache-read,
+The report retains per-step selected model/provider identity, returned model identity when available, and SDK input, cache-read,
 output and reasoning counters. Raw DeepSeek usage takes precedence when available
 so absent raw fields do not inherit the SDK's zero defaults. Missing/invalid
 counters remain null and real zero remains zero. Reasoning is part of output,

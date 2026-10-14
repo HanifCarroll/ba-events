@@ -18,7 +18,7 @@ globalThis.fetch = async (_input, init) => {
   maxOutputTokens = JSON.parse(String(init?.body)).max_tokens
   received = init?.signal ?? undefined
   if (usageProbe) return Response.json({
-    id: 'usage-probe', object: 'chat.completion', created: 1, model: 'deepseek-flash',
+    id: 'usage-probe', object: 'chat.completion', created: 1, model: 'deepseek-returned-test',
     choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'Hello' } }],
     usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16, prompt_cache_hit_tokens: 7, completion_tokens_details: { reasoning_tokens: 1 } },
   })

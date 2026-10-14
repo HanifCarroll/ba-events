@@ -70,10 +70,10 @@ describe('frozen concierge conversation evaluations', () => {
       { finishReason: 'stop', usage: { inputTokens: -1, outputTokens: 1.5, inputTokenDetails: { cacheReadTokens: Infinity }, outputTokenDetails: { reasoningTokens: NaN } } },
     ] } as never)
     expect(usage).toEqual([
-      { provider: 'deepseek.chat', model: 'deepseek-flash', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0 },
-      { provider: null, model: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
-      { provider: null, model: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
-      { provider: null, model: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
+      { provider: 'deepseek.chat', model: 'deepseek-flash', responseModel: null, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0 },
+      { provider: null, model: null, responseModel: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
+      { provider: null, model: null, responseModel: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
+      { provider: null, model: null, responseModel: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, reasoningTokens: null },
     ])
   })
 

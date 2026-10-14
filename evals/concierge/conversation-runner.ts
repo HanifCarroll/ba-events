@@ -14,6 +14,7 @@ import { captureModelEvidence, type ModelEvidence } from './quality.ts'
 export interface ModelStepUsage {
   provider: string | null
   model: string | null
+  responseModel: string | null
   inputTokens: number | null
   cacheReadTokens: number | null
   outputTokens: number | null
@@ -24,12 +25,12 @@ export interface ModelStepUsage {
 export function captureModelUsage(run: import('#features/chat/api/agent/orchestrate.ts').AgentRun): ModelStepUsage[] {
   const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
   return run.steps.map(raw => {
-    const step = raw as typeof raw & { model?: { provider?: string; modelId?: string }; usage?: {
+    const step = raw as typeof raw & { response?: { modelId?: string }; model?: { provider?: string; modelId?: string }; usage?: {
       inputTokens?: number; outputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number };
       outputTokenDetails?: { reasoningTokens?: number }; raw?: { prompt_tokens?: number; prompt_cache_hit_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } }
     } }
     const rawUsage = step.usage?.raw
-    return { provider: step.model?.provider ?? null, model: step.model?.modelId ?? null,
+    return { provider: step.model?.provider ?? null, model: step.model?.modelId ?? null, responseModel: step.response?.modelId ?? null,
       inputTokens: count(rawUsage ? rawUsage.prompt_tokens : step.usage?.inputTokens),
       cacheReadTokens: count(rawUsage ? rawUsage.prompt_cache_hit_tokens : step.usage?.inputTokenDetails?.cacheReadTokens),
       outputTokens: count(rawUsage ? rawUsage.completion_tokens : step.usage?.outputTokens),
