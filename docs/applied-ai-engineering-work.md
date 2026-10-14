@@ -19,7 +19,8 @@ independent-label dependencies visible, use focused checks for each change, and
 reserve full release gates for release checkpoints. Broader provider coverage
 remains recorded below as deferred work, rather than being marked complete.
 
-Current focus: Section 8 — BA draft PR #6 and Casamo draft PR #5 are prepared
+Current focus: Section 10 — local Section 9 cancellation/failure exercises are complete.
+Section 8 release prerequisites remain open: BA draft PR #6 and Casamo draft PR #5 are prepared
 and their release checks pass. Both production Workers have project-specific
 Langfuse settings; the tracing code remains undeployed. BA’s migrations await
 Supabase sign-in. Casamo’s staging scan verification awaits a separate Langfuse
@@ -27,7 +28,7 @@ staging key; the existing read-only canary verifies the Access boundary only.
 Saved production-error views and existing curated views are recorded below.
 Alerts await an existing notification destination. Prompt/request-configuration
 identifiers are implemented and locally verified in both release branches.
-Continue Section 9’s remaining cancellation/recovery work while the deployment
+Continue Section 10’s performance targets and spending controls while deployment
 and reviewer dependencies remain open. Casamo’s photo label conflict and failed gate remain
 unchanged pending independent review.
 
@@ -179,12 +180,14 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 
 - [ ] Verify deployed interruption, cancellation, replay, and recovery behavior.
 - [x] Propagate BA concierge cancellation through model, history, context and read-tool requests (local verification).
-- [ ] Verify cancellation of remaining BA channel requests and Casamo model/provider operations.
+- [x] Verify local cancellation of BA channel requests and Casamo model/provider operations.
   - [x] Reject already-cancelled and late-completing BA event/venue/directions reads before returning facts or starting a venue-name fallback; 11 cases reproduce the old failures and pass in both runners.
   - [x] Replace MCP’s response-only timeout race with the existing owned-read cancellation boundary; propagate HTTP/protocol cancellation and the 20-second deadline into search and public detail reads. Two old-protocol regressions reproduce missing reader cancellation; all 34 focused MCP/direct-read/presentation/transport checks pass in Vitest and Bun, with TypeScript and 10 specs green.
   - [x] Connect Telegram turn cancellation to final Bot API sends, callback answers, typing and progress drafts, including response-body reads. Pass native Effect interruption into external conversation and delivery-claim database requests. Twelve new cases cover stalled/previously cancelled delivery, late progress and actual PostgREST read/RPC/write cancellation; all 118 focused channel/storage checks pass in Vitest and Bun. TypeScript and canonical spec validation pass.
-  - [ ] Finish Casamo provider/model cancellation checks; verify deployed Telegram/Casamo behavior after release.
-- [ ] Exercise model, tool, persistence, and delivery failures.
+  - [x] Connect Casamo’s shared DeepSeek client to owning cancellation for model fetch/body reads and inline-image fetch/readers. Six regression cases cover pending and already interrupted calls, image bodies, late completion and retry backoff; 38 focused model/tracing checks pass in the primary checkout, with 30 in the narrower release checkout. Primary application checks, Worker types and strict 18-item spec validation pass.
+  - [x] Exercise Casamo’s existing provider-action cancellation controller and permit cleanup through actual Workers/D1 execution: request/body interruption and lease loss abort the request, free capacity and leave no reusable output. Reproduce and fix the browser acquisition/closure race with a closed-session guard; late acquisition and later reuse create no page. All 47 Workers storage/recovery checks and 75 native browser/workflow/registry/replay checks pass, with Worker types, specs and staging packaging green. Deployment verification remains in the first box.
+- [x] Exercise model, tool, persistence and delivery failures locally using existing suites: BA’s 73 orchestration/read/delivery/reconnect/Telegram cases pass; Casamo’s storage, workflow and replay cases above cover lost leases, deadlines, restart reuse, uncertain responses, terminal races and notification recovery.
+- [ ] Repeat the relevant interruption/failure smoke checks in deployed environments after release.
 
 ## 10. Latency and cost
 
