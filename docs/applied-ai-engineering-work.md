@@ -27,8 +27,10 @@ The fixture and failed gate remain unchanged pending independent label review.
 Section 8’s BA release is prepared in the existing isolated checkout. Its
 813 Bun tests, 798 Vitest tests, type checks and 10 specs pass; the production
 build passes with existing Supabase configuration and local PostHog stand-ins.
-Database migration application awaits a signed-in Supabase session; no release
-or migration has been applied yet.
+Draft PR #6 (https://github.com/HanifCarroll/ba-events/pull/6) contains the
+prepared release. Four Langfuse settings are configured privately on baeventos.
+Database migration application awaits a signed-in Supabase session; no code
+release or migration has been applied yet.
 
 Earlier engineering work and its receipts are recorded under each section.
 Real-user satisfaction and independent human labels remain external dependencies;
@@ -152,7 +154,8 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [x] Create separate BA Eventos and Casamo projects under HC Studio.
 - [x] Implement BA Eventos model/tool tracing and verify export in a Workers runtime.
 - [ ] Deploy BA Eventos tracing and verify real web/Telegram sessions.
-  - [x] Prepare an isolated release branch on current main and pass the existing release checks; preserve deployed chat recovery/feedback and exclude private diagnostics.
+  - [x] Prepare isolated draft PR #6 on current main; 813 Bun/798 Vitest tests, Svelte/TypeScript checks, 10 specs and the production build pass. Preserve deployed chat recovery/feedback and exclude private diagnostics.
+  - [x] Configure BA’s project-specific Langfuse keys, US base URL and production environment on the application Worker; code deployment/real traces remain pending.
   - [ ] Apply the prepared migrations before merging; Supabase browser sign-in is required because local database-management credentials are absent.
   - [ ] Apply BA's additive `20261014000000_add_enrichment_provenance.sql` migration and release/verify the import/enrichment pipeline with tracing; older rows remain unknown, with no speculative backfill.
   - [ ] Apply `20261014010000_fix_paid_only_search_filters.sql` before the changed search client, and verify paid/free/unrestricted searches through the deployed functions.
