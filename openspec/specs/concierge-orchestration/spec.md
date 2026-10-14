@@ -133,6 +133,11 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **AND** redaction failure omits the span without repeating model execution
 - **AND** pattern redaction is not represented as anonymizing names, addresses, arbitrary secrets or historical traces
 
+#### Scenario: An unlabeled recognizable key appears in chat content
+- **WHEN** exported text contains a hyphenated `sk-` key or an underscore-delimited `sk_test_`, `sk_live_`, `rk_test_` or `rk_live_` key
+- **THEN** its credential-shaped value is masked even without a field label
+- **AND** the original model input and application output remain unchanged
+
 #### Scenario: Langfuse is unavailable
 - **WHEN** tracing is unconfigured or its exporter fails
 - **THEN** the concierge retains the same execution, fallback and canonical-artifact rules

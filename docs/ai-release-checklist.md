@@ -52,7 +52,7 @@ part of a code rollback.
 
 ## Current draft
 
-[PR #6](https://github.com/HanifCarroll/ba-events/pull/6) is open and undeployed.
+[PR #6](https://github.com/HanifCarroll/ba-events/pull/6) is merged and deployed at `e73a1ea`. Both production build integrations succeeded. A live browser chat and seven Langfuse observations verify execution and grounded paid-event cards; an unlabeled synthetic underscore-delimited key exposes a redaction gap, addressed by the following tracing-only patch.
 The full existing release gate passes at runtime commit `e296a00`: 865 Bun and
 850 Vitest tests, Svelte/TypeScript checks and the production build. Subsequent
 receipt-only documentation does not change that tested runtime. Both Supabase migrations and twelve live search checks pass. The owner authorized

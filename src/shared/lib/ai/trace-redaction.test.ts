@@ -21,6 +21,8 @@ describe('trace content redaction', () => {
       .toBe('Try jazz; password=[REDACTED] and Bearer [REDACTED].')
     expect(redactTraceText('Bearer eyJheader.payload.signature. sk-lf-fakeonly123456'))
       .toBe('Bearer [REDACTED]. [REDACTED]')
+    expect(redactTraceText('Find jazz. sk_test_BAReleaseCanary1234567890; sk_live_fakeonly123456; rk_live_fakeonly123456.'))
+      .toBe('Find jazz. [REDACTED]; [REDACTED]; [REDACTED].')
   })
 
   it('omits a span if redaction cannot read it', () => {
@@ -40,7 +42,7 @@ describe('trace content redaction', () => {
     const span = provider.getTracer('ai').startSpan('model call', {
       attributes: {
         'langfuse.observation.input': JSON.stringify({ content: 'Find jazz guest@example.test', token: 'short-secret' }),
-        'gen_ai.input.messages': 'Email guest@example.test',
+        'gen_ai.input.messages': 'Email guest@example.test sk_test_BAReleaseCanary1234567890',
         'ai.prompt.messages': JSON.stringify([{ role: 'user', content: '+54 (11) 5555-0100' }]),
         'gen_ai.tool.result': JSON.stringify({ name: 'Jazz show', url: 'https://example.test/event?token=short-secret' }),
         'gen_ai.usage.input_tokens': 10,
@@ -58,14 +60,14 @@ describe('trace content redaction', () => {
       expect(exported).toHaveLength(1)
       const data = JSON.stringify({ attributes: exported[0].attributes, events: exported[0].events,
         links: exported[0].links, status: exported[0].status })
-      for (const privateValue of ['guest@example.test', 'short-secret', '+54 (11) 5555-0100']) {
+      for (const privateValue of ['guest@example.test', 'short-secret', '+54 (11) 5555-0100', 'sk_test_BAReleaseCanary1234567890']) {
         expect(data).not.toContain(privateValue)
       }
       expect(data).toContain('Find jazz')
       expect(data).toContain('Jazz show')
       expect(exported[0].attributes['gen_ai.usage.input_tokens']).toBe(10)
       expect(exported[0].attributes['langfuse.observation.metadata.configurationId']).toBe('a'.repeat(64))
-      expect((span as unknown as ReadableSpan).attributes['gen_ai.input.messages']).toBe('Email guest@example.test')
+      expect((span as unknown as ReadableSpan).attributes['gen_ai.input.messages']).toBe('Email guest@example.test sk_test_BAReleaseCanary1234567890')
     } finally { await provider.shutdown() }
   })
 })
