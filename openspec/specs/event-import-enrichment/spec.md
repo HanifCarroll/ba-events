@@ -37,6 +37,25 @@ Enrichment SHALL use the registered source strategy, retain available source dat
 - **WHEN** a source already provides usable Spanish description text
 - **THEN** the translate-only path may create the English presentation without re-scraping for a replacement description
 
+#### Scenario: Source page provides no concrete activity information
+- **WHEN** a source page contains only identifiers, dates, registration, ticket or boilerplate content
+- **THEN** description extraction returns no description rather than a generic event paragraph or an unavailable-description notice
+- **AND** it does not infer atmosphere, audience or inclusions from a title or category
+
+#### Scenario: Source does not establish facet intensity
+- **WHEN** the source does not describe energy or degree of social involvement
+- **THEN** facet extraction leaves those values unknown
+- **AND** missing information does not become a default low value based on an event type, genre, dinner or class
+
+#### Scenario: Source establishes both event format and participant activity
+- **WHEN** a class or workshop explicitly involves a supported participant activity
+- **THEN** the multi-label facet arrays retain the supported activity alongside the format rather than replacing it with the format alone
+
+#### Scenario: Model expresses an unknown optional facet as null
+- **WHEN** an otherwise valid model facet object uses null for unknown energy or social interaction
+- **THEN** the model boundary normalizes those scalars to omitted canonical values while retaining supported array facets
+- **AND** invalid non-null enum values still fail validation
+
 ### Requirement: Catch-up retries are bounded per scheduled chain
 The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
 
@@ -85,6 +104,58 @@ Anonymous Meetup detail HTML MAY be stored privately with validators. Each new r
 #### Scenario: Detail source is unchanged
 - **WHEN** the source returns 304 to a validator from an earlier observation
 - **THEN** extraction reuses the source-backed HTML without transferring its body again
+
+### Requirement: Automated detail enrichment retains processing provenance
+Successful automated full enrichment and facets backfills SHALL record the enrichment revision, configured text model, processing time and embedding model/version when an embedding is produced. Full-pass and facets-backfill records SHALL remain distinct so a facets-only write does not relabel the older description pass.
+
+#### Scenario: Enrichment behavior changes
+- **WHEN** enrichment prompts, extraction schemas or orchestration change
+- **THEN** the enrichment revision is advanced
+
+#### Scenario: A pass fails or produces unavailable output
+- **WHEN** enrichment does not complete successfully
+- **THEN** existing status/error fields represent the failure or unavailable output, and a successful provenance record is not fabricated
+
+### Requirement: Detail-source age is separate from processing age
+Automated detail passes SHALL distinguish body observation, HTTP revalidation and processing times. Observation SHALL mean receipt of source content, not provider publication time. Stored input without a matching receipt or legacy caches without a timestamp SHALL retain unknown age. Processing or daily catalog discovery MUST NOT imply a fresh detail read.
+
+#### Scenario: Detail HTML is revalidated or a protected detail is reused
+- **WHEN** Meetup returns 304 for retained HTML or a run retry/same-day Passline catch-up reuses a successful detail
+- **THEN** the original known body observation time is retained rather than replaced with enrichment time
+- **AND** HTTP revalidation time is separate from body observation time
+- **AND** run retries reuse the original acquisition/revalidation receipt
+
+#### Scenario: A facets backfill follows full enrichment
+- **WHEN** an already enriched description receives a facets-only update
+- **THEN** the new processing revision/time is recorded separately and the existing full-pass provenance remains unchanged
+- **AND** no fresh source observation or embedding generation is claimed for a stored-input/no-embedding pass
+
+### Requirement: Catalog imports retain acquisition and configuration receipts
+The six automated catalog imports SHALL return catalog observation time, import revision and configured model/embedding identifiers in existing scrape-run metadata. Catalog receipts MUST NOT imply a refreshed detail description or a model call for every event. Import revisions SHALL advance when catalog transforms or categorization/presentation behavior changes. Unchanged events SHALL retain their no-write behavior.
+
+#### Scenario: A catalog retry reuses a completed observation
+- **WHEN** a Meetup or Passline run retry reuses a retained catalog, including an empty catalog
+- **THEN** it returns the original observation time with that catalog
+- **AND** a successful legacy raw-array cache may be reused with unknown observation age
+- **AND** the legacy cache format remains readable by older workers
+
+#### Scenario: A source run observes only unchanged events
+- **WHEN** a daily source import completes but all event records are unchanged
+- **THEN** its catalog receipt remains in the source result and finalized scrape-run metadata
+- **AND** event records receive no provenance-only write or additional AI processing
+
+### Requirement: Source monitoring preserves measured coverage and unknowns
+Daily scrape metadata SHALL retain per-source catalog/filter/expansion/unchanged counts where supplied, categorization outcomes and a source-health snapshot. Monitoring SHALL distinguish failed sources, stale observations, empty catalogs, processing skips and missing measurements. Zero inserts MUST NOT imply an empty catalog or extraction failure. Enrichment failures SHALL remain separate from import success.
+
+#### Scenario: Unchanged catalog produces no inserts
+- **WHEN** the source observes events but performs no writes because they are unchanged
+- **THEN** monitoring retains the fetched/filtered and available unchanged counts without an empty-catalog warning
+
+#### Scenario: A monitoring read has incomplete history
+- **WHEN** a source lacks a valid observation timestamp or a count was not measured
+- **THEN** its age or count remains unknown rather than becoming fresh or zero
+- **AND** the read-only health command uses a declared 36-hour daily-source freshness threshold, excludes raw provider errors/content, and reports unknown or actionable health with a nonzero exit status
+- **AND** catalog counts do not claim exhaustive marketplace inventory
 
 ## Verification
 

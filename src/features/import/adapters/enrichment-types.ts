@@ -114,6 +114,8 @@ export interface ServerEnrichmentOptions {
  * Result from server-side enrichment
  */
 export interface ServerEnrichmentResult {
+  sourceObservedAt?: string | null
+  sourceValidatedAt?: string | null
   description_es: string | null
   description_en: string | null
   venue_name: string | null

@@ -23,6 +23,8 @@ export const meetupEnrichmentAdapter: EnrichmentAdapter = {
       const detail = await fetchMeetupEventDetail(link)
       if (!detail?.description) return null
       return {
+        sourceObservedAt: detail.sourceObservedAt ?? null,
+        sourceValidatedAt: detail.sourceValidatedAt ?? null,
         description_es: null,
         description_en: detail.description,
         venue_name: options?.extractVenue ? detail.venue?.name ?? null : null,

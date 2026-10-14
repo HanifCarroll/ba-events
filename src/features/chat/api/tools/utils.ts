@@ -60,13 +60,13 @@ export function formatEventForClaude(event: EventWithVenue) {
     description: summary,
     hasDetails: !!display,
     venue: event.venue_name,
-    venueAddress: event.venue_address,
+    venueAddress: event.location_hidden || event.location_tba ? null : event.venue_address,
     neighborhood: event.venue_neighborhood,
     dateTime: event.time_tba ? 'Time TBA' : formatInBA(event.starts_at),
     endsAt: event.time_tba ? null : event.ends_at ? formatInBA(event.ends_at) : null,
     timeTba: event.time_tba,
     isAllDay: event.is_all_day ?? false,
-    price: event.is_free ? 'Free' : event.price ? `$${event.price} ARS` : 'TBA',
+    price: event.is_free || event.price === 0 ? 'Free' : event.price != null ? `$${event.price} ARS` : 'TBA',
     categories: event.categories,
     ticketUrl: event.ticket_url,
   }
@@ -85,7 +85,7 @@ export function formatEventsToolResult(events: EventWithVenue[]): string {
 
 export function ensureChatEventPayload(event: EventWithVenue): ChatEventPayload {
   const { embedding: _embedding, ...payload } = event
-  return payload
+  return { ...payload, venue_address: event.location_hidden || event.location_tba ? null : event.venue_address }
 }
 
 export function ensureChatEventPayloads(events: EventWithVenue[]): ChatEventPayload[] {
@@ -104,13 +104,13 @@ export function formatEventDetailsForClaude(event: EventWithVenue) {
     name: event.name,
     description: display,
     venue: event.venue_name,
-    venueAddress: event.venue_address,
+    venueAddress: event.location_hidden || event.location_tba ? null : event.venue_address,
     neighborhood: event.venue_neighborhood,
     dateTime: event.time_tba ? 'Time TBA' : formatInBA(event.starts_at),
     endsAt: event.time_tba ? null : event.ends_at ? formatInBA(event.ends_at) : null,
     timeTba: event.time_tba,
     isAllDay: event.is_all_day ?? false,
-    price: event.is_free ? 'Free' : event.price ? `$${event.price} ARS` : 'TBA',
+    price: event.is_free || event.price === 0 ? 'Free' : event.price != null ? `$${event.price} ARS` : 'TBA',
     categories: event.categories,
     ticketUrl: event.ticket_url,
     link: event.link,
@@ -160,7 +160,7 @@ export function formatSavedEventsForClaude(events: EventWithVenue[]) {
     neighborhood: e.venue_neighborhood,
     dateTime: e.time_tba ? 'Time TBA' : formatInBA(e.starts_at),
     timeTba: e.time_tba,
-    price: e.is_free ? 'Free' : e.price ? `$${e.price} ARS` : 'TBA',
+    price: e.is_free || e.price === 0 ? 'Free' : e.price != null ? `$${e.price} ARS` : 'TBA',
     categories: e.categories,
     isPast: new Date(e.starts_at) < now,
   }))

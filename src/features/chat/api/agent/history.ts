@@ -4,6 +4,7 @@ import { extractVisibleTextFromUIMessageParts } from '#features/chat/lib/extract
 
 export const MAX_AGENT_HISTORY_MESSAGES = 12
 export const MAX_AGENT_HISTORY_TEXT = 2000
+export const MAX_AGENT_HISTORY_TOTAL_TEXT = 6000
 
 export interface AgentHistoryMessage {
   role: 'user' | 'assistant'
@@ -22,6 +23,22 @@ function withoutCurrent(messages: AgentHistoryMessage[], currentText: string): A
   return last?.role === 'user' && last.content === current ? messages.slice(0, -1) : messages
 }
 
+/** Keep a contiguous suffix of whole messages; server-owned facts live separately. */
+export function boundAgentHistory(messages: AgentHistoryMessage[]): AgentHistoryMessage[] {
+  const normalized = messages.map(message => bounded(message.role, message.content))
+    .filter((message): message is AgentHistoryMessage => message !== null)
+    .slice(-MAX_AGENT_HISTORY_MESSAGES)
+  const retained: AgentHistoryMessage[] = []
+  let total = 0
+  for (let index = normalized.length - 1; index >= 0; index--) {
+    const message = normalized[index]
+    if (total + message.content.length > MAX_AGENT_HISTORY_TOTAL_TEXT) break
+    retained.push(message)
+    total += message.content.length
+  }
+  return retained.reverse()
+}
+
 export function buildAgentHistoryFromUIMessages(messages: UIMessage[], currentText: string): AgentHistoryMessage[] {
   const history = messages
     .map((message) => {
@@ -29,7 +46,7 @@ export function buildAgentHistoryFromUIMessages(messages: UIMessage[], currentTe
       return bounded(message.role === 'assistant' ? 'assistant' : 'user', content)
     })
     .filter((message): message is AgentHistoryMessage => message !== null)
-  return withoutCurrent(history, currentText).slice(-MAX_AGENT_HISTORY_MESSAGES)
+  return boundAgentHistory(withoutCurrent(history, currentText))
 }
 
 export function buildAgentHistoryFromStoredMessages(messages: Message[], currentText: string): AgentHistoryMessage[] {
@@ -37,5 +54,5 @@ export function buildAgentHistoryFromStoredMessages(messages: Message[], current
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .map((message) => bounded(message.role === 'assistant' ? 'assistant' : 'user', message.visible_content || message.content))
     .filter((message): message is AgentHistoryMessage => message !== null)
-  return withoutCurrent(history, currentText).slice(-MAX_AGENT_HISTORY_MESSAGES)
+  return boundAgentHistory(withoutCurrent(history, currentText))
 }

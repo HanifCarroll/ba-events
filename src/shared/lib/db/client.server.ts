@@ -17,6 +17,7 @@ import type {
 } from '../types.ts'
 import { generateEmbedding } from '../ai/embeddings.ts'
 import { rrfFuse } from '../search/rrf.ts'
+import { withReadSignal } from './read-signal.ts'
 // Lazy-initialize Supabase client (only when needed, server-side only)
 let supabaseInstance: SupabaseClient | null = null
 
@@ -38,24 +39,24 @@ export function getSupabase(): SupabaseClient {
 // VENUE OPERATIONS
 // ============================================================================
 
-export async function getVenueById(id: string) {
-  const { data, error } = await getSupabase()
+export async function getVenueById(id: string, abortSignal?: AbortSignal) {
+  const { data, error } = await withReadSignal(getSupabase()
     .from('venues')
     .select('*')
-    .eq('id', id)
+    .eq('id', id), abortSignal)
     .single()
 
   if (error) throw error
   return data as Venue
 }
 
-export async function searchVenuesByName(query: string) {
-  const { data, error } = await getSupabase()
+export async function searchVenuesByName(query: string, abortSignal?: AbortSignal) {
+  const { data, error } = await withReadSignal(getSupabase()
     .from('venues')
     .select('*')
     .ilike('name', `%${query}%`)
     .order('name', { ascending: true })
-    .limit(20)
+    .limit(20), abortSignal)
 
   if (error) throw error
   return data as Venue[]
@@ -177,11 +178,11 @@ export async function getDisplayableEventById(id: string): Promise<PublicEventRe
   return (data as PublicEventRecord | null) ?? null
 }
 
-export async function getEventWithVenue(id: string) {
-  const { data, error } = await getSupabase()
+export async function getEventWithVenue(id: string, abortSignal?: AbortSignal) {
+  const { data, error } = await withReadSignal(getSupabase()
     .from('events_with_venues')
     .select('*')
-    .eq('id', id)
+    .eq('id', id), abortSignal)
     .single()
 
   if (error) throw error
@@ -200,7 +201,9 @@ export async function getEventWithVenue(id: string) {
  * caller's responsibility (`isDisplayableStatus` in the agent follow-up module).
  */
 export async function getEventFactsByIds(
-  ids: string[]
+  ids: string[],
+  abortSignal?: AbortSignal,
+  client?: SupabaseClient
 ): Promise<
   Array<{
     id: string
@@ -215,20 +218,24 @@ export async function getEventFactsByIds(
   ].slice(0, 100)
   if (unique.length === 0) return []
 
-  const { data, error } = await getSupabase()
+  const { data, error } = await withReadSignal((client ?? getSupabase())
     .from('events_with_venues')
-    .select('id, name, venue_id, venue_name, status')
+    .select('id, name, venue_id, venue_name, status, location_hidden, location_tba')
     .in('id', unique)
-    .limit(100)
+    .limit(100), abortSignal)
 
   if (error) throw error
-  return (data ?? []) as Array<{
+  return ((data ?? []) as Array<{
     id: string
     name: string
     venue_id: string | null
     venue_name: string | null
     status: EventStatus
-  }>
+    location_hidden: boolean
+    location_tba: boolean
+  }>).map(({ location_hidden, location_tba, ...fact }) => ({
+    ...fact, venue_id: location_hidden || location_tba ? null : fact.venue_id,
+  }))
 }
 
 export async function createEvent(event: EventInsert, client?: SupabaseClient) {
@@ -264,7 +271,7 @@ export function applyAvoidGenres<T extends { facets?: { genres?: string[] } | nu
 }
 
 // Filter-based search (for structured queries)
-export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50): Promise<ChatEventPayload[]> {
+export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50, abortSignal?: AbortSignal): Promise<ChatEventPayload[]> {
   let query = getSupabase().from('events_with_venues').select(CHAT_EVENT_COLUMNS)
 
   // Default to scheduled events
@@ -298,7 +305,7 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
 
   query = query.order('starts_at', { ascending: true }).limit(limit)
 
-  const { data, error } = await query
+  const { data, error } = await withReadSignal(query, abortSignal)
   if (error) throw error
   const results = data as ChatEventPayload[]
   return applyAvoidGenres(results, filters.avoidGenres)
@@ -307,7 +314,7 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
 // Count scheduled events matching the given filters (ignores `limit`). Used to
 // report search coverage so the model knows how much it searched vs. returned.
 // Mirrors the predicate in searchEventsWithFilters.
-export async function countEventsWithFilters(filters: EventFilters): Promise<number> {
+export async function countEventsWithFilters(filters: EventFilters, abortSignal?: AbortSignal): Promise<number> {
   // Avoid genres can't be expressed as a PostgREST filter (the `ov` operator on
   // a `facets->genres` jsonb path errors, and `cs`/overlap mishandles events
   // with no genres key). So when avoid is present we fetch matched `facets` and
@@ -344,9 +351,9 @@ export async function countEventsWithFilters(filters: EventFilters): Promise<num
       if (filters.maxPrice !== undefined) q = q.lte('price', filters.maxPrice)
       if (filters.minAge !== undefined) q = q.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
 
-      const { data, error } = await q
+      const { data, error } = await withReadSignal(q
         .order('starts_at', { ascending: true })
-        .range(offset, offset + PAGE - 1)
+        .range(offset, offset + PAGE - 1), abortSignal)
       if (error) throw error
       if (!data || data.length === 0) break
       const rows = applyAvoidGenres(data as ChatEventPayload[], filters.avoidGenres!)
@@ -388,56 +395,64 @@ export async function countEventsWithFilters(filters: EventFilters): Promise<num
     query = query.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
   }
 
-  const { count, error } = await query
+  const { count, error } = await withReadSignal(query, abortSignal)
   if (error) throw error
   return count ?? 0
 }
 
 // Furthest future start date of any scheduled event. The source of truth for
 // "what's the event furthest into the future" and for the coverage guard.
-export async function getFurthestEventDate(): Promise<string | null> {
-  const { data, error } = await getSupabase()
+export async function getFurthestEventDate(abortSignal?: AbortSignal): Promise<string | null> {
+  const { data, error } = await withReadSignal(getSupabase()
     .from('events')
     .select('starts_at')
     .eq('status', 'scheduled')
     .order('starts_at', { ascending: false })
-    .limit(1)
+    .limit(1), abortSignal)
 
   if (error) throw error
   return data?.[0]?.starts_at ?? null
 }
 
 // Get events happening now or starting soon
-export async function getEventsHappeningNow(): Promise<ChatEventPayload[]> {
+export async function getEventsHappeningNow(abortSignal?: AbortSignal): Promise<ChatEventPayload[]> {
   const now = new Date().toISOString()
 
-  const { data, error } = await getSupabase()
+  const { data, error } = await withReadSignal(getSupabase()
     .from('events_with_venues')
     .select(CHAT_EVENT_COLUMNS)
     .eq('status', 'scheduled')
     .lte('starts_at', now)
     .or(`ends_at.is.null,ends_at.gte.${now}`)
-    .order('starts_at', { ascending: true })
+    .order('starts_at', { ascending: true }), abortSignal)
 
   if (error) throw error
   return data as ChatEventPayload[]
 }
 
 // Dense (vector) semantic search with filter application done in PostgreSQL.
+interface SearchReadDependencies {
+  client?: SupabaseClient
+  embedQuery?: typeof generateEmbedding
+}
+
 export async function semanticEventSearch(
   query: string,
   filters: EventFilters,
-  matchCount = 10
+  matchCount = 10,
+  abortSignal?: AbortSignal,
+  dependencies: SearchReadDependencies = {},
 ): Promise<ChatEventPayload[]> {
   // Empty/whitespace queries have no retrieval text — do NOT embed a blank
   // string. The filter-only path is the caller's responsibility.
+  abortSignal?.throwIfAborted()
   if (!query.trim()) return []
 
   // Generate embedding for the search query
-  const queryEmbedding = await generateEmbedding(query)
+  const queryEmbedding = await (dependencies.embedQuery ?? generateEmbedding)(query, abortSignal)
 
   // Call the PostgreSQL function with all filters applied server-side
-  const { data, error } = await getSupabase().rpc(
+  const { data, error } = await withReadSignal((dependencies.client ?? getSupabase()).rpc(
     'match_events_with_venues_filtered',
     {
       query_embedding: queryEmbedding,
@@ -447,13 +462,13 @@ export async function semanticEventSearch(
       filter_starts_before: filters.startsBefore || null,
       filter_neighborhoods: filters.neighborhoods && filters.neighborhoods.length > 0 ? filters.neighborhoods : null,
       filter_venue_ids: filters.venueIds && filters.venueIds.length > 0 ? filters.venueIds : null,
-      filter_is_free: filters.isFree || null,
+      filter_is_free: filters.isFree ?? null,
       filter_max_price: filters.maxPrice ?? null,
       filter_categories: filters.categories && filters.categories.length > 0 ? filters.categories : null,
       filter_min_age: filters.minAge ?? null,
       filter_avoid_genres: filters.avoidGenres && filters.avoidGenres.length > 0 ? filters.avoidGenres : null,
     }
-  )
+  ), abortSignal)
 
   if (error) throw error
   return (data as ChatEventPayload[]) || []
@@ -464,11 +479,14 @@ export async function semanticEventSearch(
 export async function lexicalEventSearch(
   query: string,
   filters: EventFilters,
-  matchCount = 50
+  matchCount = 50,
+  abortSignal?: AbortSignal,
+  dependencies: Pick<SearchReadDependencies, 'client'> = {},
 ): Promise<ChatEventPayload[]> {
+  abortSignal?.throwIfAborted()
   if (!query.trim()) return []
 
-  const { data, error } = await getSupabase().rpc(
+  const { data, error } = await withReadSignal((dependencies.client ?? getSupabase()).rpc(
     'lexical_match_events_with_venues',
     {
       query,
@@ -477,13 +495,13 @@ export async function lexicalEventSearch(
       filter_starts_before: filters.startsBefore || null,
       filter_neighborhoods: filters.neighborhoods && filters.neighborhoods.length > 0 ? filters.neighborhoods : null,
       filter_venue_ids: filters.venueIds && filters.venueIds.length > 0 ? filters.venueIds : null,
-      filter_is_free: filters.isFree || null,
+      filter_is_free: filters.isFree ?? null,
       filter_max_price: filters.maxPrice ?? null,
       filter_categories: filters.categories && filters.categories.length > 0 ? filters.categories : null,
       filter_min_age: filters.minAge ?? null,
       filter_avoid_genres: filters.avoidGenres && filters.avoidGenres.length > 0 ? filters.avoidGenres : null,
     }
-  )
+  ), abortSignal)
 
   if (error) throw error
   return (data as ChatEventPayload[]) || []
@@ -496,13 +514,15 @@ export async function lexicalEventSearch(
 export async function hybridEventSearch(
   query: string,
   filters: EventFilters,
-  candidateLimit = 50
+  candidateLimit = 50,
+  abortSignal?: AbortSignal
 ): Promise<ChatEventPayload[]> {
+  abortSignal?.throwIfAborted()
   if (!query.trim()) return []
 
   const [semanticResults, lexicalResults] = await Promise.all([
-    semanticEventSearch(query, filters, candidateLimit),
-    lexicalEventSearch(query, filters, candidateLimit),
+    semanticEventSearch(query, filters, candidateLimit, abortSignal),
+    lexicalEventSearch(query, filters, candidateLimit, abortSignal),
   ])
 
   return rrfFuse([semanticResults, lexicalResults], { limit: candidateLimit })

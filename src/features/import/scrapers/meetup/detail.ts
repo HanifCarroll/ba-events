@@ -1,4 +1,4 @@
-import { fetchRevalidatedHtml, type HttpAcquisitionDependencies } from '../../acquisition/http.ts'
+import { fetchRevalidatedHtmlObservation, type HttpAcquisitionDependencies } from '../../acquisition/http.ts'
 import {
   extractJsonLd,
   extractNextData,
@@ -8,6 +8,8 @@ import type { EventStatus } from '#shared/lib/types.ts'
 import type { MeetupEvent, MeetupVenue } from './types.ts'
 
 export interface MeetupDetail {
+  sourceObservedAt?: string | null
+  sourceValidatedAt?: string | null
   description: string | null
   venue: MeetupVenue | null
   dateTime: string | null
@@ -119,8 +121,8 @@ export async function fetchMeetupEventDetail(
   const fullUrl = eventUrl.startsWith('http')
     ? eventUrl
     : `https://www.meetup.com${eventUrl.startsWith('/') ? '' : '/'}${eventUrl}`
-  const html = await fetchRevalidatedHtml(fullUrl, dependencies)
-  return html ? extractMeetupDetailFromHtml(html) : null
+  const observation = await fetchRevalidatedHtmlObservation(fullUrl, dependencies)
+  return observation.html ? { ...extractMeetupDetailFromHtml(observation.html), sourceObservedAt: observation.sourceObservedAt, sourceValidatedAt: observation.sourceValidatedAt } : null
 }
 
 export function mergeMeetupDetail(event: MeetupEvent, detail: MeetupDetail): void {

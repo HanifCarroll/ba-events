@@ -25,6 +25,7 @@ import {
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../api/duplicate-detection.ts'
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
@@ -52,6 +53,7 @@ export interface EventbriteImportOptions {
 }
 
 export interface EventbriteImportResult {
+  catalogProvenance?: CatalogImportProvenance
   // Scrape stats
   eventsFetched: number
   eventsFiltered: number
@@ -144,6 +146,7 @@ export function processEventbriteImportEffect(
 
     console.log('[eventbrite] Fetching events from page...')
     const allEvents = yield* eventbriteTry('eventbrite.fetch-events', () => fetchEventbriteEvents())
+    result.catalogProvenance = catalogImportProvenance(new Date().toISOString())
     result.eventsFetched = allEvents.length
     console.log(`[eventbrite] Fetched ${allEvents.length} events`)
 

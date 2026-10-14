@@ -10,7 +10,7 @@ import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { addDays, format } from 'date-fns'
 import {
-  scrapeMeetupEvents,
+  scrapeMeetupCatalog,
   filterInPersonEvents,
   filterByDateRange,
 } from '../scrapers/meetup/browser-scraper.ts'
@@ -36,6 +36,7 @@ import { delayEffect } from './nominatim.ts'
 import { filterEventsByLocation } from './geo-validation.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
+import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 
 // ============================================================================
 // TYPES
@@ -57,6 +58,7 @@ export interface MeetupImportOptions {
 }
 
 export interface MeetupImportResult {
+  catalogProvenance?: CatalogImportProvenance
   // Scrape stats
   eventsFetched: number
   eventsFiltered: number
@@ -330,7 +332,9 @@ export function processMeetupImportEffect(
     }
 
     logger.info('[meetup] Scraping events from Meetup (browser mode)')
-    const allEvents = yield* meetupTry('meetup.scrape-events', () => scrapeMeetupEvents({ startDate, endDate }))
+    const catalog = yield* meetupTry('meetup.scrape-events', () => scrapeMeetupCatalog({ startDate, endDate }))
+    const allEvents = catalog.events
+    result.catalogProvenance = catalogImportProvenance(catalog.observedAt)
     result.eventsFetched = allEvents.length
     logger.info('[meetup] Scraped events', { count: allEvents.length })
 

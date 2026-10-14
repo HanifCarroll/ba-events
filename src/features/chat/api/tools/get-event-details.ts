@@ -44,8 +44,8 @@ export const getEventDetailsTool = defineTool({
 
   requiresAuth: false,
 
-  execute: async (input) => {
-    const result = await getEventDetailsForUser(input.eventId)
+  execute: async (input, context) => {
+    const result = await getEventDetailsForUser(input.eventId, context.abortSignal)
 
     console.log(`[DEBUG] get_event_details: success=${result.success}`)
 

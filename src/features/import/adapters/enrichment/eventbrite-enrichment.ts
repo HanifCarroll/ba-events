@@ -73,6 +73,7 @@ export const eventbriteEnrichmentAdapter: EnrichmentAdapter = {
 
       return {
         description_es: result.description_es,
+        sourceObservedAt: result.sourceObservedAt ?? null,
         description_en: result.description_en,
         venue_name: result.venue_name,
       }

@@ -499,8 +499,10 @@ export function applyPreferAvoid(intent: EventSearchIntent): EventFilters {
  */
 export async function canonicalizeSearchIntent(
   input: CanonicalizeInput,
-  nowBA: Date
+  nowBA: Date,
+  abortSignal?: AbortSignal
 ): Promise<EventSearchIntent> {
+  abortSignal?.throwIfAborted()
   const query = input.query?.trim() ?? ''
 
   // --- annotate once: normalize → tokenize → match → resolve → residue ---
@@ -540,7 +542,7 @@ export async function canonicalizeSearchIntent(
   if (input.venueIds?.length) {
     must.venueIds = input.venueIds
   } else if (input.venueName) {
-    const venues = await searchVenuesByName(input.venueName)
+    const venues = await searchVenuesByName(input.venueName, abortSignal)
     must.venueIds = venues.map((v) => v.id)
   }
 
@@ -594,16 +596,9 @@ export async function canonicalizeSearchIntent(
   const avoidGenres = mapAvoidGenres(input.avoid)
   if (avoidGenres.length > 0) avoid.genres = avoidGenres
 
-  // Live music should not drift into electronic-only listings unless the user
-  // explicitly named an electronic genre.
+  // Live music and genres are preferences; only requested exclusions become hard filters.
   const queryPrefer = extractPreferFromQuery(annotated.normalizedQuery)
   const prefer = mergePrefer(input.prefer, queryPrefer)
-  const namedElectronicGenre = (queryPrefer.genres ?? []).some((genre) =>
-    ['electronic', 'techno', 'house'].includes(genre)
-  )
-  if (prefer.activities?.includes('live-music') && !namedElectronicGenre) {
-    avoid.genres = [...new Set([...(avoid.genres ?? []), 'electronic'])]
-  }
 
   // --- semanticQuery: ordered unconsumed tokens (the annotator's residue) ---
   let semanticQuery = annotated.semanticQuery

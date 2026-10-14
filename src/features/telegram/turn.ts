@@ -591,6 +591,8 @@ export function processTelegramTurnEffect(
       const agentStarted = performance.now()
       const agentInput = {
           requestId: `telegram:${payload.updateId}`,
+          sessionId: conversationId,
+          channel: 'telegram' as const,
           userContext: { userId: null, isAuthenticated: false },
           text: normalizedTurn.originalQuery,
           locale,

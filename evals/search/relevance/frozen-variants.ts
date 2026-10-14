@@ -9,6 +9,7 @@
  */
 
 import type { EventSearchPrefer } from '#features/chat/api/tools/search-intent.ts'
+import type { EventFilters } from '#shared/lib/types.ts'
 
 // ============================================================================
 // Frozen artifact shapes (mirror capture.ts)
@@ -49,6 +50,7 @@ export interface FrozenVoyage {
 }
 
 export interface FrozenQuery {
+  filters?: EventFilters
   id: string
   query: string
   subjective: boolean
@@ -65,6 +67,10 @@ export interface FrozenQuery {
 
 export interface CaptureFile {
   meta: {
+    suiteVersion?: string
+    queryFileSha256?: string
+    diagnosticQueryIds?: string[]
+    complete?: boolean
     capturedAt: string
     nowBA: string
     queries: number

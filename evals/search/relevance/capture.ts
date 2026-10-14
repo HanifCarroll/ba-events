@@ -18,7 +18,8 @@
  * `HOLDOUT_QUERIES` (an array of the LiveQuery shape).
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { LiveQuery } from './live-queries.ts'
@@ -57,9 +58,11 @@ function argValue(flag: string): string | undefined {
 
 const queriesArg = argValue('--queries')
 const outArg = argValue('--out')
+const nowBAArg = argValue('--now-ba')
 
 const QUERIES_PATH = queriesArg ? resolve(process.cwd(), queriesArg) : DEFAULT_QUERIES_PATH
 const OUT_PATH = outArg ? resolve(process.cwd(), outArg) : DEFAULT_OUT_PATH
+const queryFileSha256 = createHash('sha256').update(readFileSync(QUERIES_PATH)).digest('hex')
 
 // ============================================================================
 // Helpers
@@ -116,6 +119,8 @@ async function rerankWithRetry(
 // ============================================================================
 
 interface QueriesModule {
+  SUITE_VERSION?: string
+  DIAGNOSTIC_QUERY_IDS?: string[]
   LIVE_QUERIES?: LiveQuery[]
   HOLDOUT_QUERIES?: LiveQuery[]
 }
@@ -143,7 +148,8 @@ const QUERIES: LiveQuery[] = hasLive ? queriesModule.LIVE_QUERIES! : queriesModu
 // ============================================================================
 
 const capturedAt = new Date()
-const nowBA = getNowInBA()
+const nowBA = nowBAArg ? new Date(nowBAArg) : getNowInBA()
+if (!Number.isFinite(nowBA.getTime())) throw new Error('--now-ba must be the ISO clock from a prior capture')
 
 const events: Record<string, FrozenEvent> = {}
 const queries: FrozenQuery[] = []
@@ -184,7 +190,11 @@ for (let i = 0; i < QUERIES.length; i++) {
 
   const baseOrder = candidates.map((e) => e.id)
   for (const e of candidates) {
-    if (!events[e.id]) events[e.id] = freezeEvent(e)
+    const frozen = freezeEvent(e)
+    if (events[e.id] && JSON.stringify(events[e.id]) !== JSON.stringify(frozen)) {
+      throw new Error(`Event ${e.id} has inconsistent frozen fields across queries; one retained record cannot represent both inputs`)
+    }
+    events[e.id] = frozen
   }
 
   const voyage: FrozenVoyage =
@@ -205,6 +215,7 @@ for (let i = 0; i < QUERIES.length; i++) {
     path,
     semanticQuery: intent.semanticQuery,
     prefer: intent.prefer,
+    filters,
     baseOrder,
     voyage,
     displayLimit: intent.displayLimit,
@@ -226,6 +237,10 @@ function buildOutput(): CaptureFile {
       capturedAt: capturedAt.toISOString(),
       nowBA: nowBA.toISOString(),
       queries: QUERIES.length,
+      queryFileSha256,
+      suiteVersion: queriesModule.SUITE_VERSION,
+      diagnosticQueryIds: queriesModule.DIAGNOSTIC_QUERY_IDS,
+      complete: queries.length === QUERIES.length,
     },
     events,
     queries,

@@ -44,6 +44,22 @@ export async function reuseAcquisition<T>(key: string, acquire: () => Promise<T>
   try { return await task } catch (error) { run.pending.delete(key); throw error }
 }
 
+export interface CatalogAcquisition<T> {
+  events: T[]
+  observedAt: string | null
+}
+
+/** Preserve the receipt with the cached catalog, including successful empty catalogs. */
+export async function reuseCatalogAcquisition<T>(key: string, acquire: () => Promise<T[]>): Promise<CatalogAcquisition<T>> {
+  const run = runs.getStore()
+  // Separate namespace keeps original array caches compatible with older workers.
+  return reuseAcquisition(`${key}:observed-v1`, async () => {
+    const legacy = run ? await readAcquisitionCache<T[]>(`run:${run.id}:${key}`) : undefined
+    if (legacy !== undefined) return { events: legacy, observedAt: null }
+    return { events: await acquire(), observedAt: new Date().toISOString() }
+  })
+}
+
 export async function serializeAcquisition<T>(lane: string, work: () => Promise<T>): Promise<T> {
   const run = runs.getStore()
   if (!run) return work()

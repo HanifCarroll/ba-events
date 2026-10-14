@@ -43,12 +43,19 @@ export interface ExtractFacetsInput {
 // satisfies the TS return type; persistence treats it as the column default.
 const EMPTY = Object.freeze({}) as EventFacets
 
+// JSON models may express an unknown optional scalar as null; persisted facets omit it.
+export const eventFacetsModelSchema = eventFacetsSchema.extend({
+  energy: eventFacetsSchema.shape.energy.nullable(),
+  socialInteraction: eventFacetsSchema.shape.socialInteraction.nullable(),
+})
+
 const FACETS_EXTRACTION_PROMPT = `Classify this event into structured, closed-vocabulary search facets.
 
 Use ONLY the canonical English facet values listed below. Do not invent values.
 
 EVENT TYPE — pick 0+ of these (what the event is):
 ${EVENT_TYPE_VALUES.join(', ')}
+Food events include dinners and tastings, not only activities tagged as dinner.
 
 GENRES — music genres ONLY if clearly present in the text (0+):
 ${GENRE_VALUES.join(', ')}
@@ -71,10 +78,16 @@ SOCIAL INTERACTION — 'low' | 'medium' | 'high' (omit if not clear)
 RULES
 - Only assign a facet if the source text SUPPORTS it. Empty arrays are correct
   when there is no evidence. Do not guess.
+- Arrays are multi-label: retain both a supported format and participant action.
+  A class or workshop where participants dance can include both workshop and dancing;
+  do not replace the actual activity with the format alone.
 - Do NOT infer "romantic" from "dinner" alone — an event can be a dinner
   without being romantic. Only mark romantic if the text says it is.
 - Do NOT infer a music genre from the event category alone; require real genre
   evidence in the name or descriptions.
+- Assign energy and socialInteraction only when the source describes their
+  intensity or degree of involvement. Do not supply defaults from an event type,
+  genre, dinner or class. Missing information is unknown, not "low".
 - Translate Spanish words to the English canonical value (e.g. "jazz en vivo"
   → genres: ["jazz"], "Íntimo" → vibes: ["intimate"]).
 
@@ -106,11 +119,13 @@ export async function extractEventFacets(input: ExtractFacetsInput): Promise<Eve
   try {
     const { object } = await generateObject({
       model: textModel,
-      schema: eventFacetsSchema,
+      schema: eventFacetsModelSchema,
       prompt,
       ...NO_THINKING,
     })
-    return object
+    const { energy, socialInteraction, ...facets } = object
+    return { ...facets, ...(energy != null ? { energy } : {}),
+      ...(socialInteraction != null ? { socialInteraction } : {}) }
   } catch (error) {
     logger.warn(`[extract-facets] extraction failed, returning empty facets: ${String(error)}`, {
       eventName: name,

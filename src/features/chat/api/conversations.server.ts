@@ -21,6 +21,7 @@ import {
   sortMessagesByTurnOrderAsc,
 } from '#features/chat/lib/message-order.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
+import { withReadSignal } from '#shared/lib/db/read-signal.ts'
 
 class ConversationPersistenceError extends Data.TaggedError('ConversationPersistenceError')<{
   readonly message: string
@@ -199,9 +200,9 @@ export function getConversationEffect(event: RequestEvent, data: { id: string })
     const user = event.locals.user
     if (!user) return null
     const conversationQuery = supabase
-      .from('conversations').select('*').eq('id', data.id).eq('user_id', user.id).is('deleted_at', null).single()
+      .from('conversations').select('*').eq('id', data.id).eq('user_id', user.id).is('deleted_at', null)
     const { data: conversation, error: convError } = yield* Effect.tryPromise({
-      try: () => conversationQuery,
+      try: (signal) => withReadSignal(conversationQuery, signal).single(),
       catch: () => persistenceFailure('Failed to get conversation'),
     })
     if (convError || !conversation) return null
@@ -209,7 +210,7 @@ export function getConversationEffect(event: RequestEvent, data: { id: string })
       .from('messages').select('*').eq('conversation_id', data.id)
       .order('turn_index', { ascending: true }).order('id', { ascending: true })
     const { data: messages, error: msgError } = yield* Effect.tryPromise({
-      try: () => messageQuery,
+      try: (signal) => withReadSignal(messageQuery, signal),
       catch: () => persistenceFailure('Failed to get conversation messages'),
     })
     if (msgError) {
@@ -222,7 +223,7 @@ export function getConversationEffect(event: RequestEvent, data: { id: string })
 
 /** Get a conversation and its ordered messages. */
 export function getConversation(event: RequestEvent, data: { id: string }) {
-  return Effect.runPromise(getConversationEffect(event, data))
+  return Effect.runPromise(getConversationEffect(event, data), { signal: event.request?.signal })
 }
 
 /** Effect-native conversation creation program. */

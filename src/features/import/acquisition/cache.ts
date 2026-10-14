@@ -7,6 +7,8 @@ let client: SupabaseClient | undefined
 const memory = new Map<string, { expiresAt: number; value: unknown }>()
 
 function storageClient(): SupabaseClient | undefined {
+  // Unit tests exercise in-memory reuse; local .env credentials must not cause remote I/O.
+  if (process.env.NODE_ENV === 'test') return undefined
   if (client) return client
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY

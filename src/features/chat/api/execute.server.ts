@@ -233,7 +233,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       pin = { requested: true, status: 'invalid', eventIdHint: happeningSoonEventId.slice(0, 128) }
     } else {
       try {
-        const facts = await getEventFactsByIds([happeningSoonEventId])
+        const facts = await getEventFactsByIds([happeningSoonEventId], request.signal)
         const fact = facts.find((f) => f.id === happeningSoonEventId)
         if (fact && isDisplayableStatus(fact.status)) {
           pin = { requested: true, status: 'resolved', eventId: fact.id, venueId: fact.venue_id }
@@ -261,7 +261,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
   if (userContext.isAuthenticated && conversationId) {
     try {
-      const conversation = await Effect.runPromise(getConversationEffect(event, { id: conversationId }))
+      const conversation = await Effect.runPromise(getConversationEffect(event, { id: conversationId }), { signal: request.signal })
       if (conversation) {
         const storedMessages = (conversation.messages ?? []) as Message[]
         priorHints = hintsFromMessages(storedMessages)
@@ -344,6 +344,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
 		const result = checkpoint ?? await Effect.runPromise(runSharedChatTurnEffect({
           requestId,
+          sessionId: conversationId ?? undefined,
+          channel: 'web',
           userContext,
           locale,
           text: originalQuery,
@@ -363,7 +365,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
               writer.write({ type: 'data-progress-text', id: `progress-text:${requestId}`, transient: true, data: progressText(response) } as never)
             }
           },
-		}))
+		}), { signal: request.signal })
 
         const canonical = result.canonical
         providerRequestId = result.providerRequestId ?? null

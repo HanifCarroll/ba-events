@@ -45,6 +45,22 @@ const mockedRerankEvents = rerankEvents as unknown as Mock
 
 const context = { userContext: { userId: null, isAuthenticated: false }, locale: 'en' as const }
 
+describe('search retry constraint authority', () => {
+  it('rejects widening before any event retrieval or hosted reranking', async () => {
+    vi.resetAllMocks()
+    const result = await searchEventsTool.execute({ objective: 'search', timeFilter: 'tonight', limit: 3 }, {
+      ...context, searchRetryBoundary: { must: { neighborhoodIds: ['Palermo'], isFree: true }, excludedGenres: [], happeningNow: false },
+    })
+    expect(result).toMatchObject({ success: false, error: 'search_constraints_changed',
+      metadata: { changedConstraints: ['neighborhoodIds', 'isFree'] } })
+    expect(mockedSearchEventsWithFilters).not.toHaveBeenCalled()
+    expect(mockedHybridEventSearch).not.toHaveBeenCalled()
+    expect(mockedCountEventsWithFilters).not.toHaveBeenCalled()
+    expect(mockedRerankEvents).not.toHaveBeenCalled()
+    expect(mockedGetFurthestEventDate).not.toHaveBeenCalled()
+  })
+})
+
 // Local deterministic "happening now" corpus (no vibe fixtures — the vibe
 // scorer is deleted). All starts_at are in Dec 2026 so the now-mode date-bounds
 // tests can shrink the window to zero without ever intersecting the fixtures.
@@ -137,7 +153,8 @@ describe('search_events Phase 1 — candidate limit vs display limit', () => {
     expect(mockedHybridEventSearch).toHaveBeenCalledWith(
       'orchestra concert',
       expect.anything(),
-      50
+      50,
+      undefined
     )
   })
 
@@ -167,7 +184,8 @@ describe('search_events Phase 1 — candidate limit vs display limit', () => {
     expect(mockedHybridEventSearch).toHaveBeenCalledWith(
       'art gallery opening',
       expect.anything(),
-      50
+      50,
+      undefined
     )
     expect((result.events ?? []).length).toBe(5)
   })
@@ -193,7 +211,8 @@ describe('search_events Phase 1 — candidate limit vs display limit', () => {
     expect(mockedSearchEventsWithFilters).toHaveBeenCalledTimes(1)
     expect(mockedSearchEventsWithFilters).toHaveBeenCalledWith(
       expect.anything(),
-      50
+      50,
+      undefined
     )
     expect((result.events ?? []).length).toBe(1)
   })
@@ -300,7 +319,8 @@ describe('search_events token-boundary semantic routing', () => {
     expect(mockedHybridEventSearch).toHaveBeenCalledWith(
       semanticQuery,
       expect.anything(),
-      50
+      50,
+      undefined
     )
   })
 
@@ -539,7 +559,7 @@ describe('search_events chill rerank disabled', () => {
     expect(result.success).toBe(true)
     expect(result.metadata?.searchMode).toBe('semantic')
     expect(result.metadata?.rerank).toBe('disabled')
-    expect(mockedHybridEventSearch).toHaveBeenCalledWith('chill', expect.anything(), 50)
+    expect(mockedHybridEventSearch).toHaveBeenCalledWith('chill', expect.anything(), 50, undefined)
     const events = result.events ?? []
     expect(events.map((e) => e.id)).toEqual(['party-high', 'untagged', 'relaxed-low'])
   })
@@ -589,7 +609,7 @@ describe('search_events prefer rerank', () => {
     expect(result.success).toBe(true)
     expect(result.metadata?.searchMode).toBe('semantic')
     expect(result.metadata?.rerank).toBe('disabled')
-    expect(mockedHybridEventSearch).toHaveBeenCalledWith('romantic', expect.anything(), 50)
+    expect(mockedHybridEventSearch).toHaveBeenCalledWith('romantic', expect.anything(), 50, undefined)
     const events = result.events ?? []
     expect(events.map((e) => e.id)).toEqual(['party', 'romantic'])
   })

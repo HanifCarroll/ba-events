@@ -1,4 +1,4 @@
-import { reuseAcquisition, withOwnedBrowser } from '../../acquisition/run.ts'
+import { reuseCatalogAcquisition, withOwnedBrowser, type CatalogAcquisition } from '../../acquisition/run.ts'
 import { isCloudflareBrowserAvailable, openCloudflareBrowser, openBrowserbaseBrowser } from '#shared/lib/browser/managed.ts'
 /**
  * Meetup Browser Scraper
@@ -553,7 +553,11 @@ async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEven
  * Scrape events using a Browserbase cloud browser for a date range
  */
 export async function scrapeMeetupEvents(options: ScraperOptions): Promise<MeetupEvent[]> {
-  return reuseAcquisition(`meetup:catalog:v1:${options.startDate}:${options.endDate}`, async () => {
+  return (await scrapeMeetupCatalog(options)).events
+}
+
+export async function scrapeMeetupCatalog(options: ScraperOptions): Promise<CatalogAcquisition<MeetupEvent>> {
+  return reuseCatalogAcquisition(`meetup:catalog:v1:${options.startDate}:${options.endDate}`, async () => {
     if (isCloudflareBrowserAvailable()) {
       logger.info('[Meetup] Using Cloudflare Browser Rendering for daily discovery')
       return withOwnedBrowser('meetup:cloudflare', openCloudflareBrowser, browser => scrapeWithBrowserInstance(browser, options))

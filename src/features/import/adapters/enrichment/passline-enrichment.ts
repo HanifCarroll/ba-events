@@ -112,7 +112,7 @@ export const passlineEnrichmentAdapter: EnrichmentAdapter = {
               }
               const venueName = options?.extractVenue ? extractVenueNameFromHtml(await page.content()) : null
               console.info('[passline] Detail acquisition completed', { profile: attempt ? 'standard' : 'thin' })
-              return { description_es: result.description, description_en: null, venue_name: venueName }
+              return { description_es: result.description, description_en: null, venue_name: venueName, sourceObservedAt: new Date().toISOString() }
             } catch (error) {
               if (error instanceof EnrichmentSkippedError || attempt === 1) throw error
               console.warn('[passline] Thin detail acquisition failed; one bounded standard-profile retry')

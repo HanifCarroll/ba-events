@@ -48,6 +48,7 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
     try {
       // Fetch description
       const description = await fetchLumaDescriptionFromDetailPage(link)
+      const sourceObservedAt = new Date().toISOString()
 
       // Optionally fetch venue
       let venueName: string | null = null
@@ -63,6 +64,7 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
 
       // For Luma, we don't know the language - let caller detect
       return {
+        sourceObservedAt,
         description_es: null, // Language unknown, needs detection
         description_en: description, // Store in en temporarily, caller will detect and move if needed
         venue_name: venueName,

@@ -111,7 +111,7 @@ export interface EventFact {
   status: EventStatus
 }
 
-export type FetchEventFacts = (ids: string[]) => Promise<EventFact[]>
+export type FetchEventFacts = (ids: string[], abortSignal?: AbortSignal) => Promise<EventFact[]>
 
 class PriorContextFetchError extends Data.TaggedError('PriorContextFetchError')<{
   readonly message: string
@@ -454,13 +454,14 @@ export function buildPriorContext(
 export function rehydratePriorContextEffect(
   responses: PriorResponseHint[],
   fetchByIds: FetchEventFacts,
-  savedMembership?: SavedMembershipResult
+  savedMembership?: SavedMembershipResult,
+  abortSignal?: AbortSignal,
 ): Effect.Effect<PriorContext, PriorContextFetchError> {
   const ids = collectEventIds(responses)
   if (ids.length === 0) return Effect.succeed({ groups: [], venueByEventId: new Map() })
   return Effect.map(
     Effect.tryPromise({
-      try: () => fetchByIds(ids),
+      try: (fiberSignal) => fetchByIds(ids, abortSignal ? AbortSignal.any([abortSignal, fiberSignal]) : fiberSignal),
       catch: () => new PriorContextFetchError({ message: 'Failed to rehydrate prior context' }),
     }),
     (facts) => buildPriorContext(responses, facts, savedMembership),
@@ -471,7 +472,8 @@ export function rehydratePriorContextEffect(
 export function rehydratePriorContext(
   responses: PriorResponseHint[],
   fetchByIds: FetchEventFacts,
-  savedMembership?: SavedMembershipResult
+  savedMembership?: SavedMembershipResult,
+  abortSignal?: AbortSignal,
 ) {
-  return Effect.runPromise(rehydratePriorContextEffect(responses, fetchByIds, savedMembership))
+  return Effect.runPromise(rehydratePriorContextEffect(responses, fetchByIds, savedMembership, abortSignal), { signal: abortSignal })
 }

@@ -51,7 +51,7 @@ export const getVenueDetailsTool = defineTool({
 
   requiresAuth: false,
 
-  execute: async (input) => {
+  execute: async (input, context) => {
     console.log('[DEBUG] Get venue details input:', JSON.stringify(input))
 
     let venue = null
@@ -59,15 +59,16 @@ export const getVenueDetailsTool = defineTool({
     // If we have a venue ID, fetch directly
     if (input.venueId) {
       try {
-        venue = await getVenueById(input.venueId)
+        venue = await getVenueById(input.venueId, context.abortSignal)
       } catch {
+        context.abortSignal?.throwIfAborted()
         console.log('[DEBUG] Venue not found by ID:', input.venueId)
       }
     }
 
     // Otherwise search by name
     if (!venue && input.venueName) {
-      const venues = await searchVenuesByName(input.venueName)
+      const venues = await searchVenuesByName(input.venueName, context.abortSignal)
       if (venues.length > 0) {
         venue = venues[0] // Return the best match
       }

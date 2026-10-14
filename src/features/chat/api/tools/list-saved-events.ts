@@ -49,7 +49,7 @@ export const listSavedEventsTool = defineTool({
 
   execute: async (input, context) => {
     const filter = input.filter ?? 'all'
-    const result = await listSavedEventsForUser(filter, context.userContext)
+    const result = await listSavedEventsForUser(filter, context.userContext, context.abortSignal)
 
     const events = ensureChatEventPayloads(result.events ?? [])
 

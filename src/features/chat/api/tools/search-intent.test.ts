@@ -212,7 +212,7 @@ describe('canonicalizeSearchIntent — venues', () => {
       { id: 'venue-niceto-2', name: 'Niceto Plaza' },
     ])
     const intent = await canonicalizeSearchIntent({ venueName: 'Niceto' }, WEDNESDAY_NOON)
-    expect(mockedSearchVenuesByName).toHaveBeenCalledWith('Niceto')
+    expect(mockedSearchVenuesByName).toHaveBeenCalledWith('Niceto', undefined)
     expect(intent.must.venueIds).toEqual(['venue-niceto-1', 'venue-niceto-2'])
   })
 
@@ -279,9 +279,16 @@ describe('canonicalizeSearchIntent — prefer extraction', () => {
     expect(intent.prefer.audience).toContain('couples')
   })
 
-  it('adds electronic to avoid for live music', async () => {
-    const intent = await canonicalizeSearchIntent({ query: 'live music' }, WEDNESDAY_NOON)
-    expect(intent.avoid.genres).toContain('electronic')
+  it.each(['live music', 'live jazz in Almagro', 'jazz en vivo en Almagro'])('keeps live music as a preference without an unrequested genre exclusion: %s', async query => {
+    const intent = await canonicalizeSearchIntent({ query }, WEDNESDAY_NOON)
+    expect(intent.prefer.activities).toContain('live-music')
+    expect(intent.avoid.genres ?? []).toEqual([])
+    expect(applyPreferAvoid(intent).avoidGenres).toBeUndefined()
+  })
+
+  it('retains explicit genre exclusions alongside a live-music preference', async () => {
+    const intent = await canonicalizeSearchIntent({ query: 'live music', avoid: ['electronic'] }, WEDNESDAY_NOON)
+    expect(applyPreferAvoid(intent).avoidGenres).toContain('electronic')
   })
 
   it('does not add electronic to avoid for live techno', async () => {

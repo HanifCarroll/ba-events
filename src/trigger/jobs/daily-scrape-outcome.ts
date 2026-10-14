@@ -6,6 +6,8 @@
  * Kept free of Trigger.dev SDK imports so they can be unit-tested in isolation.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CatalogImportProvenance } from '#features/import/core/enrichment-provenance.ts'
+import { buildSourceHealthReport, measuredCount } from '../utils/source-health.ts'
 
 export interface DailyScrapeResult {
   scrapeRunId: string
@@ -18,6 +20,13 @@ export interface DailyScrapeResult {
     eventsUpdated: number
     eventsSkipped: number
     venuesAutoCreated: number
+    catalogProvenance?: CatalogImportProvenance
+    eventsFetched?: number | null
+    eventsFiltered?: number | null
+    eventsExpanded?: number | null
+    eventsUnchanged?: number | null
+    categorizationSuccessful?: number | null
+    categorizationFallback?: number | null
     error?: string
   }[]
   enrichmentTriggered: boolean
@@ -131,6 +140,13 @@ export interface BatchRunLike {
 }
 
 interface ScrapeStatsOutput {
+  eventsFetched?: number
+  eventsFiltered?: number
+  eventsExpanded?: number
+  eventsUnchanged?: number
+  categorizationSuccessful?: number
+  categorizationFallback?: number
+  catalogProvenance?: CatalogImportProvenance
   eventsInserted?: number
   eventsUpdated?: number
   eventsSkipped?: number
@@ -172,6 +188,13 @@ export function mapBatchRunsToResults(
         eventsUpdated: output.eventsUpdated ?? 0,
         eventsSkipped: output.eventsSkipped ?? 0,
         venuesAutoCreated: output.venuesAutoCreated ?? 0,
+        ...(output.catalogProvenance ? { catalogProvenance: output.catalogProvenance } : {}),
+        eventsFetched: measuredCount(output.eventsFetched),
+        eventsFiltered: measuredCount(output.eventsFiltered),
+        eventsExpanded: measuredCount(output.eventsExpanded),
+        eventsUnchanged: measuredCount(output.eventsUnchanged),
+        categorizationSuccessful: measuredCount(output.categorizationSuccessful),
+        categorizationFallback: measuredCount(output.categorizationFallback),
       }
     }
 
@@ -248,6 +271,10 @@ export async function finalizeScrapeRun(
   const status = determineScrapeRunStatus(results)
   const errorMessage = buildScrapeRunErrorMessage(results)
   const completedAt = new Date().toISOString()
+  const sourceHealth = buildSourceHealthReport([
+    { status, completed_at: completedAt, metadata: { results, enrichment: { eligible: enrichmentEligible } } },
+  ], new Date(completedAt))
+  if (sourceHealth.needsAttention) console.warn('[daily-scrape] Source health needs attention', sourceHealth)
 
   const { error: updateError } = await client
     .from('scrape_runs')
@@ -263,6 +290,7 @@ export async function finalizeScrapeRun(
       metadata: {
         ...((metadata as object | null) ?? {}),
         results,
+        sourceHealth,
         enrichmentTriggered,
         blocklistCleanup,
         enrichment: mergeEnrichmentMetadata(undefined, { eligible: enrichmentEligible }),

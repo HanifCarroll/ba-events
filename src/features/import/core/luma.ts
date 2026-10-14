@@ -29,6 +29,7 @@ import { settleVenuesEffect, getVenueIdFromResults, isPlaceholderResult, type Ve
 import { delayEffect } from './nominatim.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
+import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 
 // ============================================================================
 // TYPES
@@ -42,6 +43,7 @@ export interface LumaImportOptions {
 }
 
 export interface LumaImportResult {
+  catalogProvenance?: CatalogImportProvenance
   // Scrape stats
   eventsFetched: number
   eventsFiltered: number
@@ -129,6 +131,7 @@ export function processLumaImportEffect(
 
     console.log('[luma] Fetching events from page...')
     const allEvents = yield* lumaTry('luma.fetch-events', () => fetchLumaEvents())
+    result.catalogProvenance = catalogImportProvenance(new Date().toISOString())
     result.eventsFetched = allEvents.length
     console.log(`[luma] Fetched ${allEvents.length} events`)
 

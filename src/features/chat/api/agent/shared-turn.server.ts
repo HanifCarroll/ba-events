@@ -18,8 +18,9 @@ import { orchestrateEffect, type OrchestrateResult } from './orchestrate.ts'
 import { currentDateInBuenosAires, type LastSearchContext } from './search-context.ts'
 import type { AgentHistoryMessage } from './history.ts'
 import { logger } from '#shared/lib/logger.ts'
+import type { ConciergeTraceContext } from '#shared/lib/ai/langfuse.server.ts'
 
-export interface SharedChatTurnInput {
+export interface SharedChatTurnInput extends ConciergeTraceContext {
   requestId: string
   userContext: UserToolContext
   text: string
@@ -72,7 +73,7 @@ export function runSharedChatTurnEffect(
       const membershipStarted = performance.now()
       const membership = input.userContext.isAuthenticated
         ? yield* Effect.tryPromise({
-            try: () => getSavedMembership(input.userContext, membershipIds),
+            try: (fiberSignal) => getSavedMembership(input.userContext, membershipIds, input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal),
             catch: (cause) => new SharedChatTurnError({ message: 'Failed to load saved membership', cause }),
           })
         : undefined
@@ -84,7 +85,7 @@ export function runSharedChatTurnEffect(
       })
 
       const rehydrateStarted = performance.now()
-      let priorContext = yield* rehydratePriorContextEffect(input.priorHints, fetchEventFacts, membership)
+      let priorContext = yield* rehydratePriorContextEffect(input.priorHints, fetchEventFacts, membership, input.abortSignal)
       logger.info('[chat] pre-agent history stage', {
         durationMs: Math.round(performance.now() - rehydrateStarted),
         hintCount: input.priorHints.length,
@@ -98,11 +99,11 @@ export function runSharedChatTurnEffect(
           const homeStarted = performance.now()
           const homeMembership = input.userContext.isAuthenticated
             ? yield* Effect.tryPromise({
-                try: () => getSavedMembership(input.userContext, homeIds),
+                try: (fiberSignal) => getSavedMembership(input.userContext, homeIds, input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal),
                 catch: (cause) => new SharedChatTurnError({ message: 'Failed to load saved membership', cause }),
               })
             : undefined
-          priorContext = yield* rehydratePriorContextEffect([homeHint], fetchEventFacts, homeMembership)
+          priorContext = yield* rehydratePriorContextEffect([homeHint], fetchEventFacts, homeMembership, input.abortSignal)
           logger.info('[chat] pre-agent home fallback stage', {
             durationMs: Math.round(performance.now() - homeStarted),
             requestedCount: homeIds.length,
@@ -122,6 +123,8 @@ export function runSharedChatTurnEffect(
 
     const orchestrationInput = {
       requestId: input.requestId,
+      sessionId: input.sessionId,
+      channel: input.channel,
       userContext: input.userContext,
       locale: normalized.locale,
       originalQuery: normalized.originalQuery,
@@ -139,7 +142,7 @@ export function runSharedChatTurnEffect(
     }
     return yield* dependencies.orchestrateFn
       ? Effect.tryPromise({
-          try: () => dependencies.orchestrateFn!(orchestrationInput),
+          try: (fiberSignal) => dependencies.orchestrateFn!({ ...orchestrationInput, abortSignal: input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal }),
           catch: (cause) => new SharedChatTurnError({ message: 'Chat orchestration failed', cause }),
         })
       : orchestrateEffect(orchestrationInput)
@@ -151,5 +154,5 @@ export function runSharedChatTurn(
   input: SharedChatTurnInput,
   dependencies: SharedChatTurnDependencies = {},
 ) {
-  return Effect.runPromise(runSharedChatTurnEffect(input, dependencies))
+  return Effect.runPromise(runSharedChatTurnEffect(input, dependencies), { signal: input.abortSignal })
 }

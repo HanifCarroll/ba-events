@@ -20,6 +20,7 @@ import {
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../api/duplicate-detection.ts'
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
@@ -41,6 +42,7 @@ export interface VentiImportOptions {
 }
 
 export interface VentiImportResult {
+  catalogProvenance?: CatalogImportProvenance
   // Scrape stats
   eventsFetched: number
   eventsFiltered: number
@@ -128,6 +130,7 @@ export function processVentiImportEffect(
 
     console.log('[venti] Fetching events from catalog API...')
     const allEvents = yield* ventiTry('venti.fetch-events', () => fetchVentiEvents())
+    result.catalogProvenance = catalogImportProvenance(new Date().toISOString())
     result.eventsFetched = allEvents.length
     console.log(`[venti] Fetched ${allEvents.length} events`)
 
