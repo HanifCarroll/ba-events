@@ -147,6 +147,11 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **AND** supplied cost, original SDK spans, model requests and application responses remain unchanged
 - **AND** estimated token cost is not represented as an invoice, other-provider spending or cost per independently reviewed success
 
+#### Scenario: Stop closes the model stream before trace cleanup finishes
+- **WHEN** Stop aborts a deployed web turn and closes its response stream
+- **THEN** the Worker retains the execution promise for its bounded cancellation cleanup and best-effort trace export
+- **AND** retaining cleanup does not remove model cancellation, restart execution or permit a stopped response to commit
+
 #### Scenario: Langfuse is unavailable
 - **WHEN** tracing is unconfigured or its exporter fails
 - **THEN** the concierge retains the same execution, fallback and canonical-artifact rules

@@ -6,7 +6,8 @@
   "compatibility_date": "2026-08-25",
   "compatibility_flags": [
     "nodejs_compat",
-    "nodejs_compat_populate_process_env"
+    "nodejs_compat_populate_process_env",
+    "enable_request_signal"
   ],
   "assets": {
     "binding": "ASSETS",
