@@ -22,8 +22,8 @@ remains recorded below as deferred work, rather than being marked complete.
 Current focus: release prerequisites and waiting review/data inputs. BA PR #6
 passes the full runtime release gate. Casamo PR #5 prepares tracing, PR #6 removes
 Q&A, and PR #7 carries audit context/title/profiler fixes; their local checks are
-recorded below. These releases remain undeployed. BA needs database-management
-access; Supabase is available as an unconnected integration. Casamo still needs
+recorded below. These releases remain undeployed. Supabase installation is confirmed and the owner reports connection, but its
+database tools are not available in the current chat; the migrations remain unapplied. Casamo still needs
 its staging key and authenticated staging access. No current browser connection
 is available in this session. Independent labels, an alert destination and a
 monthly spending choice remain open. Avoid repeated gates on unchanged runtime.
@@ -153,7 +153,7 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [ ] Deploy BA Eventos tracing and verify real web/Telegram sessions.
   - [x] Prepare isolated draft PR #6 on current main; 813 Bun/798 Vitest tests, Svelte/TypeScript checks, 10 specs and the production build pass. Preserve deployed chat recovery/feedback and exclude private diagnostics.
   - [x] Configure BA’s project-specific Langfuse keys, US base URL and production environment on the application Worker; code deployment/real traces remain pending.
-  - [ ] Apply the prepared migrations before merging; Supabase browser sign-in is required because local database-management credentials are absent.
+  - [ ] Apply the prepared migrations before merging. Supabase is installed and the owner reports connection; database tools have not loaded in the current chat. No migration has been applied.
     - Read-only live check on 2026-10-14 confirms the `enrichment_provenance` column is absent (42703). The lexical RPC returns an existing paid event without a free-status constraint and zero results with explicit false. The prepared migration is still required; no schema write occurred. Private receipts: `results/releases/access-refresh/database.json` and `lexical-filter.json` in the primary checkout.
   - [ ] Apply BA's additive `20261014000000_add_enrichment_provenance.sql` migration and release/verify the import/enrichment pipeline with tracing; older rows remain unknown, with no speculative backfill.
   - [ ] Apply `20261014010000_fix_paid_only_search_filters.sql` before the changed search client, and verify paid/free/unrestricted searches through the deployed functions.
