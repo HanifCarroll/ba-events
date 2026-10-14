@@ -22,11 +22,10 @@ remains recorded below as deferred work, rather than being marked complete.
 Current focus: release prerequisites and waiting review/data inputs. BA PR #6
 passes the full runtime release gate. Casamo PR #5 prepares tracing, PR #6 removes
 Q&A, and PR #7 carries audit context/title/profiler fixes; their local checks are
-recorded below. These releases remain undeployed. BA’s two Supabase migrations are applied and live paid/free/unrestricted search
+recorded below. BA PR #6 is merged and deployed; Casamo’s releases remain undeployed. BA’s two Supabase migrations are applied and live paid/free/unrestricted search
 checks pass. The owner authorized continuing the release on 2026-10-14; independent
 quality labels remain unknown and their checklist items stay open. Casamo still needs
-its staging key and authenticated staging access. No current browser connection
-is available in this session. Independent labels, an alert destination and a
+its staging key and authenticated staging access. The in-app browser is available again for production UI checks. Independent labels, an alert destination and a
 monthly spending choice remain open. Avoid repeated gates on unchanged runtime.
 
 Earlier engineering work and its receipts are recorded under each section.
@@ -152,6 +151,7 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [x] Create separate BA Eventos and Casamo projects under HC Studio.
 - [x] Implement BA Eventos model/tool tracing and verify export in a Workers runtime.
 - [ ] Deploy BA Eventos tracing and verify real web/Telegram sessions.
+  - [x] Merge PR #6 at `e73a1ea` and verify successful Cloudflare Build `a5c923b5-90cf-4197-b90b-8318434a1dc0`, all four new Worker versions, and Trigger.dev production version `20261014.1`. One real browser chat returns two paid events whose prices/date match database records; seven production Langfuse observations include model/tool activity and prompt/configuration identifiers. Emails/phones are masked, but a synthetic unlabeled `sk_test_` marker remains visible in the original diagnostic trace.
   - [x] Prepare isolated draft PR #6 on current main; 813 Bun/798 Vitest tests, Svelte/TypeScript checks, 10 specs and the production build pass. Preserve deployed chat recovery/feedback and exclude private diagnostics.
   - [x] Configure BA’s project-specific Langfuse keys, US base URL and production environment on the application Worker; code deployment/real traces remain pending.
   - [x] Apply the prepared migrations before merging. Both applied on 2026-10-14 through the connected Supabase integration; local filenames match the recorded remote versions. Twelve live semantic/lexical paid/free/unrestricted checks pass with no wrong-status results. The additive jsonb column exists and both functions retain security-invoker execution. Original function definitions and migration/verification receipts are private under `results/releases/langfuse-current/`. Existing advisor notices remain, including mutable search paths; no new grants or privileged execution were introduced.
@@ -205,6 +205,7 @@ Q&A is removed locally; its release and deletion migration remain in Section 12.
 - [x] Add and run BA Eventos real-model malicious-source and multilingual injection evaluations.
 - [x] Add and run corresponding Casamo multilingual review/photo-source injection evaluations.
 - [ ] Define and verify telemetry redaction, sampling, access, and retention.
+  - [ ] Release and verify the production-smoke fix for unlabeled underscore-delimited secret/restricted key prefixes. The change only affects exported text; model inputs/application results stay unchanged. Four redaction/export tests pass in both runners and all ten specs validate. The original synthetic-marker trace remains a recorded failed privacy diagnostic, not a real credential exposure or a passing check.
   - [x] Implement the owner's content-with-redaction policy for BA in an export-only copy of all span attributes, status/errors, events and links, covering Langfuse and raw AI/GenAI fields. Retain useful chat/tool facts, usage and correlation IDs; leave model inputs/application responses unchanged. Common emails/international phones, credential fields/tokens and URL queries/fragments are masked. Six focused checks pass in both runners; a real SDK/default OTLP loopback capture verifies three mocked generations with redacted payloads and identical application outputs, with zero paid/external model calls. Redaction failures omit the span. Names, addresses, arbitrary secrets and historical data are not claimed anonymized. Casamo retains metadata-only audit tracing.
   - [ ] Verify deployed payloads and settle project sampling/access/retention. Langfuse's Hobby access window is not proof of automatic deletion.
 - [ ] Verify replay masking and independent protection when database rate limiting fails.

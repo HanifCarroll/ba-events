@@ -23,7 +23,7 @@ function redactText(value: string): string {
     })
     .replace(/\b((?:authorization\s*[:=]\s*)?(?:Bearer|Basic)\s+)[A-Z0-9+/=_-]+(?:\.[A-Z0-9+/=_-]+)*/gi, '$1[REDACTED]')
     .replace(/\beyJ[A-Z0-9_-]+\.[A-Z0-9_-]+\.[A-Z0-9_-]+\b/gi, '[REDACTED]')
-    .replace(/\bsk-(?:lf-|proj-)?[A-Z0-9_-]{10,}\b/gi, '[REDACTED]')
+    .replace(/\b(?:sk-(?:lf-|proj-)?|(?:sk|rk)_(?:test|live)_)[A-Z0-9_-]{10,}\b/gi, '[REDACTED]')
     .replace(/\b((?:password|api[_-]?key|access_token|refresh_token|token|secret)\s*[:=]\s*["']?)[^\s"'&,;]+/gi, '$1[REDACTED]')
     .replace(/https?:\/\/[^\s<>"']+/gi, (text) => {
       try {
