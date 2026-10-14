@@ -23,6 +23,7 @@ import {
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../api/duplicate-detection.ts'
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
@@ -46,6 +47,7 @@ export interface BATourismImportOptions {
 }
 
 export interface BATourismImportResult {
+  catalogProvenance?: CatalogImportProvenance
   // Scrape stats
   eventsFetched: number
   eventsFiltered: number
@@ -146,6 +148,7 @@ export function processBATourismImportEffect(
       'ba-tourism.scrape',
       () => scrapeBATourismEventsWithBrowser()
     )
+    result.catalogProvenance = catalogImportProvenance(new Date().toISOString())
     result.eventsFetched = allEvents.length
     result.weekStart = weekContext.startDate?.toISOString() || null
     result.weekEnd = weekContext.endDate?.toISOString() || null

@@ -27,7 +27,7 @@ import type { RequestEvent } from '@sveltejs/kit'
 import { Effect } from 'effect'
 import type { UIMessage } from 'ai'
 import { generateId, createUIMessageStream, createUIMessageStreamResponse } from 'ai'
-import { checkRateLimit, RATE_LIMIT_REQUESTS } from '#features/auth/api/rate-limit.server.ts'
+import { checkRateLimit, RATE_LIMIT_REQUESTS, RATE_LIMIT_RETRY_SECONDS } from '#features/auth/api/rate-limit.server.ts'
 import { getUserToolContext } from '#features/chat/api/user-tools.server.ts'
 import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
 import { formatTime } from '#shared/lib/utils/formatting.ts'
@@ -121,7 +121,7 @@ function publicChatError(error: unknown): string {
 		: 'An error occurred while processing your message'
 }
 
-export const POST = async (event: RequestEvent): Promise<Response> => {
+export const POST = async (event: RequestEvent, dependencies: { rateLimit?: typeof checkRateLimit } = {}): Promise<Response> => {
   const { request } = event
   const stage = request.headers.get(EXECUTION_STAGE_HEADER)
 
@@ -155,8 +155,16 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   }
 
   const ip = getClientIP(event)
-  const { success, reset } = stage === 'commit' || stage === 'fail' || Number(request.headers.get(EXECUTION_FENCE_HEADER)) > 1
-    ? { success: true, reset: 0 } : await checkRateLimit(ip)
+  let limit: Pick<Awaited<ReturnType<typeof checkRateLimit>>, 'success' | 'reset'>
+  try {
+    limit = stage === 'commit' || stage === 'fail' || Number(request.headers.get(EXECUTION_FENCE_HEADER)) > 1
+      ? { success: true, reset: 0 } : await (dependencies.rateLimit ?? checkRateLimit)(ip)
+  } catch {
+    const response = createErrorStream(m.chat_error_generic({}, { locale }))
+    response.headers.set('Retry-After', String(RATE_LIMIT_RETRY_SECONDS))
+    return response
+  }
+  const { success, reset } = limit
   if (!success) {
     console.log(`[RATE LIMIT] IP ${ip} exceeded rate limit, reset at ${new Date(reset).toISOString()}`)
     return createRateLimitResponse(reset)
@@ -233,7 +241,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       pin = { requested: true, status: 'invalid', eventIdHint: happeningSoonEventId.slice(0, 128) }
     } else {
       try {
-        const facts = await getEventFactsByIds([happeningSoonEventId])
+        const facts = await getEventFactsByIds([happeningSoonEventId], request.signal)
         const fact = facts.find((f) => f.id === happeningSoonEventId)
         if (fact && isDisplayableStatus(fact.status)) {
           pin = { requested: true, status: 'resolved', eventId: fact.id, venueId: fact.venue_id }
@@ -261,7 +269,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
   if (userContext.isAuthenticated && conversationId) {
     try {
-      const conversation = await Effect.runPromise(getConversationEffect(event, { id: conversationId }))
+      const conversation = await Effect.runPromise(getConversationEffect(event, { id: conversationId }), { signal: request.signal })
       if (conversation) {
         const storedMessages = (conversation.messages ?? []) as Message[]
         priorHints = hintsFromMessages(storedMessages)
@@ -344,6 +352,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
 
 		const result = checkpoint ?? await Effect.runPromise(runSharedChatTurnEffect({
           requestId,
+          sessionId: conversationId ?? undefined,
+          channel: 'web',
           userContext,
           locale,
           text: originalQuery,
@@ -363,7 +373,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
               writer.write({ type: 'data-progress-text', id: `progress-text:${requestId}`, transient: true, data: progressText(response) } as never)
             }
           },
-		}))
+		}), { signal: request.signal })
 
         const canonical = result.canonical
         providerRequestId = result.providerRequestId ?? null

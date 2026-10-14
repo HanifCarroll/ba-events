@@ -1,5 +1,39 @@
 import { describe, expect, it } from 'vitest'
-import { buildSearchDocument } from './embeddings.ts'
+import { buildSearchDocument, generateEmbedding } from './embeddings.ts'
+
+describe('query embedding cancellation', () => {
+  it('passes cancellation to the actual embedding provider request without retrying', async () => {
+    const originalFetch = globalThis.fetch
+    const originalKey = process.env.OPENAI_API_KEY
+    const controller = new AbortController()
+    let received: AbortSignal | undefined
+    let calls = 0
+    let started: () => void = () => {}
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    process.env.OPENAI_API_KEY = 'test-only-key'
+    globalThis.fetch = async (_input, init) => {
+      calls++
+      received = init?.signal ?? undefined
+      started()
+      return new Promise<Response>((_resolve, reject) => {
+        received!.addEventListener('abort', () => reject(received!.reason), { once: true })
+      })
+    }
+    try {
+      const running = generateEmbedding('cancellation-test-uncached-query', controller.signal)
+      const outcome = running.then(() => ({ rejected: false }), () => ({ rejected: true }))
+      await ready
+      controller.abort()
+      expect((await outcome).rejected).toBe(true)
+      expect(received?.aborted).toBe(true)
+      expect(calls).toBe(1)
+    } finally {
+      globalThis.fetch = originalFetch
+      if (originalKey === undefined) delete process.env.OPENAI_API_KEY
+      else process.env.OPENAI_API_KEY = originalKey
+    }
+  })
+})
 
 describe('buildSearchDocument', () => {
   it('includes title, descriptions, categories, facets, venue, neighborhood, free/paid, and event type for a venued event', () => {

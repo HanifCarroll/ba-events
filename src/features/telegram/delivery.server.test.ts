@@ -9,7 +9,7 @@ const identityHash = 'a'.repeat(64)
 
 function terminalQuery(result: unknown) {
   const query: Record<string, unknown> = {}
-  for (const method of ['select', 'eq', 'neq', 'update']) query[method] = vi.fn(() => query)
+  for (const method of ['abortSignal', 'select', 'eq', 'neq', 'update']) query[method] = vi.fn(() => query)
   query.single = vi.fn(async () => result)
   query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(result))
   return query
@@ -17,7 +17,7 @@ function terminalQuery(result: unknown) {
 
 describe('Telegram delivery claims', () => {
   it('stores the identity link only in the service-role delivery claim', async () => {
-    const insert = vi.fn(async () => ({ error: null }))
+    const insert = vi.fn(() => terminalQuery({ error: null }))
     const client = { from: vi.fn(() => ({ insert })) } as never
     await expect(claimTelegramUpdate('42', identityHash, client)).resolves.toMatchObject({
       completed: false,
@@ -34,7 +34,7 @@ describe('Telegram delivery claims', () => {
   ] as const)(
     'reuses a %s row key and returns the correct rate-limit decision',
     async (status, checkRateLimit) => {
-      const insert = vi.fn(async () => ({ error: { code: '23505' } }))
+      const insert = vi.fn(() => terminalQuery({ error: { code: '23505' } }))
       const read = terminalQuery({
         data: { status, attempt_count: 2, identity_hash: identityHash, envelope_key: 'existing-key' },
         error: null,
@@ -61,7 +61,7 @@ describe('Telegram delivery claims', () => {
   )
 
   it('rejects a noncompleted duplicate claimed by another identity', async () => {
-    const insert = vi.fn(async () => ({ error: { code: '23505' } }))
+    const insert = vi.fn(() => terminalQuery({ error: { code: '23505' } }))
     const read = terminalQuery({
       data: {
         status: 'processing',

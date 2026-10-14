@@ -42,6 +42,11 @@ After a solved, verified problem, offer once to invoke the `ce-compound` skill a
 
 ## OpenSpec
 
+The remaining applied AI engineering work for BA Eventos and Casamo is tracked in
+[`docs/applied-ai-engineering-work.md`](docs/applied-ai-engineering-work.md).
+Update its task status and verification receipts at completion checkpoints;
+keep local implementation and production release distinct.
+
 - `openspec/config.yaml` selects `spec-driven`; the main specs under `openspec/specs/` are the canonical requirements for current product behavior. Before implementing a behavioral change, read the affected main specs and keep them aligned with code and deterministic tests.
 - Update the affected main spec when observable behavior, persisted shapes, security or compatibility rules, or channel, search, import, or agent contracts change. Implementation-only refactors do not need spec edits.
 - CE owns planning and implementation; canonical main specs remain current product truth. For CE-planned behavior changes, update affected main specs after verified implementation in the same branch; validate OpenSpec; do not create duplicate OpenSpec proposal/design/task artifacts. Preserve existing active OpenSpec changes; they may finish under their current lifecycle. Run `openspec validate --specs --json`; `$openspec-review-conformance` is advisory and does not replace validation or tests.

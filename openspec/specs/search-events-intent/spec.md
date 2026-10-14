@@ -12,9 +12,26 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 - **WHEN** a request includes free status, a neighborhood, category, date/time bounds, venue identity, age, price, or an explicit genre exclusion
 - **THEN** the corresponding canonical `must` constraints are converted to search filters and the search does not widen or discard them
 
+#### Scenario: Paid-only search reaches semantic and lexical retrieval
+- **WHEN** the effective free-status constraint is explicitly false
+- **THEN** semantic and lexical database requests retain false rather than converting it to an unconstrained null
+- **AND** true remains free-only and an omitted constraint remains unconstrained
+
 #### Scenario: Unresolved venue remains constrained
 - **WHEN** a named venue resolves to no venue ids
 - **THEN** `search_events` returns a successful zero-event result with an `unknown venue` note and does not run event retrieval
+
+#### Scenario: An empty result triggers a broader retry
+- **GIVEN** a search established effective hard constraints within the current user turn
+- **WHEN** another search would drop or widen a neighborhood, venue, category, free-only status, budget, age restriction, date window, happening-now scope, or genre exclusion
+- **THEN** the server rejects that retry before event retrieval
+- **AND** the previous successful empty result remains authoritative
+- **AND** a new user turn may explicitly change the requested constraints
+
+#### Scenario: A retry preserves the search boundary
+- **WHEN** a retry changes subjective wording but keeps equivalent or narrower effective hard constraints
+- **THEN** it remains eligible within the existing tool and time limits
+- **AND** concurrent search calls cannot bypass the boundary by starting before the first search returns
 
 ### Requirement: Separate subjective retrieval signals from hard constraints
 
@@ -23,6 +40,11 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 #### Scenario: Subjective intent does not become a filter
 - **WHEN** a request contains vibe, genre, activity, audience, or setting language without a corresponding hard constraint
 - **THEN** those signals remain in `semanticQuery`/`prefer` for retrieval or reranking and do not become SQL filters
+
+#### Scenario: Live music does not imply a genre exclusion
+- **WHEN** a user asks for live music or live jazz without an electronic-genre exclusion
+- **THEN** live music remains a preference and no electronic genre is added to hard exclusions
+- **AND** an explicitly requested electronic-genre exclusion still reaches retrieval
 
 #### Scenario: Resolvable syntax is consumed without losing specific residue
 - **WHEN** a query combines generic discovery, temporal, neighborhood, or free-language syntax with a specific term

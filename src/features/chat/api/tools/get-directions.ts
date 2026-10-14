@@ -35,7 +35,7 @@ function generateMapsUrl(address: string, venueName: string): string {
 // TOOL DEFINITION
 // ============================================================================
 
-export const getDirectionsTool = defineTool({
+export const createGetDirectionsTool = (readers = { getEventWithVenue, getVenueById }) => defineTool({
   name: 'get_directions',
 
   description: `Generate a Google Maps directions link to an event's venue.
@@ -60,8 +60,9 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
 
   requiresAuth: false,
 
-  execute: async (input) => {
+  execute: async (input, context) => {
     try {
+      context.abortSignal?.throwIfAborted()
       // Validate that at least one ID is provided
       if (!input.eventId && !input.venueId) {
         return {
@@ -83,7 +84,8 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
 
       // Get venue info from event or directly
       if (input.eventId) {
-        const event = await getEventWithVenue(input.eventId)
+        const event = await readers.getEventWithVenue(input.eventId, context.abortSignal)
+        context.abortSignal?.throwIfAborted()
         if (!event) {
           return {
             success: false,
@@ -95,6 +97,14 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
           }
         }
 
+        if (event.location_hidden || event.location_tba) {
+          return {
+            success: false,
+            formatted: JSON.stringify({ error: 'location_unavailable', message: 'The event location is hidden or not yet confirmed. Check the original source for location details.' }),
+            error: 'location_unavailable',
+          }
+        }
+
         eventName = event.name
         eventId = event.id
         venueId = event.venue_id ?? undefined
@@ -102,7 +112,8 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
         venueAddress = event.venue_address
         venueNeighborhood = event.venue_neighborhood
       } else {
-        const venue = await getVenueById(input.venueId!)
+        const venue = await readers.getVenueById(input.venueId!, context.abortSignal)
+        context.abortSignal?.throwIfAborted()
         if (!venue) {
           return {
             success: false,
@@ -170,6 +181,7 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
         },
       }
     } catch (error) {
+      context.abortSignal?.throwIfAborted()
       console.error('[get_directions] Error:', error)
       return {
         success: false,
@@ -179,3 +191,5 @@ Provide either an eventId or venueId. If both are provided, eventId takes priori
     }
   },
 })
+
+export const getDirectionsTool = createGetDirectionsTool()

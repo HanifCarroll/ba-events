@@ -11,6 +11,7 @@ const user = { id: authenticatedUserId } as never
 
 function requestEvent() {
   const conversations = {
+    abortSignal: (_signal: AbortSignal) => conversations,
     select: () => conversations,
     eq: () => conversations,
     is: () => conversations,
@@ -20,6 +21,7 @@ function requestEvent() {
     }),
   }
   const messages = {
+    abortSignal: (_signal: AbortSignal) => messages,
     select: () => messages,
     eq: () => messages,
     order: () => messages,
@@ -97,6 +99,35 @@ describe('createConversation idempotency', () => {
 
 describe('getConversation on the signed-in chat route', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('cancels its history read before starting another database request', async () => {
+    const controller = new AbortController()
+    let received: AbortSignal | undefined
+    let started: () => void = () => {}
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    const conversationQuery = {
+      select: () => conversationQuery,
+      eq: () => conversationQuery,
+      is: () => conversationQuery,
+      abortSignal: (signal: AbortSignal) => { received = signal; return conversationQuery },
+      single: () => { started(); return new Promise<never>(() => {}) },
+    }
+    let messageReads = 0
+    vi.mocked(createSupabaseServerClient).mockReturnValue({
+      from: (table: string) => {
+        if (table !== 'conversations') messageReads++
+        return conversationQuery
+      },
+    } as never)
+    const event = { locals: { user }, request: new Request('https://app.example.test', { signal: controller.signal }) } as never
+    const running = getConversation(event, { id: 'conversation-1' })
+    const outcome = running.then(() => false, () => true)
+    await ready
+    controller.abort()
+    expect(await outcome).toBe(true)
+    expect(received?.aborted).toBe(true)
+    expect(messageReads).toBe(0)
+  })
 
   it('uses the authenticated request local without another auth lookup', async () => {
     const event = requestEvent()

@@ -158,7 +158,8 @@ export function buildEmbeddingText(
 }
 
 // Generate embedding using OpenAI with caching
-export async function generateEmbedding(text: string): Promise<number[]> {
+export async function generateEmbedding(text: string, abortSignal?: AbortSignal): Promise<number[]> {
+  abortSignal?.throwIfAborted()
   // Create cache key from text hash
   const cacheKey = `embedding:${createHash('sha256').update(text).digest('hex')}`
   const now = Date.now()
@@ -177,7 +178,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const { embedding } = await embed({
     model: embeddingModel,
     value: text,
+    abortSignal,
   })
+
+  abortSignal?.throwIfAborted()
 
   pruneEmbeddingCache(now)
   embeddingCache.set(cacheKey, {

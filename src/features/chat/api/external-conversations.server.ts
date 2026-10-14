@@ -38,13 +38,14 @@ function findByHashEffect(
 ): Effect.Effect<ExternalConversation | null, ExternalConversationError> {
   return Effect.gen(function* () {
     const { data, error } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('conversations')
         .select(CONVERSATION_FIELDS)
         .eq('channel', channel)
         .eq('external_identity_hash', hash)
         .is('user_id', null)
         .is('deleted_at', null)
+        .abortSignal(signal)
         .maybeSingle(),
       catch: () => externalFailure('Failed to get external conversation'),
     })
@@ -60,13 +61,14 @@ function requireExternalConversationEffect(
 ): Effect.Effect<void, ExternalConversationError> {
   return Effect.gen(function* () {
     const { data, error } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('conversations')
         .select('id')
         .eq('id', conversationId)
         .eq('channel', channel)
         .is('user_id', null)
         .is('deleted_at', null)
+        .abortSignal(signal)
         .maybeSingle(),
       catch: () => externalFailure('External conversation not found'),
     })
@@ -95,7 +97,7 @@ export function getOrCreateExternalConversationEffect(
     if (existing) return existing
 
     const { data, error } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('conversations')
         .insert({
           user_id: null,
@@ -105,6 +107,7 @@ export function getOrCreateExternalConversationEffect(
           metadata: input.metadata ?? {},
         })
         .select(CONVERSATION_FIELDS)
+        .abortSignal(signal)
         .single(),
       catch: () => externalFailure('Failed to create external conversation'),
     })
@@ -137,13 +140,14 @@ export function getExternalConversationEffect(
 ): Effect.Effect<ExternalConversation, ExternalConversationError> {
   return Effect.gen(function* () {
     const { data, error } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('conversations')
         .select(CONVERSATION_FIELDS)
         .eq('id', input.conversationId)
         .eq('channel', input.channel)
         .is('user_id', null)
         .is('deleted_at', null)
+        .abortSignal(signal)
         .maybeSingle(),
       catch: () => externalFailure('External conversation not found'),
     })
@@ -166,7 +170,7 @@ export function loadExternalConversationMessagesEffect(
 ): Effect.Effect<Message[], ExternalConversationError> {
   return Effect.gen(function* () {
     const { data, error } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('messages')
         .select('*, conversations!inner(id)')
         .eq('conversation_id', input.conversationId)
@@ -174,7 +178,7 @@ export function loadExternalConversationMessagesEffect(
         .is('conversations.user_id', null)
         .is('conversations.deleted_at', null)
         .order('sequence_number', { ascending: false })
-        .limit(120),
+        .limit(120).abortSignal(signal),
       catch: () => externalFailure('Failed to load external conversation messages'),
     })
     if (error) return yield* Effect.fail(externalFailure('Failed to load external conversation messages'))
@@ -209,7 +213,7 @@ export function insertExternalConversationMessageEffect(
   return Effect.gen(function* () {
     yield* requireExternalConversationEffect(client, input.channel, input.conversationId)
     const { data, error } = yield* Effect.tryPromise({
-      try: () => client.rpc(
+      try: (signal) => client.rpc(
         'insert_message_with_turn',
         buildMessageRpcPayload({
           conversationId: input.conversationId,
@@ -222,7 +226,7 @@ export function insertExternalConversationMessageEffect(
           attachedData: input.attachedData,
           responseContractVersion: input.responseContractVersion ?? CHAT_CONTRACT_VERSION,
         })
-      ),
+      ).abortSignal(signal),
       catch: () => externalFailure('Failed to insert external conversation message'),
     })
     const message = (Array.isArray(data) ? data[0] : data) as Message | null
@@ -260,13 +264,14 @@ export function updateExternalConversationMetadataEffect(
 ): Effect.Effect<ExternalConversation, ExternalConversationError> {
   return Effect.gen(function* () {
     const { data: current, error: readError } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('conversations')
         .select('metadata')
         .eq('id', input.conversationId)
         .eq('channel', input.channel)
         .is('user_id', null)
         .is('deleted_at', null)
+        .abortSignal(signal)
         .single(),
       catch: () => externalFailure('Failed to update external conversation metadata'),
     })
@@ -289,13 +294,14 @@ export function updateExternalConversationMetadataEffect(
     }
 
     const { data, error } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('conversations')
         .update({ metadata })
         .eq('id', input.conversationId)
         .eq('channel', input.channel)
         .is('user_id', null)
         .select(CONVERSATION_FIELDS)
+        .abortSignal(signal)
         .single(),
       catch: () => externalFailure('Failed to update external conversation metadata'),
     })
@@ -323,7 +329,7 @@ export function clearExternalConversationMessagesEffect(
   return Effect.gen(function* () {
     yield* requireExternalConversationEffect(client, input.channel, input.conversationId)
     const { error } = yield* Effect.tryPromise({
-      try: () => client.from('messages').delete().eq('conversation_id', input.conversationId),
+      try: (signal) => client.from('messages').delete().eq('conversation_id', input.conversationId).abortSignal(signal),
       catch: () => externalFailure('Failed to clear external conversation messages'),
     })
     if (error) return yield* Effect.fail(externalFailure('Failed to clear external conversation messages'))
@@ -344,12 +350,12 @@ export function hardDeleteExternalConversationEffect(
 ): Effect.Effect<void, ExternalConversationError> {
   return Effect.gen(function* () {
     const { error } = yield* Effect.tryPromise({
-      try: () => client
+      try: (signal) => client
         .from('conversations')
         .delete()
         .eq('id', input.conversationId)
         .eq('channel', input.channel)
-        .is('user_id', null),
+        .is('user_id', null).abortSignal(signal),
       catch: () => externalFailure('Failed to delete external conversation'),
     })
     if (error) return yield* Effect.fail(externalFailure('Failed to delete external conversation'))

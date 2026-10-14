@@ -166,7 +166,8 @@ snapshot, verification, and guest-debug scripts:
 `verify-venti-import.ts`. They remain script runtime roots by design; their
 operator-facing Promise and CLI contracts are not application call graphs.
 
-The `evals/` files (`concierge/{deterministic.test,run}.ts`, `lib/{checks,
+The `evals/` files (`concierge/{deterministic.test,run,langfuse,multi-turn,
+conversation-runner,conversations,frozen-corpus,score}.ts`, `lib/{checks,
 run-agent}.ts`, `search/{run,run-semantic}.ts`,
 `search/relevance/{capture,run}.ts`, and `titles/run.ts`) are evaluation
 harness roots. They use Promise concurrency, timers, AI SDK calls, and test
@@ -227,18 +228,28 @@ be added here with its owning runtime and behavior.
    callbacks, Web Crypto/session helpers, PostHog in `shared/lib/analytics.ts`,
    speech recognition, PWA install/update, Svelte remote calls, and browser
    event handlers are platform/client roots or leaves.
-8. **Scripts and evals.** All `scripts/*.ts` and `evals/**/*.ts` Promise
+8. **Scripts and evals.** `shared/lib/ai/langfuse.server.ts` is an OpenTelemetry
+   SDK leaf around the existing AI SDK leaf, with bounded export and native
+   AsyncLocalStorage context. It does not own product retries or orchestration.
+   All `scripts/*.ts` and `evals/**/*.ts` Promise
    entrypoints are CLI/evaluation roots. Timers and `Promise.all` are operator
    or fixture concurrency, not product orchestration.
 9. **Tests and compatibility doubles.** `*.test.ts` files intentionally use
    Promise resolvers, fake timers, and mocked SDK clients to test these
    boundaries. They are not runtime application graphs.
+   `agent/model-cancellation.fixture.ts` runs the production model SDK leaf in
+   an isolated Bun test process with dummy keys and an intercepted transport;
+   this prevents other suites' model mocks from replacing the cancellation probe.
 
 ### Retry, timeout, cancellation, and resources
 
 - Nominatim keeps native `AbortSignal.timeout` cancellation and its existing
   single timeout retry. Effect does not add a schedule.
-- Telegram keeps Bot API `retry_after`, update claim/retry caps, DO storage
+- Telegram owns one scoped interruption signal for final sends, callbacks, typing
+  and drafts. Bot API fetch and body consumption share one Promise leaf; external
+  conversation and delivery-claim queries pass the fiber signal to PostgREST.
+  Interrupted programs cannot advance, while already committed writes remain durable.
+  Telegram keeps Bot API `retry_after`, update claim/retry caps, DO storage
   keys, alarms, and ack ordering.
 - Trigger keeps task retry policies, queue ownership, schedules, and batch
   checkpoints. A failed Effect task still fails the Trigger task so its
@@ -246,6 +257,18 @@ be added here with its owning runtime and behavior.
 - Guest chat timeout and AI/tool timeout behavior remains at the existing
   request/SDK boundaries. Browser sessions retain their existing `finally`
   cleanup and Browserbase resource lifecycle.
+- Concierge SDK callbacks use `agent/bounded-read.ts` as a native Promise leaf:
+  the per-tool timer aborts the actual read, and producer/SDK cancellation rejects
+  even a read that ignores its signal. Timers/listeners are removed on settlement.
+  Settling also closes the read scope so an early failed retrieval branch cannot
+  leave a sibling request running.
+  Effect interruption reaches the model runner through `tryPromise`'s signal;
+  membership, authenticated history and prior-context reads pass their fiber/request signals to the
+  Supabase SDK through `shared/lib/db/read-signal.ts`. Embeddings and reranking
+  receive the same read signal. Reranker outages still retain retrieval order,
+  while caller cancellation rejects instead of continuing fallback work. The web
+  runtime connects the delivery producer's request signal to the shared turn
+  Effect; detaching a browser subscriber still does not stop that producer.
 - Client outboxes retain IndexedDB transaction and service-worker cache
   semantics. `AbortController`, Web Crypto, and provider cancellation remain
   native platform contracts.

@@ -28,7 +28,7 @@ export type GetVenueDetailsInput = z.infer<typeof getVenueDetailsInputSchema>
 // TOOL DEFINITION
 // ============================================================================
 
-export const getVenueDetailsTool = defineTool({
+export const createGetVenueDetailsTool = (readers = { getVenueById, searchVenuesByName }) => defineTool({
   name: 'get_venue_details',
 
   description: `Get detailed information about a specific venue, including website, Instagram, and address. Use this when users ask about a venue's website, contact info, or want more details about where an event is held.`,
@@ -51,7 +51,8 @@ export const getVenueDetailsTool = defineTool({
 
   requiresAuth: false,
 
-  execute: async (input) => {
+  execute: async (input, context) => {
+    context.abortSignal?.throwIfAborted()
     console.log('[DEBUG] Get venue details input:', JSON.stringify(input))
 
     let venue = null
@@ -59,15 +60,18 @@ export const getVenueDetailsTool = defineTool({
     // If we have a venue ID, fetch directly
     if (input.venueId) {
       try {
-        venue = await getVenueById(input.venueId)
+        venue = await readers.getVenueById(input.venueId, context.abortSignal)
+        context.abortSignal?.throwIfAborted()
       } catch {
+        context.abortSignal?.throwIfAborted()
         console.log('[DEBUG] Venue not found by ID:', input.venueId)
       }
     }
 
     // Otherwise search by name
     if (!venue && input.venueName) {
-      const venues = await searchVenuesByName(input.venueName)
+      const venues = await readers.searchVenuesByName(input.venueName, context.abortSignal)
+      context.abortSignal?.throwIfAborted()
       if (venues.length > 0) {
         venue = venues[0] // Return the best match
       }
@@ -94,3 +98,5 @@ export const getVenueDetailsTool = defineTool({
     }
   },
 })
+
+export const getVenueDetailsTool = createGetVenueDetailsTool()

@@ -26,6 +26,29 @@ Each conversation SHALL process its inbox head in order, honor Telegram retry gu
 - **WHEN** a send is rate limited
 - **THEN** delivery waits for the supplied interval before retrying
 
+#### Scenario: The shared admission limiter is unavailable
+- **WHEN** an ordinary Telegram text/prompt update cannot establish rate-limit admission
+- **THEN** the webhook returns HTTP 503 and records dispatch failure without attaching or dispatching a model turn
+- **AND** Telegram retry retains the existing encrypted-envelope/idempotency path, while privacy commands retain their existing bypass
+
+### Requirement: Bot API delivery honors caller cancellation
+Telegram turns SHALL own a scoped cancellation signal and propagate it into final messages, callback answers, typing refreshes and progress drafts. Bot API delivery calls SHALL accept that owning cancellation signal. Cancellation SHALL stop waiting and reach the underlying fetch during both request and response-body consumption, while retaining the existing ten-second timeout and Telegram error redaction and retry metadata.
+
+#### Scenario: Delivery is cancelled before or during a request
+- **WHEN** a delivery caller cancels before a request or while its request or response body is pending
+- **THEN** an already-cancelled call starts no fetch, an active fetch receives cancellation, and a late successful response is not accepted
+
+#### Scenario: Turn is interrupted during delivery or progress
+- **WHEN** a turn is interrupted while final delivery, typing or a progress draft is pending
+- **THEN** active Bot API requests receive cancellation, queued or late progress starts no new delivery, and the interrupted turn does not mark its durable claim completed
+
+### Requirement: Turn storage requests honor interruption
+External conversation reads and writes and Telegram delivery-claim operations SHALL propagate their owning Effect interruption signal to the actual database transport. An interrupted operation SHALL NOT advance to a subsequent repository step. Cancellation does not undo a database write that has already committed.
+
+#### Scenario: A storage request is pending when the turn is interrupted
+- **WHEN** interruption arrives during an external conversation read, message RPC, metadata write, deletion, envelope lookup or completion marker
+- **THEN** the pending database request receives cancellation and the interrupted program starts no subsequent request
+
 ### Requirement: Completion and deletion remove decryptability
 Successful completion SHALL clear the envelope key. `/delete` SHALL remove the conversation and identity link and clear keys from prior delivery claims; retained nonidentifying delivery state remains subject to bounded retention.
 
@@ -47,11 +70,14 @@ Successful completion SHALL clear the envelope key. `/delete` SHALL remove the c
 - `src/features/telegram/envelope.server.test.ts`
 - `src/features/telegram/delivery.server.test.ts`
 - `src/features/telegram/identity.server.test.ts`
+- `src/features/telegram/client.test.ts`
+- `src/features/telegram/turn.test.ts`
+- `src/features/telegram/storage-cancellation.test.ts`
 - `src/telegram-worker/index.test.ts`
 
 ### Verification command
 ```sh
-bunx vitest run src/features/telegram/webhook.server.test.ts src/features/telegram/envelope.server.test.ts src/features/telegram/delivery.server.test.ts src/features/telegram/identity.server.test.ts src/telegram-worker/index.test.ts
+bunx vitest run src/features/telegram/client.test.ts src/features/telegram/turn.test.ts src/features/telegram/storage-cancellation.test.ts src/features/telegram/webhook.server.test.ts src/features/telegram/envelope.server.test.ts src/features/telegram/delivery.server.test.ts src/features/telegram/identity.server.test.ts src/telegram-worker/index.test.ts
 ```
 
 ### Advisory conformance review

@@ -20,6 +20,7 @@ import { logger } from '#shared/lib/logger.ts'
 import { getSupabase } from '#shared/lib/db/client.server.ts'
 import { extractEventFacets } from '#shared/lib/ai/extract-facets.ts'
 import { isEmptyFacets, type EventFacets } from '#shared/lib/search-facets.ts'
+import { enrichmentStageRecord, type EnrichmentProvenance } from '#features/import/core/enrichment-provenance.ts'
 
 const DELAY_MS = 200
 
@@ -48,6 +49,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 interface FacetRow {
+  enrichment_provenance?: EnrichmentProvenance | null
   id: string
   name: string
   link: string | null
@@ -65,7 +67,7 @@ async function fetchEventsNeedingFacets(
   let query = supabase
     .from('events')
     .select(
-      'id, name, link, source, categories, description_es, description_en, facets'
+      'id, name, link, source, categories, description_es, description_en, facets, enrichment_provenance'
     )
     .eq('status', 'scheduled')
     // Only rows still carrying the empty default `{}` facets. The column is
@@ -134,7 +136,10 @@ async function main() {
     if (!isEmptyFacets(facets)) {
       const { error } = await supabase
         .from('events')
-        .update({ facets })
+        .update({ facets, enrichment_provenance: {
+          ...event.enrichment_provenance,
+          facets: enrichmentStageRecord('stored_description', {}, false),
+        } })
         .eq('id', event.id)
       if (error) {
         failed++

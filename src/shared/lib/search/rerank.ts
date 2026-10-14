@@ -7,7 +7,8 @@
  * The reranker only REORDERS: it never drops candidates, never filters, and
  * has no score threshold — hard `must` constraints stay in SQL exactly as
  * today. Any failure (missing key, timeout, HTTP error, malformed response)
- * silently falls back to the pre-rerank candidate order.
+ * silently falls back to the pre-rerank candidate order. Caller cancellation
+ * aborts the request and rejects instead of starting fallback work.
  *
  * Server-side only: imported only from server code paths and offline evals.
  */
@@ -197,12 +198,15 @@ class RerankError extends Error {
 /**
  * Reorder candidates by the hosted Voyage reranker's rank (rerankerRank
  * ascending), using the incoming retrieval order (baseRank) only as a
- * deterministic tie-break. Never throws, never drops or duplicates.
+ * deterministic tie-break. Only caller cancellation throws; ranking failures
+ * retain the original candidates without dropping or duplicating them.
  */
 export async function rerankEvents<T extends { id: string }>(
   candidates: T[],
-  queryInput: RerankQueryInput
+  queryInput: RerankQueryInput,
+  abortSignal?: AbortSignal
 ): Promise<{ ordered: T[]; meta: RerankMeta }> {
+  abortSignal?.throwIfAborted()
   const apiKey = process.env.VOYAGE_API_KEY
   if (!apiKey) {
     return { ordered: [...candidates], meta: { status: 'disabled' } }
@@ -216,6 +220,9 @@ export async function rerankEvents<T extends { id: string }>(
   const startedAt = performance.now()
   const model = process.env.VOYAGE_RERANK_MODEL ?? DEFAULT_MODEL
   const documents = candidates.map((c) => buildRerankDocument(c as unknown as RerankDocumentEvent))
+  const requestSignal = abortSignal
+    ? AbortSignal.any([abortSignal, AbortSignal.timeout(RERANK_TIMEOUT_MS)])
+    : AbortSignal.timeout(RERANK_TIMEOUT_MS)
 
   const program = Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
@@ -226,7 +233,7 @@ export async function rerankEvents<T extends { id: string }>(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query: builtQuery, documents, model }),
-        signal: AbortSignal.timeout(RERANK_TIMEOUT_MS),
+        signal: requestSignal,
       }),
       catch: (error) => new RerankError(error instanceof Error ? error.message : String(error)),
     })
@@ -289,7 +296,7 @@ export async function rerankEvents<T extends { id: string }>(
     }
   })
 
-  return Effect.runPromise(Effect.match(program, {
+  const result = await Effect.runPromise(Effect.match(program, {
     onFailure: (error) => ({
       ordered: [...candidates],
       meta: {
@@ -300,4 +307,6 @@ export async function rerankEvents<T extends { id: string }>(
     }),
     onSuccess: (value) => value,
   }))
+  abortSignal?.throwIfAborted()
+  return result
 }

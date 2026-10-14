@@ -1,10 +1,14 @@
 import { openPasslineBrowser } from '#shared/lib/browser/managed.ts'
-import { reuseAcquisition, withTemporaryBrowser } from '../../acquisition/run.ts'
+import { reuseCatalogAcquisition, withTemporaryBrowser, type CatalogAcquisition } from '../../acquisition/run.ts'
 import { collectPasslinePages, PASSLINE_API_URL, type PasslineEvent } from './api.ts'
 
 /** Published country pagination, validated to an empty terminal page. */
 export async function fetchPasslineEventsWithBrowserbase(): Promise<PasslineEvent[]> {
-  return reuseAcquisition('passline:catalog:v1:argentina', () =>
+  return (await fetchPasslineCatalogWithBrowserbase()).events
+}
+
+export async function fetchPasslineCatalogWithBrowserbase(): Promise<CatalogAcquisition<PasslineEvent>> {
+  return reuseCatalogAcquisition('passline:catalog:v1:argentina', () =>
     withTemporaryBrowser(() => openPasslineBrowser(false), async browser => {
       const context = browser.contexts()[0]
       await context.addCookies([

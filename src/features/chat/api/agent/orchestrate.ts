@@ -1,7 +1,8 @@
 /** ToolLoopAgent concierge orchestration. */
 import { ToolLoopAgent, isStepCount, tool } from 'ai'
 import { Data, Effect } from 'effect'
-import type { ModelMessage, ToolSet } from 'ai'
+import { createHash } from 'node:crypto'
+import type { ModelMessage, ToolSet, ToolExecutionOptions } from 'ai'
 import { z } from 'zod'
 import type {
   CanonicalChatEventPayload,
@@ -27,14 +28,21 @@ import { handleFor, type PriorDisplayGroup, type VenueFact } from './follow-up.t
 import { buildSanitizedTrace, type RawStep } from './trace.ts'
 import { generateSuggestions } from '../suggestions.ts'
 import { attachSearchContext, type LastSearchContext } from './search-context.ts'
-import { MAX_AGENT_HISTORY_MESSAGES, MAX_AGENT_HISTORY_TEXT } from './history.ts'
+import { boundAgentHistory } from './history.ts'
 import { logger } from '#shared/lib/logger.ts'
+import { traceConcierge, type ConciergeTraceContext } from '#shared/lib/ai/langfuse.server.ts'
+import type { TelemetryOptions } from 'ai'
+import type { SearchRetryBoundary } from '../tools/search-retry.ts'
+import { boundedRead, ReadTimeoutError } from './bounded-read.ts'
 import { extractRecommendationFraming, extractRecommendationReasons, extractRecommendationResponse, isValidRecommendationReason, removeFramingMarkers, warmRecommendationFallback } from '#shared/lib/recommendation-framing.ts'
 
 const MAX_STEPS = 5
+const MODEL_MAX_RETRIES = 1
+// Bump when instruction templates or tool descriptions change; release identifies the code.
+export const CONCIERGE_PROMPT_VERSION = 'concierge-prompt-v1'
 const MAX_TOOL_CALLS = 8
-const MAX_MESSAGES = MAX_AGENT_HISTORY_MESSAGES
-const MAX_TEXT = MAX_AGENT_HISTORY_TEXT
+const MAX_CONTEXT_INPUT_TOKENS = 16_000
+const MAX_OUTPUT_TOKENS = 8_192
 const AGENT_TIMEOUT = { totalMs: 60_000, stepMs: 20_000 } as const
 const TOOL_TIMEOUT_MS = 7_000
 const POST_SEARCH_TOOLS = ['get_event_details', 'get_directions', 'get_venue_details', 'list_saved_events', 'ask_clarification', 'recommendations_mismatch'] as const
@@ -79,6 +87,7 @@ const CLARIFICATION_LABELS: Record<ClarificationKey, { en: string; es: string }>
 
 export type RawToolOutput = {
   success: boolean
+  searchRetryBoundary?: SearchRetryBoundary
   events?: ChatEventPayload[]
   directions?: DirectionsData | null
   venue?: VenueDetailsData | null
@@ -99,7 +108,7 @@ type LedgerRecord = { toolCallId: string; toolName: string; input: unknown; raw:
 type AgentStep = { finishReason?: string; toolCalls?: Array<Record<string, unknown>>; toolResults?: Array<Record<string, unknown>> }
 
 export interface AgentRun { text: string; steps: AgentStep[]; responseId: string | null }
-export interface AgentInput { messages: ModelMessage[]; instructions: string; tools: ToolSet; requestId?: string; abortSignal?: AbortSignal; onText?: (text: string) => void }
+export interface AgentInput extends ConciergeTraceContext { messages: ModelMessage[]; instructions: string; tools: ToolSet; abortSignal?: AbortSignal; onText?: (text: string) => void }
 export type AgentRunner = (input: AgentInput) => Promise<AgentRun>
 
 export interface ReadExecutors {
@@ -110,7 +119,7 @@ export interface ReadExecutors {
   listSaved?: (input: ListSavedEventsInput, context: ToolExecutionContext) => Promise<RawToolOutput>
 }
 
-export interface OrchestrateInput {
+export interface OrchestrateInput extends ConciergeTraceContext {
   requestId: string
   userContext: UserToolContext
   locale: 'en' | 'es'
@@ -174,7 +183,7 @@ function priorState(groups: PriorDisplayGroup[], venues?: Map<string, VenueFact>
     const ref = handleFor(group.requestId, event.displayIndex)
     const venue = venues?.get(event.eventId)
     refs.set(ref, { eventId: event.eventId })
-    if (venue?.venueId) refs.set(`${ref}:venue`, { venueId: venue.venueId })
+    if (venue?.venueId) refs.set(`${ref}:venue`, { eventId: event.eventId, venueId: venue.venueId })
     if (event.saved !== null) saved.set(event.eventId, event.saved)
     hints.push({ handle: ref, responseOrder, displayOrder: event.displayIndex, name: event.name, venueName: venue?.venueName ?? null, saved: event.saved })
   }
@@ -194,9 +203,9 @@ function instructions(input: OrchestrateInput, hints: PriorEventHint[]): string 
   const responseLanguage = input.locale === 'es'
     ? 'Spanish only, using a natural Rioplatense register.'
     : 'English only. Do not switch to Spanish because the events are in Buenos Aires.'
-  return `${STATIC_INSTRUCTIONS}\n\nThe latest request is the final user message. Locale: ${input.locale}; Buenos Aires date: ${input.currentDateInBA ?? 'unknown'}. Prior server-rehydrated event DATA (use exact eventRef handles, newest response has highest order):\n${prior}\nPinned event is available as eventRef "pinned_event" only when present: ${input.pinFacts ? JSON.stringify(input.pinFacts) : 'none'}. Previous executed search DATA: ${safeLastSearch ? JSON.stringify(safeLastSearch) : 'none'}. Final response language: ${responseLanguage}`
+  return `${STATIC_INSTRUCTIONS}\n\nEmpty search results do not authorize relaxing the user's constraints. A retry in this turn must preserve or narrow the original dates/time, neighborhood, venue, category, free status, budget, age, and genre exclusions. You may vary subjective query wording, but never drop a hard filter to find alternatives. Report no matching results and ask the user before broadening.\n\nThe latest request is the final user message. Locale: ${input.locale}; Buenos Aires date: ${input.currentDateInBA ?? 'unknown'}. Prior server-rehydrated event DATA (use exact eventRef handles, newest response has highest order):\n${prior}\nPinned event is available as eventRef "pinned_event" only when present: ${input.pinFacts ? JSON.stringify(input.pinFacts) : 'none'}. Previous executed search DATA: ${safeLastSearch ? JSON.stringify(safeLastSearch) : 'none'}. Final response language: ${responseLanguage}`
 }
-function localDateTime(value: string | null): string | null {
+function localDateTime(value: string | null, dateOnly = false): string | null {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -205,25 +214,29 @@ function localDateTime(value: string | null): string | null {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(date).map(({ type, value: part }) => [type, part]))
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} (${BA_TIMEZONE})`
+  const localDate = `${parts.year}-${parts.month}-${parts.day}`
+  return dateOnly ? localDate : `${localDate} ${parts.hour}:${parts.minute} (${BA_TIMEZONE})`
 }
 
 function publicEvent(event: ChatEventPayload, ref: string, venueRef?: string): Record<string, unknown> {
+  // Keep complete original text; presentation-only records retain their best available fallback.
+  const hasOriginal = Boolean(event.description_es || event.description_en)
+  const hasDisplay = Boolean(event.description_display_es || event.description_display_en)
+  const fallback = hasOriginal ? {} : hasDisplay
+    ? { description_display_es: event.description_display_es, description_display_en: event.description_display_en }
+    : { description_summary_es: event.description_summary_es, description_summary_en: event.description_summary_en }
   return {
     name: event.name,
     description_es: event.description_es,
     description_en: event.description_en,
-    description_display_es: event.description_display_es,
-    description_display_en: event.description_display_en,
-    description_summary_es: event.description_summary_es,
-    description_summary_en: event.description_summary_en,
-    starts_at: localDateTime(event.starts_at),
-    ends_at: localDateTime(event.ends_at),
+    ...fallback,
+    starts_at: localDateTime(event.starts_at, event.time_tba),
+    ends_at: event.time_tba ? null : localDateTime(event.ends_at),
     is_all_day: event.is_all_day,
     time_tba: event.time_tba,
     categories: event.categories,
     price: event.price,
-    is_free: event.is_free,
+    is_free: event.is_free || event.price === 0,
     min_age: event.min_age,
     image_url: event.image_url,
     image_width: event.image_width,
@@ -236,7 +249,7 @@ function publicEvent(event: ChatEventPayload, ref: string, venueRef?: string): R
     description_unavailable: event.description_unavailable,
     venue_name: event.venue_name,
     venue_neighborhood: event.venue_neighborhood,
-    venue_address: event.venue_address,
+    venue_address: event.location_hidden || event.location_tba ? null : event.venue_address,
     saved: event.saved,
     eventRef: ref,
     ...(venueRef ? { venueRef } : {}),
@@ -245,9 +258,9 @@ function publicEvent(event: ChatEventPayload, ref: string, venueRef?: string): R
 function publicOutput(raw: RawToolOutput, callId: string, registerRef: (ref: string, value: RefRecord) => void): PublicToolOutput {
   const events = raw.events?.map((event, index) => {
     const eventRef = `${callId}:event_${index}`
-    const venueRef = event.venue_id ? `${callId}:venue_${index}` : undefined
+    const venueRef = event.venue_id && !event.location_hidden && !event.location_tba ? `${callId}:venue_${index}` : undefined
     registerRef(eventRef, { eventId: event.id, ...(event.venue_id ? { venueId: event.venue_id } : {}) })
-    if (venueRef && event.venue_id) registerRef(venueRef, { venueId: event.venue_id })
+    if (venueRef && event.venue_id) registerRef(venueRef, { eventId: event.id, venueId: event.venue_id })
     return publicEvent(event, eventRef, venueRef)
   })
   const directions = raw.directions ? (() => {
@@ -267,8 +280,12 @@ function publicOutput(raw: RawToolOutput, callId: string, registerRef: (ref: str
 function failed(message: string): RawToolOutput { return { success: false, formatted: JSON.stringify({ success: false, error: message }), error: message } }
 
 function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, ledger: Map<string, LedgerRecord>, calls: { count: number; successfulSearch: boolean }, executors: ReadExecutors, onSearchStart?: () => void, onTrustedSearchProgress?: () => void, requestId?: string, onRead?: () => void, abortSignal?: AbortSignal) {
-  const execute = async (toolCallId: string, toolName: string, input: unknown, fn: () => Promise<RawToolOutput>): Promise<PublicToolOutput> => {
+  let retryBoundary: SearchRetryBoundary | undefined
+  let searchInFlight = false
+  const execute = async (options: Pick<ToolExecutionOptions<unknown>, 'toolCallId' | 'abortSignal'>, toolName: string, input: unknown, fn: (context: ToolExecutionContext) => Promise<RawToolOutput>): Promise<PublicToolOutput> => {
+    const { toolCallId } = options
     abortSignal?.throwIfAborted()
+    options.abortSignal?.throwIfAborted()
     if (calls.count >= MAX_TOOL_CALLS) {
       const raw = failed('tool_call_limit')
       ledger.set(toolCallId, { toolCallId, toolName, input, raw })
@@ -279,16 +296,15 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
     ledger.set(toolCallId, record)
     let raw: RawToolOutput
     const toolStartedAt = performance.now()
-    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const timeout = new Promise<RawToolOutput>((resolve) => {
-        timer = setTimeout(() => resolve(failed('tool_timeout')), TOOL_TIMEOUT_MS)
-      })
-      raw = await Promise.race([fn(), timeout])
-    } catch { raw = failed('tool_execution_error') }
-    finally { if (timer) clearTimeout(timer) }
-    record.raw = raw
+      const parentSignal = abortSignal && options.abortSignal
+        ? AbortSignal.any([abortSignal, options.abortSignal])
+        : abortSignal ?? options.abortSignal
+      raw = await boundedRead((signal) => fn({ ...ctx, abortSignal: signal }), parentSignal, TOOL_TIMEOUT_MS)
+    } catch (cause) { raw = failed(cause instanceof ReadTimeoutError ? 'tool_timeout' : 'tool_execution_error') }
     abortSignal?.throwIfAborted()
+    options.abortSignal?.throwIfAborted()
+    record.raw = raw
     if (raw.success) onRead?.()
     logger.info('[chat] agent tool step', {
       ...(requestId ? { requestId } : {}),
@@ -305,45 +321,76 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
     return value ?? null
   }
   return {
-    search_events: tool({ description: `${searchEventsTool.description} IMPORTANT: map the user's request into this schema directly. Put age only in minAge and categories only in categories; never repeat either in query text. Decide limit before calling: surprise/pick/choose = 1; open discovery/any/options = 3; second/third/five = at least that many, capped at 5. Use exactly one search per user request; never call this tool again to resolve a returned event. The returned list is authoritative even if it contains multiple results. For a follow-up asking which prior option you recommend most, inspect a small number of plausible prior options with get_event_details purpose "details" as needed, then make the chosen event the final get_event_details call with purpose "recommendation" and give one decisive pick with no alternative. After results return, immediately use the matching eventRef/venueRef: for "save the second" call get_event_details with the second eventRef and purpose="save"; for "directions to the second" call get_directions with the second eventRef. Do not write a final answer or call another search before that follow-up.`, inputSchema: agentSearchSchema, execute: (input, options) => execute(options.toolCallId, 'search_events', input, async () => {
+    search_events: tool({ description: 'Search Buenos Aires events using the structured input fields. Read coverage metadata for the searched window; absence within that window does not prove absence beyond it. Use returned eventRef and venueRef handles for follow-up reads in the displayed order.', inputSchema: agentSearchSchema, execute: (input, options) => execute(options, 'search_events', input, async (readContext) => {
       if (calls.successfulSearch) return failed('search_already_succeeded')
-      onSearchStart?.()
-      const raw = await (executors.search ?? (async (value, context) => searchEventsTool.execute(value, context) as Promise<RawToolOutput>))(input, ctx)
-      if (raw.success && (raw.events?.length ?? 0) > 0) {
-        calls.successfulSearch = true
-        onTrustedSearchProgress?.()
-      }
-      return raw
+      if (searchInFlight) return failed('search_in_progress')
+      searchInFlight = true
+      try {
+        onSearchStart?.()
+        const raw = await (executors.search ?? (async (value, context) => searchEventsTool.execute(value, context) as Promise<RawToolOutput>))(input, { ...readContext, searchRetryBoundary: retryBoundary })
+        readContext.abortSignal?.throwIfAborted()
+        if (!retryBoundary && raw.searchRetryBoundary) retryBoundary = structuredClone(raw.searchRetryBoundary)
+        if (raw.success && (raw.events?.length ?? 0) > 0) {
+          calls.successfulSearch = true
+          onTrustedSearchProgress?.()
+        }
+        return raw
+      } finally { searchInFlight = false }
     }) }),
-    get_event_details: tool({ description: `${getEventDetailsTool.description} For "save the second" or similar requests, immediately use the matching eventRef from the latest search and set purpose to "save"; never search again or finish without this read.`, inputSchema: eventRefSchema, execute: (input, options) => execute(options.toolCallId, 'get_event_details', input, async () => {
+    get_event_details: tool({ description: getEventDetailsTool.description, inputSchema: eventRefSchema, execute: (input, options) => execute(options, 'get_event_details', input, async (readContext) => {
       const eventId = resolve(input.eventRef, 'eventId')
-      return eventId ? (executors.eventDetails ?? (async (value, context) => getEventDetailsTool.execute(value, context) as Promise<RawToolOutput>))({ eventId }, ctx) : failed('unknown_event_ref')
+      return eventId ? (executors.eventDetails ?? (async (value, context) => getEventDetailsTool.execute(value, context) as Promise<RawToolOutput>))({ eventId }, readContext) : failed('unknown_event_ref')
     }) }),
-    get_directions: tool({ description: 'Create trusted directions for an eventRef or venueRef returned by server context or a prior tool result. For "directions for the second" immediately use the second eventRef from the latest search; never search again or finish without this read. Try the eventRef first and let the agent decide whether a separate venue read is needed.', inputSchema: directionRefSchema, execute: (input, options) => execute(options.toolCallId, 'get_directions', input, async () => {
-      const eventId = input.eventRef ? resolve(input.eventRef, 'eventId') : null
+    get_directions: tool({ description: 'Create trusted directions for an eventRef or venueRef returned by server context or a successful read.', inputSchema: directionRefSchema, execute: (input, options) => execute(options, 'get_directions', input, async (readContext) => {
+      const eventId = input.eventRef ? resolve(input.eventRef, 'eventId') : input.venueRef ? resolve(input.venueRef, 'eventId') : null
       const venueId = input.venueRef ? resolve(input.venueRef, 'venueId') : null
       if (input.eventRef && !eventId || input.venueRef && !venueId) return failed('unknown_event_ref')
       const runDirections = executors.directions ?? (async (value: GetDirectionsInput, context: ToolExecutionContext) => getDirectionsTool.execute(value, context) as Promise<RawToolOutput>)
-      return runDirections(eventId ? { eventId } : { venueId: venueId ?? undefined }, ctx)
+      return runDirections(eventId ? { eventId } : { venueId: venueId ?? undefined }, readContext)
     }) }),
-    get_venue_details: tool({ description: 'Get trusted venue details using a venueRef returned by server context or a prior tool result, or a venue name supplied by the user.', inputSchema: venueRefSchema, execute: (input, options) => execute(options.toolCallId, 'get_venue_details', input, async () => {
+    get_venue_details: tool({ description: 'Get trusted venue details using a venueRef returned by server context or a prior tool result, or a venue name supplied by the user.', inputSchema: venueRefSchema, execute: (input, options) => execute(options, 'get_venue_details', input, async (readContext) => {
       const venueId = input.venueRef ? resolve(input.venueRef, 'venueId') : null
       if (input.venueRef && !venueId) return failed('unknown_venue_ref')
-      return (executors.venueDetails ?? (async (value, context) => getVenueDetailsTool.execute(value, context) as Promise<RawToolOutput>))(venueId ? { venueId } : { venueName: input.venueName }, ctx)
+      const ownerId = input.venueRef ? resolve(input.venueRef, 'eventId') : null
+      if (ownerId) {
+        const owner = await (executors.eventDetails ?? (async (value, context) => getEventDetailsTool.execute(value, context) as Promise<RawToolOutput>))({ eventId: ownerId }, readContext)
+        const event = owner.events?.find((event) => event.id === ownerId)
+        if (!owner.success || !event || event.location_hidden || event.location_tba) return failed('location_unavailable')
+      }
+      return (executors.venueDetails ?? (async (value, context) => getVenueDetailsTool.execute(value, context) as Promise<RawToolOutput>))(venueId ? { venueId } : { venueName: input.venueName }, readContext)
     }) }),
-    list_saved_events: tool({ description: listSavedEventsTool.description, inputSchema: z.object({ filter: z.enum(['upcoming', 'past', 'all']).optional() }).strict(), execute: (input, options) => execute(options.toolCallId, 'list_saved_events', input, async () => (executors.listSaved ?? (async (value, context) => listSavedEventsTool.execute(value, context) as Promise<RawToolOutput>))(input, ctx)) }),
-    ask_clarification: tool({ description: 'Ask one concise clarification when event or venue reference is genuinely ambiguous. Do not use for a clear request.', inputSchema: clarificationSchema, execute: (input, options) => execute(options.toolCallId, 'ask_clarification', input, async () => ({ success: true, formatted: JSON.stringify(input), metadata: { clarification: input } })) }),
-    recommendations_mismatch: tool({ description: 'Signal that no inspected prior option has explicit source-description evidence for the user’s key criterion. Use this instead of forcing a pick. Keep reason concise and source-grounded; do not use title, category, venue, or facets as evidence. This always renders no event card.', inputSchema: recommendationsMismatchSchema, execute: (input, options) => execute(options.toolCallId, 'recommendations_mismatch', input, async () => !isValidRecommendationReason(input.reason) ? failed('invalid_recommendation_reason') : ledger.values().some((read) => read.toolName === 'get_event_details' && read.raw.success && (read.input as { purpose?: unknown }).purpose === 'details') ? ({ success: true, formatted: JSON.stringify(input), metadata: { recommendationsMismatch: input } }) : failed('recommendations_mismatch_requires_inspection')) }),
+    list_saved_events: tool({ description: listSavedEventsTool.description, inputSchema: z.object({ filter: z.enum(['upcoming', 'past', 'all']).optional() }).strict(), execute: (input, options) => execute(options, 'list_saved_events', input, async (readContext) => (executors.listSaved ?? (async (value, context) => listSavedEventsTool.execute(value, context) as Promise<RawToolOutput>))(input, readContext)) }),
+    ask_clarification: tool({ description: 'Ask one concise clarification when event or venue reference is genuinely ambiguous. Do not use for a clear request.', inputSchema: clarificationSchema, execute: (input, options) => execute(options, 'ask_clarification', input, async (readContext) => ({ success: true, formatted: JSON.stringify(input), metadata: { clarification: input } })) }),
+    recommendations_mismatch: tool({ description: 'Signal that no inspected prior option has explicit source-description evidence for the user’s key criterion. Use this instead of forcing a pick. Keep reason concise and source-grounded; do not use title, category, venue, or facets as evidence. This always renders no event card.', inputSchema: recommendationsMismatchSchema, execute: (input, options) => execute(options, 'recommendations_mismatch', input, async (readContext) => !isValidRecommendationReason(input.reason) ? failed('invalid_recommendation_reason') : ledger.values().some((read) => read.toolName === 'get_event_details' && read.raw.success && (read.input as { purpose?: unknown }).purpose === 'details') ? ({ success: true, formatted: JSON.stringify(input), metadata: { recommendationsMismatch: input } }) : failed('recommendations_mismatch_requires_inspection')) }),
   }
 }
 
-async function runToolLoop(input: AgentInput): Promise<AgentRun> {
+/** Production model runner; eval adapters may observe its inputs and results. */
+export async function runToolLoop(input: AgentInput): Promise<AgentRun> {
   const { CHAT_THINKING, textModelForRequest } = await import('#shared/lib/ai/providers.ts')
   const model = textModelForRequest(input.requestId ?? 'unknown')
+  // Identity contains only server-owned settings, never messages, credentials or context.
+  const configurationId = createHash('sha256').update(JSON.stringify({
+    version: 'concierge-config-v1', contract: CHAT_CONTRACT_VERSION,
+    provider: model.provider, model: model.modelId,
+    maxSteps: MAX_STEPS, maxToolCalls: MAX_TOOL_CALLS, maxInputTokens: MAX_CONTEXT_INPUT_TOKENS, maxOutputTokens: MAX_OUTPUT_TOKENS,
+    timeout: AGENT_TIMEOUT, toolTimeoutMs: TOOL_TIMEOUT_MS, maxRetries: MODEL_MAX_RETRIES,
+    thinking: CHAT_THINKING, postSearchTools: POST_SEARCH_TOOLS,
+    tools: Object.keys(input.tools).sort(),
+  })).digest('hex')
+  return traceConcierge({ ...input, promptVersion: CONCIERGE_PROMPT_VERSION, configurationId },
+    (telemetry) => generateToolLoop(input, model, CHAT_THINKING, telemetry))
+}
+
+async function generateToolLoop(input: AgentInput,
+  model: ReturnType<typeof import('#shared/lib/ai/providers.ts').textModelForRequest>,
+  thinking: typeof import('#shared/lib/ai/providers.ts').CHAT_THINKING,
+  telemetry?: TelemetryOptions): Promise<AgentRun> {
   const promptSize = input.instructions.length + input.messages.reduce((total, message) => total + JSON.stringify(message.content).length, 0)
-  logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: 1 })
+  logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: MODEL_MAX_RETRIES, contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS, maxOutputTokens: MAX_OUTPUT_TOKENS })
   const agent = new ToolLoopAgent({
     model,
+    telemetry,
     onStepEnd: (step) => logger.info('[chat] agent model step', {
       requestId: input.requestId,
       phase: 'model',
@@ -355,6 +402,8 @@ async function runToolLoop(input: AgentInput): Promise<AgentRun> {
       toolCallCount: step.toolCalls.length,
       toolResultCount: step.toolResults.length,
       inputTokens: step.usage.inputTokens,
+      contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS,
+      contextInputBudgetExceeded: (step.usage.inputTokens ?? 0) > MAX_CONTEXT_INPUT_TOKENS,
       noCacheTokens: step.usage.inputTokenDetails.noCacheTokens,
       cacheReadTokens: step.usage.inputTokenDetails.cacheReadTokens,
       cacheWriteTokens: step.usage.inputTokenDetails.cacheWriteTokens,
@@ -367,15 +416,21 @@ async function runToolLoop(input: AgentInput): Promise<AgentRun> {
     tools: input.tools,
     stopWhen: isStepCount(MAX_STEPS),
     prepareStep: ({ steps }) => {
+      // Usage includes instructions, schemas, history and accumulated tool results.
+      // A completed request can overshoot; do not make another model request afterward.
+      if (steps.some(step => (step.usage.inputTokens ?? 0) > MAX_CONTEXT_INPUT_TOKENS)) {
+        throw new Error('input_context_budget_exceeded')
+      }
       const searched = steps.flatMap((step) => step.toolResults).some((result) => {
         const output = result.output as { success?: boolean; events?: unknown[] }
         return result.toolName === 'search_events' && output.success === true && (output.events?.length ?? 0) > 0
       })
       return searched ? { activeTools: POST_SEARCH_TOOLS } : undefined
     },
-    maxRetries: 1,
+    maxRetries: MODEL_MAX_RETRIES,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
     timeout: AGENT_TIMEOUT,
-    ...CHAT_THINKING,
+    ...thinking,
   })
   if (input.onText) {
     const result = await agent.stream({ messages: input.messages, abortSignal: input.abortSignal })
@@ -408,7 +463,9 @@ function orderedReads(run: AgentRun, ledger: Map<string, LedgerRecord>): LedgerR
 }
 
 function stamp(events: ChatEventPayload[], saved: Map<string, boolean>, forceSaved = false): CanonicalChatEventPayload[] {
-  return events.map((event) => ({ ...event, saved: forceSaved ? true : (saved.get(event.id) ?? event.saved ?? null) }))
+  return events.map((event) => ({ ...event,
+    venue_address: event.location_hidden || event.location_tba ? null : event.venue_address,
+    saved: forceSaved ? true : (saved.get(event.id) ?? event.saved ?? null) }))
 }
 function assemble(input: OrchestrateInput, run: AgentRun, reads: LedgerRecord[], saved: Map<string, boolean>): CanonicalChatResponse {
   const successful = reads.filter((read) => read.raw.success)
@@ -500,13 +557,14 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
   const { hints, refs, saved } = priorState(input.priorDisplayedEvents, input.venueByEventId)
   if (pin.requested && pin.status === 'resolved' && pin.eventId) {
     refs.set('pinned_event', { eventId: pin.eventId })
-    if (pin.venueId) refs.set('pinned_venue', { venueId: pin.venueId })
+    if (pin.venueId) refs.set('pinned_venue', { eventId: pin.eventId, venueId: pin.venueId })
   }
   const ledger = new Map<string, LedgerRecord>()
   let progressiveText = ''
   let lastProgress = ''
+  let executionSignal = input.abortSignal
   const publishProgress = () => {
-    if (!input.onProgress || input.abortSignal?.aborted) return
+    if (!input.onProgress || executionSignal?.aborted) return
     const response = assemble(input, { text: progressiveText, steps: [], responseId: null }, [...ledger.values()], saved)
     // Keep incomplete marker lines private. Recommendation framing remains validated as a whole.
     const prefix = response.text.trim().toUpperCase()
@@ -519,16 +577,20 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
     lastProgress = serialized
     input.onProgress(response)
   }
-  const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId, publishProgress, input.abortSignal)
   const messages: ModelMessage[] = [
-    ...(input.recentMessages ?? []).slice(-MAX_MESSAGES).map((message) => ({ role: message.role, content: [{ type: 'text', text: `UNTRUSTED DATA: ${message.content.slice(0, MAX_TEXT)}` }] } as ModelMessage)),
+    ...boundAgentHistory(input.recentMessages ?? []).map((message) => ({ role: message.role, content: [{ type: 'text', text: `UNTRUSTED DATA: ${message.content}` }] } as ModelMessage)),
     { role: 'user', content: input.originalQuery },
   ]
   const agentResult = yield* Effect.match(
     Effect.tryPromise({
-      try: () => (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, abortSignal: input.abortSignal,
+      try: (fiberSignal) => {
+        executionSignal = input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal
+        executionSignal.throwIfAborted()
+        const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId, publishProgress, executionSignal)
+        return (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, sessionId: input.sessionId, channel: input.channel, abortSignal: executionSignal,
         ...(input.onProgress ? { onText: (text: string) => { progressiveText = text; publishProgress() } } : {}),
-      }),
+        })
+      },
       catch: (cause) => new PlannerExecutionError({ message: 'Tool loop failed', cause }),
     }),
     {

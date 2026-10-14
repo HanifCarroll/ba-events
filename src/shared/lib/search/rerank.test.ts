@@ -112,6 +112,49 @@ describe('buildRerankDocument', () => {
 // ============================================================================
 
 describe('rerankEvents', () => {
+  it('aborts a pending request on caller cancellation instead of returning ranking fallback', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', 'test-key')
+    const controller = new AbortController()
+    let received: AbortSignal | undefined
+    let started: () => void = () => {}
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      received = init?.signal ?? undefined
+      started()
+      return new Promise<Response>((_resolve, reject) => {
+        received!.addEventListener('abort', () => reject(received!.reason), { once: true })
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const running = rerankEvents([mkEvent('a'), mkEvent('b')], { semanticQuery: 'jazz', prefer: {}, avoid: [] }, controller.signal)
+    const outcome = running.then(() => ({ rejected: false }), () => ({ rejected: true }))
+    await ready
+    controller.abort()
+    expect((await outcome).rejected).toBe(true)
+    expect(received?.aborted).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps caller cancellation active while consuming the response body', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', 'test-key')
+    const controller = new AbortController()
+    let started: () => void = () => {}
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    let bodyAborted = false
+    vi.stubGlobal('fetch', async (_input: unknown, init?: RequestInit) => new Response(new ReadableStream({
+      start(body) {
+        init!.signal!.addEventListener('abort', () => { bodyAborted = true; body.error(init!.signal!.reason) }, { once: true })
+        started()
+      },
+    }), { status: 200 }))
+    const running = rerankEvents([mkEvent('a'), mkEvent('b')], { semanticQuery: 'jazz', prefer: {}, avoid: [] }, controller.signal)
+    const outcome = running.then(() => ({ rejected: false }), () => ({ rejected: true }))
+    await ready
+    controller.abort()
+    expect((await outcome).rejected).toBe(true)
+    expect(bodyAborted).toBe(true)
+  })
+
   it('orders by pure Voyage rank, not the legacy weighted fusion', async () => {
     vi.stubEnv('VOYAGE_API_KEY', 'test-key')
     const fetchMock = vi.fn().mockResolvedValue(

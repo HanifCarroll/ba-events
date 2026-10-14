@@ -33,6 +33,7 @@ import { enrichSingleEvent, countEventsNeedingEnrichment, getEventsNeedingEnrich
 import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
 import { HttpError } from '#shared/lib/errors.ts'
+import { ENRICHMENT_VERSION, type EnrichmentStageRecord } from './enrichment-provenance.ts'
 
 const embedEventWithDocumentMock = embedEventWithDocument as unknown as Mock
 const getEnrichmentAdapterMock = getEnrichmentAdapter as unknown as Mock
@@ -94,6 +95,10 @@ describe('enrichSingleEvent facets-only path', () => {
   })
 
   it('re-embeds when facets-only backfill extracts non-empty facets', async () => {
+    const full = {
+      version: 'previous-revision', textModel: 'previous-model', processedAt: '2026-10-01T12:00:00.000Z',
+      sourceMode: 'detail' as const, sourceObservedAt: '2026-10-01T10:00:00.000Z', sourceValidatedAt: null,
+    }
     const extractEventFacets = makeExtractFacetsMock()
     extractEventFacets.mockResolvedValue({ genres: ['jazz'] })
     const client: ReturnType<typeof makeClient> = makeClient()
@@ -109,6 +114,7 @@ describe('enrichSingleEvent facets-only path', () => {
         description_es: 'Jazz en vivo íntimo.',
         description_en: 'Intimate live jazz.',
         enrichment_status: 'completed',
+        enrichment_provenance: { full },
       },
       { extractFacets: extractEventFacets as never }
     )
@@ -129,6 +135,11 @@ describe('enrichSingleEvent facets-only path', () => {
     expect(written).toHaveProperty('embedding')
     expect(written).toHaveProperty('search_document')
     expect(written.embedding_version).toBe(CURRENT_EMBEDDING_VERSION)
+    expect((written.enrichment_provenance as { full: EnrichmentStageRecord }).full).toEqual(full)
+    expect(written.enrichment_provenance).toMatchObject({ facets: {
+      version: ENRICHMENT_VERSION, sourceMode: 'stored_description',
+      sourceObservedAt: null, sourceValidatedAt: null, embeddingVersion: CURRENT_EMBEDDING_VERSION,
+    } })
     expect(written).not.toHaveProperty('enrichment_status')
     expect(written).not.toHaveProperty('description_es')
   })
@@ -183,10 +194,46 @@ describe('enrichSingleEvent facets-only path', () => {
     // Empty facets keep the facets-only write (no embedding/status/description).
     expect(client.updates).toHaveLength(1)
     const written = client.updates[0].data as Record<string, unknown>
-    expect(written).toEqual({ facets: {} })
+    expect(written.facets).toEqual({})
+    expect(written.enrichment_provenance).toMatchObject({ facets: {
+      version: ENRICHMENT_VERSION, sourceObservedAt: null, sourceValidatedAt: null,
+    } })
+    expect((written.enrichment_provenance as { facets: unknown }).facets).not.toHaveProperty('embeddingVersion')
     expect(written).not.toHaveProperty('embedding')
     expect(written).not.toHaveProperty('enrichment_status')
     expect(written).not.toHaveProperty('description_es')
+  })
+})
+
+describe('enrichSingleEvent source provenance', () => {
+  it('persists a detail observation separately from processing time and keeps stored input age unknown', async () => {
+    const sourceObservedAt = '2026-10-01T10:00:00.000Z'
+    const sourceValidatedAt = '2026-10-02T10:00:00.000Z'
+    embedEventWithDocumentMock.mockResolvedValue({ embedding: [0.1], searchDocument: 'Jazz' })
+    getEnrichmentAdapterMock.mockReturnValue({
+      config: { requiresClientSide: false },
+      serverEnrich: async () => ({ description_es: 'Jazz en vivo.', description_en: 'Live jazz.', venue_name: null, sourceObservedAt, sourceValidatedAt }),
+    })
+    for (const stored of [false, true]) {
+      const client = makeClient()
+      const result = await enrichSingleEvent(client as never, {
+        id: 'provenance', name: 'Jazz', link: 'https://example.com/jazz', source: 'meetup',
+        ...(stored ? { description_es: 'Jazz en vivo.', description_en: 'Live jazz.' } : {}),
+      }, {
+        extractFacets: async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] }),
+        buildPresentationFields: async () => ({ description_display_es: 'Jazz en vivo.', description_display_en: 'Live jazz.', description_summary_es: null, description_summary_en: null }),
+      })
+      expect(result.success).toBe(true)
+      const written = client.updates[0].data as { enriched_at: string; enrichment_provenance: { full: EnrichmentStageRecord } }
+      expect(written.enrichment_provenance.full).toMatchObject({
+        version: ENRICHMENT_VERSION, sourceMode: stored ? 'stored_description' : 'detail',
+        sourceObservedAt: stored ? null : sourceObservedAt,
+        sourceValidatedAt: stored ? null : sourceValidatedAt,
+        embeddingVersion: CURRENT_EMBEDDING_VERSION,
+      })
+      expect(written.enrichment_provenance.full.processedAt).toBe(written.enriched_at)
+      expect(Date.parse(written.enriched_at)).toBeGreaterThan(Date.parse(sourceValidatedAt))
+    }
   })
 })
 

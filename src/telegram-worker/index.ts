@@ -64,10 +64,10 @@ async function processItem(item: InboxItem, env: Env): Promise<void> {
   const client = createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN })
   await Effect.runPromise(Effect.provide(processTelegramTurnEffect(item.payload), telegramTurnLayer({
     ...defaultTelegramTurnDependencies,
-    sendMessage: (chatId, message) => client.sendMessage(chatId, message.text, message.replyMarkup),
-    sendTyping: (chatId) => client.sendChatAction(chatId),
-    sendDraft: (chatId, draftId, text) => client.sendMessageDraft(chatId, draftId, text),
-    answerCallback: (callbackId, text) => client.answerCallbackQuery(callbackId, text),
+    sendMessage: (chatId, message, signal) => client.sendMessage(chatId, message.text, message.replyMarkup, signal),
+    sendTyping: (chatId, signal) => client.sendChatAction(chatId, 'typing', signal),
+    sendDraft: (chatId, draftId, text, signal) => client.sendMessageDraft(chatId, draftId, text, signal),
+    answerCallback: (callbackId, text, signal) => client.answerCallbackQuery(callbackId, text, signal),
   })))
 }
 

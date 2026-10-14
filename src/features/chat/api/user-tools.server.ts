@@ -9,7 +9,9 @@ import { Data, Effect } from 'effect'
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts'
 import { getEventWithVenue } from '#shared/lib/db/client.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
+import { withReadSignal } from '#shared/lib/db/read-signal.ts'
 import type { ChatEventPayload, EventWithVenue, SavedMembershipResult } from '#shared/lib/types.ts'
+import { ensureChatEventPayload } from './tools/utils.ts'
 
 export interface UserToolContext {
   userId: string | null
@@ -58,7 +60,7 @@ class UserToolError extends Data.TaggedError('UserToolError')<{
 
 const userToolFailure = (message: string, cause?: unknown) => new UserToolError({ message, cause })
 
-function promiseEffect<A>(run: () => PromiseLike<A>, fallbackMessage: string) {
+function promiseEffect<A>(run: (signal: AbortSignal) => PromiseLike<A>, fallbackMessage: string) {
   return Effect.tryPromise({
     try: run,
     catch: (cause) => userToolFailure(
@@ -72,18 +74,19 @@ function promiseEffect<A>(run: () => PromiseLike<A>, fallbackMessage: string) {
 export function getSavedMembershipForIdsEffect(
   ctx: UserToolContext,
   ids: string[],
+  abortSignal?: AbortSignal,
 ): Effect.Effect<SavedMembershipResult, never> {
   if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) return Effect.succeed({ status: 'unavailable' })
   if (ids.length === 0) return Effect.succeed({ status: 'complete', savedIds: new Set<string>() })
   const program = Effect.gen(function* () {
     const client = createSupabaseServerClient(ctx.event!)
     const { data, error } = yield* promiseEffect(
-      () => client
+      (fiberSignal) => withReadSignal(client
         .from('saved_events')
         .select('event_id')
         .eq('user_id', ctx.userId!)
         .in('event_id', ids)
-        .limit(ids.length),
+        .limit(ids.length), abortSignal ? AbortSignal.any([abortSignal, fiberSignal]) : fiberSignal),
       'Failed to load saved event membership',
     )
     if (error) return { status: 'unavailable' as const }
@@ -99,8 +102,8 @@ export function getSavedMembershipForIdsEffect(
   })
 }
 
-export function getSavedMembershipForIds(ctx: UserToolContext, ids: string[]) {
-  return Effect.runPromise(getSavedMembershipForIdsEffect(ctx, ids))
+export function getSavedMembershipForIds(ctx: UserToolContext, ids: string[], abortSignal?: AbortSignal) {
+  return Effect.runPromise(getSavedMembershipForIdsEffect(ctx, ids, abortSignal), { signal: abortSignal })
 }
 
 /** Effect-native request session lookup. */
@@ -204,6 +207,7 @@ type SavedEventRow = {
 export function listSavedEventsForUserEffect(
   filter: 'all' | 'upcoming' | 'past' = 'all',
   ctx: UserToolContext,
+  abortSignal?: AbortSignal,
 ): Effect.Effect<ListSavedEventsResult, never> {
   if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) {
     return Effect.succeed({
@@ -217,7 +221,7 @@ export function listSavedEventsForUserEffect(
     const client = createSupabaseServerClient(ctx.event!)
     const now = new Date().toISOString()
     const { data, error } = yield* promiseEffect(
-      () => client
+      (fiberSignal) => withReadSignal(client
         .from('saved_events')
         .select(`
         event_id,
@@ -225,7 +229,7 @@ export function listSavedEventsForUserEffect(
         events_with_venues (*)
       `)
         .eq('user_id', ctx.userId!)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false }), abortSignal ? AbortSignal.any([abortSignal, fiberSignal]) : fiberSignal),
       'Failed to list saved events',
     )
     if (error) {
@@ -248,18 +252,17 @@ export function listSavedEventsForUserEffect(
   })
 }
 
-export function listSavedEventsForUser(filter: 'all' | 'upcoming' | 'past' = 'all', ctx: UserToolContext) {
-  return Effect.runPromise(listSavedEventsForUserEffect(filter, ctx))
+export function listSavedEventsForUser(filter: 'all' | 'upcoming' | 'past' = 'all', ctx: UserToolContext, abortSignal?: AbortSignal) {
+  return Effect.runPromise(listSavedEventsForUserEffect(filter, ctx, abortSignal), { signal: abortSignal })
 }
 
 /** Effect-native public event-details lookup. */
-export function getEventDetailsForUserEffect(eventId: string): Effect.Effect<GetEventDetailsResult, never> {
+export function getEventDetailsForUserEffect(eventId: string, abortSignal?: AbortSignal): Effect.Effect<GetEventDetailsResult, never> {
   const program = Effect.map(
-    promiseEffect(() => getEventWithVenue(eventId), 'Failed to read event details'),
+    promiseEffect((fiberSignal) => getEventWithVenue(eventId, abortSignal ? AbortSignal.any([abortSignal, fiberSignal]) : fiberSignal), 'Failed to read event details'),
     (event) => {
       if (!event) return { success: false as const, error: 'not_found' as const }
-      const { embedding: _embedding, ...eventWithoutEmbedding } = event
-      return { success: true as const, event: eventWithoutEmbedding }
+      return { success: true as const, event: ensureChatEventPayload(event) }
     },
   )
   return Effect.match(program, {
@@ -271,8 +274,8 @@ export function getEventDetailsForUserEffect(eventId: string): Effect.Effect<Get
   })
 }
 
-export function getEventDetailsForUser(eventId: string) {
-  return Effect.runPromise(getEventDetailsForUserEffect(eventId))
+export function getEventDetailsForUser(eventId: string, abortSignal?: AbortSignal) {
+  return Effect.runPromise(getEventDetailsForUserEffect(eventId, abortSignal), { signal: abortSignal })
 }
 
 /** Effect-native saved-state lookup. */

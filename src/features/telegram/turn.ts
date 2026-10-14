@@ -72,10 +72,10 @@ export interface TelegramTurnDependencies {
   runTurn: typeof runSharedChatTurn
   runTurnEffect?: typeof runSharedChatTurnEffect
   render: typeof renderTelegramMessage
-  sendMessage: (chatId: string, message: TelegramOutgoingMessage) => Promise<unknown>
-  sendTyping: (chatId: string) => Promise<unknown>
-  sendDraft: (chatId: string, draftId: number, text: string) => Promise<unknown>
-  answerCallback: (callbackId: string, text?: string) => Promise<unknown>
+  sendMessage: (chatId: string, message: TelegramOutgoingMessage, signal?: AbortSignal) => Promise<unknown>
+  sendTyping: (chatId: string, signal?: AbortSignal) => Promise<unknown>
+  sendDraft: (chatId: string, draftId: number, text: string, signal?: AbortSignal) => Promise<unknown>
+  answerCallback: (callbackId: string, text?: string, signal?: AbortSignal) => Promise<unknown>
   markCompleted: typeof markTelegramUpdateCompleted
   markCompletedEffect?: typeof markTelegramUpdateCompletedEffect
   markFailed: typeof markTelegramUpdateFailed
@@ -276,10 +276,11 @@ function persistedCanonical(messages: Message[], clientMessageId: string): Canon
 async function answerCallbackBestEffort(
   callbackId: string,
   text: string | undefined,
-  service: TelegramTurnService['Service']
+  service: TelegramTurnService['Service'],
+  signal: AbortSignal,
 ) {
   try {
-    await service.answerCallback(callbackId, text)
+    await service.answerCallback(callbackId, text, signal)
   } catch {
     // Telegram expires callback queries quickly; the durable action must still finish.
   }
@@ -288,10 +289,11 @@ async function answerCallbackBestEffort(
 async function sendMessageBestEffort(
   chatId: string,
   message: TelegramRenderedMessage,
-  service: TelegramTurnService['Service']
+  service: TelegramTurnService['Service'],
+  signal: AbortSignal,
 ) {
   try {
-    await service.sendMessage(chatId, message)
+    await service.sendMessage(chatId, message, signal)
   } catch {
     // Erasure is complete; delivery failure must not restore identity material.
   }
@@ -304,12 +306,13 @@ async function sendDraftBestEffort(
   service: TelegramTurnService['Service'],
   phase: 'initial-draft' | 'found-draft',
   updateId: string,
-  canSend: () => boolean = () => true
+  canSend: () => boolean,
+  signal: AbortSignal,
 ) {
-  if (!canSend()) return
+  if (signal.aborted || !canSend()) return
   const startedAt = performance.now()
   try {
-    await service.sendDraft(chatId, draftId, text)
+    await service.sendDraft(chatId, draftId, text, signal)
     logTiming(phase, startedAt, 'success', updateId)
   } catch {
     logTiming(phase, startedAt, 'error', updateId)
@@ -336,15 +339,16 @@ function startTypingBestEffort(
   chatId: string,
   service: TelegramTurnService['Service'],
   updateId: string,
+  signal: AbortSignal,
 ): { stop: () => void } {
   let active = true
   let sending = false
   const send = async (initial = false): Promise<void> => {
-    if (!active || sending) return
+    if (signal.aborted || !active || sending) return
     sending = true
     const startedAt = initial ? performance.now() : 0
     try {
-      await service.sendTyping(chatId)
+      await service.sendTyping(chatId, signal)
       if (initial) logTiming('initial-typing', startedAt, 'success', updateId)
     } catch {
       if (initial) logTiming('initial-typing', startedAt, 'error', updateId)
@@ -372,6 +376,7 @@ export function processTelegramTurnEffect(
 
   const program = Effect.gen(function* () {
     const service = yield* TelegramTurnService
+    const turnSignal = yield* Effect.abortSignal
     const envelopeStarted = performance.now()
     const keyResult = yield* settle(service.getEnvelopeKey(payload.updateId))
     if (!keyResult.ok) {
@@ -403,11 +408,11 @@ export function processTelegramTurnEffect(
         yield* service.deleteConversation({ channel: 'telegram', conversationId })
         yield* service.redactClaims(input.identityHash)
         yield* Effect.tryPromise({
-          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].declined, service),
+          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].declined, service, turnSignal),
           catch: (cause) => turnFailure('Failed to answer Telegram callback', cause),
         })
         yield* Effect.tryPromise({
-          try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].declined }, service),
+          try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].declined }, service, turnSignal),
           catch: (cause) => turnFailure('Failed to send Telegram message', cause),
         })
         return
@@ -417,11 +422,11 @@ export function processTelegramTurnEffect(
         conversation = yield* service.getConversation({ channel: 'telegram', conversationId })
         locale = localeFrom(input.languageCode, conversation.metadata.locale)
         yield* Effect.tryPromise({
-          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].legacyAccepted, service),
+          try: () => answerCallbackBestEffort(input.callbackId!, COPY[locale].legacyAccepted, service, turnSignal),
           catch: (cause) => turnFailure('Failed to answer Telegram callback', cause),
         })
         yield* dependencyEffect(
-          () => service.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].legacyAccepted }, turnSignal),
           'Failed to send Telegram message',
         )
         yield* service.markCompleted(payload.updateId, conversationId)
@@ -434,6 +439,7 @@ export function processTelegramTurnEffect(
           input.callbackId!,
           input.rateLimited ? COPY[locale].rateLimited : undefined,
           service,
+          turnSignal,
         ),
         catch: (cause) => turnFailure('Failed to answer Telegram callback', cause),
       })
@@ -441,7 +447,7 @@ export function processTelegramTurnEffect(
       locale = localeFrom(input.languageCode, conversation.metadata.locale)
       if (input.rateLimited) {
         yield* dependencyEffect(
-          () => service.sendMessage(input.chatId, { text: COPY[locale].rateLimited }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].rateLimited }, turnSignal),
           'Failed to send Telegram message',
         )
         yield* service.markCompleted(payload.updateId, conversationId)
@@ -452,7 +458,7 @@ export function processTelegramTurnEffect(
 
     if (input.rateLimited) {
       yield* dependencyEffect(
-        () => service.sendMessage(input.chatId, { text: COPY[locale].rateLimited }),
+        () => service.sendMessage(input.chatId, { text: COPY[locale].rateLimited }, turnSignal),
         'Failed to send Telegram message',
       )
       yield* service.markCompleted(payload.updateId, conversationId)
@@ -462,7 +468,7 @@ export function processTelegramTurnEffect(
     const parsed = parseTelegramText(promptText ?? input.text ?? '')
     if (!parsed) {
       yield* dependencyEffect(
-        () => service.sendMessage(input.chatId, { text: COPY[locale].unsupported }),
+        () => service.sendMessage(input.chatId, { text: COPY[locale].unsupported }, turnSignal),
         'Failed to send Telegram message',
       )
       yield* service.markCompleted(payload.updateId, conversationId)
@@ -473,7 +479,7 @@ export function processTelegramTurnEffect(
       yield* service.deleteConversation({ channel: 'telegram', conversationId })
       yield* service.redactClaims(input.identityHash)
       yield* Effect.tryPromise({
-        try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].deleted }, service),
+        try: () => sendMessageBestEffort(input.chatId, { text: COPY[locale].deleted }, service, turnSignal),
         catch: (cause) => turnFailure('Failed to send Telegram message', cause),
       })
       return
@@ -488,12 +494,12 @@ export function processTelegramTurnEffect(
           () => service.sendMessage(input.chatId, {
             text: COPY[locale].privacy,
             replyMarkup: privacyKeyboard(locale),
-          }),
+          }, turnSignal),
           'Failed to send Telegram message',
         )
       } else if (parsed.command === 'help') {
         yield* dependencyEffect(
-          () => service.sendMessage(input.chatId, { text: COPY[locale].help }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].help }, turnSignal),
           'Failed to send Telegram message',
         )
       } else if (parsed.command === 'new') {
@@ -504,7 +510,7 @@ export function processTelegramTurnEffect(
             metadataPatch: { locale },
           })
         yield* dependencyEffect(
-          () => service.sendMessage(input.chatId, { text: COPY[locale].fresh }),
+          () => service.sendMessage(input.chatId, { text: COPY[locale].fresh }, turnSignal),
           'Failed to send Telegram message',
         )
       } else {
@@ -512,7 +518,7 @@ export function processTelegramTurnEffect(
           () => service.sendMessage(input.chatId, {
             text: `${COPY[locale].start}\n\n${PRIVACY_URL}`,
             replyMarkup: { remove_keyboard: true },
-          }),
+          }, turnSignal),
           'Failed to send Telegram message',
         )
       }
@@ -553,14 +559,14 @@ export function processTelegramTurnEffect(
         catch: (cause) => turnFailure('Failed to render Telegram message', cause),
       })
       yield* dependencyEffect(
-        () => service.sendMessage(input.chatId, rendered),
+        () => service.sendMessage(input.chatId, rendered, turnSignal),
         'Failed to send Telegram message',
       )
       yield* service.markCompleted(payload.updateId, conversationId)
       return
     }
 
-    const typing = startTypingBestEffort(input.chatId, service, payload.updateId)
+    const typing = startTypingBestEffort(input.chatId, service, payload.updateId, turnSignal)
     const naturalProgram = Effect.gen(function* () {
       let draftsClosed = false
       let draftChain = Promise.resolve()
@@ -575,6 +581,7 @@ export function processTelegramTurnEffect(
           phase,
           payload.updateId,
           () => !draftsClosed,
+          turnSignal,
         ))
       }
       const userInsertStarted = performance.now()
@@ -591,6 +598,8 @@ export function processTelegramTurnEffect(
       const agentStarted = performance.now()
       const agentInput = {
           requestId: `telegram:${payload.updateId}`,
+          sessionId: conversationId,
+          channel: 'telegram' as const,
           userContext: { userId: null, isAuthenticated: false },
           text: normalizedTurn.originalQuery,
           locale,
@@ -645,7 +654,7 @@ export function processTelegramTurnEffect(
           attachedData: { canonical: agentResult.value.canonical },
       })
       yield* dependencyEffect(
-        () => service.sendMessage(input.chatId, rendered),
+        () => service.sendMessage(input.chatId, rendered, turnSignal),
         'Failed to send Telegram message',
       )
       logTiming('persist-send', persistSendStarted, 'success', payload.updateId)
@@ -663,16 +672,17 @@ export function processTelegramTurnEffect(
     )
     return yield* Effect.fail(error)
   }))
-  return handled
+  return Effect.scoped(handled)
 }
 
 /** Promise compatibility adapter for the Durable Object processor/tests. */
 export function processTelegramTurn(
   rawPayload: TelegramTaskPayload,
   dependencies: TelegramTurnDependencies,
+  signal?: AbortSignal,
 ) {
   return Effect.runPromise(Effect.provide(
     processTelegramTurnEffect(rawPayload),
     telegramTurnLayer(dependencies),
-  ))
+  ), { signal })
 }

@@ -13,7 +13,7 @@ import {
   CURRENT_EMBEDDING_VERSION,
 } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
-import { checkApiRateLimit } from '#features/auth/api/rate-limit.server.ts'
+import { checkApiRateLimit, RATE_LIMIT_RETRY_SECONDS } from '#features/auth/api/rate-limit.server.ts'
 import { apiSuccess, apiList, apiError, CachePresets, withCache } from '#shared/lib/api-response.ts'
 import { CATEGORIES, EVENT_STATUSES } from '#shared/lib/types.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
@@ -102,6 +102,12 @@ function tooManyRequests(reset: number) {
   )
 }
 
+function limiterUnavailable(): Response {
+  return Response.json(apiError('Rate limiting is temporarily unavailable.', 'SERVICE_UNAVAILABLE'), {
+    status: 503, headers: { 'Retry-After': String(RATE_LIMIT_RETRY_SECONDS) },
+  })
+}
+
 function checkAuth(request: Request): 'authorized' | 'unauthorized' | 'not_configured' {
   // In production, API key must be configured
   if (IS_PRODUCTION && !API_KEY) {
@@ -143,17 +149,15 @@ function getClientIP(event: RequestEvent): string {
   return 'unknown-ip'
 }
 
-async function applyRateLimit(event: RequestEvent): Promise<{ allowed: boolean; reset: number }> {
+async function applyRateLimit(event: RequestEvent): Promise<{ allowed: boolean; reset: number; unavailable?: boolean }> {
   const clientIP = getClientIP(event)
 
   try {
     // Use the API rate limiter (10 req/min per IP)
     const result = await checkApiRateLimit(clientIP)
     return { allowed: result.success, reset: result.reset }
-  } catch (error) {
-    // If rate limiting service is unavailable, allow the request but log warning
-    console.warn('[API] Rate limiting service unavailable, allowing request:', error)
-    return { allowed: true, reset: 0 }
+  } catch {
+    return { allowed: false, reset: 0, unavailable: true }
   }
 }
 
@@ -167,7 +171,8 @@ export const GET = async (event: RequestEvent): Promise<Response> => {
   if (authResult === 'unauthorized') return unauthorized()
 
   // Apply rate limiting
-  const { allowed, reset } = await applyRateLimit(event)
+  const { allowed, reset, unavailable } = await applyRateLimit(event)
+  if (unavailable) return limiterUnavailable()
   if (!allowed) return tooManyRequests(reset)
 
   try {
@@ -194,7 +199,8 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
   if (authResult === 'unauthorized') return unauthorized()
 
   // Apply rate limiting
-  const { allowed, reset } = await applyRateLimit(event)
+  const { allowed, reset, unavailable } = await applyRateLimit(event)
+  if (unavailable) return limiterUnavailable()
   if (!allowed) return tooManyRequests(reset)
 
   try {

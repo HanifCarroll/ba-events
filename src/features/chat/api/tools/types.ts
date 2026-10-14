@@ -8,6 +8,7 @@
 import { z } from 'zod'
 import type { UserToolContext } from '../user-tools.server.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
+import type { SearchRetryBoundary } from './search-retry.ts'
 
 // ============================================================================
 // CONTEXT TYPES
@@ -22,6 +23,10 @@ export interface ToolExecutionContext {
   userContext: UserToolContext
   /** Current locale for response formatting */
   locale: 'en' | 'es'
+  /** Server-only constraint authority for a repeated search in the same turn. */
+  searchRetryBoundary?: SearchRetryBoundary
+  /** Producer/SDK cancellation combined with this read's deadline. */
+  abortSignal?: AbortSignal
 }
 
 // ============================================================================
@@ -43,6 +48,8 @@ export interface ToolResult {
   error?: string
   /** Additional metadata for analytics */
   metadata?: Record<string, unknown>
+  /** Private planner bookkeeping; omitted from model-facing tool results. */
+  searchRetryBoundary?: SearchRetryBoundary
 }
 
 // ============================================================================

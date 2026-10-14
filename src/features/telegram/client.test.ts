@@ -158,4 +158,50 @@ describe('Telegram Bot API client', () => {
     })
     await expect(generic.sendChatAction('99')).resolves.toEqual({ ok: 'generic' })
   })
+
+  it.each(['request', 'body'] as const)('cancels a stalled %s without accepting late success', async (phase) => {
+    const controller = new AbortController()
+    let transportSignal: AbortSignal | undefined
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    let release!: () => void
+    const stalled = new Promise<void>((resolve) => { release = resolve })
+    const client = createTelegramClient({
+      token: '123:secret',
+      fetch: (async (_input, init) => {
+        transportSignal = init?.signal as AbortSignal
+        if (phase === 'request') {
+          started()
+          await stalled
+        }
+        return {
+          status: 200,
+          json: async () => {
+            if (phase === 'body') {
+              started()
+              await stalled
+            }
+            return { ok: true, result: true }
+          },
+        } as Response
+      }) as typeof fetch,
+    })
+    const pending = client.sendMessage('99', 'hello', undefined, controller.signal)
+    const outcome = pending.then(() => 'success', () => 'cancelled')
+    await ready
+    controller.abort()
+    expect(await outcome).toBe('cancelled')
+    expect(transportSignal?.aborted).toBe(true)
+    release()
+  })
+
+  it('does not start delivery for an already cancelled turn', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const fetchMock = vi.fn(async () => telegramResponse({ ok: true, result: true }))
+    const client = createTelegramClient({ token: '123:secret', fetch: fetchMock as typeof fetch })
+    await expect(client.sendMessage('99', 'hello', undefined, controller.signal)).rejects.toThrow()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
 })

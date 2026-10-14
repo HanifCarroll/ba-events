@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { orchestrate, type AgentRun } from './orchestrate.ts'
+import { orchestrateEffect } from './orchestrate.ts'
+import { Effect } from 'effect'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
+import { createGetDirectionsTool } from '../tools/get-directions.ts'
+import type { EventWithVenue } from '#shared/lib/types.ts'
 
 const base = {
   requestId: 'request-1',
@@ -21,6 +25,352 @@ const priorEvent = (id: string, name: string) => ({
 }) as unknown as ChatEventPayload
 
 describe('recommendation follow-ups', () => {
+  for (const kind of ['search_events', 'get_event_details', 'list_saved_events'] as const) {
+    it(`sends complete source descriptions without redundant presentation copies for ${kind}`, async () => {
+      const original: ChatEventPayload = { ...priorEvent('original', 'Original-source event'),
+        description_en: `Original English ${'source text '.repeat(500)}Final exact source fact.`,
+        description_es: 'Texto original completo.', description_display_en: 'Rendered English copy.',
+        description_display_es: 'Copia renderizada.', description_summary_en: 'English summary.', description_summary_es: 'Resumen.' }
+      const display: ChatEventPayload = { ...original, id: 'display', description_en: null, description_es: null }
+      const summary: ChatEventPayload = { ...display, id: 'summary', description_display_en: null, description_display_es: null }
+      const events = [original, display, summary]
+      let supplied: Array<Record<string, unknown>> = []
+      const read = async () => ({ success: true, events, formatted: '{}' })
+      const result = await orchestrate({
+        ...base,
+        priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+          events: [{ eventId: original.id, displayIndex: 0, name: original.name, saved: null }] }],
+        readExecutors: { search: read, eventDetails: read, listSaved: read },
+        runAgentFn: async input => {
+          const selected = input.tools[kind] as unknown as { execute: (value: unknown, options: unknown) => Promise<{ events: Array<Record<string, unknown>> }> }
+          const output = await selected.execute(kind === 'get_event_details' ? { eventRef: 'prior:event_0' } : kind === 'search_events' ? { objective: 'search' } : {}, { toolCallId: 'description-read' })
+          supplied = output.events
+          return { text: 'Here are the available source details.', steps: [{ toolResults: [{ toolCallId: 'description-read', toolName: kind, output }] }], responseId: null }
+        },
+      })
+      expect(supplied[0]).toMatchObject({ description_en: original.description_en, description_es: original.description_es })
+      for (const field of ['description_display_en', 'description_display_es', 'description_summary_en', 'description_summary_es']) expect(supplied[0]).not.toHaveProperty(field)
+      expect(supplied[1]).toMatchObject({ description_en: null, description_es: null,
+        description_display_en: display.description_display_en, description_display_es: display.description_display_es })
+      expect(supplied[1]).not.toHaveProperty('description_summary_en')
+      expect(supplied[2]).toMatchObject({ description_summary_en: summary.description_summary_en, description_summary_es: summary.description_summary_es })
+      expect(supplied[2]).not.toHaveProperty('description_display_en')
+      expect(result.canonical.events[0]).toMatchObject({ description_en: original.description_en,
+        description_display_en: original.description_display_en, description_summary_en: original.description_summary_en })
+    })
+  }
+
+  it('passes authoritative prices and source descriptions/links without inferring missing facts', async () => {
+    const events: ChatEventPayload[] = [
+      { ...priorEvent('unknown', 'Music-sounding title'), price: null, is_free: false, link: null, ticket_url: null,
+        description_es: null, description_en: null, description_display_es: null, description_display_en: null,
+        description_summary_es: null, description_summary_en: null, description_unavailable: true,
+        categories: ['music'], facets: { eventType: ['concert'], genres: [], activities: ['live-music'], vibes: [], audience: [], setting: ['seated'] } },
+      { ...priorEvent('zero', 'Zero-price event'), price: 0, is_free: false,
+        description_en: 'Exact source description.', link: 'https://source.example.test/event', ticket_url: 'https://tickets.example.test/event' },
+    ]
+    let supplied: Array<Record<string, unknown>> = []
+    const result = await orchestrate({
+      ...base,
+      readExecutors: { search: async () => ({ success: true, events, formatted: '{}' }) },
+      runAgentFn: async input => {
+        const search = input.tools.search_events as unknown as { execute: (value: unknown, options: unknown) => Promise<{ events: Array<Record<string, unknown>> }> }
+        const output = await search.execute({ objective: 'search' }, { toolCallId: 'source-read' })
+        supplied = output.events
+        return { text: 'Here are the source details.', steps: [{ toolResults: [{ toolCallId: 'source-read', toolName: 'search_events', output }] }], responseId: null }
+      },
+    })
+    expect(supplied[0]).toMatchObject({ price: null, is_free: false, link: null, ticket_url: null,
+      description_en: null, description_es: null, description_summary_en: null, description_unavailable: true })
+    expect(supplied[0]).not.toHaveProperty('description_display_en')
+    expect(supplied[0]).not.toHaveProperty('facets')
+    expect(supplied[1]).toMatchObject({ price: 0, is_free: true, description_en: events[1].description_en,
+      link: events[1].link, ticket_url: events[1].ticket_url })
+    expect(result.canonical.events[0]).toMatchObject({ price: null, is_free: false, link: null, ticket_url: null })
+    expect(result.canonical.events[1]).toMatchObject({ price: 0, link: events[1].link, ticket_url: events[1].ticket_url })
+  })
+
+  for (const origin of ['prior', 'pinned'] as const) {
+    it(`rechecks event-owned ${origin} venue handles before exposing location details`, async () => {
+      const event = { ...priorEvent('event-1', 'Hidden event'), location_hidden: true, venue_id: 'private-venue', venue_address: 'Secret street 123' }
+      let venueReads = 0
+      const outputs: Array<Record<string, unknown>> = []
+      const directions = createGetDirectionsTool({
+        getEventWithVenue: async () => event as unknown as EventWithVenue,
+        getVenueById: async () => { venueReads++; throw new Error('Unexpected venue fallback') },
+      })
+      const ref = origin === 'pinned' ? 'pinned_venue' : 'prior:event_0:venue'
+      await orchestrate({
+        ...base,
+        priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+          events: [{ eventId: event.id, displayIndex: 0, name: event.name, saved: null }] }],
+        // Simulate an older venue handle whose event has since become private.
+        venueByEventId: new Map([[event.id, { venueId: event.venue_id, venueName: event.venue_name }]]),
+        pin: origin === 'pinned' ? { requested: true, status: 'resolved', eventId: event.id, venueId: event.venue_id } : undefined,
+        readExecutors: {
+          eventDetails: async () => ({ success: true, events: [event], formatted: '{}' }),
+          directions: (input, context) => directions.execute(input, context),
+          venueDetails: async () => { venueReads++; throw new Error('Unexpected venue read') },
+        },
+        runAgentFn: async input => {
+          const toolResults = []
+          for (const toolName of ['get_venue_details', 'get_directions']) {
+            const tool = input.tools[toolName] as unknown as { execute: (value: unknown, options: unknown) => Promise<Record<string, unknown>> }
+            const output = await tool.execute({ venueRef: ref }, { toolCallId: toolName })
+            outputs.push(output)
+            toolResults.push({ toolCallId: toolName, toolName, output })
+          }
+          return { text: 'Check the original source for the location.', steps: [{ toolResults }], responseId: null }
+        },
+      })
+      expect(outputs).toHaveLength(2)
+      expect(outputs.every(output => output.success === false && output.error === 'location_unavailable')).toBe(true)
+      expect(JSON.stringify(outputs)).not.toContain(event.venue_address)
+      expect(venueReads).toBe(0)
+    })
+  }
+
+  for (const kind of ['search_events', 'get_event_details', 'list_saved_events'] as const) {
+    it(`keeps hidden addresses out of ${kind} model input, previews and final cards`, async () => {
+      const event = { ...priorEvent('event-1', 'Private-location event'),
+        venue_id: 'private-venue', venue_address: 'Secret street 123', location_hidden: true }
+      let venueReads = 0
+      const outputs: Array<Record<string, unknown>> = []
+      const previews: string[] = []
+      const directions = createGetDirectionsTool({
+        getEventWithVenue: async () => event as unknown as EventWithVenue,
+        getVenueById: async () => { venueReads++; throw new Error('Unexpected venue fallback') },
+      })
+      const read = async () => ({ success: true, events: [event], formatted: '{}' })
+      const result = await orchestrate({
+        ...base,
+        priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+          events: [{ eventId: event.id, displayIndex: 0, name: event.name, saved: null }] }],
+        onProgress: response => { previews.push(JSON.stringify(response)) },
+        readExecutors: { search: read, eventDetails: read, listSaved: read,
+          directions: (input, context) => directions.execute(input, context),
+          venueDetails: async () => { venueReads++; throw new Error('Unexpected venue read') } },
+        runAgentFn: async input => {
+          const invoke = async (toolName: string, value: unknown, toolCallId: string) => {
+            const tool = input.tools[toolName] as unknown as { execute: (value: unknown, options: unknown) => Promise<Record<string, unknown>> }
+            const output = await tool.execute(value, { toolCallId })
+            outputs.push(output)
+            return { toolCallId, toolName, output }
+          }
+          const toolResults = [
+            await invoke(kind, kind === 'get_event_details' ? { eventRef: 'prior:event_0' } : kind === 'search_events' ? { objective: 'search' } : {}, 'private-read'),
+            await invoke('get_venue_details', { venueRef: 'private-read:venue_0' }, 'private-venue-read'),
+            await invoke('get_directions', { eventRef: 'private-read:event_0' }, 'private-directions'),
+          ]
+          return { text: 'The event location is hidden.', steps: [{ toolResults }], responseId: null }
+        },
+      })
+      expect((outputs[0].events as Array<Record<string, unknown>>)[0]).toMatchObject({ venue_address: null, location_hidden: true })
+      expect((outputs[0].events as Array<Record<string, unknown>>)[0]).not.toHaveProperty('venueRef')
+      expect(outputs[1]).toMatchObject({ success: false, error: 'unknown_venue_ref' })
+      expect(outputs[2]).toMatchObject({ success: false, error: 'location_unavailable' })
+      expect(result.canonical.events[0].venue_address).toBeNull()
+      expect(result.canonical.directions).toBeNull()
+      expect(previews.length).toBeGreaterThan(0)
+      expect([...previews, JSON.stringify(outputs), JSON.stringify(result.canonical)].join('\n')).not.toContain(event.venue_address)
+      expect(venueReads).toBe(0)
+    })
+  }
+
+  for (const timeTba of [true, false]) {
+    it(`passes ${timeTba ? 'only the known date' : 'verified local times'} to the model`, async () => {
+      const event = {
+        ...priorEvent('dated-event', 'Source event'),
+        starts_at: '2026-10-14T01:00:00.000Z',
+        ends_at: '2026-10-14T04:00:00.000Z',
+        time_tba: timeTba,
+      }
+      let modelEvent: Record<string, unknown> | undefined
+      const result = await orchestrate({
+        ...base,
+        readExecutors: { search: async () => ({ success: true, events: [event], formatted: '{}' }) },
+        runAgentFn: async (input) => {
+          const search = input.tools.search_events as unknown as {
+            execute: (value: unknown, options: unknown) => Promise<{ events: Array<Record<string, unknown>> }>
+          }
+          const output = await search.execute({ objective: 'search' }, { toolCallId: 'date-read' })
+          modelEvent = output.events[0]
+          return { text: 'Here are the available details.', steps: [{ toolResults: [{
+            toolCallId: 'date-read', toolName: 'search_events', output,
+          }] }], responseId: null }
+        },
+      })
+      expect(modelEvent).toMatchObject({
+        starts_at: timeTba ? '2026-10-13' : '2026-10-13 22:00 (America/Argentina/Buenos_Aires)',
+        ends_at: timeTba ? null : '2026-10-14 01:00 (America/Argentina/Buenos_Aires)',
+        time_tba: timeTba,
+      })
+      // Cards retain source timestamps and the explicit unknown-time flag.
+      expect(result.canonical.events[0]).toMatchObject({
+        starts_at: event.starts_at, ends_at: event.ends_at, time_tba: timeTba,
+      })
+    })
+  }
+
+  it('exposes only the declared read and framing tools, including for save requests', async () => {
+    await orchestrate({
+      ...base, originalQuery: 'Save the second event',
+      runAgentFn: async (input) => {
+        expect(Object.keys(input.tools).sort()).toEqual([
+          'ask_clarification', 'get_directions', 'get_event_details',
+          'get_venue_details', 'list_saved_events', 'recommendations_mismatch', 'search_events',
+        ])
+        return { text: 'Use the event save button.', steps: [], responseId: null }
+      },
+    })
+  })
+
+  for (const parallel of [false, true]) {
+    it(`rejects excess ${parallel ? 'parallel' : 'sequential'} tool calls before invoking the business reader`, async () => {
+      let businessReads = 0
+      const outputs: Array<{ success?: boolean; error?: string }> = []
+      const result = await orchestrate({
+        ...base,
+        priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+          events: [{ eventId: 'event-1', displayIndex: 0, name: 'Verified event', saved: null }] }],
+        readExecutors: { eventDetails: async () => {
+          businessReads++
+          await Promise.resolve()
+          return { success: true, events: [priorEvent('event-1', 'Verified event')], formatted: '{}' }
+        } },
+        runAgentFn: async (input) => {
+          const details = input.tools.get_event_details as unknown as {
+            execute: (value: unknown, options: unknown) => Promise<{ success?: boolean; error?: string }>
+          }
+          const read = (index: number) => details.execute(
+            { eventRef: 'prior:event_0', purpose: 'details' }, { toolCallId: `bounded-${index}` },
+          )
+          if (parallel) outputs.push(...await Promise.all(Array.from({ length: 10 }, (_, index) => read(index))))
+          else for (let index = 0; index < 10; index++) outputs.push(await read(index))
+          return { text: 'Here are the verified details.', steps: [{ toolResults: outputs.map((output, index) => ({
+            toolCallId: `bounded-${index}`, toolName: 'get_event_details', output,
+          })) }], responseId: null }
+        },
+      })
+      expect(businessReads).toBe(8)
+      expect(outputs.slice(0, 8).every(output => output.success)).toBe(true)
+      expect(outputs.slice(8)).toEqual([
+        expect.objectContaining({ success: false, error: 'tool_call_limit' }),
+        expect.objectContaining({ success: false, error: 'tool_call_limit' }),
+      ])
+      expect(result.canonical.events.map(event => event.id)).toEqual(['event-1'])
+      expect(result.reads.filter(read => read.success)).toHaveLength(8)
+    })
+  }
+
+  it('aborts a real tool deadline, keeps earlier reads and ignores a late completion', async () => {
+    let received: AbortSignal | undefined
+    let finishLateRead: () => void = () => {}
+    let toolError: unknown
+    const previews: string[][] = []
+    const result = await orchestrate({
+      ...base, originalQuery: 'Find events',
+      onProgress: (preview) => previews.push(preview.events.map((event) => event.id)),
+      readExecutors: {
+        search: async () => ({ success: true, events: [priorEvent('kept-event', 'Kept event')], formatted: '{}' }),
+        eventDetails: async (_input, context) => {
+          received = context.abortSignal
+          return new Promise((resolve) => {
+            finishLateRead = () => resolve({ success: true, events: [priorEvent('late-event', 'Late event')], formatted: '{}' })
+          })
+        },
+      },
+      runAgentFn: async (input) => {
+        const search = input.tools.search_events as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        const details = input.tools.get_event_details as unknown as { execute: (value: unknown, options: unknown) => Promise<{ error?: unknown }> }
+        await search.execute({ objective: 'search', query: 'events', limit: 1 }, { toolCallId: 'kept-read' })
+        toolError = (await details.execute({ eventRef: 'kept-read:event_0', purpose: 'details' }, { toolCallId: 'late-read' })).error
+        throw new Error('Final generation unavailable')
+      },
+    })
+    expect(received?.aborted).toBe(true)
+    expect(toolError).toBe('tool_timeout')
+    expect(result.canonical.events.map((event) => event.id)).toEqual(['kept-event'])
+    expect(result.canonical.provenance.fallbackUsed).toBe(true)
+    const previewCount = previews.length
+    finishLateRead()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(previews).toHaveLength(previewCount)
+    expect(previews.flat()).not.toContain('late-event')
+  }, 12_000)
+
+  it('propagates SDK step cancellation to an in-flight read and excludes its late result', async () => {
+    const sdk = new AbortController()
+    let readSignal: AbortSignal | undefined
+    const previews: unknown[] = []
+    const result = await orchestrate({
+      ...base, onProgress: (preview) => previews.push(preview),
+      readExecutors: { search: async (_input, context) => {
+        readSignal = context.abortSignal
+        sdk.abort()
+        return { success: true, events: [priorEvent('late', 'Late event')], formatted: '{}' }
+      } },
+      runAgentFn: async (input) => {
+        const search = input.tools.search_events as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        await search.execute({ objective: 'search' }, { toolCallId: 'sdk-cancelled', abortSignal: sdk.signal })
+        return { text: 'Late reply', steps: [], responseId: null }
+      },
+    })
+    expect(readSignal?.aborted).toBe(true)
+    expect(result.canonical.events).toEqual([])
+    expect(previews).toEqual([])
+  })
+
+  it('interrupting the owning Effect aborts its runner and pending read', async () => {
+    const owner = new AbortController()
+    let started: () => void = () => {}
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    let readSignal: AbortSignal | undefined
+    let runnerSignal: AbortSignal | undefined
+    const previews: unknown[] = []
+    const running = Effect.runPromise(orchestrateEffect({
+      ...base, onProgress: (preview) => previews.push(preview),
+      readExecutors: { search: async (_input, context) => {
+        readSignal = context.abortSignal
+        started()
+        return new Promise(() => {})
+      } },
+      runAgentFn: async (input) => {
+        runnerSignal = input.abortSignal
+        const search = input.tools.search_events as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        await search.execute({ objective: 'search' }, { toolCallId: 'interrupted' })
+        return { text: 'Late reply', steps: [], responseId: null }
+      },
+    }), { signal: owner.signal })
+    const outcome = running.then(() => ({ rejected: false }), () => ({ rejected: true }))
+    await ready
+    owner.abort()
+    expect((await outcome).rejected).toBe(true)
+    expect(readSignal?.aborted).toBe(true)
+    expect(runnerSignal?.aborted).toBe(true)
+    expect(previews).toEqual([])
+  })
+
+  it('passes producer cancellation to the actual read executor', async () => {
+    const controller = new AbortController()
+    let readSignal: AbortSignal | undefined
+    await orchestrate({
+      ...base, abortSignal: controller.signal,
+      readExecutors: { search: async (_input, context) => {
+        readSignal = (context as { abortSignal?: AbortSignal }).abortSignal
+        controller.abort()
+        return { success: true, events: [priorEvent('late', 'Late event')], formatted: '{}' }
+      } },
+      runAgentFn: async (input) => {
+        const search = input.tools.search_events as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        await search.execute({ objective: 'search', query: 'events' }, { toolCallId: 'cancelled-read' })
+        return { text: 'Late reply', steps: [], responseId: null }
+      },
+    })
+    expect(readSignal).toBeDefined()
+    expect(readSignal?.aborted).toBe(true)
+  })
+
   it('publishes successful server reads before final generation and keeps model text from creating cards', async () => {
     const previews: Array<{ text: string; ids: string[] }> = []
     let finalReturned = false

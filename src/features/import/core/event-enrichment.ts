@@ -27,6 +27,7 @@ import { buildDescriptionPresentationFields } from '#features/events/lib/descrip
 import { type VenueSettlementResult, settleVenueEffect } from './venue-settlement.ts'
 import { delayEffect } from './nominatim.ts'
 import { importTry } from './effect-utils.ts'
+import { enrichmentStageRecord, type EnrichmentProvenance } from './enrichment-provenance.ts'
 
 // ============================================================================
 // QUEUE SELECTION FILTERS
@@ -45,6 +46,7 @@ export function enrichmentStartsAtFloor(now: Date = new Date()): string {
 // ============================================================================
 
 export interface EventEnrichmentInput {
+  enrichment_provenance?: EnrichmentProvenance | null
   id: string
   name: string
   link: string | null
@@ -140,6 +142,7 @@ function updateEventEnrichmentEffect(
     enrichment_status?: 'pending' | 'completed' | 'failed' | 'skipped'
     enrichment_error?: string | null
     enriched_at?: string | null
+    enrichment_provenance?: EnrichmentProvenance
     status?: 'scheduled' | 'canceled' | 'postponed' | 'past' | 'pending_review'
   }
 ): Effect.Effect<void, EventEnrichmentError> {
@@ -179,9 +182,12 @@ export type ExtractFacetsFn = (
 
 export interface EnrichSingleEventOptions {
   extractFacets?: ExtractFacetsFn
+  buildPresentationFields?: typeof buildDescriptionPresentationFields
 }
 
 interface EnrichmentPayload {
+  sourceObservedAt?: string | null
+  sourceValidatedAt?: string | null
   description_es: string | null
   description_en: string | null
   venue_name: string | null
@@ -213,6 +219,7 @@ export function enrichSingleEventEffect(
 ): Effect.Effect<EventEnrichmentResult, EventEnrichmentError> {
   const { id, name, link, source, categories, venue_id, price, is_free } = input
   const extractFacets = options.extractFacets ?? extractEventFacets
+  const buildPresentationFields = options.buildPresentationFields ?? buildDescriptionPresentationFields
 
   const program = Effect.gen(function* () {
     if (!link) {
@@ -238,7 +245,13 @@ export function enrichSingleEventEffect(
       }))
 
       if (isEmptyFacets(facets)) {
-        yield* updateEventEnrichmentEffect(client, id, { facets })
+        yield* updateEventEnrichmentEffect(client, id, {
+          facets,
+          enrichment_provenance: {
+            ...input.enrichment_provenance,
+            facets: enrichmentStageRecord('stored_description', {}, false),
+          },
+        })
       } else {
         let venueName: string | null = null
         let venueNeighborhood: Neighborhood | null = null
@@ -267,6 +280,10 @@ export function enrichSingleEventEffect(
           embedding,
           search_document: searchDocument,
           embedding_version: CURRENT_EMBEDDING_VERSION,
+          enrichment_provenance: {
+            ...input.enrichment_provenance,
+            facets: enrichmentStageRecord('stored_description', {}, true),
+          },
         })
       }
 
@@ -298,6 +315,10 @@ export function enrichSingleEventEffect(
     if (input.description_es) {
       console.log(`[event-enrichment] Reusing stored Spanish description for ${name}`)
       enrichmentResult = {
+        // A stored description may have changed since a prior full pass.
+        // Without an acquisition receipt for these exact inputs, age is unknown.
+        sourceObservedAt: null,
+        sourceValidatedAt: null,
         description_es: input.description_es,
         description_en: input.description_en
           ? input.description_en
@@ -402,12 +423,13 @@ export function enrichSingleEventEffect(
       })
     )
     const presentationFields = yield* enrichmentTry('event-enrichment.presentation-fields', () =>
-      buildDescriptionPresentationFields({
+      buildPresentationFields({
         description_es: enrichmentResult!.description_es,
         description_en: enrichmentResult!.description_en,
       })
     )
 
+    const provenance = enrichmentStageRecord(input.description_es ? 'stored_description' : 'detail', enrichmentResult, true)
     const updateData: Parameters<typeof updateEventEnrichmentEffect>[2] = {
       description_es: enrichmentResult.description_es,
       description_en: enrichmentResult.description_en,
@@ -418,7 +440,8 @@ export function enrichSingleEventEffect(
       facets,
       enrichment_status: 'completed',
       enrichment_error: null,
-      enriched_at: new Date().toISOString(),
+      enriched_at: provenance.processedAt,
+      enrichment_provenance: { full: provenance },
     }
     if (settledVenueId) updateData.venue_id = settledVenueId
 
@@ -623,7 +646,7 @@ export function getEventsNeedingEnrichmentEffect(
   let query = client
     .from('events')
     .select(
-      'id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, embedding, price, is_free'
+      'id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, embedding, price, is_free, enrichment_provenance'
     )
     .in('enrichment_status', options?.statuses ?? ['pending', 'failed'])
     .neq('status', 'canceled')

@@ -56,6 +56,10 @@ Reply with ONLY one word: "spanish" or "english" (lowercase, no punctuation).`
  */
 const EXTRACTION_PROMPT_ES = `Extrae una descripción semántica de este evento para indexación de búsqueda.
 
+Usa solo información explícita de la fuente. No deduzcas ambiente, público ni inclusiones del título o categoría.
+Si no hay información sobre una actividad o experiencia concreta, devuelve una cadena vacía para description.
+No escribas un párrafo genérico, un aviso de "descripción no disponible" ni un texto basado solo en registro, fecha o entradas.
+
 Enfócate en:
 - El TIPO de experiencia (concierto, taller, proyección, fiesta, etc.)
 - El AMBIENTE y vibra (íntimo, energético, casual, elegante, etc.)
@@ -84,6 +88,10 @@ Mantén menos de 200 palabras total.`
  * English extraction prompt - same focus as Spanish version
  */
 const EXTRACTION_PROMPT_EN = `Extract a semantic description of this event for search indexing.
+
+Use only information explicitly supplied by the source. Do not infer atmosphere, audience or inclusions from the title or category.
+If no concrete activity or experience information is available, return an empty string for description.
+Do not write a generic paragraph, a "description unavailable" notice or text based only on registration, dates or tickets.
 
 Focus on:
 - The TYPE of experience (concert, workshop, screening, party, etc.)
@@ -392,6 +400,7 @@ export async function enrichEventDescriptionBilingual(
  * Full enrichment result including venue extraction
  */
 export interface FullEnrichmentResult {
+  sourceObservedAt?: string | null
   description_es: string | null
   description_en: string | null
   venue_name: string | null
@@ -419,6 +428,7 @@ export async function enrichEventFull(
   // Step 1: Fetch markdown via Jina (once for all extractions)
   console.log(`[enrichment] Fetching via Jina...`)
   const markdown = await fetchWithJina(url)
+  const sourceObservedAt = new Date().toISOString()
   if (!markdown) {
     console.log(`[enrichment] Jina fetch failed`)
     return null
@@ -453,6 +463,7 @@ export async function enrichEventFull(
         description_es: null,
         description_en: null,
         venue_name: venueName,
+        sourceObservedAt,
       }
     }
     return null
@@ -469,6 +480,7 @@ export async function enrichEventFull(
   return {
     ...bilingual,
     venue_name: venueName,
+    sourceObservedAt,
   }
 }
 

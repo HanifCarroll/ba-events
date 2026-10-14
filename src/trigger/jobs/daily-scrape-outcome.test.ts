@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { catalogImportProvenance, CATALOG_IMPORT_VERSION } from '#features/import/core/enrichment-provenance.ts'
 import {
   mapBatchRunsToResults,
   summarizeResults,
@@ -52,10 +53,22 @@ function resultsFor(success: boolean[]): DailyScrapeResult['results'] {
 }
 
 describe('mapBatchRunsToResults', () => {
+  it('retains catalog observation/version receipts and leaves legacy outputs unmeasured', () => {
+    const provenance = catalogImportProvenance('2026-10-01T10:00:00.000Z')
+    const runs = SOURCE_JOBS.map((job, index) => ({
+      ...okRun(job.id),
+      output: { ...okRun(job.id).output, ...(index === 0 ? { catalogProvenance: provenance } : {}) },
+    }))
+    const results = mapBatchRunsToResults(runs, SOURCE_JOBS)
+    expect(results[0].catalogProvenance).toEqual(provenance)
+    expect(results[0].catalogProvenance?.version).toBe(CATALOG_IMPORT_VERSION)
+    expect(results[0].catalogProvenance?.scope).toBe('catalog')
+    expect(results[1]).not.toHaveProperty('catalogProvenance')
+  })
   it('maps runs to source results by taskIdentifier', () => {
     const results = mapBatchRunsToResults(
       [
-        okRun('scrape-passline', { eventsInserted: 3, eventsUpdated: 1 }),
+        okRun('scrape-passline', { eventsInserted: 3, eventsUpdated: 1, eventsFetched: 100, eventsFiltered: 80, eventsUnchanged: 76, categorizationSuccessful: 3, categorizationFallback: 0 }),
         okRun('scrape-meetup', { eventsInserted: 2 }),
         failRun('scrape-eventbrite', 'eventbrite down'),
         okRun('scrape-ba-tourism'),
@@ -71,12 +84,15 @@ describe('mapBatchRunsToResults', () => {
       success: true,
       eventsInserted: 3,
       eventsUpdated: 1,
+      eventsFetched: 100, eventsFiltered: 80, eventsUnchanged: 76,
+      categorizationSuccessful: 3, categorizationFallback: 0,
     })
     expect(results[2]).toMatchObject({
       source: 'Eventbrite',
       success: false,
       error: 'eventbrite down',
     })
+    expect(results[1].eventsFetched).toBeNull()
   })
 
   it('marks a missing run as failed', () => {
@@ -141,6 +157,7 @@ describe('finalizeScrapeRun', () => {
   it('writes status completed, completed_at and stats for a fully-successful run', async () => {
     const { client, updates, eq } = fakeFinalizeClient()
     const results = resultsFor([true, true])
+    results[0].catalogProvenance = catalogImportProvenance('2026-10-01T10:00:00.000Z')
 
     await finalizeScrapeRun(client, 'run-1', { scheduled: true }, results, true, 4, 37)
 
@@ -155,6 +172,8 @@ describe('finalizeScrapeRun', () => {
       enrichmentTriggered: true,
       blocklistCleanup: 4,
       enrichment: { eligible: 37 },
+      results: [{ ...results[0] }, { ...results[1] }],
+      sourceHealth: { version: 'source-health-v1', freshnessLimitHours: 36, enrichment: { eligible: 37, enriched: null, failed: null, remaining: null } },
     })
   })
 

@@ -106,7 +106,7 @@ describe('Telegram turn processor', () => {
       deps
     )
     expect(deps.runTurn).toHaveBeenCalledOnce()
-    expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' })
+    expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' }, expect.any(AbortSignal))
   })
 
   it('serializes initial and trusted search drafts before final delivery', async () => {
@@ -129,16 +129,75 @@ describe('Telegram turn processor', () => {
 
     for (let index = 0; index < 12; index += 1) await Promise.resolve()
     expect(deps.sendDraft).toHaveBeenCalledTimes(1)
-    expect(deps.sendDraft).toHaveBeenNthCalledWith(1, '123', 42, 'Finding events…')
+    expect(deps.sendDraft).toHaveBeenNthCalledWith(1, '123', 42, 'Finding events…', expect.any(AbortSignal))
     expect(deps.sendMessage).not.toHaveBeenCalled()
 
     resolvers.shift()?.()
     for (let index = 0; index < 4; index += 1) await Promise.resolve()
     expect(deps.sendDraft).toHaveBeenCalledTimes(2)
-    expect(deps.sendDraft).toHaveBeenNthCalledWith(2, '123', 42, 'Found events…')
+    expect(deps.sendDraft).toHaveBeenNthCalledWith(2, '123', 42, 'Found events…', expect.any(AbortSignal))
     resolvers.shift()?.()
     await turn
-    expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' })
+    expect(deps.sendMessage).toHaveBeenCalledWith('123', { text: 'rendered result' }, expect.any(AbortSignal))
+  })
+
+  it('cancels final delivery without completing its durable claim', async () => {
+    const deps = dependencies()
+    const controller = new AbortController()
+    let signal: AbortSignal | undefined
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    let release!: () => void
+    deps.sendMessage = vi.fn((_chatId, _message, ownedSignal) => {
+      signal = ownedSignal
+      started()
+      return new Promise<void>((resolve) => { release = resolve })
+    })
+    const pending = processTelegramTurn(payload({ chatId: '123', text: 'milongas' }), deps, controller.signal)
+    const outcome = pending.then(() => 'success', () => 'cancelled')
+    await ready
+    controller.abort()
+    expect(await outcome).toBe('cancelled')
+    expect(signal?.aborted).toBe(true)
+    release()
+    await Promise.resolve()
+    expect(deps.markCompleted).not.toHaveBeenCalled()
+  })
+
+  it('closes typing and draft requests and skips late progress on interruption', async () => {
+    const deps = dependencies()
+    const controller = new AbortController()
+    const signals: AbortSignal[] = []
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    let release!: () => void
+    const stalled = new Promise<void>((resolve) => { release = resolve })
+    const track = (signal?: AbortSignal) => {
+      signals.push(signal!)
+      if (signals.length === 2) started()
+      return stalled
+    }
+    deps.sendTyping = vi.fn((_chatId, signal) => track(signal))
+    deps.sendDraft = vi.fn((_chatId, _draftId, _text, signal) => track(signal))
+    let lateProgress: (() => void) | undefined
+    deps.runTurnEffect = ((input: Parameters<typeof deps.runTurn>[0]) => {
+      input.onSearchStart?.()
+      lateProgress = input.onTrustedSearchProgress
+      return Effect.never
+    }) as never
+    const pending = processTelegramTurn(payload({ chatId: '123', text: 'milongas' }), deps, controller.signal)
+    const outcome = pending.then(() => 'success', () => 'cancelled')
+    await ready
+    controller.abort()
+    expect(await outcome).toBe('cancelled')
+    expect(signals.every((signal) => signal.aborted)).toBe(true)
+    lateProgress?.()
+    release()
+    for (let index = 0; index < 4; index += 1) await Promise.resolve()
+    expect(deps.sendDraft).toHaveBeenCalledTimes(1)
+    expect(deps.sendTyping).toHaveBeenCalledTimes(1)
+    expect(deps.sendMessage).not.toHaveBeenCalled()
+    expect(deps.markCompleted).not.toHaveBeenCalled()
   })
 
   it('acknowledges legacy accept without restoring a consent gate, and deletes on decline', async () => {
@@ -159,6 +218,7 @@ describe('Telegram turn processor', () => {
     expect(accepted.sendMessage).toHaveBeenCalledWith(
       '123',
       { text: 'Thanks. You can send me an event question anytime.' },
+      expect.any(AbortSignal),
     )
 
     const declined = dependencies()
@@ -186,7 +246,8 @@ describe('Telegram turn processor', () => {
     expect(declined.getConversation).not.toHaveBeenCalled()
     expect(declined.sendMessage).toHaveBeenCalledWith(
       '123',
-      expect.objectContaining({ text: expect.stringContaining('Declined') })
+      expect.objectContaining({ text: expect.stringContaining('Declined') }),
+      expect.any(AbortSignal),
     )
     expect(declined.markCompleted).not.toHaveBeenCalled()
   })
@@ -223,7 +284,7 @@ describe('Telegram turn processor', () => {
     )
 
     for (let index = 0; index < 12; index += 1) await Promise.resolve()
-    expect(deps.sendTyping).toHaveBeenCalledWith('123')
+    expect(deps.sendTyping).toHaveBeenCalledWith('123', expect.any(AbortSignal))
     expect(deps.sendDraft).not.toHaveBeenCalled()
     expect(deps.runTurn).toHaveBeenCalledOnce()
     expect(deps.insertMessage).toHaveBeenCalledTimes(1)
@@ -312,7 +373,7 @@ describe('Telegram turn processor', () => {
       payload({ chatId: '123', userId: '123', messageId: '9', text: 'milongas' }),
       deps
     )
-    expect(deps.sendTyping).toHaveBeenCalledWith('123')
+    expect(deps.sendTyping).toHaveBeenCalledWith('123', expect.any(AbortSignal))
     expect(deps.runTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         requestId: 'telegram:42',
@@ -362,7 +423,7 @@ describe('Telegram turn processor', () => {
       expect(deps.sendMessage).toHaveBeenCalledWith('123', {
         text: expect.stringContaining('https://baeventos.com/privacy'),
         replyMarkup: { remove_keyboard: true },
-      })
+      }, expect.any(AbortSignal))
     }
   })
 
@@ -371,7 +432,7 @@ describe('Telegram turn processor', () => {
     await processTelegramTurn(payload({
       chatId: '123', callbackId: 'callback-1', callbackData: 'prompt:v1:weekend', languageCode: 'es',
     }), deps)
-    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', undefined)
+    expect(deps.answerCallback).toHaveBeenCalledWith('callback-1', undefined, expect.any(AbortSignal))
     expect(deps.runTurn).toHaveBeenCalledWith(expect.objectContaining({
       text: '¿Qué hay este finde?', locale: 'es', requestId: 'telegram:42',
     }))
@@ -385,9 +446,8 @@ describe('Telegram turn processor', () => {
     }), deps)
     expect(deps.answerCallback).toHaveBeenCalledWith(
       'callback-1',
-      expect.stringContaining('Too many requests')
-    )
-    expect(deps.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({ text: expect.stringContaining('Too many') }))
+      expect.stringContaining('Too many requests'), expect.any(AbortSignal))
+    expect(deps.sendMessage).toHaveBeenCalledWith('123', expect.objectContaining({ text: expect.stringContaining('Too many') }), expect.any(AbortSignal))
     expect(deps.runTurn).not.toHaveBeenCalled()
   })
 

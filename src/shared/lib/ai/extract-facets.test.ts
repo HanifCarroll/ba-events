@@ -6,7 +6,7 @@ vi.mock('ai', () => ({
 }))
 
 import { generateObject } from 'ai'
-import { extractEventFacets } from './extract-facets.ts'
+import { eventFacetsModelSchema, extractEventFacets } from './extract-facets.ts'
 import {
   eventFacetsSchema,
   parseEventFacets,
@@ -54,6 +54,17 @@ describe('eventFacetsSchema', () => {
 describe('extractEventFacets', () => {
   beforeEach(() => {
     generateObjectMock.mockReset()
+  })
+
+  it('retains known facets when the model uses null for unknown optional intensity', async () => {
+    generateObjectMock.mockResolvedValue({ object: { eventType: ['food'], activities: ['dinner'], energy: null, socialInteraction: null } })
+    const facets = await extractEventFacets({ name: 'Dinner', description_en: 'This event is a dinner.' })
+    expect(facets.eventType).toEqual(['food'])
+    expect(facets.activities).toEqual(['dinner'])
+    expect(facets.energy).toBeUndefined()
+    expect(facets.socialInteraction).toBeUndefined()
+    expect(eventFacetsModelSchema.safeParse({ energy: 'turbo' }).success).toBe(false)
+    expect(eventFacetsSchema.safeParse({ energy: null }).success).toBe(false)
   })
 
   it('returns facets from the mocked generateObject (never calls DeepSeek)', async () => {

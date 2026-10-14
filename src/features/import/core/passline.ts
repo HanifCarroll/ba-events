@@ -13,7 +13,8 @@ import {
   filterByDateRange,
   type PasslineEvent,
 } from '../scrapers/passline/api.ts'
-import { fetchPasslineEventsWithBrowserbase } from '../scrapers/passline/browser-scraper.ts'
+import { fetchPasslineCatalogWithBrowserbase } from '../scrapers/passline/browser-scraper.ts'
+import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 import { isBrowserbaseAvailable } from '#shared/lib/browser/browserbase.ts'
 import { transformPasslineEvent } from '../scrapers/passline/transformer.ts'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
@@ -61,6 +62,7 @@ export interface PasslineImportOptions {
 }
 
 export interface PasslineImportResult {
+  catalogProvenance?: CatalogImportProvenance
   // Scrape stats
   eventsFetched: number
   eventsFiltered: number
@@ -308,10 +310,14 @@ export function processPasslineImportEffect(
 
     logger.info('[passline] Fetching events from API')
     const fetchStart = performance.now()
-    const allEvents = yield* passlineTry(
+    const catalog = yield* passlineTry(
       'passline.fetch-events',
-      () => isBrowserbaseAvailable() ? fetchPasslineEventsWithBrowserbase() : fetchPasslineEvents()
+      async () => isBrowserbaseAvailable()
+        ? fetchPasslineCatalogWithBrowserbase()
+        : { events: await fetchPasslineEvents(), observedAt: new Date().toISOString() }
     )
+    const allEvents = catalog.events
+    result.catalogProvenance = catalogImportProvenance(catalog.observedAt)
     result.eventsFetched = allEvents.length
     logger.info('[passline] Fetch phase', { ms: Math.round(performance.now() - fetchStart), count: allEvents.length })
 

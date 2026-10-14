@@ -65,9 +65,22 @@
 					defaults: '2025-05-24',
 					capture_pageview: true,
 					capture_pageleave: true,
-					autocapture: true,
+					autocapture: { capture_copied_text: false },
+					mask_all_text: true,
+					mask_all_element_attributes: true,
+					disable_capture_url_hashes: true,
+					property_denylist: ['$title', '$referrer', '$initial_referrer', '$session_referrer', '$session_entry_referrer'],
+					save_referrer: false,
+					mask_personal_data_properties: true,
+					// Keep named masking aligned with auth/intake query parameters.
+					custom_personal_data_properties: [
+						'code', 'token', 'token_hash', 'access_token', 'refresh_token',
+						'email', 'password', 'error_description', 'redirect', 'next',
+						'callbackURL', 'redirect_uri', 'state', 'q', 'url',
+					],
 					respect_dnt: true,
 					disable_surveys: true,
+					session_recording: { maskAllInputs: true, maskTextSelector: '*', maskAllElementAttributes: true },
 					loaded: (ph) => {
 						// Expose globally for debugging.
 						;(window as unknown as Record<string, unknown>).posthog = ph

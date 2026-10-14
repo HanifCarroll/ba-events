@@ -19,6 +19,36 @@ const result = {
 }
 
 describe('shared chat turn', () => {
+  for (const stage of ['membership', 'history'] as const) {
+    it(`cancels pending ${stage} preparation before starting a model`, async () => {
+      const controller = new AbortController()
+      let started: () => void = () => {}
+      const ready = new Promise<void>((resolve) => { started = resolve })
+      let received: AbortSignal | undefined
+      let modelCalls = 0
+      const pending = (signal?: AbortSignal) => {
+        received = signal
+        started()
+        return new Promise<never>(() => {})
+      }
+      const running = runSharedChatTurn({
+        requestId: 'cancel-preparation', userContext: { userId: 'user', isAuthenticated: true },
+        text: 'Tell me more', locale: 'en', priorHints: [hint], abortSignal: controller.signal,
+      }, {
+        getSavedMembership: async (_context, _ids, signal) => stage === 'membership'
+          ? pending(signal) : { status: 'complete', savedIds: new Set<string>() },
+        fetchEventFacts: async (_ids, signal) => pending(signal),
+        orchestrateFn: async () => { modelCalls++; return result },
+      })
+      const outcome = running.then(() => ({ rejected: false }), () => ({ rejected: true }))
+      await ready
+      controller.abort()
+      expect((await outcome).rejected).toBe(true)
+      expect(received?.aborted).toBe(true)
+      expect(modelCalls).toBe(0)
+    })
+  }
+
   it('normalizes text and detects the response language', () => {
     expect(normalizeChatTurn('  qué\n\u0000 eventos  ', 'en')).toEqual({
       originalQuery: 'qué eventos',
@@ -61,7 +91,8 @@ describe('shared chat turn', () => {
 
     expect(getSavedMembership).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user-1' }),
-      [EVENT_ID]
+      [EVENT_ID],
+      expect.any(AbortSignal)
     )
     expect(orchestrateFn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -102,7 +133,7 @@ describe('shared chat turn', () => {
       { fetchEventFacts, orchestrateFn }
     )
 
-    expect(fetchEventFacts).toHaveBeenCalledWith([EVENT_ID])
+    expect(fetchEventFacts).toHaveBeenCalledWith([EVENT_ID], expect.any(AbortSignal))
     expect(orchestrateFn).toHaveBeenCalledWith(
       expect.objectContaining({
         priorDisplayedEvents: [

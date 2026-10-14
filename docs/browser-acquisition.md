@@ -14,6 +14,16 @@ Memory holds at most 256 entries. Retry entries expire after 48 hours and HTTP v
 
 The daily enrichment ceiling scales to the observed eligible population; no proxy quota stops new-event acquisition. Failed rows remain excluded from later batches of that chain and are retried by the scheduled catch-up.
 
+## Source health checks
+
+Run `bun run source:health` with the existing service-role environment to read the latest 30 daily runs and four exact counts of upcoming scheduled events. It makes no provider/model calls or database writes and excludes raw source errors and content. Exit 1 means an actionable signal, unknown measurement or unavailable read; the JSON separates those cases. The 36-hour source-age threshold allows the daily schedule a twelve-hour grace period.
+
+Daily finalization retains source catalog/filter/expansion/unchanged counts when supplied, categorization outcomes and a timestamped health snapshot, and logs a warning for failed/stale/empty sources, processing skips or categorization fallbacks. Zero writes can mean unchanged inventory. Filtered counts are the retained eligible set; expanded Meetup/BA Tourism entries are a different count. None of these measurements establishes exhaustive marketplace coverage. Legacy aggregate `scrape_runs.events_fetched` remains an import-processing total; use the new per-source `metadata.results[].eventsFetched` for actual catalog counts.
+
+The read-only command also reports the latest daily chain's measured enrichment outcomes and current scheduled/upcoming inventory counts: total, both primary language descriptions null, explicitly unavailable descriptions and failed enrichment. Description absence includes work still pending; it is not automatically an extraction failure. The four inventory queries are separate reads, not an atomic inventory snapshot. Parent health snapshots precede asynchronous enrichment; final chain counts remain in `metadata.enrichment`. Older rows without source receipts/counts remain unknown until new instrumented runs are released.
+
+The first production read at `2026-10-14T02:39:10.170Z` reported a partial daily run with Luma failed; 1,457 upcoming scheduled events, 25 with both primary descriptions null, zero explicitly unavailable and one failed enrichment. The latest daily chain separately reported 64 eligible/64 enriched/zero failed/zero remaining. Source ages and catalog counts were unmeasured in those pre-release records. The private receipt is `results/source-health/ba-production-first.json`. Alerts and deployed verification remain part of the observability release checkpoint.
+
 ## Measured validation and capacity limits
 
 October 1, 2026 experiments acquired exactly matching 3,015 country rows / 3,000 distinct IDs with the old and optimized resource profiles: 20,432,211 versus 599,295 proxy bytes (97.1% less). The production transformer accepted all required fields, with 1,245 distinct CABA/date-eligible IDs before the private blocklist. 1,119 of those were absent from the capped home feed; this is an acquisition omission count, not proof of 1,119 new database events.

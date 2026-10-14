@@ -24,6 +24,7 @@ import {
 } from './search-ranking.ts'
 import { rerankEvents, type RerankMeta } from '#shared/lib/search/rerank.ts'
 import { logger } from '#shared/lib/logger.ts'
+import { searchRetryBoundary, widenedSearchConstraints, rejectedSearchRetry, type SearchRetryBoundary } from './search-retry.ts'
 
 // Display vs. candidate limits. The display limit is how many events the user
 // asked to see (clamped to 1..5). Candidate limit is how many the retrieval
@@ -183,13 +184,17 @@ The result includes coverage metadata: the window you searched, total matches, a
 
   requiresAuth: false,
 
-  execute: async (input) => {
+  execute: async (input, context) => {
     const searchStartedAt = performance.now()
+    let retryBoundary: SearchRetryBoundary | undefined
     try {
       // Canonicalize raw input into a structured intent. The must constraints
       // become hard SQL filters; the leftover semanticQuery drives retrieval.
       // Venue resolution is async (DB lookup).
-      const intent = await canonicalizeSearchIntent(input, getNowInBA())
+      const intent = await canonicalizeSearchIntent(input, getNowInBA(), context.abortSignal)
+      retryBoundary = searchRetryBoundary(intent, input)
+      const widened = widenedSearchConstraints(context.searchRetryBoundary, retryBoundary)
+      if (widened.length) return rejectedSearchRetry(widened)
       // must -> hard filters, plus avoid genres as hard facet excludes.
       const filters = applyPreferAvoid(intent)
       // Multi-weekday asks carry disjoint per-day windows (never a spanning
@@ -229,7 +234,7 @@ The result includes coverage metadata: the window you searched, total matches, a
       // silently drop the constraint — report success with zero events and a
       // note so the model can correct the name.
       if (input.venueName && (!intent.must.venueIds || intent.must.venueIds.length === 0)) {
-        const maxEventDate = await getFurthestEventDate()
+        const maxEventDate = await getFurthestEventDate(context.abortSignal)
         const formatted = JSON.stringify({
           count: 0,
           events: [],
@@ -237,6 +242,7 @@ The result includes coverage metadata: the window you searched, total matches, a
         })
         return {
           success: true,
+          searchRetryBoundary: retryBoundary,
           events: [],
           formatted,
           metadata: {
@@ -275,7 +281,7 @@ The result includes coverage metadata: the window you searched, total matches, a
         // already started and haven't ended. Fetch those, then apply the
         // remaining `must` filters in memory.
         searchMode = 'now'
-        let nowEvents = await getEventsHappeningNow()
+        let nowEvents = await getEventsHappeningNow(context.abortSignal)
         // A dateFrom/dateTo window on the now-path applies as hard bounds on
         // starts_at (canonicalize set them even though 'now' alone sets no
         // range). An empty intersection → zero events, and we must not widen.
@@ -338,7 +344,7 @@ The result includes coverage metadata: the window you searched, total matches, a
             semanticQuery: query,
             prefer: intent.prefer,
             avoid: rerankAvoid,
-          })
+          }, context.abortSignal)
           rerankMeta = meta
           results =
             displayLimit > 1
@@ -357,17 +363,17 @@ The result includes coverage metadata: the window you searched, total matches, a
                     ...filters,
                     startsAfter: w.startsAfter,
                     startsBefore: w.startsBefore,
-                  })
+                  }, context.abortSignal)
                 )
               )
             ).reduce((sum, n) => sum + n, 0)
-          : await countEventsWithFilters(filters)
+          : await countEventsWithFilters(filters, context.abortSignal)
         if (objective === 'surprise') {
           // Surprise: no query, no hard must. Rank the filtered upcoming set by
           // quality + near-term decay (NOT chronological "soonest"), return one.
           searchMode = 'surprise'
           const rankStartedAt = performance.now()
-          const candidates = await searchEventsWithFilters(filters, CANDIDATE_LIMIT)
+          const candidates = await searchEventsWithFilters(filters, CANDIDATE_LIMIT, context.abortSignal)
           const ranked = surpriseRank(candidates, getNowInBA().getTime())
           // Surprise always returns exactly 1, ignoring displayLimit.
           results = ranked.slice(0, 1)
@@ -385,16 +391,16 @@ The result includes coverage metadata: the window you searched, total matches, a
           // events, and never applies to the surprise path.
           const candidates = weekdayWindows
             ? await fetchAcrossWeekdayWindows(weekdayWindows, filters, (f) =>
-                hybridEventSearch(query, f, CANDIDATE_LIMIT)
+                hybridEventSearch(query, f, CANDIDATE_LIMIT, context.abortSignal)
               )
-            : await hybridEventSearch(query, filters, CANDIDATE_LIMIT)
+            : await hybridEventSearch(query, filters, CANDIDATE_LIMIT, context.abortSignal)
           const genreResult = filterNamedGenre(candidates, namedGenre)
           if (genreResult.mismatch) genreMismatch = namedGenre
           const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
             semanticQuery: query,
             prefer: intent.prefer,
             avoid: rerankAvoid,
-          })
+          }, context.abortSignal)
           rerankMeta = meta
           results =
             displayLimit > 1
@@ -409,16 +415,16 @@ The result includes coverage metadata: the window you searched, total matches, a
           logger.debug('[search_events] Using filter-only search')
           const candidates = weekdayWindows
             ? await fetchAcrossWeekdayWindows(weekdayWindows, filters, (f) =>
-                searchEventsWithFilters(f, CANDIDATE_LIMIT)
+                searchEventsWithFilters(f, CANDIDATE_LIMIT, context.abortSignal)
               )
-            : await searchEventsWithFilters(filters, CANDIDATE_LIMIT)
+            : await searchEventsWithFilters(filters, CANDIDATE_LIMIT, context.abortSignal)
           const genreResult = filterNamedGenre(candidates, namedGenre)
           if (genreResult.mismatch) genreMismatch = namedGenre
           const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
             semanticQuery: query,
             prefer: intent.prefer,
             avoid: rerankAvoid,
-          })
+          }, context.abortSignal)
           rerankMeta = meta
           results =
             displayLimit > 1 ? applyDiversity(reranked, displayLimit) : reranked.slice(0, displayLimit)
@@ -427,7 +433,7 @@ The result includes coverage metadata: the window you searched, total matches, a
 
       // Furthest future event on record — the true coverage horizon the model
       // must answer "furthest into the future" from.
-      const maxEventDate = await getFurthestEventDate()
+      const maxEventDate = await getFurthestEventDate(context.abortSignal)
 
       const durationMs = Math.round(performance.now() - searchStartedAt)
 
@@ -467,6 +473,7 @@ The result includes coverage metadata: the window you searched, total matches, a
 
       return {
         success: true,
+        searchRetryBoundary: retryBoundary,
         events: ensureChatEventPayloads(results),
         formatted,
         metadata: {
@@ -498,9 +505,11 @@ The result includes coverage metadata: the window you searched, total matches, a
         },
       }
     } catch (error) {
+      context.abortSignal?.throwIfAborted()
       logger.error('[search_events] Search failed', { error: String(error) })
       return {
         success: false,
+        searchRetryBoundary: retryBoundary,
         formatted: JSON.stringify({ error: 'Failed to search for events' }),
         error: 'execution_error',
       }

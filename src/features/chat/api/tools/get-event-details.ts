@@ -24,7 +24,7 @@ export type GetEventDetailsInput = z.infer<typeof getEventDetailsInputSchema>
 // TOOL DEFINITION
 // ============================================================================
 
-export const getEventDetailsTool = defineTool({
+export const createGetEventDetailsTool = (read = getEventDetailsForUser) => defineTool({
   name: 'get_event_details',
 
   description: `Get complete details about a specific event. Use when the user wants more information about an event you previously mentioned, or asks "tell me more about that".`,
@@ -44,8 +44,10 @@ export const getEventDetailsTool = defineTool({
 
   requiresAuth: false,
 
-  execute: async (input) => {
-    const result = await getEventDetailsForUser(input.eventId)
+  execute: async (input, context) => {
+    context.abortSignal?.throwIfAborted()
+    const result = await read(input.eventId, context.abortSignal)
+    context.abortSignal?.throwIfAborted()
 
     console.log(`[DEBUG] get_event_details: success=${result.success}`)
 
@@ -75,3 +77,5 @@ export const getEventDetailsTool = defineTool({
     }
   },
 })
+
+export const getEventDetailsTool = createGetEventDetailsTool()
