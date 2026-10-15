@@ -9,7 +9,7 @@ measured production service levels or a promise to the traveler.
 | First useful result, p95 | Within 5 seconds of starting a turn | First acquired candidate/progress within 60 seconds of scan admission |
 | Complete response, p95 | Within 15 seconds | Saved qualified-choice report within 15 minutes of admission |
 | Existing hard execution boundary | 60 seconds per turn; 20 seconds per model step | 60 minutes per admitted scan; queue wait is separate |
-| Cost per independently reviewed success | Unmeasured; monetary target pending budget choice | Unmeasured; monetary target pending budget choice |
+| Cost per independently reviewed success | Unmeasured; target awaits independent outcome labels | Unmeasured; target awaits independent outcome labels |
 
 Count first useful BA output as a grounded event preview or a complete
 clarification or authoritative directions/venue artifact, not typing or generic progress. For Casamo, count acquired provider
@@ -52,18 +52,22 @@ setting included in its configuration fingerprint. The input guard runs after a
 provider reports usage, so the first oversized request may already be charged.
 Successful reads remain available under the existing fallback rules.
 
-Casamo's shared structured client defaults to 4,096 output tokens. Its locally
-implemented audit input guard rejects more than 64 KiB of complete text before
+Casamo's shared structured client defaults to 4,096 output tokens. Its released
+audit input guard rejects more than 64 KiB of complete text before
 I/O and rejects reported input beyond 32,768 tokens after the response. That
-context-budget change still requires its separate release. The accepted scan
+context-budget change was released in [Casamo PR #7](https://github.com/HanifCarroll/casamo/pull/7)
+with owner approval for the operational safeguards. Its production smoke retained
+bounded provider failures, two visible stays and cleared permits; it did not
+establish fresh model-quality acceptance. The accepted scan
 manifest owns action attempts, deadlines and durable resource permits. Keep those
 existing controls; changes to their numerical ceilings must use a new captured
 policy revision. Permits count actions and can cover multiple photo calls, so
 they must not be reported as an exact number of simultaneous HTTP requests.
 
 Per-call output limits and concurrency permits are not a monthly dollar cap.
-Choose the account budget, then use the provider balance/billing controls and
-existing usage views before considering a new application spending ledger.
+The owner selected **US$20 per month**, provisionally shared across BA Eventos
+and Casamo. This is a planning target, not an enforced cutoff. Use native provider
+balance/billing controls and existing usage views for this scale.
 Failures and retries belong in total spending; cost per success divides that
 total by independently reviewed successful outcomes and stays unknown when that
 denominator is unavailable.
@@ -79,7 +83,11 @@ embeddings, reranking, browser acquisition and infrastructure.
 
 Use reported cache/input/output counters for an estimate and retain the rate
 date. Missing counters remain unknown; do not silently price them as zero or
-report an estimate as an invoice. BA’s trace exporter now maps reported DeepSeek Flash counters to the published peak/off-peak token-rate estimate, with explicit estimate/rate/time-basis metadata and unknown values preserved. This excludes other providers and infrastructure. New deployed cost visibility, Casamo’s corresponding mapping and fallback/usage coverage remain under section 8.
+report an estimate as an invoice. Both trace exporters now map reported DeepSeek
+Flash counters to published peak/off-peak token-rate estimates, with explicit
+totals, estimate/rate/time-basis metadata and unknown values preserved. The
+deployed visibility receipts and fallback denominators are recorded under
+section 8 of the shared worklist. This excludes other providers and infrastructure.
 
 For the next model/configuration comparison, reuse the frozen conversation
 corpus and existing repeated-trial adapter. Record selected and returned model,
@@ -89,3 +97,17 @@ configured `adaptive` thinking to wire `enabled`; record the wire mode rather
 than comparing it as a distinct provider capability. Do not select a cheaper
 configuration based on latency alone or run a larger benchmark before the
 pending quality labels can support the decision.
+
+## Recorded provider billing checkpoint — October 15, 2026
+
+The owner-approved DeepSeek USD low-balance email is enabled at US$5 and was
+verified by reopening its saved settings. This is a balance notification, not
+a monthly spending cap. The saved October view showed US$1.90 for the selected
+BA Eventos/Casamo keys; other apps share the account. Signed-in Voyage BA Eventos
+showed US$0.00 October spend and exposed budget email alerts, with none configured
+and no hard cutoff shown. These are dated, partial observations rather than a
+current complete provider bill. No purchase or recharge was made.
+
+The shared US$20 target has no per-provider allocation or enforced combined cap.
+Use the dated evidence in `results/releases/spending-controls/current.json` and
+the [shared worklist](applied-ai-engineering-work.md) for the recorded decisions.

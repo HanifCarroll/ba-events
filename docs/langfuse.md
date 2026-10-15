@@ -59,6 +59,12 @@ redaction failure, export failure or Worker lifetime can leave observations
 missing. No probabilistic sampling or delivery guarantee is inferred from a
 healthy example trace.
 
+The owner-approved retention policy (2026-10-15 UTC) is to keep Langfuse Hobby
+and accept that stored traces are not automatically deleted. The plan's 30-day
+access window is not a deletion guarantee. No paid upgrade or automatic cleanup
+service is configured. Keep the documented content/access controls in place and
+revisit retention when the owner changes that policy.
+
 ## Evaluation
 
 ```sh
@@ -110,15 +116,22 @@ counts only production GENERATION observations with ERROR status. Its filters
 were verified after saving. Check recorded traffic separately: zero errors or
 an empty chart cannot prove telemetry coverage or successful customer outcomes.
 
-The prepared alert uses count > 0 over one hour, missing data as NO_DATA, and
-renotification off. It is not saved: Langfuse requires at least one notification
-automation, and an existing destination has not been selected. No Slack, webhook
-receiver or GitHub Actions integration was created. Hobby allows two alerts per
-organization, so reserve one per project.
+The enabled alert uses count > 0 over one hour, missing data as NO_DATA, and
+renotification off. Each project's webhook automation sends to the Casamo public
+Worker, which verifies the signature and queues email to the owner-selected
+`hanif@hanifcarroll.com`. The dated setup receipts show provider acceptance for
+both project emails; inbox arrival remains unobserved. A natural Casamo error
+also exercised incident delivery. See Casamo's `docs/ops/langfuse.md` and private
+`results/releases/langfuse-email-alerts.json`. The two project alerts use the
+organization's two-alert Hobby allowance.
 
 Production model timing and usage were inspected for six observed BA generations on October 14. Their dollar-cost fields were empty, and none of the 190 available model definitions matched DeepSeek. The export boundary now estimates DeepSeek Flash token costs from valid reported total input/cache/output counters using the [published peak/off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/). Raw OTLP cost exports include an explicit `total` for aggregate views; component-only records produced an observed zero cost aggregate and remain a retained diagnostic. Rates are versioned `deepseek-flash-2026-09-10`; cached tokens are subtracted from total input before charging uncached input. Reasoning is already included in provider output totals and is not charged again. The estimate uses model-span start time; calls whose endpoints have different price periods are left unpriced. Missing/inconsistent counters, other models and previously supplied costs are preserved. Estimates exclude embeddings, reranking, acquisition, proxies and infrastructure and do not certify an invoice or cost per independently reviewed success. Update the small rate table when provider prices change; no pricing service or spending ledger was added.
 
-Deployment, fresh production cost visibility and fallback measurement remain separate checkpoints. Curated cost views do not prove total provider spend.
+The export and explicit-total correction are deployed in PRs #9/#10. A fresh
+production request verified stored component/total estimates and the Metrics API
+aggregate; the original component-only diagnostic remains unchanged. The dated
+receipt is `results/releases/langfuse-cost-production.json`. Curated cost views
+do not prove total provider spend; fallback has its own denominator below.
 Experiments retain diagnostic scores separately from human-calibrated quality.
 
 References: [Custom dashboards](https://langfuse.com/docs/metrics/features/custom-dashboards),

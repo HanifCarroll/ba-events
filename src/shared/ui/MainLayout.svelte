@@ -186,6 +186,13 @@
 				</a>
 				<div class="my-2 h-px bg-border"></div>
 				<LanguageSwitcher />
+				<a
+					href="/privacy"
+					onclick={() => (mobileMenuOpen = false)}
+					class="flex min-h-11 items-center px-4 text-sm text-muted-foreground hover:text-foreground"
+				>
+					{m.nav_privacy()}
+				</a>
 				{#if auth.user}
 					<div class="space-y-2">
 						<div class="px-3 py-2">
@@ -273,6 +280,12 @@
 		<!-- Language switcher -->
 		<div class="px-5 pb-3 space-y-1">
 			<LanguageSwitcher />
+			<a
+				href="/privacy"
+				class="flex min-h-11 items-center px-4 text-sm text-muted-foreground hover:text-foreground"
+			>
+				{m.nav_privacy()}
+			</a>
 		</div>
 
 		<div class="h-px bg-border mx-5"></div>
