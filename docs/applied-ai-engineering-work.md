@@ -47,6 +47,26 @@ Execution checkpoint — 2026-10-15: completed the requested small Booking photo
 
 Publication checkpoint — 2026-10-15: the owner explicitly authorized publishing the checklists/templates and cleanup. BA PR #14 and Casamo PR #16 contain the manual release-decision policy; the BA PR also updates this shared status ledger. Other local differences are preserved before checkout cleanup and are not automatically promoted to main. Existing private Booking photo corpora and release receipts remain private.
 
+Production dogfood — 2026-10-15: the owner authorized one small normal journey
+per app. BA guest chat `2c6d29de-8b47-4338-881a-430c2d106551` returned two
+dated weekend events; a follow-up resolved the first event, its time/venue agreed
+with the canonical database record, event detail/back navigation worked, and all
+four messages survived reload. No BA runtime correction was needed. Casamo trip
+`c22e786f-dd85-43b5-88eb-4df4b7c6cb43` was submitted through the signed-in UI
+with two Airbnb links and completed in 67 seconds with both stays. Leaving and
+reopening progress, list/map/compare/detail navigation, exact photo evidence and
+favorite save/reload/restore worked. Its unavailable dated prices remain explicit.
+The trip and chat are retained as engineering evidence; no feedback vote,
+purchase or second scan was made. Notification-sent is recorded, while inbox
+delivery remains unobserved. Casamo PR #19 corrects two observed display defects:
+the zero submitted-count label and comparison's false missing-source message.
+Its focused regressions and application/Storybook/spec gates pass; final release
+and deployed recheck receipts live under ignored
+`results/releases/production-dogfood-20261015/` in both repositories. This is a
+small desktop operational check; the owner-deferred independent quality review,
+Booking/destination-search, checkout, new sign-in and physical-device coverage
+remain separate. No broader checklist item is checked from this canary.
+
 ## 1. Product outcomes
 
 - [x] Define task success and failure categories for recommendations and follow-ups.
