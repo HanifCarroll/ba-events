@@ -374,10 +374,21 @@ remain separate. No broader checklist item is checked from this canary.
   per-test limits, assertions and production deadlines. All 77 integration tests
   and their TypeScript check pass locally; the branch's GitHub browser tests pass.
   Empty commit `f9c3697295f9bdbaad4335e4b3248e761efa4ef6` triggers fresh native
-  builds; their remote results are pending. Both original failure logs remain
-  private with the release evidence. Direct dashboard log access is currently
-  blocked by the browser tool connection; the existing Wrangler credential does
-  not authorize the Builds API. Neither is an application runtime failure.
+  builds. Public build `f1660ab2-fc30-4528-8699-c3503f267e32` and private build
+  `11d17578-a720-4383-8147-c3a3dd74cf50` both pass and deploy successfully;
+  main's GitHub browser tests also pass. The active 100% versions are public
+  `7158f316-7cb5-41a5-bfe9-a92e6680f7d1` and private
+  `dd6a0310-08b1-4c3e-b84e-d010ccf01b6a`. The native logs confirm all 77
+  integration tests pass on both runners, including the formerly timed-out
+  cases. Both original failure logs and complete final build logs remain private
+  with the release evidence. Cloudflare's official `cloudflare-api` MCP connector
+  is configured in the owner's Codex setup, with credentials in macOS Keychain;
+  authenticated build-detail and paginated build-log reads return HTTP 200.
+  The returned grant is broader than the initial read-only request; the owner
+  explicitly chooses to keep full Cloudflare access. Only read operations are
+  used for this checkpoint. Browser access and Wrangler's missing Builds scope
+  no longer prevent direct log retrieval. No application changes or paid scans
+  are needed for this follow-up.
 
 - Casamo staging recovery checkpoint: the approved temporary Service Auth credential unblocks the existing canary without changing production access. One run `recovery-20261014` proves scheduled stranded-outbox reconciliation, confirmed expired-dispatcher-lease recovery with stale-version rejection, and reconciliation of a seeded ambiguous state. All three retain envelope/downstream identity and clear leases. Completion is 2026-10-14T23:50:33.675Z; scoped cleanup removes the three cases and their associated synthetic operations/confirmations/audit/ledger records, verified at 23:51:14.022Z. No email/model calls or application release occurred. Duplicate delivery, stage-lease loss and real network ambiguity remain unverified. Private receipt: Casamo `results/releases/staging-recovery-canary.json`; credential expires after 24 hours and is stored only in ignored `.env.staging`.
 
