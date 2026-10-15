@@ -356,6 +356,16 @@ remain separate. No broader checklist item is checked from this canary.
   inputs and rollback evidence remain under Casamo's ignored
   `results/releases/airbnb-price-destination-20261015/`. Independent model-quality
   review and original photo-label failures remain deferred/unresolved.
+  CI follow-up [PR #21](https://github.com/HanifCarroll/casamo/pull/21), merged
+  at `ec3995ed2d8e9766b19a258f76385812787539b3`, gives only the 160-candidate
+  deep-pagination integration test 120 seconds: the slower Cloudflare runner
+  completed its assertions in 66.8 seconds, exceeding its former 60-second
+  test limit. All 77 Cloudflare tests pass locally; production deadlines and
+  assertions are unchanged. Empty commit `b15aca0` triggers the existing native
+  build gate because test files are outside its normal watch paths. The original
+  failed build log and final remote-build status are retained in the same private
+  receipt directory. This follow-up changes no AI or application behavior and
+  needs no further paid scan.
 
 - Casamo staging recovery checkpoint: the approved temporary Service Auth credential unblocks the existing canary without changing production access. One run `recovery-20261014` proves scheduled stranded-outbox reconciliation, confirmed expired-dispatcher-lease recovery with stale-version rejection, and reconciliation of a seeded ambiguous state. All three retain envelope/downstream identity and clear leases. Completion is 2026-10-14T23:50:33.675Z; scoped cleanup removes the three cases and their associated synthetic operations/confirmations/audit/ledger records, verified at 23:51:14.022Z. No email/model calls or application release occurred. Duplicate delivery, stage-lease loss and real network ambiguity remain unverified. Private receipt: Casamo `results/releases/staging-recovery-canary.json`; credential expires after 24 hours and is stored only in ignored `.env.staging`.
 
