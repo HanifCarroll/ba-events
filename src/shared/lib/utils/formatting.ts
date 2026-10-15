@@ -130,11 +130,13 @@ export function formatEventTime(startsAt: string, endsAt: string | null): string
 
   if (endsAt) {
     const end = new Date(endsAt)
-    const endTime = end.toLocaleTimeString(locale, {
+    const sameDay = start.toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE }) ===
+      end.toLocaleDateString('en-CA', { timeZone: BA_TIMEZONE })
+    const endTime = sameDay ? end.toLocaleTimeString(locale, {
       hour: locale === 'en' ? 'numeric' : '2-digit',
       minute: '2-digit',
       timeZone: BA_TIMEZONE,
-    })
+    }) : end.toLocaleDateString(locale, options)
     result += ` - ${endTime}`
   }
 

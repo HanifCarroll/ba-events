@@ -5,6 +5,17 @@ Define homepage reassurance and consistent navigation to the web chat and Telegr
 
 ## Requirements
 
+### Requirement: Event details preserve cross-day end dates
+Event detail time ranges SHALL show the end date when it differs from the start date in Buenos Aires time. Same-day ranges SHALL retain a time-only end, regardless of a UTC date boundary.
+
+#### Scenario: Event ends the next local day
+- **WHEN** a saved event starts on October 17 at midnight and ends on October 18 at 06:00 in Buenos Aires
+- **THEN** its detail range includes both October 17 and October 18 rather than implying a six-hour same-day event
+
+#### Scenario: UTC midnight is not local midnight
+- **WHEN** start and end timestamps fall on different UTC dates but the same Buenos Aires date
+- **THEN** the end remains time-only in the active locale
+
 ### Requirement: Homepage reassurance focuses on guest access
 The homepage SHALL state that the service is free to use and no sign-up is needed in the active locale. Its reassurance line SHALL NOT include the English-or-Spanish language claim.
 
@@ -57,7 +68,7 @@ The MCP setup page SHALL provide localized Claude web and desktop connector inst
 - **AND** the ChatGPT section contains no Codex terminal command
 
 ## Verification
-- Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`
+- Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
 - Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify both reassurance lines, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions.
 - Static check: `bun run paraglide:compile && bun run check`
 - Specification validation: `bunx @fission-ai/openspec validate --specs --json`

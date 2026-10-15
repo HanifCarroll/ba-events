@@ -9,6 +9,18 @@ vi.mock('#paraglide/runtime.js', () => ({
 import { formatEventTime } from './formatting.ts'
 
 describe('formatEventTime', () => {
+  it('shows the end date when an event crosses a Buenos Aires calendar day', () => {
+    localeState.value = 'en'
+    const formatted = formatEventTime('2026-10-17T03:00:00Z', '2026-10-18T09:00:00Z').replaceAll(' at ', ', ')
+    expect(formatted).toBe('Sat, Oct 17, 12:00 AM - Sun, Oct 18, 6:00 AM')
+  })
+
+  it('keeps a time-only end across UTC midnight within the same Buenos Aires day', () => {
+    localeState.value = 'en'
+    const formatted = formatEventTime('2026-10-17T22:00:00Z', '2026-10-18T01:00:00Z').replaceAll(' at ', ', ')
+    expect(formatted).toBe('Sat, Oct 17, 7:00 PM - 10:00 PM')
+  })
+
   it('does not pad English event hours with a leading zero', () => {
     localeState.value = 'en'
 

@@ -51,7 +51,9 @@ Production dogfood — 2026-10-15: the owner authorized one small normal journey
 per app. BA guest chat `2c6d29de-8b47-4338-881a-430c2d106551` returned two
 dated weekend events; a follow-up resolved the first event, its time/venue agreed
 with the canonical database record, event detail/back navigation worked, and all
-four messages survived reload. No BA runtime correction was needed. Casamo trip
+four messages survived reload. The detail panel omitted the date of a next-day
+end even though the grounded chat included it; the date formatter now preserves
+that date with focused local-day and UTC-boundary regressions. Casamo trip
 `c22e786f-dd85-43b5-88eb-4df4b7c6cb43` was submitted through the signed-in UI
 with two Airbnb links and completed in 67 seconds with both stays. Leaving and
 reopening progress, list/map/compare/detail navigation, exact photo evidence and
