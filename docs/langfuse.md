@@ -49,6 +49,16 @@ credentials and per-user context. Keep the application release alongside these
 identifiers; the fingerprint describes configured options rather than replacing
 code or SDK version tracking. Historical traces are not backfilled.
 
+Tracing uses the installed OpenTelemetry provider's `parentbased_always_on`
+default: new root traces are selected at 100%, and child spans inherit the
+parent's sampled flag. The active production web/Telegram Workers have no
+`OTEL_TRACES_SAMPLER` or `OTEL_TRACES_SAMPLER_ARG` binding override (read on
+2026-10-14). Langfuse exports its supported Langfuse/GenAI/LLM spans after the
+redaction boundary. Selection is not delivery: disabled/missing credentials,
+redaction failure, export failure or Worker lifetime can leave observations
+missing. No probabilistic sampling or delivery guarantee is inferred from a
+healthy example trace.
+
 ## Evaluation
 
 ```sh
