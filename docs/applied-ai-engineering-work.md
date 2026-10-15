@@ -329,6 +329,34 @@ remain separate. No broader checklist item is checked from this canary.
 
 ## Verification receipts
 
+- Casamo Airbnb pricing and destination dogfood checkpoint (2026-10-15):
+  [PR #20](https://github.com/HanifCarroll/casamo/pull/20) is merged at
+  `e1ba5ca7e17298b98e200716110196aa542cdc5d`. Missing submitted-link prices now
+  use the anonymous dated Book It quote; both Airbnb price readers reject
+  redirects using Worker-compatible manual mode. Exact before-tax and regional
+  regulated totals retain their own qualifiers, dates, guests, accepted-intake
+  hash and raw source reference. The staged 15-night comparison
+  `5496432c-9a9e-425c-bfeb-166f6f446c68` completes in 59 seconds and displays
+  $639.18 total/$42.61 nightly; the provider's unavailable quote stays unknown.
+  The coordinated production release deploys private
+  `dd9069d2-1cc5-4d00-bd4d-6d1b112f438f` before public
+  `f4d20a55-0ae6-47cd-b76c-868fd9c66b07`, after active scans drain. No migration
+  or credential change is needed; the compatible previous versions are retained.
+  The normal production destination search
+  `3f5c6dc1-3305-4842-a192-8598a46e8182` finishes in 6m29s and saves ten Airbnb
+  apartments within $75/night for October 25–November 8. It sees 108 discovery
+  listings and investigates 35 properties; these are distinct counts. Booking
+  returns no usable listings and the saved report discloses the Airbnb-only
+  result. List, map marker/preview, detail, comparison/reload, exact AC photo and
+  full Wi-Fi review navigation work. This destination run precedes the pricing
+  release; new submitted-price capture is verified in staging, not through an
+  extra paid production comparison. The complete Casamo gate passes 313 unit,
+  523 native, 77 Cloudflare and 519 scan tests, checks/build and 18 strict specs.
+  Original failed captures, regional source responses, 19 unchanged frozen
+  inputs and rollback evidence remain under Casamo's ignored
+  `results/releases/airbnb-price-destination-20261015/`. Independent model-quality
+  review and original photo-label failures remain deferred/unresolved.
+
 - Casamo staging recovery checkpoint: the approved temporary Service Auth credential unblocks the existing canary without changing production access. One run `recovery-20261014` proves scheduled stranded-outbox reconciliation, confirmed expired-dispatcher-lease recovery with stale-version rejection, and reconciliation of a seeded ambiguous state. All three retain envelope/downstream identity and clear leases. Completion is 2026-10-14T23:50:33.675Z; scoped cleanup removes the three cases and their associated synthetic operations/confirmations/audit/ledger records, verified at 23:51:14.022Z. No email/model calls or application release occurred. Duplicate delivery, stage-lease loss and real network ambiguity remain unverified. Private receipt: Casamo `results/releases/staging-recovery-canary.json`; credential expires after 24 hours and is stored only in ignored `.env.staging`.
 
 - Section 5 Casamo source transformations: 32 existing/new native checks pass
