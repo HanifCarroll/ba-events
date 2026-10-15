@@ -366,6 +366,18 @@ remain separate. No broader checklist item is checked from this canary.
   failed build log and final remote-build status are retained in the same private
   receipt directory. This follow-up changes no AI or application behavior and
   needs no further paid scan.
+  A second native scan build, `1f6aceda-8188-4db0-86af-147d2943c0b3`, passes
+  deep pagination but hits Vitest's default five-second deadline in the
+  six-scenario publication/refund integration test. [PR #22](https://github.com/HanifCarroll/casamo/pull/22),
+  merged at `df17bb0d66c85a3ac138ffa63840a5186daf966b`, sets the Cloudflare
+  bindings project's default test limit to 30 seconds while preserving explicit
+  per-test limits, assertions and production deadlines. All 77 integration tests
+  and their TypeScript check pass locally; the branch's GitHub browser tests pass.
+  Empty commit `f9c3697295f9bdbaad4335e4b3248e761efa4ef6` triggers fresh native
+  builds; their remote results are pending. Both original failure logs remain
+  private with the release evidence. Direct dashboard log access is currently
+  blocked by the browser tool connection; the existing Wrangler credential does
+  not authorize the Builds API. Neither is an application runtime failure.
 
 - Casamo staging recovery checkpoint: the approved temporary Service Auth credential unblocks the existing canary without changing production access. One run `recovery-20261014` proves scheduled stranded-outbox reconciliation, confirmed expired-dispatcher-lease recovery with stale-version rejection, and reconciliation of a seeded ambiguous state. All three retain envelope/downstream identity and clear leases. Completion is 2026-10-14T23:50:33.675Z; scoped cleanup removes the three cases and their associated synthetic operations/confirmations/audit/ledger records, verified at 23:51:14.022Z. No email/model calls or application release occurred. Duplicate delivery, stage-lease loss and real network ambiguity remain unverified. Private receipt: Casamo `results/releases/staging-recovery-canary.json`; credential expires after 24 hours and is stored only in ignored `.env.staging`.
 
