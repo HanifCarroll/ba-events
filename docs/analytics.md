@@ -24,9 +24,11 @@ Authenticated people are identified with their application user ID, locale, and 
 
 PostHog also collects autocaptured interaction metadata, page-leave and scroll-depth data, heatmap positions, and session replays. Automatic interactions explicitly mask element text and attributes (`mask_all_text=true`, `mask_all_element_attributes=true`), and copied-text capture is disabled. Named outcome events remain available. The owner-approved session replay policy disables text, input and DOM-attribute masking locally (`maskAllInputs=false`, `maskInputOptions.password=false`, `maskTextSelector=''`, `maskAllElementAttributes=false`). New recordings can include page content and entered values; authorized replay viewers can see them. See [PostHog's replay privacy controls](https://posthog.com/docs/session-replay/privacy). Project settings still control which sessions record. Previously masked recordings cannot recover content that was never sent. PostHog omits page titles and strips automatically captured URL fragments. Known auth/search query names are masked with the SDK’s `mask_personal_data_properties` and `custom_personal_data_properties`; referrer collection is disabled and referrer event properties are denied. This list is explicit: newly introduced query fields need privacy review. Separately supplied custom fields, replay/network URL coverage and historical data remain separate surfaces; verify deployed payloads before claiming complete telemetry redaction.
 
+Replay network performance capture removes query strings, fragments and embedded username/password values from document-navigation and request URLs, preserving host/path, status and timings. Header and body capture are explicitly disabled. This uses the existing SDK's `maskCapturedNetworkRequestFn`; it does not modify requests, page text, inputs or unmasked DOM link attributes. Ordinary event URL masking remains separate, and historical recordings retain their original content. See [network recording](https://posthog.com/docs/session-replay/network-recording).
+
 ## What is deliberately not collected
 
-- Chat text, search text, feedback text, error messages, or input values
+- Chat text, search text, feedback text, error messages, or input values in named product-event properties. Unmasked session replays can contain visible page text and entered values under the owner-approved policy above.
 - PostHog surveys
 - Localhost and preview traffic
 - Server-side agent, tool, fallback, or execution-trace telemetry
@@ -87,6 +89,12 @@ If delivery fails, the feedback remains saved and the person sees a successful s
 ## Reporting
 
 Use PostHog directly for detailed product behavior. GA4 is limited to acquisition, page paths, and the existing browser outcome events so OpenSEO can report the acquisition-to-outcome funnel. Do not build a second analytics dashboard.
+
+Use explicit UTC bounds for receipts timestamped in UTC, for example
+`timestamp >= toDateTime('2026-10-14 23:28:40', 'UTC')`. BA's PostHog project
+uses Buenos Aires time; an unqualified `toDateTime` interprets that string in
+the project timezone. Exclude marked engineering visits and their known session
+IDs from customer reporting, including subsequent pages that lose the URL marker.
 
 The core funnel is:
 

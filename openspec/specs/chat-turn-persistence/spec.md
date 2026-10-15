@@ -221,6 +221,16 @@ Browser automatic interaction capture SHALL mask element text and element attrib
 - **THEN** local SDK configuration excludes element text and attributes, with copied-text capture disabled
 - **AND** named outcome measurement retains its existing behavior
 
+### Requirement: Replay network timing URLs exclude private URL content
+
+Replay network capture SHALL remove all URL query strings, fragments and embedded username/password values from its telemetry copy, including initial document navigation. Network status and timing metadata SHALL remain available. Invalid or non-HTTP(S) URLs SHALL be omitted. Header/body recording SHALL be explicitly disabled. Page text, input values and DOM attributes retain the owner-approved unmasked policy; historical telemetry is unchanged.
+
+#### Scenario: A page navigation or request contains private URL values
+- **WHEN** replay captures document navigation or a network timing entry with URL query, fragment or embedded credentials
+- **THEN** the exported network URL retains only its scheme, host and path
+- **AND** the original browser request and page content remain unchanged
+- **AND** header/body capture is disabled and status/timing diagnostics remain available
+
 ### Requirement: Browser event telemetry excludes sensitive URLs and titles
 
 The browser SDK SHALL mask declared sensitive query names, strip captured URL fragments, omit PostHog page titles and disable referrer collection. Named outcomes and the first-party interface SHALL remain unchanged. These event controls do not imply replay-content masking. New query fields SHALL receive privacy review; historical telemetry remains unchanged.

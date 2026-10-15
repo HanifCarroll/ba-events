@@ -8,6 +8,7 @@
 	import { getLocale } from '#paraglide/runtime.js'
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
 	import { initializeGoogleAnalytics, isAnalyticsEnabled } from '#shared/lib/analytics.ts'
+	import { redactReplayNetworkRequest } from '#shared/lib/replay-network.ts'
 	import MainLayout from '#shared/ui/MainLayout.svelte'
 	import EventPage from './events/[id]/+page.svelte'
 	import Toaster from '#shared/ui/sonner/sonner.svelte'
@@ -80,7 +81,12 @@
 					],
 					respect_dnt: true,
 					disable_surveys: true,
-					session_recording: { maskAllInputs: false, maskInputOptions: { password: false }, maskTextSelector: '', maskAllElementAttributes: false },
+					session_recording: {
+						maskAllInputs: false, maskInputOptions: { password: false },
+						maskTextSelector: '', maskAllElementAttributes: false,
+						recordHeaders: false, recordBody: false,
+						maskCapturedNetworkRequestFn: redactReplayNetworkRequest,
+					},
 					loaded: (ph) => {
 						// Expose globally for debugging.
 						;(window as unknown as Record<string, unknown>).posthog = ph
