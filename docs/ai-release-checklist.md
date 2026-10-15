@@ -5,6 +5,26 @@ adapter. Record this checkpoint in the PR before merging. The automated gate
 checks code and deterministic contracts; AI-quality approval is a manual merge
 checkpoint owned by the project owner.
 
+## Required release decision
+
+Record one decision in every AI-related PR. A blank decision or `blocked` leaves
+the manual merge checkpoint incomplete.
+
+| Decision | Required evidence |
+| --- | --- |
+| `reviewed_quality_accepted` | Matching frozen eval, independent labels, retained failures and dated owner acceptance. |
+| `no_ai_behavior_change` | Evidence that model requests, retrieval, grounding and results are unchanged; relevant deterministic checks. |
+| `owner_approved_operational_exception` | Exact release-specific owner approval, bounded operational scope, remaining quality risks and rollback. |
+| `blocked` | Missing checks, approval, compatible data/rollback or a required quality decision. |
+
+The owner deferred human review. Independent factuality/usefulness and grader
+calibration remain unknown, and that deferral does not approve future model,
+prompt or retrieval changes. Frozen-example and documentation additions can be
+`no_ai_behavior_change` when they alter no runtime behavior. Retain all original
+failed diagnostics and separate automatic scores from independent review.
+This is the existing manual PR gate, not enforced branch protection or a new CI
+platform. An operational exception applies only to the release it names.
+
 ## Before merge
 
 - Identify whether the change affects prompts, selected models, context/output
@@ -20,8 +40,8 @@ checkpoint owned by the project owner.
   own score or a routing pass cannot establish reviewed factuality/usefulness.
   Keep the quality approval open until the owner accepts the relevant evidence.
 - For a tracing-only change, record why model requests/results are unchanged
-  and attach exporter/privacy/failure checks. The current release also changes
-  orchestration limits and retrieval, so that exception does not cover the whole PR.
+  and attach exporter/privacy/failure checks. That exception does not cover
+  changes to orchestration limits, retrieval or grounding in the same PR.
 - Apply required migrations in the declared order, verify their actual behavior,
   and record the backup/rollback boundary. Keep credentials and source captures private.
 - Record staging/production checks separately. A bundle dry run or accepted
@@ -50,13 +70,26 @@ order if rollback is required. Preserve the paid-filter correction and additive
 provenance column when reverting application code; do not drop captured data as
 part of a code rollback.
 
-## Current draft
+## Recorded releases
 
-[PR #6](https://github.com/HanifCarroll/ba-events/pull/6) is merged and deployed at `e73a1ea`. Both production build integrations succeeded. A live browser chat and seven Langfuse observations verify execution and grounded paid-event cards; an unlabeled synthetic underscore-delimited key exposes a redaction gap, addressed by the following tracing-only patch.
-The full existing release gate passes at runtime commit `e296a00`: 865 Bun and
-850 Vitest tests, Svelte/TypeScript checks and the production build. Subsequent
-receipt-only documentation does not change that tested runtime. Both Supabase migrations and twelve live search checks pass. The owner authorized
-continuing the release on 2026-10-14 using the retained evidence and disclosed
-label gaps; independent quality calibration remains open. Deployed smoke checks remain open. The owner chose content with redaction;
-local export checks pass, while deployed payload verification remains open. Historical baseline receipts remain
-diagnostic evidence for their recorded code/configuration.
+Tracing and its redaction correction, paid-filter/provenance migrations,
+token-cost exports, cancellation cleanup and replay network URL correction are
+released. The replay correction is recorded at
+`932295e4c106a22f3535032ed20e17f54b517ce1`; the separately recorded cancellation
+trace fix is `85399349aaa9c2cad1b89916a37d3c090f18f00f`. Their original checks,
+deployed versions and observations remain distinct. The October 15 scheduled
+import confirms all six catalog provenance records and fresh enrichment rows;
+two source-description gaps remain explicit.
+
+Private `results/releases/ai-reproducibility-20261015/index.json` fingerprints and
+links code/check, prompt/configuration, model, frozen corpus/results, migration,
+deployed observation and rollback receipts. It preserves original observation
+dates and historical unknowns instead of certifying the current dirty worktree
+or a newer deployment. Independent quality review/calibration remain deferred;
+operational acceptance is separate from reviewed-quality acceptance. Unsupported
+Telegram lifecycle/fault and deployed limiter-outage checks stay open.
+
+This publication changes the release documentation and PR template only. It
+changes no model requests, application behavior, tests, credentials or data.
+The private reproducibility index retains historical receipt dates and unknowns;
+publishing the checklist does not create new independent quality approval.
