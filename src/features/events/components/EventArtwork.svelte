@@ -28,7 +28,7 @@
 
 	let failedUrl = $state<string | null>(null)
 	const sources = $derived(eventId && failedUrl !== imageUrl && isArtworkOriginAllowed(imageUrl)
-		? artworkSrcset(eventId, imageUrl) : undefined)
+		? artworkSrcset(eventId, imageUrl, imageWidth) : undefined)
 	const ratio = $derived(aspectRatio ?? getArtworkAspectRatio(imageWidth, imageHeight))
 </script>
 
@@ -44,7 +44,9 @@
 			{fetchpriority}
 			decoding="async"
 			onerror={() => { failedUrl = imageUrl }}
-			class="block max-h-full max-w-full object-contain"
+			style:max-width={ratio && imageWidth ? `min(100%, ${imageWidth}px)` : undefined}
+			style:max-height={ratio && imageHeight ? `min(100%, ${imageHeight}px)` : undefined}
+			class={ratio ? 'block h-full w-full object-contain' : 'block max-h-full max-w-full object-contain'}
 		/>
 	</picture>
 </div>

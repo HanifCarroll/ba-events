@@ -30,6 +30,12 @@ export function artworkUrl(id: string, imageUrl: string, width: typeof ARTWORK_W
   return `/api/event-artwork/${encodeURIComponent(id)}/${width}.webp?v=${artworkVersion(imageUrl)}`
 }
 
-export function artworkSrcset(id: string, imageUrl: string): string {
-  return ARTWORK_WIDTHS.map((width) => `${artworkUrl(id, imageUrl, width)} ${width}w`).join(', ')
+export function artworkSrcset(id: string, imageUrl: string, imageWidth?: number | null): string {
+  const seen = new Set<number>()
+  return ARTWORK_WIDTHS.flatMap((width) => {
+    const actualWidth = imageWidth && Number.isInteger(imageWidth) && imageWidth > 0 ? Math.min(width, imageWidth) : width
+    if (seen.has(actualWidth)) return []
+    seen.add(actualWidth)
+    return [`${artworkUrl(id, imageUrl, width)} ${actualWidth}w`]
+  }).join(', ')
 }

@@ -10,6 +10,13 @@ const SOURCE_IMAGES = [
 ]
 
 describe('bounded artwork delivery', () => {
+  it('caps candidate descriptors and removes duplicate no-upscale variants when source dimensions are known', () => {
+    const sources = artworkSrcset('catalog-id', SOURCE_IMAGES[0][1], 400)
+    expect(sources).toContain(' 320w')
+    expect(sources).toContain(' 400w')
+    expect(sources).not.toContain(' 640w')
+    expect(sources).not.toContain('1280.webp')
+  })
   it.each(SOURCE_IMAGES)('supports %s artwork without changing signed upstream URLs', (_source, url) => {
     expect(isArtworkOriginAllowed(url)).toBe(true)
     expect(artworkSrcset('catalog-id', url)).toContain(`/320.webp?v=${artworkVersion(url)} 320w`)
