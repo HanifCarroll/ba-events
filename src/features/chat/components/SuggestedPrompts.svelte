@@ -26,7 +26,7 @@
 		type RecognitionMode,
 		type SpeechRecognitionLike
 	} from '#features/chat/lib/speech-recognition.ts'
-	import type { ChatEventPayload } from '#shared/lib/types.ts'
+	import type { HomeEventFeed } from '#features/events/lib/home-feed.ts'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
 	import InstallApp from '#shared/ui/InstallApp.svelte'
 	import {
@@ -47,7 +47,7 @@
 		happeningSoonEvents = []
 	}: {
 		onSelectPrompt: (prompt: string, options?: { eventId?: string }) => void
-		happeningSoonEvents?: ChatEventPayload[]
+		happeningSoonEvents?: HomeEventFeed
 	} = $props()
 
 	const auth = useAuthContext()

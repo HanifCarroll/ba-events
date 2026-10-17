@@ -151,6 +151,8 @@
 		>
 			{#if event.image_url}
 				<EventArtwork
+						eventId={event.id}
+						sizes="(min-width: 768px) 50vw, 100vw"
 					imageUrl={event.image_url}
 					imageWidth={event.image_width}
 					imageHeight={event.image_height}
