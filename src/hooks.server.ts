@@ -17,6 +17,13 @@ export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
 // (a) Supabase handle — create a per-request server client, load the
 // authenticated user and their profile, and expose them via `event.locals`.
 const handleSupabase: Handle = async ({ event, resolve }) => {
+  // These public media/feed endpoints never read account data or refresh a session.
+  if (event.url.pathname === '/api/events/happening-soon' || event.url.pathname.startsWith('/api/event-artwork/')) {
+    event.locals.user = null;
+    event.locals.profile = null;
+    event.locals.isAdmin = false;
+    return resolve(event);
+  }
 	const session = await Effect.runPromise(getSessionUserEffect(event));
 	if (!session) {
 		event.locals.user = null;

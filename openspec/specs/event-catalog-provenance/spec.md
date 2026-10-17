@@ -55,6 +55,32 @@ Event detail and summaries SHALL distinguish BA Eventos pages, original event so
 - **WHEN** source presentation is built
 - **THEN** the link remains identified as external source evidence rather than BA Eventos-authored fact
 
+### Requirement: Homepage cards are discovered early without delaying the hero
+The homepage SHALL render a fresh shared cache of at most four compact public cards in server HTML. A cold cache SHALL stream the feed independently of the hero. Cached cards SHALL be fresh for 60 seconds and MAY be served for a further 300 seconds while a retained background refresh runs. Failed refreshes MUST NOT be cached as successful empty feeds. Browser/CDN cache policy MUST NOT extend the feed's intended freshness to the zone's four-hour browser TTL.
+
+#### Scenario: Homepage shared cache is warm
+- **WHEN** a homepage request reaches a fresh cache
+- **THEN** card artwork is discoverable in server HTML without a client events API waterfall
+
+#### Scenario: Homepage shared cache is cold
+- **WHEN** no usable cached feed exists
+- **THEN** the hero can render before the database read completes, with reserved loading geometry for the event row
+
+### Requirement: Event artwork is bounded and responsive across sources
+Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog-mediated responsive WebP delivery path. BA Tourism records without source images SHALL retain their existing missing-image presentation. Transformations SHALL preserve aspect ratio, avoid upscaling, use fixed 320/640/1280-pixel variants, and retain original-image fallback on unavailable transformations or quota exhaustion. The first two homepage cards SHALL load eagerly, only the first SHALL have high fetch priority, and farther cards SHALL remain lazy.
+
+#### Scenario: An image transformation is requested
+- **WHEN** a caller provides a displayable catalog event ID and a supported variant
+- **THEN** the server resolves its stored artwork, allows only exact known media hosts and paths over HTTPS, downloads anonymously without following redirects, bounds bytes and decoded dimensions, and caches only successful derived images
+
+#### Scenario: An arbitrary proxy target is supplied
+- **WHEN** an image request supplies an upstream URL, unsupported size, invalid event ID, obsolete version, or unapproved origin
+- **THEN** it MUST NOT fetch or transform that arbitrary target
+
+#### Scenario: Transformation is unavailable
+- **WHEN** the image service or its free allowance is unavailable
+- **THEN** the original approved source image remains available and the fallback MUST NOT be cached as a successful derivative
+
 ## Verification
 
 ### Implementation anchors
@@ -63,6 +89,8 @@ Event detail and summaries SHALL distinguish BA Eventos pages, original event so
 - `src/features/events/lib/location-presentation.ts`
 - `src/features/events/lib/source-presentation.ts`
 - `src/features/events/lib/description-presentation.ts`
+- `src/features/events/api/home-feed.server.ts`
+- `src/features/events/api/artwork.server.ts`
 - `src/features/chat/api/agent/orchestrate.ts`
 - `src/features/chat/api/tools/get-directions.ts`
 - `src/features/chat/api/tools/utils.ts`
@@ -73,6 +101,10 @@ Event detail and summaries SHALL distinguish BA Eventos pages, original event so
 - `src/features/events/lib/source-presentation.test.ts`
 - `src/features/events/lib/description-presentation.test.ts`
 - `src/features/events/lib/event-summary.test.ts`
+- `src/routes/home-loading.test.ts`
+- `src/features/events/api/home-feed.server.test.ts`
+- `src/features/events/api/artwork.server.test.ts`
+- `src/features/events/lib/artwork-delivery.test.ts`
 - `src/features/chat/api/tools/presentation.test.ts`
 - `src/features/chat/api/agent/orchestrate.test.ts`
 

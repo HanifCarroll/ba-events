@@ -18,6 +18,7 @@ import type {
 import { generateEmbedding } from '../ai/embeddings.ts'
 import { rrfFuse } from '../search/rrf.ts'
 import { withReadSignal } from './read-signal.ts'
+import type { HomeEventCard } from '#features/events/lib/home-feed.ts'
 // Lazy-initialize Supabase client (only when needed, server-side only)
 let supabaseInstance: SupabaseClient | null = null
 
@@ -133,13 +134,13 @@ export async function getEventsWithVenues(limit = 50) {
  * Floor is now + 12 hours, rolling. Daytime events can appear if they
  * start at least 12 hours out; a night already in progress does not.
  */
-export async function getHappeningSoonEvents(limit = 8): Promise<ChatEventPayload[]> {
+export async function getHappeningSoonEvents(limit = 4): Promise<HomeEventCard[]> {
   const earliestStartUTC = addHours(new Date(), 12).toISOString()
 
   const { data, error } = await getSupabase()
     .from('events_with_venues')
-    .select(CHAT_EVENT_COLUMNS)
-    .neq('status', 'past')
+    .select('id, name, starts_at, time_tba, image_url, image_width, image_height, venue_name, venue_neighborhood, price, is_free')
+    .eq('status', 'scheduled')
     .gte('starts_at', earliestStartUTC)
     .eq('location_tba', false)
     .eq('description_unavailable', false)
@@ -158,7 +159,15 @@ export async function getHappeningSoonEvents(limit = 8): Promise<ChatEventPayloa
     .limit(limit)
 
   if (error) throw error
-  return data as ChatEventPayload[]
+  return data as HomeEventCard[]
+}
+
+/** Catalog-mediated image lookup: callers cannot supply upstream URLs. */
+export async function getEventArtwork(id: string, signal?: AbortSignal) {
+  const { data, error } = await withReadSignal(getSupabase().from('events')
+    .select('image_url').eq('id', id).in('status', ['scheduled', 'past']), signal).maybeSingle()
+  if (error) throw error
+  return data as { image_url: string | null } | null
 }
 
 // ============================================================================

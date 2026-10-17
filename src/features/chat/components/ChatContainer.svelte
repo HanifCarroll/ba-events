@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { HomeEventCard, HomeEventFeed } from '#features/events/lib/home-feed.ts'
 	import { untrack } from 'svelte'
 	import { RotateCw } from 'lucide-svelte'
 	import { Chat } from '@ai-sdk/svelte'
@@ -62,7 +63,7 @@
 	let {
 		conversationId = null as string | null,
 		onConversationChange = undefined as ((id: string) => Promise<void>) | undefined,
-		happeningSoonEvents = undefined as ChatEventPayload[] | undefined,
+		happeningSoonEvents = undefined as HomeEventFeed | undefined,
 		preloadedConversation = null as ConversationWithMessages | null,
 		pendingTurns = [] as Array<{
 			id: string
@@ -75,7 +76,7 @@
 	}: {
 		conversationId?: string | null
 		onConversationChange?: (id: string) => Promise<void>
-		happeningSoonEvents?: ChatEventPayload[]
+		happeningSoonEvents?: HomeEventFeed
 		preloadedConversation?: ConversationWithMessages | null
 		pendingTurns?: Array<{
 			id: string
@@ -86,6 +87,17 @@
 		}>
 		showLanding?: boolean
 	} = $props()
+
+	// Resolve streamed cards for first-turn context without blocking sending a message.
+	let streamedHomeEvents = $state.raw<HomeEventCard[]>([])
+	const resolvedHomeEvents = $derived(Array.isArray(happeningSoonEvents) ? happeningSoonEvents : streamedHomeEvents)
+	$effect(() => {
+		const feed = happeningSoonEvents
+		if (!feed || Array.isArray(feed)) return
+		let active = true
+		void feed.then((events) => { if (active) streamedHomeEvents = events })
+		return () => { active = false }
+	})
 
 	const auth = useAuthContext()
 	const userId = $derived(auth.user?.id ?? null)
@@ -341,7 +353,7 @@
 		const startedAt = Date.now()
 		const hasHistory = chat.messages.length > 0
 		const homeEventIds = !chat.messages.some((message) => message.role === 'assistant')
-			? options?.happeningSoonEventIds ?? happeningSoonEvents?.slice(0, 4).map((event) => event.id)
+			? options?.happeningSoonEventIds ?? resolvedHomeEvents.slice(0, 4).map((event) => event.id)
 			: undefined
 		activeTurn = turn
 		progressiveResponse = null

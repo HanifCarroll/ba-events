@@ -3,7 +3,7 @@ import {
   getEventWithVenue,
 } from '#shared/lib/db/client.server.ts'
 import { Data, Effect } from 'effect'
-import type { ChatEventPayload } from '#shared/lib/types.ts'
+import type { HomeEventCard } from '../lib/home-feed.ts'
 
 class EventReadError extends Data.TaggedError('EventReadError')<{
   readonly message: string
@@ -14,9 +14,9 @@ class EventReadError extends Data.TaggedError('EventReadError')<{
  * Next upcoming events for the chat home "Happening soon" grid.
  * Public — no auth, lightweight chat columns only.
  */
-export function getHappeningSoonEventsForGridEffect(): Effect.Effect<ChatEventPayload[], EventReadError> {
+export function getHappeningSoonEventsForGridEffect(): Effect.Effect<HomeEventCard[], EventReadError> {
   return Effect.tryPromise({
-    try: () => getHappeningSoonEvents(8),
+    try: () => getHappeningSoonEvents(4),
     catch: (cause) => new EventReadError({ message: 'Failed to load happening soon events', cause }),
   })
 }
