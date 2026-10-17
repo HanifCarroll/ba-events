@@ -81,6 +81,10 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 - **WHEN** the image service or its free allowance is unavailable
 - **THEN** the original approved source image remains available and the fallback MUST NOT be cached as a successful derivative
 
+#### Scenario: A small original is selected through a larger cached candidate
+- **WHEN** no-upscale delivery returns fewer physical pixels than the requested variant and candidate selection changes
+- **THEN** artwork in a reserved aspect-ratio frame retains its rendered size independently of density-corrected natural dimensions, remains uncropped, and caps candidate descriptors to known source widths without duplicate variants
+
 ## Verification
 
 ### Implementation anchors

@@ -16,6 +16,11 @@ the feed's freshness. HTML remains locale/session dependent and is not shared.
 `EventArtwork` selects WebP variants through a `<picture>` and accurate `sizes`.
 Homepage cards 1–2 are eager; only card 1 has high priority. Remaining cards are
 lazy. Event details and chat artwork use the same delivery path.
+Reserved frames give the image an explicit box with `object-contain`, so switching
+to a cached candidate cannot shrink it through density-corrected natural sizing.
+Known source dimensions cap both the rendered maximum and candidate descriptors;
+duplicate no-upscale candidates are omitted. Missing metadata keeps the explicit
+frame geometry without enabling server-side upscaling.
 
 ## Image boundary
 
