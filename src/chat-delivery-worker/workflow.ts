@@ -1,6 +1,7 @@
 import { WorkflowEntrypoint, WorkerEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 import type { ChatDeliveryEnv } from './index.ts'
 import { workflowRequest, type ExecutionStage } from './recovery.ts'
+import { createChatTiming } from '#features/chat/lib/timing.ts'
 
 export type ChatWorkflowParams = { name: string }
 const generationPolicy = { retries: { limit: 2, delay: '1 second', backoff: 'constant' as const }, timeout: '95 seconds' }
@@ -15,6 +16,7 @@ async function call(env: ChatDeliveryEnv, name: string, action: string, stage?: 
 export class ChatResponseWorkflow extends WorkflowEntrypoint<ChatDeliveryEnv, ChatWorkflowParams> {
  async run(event: WorkflowEvent<ChatWorkflowParams>, step: WorkflowStep) {
   const name = event.payload.name
+  createChatTiming({ requestId: name.split(':').at(-1) ?? '', phase: 'workflow', scope: 'workflow' }).mark('workflow_started')
   try {
    const generated = await step.do('generate validated response', generationPolicy, () => call(this.env, name, 'run', 'generate'))
    if (generated.phase !== 'running') return generated

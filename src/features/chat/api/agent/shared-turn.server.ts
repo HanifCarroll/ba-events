@@ -121,11 +121,13 @@ export function runSharedChatTurnEffect(
       onSuccess: (value) => value,
     })
 
+    input.timing?.mark('context_ready')
     const orchestrationInput = {
       requestId: input.requestId,
       sessionId: input.sessionId,
       channel: input.channel,
       retainTask: input.retainTask,
+      timing: input.timing,
       userContext: input.userContext,
       locale: normalized.locale,
       originalQuery: normalized.originalQuery,

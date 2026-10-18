@@ -232,3 +232,10 @@ bunx vitest run src/features/chat/api/agent/orchestrate.test.ts src/features/cha
 
 ### Advisory conformance review
 `$openspec-review-conformance concierge-orchestration` is advisory rather than proof.
+
+#### Scenario: Startup and completion timing is recorded
+- **WHEN** a web chat passes through ingress, durable admission, workflow dispatch and model execution
+- **THEN** server-only timing records correlate the attempt across request entry/session loading, admission, execution verification, rate admission, context readiness, provider initialization, model start, trace export and checkpoint/publication
+- **AND** stage and cumulative durations use a local monotonic clock, while a persisted admission timestamp identifies the cross-worker wait separately
+- **AND** records contain only a validated attempt identifier, allowlisted stage/phase/scope/version labels and numeric or explicitly unknown timings
+- **AND** logging failures cannot change admission, execution, cancellation, persistence or replay and no credentials, capabilities or chat content are added to timing logs

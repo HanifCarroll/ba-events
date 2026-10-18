@@ -7,6 +7,7 @@ import {
 	deliveryObjectName, parseDeliveryIdentity, type DeliveryIdentity,
 } from '#features/chat/lib/delivery-protocol.ts'
 import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, parseCheckpoint, type RecoveryCheckpoint } from '../../../chat-delivery-worker/recovery.ts'
+import { requestChatTiming } from '#features/chat/lib/timing.ts'
 
 export interface ChatDeliveryNamespace {
 	idFromName(name: string): unknown
@@ -25,7 +26,9 @@ export const forwardChatDeliveryEffect = Effect.fn('forwardChatDeliveryEffect')(
 ) {
 	const binding = chatDeliveryBinding(event)
 	if (!binding) return new Response('Chat delivery is unavailable', { status: 503 })
+	const timing = requestChatTiming(event)
 	const context = yield* getUserToolContextEffect(event)
+	timing.mark('identity_ready')
 	const headers = new Headers(event.request.headers)
 	headers.delete(DELIVERY_AUTH_HEADER)
 	headers.delete(EXECUTION_FENCE_HEADER)
@@ -35,6 +38,7 @@ export const forwardChatDeliveryEffect = Effect.fn('forwardChatDeliveryEffect')(
 	headers.set('x-chat-client-ip', event.getClientAddress())
 	const url = new URL(event.request.url)
 	url.pathname = `/${action}`
+	timing.mark('delivery_forward_start')
 	const response = yield* Effect.tryPromise({
 		try: () => binding.get(binding.idFromName(deliveryObjectName(identity))).fetch(new Request(url, {
 			method: action === 'stream' ? 'GET' : 'POST', headers,
@@ -42,6 +46,7 @@ export const forwardChatDeliveryEffect = Effect.fn('forwardChatDeliveryEffect')(
 		})),
 		catch: (cause) => new ChatDeliveryError({ cause }),
 	})
+	timing.mark('delivery_headers')
 	if (action === 'stop' && response.ok && context.isAuthenticated) {
 		// A Stop can precede claim acquisition, or the claim can already be superseded.
 		// The delivery gate has cancelled the producer either way; cleanup cannot undo it.

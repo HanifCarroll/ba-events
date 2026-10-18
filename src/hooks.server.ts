@@ -3,6 +3,7 @@ import { dev } from '$app/env';
 import { Effect } from 'effect';
 import { getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
+import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 
 export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
@@ -24,7 +25,10 @@ const handleSupabase: Handle = async ({ event, resolve }) => {
     event.locals.isAdmin = false;
     return resolve(event);
   }
+	const timing = requestChatTiming(event);
+	timing.mark("request_entry");
 	const session = await Effect.runPromise(getSessionUserEffect(event));
+	timing.mark("session_ready");
 	if (!session) {
 		event.locals.user = null;
 		event.locals.profile = null;

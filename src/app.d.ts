@@ -7,6 +7,7 @@ declare global {
 	namespace App {
 		// interface Error {}
 		interface Locals {
+			chatTiming?: import('#features/chat/lib/timing.ts').ChatTiming;
 			user: User | null;
 			profile: Profile | null;
 			isAdmin: boolean;
