@@ -367,7 +367,9 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
 
 /** Production model runner; eval adapters may observe its inputs and results. */
 export async function runToolLoop(input: AgentInput): Promise<AgentRun> {
+  input.timing?.mark('provider_init_start')
   const { CHAT_THINKING, textModelForRequest } = await import('#shared/lib/ai/providers.ts')
+  input.timing?.mark('provider_ready')
   const model = textModelForRequest(input.requestId ?? 'unknown')
   // Identity contains only server-owned settings, never messages, credentials or context.
   const configurationId = createHash('sha256').update(JSON.stringify({
@@ -386,6 +388,7 @@ async function generateToolLoop(input: AgentInput,
   model: ReturnType<typeof import('#shared/lib/ai/providers.ts').textModelForRequest>,
   thinking: typeof import('#shared/lib/ai/providers.ts').CHAT_THINKING,
   telemetry?: TelemetryOptions): Promise<AgentRun> {
+  input.timing?.mark('model_start')
   const promptSize = input.instructions.length + input.messages.reduce((total, message) => total + JSON.stringify(message.content).length, 0)
   logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: MODEL_MAX_RETRIES, contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS, maxOutputTokens: MAX_OUTPUT_TOKENS })
   const agent = new ToolLoopAgent({
@@ -587,7 +590,7 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
         executionSignal = input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal
         executionSignal.throwIfAborted()
         const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId, publishProgress, executionSignal)
-        return (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, sessionId: input.sessionId, channel: input.channel, abortSignal: executionSignal, retainTask: input.retainTask,
+        return (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, sessionId: input.sessionId, channel: input.channel, abortSignal: executionSignal, retainTask: input.retainTask, timing: input.timing,
         ...(input.onProgress ? { onText: (text: string) => { progressiveText = text; publishProgress() } } : {}),
         })
       },

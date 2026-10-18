@@ -1,5 +1,6 @@
 import type { TelemetryOptions } from 'ai'
 import { redactingSpanProcessor } from './trace-redaction.ts'
+import type { ChatTiming } from '#features/chat/lib/timing.ts'
 
 export interface ConciergeTraceContext {
   requestId?: string
@@ -8,6 +9,7 @@ export interface ConciergeTraceContext {
   promptVersion?: string
   configurationId?: string
   retainTask?: (task: Promise<unknown>) => void
+  timing?: ChatTiming
 }
 
 type Runtime = {
@@ -121,6 +123,8 @@ async function traceConciergeRun<T extends { text: string; steps: unknown[] }>(
     throw error
   } finally {
     // Both successful and failed/aborted streaming generations end before export.
+    input.timing?.mark('trace_flush_start')
     await flushLangfuse()
+    input.timing?.mark('trace_flush_complete')
   }
 }

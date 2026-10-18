@@ -5,6 +5,7 @@ import {
 } from '#features/chat/lib/delivery-protocol.ts'
 import { signChatExecution } from '#features/chat/api/delivery-auth.server.ts'
 import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, canonicalKey, openEnvelope, parseCheckpoint, sealEnvelope, verifyWorkflowRequest, type ExecutionStage, type RecoveryCheckpoint, type SealedEnvelope } from './recovery.ts'
+import { createChatTiming } from '#features/chat/lib/timing.ts'
 
 type Storage = {
 	get<T>(key: string): Promise<T | undefined>
@@ -142,6 +143,7 @@ export class ChatDelivery {
 		const identity = parseDeliveryIdentity(request.headers.get(DELIVERY_TURN_HEADER), request.headers)
 		const owner = request.headers.get(DELIVERY_OWNER_HEADER)
 		if (!identity || !owner || !this.env.CHAT_DELIVERY_SECRET || !this.env.CHAT_RESPONSE_WORKFLOW) return new Response(null, { status: 400 })
+		const timing = createChatTiming({ requestId: identity.attemptId, phase: 'delivery', scope: 'delivery_start' })
 		const tokenHash = await digest(identity.token)
 		const payloadHash = await digest(body)
 		return this.serialize(async () => {
@@ -161,6 +163,7 @@ export class ChatDelivery {
 				headers.set('content-type', 'application/json')
 				const envelope = await sealEnvelope({ url: request.url, headers: [...headers], body }, this.env.CHAT_DELIVERY_SECRET, name)
 				await this.state.storage.put({ metadata, request: envelope })
+				timing.mark('durable_input_ready')
 				// Reconcile admission after a crash between durable input and workflow creation.
 				await this.state.storage.setAlarm(now + 1000)
 				// The workflow stores only an opaque object reference; credentials stay encrypted and bounded here.
@@ -173,9 +176,12 @@ export class ChatDelivery {
 	private async ensureWorkflow(metadata: Metadata): Promise<void> {
 		if (this.admission) return this.admission
 		this.admission = (async () => {
+			const timing = createChatTiming({ requestId: metadata.attemptId, phase: 'delivery', scope: 'admission', admittedAtMs: metadata.createdAt })
+			timing.mark('workflow_admission_start')
 			let admitted = false
 			try { await this.env.CHAT_RESPONSE_WORKFLOW.create({ id: metadata.workflowId!, params: { name: `${metadata.turnId}:${metadata.attemptId}` } }); admitted = true }
 			catch { try { await (await this.env.CHAT_RESPONSE_WORKFLOW.get(metadata.workflowId!)).status(); admitted = true } catch { /* The alarm retries an uncertain admission without changing its ID. */ } }
+			timing.mark(admitted ? 'workflow_admitted' : 'workflow_admission_unknown')
 			await this.serialize(async () => {
 				const current = await this.state.storage.get<StoredMetadata>('metadata')
 				if (!current || current.phase === 'expired' || terminal(current)) return
@@ -190,6 +196,7 @@ export class ChatDelivery {
 		const task = await this.serialize(async () => {
 			const metadata = await this.state.storage.get<StoredMetadata>('metadata')
 			if (!metadata || metadata.phase === 'expired') return { phase: 'expired', fence: 0 }
+			createChatTiming({ requestId: metadata.attemptId, phase: stage, scope: 'dispatch', admittedAtMs: metadata.createdAt }).mark('workflow_dispatch_received')
 			if (terminal(metadata)) return { phase: metadata.phase, fence: metadata.fence ?? 0 }
 			if (metadata.deadline! <= Date.now()) { this.producer?.abort(); await this.fail(metadata, 'The response timed out. Please retry.'); return { phase: 'failed', fence: metadata.fence ?? 0 } }
 			if (stage === 'generate' && metadata.hasCheckpoint) return { phase: metadata.phase, fence: metadata.fence ?? 0 }
@@ -203,7 +210,7 @@ export class ChatDelivery {
 			await this.state.storage.put({ metadata })
 			const headers = new Headers(envelope.headers); headers.set(EXECUTION_FENCE_HEADER, String(fence)); headers.set(EXECUTION_STAGE_HEADER, stage)
 			// The promise is returned inside an object so serialization does not await the producer.
-			return { work: this.produce(new Request(envelope.url, { method: 'POST', headers }), envelope.body, controller, stage, fence), fence }
+			return { work: this.produce(new Request(envelope.url, { method: 'POST', headers }), envelope.body, controller, stage, fence, metadata.createdAt), fence }
 		})
 		if ('work' in task) await task.work
 		const current = await this.state.storage.get<StoredMetadata>('metadata')
@@ -211,8 +218,10 @@ export class ChatDelivery {
 		return Response.json({ phase: current?.phase ?? 'expired', fence: task.fence })
 	}
 
-	private async produce(request: Request, body: string, controller: AbortController, stage: ExecutionStage, fence: number): Promise<void> {
+	private async produce(request: Request, body: string, controller: AbortController, stage: ExecutionStage, fence: number, admittedAtMs: number): Promise<void> {
 		let completed = false
+		let previewPublished = false
+		const timing = createChatTiming({ requestId: request.headers.get('x-chat-attempt') ?? '', phase: stage, scope: 'producer', admittedAtMs })
 		const batch: string[] = []; let batchBytes = 0
 		try {
 			const headers = new Headers(request.headers)
@@ -220,9 +229,11 @@ export class ChatDelivery {
 			const url = new URL(request.url)
 			url.pathname = '/api/chat/execute'
 			url.search = ''
+			timing.mark('execution_fetch_start')
 			const response = await this.env.CHAT_EXECUTION.fetch(new Request(url, {
 				method: 'POST', headers, body, signal: controller.signal,
 			}))
+			timing.mark('execution_headers')
 			if (!response.ok || !response.body) throw new Error('Chat execution unavailable')
 			const reader = response.body.getReader()
 			const cancelReader = () => { void reader.cancel().catch(() => {}) }
@@ -242,8 +253,11 @@ export class ChatDelivery {
 								if (stage === 'commit') {
 									batchBytes += encoder.encode(data).byteLength; if (batchBytes > 512 * 1024) throw new Error('Final response exceeds delivery limit')
 									batch.push(data)
-									if (JSON.parse(data).type === 'finish') { await this.publishFinal(metadata, batch); completed = true }
-								} else { await this.append(metadata, data); completed ||= terminal(metadata) }
+									if (JSON.parse(data).type === 'finish') { await this.publishFinal(metadata, batch); timing.mark('final_published'); completed = true }
+								} else {
+									await this.append(metadata, data); completed ||= terminal(metadata)
+									if (!previewPublished && JSON.parse(data).type === 'data-progress') { previewPublished = true; timing.mark('first_preview_published') }
+								}
 							}
 						})
 					}

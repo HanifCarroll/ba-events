@@ -77,6 +77,7 @@ import { beginChatDeliveryCommit, getChatDeliveryCheckpoint, saveChatDeliveryChe
 import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER } from '../../../chat-delivery-worker/recovery.ts'
 import { DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER, parseDeliveryIdentity } from '#features/chat/lib/delivery-protocol.ts'
 import { progressArtifactKey, progressText } from '#features/chat/lib/progress.ts'
+import { requestChatTiming } from '#features/chat/lib/timing.ts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -123,6 +124,7 @@ function publicChatError(error: unknown): string {
 
 export const POST = async (event: RequestEvent, dependencies: { rateLimit?: typeof checkRateLimit } = {}): Promise<Response> => {
   const { request } = event
+  const timing = requestChatTiming(event)
   const stage = request.headers.get(EXECUTION_STAGE_HEADER)
 
   let uiMessages: UIMessage[]
@@ -154,23 +156,28 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
     return createErrorStream('Invalid request body')
   }
 
+  timing.mark('body_ready')
   const ip = getClientIP(event)
   let limit: Pick<Awaited<ReturnType<typeof checkRateLimit>>, 'success' | 'reset'>
   try {
+    timing.mark('rate_limit_start')
     limit = stage === 'commit' || stage === 'fail' || Number(request.headers.get(EXECUTION_FENCE_HEADER)) > 1
       ? { success: true, reset: 0 } : await (dependencies.rateLimit ?? checkRateLimit)(ip)
   } catch {
+    timing.mark('rate_limit_rejected')
     const response = createErrorStream(m.chat_error_generic({}, { locale }))
     response.headers.set('Retry-After', String(RATE_LIMIT_RETRY_SECONDS))
     return response
   }
   const { success, reset } = limit
+  timing.mark(success ? 'rate_limit_ready' : 'rate_limit_rejected')
   if (!success) {
     console.log(`[RATE LIMIT] IP ${ip} exceeded rate limit, reset at ${new Date(reset).toISOString()}`)
     return createRateLimitResponse(reset)
   }
 
   const userContext = await getUserToolContext(event)
+  timing.mark('identity_ready')
   if (event.request.headers.get(DELIVERY_OWNER_HEADER) !== (userContext.userId ?? 'guest') ||
       event.request.headers.get(DELIVERY_TURN_HEADER) !== turnId) return new Response(null, { status: 403 })
   request.signal.throwIfAborted()
@@ -220,6 +227,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
     originalQuery = normalizedTurn.originalQuery
     locale = normalizedTurn.locale
   }
+  timing.mark('claim_ready')
 
   if (!userContext.isAuthenticated) {
     void Effect.runPromise(persistGuestChatDebugEffect({
@@ -260,6 +268,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
     }
   }
 
+  timing.mark('pin_ready')
   // Prior displayed-event context and previous-search context: guest and auth
   // share bounded validation, while authenticated history is read from the
   // server-owned persisted conversation instead of client-supplied canonicals.
@@ -293,6 +302,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
     recentMessages = buildAgentHistoryFromUIMessages(uiMessages, originalQuery)
   }
 
+  timing.mark('history_ready')
   const stream = createUIMessageStream({
     execute: ({ writer }) => {
       const execution = (async () => {
@@ -350,11 +360,13 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
         if (!userContext.isAuthenticated && stage !== 'commit') {
           await Effect.runPromise(recordGuestRequestStartedEffect({ requestId, conversationId }))
         }
+        timing.mark('guest_lifecycle_ready')
 
 		const result = checkpoint ?? await Effect.runPromise(runSharedChatTurnEffect({
           requestId,
           sessionId: conversationId ?? undefined,
           channel: 'web',
+          timing,
           retainTask: task => event.platform?.context?.waitUntil(task),
           userContext,
           locale,
@@ -378,16 +390,21 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
 		}), { signal: request.signal })
 
         const canonical = result.canonical
+        timing.mark('generation_complete')
         providerRequestId = result.providerRequestId ?? null
         if (stage === 'generate') {
           request.signal.throwIfAborted()
+          timing.mark('checkpoint_start')
           await saveChatDeliveryCheckpoint(event, { canonical, executionTrace: result.executionTrace, providerRequestId: providerRequestId ?? undefined })
+          timing.mark('checkpoint_ready')
           return
         }
 
         // Server-side authoritative persistence for authenticated users.
         request.signal.throwIfAborted()
+        timing.mark('commit_gate_start')
         await beginChatDeliveryCommit(event)
+        timing.mark('commit_gate_ready')
         writeStatus('persisting')
         if (userContext.isAuthenticated && turnId && claimedTurn && assistantClientMessageId) {
           await Effect.runPromise(completeChatTurnEffect(event, {
@@ -409,6 +426,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
 			}))
         }
 
+        timing.mark('persistence_ready')
         // Exactly one final text block.
         const textId = generateId()
         writer.write({ type: 'text-start', id: textId })
@@ -431,6 +449,7 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
 
         writeStatus('done')
         writer.write({ type: 'finish', finishReason: 'stop' })
+        timing.mark('final_written')
 
         if (!userContext.isAuthenticated) {
           await Promise.all([
