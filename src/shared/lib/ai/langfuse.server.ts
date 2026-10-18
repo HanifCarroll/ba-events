@@ -124,7 +124,16 @@ async function traceConciergeRun<T extends { text: string; steps: unknown[] }>(
   } finally {
     // Both successful and failed/aborted streaming generations end before export.
     input.timing?.mark('trace_flush_start')
-    await flushLangfuse()
-    input.timing?.mark('trace_flush_complete')
+    const cleanup = flushLangfuse().finally(() => input.timing?.mark('trace_flush_complete'))
+    if (input.retainTask) {
+      try { input.retainTask(cleanup) }
+      catch {
+        console.warn('[langfuse] cleanup retention failed')
+        await cleanup
+      }
+    } else {
+      // CLI and runtimes without an owning lifecycle must finish export here.
+      await cleanup
+    }
   }
 }

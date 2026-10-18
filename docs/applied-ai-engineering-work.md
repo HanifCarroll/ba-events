@@ -254,6 +254,8 @@ remain separate. No broader checklist item is checked from this canary.
 
 ## 10. Latency and cost
 
+- [x] Prepare the owner-authorized generic-city search and retained asynchronous trace-export fixes in an isolated current-main checkout. Bilingual constraint/title negatives and four lifecycle cleanup modes are covered. Production release and the controlled startup comparison remain separate verification checkpoints. Thinking settings stay unchanged and the directions shortcut remains disabled.
+
 - [ ] Set first-useful-result, complete-response, and cost-per-success targets.
   - [x] Define provisional first-useful/completion targets and their denominators in `docs/ai-performance.md`. Reuse the saved 72-turn frozen-corpus receipt (p50 5,116 ms; p95 9,005 ms; maximum 13,044 ms), with first-useful latency and reviewed cost explicitly unmeasured. No new model calls.
   - [x] Extend the existing repeated-trial adapter with first-useful grounded progress/completion timings, selected model/provider, separately returned model identity and token/cache/reasoning counters, unknown-versus-zero handling and measurement/transport/source identity. Thirty focused eval/quality/real-SDK checks pass in both runners. Preserve historical reports and exclude placeholder text and unreported failed attempts from measured claims; no paid model run occurred.

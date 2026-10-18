@@ -147,6 +147,11 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **AND** supplied cost, original SDK spans, model requests and application responses remain unchanged
 - **AND** estimated token cost is not represented as an invoice, other-provider spending or cost per independently reviewed success
 
+#### Scenario: Trace export follows a completed or interrupted model run
+- **WHEN** an owning runtime lifecycle hook can retain the separately bounded trace export
+- **THEN** successful generation can return before export completes, and interrupted generation still retains cleanup without rerunning the model
+- **AND** a missing or failing retention hook causes the leaf to await bounded export before settling
+
 #### Scenario: Stop closes the model stream before trace cleanup finishes
 - **WHEN** Stop aborts a deployed web turn and closes its response stream
 - **THEN** the Worker retains the tracing leaf promise for its bounded cancellation cleanup and best-effort trace export, even if the owning Effect finishes interruption first

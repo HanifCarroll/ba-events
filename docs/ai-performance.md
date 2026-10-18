@@ -111,3 +111,10 @@ current complete provider bill. No purchase or recharge was made.
 The shared US$20 target has no per-provider allocation or enforced combined cap.
 Use the dated evidence in `results/releases/spending-controls/current.json` and
 the [shared worklist](applied-ai-engineering-work.md) for the recorded decisions.
+
+
+## Search and trace-export release, October 18 2026
+
+Generic discovery such as “events in Buenos Aires this week” now consumes the city-only residue through the existing search annotator. Specific titles, quoted city names, genres, dates, neighborhoods, price constraints and display limits retain their existing meaning. Completed model runs retain bounded Langfuse export through the Worker lifecycle so export no longer delays checkpointing; runtimes without a working lifecycle hook still await cleanup. Tests cover completed, interrupted, unretained and failed-retention cases with exactly one generation.
+
+This release does not alter model/thinking settings, tool-loop shortcuts, repeated-card behavior or startup ownership. A separate bounded startup comparison will keep these settings identical across arms.

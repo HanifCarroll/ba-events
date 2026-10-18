@@ -35,6 +35,29 @@ afterEach(() => {
 })
 
 describe('canonicalizeSearchIntent — free language', () => {
+  it('routes generic bilingual city discovery to filters while retaining the full hard boundary', async () => {
+    for (const query of ['events in Buenos Aires this week', 'eventos en Buenos Aires esta semana', "what’s on in Buenos Aires this week"]) {
+      const intent = await canonicalizeSearchIntent({ query, timeFilter: 'week', isFree: true, neighborhoods: ['Palermo'], maxPrice: 1000, limit: 3 }, WEDNESDAY_NOON)
+      expect(intent.semanticQuery).toBe('')
+      expect(intent.annotation?.semanticQuery).toBe('')
+      expect(intent.must).toMatchObject({ isFree: true, neighborhoodIds: ['Palermo'], maxPrice: 1000 })
+      expect(intent.must.startsAfter).toBeDefined()
+      expect(intent.must.startsBefore).toBeDefined()
+      expect(intent.displayLimit).toBe(3)
+      expect(intent.objective).toBe('search')
+    }
+  })
+
+  it('preserves specific city titles, quoted names, genres and structured preferences', async () => {
+    for (const query of ['Buenos Aires', 'Buenos Aires Social and Political Walk', 'live jazz in Buenos Aires', 'events called Buenos Aires', 'events "Buenos Aires"', "eventos 'Buenos Aires'"]) {
+      const intent = await canonicalizeSearchIntent({ query }, WEDNESDAY_NOON)
+      expect(intent.semanticQuery).toContain('buenos aires')
+    }
+    const preferred = await canonicalizeSearchIntent({ query: 'eventos en Buenos Aires', prefer: { genres: ['jazz'] } }, WEDNESDAY_NOON)
+    expect(preferred.semanticQuery).toContain('jazz')
+    expect(preferred.prefer.genres).toContain('jazz')
+  })
+
   it('maps explicit isFree:true onto must.isFree', async () => {
     const intent = await canonicalizeSearchIntent({ isFree: true }, WEDNESDAY_NOON)
     expect(intent.must.isFree).toBe(true)
