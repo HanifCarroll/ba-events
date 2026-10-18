@@ -50,6 +50,12 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 - **WHEN** a query combines generic discovery, temporal, neighborhood, or free-language syntax with a specific term
 - **THEN** only the recognized syntax is consumed, the specific semantic residue remains, and the request uses semantic retrieval when residue remains
 
+#### Scenario: Generic discovery repeats the product city
+- **WHEN** recognized generic discovery leaves only the unquoted product-city phrase Buenos Aires after structured syntax is consumed
+- **THEN** that city phrase is also consumed through the query-span annotator and discovery uses filter-only retrieval unless explicit preferences supply semantic text
+- **AND** dates, neighborhoods, budgets, free status, display count and all other hard constraints remain intact
+- **AND** quoted names, city-only title searches, specific titles, genres and any other remaining semantic terms retain their city wording
+
 ### Requirement: Bound candidate and display work
 
 `search_events` MUST keep the candidate retrieval cap separate from the display limit: display results are clamped to 1–5, while normal retrieval fetches at most 50 candidates before ranking and slicing. Surprise mode returns exactly one result; disjoint weekday windows are fetched separately and merged with a global cap of 50.

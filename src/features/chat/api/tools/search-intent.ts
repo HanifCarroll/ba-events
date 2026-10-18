@@ -506,7 +506,15 @@ export async function canonicalizeSearchIntent(
   const query = input.query?.trim() ?? ''
 
   // --- annotate once: normalize → tokenize → match → resolve → residue ---
-  const annotated = annotateQuery(query, buildQueryAnnotationRules(input.timeFilter))
+  const rules = buildQueryAnnotationRules(input.timeFilter)
+  let annotated = annotateQuery(query, rules)
+  // The product's city is not a semantic preference in otherwise generic
+  // discovery. Keep specific titles, genres and quoted city names intact.
+  if (annotated.semanticQuery === 'buenos aires' &&
+      annotated.spans.some(span => span.kind === 'generic_discovery') &&
+      !/["“”«»]|'\s*buenos\s+aires\s*'/iu.test(query)) {
+    annotated = annotateQuery(query, [...rules, { phrase: ['buenos', 'aires'], kind: 'generic_discovery' }])
+  }
   const spans = annotated.spans
 
   // Derived from resolved spans — never by re-scanning token values.
