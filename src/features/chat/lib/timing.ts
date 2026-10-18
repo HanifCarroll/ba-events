@@ -5,7 +5,7 @@ export type ChatTimingStage =
   | 'request_entry' | 'session_ready' | 'route_entry' | 'body_ready' | 'execution_verified'
   | 'identity_ready' | 'delivery_forward_start' | 'delivery_headers'
   | 'durable_input_ready' | 'workflow_admission_start' | 'workflow_admitted' | 'workflow_admission_unknown' | 'workflow_started'
-  | 'workflow_dispatch_received' | 'execution_fetch_start' | 'execution_headers'
+  | 'workflow_dispatch_received' | 'admitted_generation_start' | 'existing_producer_joined' | 'execution_fetch_start' | 'execution_headers'
   | 'rate_limit_start' | 'rate_limit_ready' | 'rate_limit_rejected'
   | 'claim_ready' | 'pin_ready' | 'history_ready' | 'guest_lifecycle_ready' | 'context_ready'
   | 'provider_init_start' | 'provider_ready' | 'model_start'

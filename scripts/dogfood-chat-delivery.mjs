@@ -57,7 +57,8 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   compatibilityDate: '2026-10-01', compatibilityFlags: ['nodejs_compat'],
   durableObjects: { CHAT_DELIVERY: { className: 'ChatDelivery', useSQLite: true } },
   workflows: { CHAT_RESPONSE_WORKFLOW: { name: 'fixture-chat-response', className: 'ChatResponseWorkflow' } },
-  bindings: { CHAT_DELIVERY_SECRET: secret },
+  bindings: { CHAT_DELIVERY_SECRET: secret,
+   ...(process.env.CHAT_DOGFOOD_EARLY_GENERATION === '1' ? { CHAT_EXPERIMENTAL_EARLY_GENERATION: 'after-admission' } : {}) },
   serviceBindings: { CHAT_EXECUTION: async request => {
    const result = await execution(request);
    if (!result.body) return new RuntimeResponse(null, { status: result.status, headers: result.headers });

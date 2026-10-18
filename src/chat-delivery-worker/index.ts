@@ -6,6 +6,7 @@ import {
 import { signChatExecution } from '#features/chat/api/delivery-auth.server.ts'
 import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, canonicalKey, openEnvelope, parseCheckpoint, sealEnvelope, verifyWorkflowRequest, type ExecutionStage, type RecoveryCheckpoint, type SealedEnvelope } from './recovery.ts'
 import { createChatTiming } from '#features/chat/lib/timing.ts'
+import { selectedForEarlyStartup } from './startup-experiment.ts'
 
 type Storage = {
 	get<T>(key: string): Promise<T | undefined>
@@ -17,6 +18,10 @@ type Storage = {
 }
 type State = { storage: Storage; waitUntil(promise: Promise<unknown>): void; abort?(reason: string): never }
 export type ChatDeliveryEnv = {
+	/** Local/preview experiment only; absent in production configuration. */
+	CHAT_EXPERIMENTAL_EARLY_GENERATION?: 'after-admission'
+	/** Finite expiring operator-selected cohort; omitted from normal deployment. */
+	CHAT_STARTUP_COMPARISON?: string
 	CHAT_EXECUTION: { fetch(request: Request): Promise<Response> }
 	CHAT_DELIVERY_SECRET: string
 	CHAT_DELIVERY: { idFromName(name: string): unknown; get(id: unknown): { fetch(request: Request): Promise<Response> } }
@@ -28,6 +33,8 @@ type Metadata = {
 	sequence: number; bytes: number; createdAt: number; expiresAt: number
 	hasCanonical: boolean
 	workflowId?: string; workflowAdmitted?: boolean; fence?: number; deadline?: number; hasCheckpoint?: boolean
+	earlyGeneration?: true
+	earlyFailurePending?: true
 }
 type StoredMetadata = Metadata | { phase: 'expired'; expiresAt: number }
 type StoredEvent = { sequence: number; data: string }
@@ -48,6 +55,7 @@ export class ChatDelivery {
 	private queue: Promise<unknown> = Promise.resolve()
 	private producer: AbortController | null = null
 	private admission: Promise<void> | null = null
+	private activeWork: { stage: ExecutionStage; fence: number; work: Promise<void>; workflowJoined: boolean } | null = null
 	private subscribers = new Set<ReadableStreamDefaultController<Uint8Array>>()
 	constructor(private readonly state: State, private readonly env: ChatDeliveryEnv) {}
 
@@ -158,6 +166,8 @@ export class ChatDelivery {
 				metadata = { owner, tokenHash, payloadHash, turnId: identity.turnId, attemptId: identity.attemptId,
 					phase: 'running', sequence: 0, bytes: 0, hasCanonical: false, createdAt: now, expiresAt: now + DELIVERY_RETENTION_MS,
 					workflowId: name, fence: 0, deadline: now + DELIVERY_RUN_TIMEOUT_MS, hasCheckpoint: false }
+				if (this.env.CHAT_EXPERIMENTAL_EARLY_GENERATION === 'after-admission' ||
+					selectedForEarlyStartup(this.env.CHAT_STARTUP_COMPARISON, identity.attemptId, now)) metadata.earlyGeneration = true
 				const headers = new Headers()
 				for (const key of ['cookie', 'authorization', 'x-chat-token', 'x-chat-attempt', DELIVERY_OWNER_HEADER, DELIVERY_TURN_HEADER, 'x-chat-client-ip']) { const value = request.headers.get(key); if (value) headers.set(key, value) }
 				headers.set('content-type', 'application/json')
@@ -182,24 +192,43 @@ export class ChatDelivery {
 			try { await this.env.CHAT_RESPONSE_WORKFLOW.create({ id: metadata.workflowId!, params: { name: `${metadata.turnId}:${metadata.attemptId}` } }); admitted = true }
 			catch { try { await (await this.env.CHAT_RESPONSE_WORKFLOW.get(metadata.workflowId!)).status(); admitted = true } catch { /* The alarm retries an uncertain admission without changing its ID. */ } }
 			timing.mark(admitted ? 'workflow_admitted' : 'workflow_admission_unknown')
-			await this.serialize(async () => {
+			const startEarly = await this.serialize(async () => {
 				const current = await this.state.storage.get<StoredMetadata>('metadata')
-				if (!current || current.phase === 'expired' || terminal(current)) return
+				if (!current || current.phase === 'expired' || terminal(current)) return false
 				if (admitted) { current.workflowAdmitted = true; await this.state.storage.put({ metadata: current }) }
 				await this.state.storage.setAlarm(admitted ? current.deadline! : Math.min(Date.now() + 1000, current.deadline!))
+				return admitted && current.earlyGeneration === true && !current.hasCheckpoint && (current.fence ?? 0) === 0
 			})
+			// Workflow recovery remains the owner; an early producer only removes
+			// the wait for its callback. Failure is recovered by that same Workflow.
+			if (startEarly) this.state.waitUntil(this.run('generate', 'admission').then(() => undefined, () => undefined))
 		})()
 		try { await this.admission } finally { this.admission = null }
 	}
 
-	private async run(stage: ExecutionStage): Promise<Response> {
+	private async run(stage: ExecutionStage, source: 'workflow' | 'admission' = 'workflow'): Promise<Response> {
 		const task = await this.serialize(async () => {
 			const metadata = await this.state.storage.get<StoredMetadata>('metadata')
 			if (!metadata || metadata.phase === 'expired') return { phase: 'expired', fence: 0 }
-			createChatTiming({ requestId: metadata.attemptId, phase: stage, scope: 'dispatch', admittedAtMs: metadata.createdAt }).mark('workflow_dispatch_received')
+			const timing = createChatTiming({ requestId: metadata.attemptId, phase: stage, scope: 'dispatch', admittedAtMs: metadata.createdAt })
+			timing.mark(source === 'admission' ? 'admitted_generation_start' : 'workflow_dispatch_received')
 			if (terminal(metadata)) return { phase: metadata.phase, fence: metadata.fence ?? 0 }
 			if (metadata.deadline! <= Date.now()) { this.producer?.abort(); await this.fail(metadata, 'The response timed out. Please retry.'); return { phase: 'failed', fence: metadata.fence ?? 0 } }
 			if (stage === 'generate' && metadata.hasCheckpoint) return { phase: metadata.phase, fence: metadata.fence ?? 0 }
+			if (stage === 'generate' && source === 'workflow' && metadata.earlyFailurePending) {
+				delete metadata.earlyFailurePending
+				await this.state.storage.put({ metadata })
+				const active = this.activeWork
+				if (active && active.fence === metadata.fence) active.workflowJoined = true
+				// Consume the failed early execution as the first workflow attempt,
+				// including after restart, rather than buying an additional retry.
+				throw new Error('Early generation failed before workflow dispatch')
+			}
+			if (metadata.earlyGeneration && this.activeWork?.stage === stage && this.activeWork.fence === metadata.fence) {
+				timing.mark('existing_producer_joined')
+				if (source === 'workflow') this.activeWork.workflowJoined = true
+				return this.activeWork
+			}
 			if (stage === 'commit' && !metadata.hasCheckpoint) throw new Error('Missing validated checkpoint')
 			const sealed = await this.state.storage.get<SealedEnvelope>('request')
 			if (!sealed) throw new Error('Missing recovery request')
@@ -210,7 +239,21 @@ export class ChatDelivery {
 			await this.state.storage.put({ metadata })
 			const headers = new Headers(envelope.headers); headers.set(EXECUTION_FENCE_HEADER, String(fence)); headers.set(EXECUTION_STAGE_HEADER, stage)
 			// The promise is returned inside an object so serialization does not await the producer.
-			return { work: this.produce(new Request(envelope.url, { method: 'POST', headers }), envelope.body, controller, stage, fence, metadata.createdAt), fence }
+			const active = { stage, fence, workflowJoined: source === 'workflow', work: this.produce(new Request(envelope.url, { method: 'POST', headers }), envelope.body, controller, stage, fence, metadata.createdAt) }
+			if (metadata.earlyGeneration && source === 'admission') active.work = active.work.catch(async cause => {
+				await this.serialize(async () => {
+					const current = await this.state.storage.get<StoredMetadata>('metadata')
+					if (current && current.phase !== 'expired' && !terminal(current) && current.fence === fence && !current.hasCheckpoint && !active.workflowJoined) {
+						current.earlyFailurePending = true
+						await this.state.storage.put({ metadata: current })
+					}
+				})
+				throw cause
+			})
+			this.activeWork = active
+			const clear = () => { if (this.activeWork === active) this.activeWork = null }
+			void active.work.then(clear, clear)
+			return active
 		})
 		if ('work' in task) await task.work
 		const current = await this.state.storage.get<StoredMetadata>('metadata')
