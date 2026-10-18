@@ -118,3 +118,12 @@ the [shared worklist](applied-ai-engineering-work.md) for the recorded decisions
 Generic discovery such as “events in Buenos Aires this week” now consumes the city-only residue through the existing search annotator. Specific titles, quoted city names, genres, dates, neighborhoods, price constraints and display limits retain their existing meaning. Completed model runs retain bounded Langfuse export through the Worker lifecycle so export no longer delays checkpointing; runtimes without a working lifecycle hook still await cleanup. Tests cover completed, interrupted, unretained and failed-retention cases with exactly one generation.
 
 This release does not alter model/thinking settings, tool-loop shortcuts, repeated-card behavior or startup ownership. A separate bounded startup comparison will keep these settings identical across arms.
+
+
+## Controlled startup comparison protocol, October 18 2026
+
+The owner authorized deploying the search/export fixes first and comparing startup while keeping thinking and directions unchanged. The comparison candidate persists an opt-in attempt policy, starts generation after confirmed Workflow admission, and lets the Workflow callback join that producer. It retains fencing, checkpoint/commit publication, Stop and the original retry budget. An early failure before dispatch consumes a Workflow attempt even across restart. Normal dispatch remains the default.
+
+A server-only campaign selects up to 64 exact attempt IDs and expires within two hours; invalid, expired or unselected requests keep normal dispatch. No public request field changes this policy. The live protocol plans six independent English/Spanish conversation pairs (36 sequential turns), alternating order at each turn. Each arm carries its own actual conversation history. Discovery, assessment and directions retain the same prompts, model configuration, tools, database and public app version. These measure first messages versus follow-ups; they do not deliberately create cold Worker isolates or independently establish prose quality.
+
+Record response headers, first structured artifact, first prose, canonical completion, model/tool counts, admission/dispatch/execution markers, export completion, errors and duplicate publications. Compare admission-to-execution separately from variable model time. Remove the campaign after the bounded run; a broader rollout is a separate decision. Private plan, source and receipts: results/releases/startup-controlled-20261018/.

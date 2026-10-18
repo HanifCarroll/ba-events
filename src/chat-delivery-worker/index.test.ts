@@ -11,7 +11,7 @@ const canonical = adaptStoredMessageToCanonical({ id: 'fixed-assistant', content
 const identity = () => ({ turnId: crypto.randomUUID(), attemptId: crypto.randomUUID(), token: 'a'.repeat(64) })
 const wait = async (predicate: () => boolean) => { for (let i = 0; i < 1000 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 1)); expect(predicate()).toBe(true) }
 
-function fixture() {
+function fixture(options: { early?: boolean; delayedWorkflow?: boolean; delayedAdmission?: boolean } = {}) {
  const values = new Map<string, unknown>(); let alarm = 0
  const storage = {
   async get<T>(key: string) { return structuredClone(values.get(key)) as T | undefined },
@@ -25,12 +25,15 @@ function fixture() {
  const state = { storage, waitUntil: (task: Promise<unknown>) => { tasks.push(task) } }
  const id = identity(); const name = `${id.turnId}:${id.attemptId}`
  let object: ChatDelivery
+ let dispatchWorkflow: () => Promise<void> = async () => {}
+ let releaseAdmission: () => void = () => {}
  const control = async (action: string, stage?: 'generate' | 'commit') => object.fetch(await workflowRequest('test-secret', name, action, stage))
  const env: ChatDeliveryEnv = {
+  ...(options.early ? { CHAT_EXPERIMENTAL_EARLY_GENERATION: 'after-admission' as const } : {}),
   CHAT_DELIVERY_SECRET: 'test-secret', CHAT_DELIVERY: { idFromName: value => value, get: () => ({ fetch: request => object.fetch(request) }) },
   CHAT_RESPONSE_WORKFLOW: { async create(input) {
    expect(input).toEqual({ id: name.replace(':', '-'), params: { name } })
-   const task = (async () => {
+   dispatchWorkflow = () => { const task = (async () => {
     for (const stage of ['generate', 'commit'] as const) {
      let result: { phase: string } | null = null
      for (let retry = 0; retry < 3; retry++) {
@@ -39,7 +42,10 @@ function fixture() {
      if (!result) { await control('workflow-fail'); return }
      if (result.phase !== 'running') return
     }
-   })(); tasks.push(task); return {}
+   })(); tasks.push(task); return task }
+   if (!options.delayedWorkflow) void dispatchWorkflow()
+   if (options.delayedAdmission) await new Promise<void>(resolve => { releaseAdmission = resolve })
+   return {}
   }, async get() { return { status: async () => ({ status: 'running' }) } } },
   CHAT_EXECUTION: { async fetch(request) {
    expect(await verifyChatExecution(request.headers, 'test-secret')).toBe(true)
@@ -70,12 +76,84 @@ function fixture() {
  const reload = () => { object = new ChatDelivery(state, env) };
  const restart = () => { const previous = object; object = new ChatDelivery(state, env); upstream.error(new Error('Runtime reset')); return previous }
  return { values, request, start, emit, finish, checkpoint, restart, reload, control, tasks, state, env,
+  dispatchWorkflow: () => dispatchWorkflow(), releaseAdmission: () => releaseAdmission(),
   get object() { return object }, get executions() { return executions }, get commits() { return commits }, get cancelled() { return cancelled }, get upstreamRequest() { return upstreamRequest }, get oldRequest() { return oldRequest }, get alarm() { return alarm },
   closeGeneration: () => upstream.close(), restartCommit: () => { object = new ChatDelivery(state, env); commitController.error(new Error('Runtime reset during commit')) }, holdCommit: () => { holdCommit = true }, get commitRequest() { return commitRequest }, get commitController() { return commitController },
  }
 }
 
 describe('workflow-backed chat delivery', () => {
+ it('persists selection only for the operator-configured comparison attempt', async () => {
+  const f = fixture({ delayedWorkflow: true }), request = f.request('start')
+  f.env.CHAT_STARTUP_COMPARISON = JSON.stringify({ expiresAt: Date.now() + 60_000, attemptIds: [request.headers.get('x-chat-attempt')] })
+  const response = await f.object.fetch(request); await response.body!.cancel()
+  await wait(() => f.executions === 1)
+  expect((f.values.get('metadata') as { earlyGeneration?: true }).earlyGeneration).toBe(true)
+  delete f.env.CHAT_STARTUP_COMPARISON
+  const workflow = f.dispatchWorkflow(); await f.finish(); await workflow
+  expect(f.executions).toBe(1); expect(f.commits).toBe(1)
+ })
+ for (const early of [false, true]) {
+ it(`keeps recovery, checkpoint fencing and final publication with early startup ${early}`, async () => {
+  const f = fixture({ early }); const response = await f.start(); await response.body!.cancel()
+  const old = f.upstreamRequest
+  f.restart(); await wait(() => f.executions === 2)
+  expect((await f.object.fetch(f.request('checkpoint', { headers: old.headers, body: JSON.stringify({ canonical, executionTrace: [] }) }))).status).toBe(409)
+  await f.finish()
+  const replay = await (await f.object.fetch(f.request('stream'))).text()
+  expect((replay.match(/"type":"data-response"/g) ?? []).length).toBe(1)
+  expect(f.commits).toBe(1)
+ })
+ }
+ it('starts the experiment only after confirmed admission and joins delayed or duplicate callbacks', async () => {
+  const f = fixture({ early: true, delayedWorkflow: true, delayedAdmission: true })
+  const response = await f.object.fetch(f.request('start')); await response.body!.cancel()
+  await new Promise(resolve => setTimeout(resolve, 5)); expect(f.executions).toBe(0)
+  delete f.env.CHAT_EXPERIMENTAL_EARLY_GENERATION
+  f.releaseAdmission(); await wait(() => f.executions === 1)
+  const original = f.upstreamRequest
+  const workflow = f.dispatchWorkflow(), duplicate = f.control('run', 'generate')
+  await new Promise(resolve => setTimeout(resolve, 5))
+  expect(f.executions).toBe(1); expect(original.signal.aborted).toBe(false)
+  await f.finish(); await workflow; await duplicate
+  expect(f.executions).toBe(1); expect(f.commits).toBe(1)
+ })
+ it('keeps the default waiting for dispatch and persists experiment policy per attempt', async () => {
+  const f = fixture({ delayedWorkflow: true })
+  const response = await f.object.fetch(f.request('start')); await response.body!.cancel()
+  await Promise.all(f.tasks); expect(f.executions).toBe(0)
+  f.env.CHAT_EXPERIMENTAL_EARLY_GENERATION = 'after-admission'
+  const duplicate = await f.object.fetch(f.request('start')); await duplicate.body!.cancel()
+  expect(f.executions).toBe(0)
+  expect((f.values.get('metadata') as { earlyGeneration?: true }).earlyGeneration).toBeUndefined()
+  const workflow = f.dispatchWorkflow(); await wait(() => f.executions === 1)
+  await f.finish(); await workflow
+ })
+ it('does not start early work on uncertain admission or after Stop wins admission', async () => {
+  const uncertain = fixture({ early: true, delayedWorkflow: true })
+  uncertain.env.CHAT_RESPONSE_WORKFLOW.create = async () => { throw new Error('Unknown admission') }
+  uncertain.env.CHAT_RESPONSE_WORKFLOW.get = async () => { throw new Error('Not admitted') }
+  const pending = await uncertain.object.fetch(uncertain.request('start')); await pending.body!.cancel()
+  await Promise.all(uncertain.tasks); expect(uncertain.executions).toBe(0)
+  const f = fixture({ early: true, delayedWorkflow: true, delayedAdmission: true })
+  const response = await f.object.fetch(f.request('start')); await response.body!.cancel()
+  expect((await f.object.fetch(f.request('stop'))).status).toBe(204)
+  f.releaseAdmission(); await Promise.all(f.tasks)
+  expect(f.executions).toBe(0)
+ })
+ it('counts an early failure against the existing recovery budget even after owner restart', async () => {
+  const f = fixture({ early: true, delayedWorkflow: true }); let generationAttempts = 0
+  const execute = f.env.CHAT_EXECUTION.fetch
+  f.env.CHAT_EXECUTION.fetch = async request => {
+   if (request.headers.get(EXECUTION_STAGE_HEADER) === 'generate') { generationAttempts++; throw new Error('Read-only generation unavailable') }
+   return execute(request)
+  }
+  const response = await f.object.fetch(f.request('start')); await response.body!.cancel()
+  await wait(() => (f.values.get('metadata') as { earlyFailurePending?: boolean }).earlyFailurePending === true)
+  f.reload(); await f.dispatchWorkflow(); await Promise.all(f.tasks)
+  expect(generationAttempts).toBe(3)
+  expect((f.values.get('metadata') as { phase: string }).phase).toBe('failed')
+ })
  it('reconciles a crash or uncertain admission using the original workflow ID', async () => {
   const f=fixture();const create=f.env.CHAT_RESPONSE_WORKFLOW.create;let attempts=0;
   f.env.CHAT_RESPONSE_WORKFLOW.create=async input=>{if(++attempts===1)throw new Error('Admission response lost');return create(input)};

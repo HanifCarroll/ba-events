@@ -254,6 +254,8 @@ remain separate. No broader checklist item is checked from this canary.
 
 ## 10. Latency and cost
 
+- [x] Prepare the bounded startup comparison candidate with persisted per-attempt policy, callback joining, retry-budget preservation and a finite expiring server-selected cohort. Model/thinking and directions configuration remain unchanged; live measurement and campaign cleanup remain required.
+
 - [x] Prepare the owner-authorized generic-city search and retained asynchronous trace-export fixes in an isolated current-main checkout. Bilingual constraint/title negatives and four lifecycle cleanup modes are covered. Production release and the controlled startup comparison remain separate verification checkpoints. Thinking settings stay unchanged and the directions shortcut remains disabled.
 
 - [ ] Set first-useful-result, complete-response, and cost-per-success targets.
