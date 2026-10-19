@@ -13,6 +13,8 @@ describe('main chat request decoder', () => {
 		turnId: 'turn',
 		happeningSoonEventIds: ['a', 2],
 		forged: 'ignored',
+		thinking: 'disabled',
+		providerOptions: { deepseek: { thinking: { type: 'disabled' } } },
 		})).toEqual({
 		locale: 'es',
 		conversationId: null,

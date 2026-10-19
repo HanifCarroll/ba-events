@@ -46,8 +46,9 @@ export const NO_THINKING = {
 } as const
 
 /**
- * Concierge chat only. Adaptive thinking lets DeepSeek reason on ambiguous
- * asks (e.g. "next weekend" on a Saturday) and skip it on simple ones.
+ * Concierge chat only. The installed SDK maps the legacy adaptive alias to
+ * enabled thinking. This does not select a thinking mode per user turn;
+ * reasoning effort stays at the provider default unless explicitly evaluated.
  */
 export const CHAT_THINKING = {
   providerOptions: { deepseek: { thinking: { type: 'adaptive' } } },

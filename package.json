@@ -23,6 +23,7 @@
 		"eval:concierge": "bun evals/concierge/run.ts",
 		"eval:concierge:langfuse": "bun evals/concierge/langfuse.ts",
 		"eval:concierge:multi": "bun evals/concierge/multi-turn.ts",
+		"eval:concierge:thinking": "bun evals/concierge/compare-thinking.ts",
 		"eval:concierge:injection": "bun evals/concierge/run-injection.ts",
 		"eval:concierge:quality": "bun evals/concierge/run-quality.ts",
 		"eval:concierge:judge-controls": "bun evals/concierge/run-quality-controls.ts",

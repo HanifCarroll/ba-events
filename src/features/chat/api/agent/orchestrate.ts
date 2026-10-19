@@ -64,6 +64,11 @@ const directionRefSchema = z.object({
   eventRef: z.string().min(1).max(160).optional(),
   venueRef: z.string().min(1).max(160).optional(),
 }).strict().refine((value) => value.eventRef !== undefined || value.venueRef !== undefined, 'eventRef or venueRef is required')
+const completeDirectionRefSchema = z.object({
+  eventRef: z.string().min(1).max(160).optional(),
+  venueRef: z.string().min(1).max(160).optional(),
+  completeAnswer: z.boolean().describe('True only when verified directions alone fully answer the entire request. False for assessments, comparisons or other remaining tasks.'),
+}).strict().refine((value) => value.eventRef !== undefined || value.venueRef !== undefined, 'eventRef or venueRef is required')
 const venueRefSchema = z.object({
   venueRef: z.string().min(1).max(160).optional(),
   venueName: z.string().min(1).max(200).optional(),
@@ -107,7 +112,14 @@ type RefRecord = { eventId?: string; venueId?: string }
 type LedgerRecord = { toolCallId: string; toolName: string; input: unknown; raw: RawToolOutput }
 type AgentStep = { finishReason?: string; toolCalls?: Array<Record<string, unknown>>; toolResults?: Array<Record<string, unknown>> }
 
-export interface AgentRun { text: string; steps: AgentStep[]; responseId: string | null }
+export type ChatThinkingMode = 'adaptive' | 'disabled'
+export interface ModelRunConfiguration {
+  id: string; promptVersion: string; provider: string; model: string
+  configuredThinking: ChatThinkingMode; wireThinking: 'enabled' | 'disabled'
+  reasoningEffort?: 'low'
+  completeDirections?: true
+}
+export interface AgentRun { text: string; steps: AgentStep[]; responseId: string | null; configuration?: ModelRunConfiguration; completedDirections?: true }
 export interface AgentInput extends ConciergeTraceContext { messages: ModelMessage[]; instructions: string; tools: ToolSet; abortSignal?: AbortSignal; onText?: (text: string) => void }
 export type AgentRunner = (input: AgentInput) => Promise<AgentRun>
 
@@ -366,10 +378,17 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
 }
 
 /** Production model runner; eval adapters may observe its inputs and results. */
-export async function runToolLoop(input: AgentInput): Promise<AgentRun> {
+export async function runToolLoop(input: AgentInput, options: { thinking?: ChatThinkingMode; reasoningEffort?: 'low'; completeDirections?: boolean } = {}): Promise<AgentRun> {
   input.timing?.mark('provider_init_start')
   const { CHAT_THINKING, textModelForRequest } = await import('#shared/lib/ai/providers.ts')
   input.timing?.mark('provider_ready')
+  // Explicit server/evaluation injection only. No request field or environment
+  // switch changes the production default while configurations are compared.
+  const thinking = options.thinking === 'disabled'
+    ? { providerOptions: { deepseek: { thinking: { type: 'disabled' as const } } } }
+    : options.reasoningEffort === 'low'
+      ? { providerOptions: { deepseek: { ...CHAT_THINKING.providerOptions.deepseek, reasoningEffort: 'low' as const } } }
+      : CHAT_THINKING
   const model = textModelForRequest(input.requestId ?? 'unknown')
   // Identity contains only server-owned settings, never messages, credentials or context.
   const configurationId = createHash('sha256').update(JSON.stringify({
@@ -377,20 +396,39 @@ export async function runToolLoop(input: AgentInput): Promise<AgentRun> {
     provider: model.provider, model: model.modelId,
     maxSteps: MAX_STEPS, maxToolCalls: MAX_TOOL_CALLS, maxInputTokens: MAX_CONTEXT_INPUT_TOKENS, maxOutputTokens: MAX_OUTPUT_TOKENS,
     timeout: AGENT_TIMEOUT, toolTimeoutMs: TOOL_TIMEOUT_MS, maxRetries: MODEL_MAX_RETRIES,
-    thinking: CHAT_THINKING, postSearchTools: POST_SEARCH_TOOLS,
+    thinking, postSearchTools: POST_SEARCH_TOOLS,
+    ...(options.completeDirections ? { completeDirections: true } : {}),
     tools: Object.keys(input.tools).sort(),
   })).digest('hex')
-  return traceConcierge({ ...input, promptVersion: CONCIERGE_PROMPT_VERSION, configurationId },
-    (telemetry) => generateToolLoop(input, model, CHAT_THINKING, telemetry))
+  const run = await traceConcierge({ ...input, promptVersion: CONCIERGE_PROMPT_VERSION, configurationId },
+    (telemetry) => generateToolLoop(input, model, thinking, telemetry, options.completeDirections))
+  return { ...run, configuration: { id: configurationId, promptVersion: CONCIERGE_PROMPT_VERSION,
+    ...(options.reasoningEffort === 'low' && options.thinking !== 'disabled' ? { reasoningEffort: 'low' as const } : {}),
+    ...(options.completeDirections ? { completeDirections: true as const } : {}),
+    provider: model.provider, model: model.modelId, configuredThinking: options.thinking ?? 'adaptive',
+    wireThinking: options.thinking === 'disabled' ? 'disabled' : 'enabled' } }
 }
 
 async function generateToolLoop(input: AgentInput,
   model: ReturnType<typeof import('#shared/lib/ai/providers.ts').textModelForRequest>,
-  thinking: typeof import('#shared/lib/ai/providers.ts').CHAT_THINKING,
-  telemetry?: TelemetryOptions): Promise<AgentRun> {
+  thinking: { providerOptions: { deepseek: { thinking: { type: ChatThinkingMode }; reasoningEffort?: 'low' } } },
+  telemetry?: TelemetryOptions, completeDirections = false): Promise<AgentRun> {
   input.timing?.mark('model_start')
   const promptSize = input.instructions.length + input.messages.reduce((total, message) => total + JSON.stringify(message.content).length, 0)
   logger.info('[chat] agent generation started', { requestId: input.requestId, phase: 'model', outcome: 'started', promptChars: promptSize, messageCount: input.messages.length, maxRetries: MODEL_MAX_RETRIES, contextInputTokenLimit: MAX_CONTEXT_INPUT_TOKENS, maxOutputTokens: MAX_OUTPUT_TOKENS })
+  let completedDirections = false
+  const tools = { ...input.tools }
+  if (completeDirections && tools.get_directions?.execute) {
+    const original = tools.get_directions
+    tools.get_directions = tool({
+      description: `${original.description} Set completeAnswer=true only if a successful directions card satisfies the whole user request; this ends the turn without further prose. Use false when anything else remains to answer.`,
+      inputSchema: completeDirectionRefSchema,
+      execute: async ({ completeAnswer, ...target }, execution) => {
+        const output = await original.execute!(target, execution) as PublicToolOutput
+        return { ...output, completeAnswer: completeAnswer && output.success && !!output.directions }
+      },
+    })
+  }
   const agent = new ToolLoopAgent({
     model,
     telemetry,
@@ -416,8 +454,17 @@ async function generateToolLoop(input: AgentInput,
       model: step.model.modelId,
     }),
     instructions: input.instructions,
-    tools: input.tools,
-    stopWhen: isStepCount(MAX_STEPS),
+    tools,
+    stopWhen: [isStepCount(MAX_STEPS), ({ steps }) => {
+      const last = steps.at(-1)
+      completedDirections = completeDirections && last?.toolResults.length === 1 &&
+        last.toolResults.length === last.toolCalls.length &&
+        steps.slice(0, -1).every(step => step.toolResults.every(result => result.toolName === 'get_directions' &&
+          (result.output as PublicToolOutput).success === false)) &&
+        last.toolResults.every(result => result.toolName === 'get_directions' &&
+          (result.output as PublicToolOutput & { completeAnswer?: boolean }).completeAnswer === true)
+      return completedDirections
+    }],
     prepareStep: ({ steps }) => {
       // Usage includes instructions, schemas, history and accumulated tool results.
       // A completed request can overshoot; do not make another model request afterward.
@@ -449,10 +496,12 @@ async function generateToolLoop(input: AgentInput,
       }
     }
     input.onText(text)
-    return { text: await result.text, steps: await result.steps as unknown as AgentStep[], responseId: (await result.response)?.id ?? null }
+    return { text: await result.text, steps: await result.steps as unknown as AgentStep[], responseId: (await result.response)?.id ?? null,
+      ...(completedDirections ? { completedDirections: true as const } : {}) }
   }
   const result = await agent.generate({ messages: input.messages, abortSignal: input.abortSignal })
-  return { text: result.text, steps: result.steps as unknown as AgentStep[], responseId: result.response?.id ?? null }
+  return { text: result.text, steps: result.steps as unknown as AgentStep[], responseId: result.response?.id ?? null,
+    ...(completedDirections ? { completedDirections: true as const } : {}) }
 }
 
 function orderedReads(run: AgentRun, ledger: Map<string, LedgerRecord>): LedgerRecord[] {
@@ -478,7 +527,15 @@ function assemble(input: OrchestrateInput, run: AgentRun, reads: LedgerRecord[],
   const direction = [...successful].reverse().find((read) => read.toolName === 'get_directions')
   const venue = [...successful].reverse().find((read) => read.toolName === 'get_venue_details')
   const selectedEvents = selected?.raw.events ?? []
-  const events = selected?.toolName === 'list_saved_events' ? stamp(selectedEvents, saved, true) : stamp(selectedEvents, saved)
+  // Details reads ground follow-up prose; they are not a request to display the
+  // same card again. Home suggestions have not yet appeared in the conversation.
+  const purpose = (selected?.input as { purpose?: unknown } | undefined)?.purpose
+  const isDetailFollowUp = selected?.toolName === 'get_event_details' && purpose !== 'save' && purpose !== 'unsave'
+  const displayedIds = new Set(input.priorDisplayedEvents
+    .filter((group) => group.assistantMessageId !== 'home')
+    .flatMap((group) => group.events.map((event) => event.eventId)))
+  const displayEvents = isDetailFollowUp ? selectedEvents.filter((event) => !displayedIds.has(event.id)) : selectedEvents
+  const events = selected?.toolName === 'list_saved_events' ? stamp(displayEvents, saved, true) : stamp(displayEvents, saved)
   const canonical: CanonicalChatResponse = { contractVersion: CHAT_CONTRACT_VERSION, requestId: input.requestId, kind: 'error', messageKey: 'error', text: run.text.trim(), events, directions: direction?.raw.directions ?? null, venue: venue?.raw.venue ?? null, operations: [], suggestions: [], clarificationQuestions: [], provenance: emptyProvenance() }
   if (canonical.text) canonical.text = removeFramingMarkers(canonical.text)
   if (mismatch) {
@@ -520,6 +577,10 @@ function assemble(input: OrchestrateInput, run: AgentRun, reads: LedgerRecord[],
   canonical.provenance.directionToolCallIds = direction ? [direction.toolCallId] : []
   canonical.provenance.venueToolCallIds = venue ? [venue.toolCallId] : []
   canonical.provenance.searchAttemptToolCallIds = reads.filter((read) => read.toolName === 'search_events').map((read) => read.toolCallId)
+  if (canonical.messageKey === 'recommendations_pick' && events.length === 0) {
+    const reasons = extractRecommendationReasons(run.text, selectedEvents)
+    canonical.text = reasons?.length === 1 ? reasons[0] : run.text.replace(/^\s*REASON_\d+\s*:\s*/gim, '').trim()
+  }
   if (canonical.kind === 'recommendations' && canonical.messageKey !== 'recommendations_mismatch' && events.length > 0) {
     const venueNames = [
       ...events.map((event) => event.venue_name ?? ''),
@@ -618,8 +679,11 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
   const run = agentResult.run
   const reads = orderedReads(run, ledger)
   const canonical = assemble(input, run, reads, saved)
+  const completedDirections = run.completedDirections === true && canonical.kind === 'directions' && !!canonical.directions &&
+    reads.some(read => read.toolName === 'get_directions' && read.raw.success && read.raw.directions)
+  if (completedDirections) canonical.text = input.locale === 'es' ? 'Abrí el mapa para ver cómo llegar.' : 'Open the map for directions.'
   if (reads.length === 0 && isShareRequest(input.originalQuery)) canonical.messageKey = 'share_guidance'
-  const needsPlannerFallback = !run.text.trim() || (!canonical.text && canonical.kind !== 'recommendations')
+  const needsPlannerFallback = !completedDirections && (!run.text.trim() || (!canonical.text && canonical.kind !== 'recommendations'))
   if (needsPlannerFallback) {
     if (canonical.kind !== 'recommendations') canonical.text = fallbackText(input.locale)
     canonical.provenance.origin = 'fallback'

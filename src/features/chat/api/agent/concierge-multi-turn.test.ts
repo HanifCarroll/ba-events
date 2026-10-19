@@ -19,7 +19,7 @@ function scriptedAgent(inputs: AgentInput[] = []): AgentRunner {
     const toolName = index === 0 ? 'search_events' : index === 1 ? 'get_event_details' : 'get_directions'
     const toolInput = index === 0
       ? { objective: 'search', limit: 3, neighborhoods: ['Palermo'], isFree: true, timeFilter: 'tonight' }
-      : { eventRef: index === 1 ? `${inputs[0].requestId}:event_1` : `${inputs[1].requestId}:event_0` }
+      : { eventRef: `${inputs[0].requestId}:event_1` }
     const toolCallId = `${input.requestId}-read`
     const output = await (input.tools[toolName] as unknown as Executable).execute(toolInput, { toolCallId, messages: input.messages })
     return { text: index === 0
@@ -59,6 +59,7 @@ describe('frozen concierge conversation evaluations', () => {
     expect(run.cardsGrounded).toBe(true)
     expect(run.timing?.transport).toBe('stream')
     expect(run.timing?.firstUsefulMs).toBeGreaterThanOrEqual(10)
+    expect(run.timing?.firstGroundedTextMs).toBeGreaterThanOrEqual(10)
     expect(run.timing?.completionMs).toBeGreaterThanOrEqual(run.timing!.firstUsefulMs!)
   })
 
@@ -107,8 +108,9 @@ describe('frozen concierge conversation evaluations', () => {
     const result = await runConversation(scenario, 1, { dependencies: frozenDependencies(scriptedAgent(inputs)), sessionId: 'test-conversation' })
     expect(result.pass).toBe(true)
     expect(result.turns).toHaveLength(3)
-    expect(result.turns[1].run?.events[0].id).toBe(result.turns[0].run?.events[1].id)
-    expect(result.turns[2].run?.canonical.directions?.eventId).toBe(result.turns[1].run?.events[0].id)
+    expect(result.turns[1].run?.events).toEqual([])
+    expect(result.turns[1].run?.toolCalls[0].eventIds).toEqual([result.turns[0].run?.events[1].id])
+    expect(result.turns[2].run?.canonical.directions?.eventId).toBe(result.turns[0].run?.events[1].id)
     expect(inputs[0].messages).toHaveLength(1)
     expect(inputs[1].messages).toHaveLength(3)
     expect(inputs[2].messages).toHaveLength(5)
@@ -123,7 +125,7 @@ describe('frozen concierge conversation evaluations', () => {
     const scenario = CONVERSATIONS[0]
     const result = await runConversation(scenario, 1, { dependencies: frozenDependencies(scriptedAgent()) })
     const previous = result.turns[0].run!
-    const wrong = { ...result.turns[1].run!, events: [previous.events[0]] }
+    const wrong = { ...result.turns[1].run!, toolCalls: result.turns[1].run!.toolCalls.map(call => ({ ...call, eventIds: [previous.events[0].id] })) }
     const failures = await scoreConversationTurn('wrong', scenario.turns[1].message, 'en', scenario.turns[1].expect, wrong, [previous])
     expect(wrong.cardsGrounded).toBe(true)
     expect(failures).toContain('target: details refer to the wrong event')

@@ -6,6 +6,9 @@ import type { ChatEventPayload } from '#shared/lib/types.ts'
 const streaming = process.argv[2] === 'stream'
 const contextBudget = process.argv[2] === 'context-budget'
 const usageProbe = process.argv[2] === 'usage'
+const thinkingProbe = process.argv[2] === 'thinking'
+let wireThinking: unknown
+let wireEffort: unknown
 const controller = new AbortController()
 let received: AbortSignal | undefined
 let calls = 0
@@ -16,8 +19,10 @@ const ready = new Promise<void>((resolve) => { started = resolve })
 globalThis.fetch = async (_input, init) => {
   calls++
   maxOutputTokens = JSON.parse(String(init?.body)).max_tokens
+  wireThinking = JSON.parse(String(init?.body)).thinking
+  wireEffort = JSON.parse(String(init?.body)).reasoning_effort
   received = init?.signal ?? undefined
-  if (usageProbe) return Response.json({
+  if (usageProbe || thinkingProbe) return Response.json({
     id: 'usage-probe', object: 'chat.completion', created: 1, model: 'deepseek-returned-test',
     choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'Hello' } }],
     usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16, prompt_cache_hit_tokens: 7, completion_tokens_details: { reasoning_tokens: 1 } },
@@ -54,9 +59,10 @@ if (contextBudget) {
   console.log(JSON.stringify({ calls, maxOutputTokens, businessReads, eventIds: result.canonical.events.map(event => event.id), fallbackUsed: result.canonical.provenance.fallbackUsed }))
   process.exit(0)
 }
-if (usageProbe) {
-  const run = await runToolLoop({ instructions: 'Answer briefly.', messages: [{ role: 'user', content: 'Hello' }], tools: {} })
-  console.log(JSON.stringify(captureModelUsage(run)))
+if (usageProbe || thinkingProbe) {
+  const run = await runToolLoop({ instructions: 'Answer briefly.', messages: [{ role: 'user', content: 'Hello' }], tools: {} },
+    thinkingProbe && process.argv[3] === 'disabled' ? { thinking: 'disabled' } : thinkingProbe && process.argv[3] === 'low' ? { reasoningEffort: 'low' } : {})
+  console.log(JSON.stringify(thinkingProbe ? { wireThinking, wireEffort, configuration: run.configuration, maxOutputTokens, calls } : captureModelUsage(run)))
   process.exit(0)
 }
 const running = runToolLoop({

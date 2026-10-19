@@ -6,6 +6,24 @@ import { fileURLToPath } from 'node:url'
 const run = promisify(execFile)
 
 describe('production model runner cancellation', () => {
+  it('keeps production thinking enabled and fingerprints the explicitly injected disabled evaluation', async () => {
+    const receipts = []
+    for (const mode of ['default', 'disabled', 'low']) {
+      const { stdout } = await run('bun', [fileURLToPath(new URL('./model-cancellation.fixture.ts', import.meta.url)), 'thinking', mode], {
+        timeout: 4000, env: { PATH: process.env.PATH, AI_API_KEY: 'test-only-key', LANGFUSE_TRACING_ENABLED: 'false' },
+      })
+      receipts.push(JSON.parse(stdout.trim().split('\n').at(-1)!))
+    }
+    expect(receipts[0]).toMatchObject({ wireThinking: { type: 'enabled' }, maxOutputTokens: 8192, calls: 1,
+      configuration: { configuredThinking: 'adaptive', wireThinking: 'enabled', model: 'deepseek-flash' } })
+    expect(receipts[1]).toMatchObject({ wireThinking: { type: 'disabled' }, maxOutputTokens: 8192, calls: 1,
+      configuration: { configuredThinking: 'disabled', wireThinking: 'disabled', model: 'deepseek-flash' } })
+    expect(receipts[0].configuration.id).not.toBe(receipts[1].configuration.id)
+    expect(receipts[0].wireEffort).toBeUndefined()
+    expect(receipts[2]).toMatchObject({ wireThinking: { type: 'enabled' }, wireEffort: 'low', maxOutputTokens: 8192, calls: 1,
+      configuration: { configuredThinking: 'adaptive', wireThinking: 'enabled', reasoningEffort: 'low', model: 'deepseek-flash' } })
+    expect(receipts[0].configuration.id).not.toBe(receipts[2].configuration.id)
+  })
   it('stops after observed oversized context and retains successful source reads', async () => {
     const { stdout } = await run('bun', [fileURLToPath(new URL('./model-cancellation.fixture.ts', import.meta.url)), 'context-budget'], {
       timeout: 4000,
