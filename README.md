@@ -1,42 +1,12 @@
-# sv
+# BA Eventos
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
-
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
+SvelteKit 3 RC application using Svelte 5 runes, Vite 8, and TypeScript 6. Use Bun for dependencies and scripts.
 
 ```sh
-# create a new project
-npx sv create my-app
+bun install --frozen-lockfile
+bun run paraglide:compile
+bun run check
+bun run test
 ```
 
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-bun x sv@1.0.0-next.2 create --template minimal --types ts --add paraglide="languageTags:en,es+demo:no" vitest="usages:unit" sveltekit-adapter="adapter:netlify" experimental="features:async,remoteFunctions" --no-download-check --install bun ba-events-sveltekit
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+The [development guide](docs/development.md) documents both test runners, chat diagnosis, search configuration, and canonical contracts. The [documentation index](docs/README.md) links architecture, operational runbooks, and historical plans.

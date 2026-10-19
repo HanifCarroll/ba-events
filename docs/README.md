@@ -4,6 +4,10 @@
 
 ## Current
 
+- [`development.md`](./development.md) — stack, checks, chat diagnosis, search configuration, and canonical contracts
+- [`effect-4.md`](./effect-4.md) — version-matched Effect boundaries and deliberate exceptions
+- [`applied-ai-engineering-work.md`](./applied-ai-engineering-work.md) — remaining work and verification receipts
+
 Canonical chat contract and trust model:
 
 - [`canonical-response.md`](./canonical-response.md) — the field-by-field v4 chat response schema
