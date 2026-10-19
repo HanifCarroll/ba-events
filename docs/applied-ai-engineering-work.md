@@ -265,6 +265,8 @@ remain separate. No broader checklist item is checked from this canary.
   - [ ] Choose a cost-per-reviewed-success target after useful human quality and cost evidence is available; the US$20 monthly budget does not specify this target.
 - [ ] Benchmark model/configuration choices against the same quality suite.
   - Record the installed SDK’s reported mapping of configured thinking adaptive to wire enabled when comparing modes; the local identifier probe exposed this compatibility alias. No thinking behavior was changed.
+  - [x] Configure production after-admission startup following the owner-approved larger comparison/native restart evidence; runtime implementation and model/thinking/directions settings remain unchanged. Full local gates and early browser/workerd checks pass.
+  - [ ] Complete post-enable production verification and keep-or-rollback decision; bounded smoke/conversation/concurrency/reconnect/Stop/native-reset receipts are retained in results/releases/startup-production-20261018/.
 - [ ] Add appropriate spending and concurrency controls.
   - [x] Add BA’s explicit 8,192-token per-model-call output cap and include it in configuration identity; the existing real-SDK transport check verifies `max_tokens=8192`. Thirty focused tests pass in Vitest and Bun, with TypeScript and 10 specs green. Retain existing step/input/retry/time/tool controls. Casamo’s existing output defaults, captured deadlines and action-resource permits are inventoried in `docs/ai-performance.md`.
   - [ ] Verify budget/usage coverage and tune existing numerical limits against reviewed quality and measured production throughput; per-call limits are not a monthly dollar cap.

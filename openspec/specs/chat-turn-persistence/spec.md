@@ -110,15 +110,15 @@ The web channel SHALL keep a workflow-owned attempt independent of browser subsc
 - **THEN** an alarm reconciles admission using the original workflow ID
 - **AND** recovery neither creates a second attempt nor depends on the browser staying connected
 
-#### Scenario: A controlled experiment starts generation after confirmed admission
-- **WHEN** the server-only after-admission experiment is configured for a newly created attempt
+#### Scenario: Production starts generation after confirmed admission
+- **WHEN** a newly created production attempt uses the configured after-admission startup policy
 - **THEN** its persisted attempt policy permits generation only after durable input and confirmed Workflow admission
 - **AND** a delayed or duplicate Workflow callback joins a running producer under the same fence rather than starting another one
 - **AND** failed early generation remains recoverable by the original Workflow, and runtime recovery still rejects stale execution writes
 - **AND** an early failure not yet observed by the Workflow is durably recorded and consumes a Workflow attempt without another generation, preserving the existing retry budget across restart
 - **AND** Stop, identity and rate admission, checkpoints and atomic final publication retain their normal authority
-- **AND** absent experiment configuration, existing attempts and new production attempts keep their existing dispatch policy
-- **AND** a deployed comparison selects at most 64 exact attempt identifiers from server-only configuration with an expiry no more than two hours away; malformed, expired, oversized or unselected configuration keeps normal dispatch
+- **AND** existing attempts retain their persisted policy across configuration changes; removing the production startup setting restores Workflow-only dispatch for newly created attempts
+- **AND** when the production setting is absent, a bounded comparison MAY select at most 64 exact attempt identifiers from server-only configuration with an expiry no more than two hours away; malformed, expired, oversized or unselected comparison configuration keeps Workflow-only dispatch
 
 #### Scenario: A runtime restarts during final persistence or publication
 - **WHEN** a validated final response is already checkpointed
