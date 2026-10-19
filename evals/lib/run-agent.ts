@@ -31,7 +31,7 @@ export interface AgentRun {
   cardsGrounded: boolean
   /** Eval-only model-visible evidence; never persisted by the application. */
   modelEvidence?: ModelEvidence
-  timing?: { transport: 'stream'; firstUsefulMs: number | null; completionMs: number }
+  timing?: { transport: 'stream'; firstUsefulMs: number | null; firstGroundedTextMs?: number | null; completionMs: number }
 }
 
 export type ConciergeEvalContext = Pick<SharedChatTurnInput,
@@ -47,7 +47,12 @@ export async function runConcierge(
   const { currentDateInBA, capturePerformance, ...turnContext } = context
   const started = performance.now()
   let firstUsefulMs: number | null = null
+  let firstGroundedTextMs: number | null = null
   const observeProgress = (response: CanonicalChatResponse) => {
+    if (firstGroundedTextMs === null && response.text.trim() &&
+      (response.provenance.sourceToolCallIds.length || response.directions || response.venue || response.clarificationQuestions.length)) {
+      firstGroundedTextMs = Math.round(performance.now() - started)
+    }
     if (firstUsefulMs !== null) return
     if (response.events.length || response.directions || response.venue ||
       response.kind === 'clarification' && response.clarificationQuestions.length) {
@@ -91,6 +96,6 @@ export async function runConcierge(
     stepCount: result.executionTrace.length,
     canonical: result.canonical,
     cardsGrounded,
-    ...(capturePerformance ? { timing: { transport: 'stream' as const, firstUsefulMs, completionMs } } : {}),
+    ...(capturePerformance ? { timing: { transport: 'stream' as const, firstUsefulMs, firstGroundedTextMs, completionMs } } : {}),
   }
 }

@@ -2,6 +2,7 @@ import type { Neighborhood, ResponseKind } from '#shared/lib/types.ts'
 
 export interface TurnExpectation {
   kind: ResponseKind
+  alternativeKinds?: ResponseKind[]
   minEvents?: number
   maxEvents?: number
   tools?: string[]
@@ -22,7 +23,7 @@ const search = (neighborhood: Neighborhood, isFree = true): TurnExpectation => (
   neighborhood, ...(isFree ? { isFree: true } : {}), tonight: true,
 })
 const details = (targetIndex: number): TurnExpectation => ({ kind: 'event_details',
-  tools: ['get_event_details'], forbiddenTools: ['search_events'], minEvents: 1, maxEvents: 1, targetIndex })
+  tools: ['get_event_details'], forbiddenTools: ['search_events'], minEvents: 0, maxEvents: 0, targetIndex })
 const directions = (targetIndex: number): TurnExpectation => ({ kind: 'directions',
   tools: ['get_directions'], forbiddenTools: ['search_events'], targetIndex })
 
@@ -30,12 +31,12 @@ export const CONVERSATIONS: ConversationCase[] = [
   { id: 'ordinal-details-directions-en', locale: 'en', turns: [
     { message: 'Show me three free events in Palermo tonight.', expect: search('Palermo') },
     { message: 'Tell me more about the second one.', expect: details(1) },
-    { message: 'How do I get to that event?', expect: directions(0) },
+    { message: 'How do I get to that event?', expect: directions(1) },
   ] },
   { id: 'ordinal-details-directions-es', locale: 'es', turns: [
     { message: 'Mostrame tres eventos gratis en Palermo para esta noche.', expect: search('Palermo') },
     { message: 'Contame más sobre el tercero.', expect: details(2) },
-    { message: '¿Cómo llego a ese evento?', expect: directions(0) },
+    { message: '¿Cómo llego a ese evento?', expect: directions(2) },
   ] },
   { id: 'refinement-constraints-en', locale: 'en', turns: [
     { message: 'Show me three events in Palermo tonight.', expect: search('Palermo', false) },
@@ -66,5 +67,20 @@ export const CONVERSATIONS: ConversationCase[] = [
     { message: 'Mostrame tres eventos gratis en Recoleta para esta noche.', expect: { ...search('Recoleta'), kind: 'no_results', minEvents: 0, maxEvents: 0 } },
     { message: 'Entonces buscá en Palermo, manteniendo que sean gratis y para esta noche. Mostrame tres.', expect: search('Palermo') },
     { message: '¿Cómo llego al tercero?', expect: directions(2) },
+  ] },
+  { id: 'simple-assessment-en', locale: 'en', turns: [
+    { message: 'Show me three free events in Palermo tonight.', expect: search('Palermo') },
+    { message: 'Does the second one look fun? What actually happens there?', expect: { ...details(1), alternativeKinds: ['recommendations'] } },
+    { message: 'How do I get to that event?', expect: directions(1) },
+  ] },
+  { id: 'simple-assessment-es', locale: 'es', turns: [
+    { message: 'Mostrame tres eventos gratis en Palermo para esta noche.', expect: search('Palermo') },
+    { message: '¿El segundo parece divertido? ¿Qué se hace ahí?', expect: { ...details(1), alternativeKinds: ['recommendations'] } },
+    { message: '¿Cómo llego a ese evento?', expect: directions(1) },
+  ] },
+  { id: 'missing-description-es', locale: 'es', turns: [
+    { message: '¿Qué hay en Casa SinTexto esta noche?', expect: { kind: 'recommendations', tools: ['search_events'], minEvents: 1, maxEvents: 1, tonight: true } },
+    { message: 'Contame los detalles de la primera opción.', expect: details(0) },
+    { message: '¿Recomendarías esa opción para escuchar jazz en vivo? Solo recomendala si la descripción de la fuente confirma jazz en vivo.', expect: { kind: 'recommendations', tools: ['recommendations_mismatch'], forbiddenTools: ['search_events'], maxEvents: 0 } },
   ] },
 ]

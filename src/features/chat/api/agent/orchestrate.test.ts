@@ -38,12 +38,12 @@ describe('recommendation follow-ups', () => {
       const read = async () => ({ success: true, events, formatted: '{}' })
       const result = await orchestrate({
         ...base,
-        priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+        priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'home', createdAt: null,
           events: [{ eventId: original.id, displayIndex: 0, name: original.name, saved: null }] }],
         readExecutors: { search: read, eventDetails: read, listSaved: read },
         runAgentFn: async input => {
           const selected = input.tools[kind] as unknown as { execute: (value: unknown, options: unknown) => Promise<{ events: Array<Record<string, unknown>> }> }
-          const output = await selected.execute(kind === 'get_event_details' ? { eventRef: 'prior:event_0' } : kind === 'search_events' ? { objective: 'search' } : {}, { toolCallId: 'description-read' })
+          const output = await selected.execute(kind === 'get_event_details' ? { eventRef: 'prior:event_0', purpose: 'recommendation' } : kind === 'search_events' ? { objective: 'search' } : {}, { toolCallId: 'description-read' })
           supplied = output.events
           return { text: 'Here are the available source details.', steps: [{ toolResults: [{ toolCallId: 'description-read', toolName: kind, output }] }], responseId: null }
         },
@@ -169,7 +169,8 @@ describe('recommendation follow-ups', () => {
       expect((outputs[0].events as Array<Record<string, unknown>>)[0]).not.toHaveProperty('venueRef')
       expect(outputs[1]).toMatchObject({ success: false, error: 'unknown_venue_ref' })
       expect(outputs[2]).toMatchObject({ success: false, error: 'location_unavailable' })
-      expect(result.canonical.events[0].venue_address).toBeNull()
+      if (kind === 'get_event_details') expect(result.canonical.events).toEqual([])
+      else expect(result.canonical.events[0].venue_address).toBeNull()
       expect(result.canonical.directions).toBeNull()
       expect(previews.length).toBeGreaterThan(0)
       expect([...previews, JSON.stringify(outputs), JSON.stringify(result.canonical)].join('\n')).not.toContain(event.venue_address)
@@ -258,7 +259,7 @@ describe('recommendation follow-ups', () => {
         expect.objectContaining({ success: false, error: 'tool_call_limit' }),
         expect.objectContaining({ success: false, error: 'tool_call_limit' }),
       ])
-      expect(result.canonical.events.map(event => event.id)).toEqual(['event-1'])
+      expect(result.canonical.events).toEqual([])
       expect(result.reads.filter(read => read.success)).toHaveLength(8)
     })
   }
@@ -371,7 +372,7 @@ describe('recommendation follow-ups', () => {
     expect(readSignal?.aborted).toBe(true)
   })
 
-  it('publishes successful server reads before final generation and keeps model text from creating cards', async () => {
+  it('streams grounded follow-up prose without publishing a repeated card', async () => {
     const previews: Array<{ text: string; ids: string[] }> = []
     let finalReturned = false
     const result = await orchestrate({
@@ -383,7 +384,7 @@ describe('recommendation follow-ups', () => {
       runAgentFn: async (input): Promise<AgentRun> => {
         const details = input.tools.get_event_details as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
         await details.execute({ eventRef: 'prior:event_0', purpose: 'details' }, { toolCallId: 'detail' })
-        expect(previews.some(({ ids }) => ids[0] === 'verified-id')).toBe(true)
+        expect(previews.every(({ ids }) => ids.length === 0)).toBe(true)
         input.onText?.('Here is')
         input.onText?.('Here is the event. Invented event id: forged-id')
         finalReturned = true
@@ -392,8 +393,67 @@ describe('recommendation follow-ups', () => {
     })
     expect(previews.every(({ ids }) => ids.every((id) => id === 'verified-id'))).toBe(true)
     expect(previews.some(({ text }) => text === 'Here is')).toBe(true)
-    expect(result.canonical.events.map(({ id }) => id)).toEqual(['verified-id'])
+    expect(result.canonical.events).toEqual([])
     expect(result.canonical.text).toBe('Here is the event.')
+  })
+
+  for (const purpose of [undefined, 'details', 'save', 'unsave', 'recommendation'] as const) {
+    it(`keeps follow-up facts and provenance with purpose ${purpose ?? 'omitted'}`, async () => {
+      const previews: string[][] = []
+      const result = await orchestrate({
+        ...base, originalQuery: 'Does it look fun?',
+        priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+          events: [{ eventId: 'event-1', displayIndex: 0, name: 'Verified event', saved: null }] }],
+        readExecutors: { eventDetails: async () => ({ success: true,
+          events: [{ ...priorEvent('event-1', 'Verified event'), description_en: 'Live jazz with a dance floor.' }], formatted: '{}' }) },
+        onProgress: (response) => previews.push(response.events.map(({ id }) => id)),
+        runAgentFn: async (input) => {
+          const details = input.tools.get_event_details as unknown as { execute: (value: unknown, options: unknown) => Promise<{ events: Array<Record<string, unknown>> }> }
+          const output = await details.execute({ eventRef: 'prior:event_0', ...(purpose ? { purpose } : {}) }, { toolCallId: 'detail' })
+          expect(output.events[0]?.description_en).toBe('Live jazz with a dance floor.')
+          input.onText?.('The source lists live jazz and a dance floor.')
+          return { text: 'The source lists live jazz and a dance floor.', steps: [{ toolResults: [{ toolCallId: 'detail', toolName: 'get_event_details' }] }], responseId: null }
+        },
+      })
+      const expectedIds = purpose === 'save' || purpose === 'unsave' ? ['event-1'] : []
+      expect(result.canonical.events.map(({ id }) => id)).toEqual(expectedIds)
+      expect(previews.length).toBeGreaterThan(0)
+      expect(previews.every((ids) => JSON.stringify(ids) === JSON.stringify(expectedIds))).toBe(true)
+      expect(result.canonical.provenance.sourceToolCallIds).toEqual(['detail'])
+      expect(result.reads[0]?.eventIds).toEqual(['event-1'])
+      expect(result.canonical.provenance.fallbackUsed).toBe(false)
+    })
+  }
+
+  it('keeps the first chat card for an event referenced from home suggestions', async () => {
+    const result = await orchestrate({
+      ...base, originalQuery: 'Tell me about this event',
+      priorDisplayedEvents: [{ requestId: 'home', assistantMessageId: 'home', createdAt: null,
+        events: [{ eventId: 'event-1', displayIndex: 0, name: 'Verified event', saved: null }] }],
+      readExecutors: { eventDetails: async () => ({ success: true, events: [priorEvent('event-1', 'Verified event')], formatted: '{}' }) },
+      runAgentFn: async (input) => {
+        const details = input.tools.get_event_details as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        await details.execute({ eventRef: 'home:event_0', purpose: 'details' }, { toolCallId: 'detail' })
+        return { text: 'Here are the details.', steps: [{ toolResults: [{ toolCallId: 'detail', toolName: 'get_event_details' }] }], responseId: null }
+      },
+    })
+    expect(result.canonical.events.map(({ id }) => id)).toEqual(['event-1'])
+  })
+
+  it('does not repeat a prior card when generation fails after a successful detail read', async () => {
+    const result = await orchestrate({
+      ...base, priorDisplayedEvents: [{ requestId: 'prior', assistantMessageId: 'assistant', createdAt: null,
+        events: [{ eventId: 'event-1', displayIndex: 0, name: 'Verified event', saved: null }] }],
+      readExecutors: { eventDetails: async () => ({ success: true, events: [priorEvent('event-1', 'Verified event')], formatted: '{}' }) },
+      runAgentFn: async (input) => {
+        const details = input.tools.get_event_details as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        await details.execute({ eventRef: 'prior:event_0' }, { toolCallId: 'detail' })
+        throw new Error('Final generation failed')
+      },
+    })
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.provenance).toMatchObject({ sourceToolCallIds: ['detail'], fallbackUsed: true })
+    expect(result.canonical.text.length).toBeGreaterThan(0)
   })
 
   it('does not publish a tool result after cancellation', async () => {
@@ -453,7 +513,7 @@ describe('recommendation follow-ups', () => {
     ])
   })
 
-  it('uses the final recommendation detail read as the selected card and preserves model prose', async () => {
+  it('uses the final recommendation detail read without repeating its card and preserves model prose', async () => {
     const calls: string[] = []
     const result = await orchestrate({
       ...base,
@@ -486,9 +546,8 @@ describe('recommendation follow-ups', () => {
     expect(calls).toEqual(['compared'])
     expect(result.canonical.messageKey).toBe('recommendations_pick')
     expect(result.canonical.text).toBe('This fits your request for a focused recommendation.')
-    expect(result.canonical.events).toHaveLength(1)
-    expect(result.canonical.events[0]?.name).toBe('Second')
-    expect(result.canonical.events[0]?.recommendation_reason).toBe('This fits your request for a focused recommendation.')
+    expect(result.canonical.events).toEqual([])
+    expect(result.reads.findLast(read => read.toolName === 'get_event_details')?.eventIds).toEqual(['event-2'])
   })
 
   it('keeps facets in canonical events but not in model-facing search output', async () => {
@@ -524,7 +583,9 @@ describe('recommendation follow-ups', () => {
       },
     })
     expect(result.canonical.messageKey).toBe('recommendations_pick')
-    expect(result.canonical.events[0]?.name).toBe('Business Mixer')
+    expect(result.canonical.events).toEqual([])
+    expect(result.canonical.text).toBe('The description explicitly mentions business networking.')
+    expect(result.reads[0]?.eventIds).toEqual(['event-1'])
   })
 })
 

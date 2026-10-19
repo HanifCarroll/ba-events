@@ -9,6 +9,7 @@ import { scoreCase } from './score.ts'
 import { frozenDependencies, frozenSearchIntent, FROZEN_DATE } from './frozen-corpus.ts'
 import type { ConversationCase, TurnExpectation } from './conversations.ts'
 import type { SearchEventsInput } from '#features/chat/api/tools/search-events.ts'
+import type { AgentRunner, ModelRunConfiguration } from '#features/chat/api/agent/orchestrate.ts'
 import { captureModelEvidence, type ModelEvidence } from './quality.ts'
 
 export interface ModelStepUsage {
@@ -46,6 +47,7 @@ export interface TurnResult {
   run?: AgentRun
   durationMs: number
   modelUsage?: { steps: ModelStepUsage[]; inputOutputComplete: boolean }
+  modelConfiguration?: ModelRunConfiguration
 }
 export interface ConversationResult {
   caseId: string
@@ -67,7 +69,7 @@ export async function scoreConversationTurn(
   run: AgentRun, previousResults: AgentRun[],
 ): Promise<string[]> {
   const failures = scoreCase({ id, message, locale, expect: {} }, run).failures
-  if (run.canonical.kind !== expectation.kind) failures.push(`kind: expected ${expectation.kind}, got ${run.canonical.kind}`)
+  if (![expectation.kind, ...(expectation.alternativeKinds ?? [])].includes(run.canonical.kind)) failures.push(`kind: expected ${expectation.kind}, got ${run.canonical.kind}`)
   if (expectation.minEvents !== undefined && run.events.length < expectation.minEvents) failures.push(`events: fewer than ${expectation.minEvents}`)
   if (expectation.maxEvents !== undefined && run.events.length > expectation.maxEvents) failures.push(`events: more than ${expectation.maxEvents}`)
   for (const tool of expectation.tools ?? []) {
@@ -82,7 +84,13 @@ export async function scoreConversationTurn(
     if (!target) failures.push('target: prior response did not supply the requested ordinal')
     else if (expectation.kind === 'directions') {
       if (run.canonical.directions?.eventId !== target.id) failures.push('target: directions refer to the wrong event')
-    } else if (run.events.length !== 1 || run.events[0].id !== target.id) failures.push('target: details refer to the wrong event')
+    } else {
+      // Detail-only follow-ups have grounded reads but intentionally no new card.
+      const details = run.toolCalls.filter(call => call.toolName === 'get_event_details')
+      if (details.length === 0 || details.some(call => call.eventIds.length !== 1 || call.eventIds[0] !== target.id)) {
+        failures.push('target: details refer to the wrong event')
+      }
+    }
   }
   for (const call of run.toolCalls.filter(call => call.toolName === 'search_events')) {
     const intent = await frozenSearchIntent(call.input as SearchEventsInput)
@@ -107,12 +115,15 @@ export async function scoreConversationTurn(
 
 export async function runConversation(
   scenario: ConversationCase, trial: number,
-  options: { runTurn?: TurnRunner; dependencies?: SharedChatTurnDependencies; sessionId?: string; historyStress?: boolean } = {},
+  options: { runTurn?: TurnRunner; runAgentFn?: AgentRunner; dependencies?: SharedChatTurnDependencies; sessionId?: string; historyStress?: boolean } = {},
 ): Promise<ConversationResult> {
   const sessionId = options.sessionId ?? `eval-${scenario.id}-${trial}-${randomUUID()}`
   let evidence: ModelEvidence | undefined
   let modelSteps: ModelStepUsage[] = []
-  const dependencies = options.dependencies ?? frozenDependencies(undefined, (input, run) => { evidence = captureModelEvidence(input, run); modelSteps = captureModelUsage(run) })
+  let modelConfiguration: ModelRunConfiguration | undefined
+  const dependencies = options.dependencies ?? frozenDependencies(options.runAgentFn, (input, run) => {
+    evidence = captureModelEvidence(input, run); modelSteps = captureModelUsage(run); modelConfiguration = run.configuration
+  })
   const runTurn = options.runTurn ?? runConcierge
   const priorHints: PriorResponseHint[] = []
   const recentMessages: AgentHistoryMessage[] = options.historyStress ? structuredClone(HISTORY_STRESS_MESSAGES) : []
@@ -125,6 +136,7 @@ export async function runConversation(
     try {
       evidence = undefined
       modelSteps = []
+      modelConfiguration = undefined
       const context: Partial<ConciergeEvalContext> = {
         sessionId, currentDateInBA: FROZEN_DATE, capturePerformance: true, priorHints: structuredClone(priorHints),
         recentMessages: structuredClone(recentMessages), lastSearch: structuredClone(lastSearch),
@@ -133,6 +145,7 @@ export async function runConversation(
       if (evidence) run.modelEvidence = evidence
       const failures = await scoreConversationTurn(`${scenario.id}/turn-${index + 1}`, turn.message, scenario.locale, turn.expect, run, previousResults)
       turns.push({ index, message: turn.message, run, pass: !failures.length, failures, durationMs: Math.round(performance.now() - started),
+        modelConfiguration,
         modelUsage: { steps: modelSteps, inputOutputComplete: modelSteps.length > 0 && modelSteps.every(step => step.inputTokens !== null && step.outputTokens !== null) } })
       previousResults.push(run)
 

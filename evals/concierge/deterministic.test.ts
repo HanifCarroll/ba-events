@@ -33,10 +33,12 @@ describe('ToolLoopAgent acceptance behavior', () => {
     expect(search.canonical.events[0]?.name).toBe('CHEBA')
     expect(prompt).toContain('CHEBA')
     expect(result.canonical.kind).toBe('event_details')
-    expect(result.canonical.events[0]?.name).toBe('CHEBA')
+    expect(result.canonical.events).toEqual([])
+    expect(result.reads[0]?.eventIds).toEqual([CHEBA_ID])
     expect(result.canonical.text).not.toContain('Which event')
     const missing = await orchestrate({ ...base, originalQuery: 'Does it have a description?', priorDisplayedEvents: [displayed], ...toolCase({ success: true, events: [event(CHEBA_ID, 'CHEBA')], formatted: '{}' }, 'The source does not provide a description.') })
-    expect(missing.canonical.events[0]?.name).toBe('CHEBA')
+    expect(missing.canonical.events).toEqual([])
+    expect(missing.reads[0]?.eventIds).toEqual([CHEBA_ID])
     expect(missing.canonical.text).toContain('does not provide')
   })
 
@@ -44,9 +46,11 @@ describe('ToolLoopAgent acceptance behavior', () => {
     let prompt = ''
     const result = await orchestrate({ ...base, originalQuery: 'tell me about the second one', priorDisplayedEvents: [prior], ...toolCase({ success: true, events: [event(SECOND_ID, 'Second event', 'Description')], formatted: '{}' }), runAgentFn: async (input) => { prompt = input.instructions; return toolCase({ success: true, events: [event(SECOND_ID, 'Second event', 'Description')], formatted: '{}' }).runAgentFn(input) } })
     expect(prompt).toContain(handleFor('search-1', 1))
-    expect(result.canonical.events[0]?.id).toBe(SECOND_ID)
+    expect(result.canonical.events).toEqual([])
+    expect(result.reads[0]?.eventIds).toEqual([SECOND_ID])
     const pronoun = await orchestrate({ ...base, originalQuery: 'what about it?', priorDisplayedEvents: [prior], ...toolCase({ success: true, events: [event(CHEBA_ID, 'CHEBA', 'Description')], formatted: '{}' }) })
-    expect(pronoun.canonical.events[0]?.name).toBe('CHEBA')
+    expect(pronoun.canonical.events).toEqual([])
+    expect(pronoun.reads[0]?.eventIds).toEqual([CHEBA_ID])
   })
 
   it('genuine ambiguity executes ask_clarification and no event read', async () => {

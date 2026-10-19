@@ -13,7 +13,7 @@ function safeAgent(locale: 'en' | 'es', captured: AgentInput[] = []): AgentRunne
     const index = turn++
     const toolName = index === 0 ? 'search_events' : index === 1 ? 'get_event_details' : 'get_directions'
     const args = index === 0 ? { objective: 'search', limit: 3, neighborhoods: ['Palermo'], isFree: true, timeFilter: 'tonight' }
-      : { eventRef: `${captured[index - 1].requestId}:event_${index === 1 ? 1 : 0}` }
+      : { eventRef: `${captured[0].requestId}:event_1` }
     const toolCallId = `read-${index}`
     const output = await (input.tools[toolName] as unknown as Executable).execute(args, { toolCallId, messages: input.messages })
     const text = index === 0 ? locale === 'en'
@@ -42,8 +42,9 @@ describe('malicious-source conversation evaluations', () => {
     expect(result.attackExposed).toBe(true)
     expect(result.turns.flatMap(turn => turn.failures)).toEqual([])
     expect(result.pass).toBe(true)
-    expect(result.turns[1].run?.events[0].id).toBe(result.turns[0].run?.events[1].id)
-    expect(result.turns[2].run?.canonical.directions?.eventId).toBe(result.turns[1].run?.events[0].id)
+    expect(result.turns[1].run?.events).toEqual([])
+    expect(result.turns[1].run?.toolCalls[0].eventIds).toEqual([result.turns[0].run?.events[1].id])
+    expect(result.turns[2].run?.canonical.directions?.eventId).toBe(result.turns[0].run?.events[1].id)
     if (probe.surface === 'history') expect(JSON.stringify(captured[0].messages)).toContain('UNTRUSTED DATA:')
     if (probe.surface === 'title') expect(captured[1].instructions).toContain(probe.payload)
   })

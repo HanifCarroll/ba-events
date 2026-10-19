@@ -12,6 +12,25 @@ The concierge MUST use a bounded ToolLoopAgent with only search, event detail, v
 - **WHEN** the model handles a request
 - **THEN** execution stops within the configured step, tool-call, per-tool, per-step, and total-time limits
 
+#### Scenario: A controlled evaluation changes reasoning effort
+- **WHEN** a server-injected evaluation requests low reasoning effort with thinking enabled
+- **THEN** the SDK transport includes that effort, and the configuration fingerprint distinguishes the candidate
+- **AND** public request fields and environment settings cannot select that evaluation mode
+- **AND** the production default, prompt, source reads, limits and cancellation rules remain unchanged
+
+#### Scenario: A controlled evaluation returns complete directions directly
+- **WHEN** an explicitly injected evaluation lets the model mark a directions result as the complete answer
+- **THEN** only a single successful directions result with a trusted artifact may end the loop without another model call
+- **AND** response assembly supplies localized map guidance, retains read provenance and does not classify the empty model prose as a planner failure
+- **AND** failed reads, ambiguous targets and results needing additional tasks continue through the normal tool loop
+- **AND** prior successful reads of other tools prevent direct termination so their results remain available for final prose
+- **AND** normal production calls do not expose the evaluation-only completion argument
+
+#### Scenario: Trace export follows a completed or interrupted model run
+- **WHEN** an owning runtime lifecycle hook can retain the separately bounded trace export
+- **THEN** successful generation can return before export completes, and interrupted generation still retains cleanup without rerunning the model
+- **AND** a missing or failing retention hook causes the leaf to await bounded export before settling
+
 #### Scenario: A read reaches its deadline
 - **WHEN** an in-flight tool read reaches the per-tool deadline
 - **THEN** its underlying database, embedding and reranking requests receive cancellation
@@ -85,6 +104,14 @@ Cards, links, directions, venue facts, provenance, and clarification data MUST b
 - **AND** the source fields and missing-description flags remain unchanged
 - **AND** canonical cards retain all stored presentation fields independently of the model projection
 
+#### Scenario: User asks about an event already displayed in the conversation
+- **WHEN** an event-details read resolves an event in a prior assistant card for details or a recommendation assessment
+- **THEN** the response answers using the successful read without attaching that event card again
+- **AND** both progressive previews and the final stored response omit the repeated card while retaining read provenance
+- **AND** the earlier displayed list remains available for subsequent follow-up references
+- **AND** a recommendation assessment retains its readable reason without exposing framing markers
+- **AND** first-time cards, home-suggestion details, fresh searches, saved-list requests and save/unsave control guidance retain their cards
+
 ### Requirement: Progressive web previews preserve the canonical trust boundary
 The web channel SHALL publish transient previews using the final response's server assembler after successful reads and during model prose generation. Previews SHALL retain existing artifact, framing and reason validation and SHALL NOT be stored as completed responses. Exactly one final canonical response SHALL be published after the persistence gate and any required authoritative commit.
 
@@ -147,11 +174,6 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **AND** supplied cost, original SDK spans, model requests and application responses remain unchanged
 - **AND** estimated token cost is not represented as an invoice, other-provider spending or cost per independently reviewed success
 
-#### Scenario: Trace export follows a completed or interrupted model run
-- **WHEN** an owning runtime lifecycle hook can retain the separately bounded trace export
-- **THEN** successful generation can return before export completes, and interrupted generation still retains cleanup without rerunning the model
-- **AND** a missing or failing retention hook causes the leaf to await bounded export before settling
-
 #### Scenario: Stop closes the model stream before trace cleanup finishes
 - **WHEN** Stop aborts a deployed web turn and closes its response stream
 - **THEN** the Worker retains the tracing leaf promise for its bounded cancellation cleanup and best-effort trace export, even if the owning Effect finishes interruption first
@@ -161,6 +183,13 @@ model execution or change the turn result. Export waiting SHALL be bounded.
 - **WHEN** tracing is unconfigured or its exporter fails
 - **THEN** the concierge retains the same execution, fallback and canonical-artifact rules
 - **AND** no additional model attempt is made to recover tracing
+
+#### Scenario: Startup and completion timing is recorded
+- **WHEN** a web chat passes through ingress, durable admission, workflow dispatch and model execution
+- **THEN** server-only timing records correlate the attempt across request entry/session loading, admission, execution verification, rate admission, context readiness, provider initialization, model start, trace export and checkpoint/publication
+- **AND** stage and cumulative durations use a local monotonic clock, while a persisted admission timestamp identifies the cross-worker wait separately
+- **AND** records contain only a validated attempt identifier, allowlisted stage/phase/scope/version labels and numeric or explicitly unknown timings
+- **AND** logging failures cannot change admission, execution, cancellation, persistence or replay and no credentials, capabilities or chat content are added to timing logs
 
 ### Requirement: Conversation evaluations retain actual context and fixed data
 Concierge regression evaluations SHALL execute sequential turns through shared
@@ -187,6 +216,14 @@ evaluation gate; model variability SHALL remain visible in per-trial results.
 - **AND** returned model steps retain model/provider identity and input, cache, output and reasoning counters, with absent or invalid measurements unknown and real zero preserved
 - **AND** raw DeepSeek counters do not inherit normalized SDK defaults for missing fields
 - **AND** historical generation-only receipts remain unchanged and unreported failed attempts are not priced as zero
+
+#### Scenario: Thinking modes are compared before a production setting changes
+- **WHEN** an explicitly invoked comparison injects thinking disabled into the shared model runner
+- **THEN** the production default remains configured adaptive with its installed SDK wire mapping recorded as enabled, without a public request override
+- **AND** each mode has its own actual conversation history, configuration fingerprint, model usage and fixed-corpus identity
+- **AND** repeated conversation pairs alternate order and retain failures, missing measurements and judge protocol errors
+- **AND** generation latency excludes separate grading time and distinguishes first grounded text from first structured artifact
+- **AND** evidence-based prose scores remain labeled uncalibrated and do not establish human quality acceptance
 
 #### Scenario: Prose quality is evaluated separately from card provenance
 - **WHEN** a model evaluation grades factuality, suitability, explanation accuracy or usefulness
@@ -237,10 +274,3 @@ bunx vitest run src/features/chat/api/agent/orchestrate.test.ts src/features/cha
 
 ### Advisory conformance review
 `$openspec-review-conformance concierge-orchestration` is advisory rather than proof.
-
-#### Scenario: Startup and completion timing is recorded
-- **WHEN** a web chat passes through ingress, durable admission, workflow dispatch and model execution
-- **THEN** server-only timing records correlate the attempt across request entry/session loading, admission, execution verification, rate admission, context readiness, provider initialization, model start, trace export and checkpoint/publication
-- **AND** stage and cumulative durations use a local monotonic clock, while a persisted admission timestamp identifies the cross-worker wait separately
-- **AND** records contain only a validated attempt identifier, allowlisted stage/phase/scope/version labels and numeric or explicitly unknown timings
-- **AND** logging failures cannot change admission, execution, cancellation, persistence or replay and no credentials, capabilities or chat content are added to timing logs
