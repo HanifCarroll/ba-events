@@ -1,6 +1,8 @@
 # Docs
 
-**Source of truth:** [`decisions.md`](./decisions.md) — a newest-first log of architectural decisions. Start there.
+Start with [getting started](getting-started.md), [architecture](architecture.md), and [contributing](../CONTRIBUTING.md).
+
+**Decision history:** [`decisions.md`](./decisions.md) — a newest-first log of architectural decisions; older entries describe historical implementations.
 
 ## Current
 
@@ -14,8 +16,6 @@ Canonical chat contract and trust model:
 - [`chat-trust-boundary.md`](./chat-trust-boundary.md) — what the server validates vs. trusts
 - [`chat-streaming.md`](./chat-streaming.md) — streaming/token lifecycle
 - [`chat-persistence-migration.md`](./chat-persistence-migration.md) — guest reply + reasoning persistence
-- [`search-stage-lifecycle.md`](./search-stage-lifecycle.md) — ordered search stage eligibility/outcomes
-- [`fallback-rules.md`](./fallback-rules.md) — deterministic fallback rules
 - [`follow-up-display-groups.md`](./follow-up-display-groups.md) — follow-up reference rendering
 
 Broader architecture and planning:

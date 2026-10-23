@@ -28,7 +28,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-!.env.test
 
 # Vite
 vite.config.js.timestamp-*
@@ -42,3 +41,19 @@ results/langfuse/
 results/evals/
 results/source-health/
 results/releases/
+
+# Local Worker secrets and operator artifacts
+.dev.vars
+.dev.vars.*
+*.local.jsonc
+*.local.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.sqlite
+*.sqlite3
+coverage/
+playwright-report/
+test-results/

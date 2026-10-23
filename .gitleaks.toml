@@ -1,0 +1,18 @@
+title = "BA Eventos secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Literal synthetic credentials used to test trace redaction"
+condition = "AND"
+paths = ['''^src/shared/lib/ai/trace-redaction\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^(sk_test_BAReleaseCanary1234567890|sk_live_fakeonly123456|rk_live_fakeonly123456)$''']
+
+[[allowlists]]
+description = "Example-only Telegram webhook secret placeholder"
+condition = "AND"
+paths = ['''^\.env\.example$''']
+regexTarget = "secret"
+regexes = ['''^replace-with-64-hex-characters$''']
