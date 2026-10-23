@@ -1,6 +1,6 @@
-# Getting started
+# Exploring the code
 
-Choose the smallest environment you need. The code checks and component gallery work without a production account; running the full service requires infrastructure setup.
+The repository is public so you can inspect the implementation behind [baeventos.com](https://baeventos.com). Start with the [architecture overview](architecture.md) and its code map. The checks and component gallery below let you explore locally without production accounts or credentials.
 
 ## 1. Run the checks
 
@@ -31,37 +31,15 @@ bun run storybook
 
 Open `http://localhost:6006`. The gallery supplies mock authentication, saved events, analytics, and speech helpers. See [Storybook](storybook.md) for browser tests and accessibility checks.
 
-## 3. Configure a full development instance
+## Reading the operational code
 
-```sh
-cp .env.example .env
-```
+Deployment files, database migrations, channel integrations, and import jobs are included to show how the hosted product works. They are maintainer references, not a supported installation guide. Self-hosting is outside the project’s scope.
 
-Use a separate Supabase project and fill in `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and the matching `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY`. The service-role key is privileged and server-only. Never prefix it with `PUBLIC_` or commit it.
+- [Chat streaming](chat-streaming.md) explains durable delivery.
+- [The MCP specification](../openspec/specs/public-event-mcp/spec.md) describes public event discovery.
+- [Import/enrichment](event-import-enrichment.md) describes the catalog pipeline.
+- [Workers Builds](cloudflare-workers-builds.md) documents the hosted deployment topology.
 
-Database bootstrap is currently manual. `supabase/schema.sql` and `supabase/seed.sql` are historical starting points, while `supabase/migrations/` records later changes, including Supabase-specific Auth and policy requirements. They are **not a verified one-command fresh-database installer**. Review and reconcile the schema and migration sequence in a disposable project before enabling app traffic. Do not apply the seed or maintenance scripts to production. Work on a reproducible bootstrap is a useful contribution.
+Deployment and webhook commands target the maintained installation. Live evaluations and imports can call providers, read configured databases, export traces, or incur costs. They are not part of local code exploration. Use the deterministic tests and Storybook fixtures above.
 
-For chat, supply your own DeepSeek generation key and OpenAI embedding key. Voyage reranking and Langfuse tracing are optional. Keep analytics disabled by leaving `PUBLIC_POSTHOG_KEY` empty. Use `LANGFUSE_TRACING_ENABLED=false` for local work unless you deliberately want to export traces to your own project.
-
-```sh
-bun run dev
-```
-
-The web app listens on `http://localhost:3001`. Configure your Supabase Auth site URL and callback allowlist for that local origin. Catalog-backed routes require a configured database and event data. Durable web-chat delivery also requires the Cloudflare services described in [chat streaming](chat-streaming.md); starting Vite alone does not provision those services.
-
-## Optional channels and ingestion
-
-- **Telegram:** create your own bot, endpoint, and independent webhook/HMAC secrets. Follow [the Telegram guide](telegram-bot.md).
-- **MCP:** use your own Worker and database bindings. The maintained public contract is in [the MCP specification](../openspec/specs/public-event-mcp/spec.md).
-- **Imports:** use your own Trigger.dev project and provider credentials. Review [import/enrichment](event-import-enrichment.md) and [browser acquisition](browser-acquisition.md) before running a job.
-- **Live evaluations:** commands beginning `eval:` may call models, read configured databases, export traces, or spend credits. They are not part of the contributor quick start. Read [concierge evaluations](concierge-evals.md) first.
-
-## Deploying a fork
-
-The checked-in `wrangler*.jsonc` files, Worker/service names, routes, account identifiers, and Trigger project identify the maintained BA Eventos installation. They are public configuration, not credentials. Copy and adapt them for your own account; do not run `deploy`, `cloudflare:deploy`, `trigger:deploy`, or webhook setup commands unchanged.
-
-Update the canonical host in `src/hooks.server.ts` and review app metadata and branded links for your own domain.
-
-Provision your own Worker bindings, Workflows, Durable Object migrations, Supabase schema/policies, authentication redirects, and runtime secrets. Shared delivery secrets must match across the relevant private bindings. [Workers Builds](cloudflare-workers-builds.md) describes the maintainer's deployment topology, not an automatic setup service for forks.
-
-Local environment files, `.dev.vars`, database dumps, traces, and scratch output stay untracked. The project never needs another contributor's production credentials.
+Local environment files, `.dev.vars`, database dumps, traces, and scratch output stay untracked. Production credentials and user data are not needed to inspect or check the code.

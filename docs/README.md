@@ -1,6 +1,6 @@
 # Docs
 
-Start with [getting started](getting-started.md), [architecture](architecture.md), and [contributing](../CONTRIBUTING.md).
+Start with [exploring the code](getting-started.md), [architecture](architecture.md), and [contributing](../CONTRIBUTING.md).
 
 **Decision history:** [`decisions.md`](./decisions.md) — a newest-first log of architectural decisions; older entries describe historical implementations.
 

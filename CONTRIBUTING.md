@@ -4,7 +4,7 @@ Thanks for helping improve event discovery in Buenos Aires. Start with a focused
 
 ## Local setup
 
-Follow [getting started](docs/getting-started.md). Bun 1.3.14 and the committed `bun.lock` are the supported dependency baseline. Use your own development services when you need the full app. The test suite and Storybook do not need production credentials.
+Follow [exploring the code](docs/getting-started.md). Bun 1.3.14 and the committed `bun.lock` are the supported dependency baseline. The test suite and Storybook use fixtures and do not need production credentials. The public repository supports inspection and contributions to the hosted product; self-hosting support is outside its scope.
 
 ## Before opening a pull request
 
@@ -13,7 +13,7 @@ bun install --frozen-lockfile
 bun run cloudflare:ci
 ```
 
-Then run the [compile-only build](docs/getting-started.md#1-run-the-checks) with placeholder public settings or your own development environment.
+Then run the [compile-only build](docs/getting-started.md#1-run-the-checks) with placeholder public settings.
 
 For UI changes, also inspect the affected Storybook stories and run the relevant browser checks from [the Storybook guide](docs/storybook.md). For database changes, include a migration and its rollback/compatibility notes. Do not run maintenance scripts against the hosted service.
 

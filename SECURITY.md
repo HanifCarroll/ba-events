@@ -12,9 +12,9 @@ Include the affected commit, relevant files, a minimal reproduction using synthe
 
 This is an independently maintained project; response times are not guaranteed. Please allow time to investigate and coordinate a fix before publishing details.
 
-## Deployment responsibilities
+## Credentials and data
 
-A public source repository does not grant access to the hosted service or its data. Operators must configure their own secrets, Supabase row-level security, authentication redirects, admission controls, provider limits, and retention policies. Never expose a Supabase service-role key through a `PUBLIC_` variable.
+The repository is public for code inspection. Access to the hosted infrastructure, credentials, and user data remains restricted to authorized maintainers. Use synthetic fixtures for review and testing. Never commit credentials or expose a Supabase service-role key through a `PUBLIC_` variable.
 
 If a real credential is committed, revoke or rotate it first, assess access, and coordinate removal from Git history and GitHub surfaces. Deleting it in a later commit alone does not remove the exposure. Automated secret scanning helps detect mistakes; it is not a security guarantee.
 
