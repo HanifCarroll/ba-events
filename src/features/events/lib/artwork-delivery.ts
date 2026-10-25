@@ -11,11 +11,13 @@ const IMAGE_PATHS: Record<string, RegExp> = {
   'images.lumacdn.com': /^\/(?:uploads|event-covers)\//,
 }
 
-export function isArtworkOriginAllowed(value: string): boolean {
+export function isArtworkOriginAllowed(value: string, ownedStorageOrigin?: string): boolean {
   try {
     const url = new URL(value)
+    const owned = ownedStorageOrigin && url.origin === new URL(ownedStorageOrigin).origin &&
+      /^\/storage\/v1\/object\/public\/event-artwork\/[0-9a-f]{64}\.(jpg|png|webp)$/.test(url.pathname) && !url.search
     return value.length <= 4096 && url.protocol === 'https:' && !url.username && !url.password &&
-      !url.port && !url.hash && !!IMAGE_PATHS[url.hostname]?.test(url.pathname)
+      !url.port && !url.hash && (!!IMAGE_PATHS[url.hostname]?.test(url.pathname) || !!owned)
   } catch { return false }
 }
 

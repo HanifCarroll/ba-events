@@ -157,6 +157,34 @@ Daily scrape metadata SHALL retain per-source catalog/filter/expansion/unchanged
 - **AND** the read-only health command uses a declared 36-hour daily-source freshness threshold, excludes raw provider errors/content, and reports unknown or actionable health with a nonzero exit status
 - **AND** catalog counts do not claim exhaustive marketplace inventory
 
+### Requirement: Instagram intake retains evidence before publication
+Instagram collection SHALL reserve at most one paid run per Buenos Aires date, obey per-run and monthly Actor budgets, and check included account credit without upgrading or purchasing. An uncertain run start MUST be reconciled rather than retried as a new paid run. Collection SHALL retain source captions, observation revisions and bounded copies of carousel media privately, report incomplete coverage, and distinguish unchanged posts from new observations. Stories and video speech SHALL NOT be claimed as covered.
+
+#### Scenario: The collection process stops after starting Apify
+- **WHEN** the collector resumes with a retained Apify run identity
+- **THEN** it resumes that run without starting another paid collection
+- **AND** a reservation without a known run identity stops for reconciliation
+
+### Requirement: Agent candidates have a shared publication boundary
+The agent SHALL submit validated structured candidates with supporting observation/image references. Publication SHALL resolve a known Buenos Aires venue, preserve unknown time/price states, hold unsupported or conflicting facts, and compare the full relevant catalog date window. Exact identities MAY link sources; ambiguous matches SHALL remain held. Source discoveries SHALL be stored separately from the enabled paid watchlist.
+
+#### Scenario: A flyer describes several occurrences or several posts promote one occurrence
+- **WHEN** candidates are prepared from the observations
+- **THEN** each occurrence retains its own stable candidate/event identity, and repeated promotion may attach additional evidence to the existing event
+
+### Requirement: Intake publication is transactional and revision checked
+The shared preview/commit interface SHALL persist candidate revisions, proposed actions and durable receipts. A repeated commit SHALL return its original receipt. Changed candidates, changed catalog rows, newer source observations, expired plans and held cases SHALL reject publication. A successful create or correction SHALL prepare the existing search document/embedding and description presentation before the catalog transaction.
+
+#### Scenario: A scheduled event is canceled or rescheduled
+- **WHEN** current direct organizer/venue evidence supports a correction
+- **THEN** the commit updates the same catalog UUID without replacing an existing platform source identity
+- **AND** subsequent legacy importer/enrichment writes cannot undo accepted facts or replace their corresponding search document
+- **AND** a curator repost cannot authorize a correction
+
+#### Scenario: Publication is retried after a successful commit
+- **WHEN** the same plan is committed again
+- **THEN** it returns its persisted receipt without inserting another event or repeating provider preparation
+
 ## Verification
 
 ### Implementation anchors
@@ -166,6 +194,9 @@ Daily scrape metadata SHALL retain per-source catalog/filter/expansion/unchanged
 - `src/features/import/core/venue-settlement.ts`
 - `src/trigger/jobs/daily-scrape.ts`
 - `src/trigger/jobs/enrichment-catchup.ts`
+- `src/features/import/intake/`
+- `scripts/instagram-intake.ts`
+- `supabase/migrations/20261025205334_instagram_intake.sql`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
@@ -173,6 +204,9 @@ Daily scrape metadata SHALL retain per-source catalog/filter/expansion/unchanged
 - `src/features/import/core/passline-existing.test.ts`
 - `src/trigger/jobs/daily-scrape-outcome.test.ts`
 - `src/trigger/jobs/enrichment-catchup.test.ts`
+- `src/features/import/intake/planning.test.ts`
+- `src/features/import/intake/service.test.ts`
+- `supabase/tests/instagram-intake.sql`
 
 ### Verification command
 ```sh

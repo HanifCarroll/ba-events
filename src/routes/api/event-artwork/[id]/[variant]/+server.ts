@@ -9,4 +9,5 @@ export const GET: RequestHandler = ({ request, params, platform }) => serveArtwo
   cache: platform?.caches?.default as unknown as PublicCache | undefined,
   retain: platform?.context ? (task) => platform.context.waitUntil(task) : undefined,
   lookup: getEventArtwork,
+  ownedStorageOrigin: process.env.SUPABASE_URL,
 })

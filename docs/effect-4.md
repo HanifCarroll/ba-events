@@ -42,6 +42,8 @@ browser automation remain direct SDK/platform boundaries.
 
 ## Connected application graphs
 
+Instagram intake adds canonical `*Effect` programs in `src/features/import/intake/{collection,repository,service}.ts`. Collection HTTP/image downloads and the injected Apify client are direct SDK/network leaves; the operator CLI in `scripts/instagram-intake.ts` is a script runtime root. Candidate decoding uses Effect Schema, while planning and matching remain pure TypeScript. No global Effect runtime or additional service layer is introduced.
+
 These are the canonical Effect programs and their expected failures. The
 Promise adapters in the same files are compatibility surfaces, not the
 application graph.

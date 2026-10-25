@@ -7,7 +7,7 @@
  */
 
 // All supported import sources
-export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'luma' | 'venti' | 'csv'
+export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'luma' | 'venti' | 'instagram' | 'csv'
 
 // Re-export DuplicateInfo for convenience
 export type { DuplicateInfo } from '../api/duplicate-detection.ts'

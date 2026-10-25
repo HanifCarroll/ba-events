@@ -12,6 +12,7 @@ const SOURCE_LABELS: Record<string, string> = {
   meetup: 'Meetup',
   luma: 'Luma',
   venti: 'Venti',
+  instagram: 'Instagram',
 }
 
 /**

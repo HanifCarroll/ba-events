@@ -22,6 +22,7 @@ type Options = {
   retain?: (task: Promise<unknown>) => void
   lookup: (id: string, signal: AbortSignal) => Promise<CatalogArtwork>
   fetchImage?: typeof fetch
+  ownedStorageOrigin?: string
 }
 const MAX_BYTES = 10 * 1024 * 1024
 const MAX_PIXELS = 40_000_000
@@ -68,7 +69,7 @@ export async function serveArtwork(options: Options): Promise<Response> {
   let original: string | undefined
   try {
     const event = await lookup(id, signal)
-    if (!event?.image_url || !isArtworkOriginAllowed(event.image_url)) {
+    if (!event?.image_url || !isArtworkOriginAllowed(event.image_url, options.ownedStorageOrigin)) {
       return new Response('Artwork unavailable', { status: 404, headers: { 'Cache-Control': 'no-store' } })
     }
     original = event.image_url

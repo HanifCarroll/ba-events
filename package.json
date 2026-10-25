@@ -32,6 +32,7 @@
 		"eval:relevance": "bun evals/search/relevance/run.ts",
 		"snapshot:search-corpus": "bun scripts/snapshot-search-corpus.ts",
 		"source:health": "bun scripts/source-health.ts",
+		"instagram:intake": "bun scripts/instagram-intake.ts",
 		"eval:titles": "bun evals/titles/run.ts",
 		"eval:enrichment": "bun evals/enrichment/run.ts",
 		"trigger:dev": "bunx trigger.dev@4.5.15 dev",

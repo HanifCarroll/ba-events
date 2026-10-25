@@ -10,6 +10,15 @@ const SOURCE_IMAGES = [
 ]
 
 describe('bounded artwork delivery', () => {
+  it('allows only the configured project and retained public artwork paths', () => {
+    const origin = 'https://synthetic.supabase.co'
+    const path = `/storage/v1/object/public/event-artwork/${'a'.repeat(64)}.jpg`
+    expect(isArtworkOriginAllowed(origin + path, origin)).toBe(true)
+    expect(isArtworkOriginAllowed(origin + path)).toBe(false)
+    expect(isArtworkOriginAllowed('https://other.supabase.co' + path, origin)).toBe(false)
+    expect(isArtworkOriginAllowed(origin + path + '?redirect=1', origin)).toBe(false)
+    expect(isArtworkOriginAllowed(origin + '/storage/v1/object/public/instagram-evidence/private.jpg', origin)).toBe(false)
+  })
   it('caps candidate descriptors and removes duplicate no-upscale variants when source dimensions are known', () => {
     const sources = artworkSrcset('catalog-id', SOURCE_IMAGES[0][1], 400)
     expect(sources).toContain(' 320w')
