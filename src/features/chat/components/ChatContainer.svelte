@@ -681,10 +681,10 @@
 			const recommendationNextStep =
 				canonical?.kind === 'recommendations' && render.events.length > 0
 					? render.framing?.nextStep ??
-						warmRecommendationFallback(
+						(completedCanonical ? warmRecommendationFallback(
 							getLocale().startsWith('es') ? 'es' : 'en',
 							render.events.length
-						).nextStep
+						).nextStep : undefined)
 					: undefined
 
 			return {

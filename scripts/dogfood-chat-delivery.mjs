@@ -42,11 +42,18 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   const body = await nativeRequest.clone().json();
   const canonical = { ...adaptStoredMessageToCanonical({ id: body.assistantClientMessageId, content: 'Completed after replay' }),
    requestId: nativeRequest.headers.get('x-chat-attempt') };
+  if (mode === 'recommendation') Object.assign(canonical, {
+   kind: 'recommendations', messageKey: 'recommendations', text: "Sure — here's what's on for live music tonight.",
+   events: [{ id: 'preview-event', name: 'Live music fixture', saved: null }],
+   framing: { acknowledgement: "Sure — here's what's on for live music tonight.", nextStep: 'Want directions to this event?' },
+  });
   if(stage === 'commit') { commitCalls++; const checkpoint = await getChatDeliveryCheckpoint(event(nativeRequest)); await beginChatDeliveryCommit(event(nativeRequest)); if(holdCommitOnce){holdCommitOnce=false;await new Promise(resolve=>{releaseHeldCommit=resolve})} return createUIMessageStreamResponse({stream:createUIMessageStream({execute:({writer})=>{writer.write({type:'start',messageId:body.assistantClientMessageId});writer.write({type:'data-response',data:checkpoint.canonical});writer.write({type:'finish',finishReason:'stop'})}})}) }
   const gate = new Promise(resolve => { release = resolve });
   return createUIMessageStreamResponse({ stream: createUIMessageStream({ execute: async ({ writer }) => {
    writer.write({ type: 'start', messageId: body.assistantClientMessageId });
-   writer.write({ type: 'data-progress', transient: true, data: { ...canonical, text: 'Server-validated preview' } });
+   writer.write({ type: 'data-progress', transient: true, data: mode === 'recommendation'
+    ? { ...canonical, text: '', framing: undefined }
+    : { ...canonical, text: 'Server-validated preview' } });
    await gate;
    await saveChatDeliveryCheckpoint(event(nativeRequest),{canonical,executionTrace:[]});
   } }) });
@@ -200,6 +207,23 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   assert.notEqual(retriedTurn.claim_id, failedTurn.claim_id);
   assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0);
   console.log('PASS exhausted workflow recovery: clear alert and Retry, same question and message identifiers, fresh attempt and exactly one response');
+  mode = 'recommendation';
+  await page.evaluate(async () => { window.startNew(); sessionStorage.removeItem('browser-conversation'); await window.loadConversation(null); window.dogfoodPrompt = 'Find live music tonight' });
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByText('Live music fixture', { exact: true }).waitFor();
+  assert.equal(await page.locator('[data-role="assistant"]').innerText(), '');
+  assert.equal(await page.locator('[data-next-step]').count(), 0, 'preview cards must not invent a fallback closing question');
+  assert.equal(await page.locator('[data-feedback-response]').count(), 0);
+  release();
+  await page.getByText("Sure — here's what's on for live music tonight.", { exact: true }).waitFor();
+  await page.getByText('Want directions to this event?', { exact: true }).waitFor();
+  await page.waitForFunction(() => !document.querySelector('input').disabled);
+  assert.equal(await page.locator('[data-event-id="preview-event"]').count(), 1);
+  await page.reload();
+  await page.getByText("Sure — here's what's on for live music tonight.", { exact: true }).waitFor();
+  await page.getByText('Want directions to this event?', { exact: true }).waitFor();
+  console.log('PASS recommendation cards appear before prose without placeholder text; completed framing survives reload');
+  mode = 'fixture';
   if (live) {
    assert.ok(process.env.DEEPSEEK_API_KEY && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY, 'Live dogfood needs configured model and database credentials');
    mode = 'live'; observed.length = 0;

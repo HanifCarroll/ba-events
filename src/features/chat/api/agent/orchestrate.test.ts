@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { orchestrate, type AgentRun } from './orchestrate.ts'
 import { orchestrateEffect } from './orchestrate.ts'
 import { Effect } from 'effect'
-import type { ChatEventPayload } from '#shared/lib/types.ts'
+import type { CanonicalChatResponse, ChatEventPayload } from '#shared/lib/types.ts'
+import { warmRecommendationFallback } from '#shared/lib/recommendation-framing.ts'
 import { createGetDirectionsTool } from '../tools/get-directions.ts'
 import type { EventWithVenue } from '#shared/lib/types.ts'
 
@@ -371,6 +372,62 @@ describe('recommendation follow-ups', () => {
     expect(readSignal).toBeDefined()
     expect(readSignal?.aborted).toBe(true)
   })
+
+  it('shows search cards immediately without placeholder prose, then publishes validated framing', async () => {
+    const events = [priorEvent('one', 'First event'), priorEvent('two', 'Second event'), priorEvent('three', 'Third event')]
+    const previews: CanonicalChatResponse[] = []
+    const text = [
+      "ACK: Sure — here's what's on for live music tonight.",
+      'REASON_1: A live performance.',
+      'REASON_2: Another live performance.',
+      'REASON_3: A session showcasing singers.',
+      'NEXT: Want directions to any of these, or details on tickets?',
+    ].join('\n')
+    const result = await orchestrate({
+      ...base, originalQuery: 'Find live music tonight',
+      readExecutors: { search: async () => ({ success: true, events, formatted: '{}' }) },
+      onProgress: response => previews.push(response),
+      runAgentFn: async input => {
+        const search = input.tools.search_events as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+        await search.execute({ objective: 'search', query: 'live music' }, { toolCallId: 'search' })
+        expect(previews.at(-1)?.events.map(event => event.id)).toEqual(['one', 'two', 'three'])
+        for (const partial of ['', 'ACK:', text.split('\n')[0], text.slice(0, text.indexOf('NEXT:'))]) input.onText?.(partial)
+        expect(previews.every(preview => preview.text === '' && preview.framing === undefined)).toBe(true)
+        input.onText?.(text)
+        expect(previews.at(-1)?.text).toBe("Sure — here's what's on for live music tonight.")
+        return { text, steps: [{ toolResults: [{ toolCallId: 'search', toolName: 'search_events' }] }], responseId: null }
+      },
+    })
+    expect(previews.every(preview => preview.events.length === 3)).toBe(true)
+    expect(previews.at(-1)?.framing).toEqual(result.canonical.framing)
+    expect(result.canonical.events.map(event => event.recommendation_reason)).toEqual([
+      'A live performance.', 'Another live performance.', 'A session showcasing singers.',
+    ])
+  })
+
+  for (const ending of ['invalid framing', 'model failure'] as const) {
+    it(`reserves fallback framing for completion after ${ending}`, async () => {
+      const previews: CanonicalChatResponse[] = []
+      const result = await orchestrate({
+        ...base, originalQuery: 'Find live music tonight',
+        readExecutors: { search: async () => ({ success: true, events: [priorEvent('one', 'First event')], formatted: '{}' }) },
+        onProgress: response => previews.push(response),
+        runAgentFn: async input => {
+          const search = input.tools.search_events as unknown as { execute: (value: unknown, options: unknown) => Promise<unknown> }
+          await search.execute({ objective: 'search', query: 'live music' }, { toolCallId: 'search' })
+          input.onText?.('ACK: Incomplete introduction')
+          if (ending === 'model failure') throw new Error('Simulated model failure')
+          return { text: 'Unstructured response', steps: [{ toolResults: [{ toolCallId: 'search', toolName: 'search_events' }] }], responseId: null }
+        },
+      })
+      expect(previews.length).toBeGreaterThan(0)
+      expect(previews.every(preview => preview.text === '' && preview.framing === undefined && preview.events.length === 1)).toBe(true)
+      expect(result.canonical.framing).toEqual(warmRecommendationFallback('en', 1))
+      expect(result.canonical.text).toBe(result.canonical.framing?.acknowledgement)
+      expect(result.canonical.events.map(event => event.id)).toEqual(['one'])
+      expect(result.canonical.provenance.fallbackUsed).toBe(ending === 'model failure')
+    })
+  }
 
   it('streams grounded follow-up prose without publishing a repeated card', async () => {
     const previews: Array<{ text: string; ids: string[] }> = []

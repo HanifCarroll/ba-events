@@ -519,7 +519,7 @@ function stamp(events: ChatEventPayload[], saved: Map<string, boolean>, forceSav
     venue_address: event.location_hidden || event.location_tba ? null : event.venue_address,
     saved: forceSaved ? true : (saved.get(event.id) ?? event.saved ?? null) }))
 }
-function assemble(input: OrchestrateInput, run: AgentRun, reads: LedgerRecord[], saved: Map<string, boolean>): CanonicalChatResponse {
+function assemble(input: OrchestrateInput, run: AgentRun, reads: LedgerRecord[], saved: Map<string, boolean>, phase: 'preview' | 'final' = 'final'): CanonicalChatResponse {
   const successful = reads.filter((read) => read.raw.success)
   const clarification = [...successful].reverse().find((read) => read.toolName === 'ask_clarification')
   const mismatch = [...successful].reverse().find((read) => read.toolName === 'recommendations_mismatch')
@@ -599,9 +599,11 @@ function assemble(input: OrchestrateInput, run: AgentRun, reads: LedgerRecord[],
       const parsed = extractRecommendationResponse(run.text, events, venueNames)
       const framing = parsed?.framing
         ?? extractRecommendationFraming(run.text, events, venueNames)
-        ?? warmRecommendationFallback(input.locale, events.length)
+        // Incomplete model text is expected during previews. Reserve fallback
+        // prose for completion so visible introductions are not replaced.
+        ?? (phase === 'final' ? warmRecommendationFallback(input.locale, events.length) : undefined)
       canonical.framing = framing
-      canonical.text = framing.acknowledgement
+      canonical.text = framing?.acknowledgement ?? ''
       addReasons(parsed?.reasons ?? null)
     }
   }
@@ -629,7 +631,7 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
   let executionSignal = input.abortSignal
   const publishProgress = () => {
     if (!input.onProgress || executionSignal?.aborted) return
-    const response = assemble(input, { text: progressiveText, steps: [], responseId: null }, [...ledger.values()], saved)
+    const response = assemble(input, { text: progressiveText, steps: [], responseId: null }, [...ledger.values()], saved, 'preview')
     // Keep incomplete marker lines private. Recommendation framing remains validated as a whole.
     const prefix = response.text.trim().toUpperCase()
     if (['ACK', 'NEXT', 'REASON_'].some((marker) => prefix.length > 0 && marker.startsWith(prefix)) ||

@@ -6,8 +6,9 @@ updates, the same canonical assembler used at completion produces transient
 `data-progress` snapshots. Small `data-progress-text` updates change prose,
 validated framing and reasons, never artifact membership or facts. No model
 reasoning, raw tool results or reference bookkeeping reach the browser.
-Recommendation framing retains whole-response validation; cards can appear
-before framing is ready.
+Recommendation framing retains whole-response validation; cards appear without
+introductory or closing placeholder prose before framing is ready. Deterministic
+fallback framing is reserved for completed responses.
 
 The final v5 wire contract remains one final text block, exactly one persistent
 `data-response` and a sanitized transient reads-only execution trace. Previews
