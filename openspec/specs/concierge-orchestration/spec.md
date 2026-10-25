@@ -121,6 +121,12 @@ The web channel SHALL publish transient previews using the final response's serv
 - **AND** later prose cannot add, reorder, or replace their structured facts
 - **AND** model reasoning, raw tool payloads, reference bookkeeping and incomplete framing markers are not exposed
 
+#### Scenario: Recommendation cards arrive before validated framing
+- **WHEN** search cards are available but the model's recommendation framing is incomplete or invalid
+- **THEN** previews show the cards without a placeholder introduction or closing question
+- **AND** validated framing may appear once it is available
+- **AND** deterministic fallback framing is reserved for completion if valid model framing never arrives
+
 #### Scenario: Model generation continues after a browser Stop
 - **WHEN** the running attempt has been cancelled before the persistence gate
 - **THEN** late reads and text cannot publish a final canonical response
