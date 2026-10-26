@@ -81,6 +81,12 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 - **WHEN** the image service or its free allowance is unavailable
 - **THEN** the original approved source image remains available and the fallback MUST NOT be cached as a successful derivative
 
+#### Scenario: Instagram supplies selected retained artwork
+- **WHEN** a displayable event references a retained public artwork object
+- **THEN** the same finite-size delivery path permits only the configured storage origin and content-hash artwork path
+- **AND** it does not permit private evidence paths, other storage projects, arbitrary query parameters or expiring Instagram CDN links
+- **AND** Instagram remains identified as the original source rather than a ticket seller
+
 #### Scenario: A small original is selected through a larger cached candidate
 - **WHEN** no-upscale delivery returns fewer physical pixels than the requested variant and candidate selection changes
 - **THEN** artwork in a reserved aspect-ratio frame retains its rendered size independently of density-corrected natural dimensions, remains uncropped, and caps candidate descriptors to known source widths without duplicate variants
