@@ -3,7 +3,7 @@
   "info": {
     "title": "ba-events local fuzz contracts",
     "version": "1.0.0",
-    "description": "Anonymous handler boundary: events admin API and chat bootstrap. Authentication is represented by locals.user=null. No database or provider access."
+    "description": "Local production handler contracts: anonymous admin boundary, authenticated chat bootstrap with local Supabase HTTP fixture, Telegram webhook with injected bindings, and real ChatDelivery replay/cancellation with synthetic storage."
   },
   "paths": {
     "/api/events": {
@@ -135,9 +135,204 @@
     },
     "/api/chat/bootstrap": {
       "post": {
+        "parameters": [
+          {
+            "name": "x-test-session",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "owner",
+                "anonymous"
+              ]
+            },
+            "example": "owner"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "conversationId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "example": "10000000-0000-4000-8000-000000000001"
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "example": "10000000-0000-4000-8000-000000000001"
+                  },
+                  "userClientMessageId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "example": "10000000-0000-4000-8000-000000000001"
+                  },
+                  "assistantClientMessageId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "example": "10000000-0000-4000-8000-000000000001"
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "locale": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "es"
+                    ]
+                  }
+                },
+                "required": [
+                  "conversationId",
+                  "turnId",
+                  "userClientMessageId",
+                  "assistantClientMessageId",
+                  "content",
+                  "locale"
+                ],
+                "additionalProperties": true
+              },
+              "example": {
+                "conversationId": "10000000-0000-4000-8000-000000000001",
+                "turnId": "10000000-0000-4000-8000-000000000001",
+                "userClientMessageId": "10000000-0000-4000-8000-000000000001",
+                "assistantClientMessageId": "10000000-0000-4000-8000-000000000001",
+                "content": "Synthetic tango tonight",
+                "locale": "en"
+              }
+            }
+          }
+        },
         "responses": {
+          "200": {
+            "description": "Handler response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "turn": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "example": "10000000-0000-4000-8000-000000000001"
+                        },
+                        "conversation_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "example": "10000000-0000-4000-8000-000000000001"
+                        },
+                        "user_message_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "example": "10000000-0000-4000-8000-000000000001"
+                        },
+                        "assistant_message_id": {
+                          "nullable": true
+                        },
+                        "user_client_message_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "example": "10000000-0000-4000-8000-000000000001"
+                        },
+                        "assistant_client_message_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "example": "10000000-0000-4000-8000-000000000001"
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "locale": {
+                          "type": "string",
+                          "enum": [
+                            "en",
+                            "es"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        "claim_id": {
+                          "nullable": true
+                        },
+                        "claimed_until": {
+                          "nullable": true
+                        },
+                        "attempt_count": {
+                          "type": "integer",
+                          "enum": [
+                            0
+                          ]
+                        },
+                        "last_error": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "conversation_id",
+                        "user_message_id",
+                        "assistant_message_id",
+                        "user_client_message_id",
+                        "assistant_client_message_id",
+                        "content",
+                        "locale",
+                        "status",
+                        "claim_id",
+                        "claimed_until",
+                        "attempt_count",
+                        "last_error"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "turn"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Handler response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "Invalid request"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Documented response",
+            "description": "Handler response",
             "content": {
               "application/json": {
                 "schema": {
@@ -158,14 +353,24 @@
               }
             }
           }
-        },
+        }
+      }
+    },
+    "/api/telegram": {
+      "post": {
         "parameters": [
           {
-            "name": "cookie",
+            "name": "x-telegram-bot-api-secret-token",
             "in": "header",
+            "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "synthetic-secret",
+                "wrong"
+              ]
+            },
+            "example": "synthetic-secret"
           }
         ],
         "requestBody": {
@@ -173,8 +378,411 @@
           "content": {
             "application/json": {
               "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "update_id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "message": {
+                        "type": "object",
+                        "properties": {
+                          "message_id": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "from": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "is_bot": {
+                                "type": "boolean",
+                                "enum": [
+                                  false
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "is_bot"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "chat": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "private"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "date": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "message_id",
+                          "from",
+                          "chat",
+                          "date",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "update_id",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "update_id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "callback_query": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "from": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "is_bot": {
+                                "type": "boolean",
+                                "enum": [
+                                  false
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "is_bot"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "message": {
+                            "type": "object",
+                            "properties": {
+                              "message_id": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "chat": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "private"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "type"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "message_id",
+                              "chat"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "data": {
+                            "type": "string",
+                            "enum": [
+                              "consent:v1:accept",
+                              "consent:v1:decline",
+                              "prompt:v1:free",
+                              "prompt:v1:live"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "from",
+                          "message",
+                          "data"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "update_id",
+                      "callback_query"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "example": {
+                "update_id": 42,
+                "message": {
+                  "message_id": 1,
+                  "from": {
+                    "id": 123,
+                    "is_bot": false
+                  },
+                  "chat": {
+                    "id": 123,
+                    "type": "private"
+                  },
+                  "date": 1,
+                  "text": "Synthetic tango tonight"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Acknowledged; ordinary text includes a typing action"
+          },
+          "400": {
+            "description": "Malformed JSON"
+          },
+          "401": {
+            "description": "Wrong webhook secret"
+          },
+          "413": {
+            "description": "Body limit"
+          }
+        }
+      }
+    },
+    "/delivery/stream": {
+      "get": {
+        "parameters": [
+          {
+            "name": "x-test-session",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "owner",
+                "anonymous"
+              ]
+            },
+            "example": "owner"
+          },
+          {
+            "name": "x-chat-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              ]
+            },
+            "example": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Owner or capability rejected"
+          },
+          "200": {
+            "description": "Finite replay from the cancelled attempt",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/delivery/stop": {
+      "post": {
+        "parameters": [
+          {
+            "name": "x-test-session",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "owner",
+                "anonymous"
+              ]
+            },
+            "example": "owner"
+          },
+          {
+            "name": "x-chat-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              ]
+            },
+            "example": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Owner or capability rejected"
+          },
+          "204": {
+            "description": "Cancellation retained"
+          }
+        }
+      }
+    },
+    "/delivery/start": {
+      "post": {
+        "parameters": [
+          {
+            "name": "x-test-session",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "owner",
+                "anonymous"
+              ]
+            },
+            "example": "owner"
+          },
+          {
+            "name": "x-chat-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              ]
+            },
+            "example": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Finite replay from the cancelled attempt",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Changed payload, capability or owner"
+          },
+          "400": {
+            "description": "Missing or malformed delivery identity"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
                 "type": "object",
-                "additionalProperties": true
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "message": "Synthetic question"
               }
             }
           }

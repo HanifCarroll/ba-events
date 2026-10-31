@@ -1200,3 +1200,17 @@ describe('search_events plain weekday filter-only + coverage', () => {
     expect(result.metadata?.genreMismatch).toBeUndefined()
   })
 })
+
+describe('happening-now free-status authority', () => {
+  it.each([false, true, undefined])('preserves %s in current-event results and coverage', async (isFree) => {
+    vi.resetAllMocks()
+    mockedGetEventsHappeningNow.mockResolvedValue(NOW_FIXTURES)
+    mockedGetFurthestEventDate.mockResolvedValue('2026-12-31T00:00:00Z')
+    mockedRerankEvents.mockImplementation(async (candidates: Array<{ id: string }>) => ({ ordered: candidates, meta: { status: 'disabled' } }))
+    const result = await searchEventsTool.execute({ timeFilter: 'now', isFree, objective: 'search', limit: 5 }, context)
+    const expected = NOW_FIXTURES.filter(event => isFree === undefined || event.is_free === isFree)
+    expect(result.success).toBe(true)
+    expect(result.events?.map(event => event.id)).toEqual(expected.map(event => event.id))
+    expect(result.metadata?.coverage).toMatchObject({ totalMatches: expected.length })
+  })
+})

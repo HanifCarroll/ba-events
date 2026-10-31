@@ -302,8 +302,8 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
   if (filters.categories && filters.categories.length > 0) {
     query = query.overlaps('categories', filters.categories)
   }
-  if (filters.isFree) {
-    query = query.eq('is_free', true)
+  if (filters.isFree !== undefined) {
+    query = query.eq('is_free', filters.isFree)
   }
   if (filters.maxPrice !== undefined) {
     query = query.lte('price', filters.maxPrice)
@@ -357,7 +357,7 @@ export async function countEventsWithFilters(filters: EventFilters, abortSignal?
       if (filters.categories && filters.categories.length > 0) {
         q = q.overlaps('categories', filters.categories)
       }
-      if (filters.isFree) q = q.eq('is_free', true)
+      if (filters.isFree !== undefined) q = q.eq('is_free', filters.isFree)
       if (filters.maxPrice !== undefined) q = q.lte('price', filters.maxPrice)
       if (filters.minAge !== undefined) q = q.or(`min_age.is.null,min_age.lte.${filters.minAge}`)
 
@@ -394,8 +394,8 @@ export async function countEventsWithFilters(filters: EventFilters, abortSignal?
   if (filters.categories && filters.categories.length > 0) {
     query = query.overlaps('categories', filters.categories)
   }
-  if (filters.isFree) {
-    query = query.eq('is_free', true)
+  if (filters.isFree !== undefined) {
+    query = query.eq('is_free', filters.isFree)
   }
   if (filters.maxPrice !== undefined) {
     query = query.lte('price', filters.maxPrice)

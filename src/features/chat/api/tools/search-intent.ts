@@ -538,9 +538,9 @@ export async function canonicalizeSearchIntent(
   let displayLimit = Math.max(1, Math.min(input.limit ?? DISPLAY_LIMIT_DEFAULT, DISPLAY_LIMIT_MAX))
 
   // --- isFree from explicit input or free-language spans ---
-  let isFree = input.isFree ?? false
-  if (spans.some((s) => s.kind === 'free')) isFree = true
-  if (isFree) must.isFree = true
+  let isFree = input.isFree
+  if (isFree === undefined && spans.some((s) => s.kind === 'free')) isFree = true
+  if (isFree !== undefined) must.isFree = isFree
 
   // --- neighborhoods (explicit + contiguous query spans) ---
   const neighborhoods = resolveNeighborhoods(input.neighborhoods ?? [], queryNeighborhoods)

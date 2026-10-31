@@ -1,0 +1,1 @@
+{"update_id": 43, "callback_query": {"id": "callback", "from": {"id": 123, "is_bot": false}, "message": {"message_id": 1, "chat": {"id": 123, "type": "private"}}, "data": "prompt:v1:free"}}

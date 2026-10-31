@@ -539,3 +539,27 @@ describe('applyPreferAvoid', () => {
     expect(filters.avoidGenres).toBeUndefined()
   })
 })
+
+describe('explicit free-status authority', () => {
+  it('retains paid-only, free-only and unconstrained requests as three distinct filters', async () => {
+    for (const isFree of [false, true, undefined]) {
+      const intent = await canonicalizeSearchIntent({ isFree, objective: 'search' }, WEDNESDAY_NOON)
+      expect(intent.must.isFree).toBe(isFree)
+      expect(applyPreferAvoid(intent).isFree).toBe(isFree)
+    }
+  })
+})
+
+describe('structured free status with query-language spans', () => {
+  it.each(['not free', 'conciertos que no sean gratis', 'free jazz'])('keeps explicit booleans authoritative for %s while consuming the free span', async (query) => {
+    for (const isFree of [false, true]) {
+      const intent = await canonicalizeSearchIntent({ isFree, query, objective: 'search' }, WEDNESDAY_NOON)
+      expect(intent.must.isFree).toBe(isFree)
+      expect(applyPreferAvoid(intent).isFree).toBe(isFree)
+      expect(intent.semanticQuery).not.toMatch(/\b(?:free|gratis)\b/)
+    }
+    const inferred = await canonicalizeSearchIntent({ query: 'free jazz', objective: 'search' }, WEDNESDAY_NOON)
+    expect(inferred.must.isFree).toBe(true)
+    expect(inferred.semanticQuery).toBe('jazz')
+  })
+})

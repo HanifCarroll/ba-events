@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 process.chdir(fileURLToPath(new URL('..', import.meta.url)));
 // Child tools receive only runtime settings, never provider/database credentials.
-const env = Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'TEMP', 'SYSTEMROOT', 'CI'].flatMap(key => process.env[key] ? [[key, process.env[key]]] : []));
+const env = Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'TEMP', 'SYSTEMROOT', 'CI', 'FC_SEED'].flatMap(key => process.env[key] ? [[key, process.env[key]]] : []));
 const run = (command, args) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { env, stdio: 'inherit' });
   const stop = () => child.kill('SIGTERM');
@@ -27,9 +27,12 @@ if (mode === 'jazzer') {
     'tmp/fuzz/corpus', 'tests/fuzz/corpus', '--sync', '--',
     '-runs=10000', '-seed=20261031', '-max_len=4096', '-timeout=5',
     '-artifact_prefix=tmp/fuzz/artifacts/', ...extra]);
+} else if (mode === 'search') {
+  if (extra.length) throw new Error('Search property tests accept no extra arguments.');
+  await run('bun', ['--no-env-file', 'tests/fuzz/search-properties.ts']);
 } else if (mode === 'api') {
   if (extra.length) throw new Error('API fuzzing accepts no remote URL or extra arguments. Edit the local fixture and schema to extend coverage.');
   await run('bun', ['--no-env-file', 'tests/fuzz/api.ts']);
 } else {
-  throw new Error('Use jazzer or api.');
+  throw new Error('Use jazzer, api or search.');
 }

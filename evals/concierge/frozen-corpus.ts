@@ -76,7 +76,7 @@ function matches(event: ChatEventPayload, intent: EventSearchIntent, happeningNo
     && (!must.neighborhoodIds || must.neighborhoodIds.includes(event.venue_neighborhood!))
     && (!must.venueIds || must.venueIds.includes(event.venue_id!))
     && (!must.categories || must.categories.some(category => event.categories.includes(category)))
-    && (must.isFree !== true || event.is_free)
+    && (must.isFree === undefined || event.is_free === must.isFree)
     && (must.maxPrice === undefined || (event.price !== null && event.price <= must.maxPrice))
     && (must.attendeeAge === undefined || event.min_age === null || event.min_age <= must.attendeeAge)
     && !(intent.avoid.genres ?? []).some(genre => event.facets.genres?.some(value => value === genre))

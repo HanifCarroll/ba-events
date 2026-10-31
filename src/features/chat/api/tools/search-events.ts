@@ -72,7 +72,7 @@ export const searchEventsInputSchema = z.object({
   dateTo: z.string().optional().describe(
     'Latest start date/datetime (ISO) to include events up to. Use for explicit calendar dates and ranges the user names.'
   ),
-  isFree: z.boolean().optional().describe('Set to true to only show free events'),
+  isFree: z.boolean().optional().describe('Set true for free events, false to exclude free events; omit for either'),
   maxPrice: z.number().optional().describe('Maximum price in ARS'),
   minAge: z.number().optional().describe(
     `The attendee's age (0-99). Filters out events with a higher minimum-age restriction — e.g. set to 18 to exclude events requiring guests over 18. Set this when the user gives an age or asks for events they can attend given their age.`
@@ -149,7 +149,7 @@ The result includes coverage metadata: the window you searched, total matches, a
       },
       isFree: {
         type: 'boolean',
-        description: 'Set to true to only show free events',
+        description: 'Set true for free events, false to exclude free events; omit for either',
       },
       maxPrice: {
         type: 'number',
@@ -312,8 +312,8 @@ The result includes coverage metadata: the window you searched, total matches, a
             (e) => !!e.venue_id && filters.venueIds!.includes(e.venue_id)
           )
         }
-        if (filters.isFree) {
-          nowEvents = nowEvents.filter((e) => e.is_free)
+        if (filters.isFree !== undefined) {
+          nowEvents = nowEvents.filter((e) => e.is_free === filters.isFree)
         }
         if (filters.maxPrice !== undefined) {
           nowEvents = nowEvents.filter((e) => (e.price ?? 0) <= filters.maxPrice!)

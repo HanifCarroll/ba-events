@@ -49,7 +49,7 @@
 		"test:storybook": "bun run paraglide:compile && vitest run --config vitest.storybook.config.ts",
 		"chat:browser": "bun scripts/check-chat-lifecycle-browser.mjs",
 		"chat:dogfood": "bun run build && bun scripts/check-chat-lifecycle-browser.mjs --live --production",
-		"test:property": "vitest run src/shared/lib/input-properties.test.ts",
+		"test:property": "vitest run src/shared/lib/*properties.test.ts && node scripts/run-fuzz.mjs search",
 		"test:fuzz": "node scripts/run-fuzz.mjs jazzer",
 		"test:api": "node scripts/run-fuzz.mjs api",
 		"test:generative": "bun run test:property && bun run test:fuzz && bun run test:api"

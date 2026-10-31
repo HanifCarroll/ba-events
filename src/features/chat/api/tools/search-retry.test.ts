@@ -10,6 +10,13 @@ const original: SearchRetryBoundary = {
 }
 
 describe('effective hard constraints on search retries', () => {
+  it('retains paid-only filtering when retrying an empty search', () => {
+    const previous = { must: { isFree: false }, excludedGenres: [], happeningNow: false }
+    expect(widenedSearchConstraints(previous, { ...previous, must: {} })).toEqual(['isFree'])
+    expect(widenedSearchConstraints(previous, { ...previous, must: { isFree: true } })).toEqual(['isFree'])
+    expect(widenedSearchConstraints(previous, structuredClone(previous))).toEqual([])
+  })
+
   it('allows equivalent ordering and stricter filters without relaxing the original scope', () => {
     const next = structuredClone(original)
     next.must.neighborhoodIds = ['San Telmo', 'Palermo']

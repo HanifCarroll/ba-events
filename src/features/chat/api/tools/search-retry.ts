@@ -45,7 +45,7 @@ export function widenedSearchConstraints(previous: SearchRetryBoundary | undefin
   for (const key of ['neighborhoodIds', 'venueIds', 'categories'] as const) {
     if (!setIsNarrower(previous.must[key], next.must[key])) changed.push(key)
   }
-  if (previous.must.isFree === true && next.must.isFree !== true) changed.push('isFree')
+  if (previous.must.isFree !== undefined && next.must.isFree !== previous.must.isFree) changed.push('isFree')
   if (previous.must.maxPrice !== undefined && (next.must.maxPrice === undefined || next.must.maxPrice > previous.must.maxPrice)) changed.push('maxPrice')
   if (previous.must.attendeeAge !== undefined && (next.must.attendeeAge === undefined || next.must.attendeeAge > previous.must.attendeeAge)) changed.push('attendeeAge')
   if (!temporalScopeIsNarrower(previous.must, next.must)) changed.push('dates')

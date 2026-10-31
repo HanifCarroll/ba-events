@@ -14,8 +14,10 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 
 #### Scenario: Paid-only search reaches semantic and lexical retrieval
 - **WHEN** the effective free-status constraint is explicitly false
-- **THEN** semantic and lexical database requests retain false rather than converting it to an unconstrained null
+- **THEN** happening-now results and filter-only, count, semantic and lexical database requests retain false rather than converting it to an unconstrained null
 - **AND** true remains free-only and an omitted constraint remains unconstrained
+- **AND** canonicalization and retries retain either explicit boolean; a paid-only retry cannot drop the filter or switch to free-only
+- **AND** an explicit boolean takes precedence over free-language query spans, while recognized spans are still consumed from semantic retrieval text
 
 #### Scenario: Unresolved venue remains constrained
 - **WHEN** a named venue resolves to no venue ids
