@@ -57,3 +57,7 @@ results/releases/
 coverage/
 playwright-report/
 test-results/
+
+# Generated fuzz corpora, failure inputs, and API test reports
+/tmp/fuzz/
+.hypothesis/

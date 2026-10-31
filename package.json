@@ -48,12 +48,17 @@
 		"build:storybook": "bun run paraglide:compile && storybook build",
 		"test:storybook": "bun run paraglide:compile && vitest run --config vitest.storybook.config.ts",
 		"chat:browser": "bun scripts/check-chat-lifecycle-browser.mjs",
-		"chat:dogfood": "bun run build && bun scripts/check-chat-lifecycle-browser.mjs --live --production"
+		"chat:dogfood": "bun run build && bun scripts/check-chat-lifecycle-browser.mjs --live --production",
+		"test:property": "vitest run src/shared/lib/input-properties.test.ts",
+		"test:fuzz": "node scripts/run-fuzz.mjs jazzer",
+		"test:api": "node scripts/run-fuzz.mjs api",
+		"test:generative": "bun run test:property && bun run test:fuzz && bun run test:api"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20260901.1",
 		"@effect/language-service": "0.87.2",
 		"@inlang/paraglide-js": "^2.25.0",
+		"@jazzer.js/core": "4.0.0",
 		"@storybook/addon-a11y": "10.6.2",
 		"@storybook/addon-docs": "10.6.2",
 		"@storybook/addon-vitest": "10.6.2",
@@ -66,6 +71,7 @@
 		"@vitest/browser-playwright": "4.1.11",
 		"bits-ui": "^2.19.0",
 		"fake-indexeddb": "^6.2.5",
+		"fast-check": "4.10.2",
 		"franc-min": "^6.2.0",
 		"storybook": "10.6.2",
 		"svelte": "^5.57.0",
