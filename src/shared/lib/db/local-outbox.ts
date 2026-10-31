@@ -5,7 +5,9 @@ import type {
   MessageRole,
 } from '#shared/lib/types.ts'
 
-export type LocalOutboxStatus = 'pending' | 'failed'
+// Additive receipt state: old clients ignore already-persisted rows; current
+// clients retry only their local removal. Existing v1 indexes need no migration.
+export type LocalOutboxStatus = 'pending' | 'persisted' | 'failed'
 
 export interface LocalOutboxItem {
   id: string
@@ -78,7 +80,7 @@ export async function listDueOutboxItems(
   return database.outbox
     .where('next_retry_at')
     .belowOrEqual(nowIso)
-    .filter((item) => item.status === 'pending')
+    .filter((item) => item.status === 'pending' || item.status === 'persisted')
     .sortBy('updated_at')
 }
 

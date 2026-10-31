@@ -26,6 +26,12 @@ Each conversation SHALL process its inbox head in order, honor Telegram retry gu
 - **WHEN** a send is rate limited
 - **THEN** delivery waits for the supplied interval before retrying
 
+#### Scenario: Inbox processing succeeds but cleanup fails
+- **WHEN** a processed inbox item has durably entered acknowledgement and cleanup fails
+- **THEN** a restarted alarm resumes cleanup without processing the turn again
+- **AND** legacy items without an explicit phase retain their existing bounded processing retry policy
+- **AND** an uncertain completion write is retried through the platform and re-read before processing decisions
+
 #### Scenario: The shared admission limiter is unavailable
 - **WHEN** an ordinary Telegram text/prompt update cannot establish rate-limit admission
 - **THEN** the webhook returns HTTP 503 and records dispatch failure without attaching or dispatching a model turn

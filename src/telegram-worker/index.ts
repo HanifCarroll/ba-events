@@ -6,6 +6,7 @@ import { handleTelegramWebhookEffect } from '#features/telegram/webhook.server.t
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { purgeTelegramRetentionEffect } from '#features/telegram/retention.ts'
 import { runTelegramHealthCheckEffect } from '#features/telegram/health.ts'
+import { createInboxLifecycle } from './inbox-lifecycle.ts'
 
 const ITEM_PREFIX = 'item:'
 const SEEN_PREFIX = 'seen:'
@@ -46,6 +47,8 @@ export type InboxItem = {
   updateId: string
   payload: TelegramTaskPayload
   attempts: number
+  /** Absent on legacy rows. Once durable, cleanup must not re-execute the turn. */
+  phase?: 'pending' | 'acknowledging'
 }
 
 type InboxProcessor = (item: InboxItem, env: Env) => Promise<void>
@@ -106,21 +109,29 @@ export class TelegramInbox {
     if (!entry) return
     const [key, item] = entry
     const seenKey = `${SEEN_PREFIX}${item.updateId}`
-    try {
-      await this.processor(item, this.env)
-      await this.state.storage.delete(key)
-      await this.state.storage.delete(seenKey)
-    } catch (error) {
-      if (item.attempts >= 2) {
-        await this.state.storage.delete(key)
-        await this.state.storage.delete(seenKey)
-      } else {
-        await this.state.storage.put(key, { ...item, attempts: item.attempts + 1 })
-        const delay = retryAfterMs(error) ?? boundedBackoffMs(item.attempts)
-        await this.state.storage.setAlarm(Date.now() + delay)
-        return
+    const lifecycle = createInboxLifecycle(item)
+    if (lifecycle.getSnapshot().matches('processing')) {
+      try {
+        await this.processor(item, this.env)
+        lifecycle.send('PROCESSED')
+        // Record completion before cleanup. Restarted alarms only acknowledge it.
+        await this.state.storage.put(key, { ...item, phase: 'acknowledging' })
+      } catch (error) {
+        // A failed completion write has an uncertain result; let the platform retry
+        // and read durable state before deciding whether processing is necessary.
+        if (lifecycle.getSnapshot().matches('acknowledging')) throw error
+        const failed = lifecycle.send('FAILED')
+        if (failed.matches('retry_wait')) {
+          await this.state.storage.put(key, { ...item, attempts: failed.context.attempts })
+          const delay = retryAfterMs(error) ?? boundedBackoffMs(item.attempts)
+          await this.state.storage.setAlarm(Date.now() + delay)
+          return
+        }
       }
     }
+    await this.state.storage.delete(key)
+    await this.state.storage.delete(seenKey)
+    lifecycle.send('ACKNOWLEDGED')
     if ((await this.state.storage.list({ prefix: ITEM_PREFIX, limit: 1 })).size > 0) {
       await this.state.storage.setAlarm(Date.now())
     }

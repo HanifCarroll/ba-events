@@ -1,10 +1,11 @@
 import type { ChatInit, UIMessage } from 'ai'
+import { createActor, type EventFromLogic } from 'xstate'
+import { turnLifecycleMachine, type RequestPhase, type TurnLifecycleSnapshot } from './turn-lifecycle.machine.ts'
+export { requestPhaseFor, type RequestPhase, type TurnLifecycleSnapshot } from './turn-lifecycle.machine.ts'
 import { completeGuestTurn, failGuestTurn } from '#shared/lib/db/guest-conversations.ts'
 import type { CanonicalChatResponse, MessageExecutionStep } from '#shared/lib/types.ts'
 import { canonicalFromDataResponse } from './canonical.ts'
 import { applyProgressText } from './progress.ts'
-
-export type RequestPhase = 'idle' | 'preparing' | 'thinking' | 'persisting' | 'error'
 
 export class ChatTurnStoppedError extends Error {
 	constructor() {
@@ -43,18 +44,28 @@ export function canonicalFromParts(parts: ReadonlyArray<{ type?: string; data?: 
 /** One attempt owns its callbacks, including the SDK's finish-after-error callback. */
 export function createTurnLifecycle(turn: ClientTurn, handlers: {
 	isCurrent: () => boolean
-	onPhase: (phase: RequestPhase) => void
+	onPhase?: (phase: RequestPhase) => void
+	onSnapshot?: (snapshot: TurnLifecycleSnapshot) => void
 	onFailure: (error: Error) => void
 	onComplete: (canonical: CanonicalChatResponse) => void | Promise<void>
 	onProgress?: (canonical: CanonicalChatResponse | null) => void
 }) {
-	let terminal = false
+	// This attempt-local actor has no invoked work or timers. SDK/store promises
+	// stay with the native caller; dropping the lifecycle releases the actor too.
+	const actor = createActor(turnLifecycleMachine).start()
+	const snapshot = () => actor.getSnapshot()
+	const advance = (event: EventFromLogic<typeof turnLifecycleMachine>) => {
+		if (!snapshot().can(event)) return false
+		actor.send(event)
+		if (handlers.isCurrent()) handlers.onSnapshot?.(snapshot())
+		return true
+	}
+	handlers.onSnapshot?.(snapshot())
 	let settled = Promise.resolve()
 	let executionTrace: MessageExecutionStep[] = []
 	let progress: CanonicalChatResponse | null = null
-	let stopping = false
 	let deferred: Array<() => void> = []
-	const isCurrent = () => !terminal && handlers.isCurrent()
+	const isCurrent = () => (snapshot().matches('running') || snapshot().matches('stopping')) && handlers.isCurrent()
 
 	async function recordFailure() {
 		if (turn.userId !== null) return
@@ -67,8 +78,7 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 	}
 
 	function fail(error: Error) {
-		if (terminal) return
-		terminal = true
+		if (!advance({ type: 'FAIL' })) return
 		handlers.onProgress?.(null)
 		settled = recordFailure().then(() => {
 			if (handlers.isCurrent()) handlers.onFailure(error)
@@ -80,7 +90,13 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 			if (!isCurrent()) return
 			if (part.type === 'data-status') {
 				const phase = (part.data as { phase?: string }).phase
-				if (phase === 'thinking' || phase === 'persisting') handlers.onPhase(phase)
+				if (phase === 'thinking' || phase === 'persisting') {
+					if (snapshot().matches('stopping')) {
+						deferred.push(() => callbacks.onData?.(part))
+					} else if (advance({ type: phase === 'thinking' ? 'THINK' : 'PERSIST' })) {
+						handlers.onPhase?.(phase)
+					}
+				}
 			} else if (part.type === 'data-execution-trace') {
 				const steps = (part.data as { steps?: MessageExecutionStep[] }).steps
 				if (Array.isArray(steps)) executionTrace = steps
@@ -92,9 +108,9 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 				if (next) { progress = next; handlers.onProgress?.(progress) }
 			}
 		},
-		onError: (error) => { if (stopping) deferred.push(() => fail(error)); else fail(error) },
+		onError: (error) => { if (snapshot().matches('stopping')) deferred.push(() => fail(error)); else fail(error) },
 		onFinish({ message, isAbort, isError, isDisconnect, finishReason }) {
-			if (stopping) {
+			if (snapshot().matches('stopping')) {
 				deferred.push(() => callbacks.onFinish?.({ message, isAbort, isError, isDisconnect, finishReason, messages: [message] }))
 				return
 			}
@@ -108,19 +124,23 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 				fail(new Error('The response was incomplete. Please retry this turn.'))
 				return
 			}
-			terminal = true
+			if (!advance({ type: 'FINISH' })) return
 			handlers.onProgress?.(null)
-			handlers.onPhase('persisting')
+			handlers.onPhase?.('persisting')
 			// The SDK does not await onFinish; expose its persistence to the send owner.
 			settled = (async () => {
 				try {
 					if (turn.userId === null) {
 						await completeGuestTurn(turn.turnId, turn.claimId, { canonical, executionTrace })
 					}
-					if (handlers.isCurrent()) await handlers.onComplete(canonical)
+					if (snapshot().matches('saving') && handlers.isCurrent()) {
+						await handlers.onComplete(canonical)
+					}
+					advance({ type: 'SAVED' })
 				} catch (error) {
+					advance({ type: 'SAVE_FAILED' })
 					await recordFailure()
-					if (handlers.isCurrent()) {
+					if (snapshot().matches('failed') && handlers.isCurrent()) {
 						handlers.onFailure(error instanceof Error ? error : new Error('Failed to save response'))
 					}
 				}
@@ -131,27 +151,41 @@ export function createTurnLifecycle(turn: ClientTurn, handlers: {
 	return {
 		callbacks,
 		fail,
-		beginStop: () => { if (terminal) return false; stopping = true; return true },
+		snapshot,
+		think: () => { advance({ type: 'THINK' }) },
+		completeFromStore: () => { advance({ type: 'FINISH' }); advance({ type: 'SAVED' }) },
+		beginStop: () => advance({ type: 'BEGIN_STOP' }),
 		endStop: (approved: boolean) => {
-			stopping = false
 			const pending = deferred
 			deferred = []
-			if (approved && terminal) settled = settled.then(recordFailure)
-			else if (approved) fail(new ChatTurnStoppedError())
-			else for (const callback of pending) callback()
+			if (approved) {
+				if (advance({ type: 'STOP' })) {
+					handlers.onProgress?.(null)
+					settled = recordFailure().then(() => {
+						if (handlers.isCurrent()) handlers.onFailure(new ChatTurnStoppedError())
+					})
+				} else if (snapshot().matches('detached') || snapshot().matches('cancelled')) {
+					// Navigation can precede the authoritative Stop acknowledgement.
+					settled = settled.then(recordFailure)
+				}
+			} else if (advance({ type: 'REJECT_STOP' })) {
+				for (const callback of pending) callback()
+			}
 		},
 		stop: () => {
-			// Once canonical persistence begins, stopping cannot undo completion.
-			if (terminal) return false
-			fail(new ChatTurnStoppedError())
+			if (!advance({ type: 'STOP' })) return false
+			handlers.onProgress?.(null)
+			settled = recordFailure().then(() => {
+				if (handlers.isCurrent()) handlers.onFailure(new ChatTurnStoppedError())
+			})
 			return true
 		},
 		cancel: () => {
-			terminal = true
-			// Cancellation can race bootstrap/claim; repeated cleanup releases a late claim too.
+			advance({ type: 'CANCEL' })
+			// Repeated cleanup releases a claim acquired after preparation was cancelled.
 			settled = settled.then(recordFailure)
 		},
-		detach: () => { terminal = true },
+		detach: () => { advance({ type: 'DETACH' }) },
 		settled: () => settled
 	}
 }

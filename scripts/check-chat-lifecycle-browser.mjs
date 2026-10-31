@@ -166,6 +166,22 @@ try {
  assert.equal(await page.getByRole('textbox',{name:'Message'}).isEnabled(),true);
  assert.deepEqual(errors,[]);
  console.log('PASS browser account/navigation cancellation cannot overwrite the new view or retry state');
+ const requestsBeforeReadFailure=requests.length;
+ await page.evaluate(async()=>{
+   const original=IDBObjectStore.prototype.get;
+   window.restoreTransactions=()=>{IDBObjectStore.prototype.get=original};
+   IDBObjectStore.prototype.get=function(){throw new DOMException('Synthetic storage failure','UnknownError')};
+   await window.setUser(null);
+   await window.loadConversation('unavailable-guest');
+ });
+ await page.getByRole('alert').getByRole('button',{name:'Retry',exact:true}).waitFor();
+ assert.equal(await page.getByText('Missing guest',{exact:true}).count(),0);
+ await page.evaluate(()=>window.restoreTransactions());
+ await page.getByRole('alert').getByRole('button',{name:'Retry',exact:true}).click();
+ await page.getByText('Missing guest',{exact:true}).waitFor();
+ assert.equal(requests.length,requestsBeforeReadFailure);
+ assert.deepEqual(errors,[]);
+ console.log('PASS guest storage failure is distinct from missing history and Retry only reloads storage');
  const { dogfoodChatDelivery } = await import('./dogfood-chat-delivery.mjs');
  await dogfoodChatDelivery({browser,script,temp,root,live:process.argv.includes('--live')});
 } finally {await browser.close();await rm(temp,{recursive:true,force:true})}

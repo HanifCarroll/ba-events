@@ -7,6 +7,7 @@ import { signChatExecution } from '#features/chat/api/delivery-auth.server.ts'
 import { EXECUTION_FENCE_HEADER, EXECUTION_STAGE_HEADER, canonicalKey, openEnvelope, parseCheckpoint, sealEnvelope, verifyWorkflowRequest, type ExecutionStage, type RecoveryCheckpoint, type SealedEnvelope } from './recovery.ts'
 import { createChatTiming } from '#features/chat/lib/timing.ts'
 import { selectedForEarlyStartup } from './startup-experiment.ts'
+import { canTransitionDelivery, isDeliveryTerminal, transitionDelivery, type DeliveryPhase } from './lifecycle.ts'
 
 type Storage = {
 	get<T>(key: string): Promise<T | undefined>
@@ -29,7 +30,7 @@ export type ChatDeliveryEnv = {
 }
 type Metadata = {
 	owner: string; tokenHash: string; payloadHash: string; turnId: string; attemptId: string
-	phase: 'running' | 'persisting' | 'completed' | 'failed' | 'cancelled'
+	phase: DeliveryPhase
 	sequence: number; bytes: number; createdAt: number; expiresAt: number
 	hasCanonical: boolean
 	workflowId?: string; workflowAdmitted?: boolean; fence?: number; deadline?: number; hasCheckpoint?: boolean
@@ -43,7 +44,7 @@ const encoder = new TextEncoder()
 const MAX_LOG_BYTES = 2 * 1024 * 1024
 const MAX_SUBSCRIBERS = 4
 const chunkSchema = Schema.Struct({ type: Schema.String, finishReason: Schema.optional(Schema.String) })
-const terminal = (metadata: Metadata) => ['completed', 'failed', 'cancelled'].includes(metadata.phase)
+const terminal = isDeliveryTerminal
 const encode = (event: StoredEvent) => encoder.encode(`id: ${event.sequence}\ndata: ${event.data}\n\n`)
 async function digest(value: string): Promise<string> {
 	return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))),
@@ -110,11 +111,10 @@ export class ChatDelivery {
 				if (terminal(metadata) || !this.producer) return new Response(null, { status: 409 })
 				if (url.pathname === '/checkpoint') {
 					if (request.method === 'GET') return Response.json(await this.state.storage.get('checkpoint') ?? null)
-					if (request.method !== 'POST' || metadata.phase !== 'running') return new Response(null, { status: 409 })
+					if (request.method !== 'POST' || !canTransitionDelivery(metadata, 'CHECKPOINT')) return new Response(null, { status: 409 })
 					const body = await request.text(); if (encoder.encode(body).byteLength > 512 * 1024) return new Response(null, { status: 413 })
 					const checkpoint = parseCheckpoint(JSON.parse(body)); if (!checkpoint) return new Response(null, { status: 400 })
-					if (metadata.hasCheckpoint) return new Response(null, { status: 409 })
-					metadata.hasCheckpoint = true
+					transitionDelivery(metadata, 'CHECKPOINT')
 					// A short publication budget remains inside the original two-minute turn claim.
 					metadata.deadline = Math.min(metadata.createdAt + DELIVERY_RUN_TIMEOUT_MS + 20_000, Date.now() + 20_000)
 					await this.state.storage.put({ metadata, checkpoint })
@@ -123,15 +123,15 @@ export class ChatDelivery {
 				}
 			}
 			if (url.pathname === '/commit' && request.method === 'POST') {
-				if (!['running', 'persisting'].includes(metadata.phase) || !this.producer || metadata.workflowId && !metadata.hasCheckpoint) return new Response(null, { status: 409 })
-				metadata.phase = 'persisting'
+				if (!canTransitionDelivery(metadata, 'COMMIT') || !this.producer) return new Response(null, { status: 409 })
+				transitionDelivery(metadata, 'COMMIT')
 				await this.state.storage.put({ metadata })
 				return new Response(null, { status: 204 })
 			}
 			if (url.pathname === '/stop' && request.method === 'POST') {
 				if (metadata.phase === 'persisting' || metadata.phase === 'completed') return new Response(null, { status: 409 })
 				if (!terminal(metadata)) {
-					metadata.phase = 'cancelled'
+					transitionDelivery(metadata, 'CANCEL')
 					await this.state.storage.put({ metadata })
 					this.producer?.abort()
 					await this.fail(metadata, 'Response stopped')
@@ -330,7 +330,7 @@ export class ChatDelivery {
 		const entries: Record<string, unknown> = {}
 		const events = batch.map(data => ({ sequence: metadata.sequence++, data }))
 		for (const event of events) entries[`event:${String(event.sequence).padStart(8, '0')}`] = event
-		metadata.bytes += bytes.reduce((a, b) => a + b, 0); metadata.hasCanonical = true; metadata.phase = 'completed'
+		metadata.bytes += bytes.reduce((a, b) => a + b, 0); transitionDelivery(metadata, 'CANONICAL'); transitionDelivery(metadata, 'COMPLETE')
 		// Completion is one atomic durable batch: a restart cannot leave a half-published final response.
 		await this.state.storage.put({ ...entries, metadata })
 		for (const event of events) for (const subscriber of this.subscribers) { try { subscriber.enqueue(encode(event)) } catch { this.subscribers.delete(subscriber) } }
@@ -341,15 +341,15 @@ export class ChatDelivery {
 		const parsed = Schema.decodeUnknownResult(chunkSchema)(JSON.parse(data))
 		if (parsed._tag !== 'Success') throw new Error('Invalid chat event')
 		const chunk = parsed.success
-		if (chunk.type === 'data-response' && (metadata.phase !== 'persisting' || metadata.hasCanonical)) {
+		if (chunk.type === 'data-response' && !canTransitionDelivery(metadata, 'CANONICAL')) {
 			throw new Error('Canonical response requires the commit gate')
 		}
 		const bytes = encoder.encode(data).byteLength
 		const limit = chunk.type === 'error' || chunk.type === 'finish' ? MAX_LOG_BYTES : MAX_LOG_BYTES - 2048
 		if (bytes > 128 * 1024 || metadata.bytes + bytes > limit) throw new Error('Chat delivery limit exceeded')
-		metadata.hasCanonical ||= chunk.type === 'data-response'
-		if (chunk.type === 'finish') {
-			metadata.phase = chunk.finishReason === 'stop' && metadata.hasCanonical ? 'completed' : 'failed'
+		if (chunk.type === 'data-response') transitionDelivery(metadata, 'CANONICAL')
+		if (chunk.type === 'finish' && !terminal(metadata)) {
+			transitionDelivery(metadata, chunk.finishReason === 'stop' && metadata.hasCanonical ? 'COMPLETE' : 'FAIL')
 		}
 		const event: StoredEvent = { sequence: metadata.sequence++, data }
 		metadata.bytes += bytes
@@ -366,7 +366,6 @@ export class ChatDelivery {
 	}
 
 	private async fail(metadata: Metadata, errorText: string): Promise<void> {
-		const phase = metadata.phase === 'cancelled' ? 'cancelled' : 'failed'
 		// Best-effort guarded claim cleanup never acquires or extends ownership.
 		if (metadata.workflowId) {
 			try {
@@ -384,8 +383,6 @@ export class ChatDelivery {
 		if (metadata.sequence === 0) await this.append(metadata, JSON.stringify({ type: 'start', messageId: metadata.turnId }))
 		await this.append(metadata, JSON.stringify({ type: 'error', errorText }))
 		await this.append(metadata, JSON.stringify({ type: 'finish', finishReason: 'error' }))
-		metadata.phase = phase
-		await this.state.storage.put({ metadata })
 	}
 
 	private async subscribe(metadata: Metadata, afterValue: string | null): Promise<Response> {

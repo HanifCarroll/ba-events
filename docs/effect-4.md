@@ -16,6 +16,14 @@ orchestration is represented by `Effect.gen` programs, with typed expected
 failures and explicit sequencing/concurrency. Existing dependency injection
 stays in place.
 
+XState v6 owns event-driven feature lifecycles described in
+[the state-machine inventory](state-machines.md). Pure XState transitions can
+govern admission and persisted-phase changes inside an Effect or platform
+operation. Component actors own cancellable UI work; they do not add an Effect
+runtime. Cloudflare storage/alarms, Trigger checkpoints/retries, database
+transactions and provider receipts remain the durability authority. XState
+snapshots are not a second server-side persistence format.
+
 The Telegram turn graph is the one runtime-local service exception: a
 per-invocation `TelegramTurnService` `Context.Service`/`Layer` normalizes its
 injected Promise and Effect implementations before the graph runs. It is

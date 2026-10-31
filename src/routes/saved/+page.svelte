@@ -1,49 +1,25 @@
 <script lang="ts">
+	import { useMachine } from '@xstate/svelte';
+	import { createSavedListMachine } from '#features/events/lib/saved-list.machine.ts';
 	import { onMount } from 'svelte';
 	import { Bookmark, Calendar, Clock, ArrowLeft, Sparkles } from 'lucide-svelte';
-	import { toast } from 'svelte-sonner';
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts';
 	import { getSavedEvents } from '#features/chat/lib/saved.ts';
 	import EventCard from '#features/events/components/EventCard.svelte';
 	import { Button } from '#shared/ui/button/index.ts';
-	import type { SavedEventWithDetails } from '#shared/lib/types.ts';
 	import * as m from '#paraglide/messages.js';
 
 	const auth = useAuthContext();
 
-	let events = $state<SavedEventWithDetails[]>([]);
-	let loading = $state(true);
+	const { snapshot, send } = useMachine(createSavedListMachine((userId) => getSavedEvents(userId)));
+	const events = $derived($snapshot.context.userId === auth.user?.id ? $snapshot.context.events : []);
+	const loading = $derived($snapshot.matches('loading'));
 	let filter = $state<'upcoming' | 'past'>('upcoming');
-
-	// Fetch saved events
+	$effect(() => { send({ type: 'IDENTITY', userId: auth.user?.id ?? null }); });
 	onMount(() => {
-		if (auth.user) {
-			loading = true;
-			getSavedEvents()
-				.then((result) => {
-					events = result;
-				})
-				.catch((error) => {
-					console.error('Failed to fetch saved events:', error);
-					toast.error('Failed to load saved events');
-				})
-				.finally(() => {
-					loading = false;
-				});
-		}
-	});
-
-	// Listen for save/unsave events to refresh the list
-	onMount(() => {
-		const handleSaveChange = () => {
-			if (auth.user) {
-				getSavedEvents().then((result) => {
-					events = result;
-				});
-			}
-		};
-		window.addEventListener('event-save-changed', handleSaveChange);
-		return () => window.removeEventListener('event-save-changed', handleSaveChange);
+		const refresh = () => send({ type: 'REFRESH' });
+		window.addEventListener('event-save-changed', refresh);
+		return () => window.removeEventListener('event-save-changed', refresh);
 	});
 
 	const upcomingEvents = $derived.by(() => {
@@ -181,6 +157,11 @@
 							class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-4"
 						></div>
 						<p class="text-sm text-muted-foreground">{m.saved_loading()}</p>
+					</div>
+				{:else if $snapshot.matches('failed')}
+					<div class="text-center py-16" role="alert">
+						<p>{m.saved_load_error()}</p>
+						<Button class="mt-4" onclick={() => send({ type: 'REFRESH' })}>{m.chat_retry()}</Button>
 					</div>
 				{:else if events.length === 0}
 					<!-- Empty state -->

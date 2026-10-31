@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CheckCircle } from 'lucide-svelte';
-	import { browser } from '$app/env';
+	import { useMachine } from '@xstate/svelte';
+	import { createFeedbackMachine } from './feedback.machine.ts';
 	import {
 		Dialog,
 		DialogContent,
@@ -18,56 +19,26 @@
 		onOpenChange
 	}: { open: boolean; onOpenChange: (open: boolean) => void } = $props();
 
-	let feedback = $state('');
-	let isSubmitting = $state(false);
-	let submitted = $state(false);
-
-	// Auto-close after submission
-	$effect(() => {
-		if (submitted) {
-			const timer = setTimeout(() => {
-				onOpenChange(false);
-				// Reset state after close animation
-				setTimeout(() => {
-					submitted = false;
-					feedback = '';
-				}, 200);
-			}, 2000);
-			return () => clearTimeout(timer);
-		}
-	});
-
-	async function handleSubmit() {
-		if (!feedback.trim() || isSubmitting) return;
-
-		isSubmitting = true;
-
-		try {
+	const { snapshot, send } = useMachine(createFeedbackMachine({
+		submit: async (message, signal) => {
 			const response = await fetch('/api/feedback', {
-				method: 'POST',
+				method: 'POST', signal,
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ message: feedback })
+				body: JSON.stringify({ message })
 			});
 			if (!response.ok) throw new Error('Feedback submission failed');
-			track('feedback:submitted');
-			submitted = true;
-		} catch (error) {
-			console.error('Failed to submit feedback:', error);
-		} finally {
-			isSubmitting = false;
-		}
-	}
-
+		},
+		close: () => onOpenChange(false),
+		submitted: () => track('feedback:submitted')
+	}));
+	const feedback = $derived($snapshot.context.message);
+	const isSubmitting = $derived($snapshot.matches('submitting'));
+	const submitted = $derived($snapshot.matches('submitted'));
+	$effect(() => { send({ type: open ? 'OPEN' : 'CLOSE' }); });
+	function handleSubmit() { send({ type: 'SUBMIT' }); }
 	function handleClose(newOpen: boolean) {
+		send({ type: newOpen ? 'OPEN' : 'CLOSE' });
 		onOpenChange(newOpen);
-
-		// Reset state after close animation
-		if (!newOpen) {
-			setTimeout(() => {
-				submitted = false;
-				feedback = '';
-			}, 200);
-		}
 	}
 </script>
 
@@ -101,9 +72,12 @@
 				class="min-h-[120px] bg-background/50 border-border/50 focus-visible:border-primary/50 focus-visible:ring-primary/20"
 				placeholder="Start typing..."
 				value={feedback}
-				oninput={(e) => (feedback = e.currentTarget.value)}
+				oninput={(e) => send({ type: 'EDIT', message: e.currentTarget.value })}
+				disabled={isSubmitting}
 				autofocus
 			/>
+
+			{#if $snapshot.context.error}<p role="alert" class="text-sm text-destructive">{$snapshot.context.error}</p>{/if}
 
 			<DialogFooter>
 				<Button variant="ghost" onclick={() => handleClose(false)}>Cancel</Button>

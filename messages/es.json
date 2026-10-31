@@ -194,5 +194,8 @@
   "mcp_limits": "Solo lectura. No necesitás una cuenta de BA Eventos. Las búsquedas devuelven hasta 5 resultados. Límite: 10 llamadas a herramientas por minuto por IP.",
   "mcp_back": "Volver a descubrir eventos",
   "mcp_privacy": "Privacidad",
-  "mcp_signpost": "¿Usás un asistente de IA? Conectá BA Eventos — Beta pública"
+  "mcp_signpost": "¿Usás un asistente de IA? Conectá BA Eventos — Beta pública",
+  "chat_history_loading": "Cargando conversaciones...",
+  "chat_history_error": "No se pudieron cargar las conversaciones",
+  "saved_load_error": "No se pudieron cargar los eventos guardados"
 }

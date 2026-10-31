@@ -19,13 +19,7 @@
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
-	import {
-		createSpeechRecognition,
-		ensureOnDeviceLanguagePack,
-		getRecognitionMode,
-		type RecognitionMode,
-		type SpeechRecognitionLike
-	} from '#features/chat/lib/speech-recognition.ts'
+	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
 	import type { HomeEventFeed } from '#features/events/lib/home-feed.ts'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
 	import InstallApp from '#shared/ui/InstallApp.svelte'
@@ -55,73 +49,22 @@
 	let landingPage = $state<HTMLDivElement | null>(null)
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
-	let isSupported = $state(false)
-	let modeRef: RecognitionMode = 'cloud'
-	let isListening = $state(false)
-	let recognitionRef: SpeechRecognitionLike | null = null
-	let baseValueRef = ''
-	let committedTranscriptRef = ''
-
-	const getRecognitionLang = () => (getLocale() === 'es' ? 'es-AR' : 'en-US')
-
-	function startRecognition(recognition: SpeechRecognitionLike, base: string) {
-		recognitionRef = recognition
-		baseValueRef = base
-		committedTranscriptRef = ''
-
-		recognition.onresult = (event) => {
-			let interim = ''
-			let committed = committedTranscriptRef
-			for (let i = event.resultIndex; i < event.results.length; i++) {
-				const result = event.results[i]
-				if (result.isFinal) committed += result[0].transcript
-				else interim += result[0].transcript
-			}
-			committedTranscriptRef = committed
-			landingQuery = [baseValueRef, committed, interim].filter(Boolean).join(' ')
+	const speech = useSpeech({
+		getLanguage: () => (getLocale() === 'es' ? 'es-AR' : 'en-US'),
+		getText: () => landingQuery,
+		onTranscript: (text) => {
+			landingQuery = text
 			requestAnimationFrame(resizeLandingInput)
+		},
+		onFailure: (failure) => {
+			if (failure === 'permission') toast.error(m.chat_dictate_permission())
+			else if (failure === 'language-pack') toast.error(m.chat_dictate_install_error())
 		}
-
-		recognition.onerror = (event) => {
-			if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-				toast.error(m.chat_dictate_permission())
-			} else if (event.error === 'language-not-supported') {
-				recognition.abort()
-				const fallback = createSpeechRecognition(getRecognitionLang(), 'cloud')
-				if (fallback) startRecognition(fallback, baseValueRef)
-			}
-		}
-
-		recognition.onend = () => {
-			isListening = false
-			if (recognitionRef === recognition) recognitionRef = null
-		}
-
-		recognition.start()
-		isListening = true
-	}
-
-	async function handleMicClick() {
-		if (!isSupported) return
-		if (isListening) {
-			recognitionRef?.stop()
-			return
-		}
-
-		const lang = getRecognitionLang()
-		let effectiveMode: RecognitionMode = modeRef
-		if (modeRef === 'on-device') {
-			const { ok, fallbackToCloud } = await ensureOnDeviceLanguagePack(lang)
-			if (!ok && !fallbackToCloud) {
-				toast.error(m.chat_dictate_install_error())
-				return
-			}
-			effectiveMode = ok ? 'on-device' : 'cloud'
-		}
-
-		const recognition = createSpeechRecognition(lang, effectiveMode)
-		if (recognition) startRecognition(recognition, landingQuery)
-	}
+	})
+	const speechState = speech.snapshot
+	const isSupported = $derived(!$speechState.matches('uninitialized') && !$speechState.matches('unsupported'))
+	const isListening = $derived($speechState.matches('recognizing') || $speechState.matches('preparing'))
+	const handleMicClick = speech.toggle
 
 	async function handleSignOut() {
 		isSigningOut = true
@@ -140,7 +83,10 @@
 
 	function submitQuery() {
 		const prompt = landingQuery.trim()
-		if (prompt) onSelectPrompt(prompt)
+		if (prompt) {
+			speech.cancel()
+			onSelectPrompt(prompt)
+		}
 	}
 
 	function handleComposerKeydown(event: KeyboardEvent) {
@@ -159,16 +105,6 @@
 	function startAsking() {
 		landingPage?.scrollTo({ top: 0, behavior: 'smooth' })
 	}
-
-	$effect(() => {
-		const mode = getRecognitionMode()
-		modeRef = mode
-		isSupported = mode !== 'unsupported'
-	})
-
-	$effect(() => {
-		return () => recognitionRef?.abort()
-	})
 
 	onMount(() => {
 		const root = landingPage

@@ -1,42 +1,24 @@
 <script lang="ts">
 	import { page } from '$app/state'
+	import { useMachine } from '@xstate/svelte'
+	import { createConversationHistoryMachine } from '../lib/conversation-history.machine.ts'
 	import { MessageCircle } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { chatState } from '#features/chat/state/chat.svelte.ts'
-	import type { ConversationListItem } from '#shared/lib/types.ts'
 
 	let { collapsed }: { collapsed: boolean } = $props()
 
 	const auth = useAuthContext()
 	const conversationId = $derived((page.params.conversationId as string | undefined) ?? null)
 
-	let conversations = $state<ConversationListItem[]>([])
-
-	$effect(() => {
-		if (!auth.user) {
-			conversations = []
-			return
-		}
-
-		// Re-run after any conversation mutation (create/rename/delete/message/
-		// title) so the signed-in history list stays fresh — replaces the legacy
-		// React Query `invalidateQueries({ queryKey: conversations.all })`.
-		chatState.conversationsVersion
-
-		let cancelled = false
-		chatState.listConversations({ limit: 50 }).then((result) => {
-			if (!cancelled) conversations = result.conversations
-		})
-
-		return () => {
-			cancelled = true
-		}
-	})
+	const { snapshot, send } = useMachine(createConversationHistoryMachine(() => chatState.listConversations({ limit: 50 })))
+	const conversations = $derived($snapshot.context.userId === auth.user?.id ? $snapshot.context.conversations : [])
+	$effect(() => { send({ type: 'SYNC', userId: auth.user?.id ?? null, version: chatState.conversationsVersion }) })
 </script>
 
-{#if conversations.length > 0}
-	<div class="flex flex-col gap-1 mt-3 pt-3 border-t border-border/50">
+{#if auth.user && (conversations.length > 0 || $snapshot.matches('loading') || $snapshot.matches('failed'))}
+	<div class="flex flex-col gap-1 mt-3 pt-3 border-t border-border/50" aria-busy={$snapshot.matches('loading')}>
 		<div
 			class="px-3 py-1 transition-all duration-300 {collapsed
 				? 'opacity-0 h-0 overflow-hidden'
@@ -46,6 +28,14 @@
 				{m.chat_history()}
 			</span>
 		</div>
+		{#if $snapshot.matches('failed')}
+			<button class="px-3 py-2 text-sm text-muted-foreground" onclick={() => send({ type: 'RETRY' })} title={m.chat_history_error()}>
+				{#if !collapsed}{m.chat_history_error()} — {/if}{m.chat_retry()}
+			</button>
+		{:else if $snapshot.matches('loading') && conversations.length === 0 && !collapsed}
+			<p class="px-3 py-2 text-xs text-muted-foreground" role="status">{m.chat_history_loading()}</p>
+		{/if}
+
 		{#each conversations as conversation (conversation.id)}
 			{@const active = conversation.id === conversationId}
 			<a

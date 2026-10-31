@@ -67,6 +67,21 @@ The MCP setup page SHALL provide localized Claude web and desktop connector inst
 - **AND** explains that workspace permissions must allow custom MCP servers
 - **AND** the ChatGPT section contains no Codex terminal command
 
+### Requirement: Browser interactions have one active lifecycle
+The PWA installation prompt and pull-to-refresh gesture SHALL each have explicit states that determine whether a new interaction is accepted. A consumed installation prompt SHALL NOT be displayed or invoked again while its choice is pending. Acceptance SHALL remain distinct from confirmed installation.
+
+#### Scenario: A visitor activates installation twice
+- **WHEN** a browser installation prompt is already awaiting a choice
+- **THEN** another activation does not invoke that prompt again
+- **AND** confirmation through `appinstalled` cannot be overwritten by a late prompt result
+
+#### Scenario: A pull gesture is cancelled or refresh fails
+- **WHEN** the browser cancels an armed pull gesture
+- **THEN** the indicator resets without refreshing
+- **WHEN** refresh fails after release
+- **THEN** the indicator resets and a subsequent gesture may retry
+- **AND** repeated releases during refresh do not start concurrent refreshes
+
 ## Verification
 - Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
 - Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify both reassurance lines, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions.

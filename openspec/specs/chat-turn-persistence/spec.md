@@ -54,6 +54,19 @@ Each attempt SHALL capture its conversation, authenticated identity, turn, claim
 - **WHEN** an authenticated browser reconnects with existing queued messages
 - **THEN** those items retain their recovery path while new submissions use durable turns
 
+#### Scenario: Legacy message persistence succeeds before local cleanup fails
+- **WHEN** the remote write succeeds and a local persistence receipt is recorded
+- **THEN** subsequent outbox flushes perform only local cleanup for that item
+- **AND** receipt or cleanup failure does not consume a remote-write retry or label the remote write failed
+- **AND** an uncertain receipt retains the existing stable client identifiers for idempotent recovery
+- **AND** concurrent flushes share work within a browser and use an origin-wide lock when the browser supports Web Locks
+
+#### Scenario: Guest history cannot be read
+- **WHEN** the current conversation's IndexedDB read fails
+- **THEN** the browser exposes a read failure and Retry, distinct from a successful read with no history
+- **AND** Retry rereads that conversation without starting generation or creating another turn
+- **AND** navigation or identity changes invalidate an obsolete read result
+
 ### Requirement: Users can stop and retry an unfinished response
 The chat SHALL expose an accessible, localized Stop control during preparation and response generation. Stopping SHALL preserve the user message and original turn identifiers, prevent partial assistant persistence and success bookkeeping, and expose an explicit Retry action. Once canonical persistence begins, Stop SHALL no longer be available and SHALL NOT undo completion.
 
@@ -161,6 +174,11 @@ The composer SHALL have a localized accessible name and SHALL NOT submit Enter w
 #### Scenario: User confirms composed text
 - **WHEN** Enter is pressed during IME composition
 - **THEN** the composer retains the draft without sending a message
+
+#### Scenario: Dictation preparation outlives its owner
+- **WHEN** dictation is disabled, cancelled or unmounted while recognition support is preparing
+- **THEN** the obsolete preparation cannot start recording
+- **AND** obsolete recognition callbacks cannot change a replacement recording or a submitted draft
 
 ### Requirement: Canonical responses are stored without reconstruction
 New assistant messages MUST persist the server-produced canonical response, visible text, contract version, and sanitized execution trace. Guest and authenticated storage MUST NOT reconstruct canonical artifacts from client callbacks.

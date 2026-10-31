@@ -1,11 +1,13 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
+	import { useMachine } from '@xstate/svelte';
+	import type { AccountDeletionSnapshot } from '#features/auth/hooks/account-deletion.ts';
+	import { createProfileFormMachine } from '#features/auth/hooks/profile.machine.ts';
 	import { User, Mail, Trash2, ArrowLeft, AlertTriangle, Loader2, Check } from 'lucide-svelte';
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts';
 	import {
 		updateDisplayName,
-		deleteAccount
+		getAccountDeletionController
 	} from '#features/auth/hooks/profile-mutations.svelte.ts';
 	import { displayNameSchema } from '#shared/lib/schemas.ts';
 	import { Button } from '#shared/ui/button/index.ts';
@@ -26,74 +28,64 @@
 
 	const auth = useAuthContext();
 
-	// Delete account state (kept separate since it's in a dialog)
+	const { snapshot: profileSnapshot, send: profileSend } = useMachine(createProfileFormMachine(updateDisplayName));
+	let deletionSnapshot = $state.raw<AccountDeletionSnapshot | null>(null);
+	$effect(() => {
+		const userId = auth.user?.id;
+		if (!userId) { deletionSnapshot = null; return; }
+		return getAccountDeletionController().subscribe(userId, (snapshot) => { deletionSnapshot = snapshot; });
+	});
 	let deleteConfirmText = $state('');
-	let deletePending = $state(false);
-	let deleteError = $state<string | null>(null);
-
+	const deletePending = $derived(deletionSnapshot?.matches('deleting') || deletionSnapshot?.matches('signingOut') || deletionSnapshot?.matches('deleted'));
+	const deleteError = $derived(deletionSnapshot?.context.error);
 	const defaultDisplayName = $derived(auth.profile?.display_name || '');
-
-	// Display name form state
 	let displayName = $state(untrack(() => defaultDisplayName));
-	let displayNamePending = $state(false);
-	let displayNameError = $state<string | null>(null);
-	let showDisplayNameSuccess = $state(false);
+	const displayNamePending = $derived($profileSnapshot.matches('saving'));
+	const displayNameError = $derived($profileSnapshot.context.error);
+	const showDisplayNameSuccess = $derived($profileSnapshot.matches('saved'));
+	const isDisplayNameDirty = $derived(displayName !== defaultDisplayName);
+	let formUserId = untrack(() => auth.user?.id);
+	let previousName = untrack(() => defaultDisplayName);
 
-	// Sync form when profile loads
-	onMount(() => {
-		if (defaultDisplayName) {
-			displayName = defaultDisplayName;
-		}
+	$effect(() => {
+		const userId = auth.user?.id;
+		const name = defaultDisplayName;
+		untrack(() => {
+			if (userId !== formUserId) {
+				profileSend({ type: 'RESET' });
+				displayName = name;
+				deleteConfirmText = '';
+			} else if (displayName === previousName) displayName = name;
+			formUserId = userId;
+			previousName = name;
+		});
 	});
 
-	const isDisplayNameDirty = $derived(displayName !== defaultDisplayName);
-
-	const onSubmitDisplayName = async (event: SubmitEvent) => {
+	function onSubmitDisplayName(event: SubmitEvent) {
 		event.preventDefault();
-
 		const result = displayNameSchema.safeParse({ displayName });
 		if (!result.success) {
-			displayNameError = result.error.issues[0]?.message ?? 'Invalid display name';
+			profileSend({ type: 'INVALID', error: result.error.issues[0]?.message ?? 'Invalid display name' });
 			return;
 		}
+		profileSend({ type: 'SAVE', name: result.data.displayName });
+	}
 
-		displayNameError = null;
-		displayNamePending = true;
-
-		try {
-			await updateDisplayName(result.data.displayName);
-			showDisplayNameSuccess = true;
-			setTimeout(() => {
-				showDisplayNameSuccess = false;
-			}, 3000);
-		} catch (error) {
-			displayNameError =
-				error instanceof Error ? error.message : 'Failed to update display name';
-		} finally {
-			displayNamePending = false;
-		}
-	};
-
-	const handleDelete = async () => {
+	function handleDelete(event: MouseEvent) {
+		// Keep the dialog mounted for errors and resumable sign-out cleanup.
+		event.preventDefault();
 		const userId = auth.user?.id;
 		if (!userId) return;
-		if (deleteConfirmText !== 'DELETE') return;
+		const controller = getAccountDeletionController();
+		if (controller.getSnapshot(userId).matches('cleanupFailed')) {
+			controller.retryCleanup(userId);
+		} else if (deleteConfirmText === 'DELETE') controller.delete(userId);
+	}
 
-		deletePending = true;
-		deleteError = null;
-
-		try {
-			await deleteAccount(userId);
-			void goto('/');
-		} catch (error) {
-			deleteError = error instanceof Error ? error.message : 'Failed to delete account';
-			deletePending = false;
-		}
-	};
-
-	const handleDisplayNameInput = (event: Event) => {
+	function handleDisplayNameInput(event: Event) {
 		displayName = (event.currentTarget as HTMLInputElement).value;
-	};
+		profileSend({ type: 'EDIT' });
+	}
 
 	const handleDeleteConfirmInput = (event: Event) => {
 		deleteConfirmText = (event.currentTarget as HTMLInputElement).value;
@@ -187,6 +179,7 @@
 							<div class="flex gap-2">
 								<Input
 									id="displayName"
+									disabled={displayNamePending}
 									value={displayName}
 									oninput={handleDisplayNameInput}
 									placeholder="Enter your display name"
@@ -280,13 +273,13 @@
 									</AlertDialogCancel>
 									<AlertDialogAction
 										onclick={handleDelete}
-										disabled={deleteConfirmText !== 'DELETE' || deletePending}
+										disabled={(!deletionSnapshot?.matches('cleanupFailed') && deleteConfirmText !== 'DELETE') || deletePending}
 										class="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
 									>
 										{#if deletePending}
 											<Loader2 class="h-4 w-4 animate-spin" />
 										{:else}
-											Delete Account
+											{deletionSnapshot?.matches('cleanupFailed') ? 'Finish signing out' : 'Delete Account'}
 										{/if}
 									</AlertDialogAction>
 								</AlertDialogFooter>

@@ -34,6 +34,7 @@ import { traceConcierge, type ConciergeTraceContext } from '#shared/lib/ai/langf
 import type { TelemetryOptions } from 'ai'
 import type { SearchRetryBoundary } from '../tools/search-retry.ts'
 import { boundedRead, ReadTimeoutError } from './bounded-read.ts'
+import { createSearchLifecycle } from './search-lifecycle.ts'
 import { extractRecommendationFraming, extractRecommendationReasons, extractRecommendationResponse, isValidRecommendationReason, removeFramingMarkers, warmRecommendationFallback } from '#shared/lib/recommendation-framing.ts'
 
 const MAX_STEPS = 5
@@ -291,9 +292,8 @@ function publicOutput(raw: RawToolOutput, callId: string, registerRef: (ref: str
 
 function failed(message: string): RawToolOutput { return { success: false, formatted: JSON.stringify({ success: false, error: message }), error: message } }
 
-function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, ledger: Map<string, LedgerRecord>, calls: { count: number; successfulSearch: boolean }, executors: ReadExecutors, onSearchStart?: () => void, onTrustedSearchProgress?: () => void, requestId?: string, onRead?: () => void, abortSignal?: AbortSignal) {
-  let retryBoundary: SearchRetryBoundary | undefined
-  let searchInFlight = false
+function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, ledger: Map<string, LedgerRecord>, calls: { count: number }, executors: ReadExecutors, onSearchStart?: () => void, onTrustedSearchProgress?: () => void, requestId?: string, onRead?: () => void, abortSignal?: AbortSignal) {
+  const search = createSearchLifecycle()
   const execute = async (options: Pick<ToolExecutionOptions<unknown>, 'toolCallId' | 'abortSignal'>, toolName: string, input: unknown, fn: (context: ToolExecutionContext) => Promise<RawToolOutput>): Promise<PublicToolOutput> => {
     const { toolCallId } = options
     abortSignal?.throwIfAborted()
@@ -334,20 +334,23 @@ function buildTools(ctx: ToolExecutionContext, refs: Map<string, RefRecord>, led
   }
   return {
     search_events: tool({ description: 'Search Buenos Aires events using the structured input fields. Read coverage metadata for the searched window; absence within that window does not prove absence beyond it. Use returned eventRef and venueRef handles for follow-up reads in the displayed order.', inputSchema: agentSearchSchema, execute: (input, options) => execute(options, 'search_events', input, async (readContext) => {
-      if (calls.successfulSearch) return failed('search_already_succeeded')
-      if (searchInFlight) return failed('search_in_progress')
-      searchInFlight = true
+      const admission = search.begin()
+      if ('error' in admission) return failed(admission.error)
+      const release = () => search.fail(admission.attempt)
+      readContext.abortSignal?.addEventListener('abort', release, { once: true })
       try {
         onSearchStart?.()
-        const raw = await (executors.search ?? (async (value, context) => searchEventsTool.execute(value, context) as Promise<RawToolOutput>))(input, { ...readContext, searchRetryBoundary: retryBoundary })
+        const raw = await (executors.search ?? (async (value, context) => searchEventsTool.execute(value, context) as Promise<RawToolOutput>))(input, { ...readContext, searchRetryBoundary: admission.boundary })
         readContext.abortSignal?.throwIfAborted()
-        if (!retryBoundary && raw.searchRetryBoundary) retryBoundary = structuredClone(raw.searchRetryBoundary)
+        search.complete(admission.attempt, raw.success && (raw.events?.length ?? 0) > 0, raw.searchRetryBoundary)
         if (raw.success && (raw.events?.length ?? 0) > 0) {
-          calls.successfulSearch = true
           onTrustedSearchProgress?.()
         }
         return raw
-      } finally { searchInFlight = false }
+      } finally {
+        readContext.abortSignal?.removeEventListener('abort', release)
+        release()
+      }
     }) }),
     get_event_details: tool({ description: getEventDetailsTool.description, inputSchema: eventRefSchema, execute: (input, options) => execute(options, 'get_event_details', input, async (readContext) => {
       const eventId = resolve(input.eventRef, 'eventId')
@@ -652,7 +655,7 @@ export function orchestrateEffect(input: OrchestrateInput): Effect.Effect<Orches
       try: (fiberSignal) => {
         executionSignal = input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal
         executionSignal.throwIfAborted()
-        const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0, successfulSearch: false }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId, publishProgress, executionSignal)
+        const tools = buildTools({ userContext: input.userContext, locale: input.locale }, refs, ledger, { count: 0 }, input.readExecutors ?? {}, input.onSearchStart, input.onTrustedSearchProgress, input.requestId, publishProgress, executionSignal)
         return (input.runAgentFn ?? runToolLoop)({ messages, instructions: instructions(input, hints), tools, requestId: input.requestId, sessionId: input.sessionId, channel: input.channel, abortSignal: executionSignal, retainTask: input.retainTask, timing: input.timing,
         ...(input.onProgress ? { onText: (text: string) => { progressiveText = text; publishProgress() } } : {}),
         })

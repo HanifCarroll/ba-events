@@ -91,14 +91,14 @@ export const SignedInSaveAndUnsave: Story = {
 	play: async (context) => {
 		await meta.play(context);
 		const button = context.canvas.getByRole('button', { name: m.event_save() });
-		await waitFor(() => expect(isEventSaved).toHaveBeenCalledWith(context.args.event.id));
+		await waitFor(() => expect(isEventSaved).toHaveBeenCalledWith(context.args.event.id, fixtureUser.id));
 		expect(button).toHaveAttribute('aria-pressed', 'false');
 		await context.userEvent.click(button);
-		await waitFor(() => expect(saveEvent).toHaveBeenCalledWith(context.args.event.id));
+		await waitFor(() => expect(saveEvent).toHaveBeenCalledWith(context.args.event.id, fixtureUser.id));
 		await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'true'));
 		await waitFor(() => expect(button).toBeEnabled());
 		await context.userEvent.click(button);
-		await waitFor(() => expect(unsaveEvent).toHaveBeenCalledWith(context.args.event.id));
+		await waitFor(() => expect(unsaveEvent).toHaveBeenCalledWith(context.args.event.id, fixtureUser.id));
 		await waitFor(() => expect(button).toHaveAttribute('aria-pressed', 'false'));
 	}
 };

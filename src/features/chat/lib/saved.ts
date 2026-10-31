@@ -29,10 +29,11 @@ function mapSavedEventRow(item: SavedEventRow): SavedEventWithDetails | null {
 }
 
 // Get all saved events for the current user
-export async function getSavedEvents(): Promise<SavedEventWithDetails[]> {
+export async function getSavedEvents(expectedUserId?: string): Promise<SavedEventWithDetails[]> {
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
+  if (expectedUserId && user?.id !== expectedUserId) throw new Error('Account changed during saved-event request')
   if (!user) {
     return []
   }
@@ -54,7 +55,7 @@ export async function getSavedEvents(): Promise<SavedEventWithDetails[]> {
 
   if (error) {
     console.error('Error fetching saved events:', error)
-    return []
+    throw error
   }
 
   // Transform the nested data to match EventWithVenue type.
@@ -90,10 +91,11 @@ export async function getSavedEventIds(): Promise<Set<string>> {
 }
 
 // Save an event
-export async function saveEvent(eventId: string): Promise<boolean> {
+export async function saveEvent(eventId: string, expectedUserId?: string): Promise<boolean> {
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
+  if (expectedUserId && user?.id !== expectedUserId) throw new Error('Account changed during saved-event request')
   if (!user) {
     throw new Error('Must be logged in to save events')
   }
@@ -119,10 +121,11 @@ export async function saveEvent(eventId: string): Promise<boolean> {
 }
 
 // Unsave an event
-export async function unsaveEvent(eventId: string): Promise<boolean> {
+export async function unsaveEvent(eventId: string, expectedUserId?: string): Promise<boolean> {
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
+  if (expectedUserId && user?.id !== expectedUserId) throw new Error('Account changed during saved-event request')
   if (!user) {
     throw new Error('Must be logged in to unsave events')
   }
@@ -143,10 +146,11 @@ export async function unsaveEvent(eventId: string): Promise<boolean> {
 }
 
 // Check if a specific event is saved
-export async function isEventSaved(eventId: string): Promise<boolean> {
+export async function isEventSaved(eventId: string, expectedUserId?: string): Promise<boolean> {
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
+  if (expectedUserId && user?.id !== expectedUserId) throw new Error('Account changed during saved-event request')
   if (!user) {
     return false
   }
@@ -160,7 +164,7 @@ export async function isEventSaved(eventId: string): Promise<boolean> {
 
   if (error) {
     console.error('Error checking saved event:', error)
-    return false
+    throw error
   }
 
   return data !== null

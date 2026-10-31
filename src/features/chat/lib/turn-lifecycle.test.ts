@@ -50,6 +50,35 @@ async function setup(claim = true) {
 }
 
 describe('browser turn lifecycle with the real chat SDK and guest store', () => {
+	it('cannot start a second Stop decision or rewind a persistence phase', async () => {
+		const { lifecycle } = await setup()
+		expect(lifecycle.beginStop()).toBe(true)
+		expect(lifecycle.beginStop()).toBe(false)
+		lifecycle.endStop(false)
+		lifecycle.callbacks.onData?.({ type: 'data-status', data: { phase: 'persisting' } })
+		lifecycle.callbacks.onData?.({ type: 'data-status', data: { phase: 'thinking' } })
+		expect(lifecycle.snapshot().matches({ running: 'persisting' })).toBe(true)
+		expect(lifecycle.stop()).toBe(false)
+		lifecycle.cancel(); await lifecycle.settled()
+	})
+	it('restores the server persistence phase when a pending Stop is rejected', async () => {
+		const { lifecycle } = await setup()
+		lifecycle.think()
+		lifecycle.beginStop()
+		lifecycle.callbacks.onData?.({ type: 'data-status', data: { phase: 'persisting' } })
+		lifecycle.endStop(false)
+		expect(lifecycle.snapshot().matches({ running: 'persisting' })).toBe(true)
+		expect(lifecycle.beginStop()).toBe(false)
+		lifecycle.cancel(); await lifecycle.settled()
+	})
+	it('ignores an SDK error after canonical persistence has started', async () => {
+		const { lifecycle, outcomes, turn } = await setup()
+		lifecycle.callbacks.onFinish?.({ message: { id: 'reply', role: 'assistant', parts: [{ type: 'data-response', data: canonical }] }, messages: [], isAbort: false, isError: false, isDisconnect: false, finishReason: 'stop' })
+		lifecycle.callbacks.onError?.(new Error('Late transport error'))
+		await lifecycle.settled()
+		expect(outcomes).toEqual(['persisting', 'success'])
+		expect((await getGuestConversationWithMessages(turn.conversationId))?.turns?.[0].status).toBe('completed')
+	})
 	it('defers terminal callbacks while Stop races the authoritative commit gate', async () => {
 		const stopped = await setup(); expect(stopped.lifecycle.beginStop()).toBe(true)
 		stopped.lifecycle.callbacks.onError?.(new Error('Response stopped'))

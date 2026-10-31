@@ -1,5 +1,7 @@
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { Schema } from 'effect'
+import { createActor } from 'xstate'
+import { deliveryMachine } from './delivery.machine.ts'
 import type { ClientTurn } from './turn-lifecycle.ts'
 import {
 	ChatEventDecoder, DELIVERY_RETENTION_MS, deliveryHeaders, deliveryStreamUrl,
@@ -51,78 +53,100 @@ export function clearClientDelivery(delivery: ClientDelivery): void {
 /** Reconnect below the SDK parser, so a network drop never becomes a terminal callback. */
 export function createDeliveryFetch(identity: DeliveryIdentity, fetchFn: typeof fetch = globalThis.fetch): typeof fetch {
 	return async (input, init) => {
-		const signal = init?.signal
+		const actor = createActor(deliveryMachine).start()
+		const state = () => actor.getSnapshot()
+		const connection = new AbortController()
+		const signal = init?.signal ? AbortSignal.any([init.signal, connection.signal]) : connection.signal
+		let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
+		const cancel = (by: 'consumer' | 'signal') => {
+			actor.send({ type: 'CANCEL', by }); connection.abort()
+			void reader?.cancel().catch(() => {})
+		}
+		const abort = () => cancel('signal')
+		if (init?.signal?.aborted) abort()
+		else init?.signal?.addEventListener('abort', abort, { once: true })
+		const cleanup = () => { init?.signal?.removeEventListener('abort', abort); actor.stop() }
 		const headers = new Headers(init?.headers)
 		for (const [name, value] of Object.entries(deliveryHeaders(identity))) headers.set(name, value)
-		let response: Response
-		let failures = 0
 		const delay = () => new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve() }, Math.min(250 * 2 ** failures, 2000))
-			const abort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }
-			if (signal?.aborted) abort()
-			else signal?.addEventListener('abort', abort, { once: true })
+			const stop = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }
+			const timer = setTimeout(() => { signal.removeEventListener('abort', stop); resolve() }, Math.min(250 * 2 ** state().context.failures, 2000))
+			if (signal.aborted) stop()
+			else signal.addEventListener('abort', stop, { once: true })
 		})
-		// A lost POST response is retried with the same identity and exact body; the object deduplicates it.
-		while (true) {
-			try { response = await fetchFn(input, { ...init, headers }); break }
-			catch (error) { if (signal?.aborted || ++failures > 5) throw error; await delay() }
-		}
-		if (!response.ok || !response.body || response.headers.get('x-chat-reconnectable') !== '1') return response
-		let source = response.body
-		let offset = -1
-		let finished = false
-		let cancelled = false
+		let response: Response
+		try {
+			// A lost POST response retains the same body, identity and server deduplication key.
+			while (true) {
+				signal.throwIfAborted()
+				try { response = await fetchFn(input, { ...init, headers, signal }); break }
+				catch (error) {
+					if (signal.aborted) throw error
+					actor.send({ type: 'LOST' })
+					if (state().matches('failed')) throw error
+					await delay(); actor.send({ type: 'RETRY' })
+				}
+			}
+			if (!response.ok || !response.body || response.headers.get('x-chat-reconnectable') !== '1') {
+				actor.send({ type: 'PASSTHROUGH' }); cleanup(); return response
+			}
+		} catch (error) { cleanup(); throw error }
+		actor.send({ type: 'CONNECTED' })
+		let source = response.body!
 		const encoder = new TextEncoder()
-		let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
 		const body = new ReadableStream<Uint8Array>({
 			async start(controller) {
 				try {
-					while (!finished && !cancelled) {
+					while (state().matches('streaming')) {
 						const frames = new ChatEventDecoder()
 						const decoder = new TextDecoder()
 						reader = source.getReader()
 						try {
-							while (true) {
+							while (state().matches('streaming')) {
 								const { done, value } = await reader.read()
-								if (done || cancelled) break
+								if (done || state().matches('cancelled')) break
 								for (const frame of frames.push(decoder.decode(value, { stream: true }))) {
 									const data = eventData(frame)
 									if (!data || data === '[DONE]') continue
 									const next = eventOffset(frame)
 									if (next === null) throw new Error('Missing chat delivery offset')
-									if (next <= offset) continue
-									if (next !== offset + 1) throw new Error('Missing chat delivery event')
-									offset = next
-									finished = (JSON.parse(data) as { type?: unknown }).type === 'finish'
+									if (next <= state().context.offset) continue
+									if (next !== state().context.offset + 1) throw new Error('Missing chat delivery event')
+									const finished = (JSON.parse(data) as { type?: unknown }).type === 'finish'
+									actor.send({ type: 'FRAME', offset: next, finished })
 									controller.enqueue(encoder.encode(`data: ${data}\n\n`))
-									failures = 0
+									if (finished) break
 								}
 							}
-						} catch (error) { if (signal?.aborted) throw error }
+						} catch (error) { if (signal.aborted) throw error }
 						finally { await reader.cancel().catch(() => {}); reader.releaseLock(); reader = null }
-						if (finished) break
-						if (cancelled) return
-						if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-						let reconnected = false
-						while (!reconnected) {
-							if (++failures > 5) throw new Error('Chat delivery interrupted')
+						if (state().matches('completed')) break
+						signal.throwIfAborted()
+						actor.send({ type: 'LOST' })
+						while (state().matches('reconnect_wait')) {
 							await delay()
-							if (cancelled) return
+							if (state().matches('cancelled')) signal.throwIfAborted()
+							actor.send({ type: 'RETRY' })
 							try {
-								const next = await fetchFn(deliveryStreamUrl(identity, offset), { headers, signal, credentials: 'same-origin' })
-								if (cancelled) { await next.body?.cancel(); return }
+								const next = await fetchFn(deliveryStreamUrl(identity, state().context.offset), { headers, signal, credentials: 'same-origin' })
+								if (state().matches('cancelled')) { await next.body?.cancel(); signal.throwIfAborted() }
 								if (!next.ok || !next.body) throw new Error('Chat delivery unavailable')
 								source = next.body
-								reconnected = true
-							} catch (error) { if (signal?.aborted) throw error }
+								actor.send({ type: 'CONNECTED' })
+							} catch (error) {
+								if (signal.aborted) throw error
+								actor.send({ type: 'LOST' })
+							}
 						}
+						if (state().matches('failed')) throw new Error('Chat delivery interrupted')
 					}
-					if (cancelled) return
+					if (state().matches('cancelled')) signal.throwIfAborted()
 					controller.enqueue(encoder.encode('data: [DONE]\n\n'))
 					controller.close()
-				} catch (error) { if (!cancelled) controller.error(error) }
+				} catch (error) { if (state().context.cancelledBy !== 'consumer') controller.error(error) }
+				finally { cleanup() }
 			},
-			cancel: () => { cancelled = true; return reader?.cancel() },
+			cancel: () => { cancel('consumer'); return reader?.cancel() },
 		})
 		return new Response(body, { status: response.status, headers: response.headers })
 	}

@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
-import { expect, fn } from 'storybook/test';
+import { expect, fn, waitFor } from 'storybook/test';
+import { createSpeechRecognition, ensureOnDeviceLanguagePack, getRecognitionMode } from '../../../../.storybook/mocks/speech.ts';
+import type { SpeechRecognitionLike } from '#features/chat/lib/speech-recognition.ts';
 import * as m from '#paraglide/messages.js';
 import ChatInput from './ChatInput.svelte';
 
@@ -86,5 +88,43 @@ export const UnsupportedDictation: Story = {
 		const microphone = canvas.getByRole('button', { name: m.chat_dictate() });
 		expect(microphone).toBeDisabled();
 		expect(microphone).toHaveAttribute('title', m.chat_dictate_unsupported());
+	}
+};
+
+export const DictationPreparationCancelled: Story = {
+	beforeEach: () => {
+		getRecognitionMode.mockReturnValue('on-device');
+		ensureOnDeviceLanguagePack.mockImplementation(() => new Promise(() => {}));
+	},
+	play: async ({ canvas, userEvent }) => {
+		await userEvent.click(canvas.getByRole('button', { name: m.chat_dictate() }));
+		await userEvent.click(await canvas.findByRole('button', { name: m.chat_stop_dictating() }));
+		await waitFor(() => expect(canvas.getByRole('button', { name: m.chat_dictate() })).toHaveAttribute('aria-pressed', 'false'));
+		expect(createSpeechRecognition).not.toHaveBeenCalled();
+	}
+};
+
+export const DictationFinalResultAndStop: Story = {
+	beforeEach: () => {
+		getRecognitionMode.mockReturnValue('cloud');
+		createSpeechRecognition.mockImplementation((): SpeechRecognitionLike => ({
+			lang: '', continuous: false, interimResults: true, maxAlternatives: 1,
+			start: fn(), stop: fn(), abort: fn(), onresult: null, onerror: null, onend: null
+		}));
+	},
+	play: async ({ canvas, userEvent, args }) => {
+		const input = canvas.getByRole('textbox', { name: m.chat_input_label() });
+		await userEvent.type(input, 'Tonight');
+		await userEvent.click(canvas.getByRole('button', { name: m.chat_dictate() }));
+		await waitFor(() => expect(createSpeechRecognition).toHaveBeenCalledOnce());
+		const recognition = createSpeechRecognition.mock.results[0].value!;
+		await userEvent.click(canvas.getByRole('button', { name: m.chat_stop_dictating() }));
+		expect(recognition.stop).toHaveBeenCalledOnce();
+		recognition.onresult!({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'jazz' } }] });
+		recognition.onend!();
+		await waitFor(() => expect(input).toHaveValue('Tonight jazz'));
+		await userEvent.click(canvas.getByRole('button', { name: m.chat_send() }));
+		expect(args.onSend).toHaveBeenCalledWith('Tonight jazz');
+		expect(recognition.abort).toHaveBeenCalledOnce();
 	}
 };

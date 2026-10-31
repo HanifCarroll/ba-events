@@ -3,13 +3,7 @@
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
-	import {
-		createSpeechRecognition,
-		ensureOnDeviceLanguagePack,
-		getRecognitionMode,
-		type RecognitionMode,
-		type SpeechRecognitionLike
-	} from '#features/chat/lib/speech-recognition.ts'
+	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
 
 	let {
 		onSend,
@@ -33,81 +27,26 @@
 	// Speech-to-text via the browser Web Speech API. Resolved after mount so SSR
 	// and client renders agree (avoids hydration mismatch); `mode` is a browser
 	// capability and never changes for the lifetime of the component.
-	let isSupported = $state(false)
-	let modeRef: RecognitionMode = 'cloud'
-	let isListening = $state(false)
-	let recognitionRef: SpeechRecognitionLike | null = null
-	let baseValueRef = ''
-	let committedTranscriptRef = ''
-
-	const getRecognitionLang = () => (getLocale() === 'es' ? 'es-AR' : 'en-US')
-
-	function startRecognition(recognition: SpeechRecognitionLike, base: string) {
-		recognitionRef = recognition
-		baseValueRef = base
-		committedTranscriptRef = ''
-
-		recognition.onresult = (event) => {
-			let interim = ''
-			let committed = committedTranscriptRef
-			for (let i = event.resultIndex; i < event.results.length; i++) {
-				const result = event.results[i]
-				if (result.isFinal) {
-					committed += result[0].transcript
-				} else {
-					interim += result[0].transcript
-				}
-			}
-			committedTranscriptRef = committed
-			value = [baseValueRef, committed, interim].filter(Boolean).join(' ')
-		}
-
-		recognition.onerror = (event) => {
-			if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-				toast.error(m.chat_dictate_permission())
-			} else if (event.error === 'language-not-supported') {
-				// On-device pack missing at runtime — transparently retry via cloud.
-				recognition.abort()
-				const fallback = createSpeechRecognition(getRecognitionLang(), 'cloud')
-				if (fallback) startRecognition(fallback, baseValueRef)
-			}
-		}
-
-		recognition.onend = () => {
-			isListening = false
-			if (recognitionRef === recognition) recognitionRef = null
-		}
-
-		recognition.start()
-		isListening = true
-	}
-
-	async function handleMicClick() {
-		if (disabled || !isSupported) return
-		if (isListening) {
-			recognitionRef?.stop()
-			return
-		}
-
-		const lang = getRecognitionLang()
-		const mode = modeRef
-		let effectiveMode: RecognitionMode = mode
-
-		if (mode === 'on-device') {
-			const { ok, fallbackToCloud } = await ensureOnDeviceLanguagePack(lang)
-			if (!ok && !fallbackToCloud) {
-				toast.error(m.chat_dictate_install_error())
-				return
-			}
-			effectiveMode = ok ? 'on-device' : 'cloud'
-		}
-
-		const recognition = createSpeechRecognition(lang, effectiveMode)
-		if (recognition) startRecognition(recognition, value)
-	}
+	const speech = useSpeech({
+		getLanguage: () => (getLocale() === 'es' ? 'es-AR' : 'en-US'),
+		getText: () => value,
+		onTranscript: (text) => {
+			value = text
+		},
+		onFailure: (failure) => {
+			if (failure === 'permission') toast.error(m.chat_dictate_permission())
+			else if (failure === 'language-pack') toast.error(m.chat_dictate_install_error())
+		},
+		isDisabled: () => disabled
+	})
+	const speechState = speech.snapshot
+	const isSupported = $derived(!$speechState.matches('uninitialized') && !$speechState.matches('unsupported'))
+	const isListening = $derived($speechState.matches('recognizing') || $speechState.matches('preparing'))
+	const handleMicClick = speech.toggle
 
 	function handleSubmit() {
 		if (value.trim() && !disabled) {
+			speech.cancel()
 			onSend(value.trim())
 			value = ''
 		}
@@ -126,25 +65,6 @@
 	// `autocorrect` is a non-standard (but widely supported on mobile) textarea
 	// attribute that Svelte's HTML element types do not include.
 	const autocorrectAttrs: Record<string, string> = { autocorrect: 'on' }
-
-	// Resolve recognition mode once after mount.
-	$effect(() => {
-		const mode = getRecognitionMode()
-		modeRef = mode
-		isSupported = mode !== 'unsupported'
-	})
-
-	// Stop recognition if the input is disabled mid-dictation.
-	$effect(() => {
-		if (disabled && isListening) recognitionRef?.abort()
-	})
-
-	// Abort on unmount.
-	$effect(() => {
-		return () => {
-			recognitionRef?.abort()
-		}
-	})
 
 	// Refocus when re-enabled.
 	$effect(() => {

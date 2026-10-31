@@ -98,6 +98,12 @@ Production Meetup discovery SHALL use configured Cloudflare Browser Rendering, r
 - **WHEN** the same Trigger run retries with a valid retained acquisition
 - **THEN** downstream processing reuses that source observation without repeating paid browser reads
 
+#### Scenario: Browser release cannot be confirmed
+- **WHEN** concurrent cleanup requests target the same owned browser
+- **THEN** they share one in-flight release and verification attempt
+- **AND** a confirmed release is not repeated, while a later cleanup may retry an unconfirmed release
+- **AND** a failed verification is not retained as permanent proof of closure
+
 ### Requirement: Conditional HTTP caching preserves daily freshness
 Anonymous Meetup detail HTML MAY be stored privately with validators. Each new run SHALL revalidate it; a 304 SHALL retain the previously observed source text, while a new 200 SHALL replace it. An HTTP error, empty body, or challenge SHALL NOT replace source facts with a successful empty observation. Existing successfully stored descriptions MAY retain the current translate-only reuse behavior; daily catalog discovery does not imply a daily refresh of every old detail description.
 

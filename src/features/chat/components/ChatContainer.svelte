@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { HomeEventCard, HomeEventFeed } from '#features/events/lib/home-feed.ts'
 	import { untrack } from 'svelte'
+	import { useMachine } from '@xstate/svelte'
+	import { createAsyncLogic } from 'xstate'
+	import { guestConversationMachine, type GuestConversationRead } from '#features/chat/lib/guest-conversation.machine.ts'
 	import { RotateCw } from 'lucide-svelte'
 	import { Chat } from '@ai-sdk/svelte'
 	import { type UIMessage } from 'ai'
@@ -22,6 +25,7 @@
 	import {
 		bootstrapGuestTurn,
 		claimGuestTurn,
+		getGuestConversationWithMessages,
 		setGuestConversationTitle
 	} from '#shared/lib/db/guest-conversations.ts'
 	import type { GuestConversationWithMessages, GuestMessage } from '#shared/lib/db/guest-conversations.ts'
@@ -40,7 +44,7 @@
 		adaptStoredMessageToCanonical,
 		canonicalToRender
 	} from '#features/chat/lib/canonical.ts'
-	import { canonicalFromParts, ChatTurnStoppedError, createTurnLifecycle, ownsClientTurn, type ClientTurn, type RequestPhase } from '#features/chat/lib/turn-lifecycle.ts'
+	import { canonicalFromParts, ChatTurnStoppedError, createTurnLifecycle, ownsClientTurn, type ClientTurn, type RequestPhase, type TurnLifecycleSnapshot, requestPhaseFor } from '#features/chat/lib/turn-lifecycle.ts'
 	import { getFallbackConversationTitle } from '#features/chat/lib/title.ts'
 	import MessageList from './MessageList.svelte'
 	import ChatInput from './ChatInput.svelte'
@@ -111,10 +115,14 @@
 	// ==========================================================================
 	let error = $state<string | null>(null)
 	let noticeIsStopped = $state(false)
-	let requestPhase = $state<RequestPhase>('idle')
+	let attemptSnapshot = $state.raw<TurnLifecycleSnapshot | null>(null)
+	const requestPhase = $derived(requestPhaseFor(attemptSnapshot))
 	let progressiveResponse = $state<CanonicalChatResponse | null>(null)
-	let guestConversation = $state<GuestConversationWithMessages | null>(null)
-	let isLoadingGuestConversation = $state(false)
+	const { snapshot: guestSnapshot, send: sendGuest } = useMachine(guestConversationMachine.provide({
+		actors: { load: createAsyncLogic<GuestConversationRead, string>({ run: async ({ input }) => ({ conversation: await getGuestConversationWithMessages(input) }) }) }
+	}))
+	const guestConversation = $derived($guestSnapshot.context.conversation)
+	const isLoadingGuestConversation = $derived($guestSnapshot.matches('loading'))
 	let scrollContainerRef = $state<HTMLDivElement | null>(null)
 
 	// ==========================================================================
@@ -318,7 +326,7 @@
 		activeRetryTurnId = null
 		localRetryTurn = null
 		isFirstExchangeRef = true
-		requestPhase = 'idle'
+		attemptSnapshot = null
 		error = null
 		noticeIsStopped = false
 	}
@@ -362,12 +370,11 @@
 		localRetryTurn = null
 		error = null
 		noticeIsStopped = false
-		requestPhase = 'preparing'
 
 		async function showCompletedTurn(canonical: NonNullable<ReturnType<typeof canonicalFromParts>>) {
 			const stored = turn.userId === null ? await chatState.getGuestConversation(turn.conversationId) : null
 			if (!isCurrentTurn(turn)) return
-			if (turn.userId === null) guestConversation = stored
+			if (turn.userId === null) sendGuest({ type: 'REPLACE', conversation: stored })
 			track('chat:response_received', { duration_ms: Date.now() - startedAt, events_returned: canonical.events.length, response_id: canonical.requestId, response_kind: canonical.kind })
 			if (isFirstExchangeRef) {
 				isFirstExchangeRef = false
@@ -376,18 +383,19 @@
 					: chatState.generateTitle({ conversationId: turn.conversationId, firstMessage: turn.content })
 				void title.catch((error) => console.error('[chat] Failed to generate title:', error))
 			}
+			lifecycle.completeFromStore()
 			localRetryTurn = null
 			if (activeDelivery) clearClientDelivery(activeDelivery)
 			activeDelivery = null
 			activeTurn = null
 			activeLifecycle = null
-			requestPhase = 'idle'
+			attemptSnapshot = null
 			void flushOutboxNow()
 		}
 
 		const lifecycle = createTurnLifecycle(turn, {
 			isCurrent: () => isCurrentTurn(turn),
-			onPhase: (phase) => { requestPhase = phase },
+			onSnapshot: (snapshot) => { attemptSnapshot = snapshot },
 			onComplete: showCompletedTurn,
 			onProgress: (response) => { if (isCurrentTurn(turn)) progressiveResponse = response },
 			onFailure: (failure) => {
@@ -412,7 +420,6 @@
 				activeLifecycle = null
 				if (activeDelivery) clearClientDelivery(activeDelivery)
 				activeDelivery = null
-				requestPhase = 'error'
 				noticeIsStopped = failure instanceof ChatTurnStoppedError
 				error = noticeIsStopped ? m.chat_response_stopped() : m.chat_error_generic()
 				if (!noticeIsStopped) {
@@ -443,16 +450,17 @@
 					const stored = await chatState.getGuestConversation(turn.conversationId)
 					if (!stillCurrent()) return
 					const claimed = stored?.turns?.find((item) => item.id === turn.turnId)
-					if (claimed?.status === 'completed') { clearClientDelivery(delivery); activeDelivery = null; requestPhase = 'idle'; activeTurn = null; activeLifecycle = null; return }
+					if (claimed?.status === 'completed') { lifecycle.completeFromStore(); clearClientDelivery(delivery); activeDelivery = null; attemptSnapshot = null; activeTurn = null; activeLifecycle = null; return }
 					if (!ownsRunningGuestClaim({ status: claimed?.status, claimId: turn.claimId, returnedClaimId: claimed?.claim_id })) throw new Error('Chat claim expired or superseded')
 				}
 				activeDelivery = delivery
-				requestPhase = 'thinking'
+				lifecycle.think()
 				await turnChat.resumeStream()
 				await lifecycle.settled()
 				return
 			}
 			await bootstrapTurn(turn)
+			await lifecycle.settled()
 			if (!stillCurrent()) return
 			if (!conversationId) {
 				turnChat.messages = [{ id: turn.userClientMessageId, role: 'user', parts: [{ type: 'text', text: content }], metadata: { createdAt: new Date().toISOString() } }]
@@ -464,6 +472,7 @@
 			}
 			if (turn.userId === null) {
 				const claimed = await claimGuestTurn(turn.turnId, turn.claimId, retry)
+				await lifecycle.settled()
 				if (!stillCurrent()) return
 				if (claimed?.status === 'completed') {
 					const stored = await chatState.getGuestConversation(turn.conversationId)
@@ -494,7 +503,7 @@
 			const metadata = { createdAt: new Date().toISOString() }
 			activeDelivery = delivery
 			saveClientDelivery(delivery)
-			requestPhase = 'thinking'
+			lifecycle.think()
 			if (turnChat.messages.some((message) => message.id === turn.userClientMessageId)) {
 				await turnChat.sendMessage({ text: content, messageId: turn.userClientMessageId, metadata }, { body })
 			} else {
@@ -512,29 +521,8 @@
 	// ==========================================================================
 	$effect(() => {
 		const id = conversationId ?? null
-		if (isAuthenticated) {
-			guestConversation = null
-			isLoadingGuestConversation = false
-			return
-		}
-		if (!id) {
-			guestConversation = null
-			isLoadingGuestConversation = false
-			return
-		}
-
-		guestConversation = null
-		isLoadingGuestConversation = true
-		let cancelled = false
-		chatState.getGuestConversation(id).then(async (result) => {
-			if (cancelled) return
-			guestConversation = result
-			isLoadingGuestConversation = false
-		})
-
-		return () => {
-			cancelled = true
-		}
+		if (isAuthenticated || !id) sendGuest({ type: 'CLEAR' })
+		else sendGuest({ type: 'LOAD', id })
 	})
 
 	$effect(() => {
@@ -777,7 +765,7 @@
 	const conversationMissing = $derived(
 		!!(
 			conversationId &&
-			!(isAuthenticated ? false : isLoadingGuestConversation) &&
+			!(isAuthenticated ? false : isLoadingGuestConversation || $guestSnapshot.matches('failed')) &&
 			!(isAuthenticated ? !!authenticatedConversation : !!guestConversation) &&
 			requestPhase === 'idle' &&
 			!hasMessages
@@ -826,6 +814,11 @@
 		{#if showConversationLoading}
 			<div class="flex items-center justify-center h-full">
 				<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+			</div>
+		{:else if !isAuthenticated && $guestSnapshot.matches('failed')}
+			<div role="alert" class="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+				<p>{m.chat_error_generic()}</p>
+				<button type="button" class="min-h-11 px-3 text-primary" onclick={() => { if (conversationId) sendGuest({ type: 'LOAD', id: conversationId }) }}>{m.chat_retry()}</button>
 			</div>
 		{:else if conversationMissing}
 			<div class="flex flex-col items-center justify-center h-full gap-4 text-center px-6">

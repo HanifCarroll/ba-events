@@ -1,8 +1,10 @@
 import { createContext } from 'svelte'
 import { browser } from '$app/env'
+import { createActor } from 'xstate'
 import type { User } from '@supabase/supabase-js'
 import type { Profile } from '#shared/lib/types.ts'
 import { getSupabaseBrowserClient, fetchProfile } from '#features/auth/api/client.ts'
+import { createAuthMachine, type AuthSeed } from './auth.machine.ts'
 
 export interface AuthContextValue {
 	user: User | null
@@ -11,79 +13,61 @@ export interface AuthContextValue {
 	loading: boolean
 }
 
-/**
- * Single shared auth state for the app. `user`/`profile`/`loading` are reactive
- * `$state` fields; `isAdmin` is derived from the profile role.
- */
-export class AuthState implements AuthContextValue {
-	user = $state<User | null>(null)
-	profile = $state<Profile | null>(null)
-	loading = $state(true)
+const authMachine = createAuthMachine(fetchProfile)
 
-	get isAdmin(): boolean {
-		return this.profile?.role === 'admin'
+/** One browser session owns its profile request; SSR gets a request-local instance. */
+export class AuthState implements AuthContextValue {
+	private actor
+	private snapshot
+
+	constructor(initial: AuthSeed = {}) {
+		this.actor = createActor(authMachine, { input: initial })
+		this.snapshot = $state.raw(this.actor.getSnapshot())
+		this.actor.subscribe((snapshot) => { this.snapshot = snapshot })
+		this.actor.start()
+	}
+
+	get user() { return this.snapshot.context.user }
+	set user(user: User | null) { this.actor.send({ type: 'SESSION_CHANGED', user }) }
+	get profile() { return this.snapshot.context.profile }
+	set profile(profile: Profile | null) {
+		if (this.user) this.updateProfile(this.user.id, profile)
+	}
+	get revision() { return this.snapshot.context.revision }
+	get loading() { return this.snapshot.matches('loadingProfile') }
+	get isAdmin() { return this.profile?.role === 'admin' }
+	seed(value: AuthSeed) { this.actor.send({ type: 'SEED', value }) }
+	updateProfile(userId: string, profile: Profile | null, revision = this.revision) {
+		this.actor.send({ type: 'PROFILE_UPDATED', userId, profile, revision })
 	}
 }
 
-const authState = new AuthState()
-
-let initialized = false
-
+let browserAuthState: AuthState | undefined
 const [get, set] = createContext<AuthContextValue>()
 
-/**
- * Initialise the shared auth state from SSR data and subscribe to browser auth
- * changes. Called once by the root layout (`src/routes/+layout.svelte`).
- *
- * The legacy AuthProvider relied on React Query refetch + window focus; here we
- * mirror it with the Supabase `onAuthStateChange` listener instead of polling.
- */
-export function initAuthContext(
-	initial?: { user?: User | null; profile?: Profile | null } | null
-): AuthContextValue {
-	// Seed from this render's data on every call. On the server the module is
-	// shared across requests, so seeding must NOT be gated by `initialized` —
-	// otherwise a later request renders the previous request's session, and the
-	// `set()` below is skipped, which makes `get()` throw `missing_context`.
-	authState.user = initial?.user ?? null
-	authState.profile = initial?.profile ?? null
-	authState.loading = false
-
-	// Subscribe to browser auth changes exactly once per client app lifetime.
-	if (browser && !initialized) {
-		initialized = true
-
-		const client = getSupabaseBrowserClient()
-		client.auth.onAuthStateChange((_event, session) => {
-			authState.user = session?.user ?? null
-			if (session?.user) {
-				void fetchProfile(session.user.id).then((next) => {
-					authState.profile = next
-				})
-			} else {
-				authState.profile = null
-			}
-		})
+export function initAuthContext(initial?: AuthSeed | null): AuthContextValue {
+	if (!browser) {
+		const state = new AuthState(initial ?? {})
+		set(state)
+		return state
 	}
-
-	// Context must be (re)established for the current component tree on every
-	// render — Svelte contexts don't survive across SSR renders, and `get()`
-	// below throws `missing_context` if `set()` hasn't run for this render.
-	set(authState)
-
-	return get()
+	if (!browserAuthState) {
+		browserAuthState = new AuthState(initial ?? {})
+		const state = browserAuthState
+		getSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
+			state.user = session?.user ?? null
+		})
+	} else {
+		browserAuthState.seed(initial ?? {})
+	}
+	set(browserAuthState)
+	return browserAuthState
 }
 
-/**
- * Access the auth context. Must be called during component initialisation, in a
- * component that is a descendant of the root layout (which calls
- * `initAuthContext`). Preserves the legacy `useAuthContext()` call-site shape.
- */
-export function useAuthContext(): AuthContextValue {
-	return get()
-}
+export function useAuthContext(): AuthContextValue { return get() }
 
-/** Module-level state access for mutation helpers (profile-mutations) and future cards. */
+/** Browser mutation helpers share the actor; server render callers use context. */
 export function getAuthState(): AuthState {
-	return authState
+	if (!browser) return get() as AuthState
+	return browserAuthState ??= new AuthState()
 }

@@ -140,14 +140,14 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
 			.from('profiles')
 			.select('*')
 			.eq('id', userId)
-			.single()
+			.maybeSingle()
 
 		if (error) {
 			console.error('Error fetching profile:', error)
-			return null
+			throw error
 		}
 
-		return data as Profile
+		return data as Profile | null
 	})
 }
 
@@ -164,7 +164,7 @@ export async function exchangeCodeForSession(code: string) {
 }
 
 // Update display name in profiles table
-export async function updateDisplayName(name: string): Promise<void> {
+export async function updateDisplayName(name: string, expectedUserId?: string): Promise<void> {
 	const client = getSupabaseBrowserClient()
 
 	const {
@@ -172,6 +172,9 @@ export async function updateDisplayName(name: string): Promise<void> {
 	} = await client.auth.getUser()
 	if (!user) {
 		throw new Error('Must be logged in to update profile')
+	}
+	if (expectedUserId && user.id !== expectedUserId) {
+		throw new Error('Account changed during profile update')
 	}
 
 	const { error } = await client

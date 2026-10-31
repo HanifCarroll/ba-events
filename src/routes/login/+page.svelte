@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { useMachine } from '@xstate/svelte';
+	import { createSignInMachine } from '#features/auth/hooks/sign-in.machine.ts';
 	import { Mail, Sparkles, Check } from 'lucide-svelte';
 	import { signInWithGoogle, signInWithMagicLink } from '#features/auth/api/client.ts';
 	import { Button } from '#shared/ui/button/index.ts';
@@ -7,36 +9,16 @@
 	import * as m from '#paraglide/messages.js';
 
 	let email = $state('');
-	let error = $state<string | null>(null);
-	let isSubmitting = $state(false);
-	let isGoogleSubmitting = $state(false);
-	let magicLinkSent = $state(false);
+	const { snapshot, send } = useMachine(createSignInMachine({ google: signInWithGoogle, magicLink: signInWithMagicLink }));
+	const error = $derived($snapshot.context.error);
+	const isSubmitting = $derived($snapshot.matches('sendingLink'));
+	const isGoogleSubmitting = $derived($snapshot.matches('googleRedirect'));
+	const magicLinkSent = $derived($snapshot.matches('linkSent'));
 
-	async function handleGoogleSignIn() {
-		error = null;
-		isGoogleSubmitting = true;
-
-		try {
-			await signInWithGoogle();
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to sign in with Google';
-			isGoogleSubmitting = false;
-		}
-	}
-
-	async function handleMagicLink(e: SubmitEvent) {
-		e.preventDefault();
-		error = null;
-		isSubmitting = true;
-
-		try {
-			await signInWithMagicLink(email);
-			magicLinkSent = true;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to send magic link';
-		} finally {
-			isSubmitting = false;
-		}
+	function handleGoogleSignIn() { send({ type: 'GOOGLE' }); }
+	function handleMagicLink(event: SubmitEvent) {
+		event.preventDefault();
+		send({ type: 'MAGIC_LINK', email });
 	}
 </script>
 
@@ -126,11 +108,11 @@
 						</div>
 						<h3 class="font-display text-lg font-medium mb-2">{m.login_check_email()}</h3>
 						<p class="text-muted-foreground text-sm">
-							{m.login_magic_sent({ email })}
+							{m.login_magic_sent({ email: $snapshot.context.email })}
 						</p>
 						<button
 							type="button"
-							onclick={() => (magicLinkSent = false)}
+							onclick={() => send({ type: 'RESET' })}
 							class="mt-4 text-sm text-primary hover:text-primary/80 transition-colors"
 						>
 							{m.login_send_another()}
@@ -172,7 +154,7 @@
 
 					<Button
 						type="submit"
-						disabled={isSubmitting}
+						disabled={isSubmitting || isGoogleSubmitting}
 						class="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
 					>
 						{#if isSubmitting}

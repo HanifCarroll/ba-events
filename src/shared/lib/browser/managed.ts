@@ -3,6 +3,7 @@ import { Browserbase } from '@browserbasehq/sdk'
 import { Schema } from 'effect'
 import type { OwnedBrowser } from '#features/import/acquisition/run.ts'
 import { BROWSER_VIEWPORT } from './constants.ts'
+import { createBrowserRelease } from './release.ts'
 
 const creationSchema = Schema.Struct({ sessionId: Schema.String, webSocketDebuggerUrl: Schema.String })
 const account = '38d9d25d890a220fb7cf6dd92f8a322a'
@@ -21,8 +22,7 @@ export async function openCloudflareBrowser(): Promise<OwnedBrowser> {
   const raw = await response.json() as { result?: unknown }
   const session = Schema.decodeUnknownSync(creationSchema)(raw.result ?? raw)
   let browser: OwnedBrowser['browser'] | undefined
-  let releasePromise: Promise<void> | undefined
-  const release = () => releasePromise ??= (async () => {
+  const release = createBrowserRelease(async () => {
     const result = await fetch(`${base}/${session.sessionId}`, { method: 'DELETE', headers, signal: AbortSignal.timeout(15000) })
     if (!result.ok && result.status !== 404) throw new Error(`Cloudflare browser release failed: HTTP ${result.status}`)
     await browser?.close().catch(() => {})
@@ -32,7 +32,7 @@ export async function openCloudflareBrowser(): Promise<OwnedBrowser> {
     const sessions = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ sessionId: Schema.String })))(body.result ?? body)
     if (sessions.some(active => active.sessionId === session.sessionId)) throw new Error('Cloudflare session remains active after release')
     console.info('[acquisition] Cloudflare browser released', { sessionId: session.sessionId, confirmedAbsent: true })
-  })()
+  })
   try { browser = await chromium.connectOverCDP(session.webSocketDebuggerUrl, { headers, timeout: 30000 }) } catch (error) { await release(); throw error }
   console.info('[acquisition] Cloudflare browser acquired', { sessionId: session.sessionId, source: 'meetup' })
   return { browser, close: release, openedAt: Date.now(), pagesUsed: 0 }
@@ -65,8 +65,7 @@ export async function openBrowserbaseBrowser(source: 'passline' | 'meetup', thin
     userMetadata: { source, stage: thin ? 'detail' : 'catalog', acquisitionVersion: '1' },
   }, { timeout: 45000 })
   let browser: OwnedBrowser['browser'] | undefined
-  let releasePromise: Promise<void> | undefined
-  const release = () => releasePromise ??= (async () => {
+  const release = createBrowserRelease(async () => {
     let ended = await sdk.sessions.retrieve(session.id, { timeout: 15000 })
     if (!['COMPLETED', 'ERROR', 'TIMED_OUT'].includes(ended.status)) {
       await sdk.sessions.update(session.id, { projectId: session.projectId, status: 'REQUEST_RELEASE' }, { timeout: 15000 })
@@ -79,7 +78,7 @@ export async function openBrowserbaseBrowser(source: 'passline' | 'meetup', thin
     }
     console.info('[acquisition] Browserbase release metadata', { sessionId: session.id, status: ended.status, proxyBytes: ended.proxyBytes, usageMayBePending: ended.proxyBytes === 0 })
     if (!['COMPLETED', 'ERROR', 'TIMED_OUT'].includes(ended.status)) throw new Error('Browserbase release has not completed')
-  })()
+  })
   try {
     browser = await chromium.connectOverCDP(session.connectUrl, { timeout: 30000 })
     if (source === 'passline') await configurePasslineResources(browser.contexts()[0], thin)

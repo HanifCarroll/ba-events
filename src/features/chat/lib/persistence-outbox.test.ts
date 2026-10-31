@@ -161,4 +161,40 @@ describe('persistence outbox', () => {
     expect(result.persisted).toBe(1)
     expect(mockedDeleteOutboxItem).toHaveBeenCalledWith('outbox-1')
   })
+
+  it('records a remote success before cleanup and never spends the retry budget on deletion', async () => {
+    mockedListDueOutboxItems.mockResolvedValue([makeOutboxItem({ attempt_count: MAX_OUTBOX_ATTEMPTS - 1 })])
+    mockedDeleteOutboxItem.mockRejectedValue(new Error('IndexedDB unavailable'))
+    const persistMessage = vi.fn().mockResolvedValue(undefined)
+    const result = await flushMessagePersistenceOutbox(persistMessage)
+    expect(result.persisted).toBe(1)
+    expect(result.terminalFailures).toEqual([])
+    expect(mockedUpdateOutboxItem).toHaveBeenCalledWith('outbox-1', { status: 'persisted', last_error: null })
+
+    mockedListDueOutboxItems.mockResolvedValue([makeOutboxItem({ status: 'persisted' })])
+    mockedDeleteOutboxItem.mockResolvedValue(undefined)
+    await flushMessagePersistenceOutbox(persistMessage)
+    expect(persistMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports direct remote persistence accurately when local receipt cleanup fails', async () => {
+    mockedGetOutboxItemByClientMessageId.mockRejectedValue(new Error('Local read failed'))
+    const result = await persistMessageWithOutbox(async () => ({ id: 'stored-message' }), {
+      conversationId: 'conv-1', clientMessageId: 'client-1', role: 'user', content: 'Hi',
+    })
+    expect(result).toEqual({ status: 'persisted', messageId: 'stored-message' })
+    expect(mockedAddOutboxItem).not.toHaveBeenCalled()
+  })
+
+  it('shares concurrent flushes rather than sending the same due row twice', async () => {
+    mockedListDueOutboxItems.mockResolvedValue([makeOutboxItem()])
+    let resolve!: () => void
+    const persistMessage = vi.fn(() => new Promise<void>((done) => { resolve = done }))
+    const first = flushMessagePersistenceOutbox(persistMessage)
+    const second = flushMessagePersistenceOutbox(persistMessage)
+    await new Promise((done) => setTimeout(done, 0))
+    resolve()
+    await Promise.all([first, second])
+    expect(persistMessage).toHaveBeenCalledTimes(1)
+  })
 })

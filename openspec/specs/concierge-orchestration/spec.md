@@ -37,6 +37,11 @@ The concierge MUST use a bounded ToolLoopAgent with only search, event detail, v
 - **AND** its late result cannot add artifacts, references or successful-search state
 - **AND** successful earlier reads remain available under the existing fallback rules
 
+#### Scenario: A search attempt settles after its replacement starts
+- **WHEN** a timed-out search returns after a replacement has been admitted
+- **THEN** it cannot clear the replacement's in-flight state, change its retry boundary or seal the turn as successfully searched
+- **AND** at most one current search is admitted, and a successful nonempty search disables further searches for that turn
+
 #### Scenario: The producer or model step is interrupted
 - **WHEN** producer cancellation, Effect interruption or an SDK step/total deadline stops execution
 - **THEN** active model and tool requests receive that cancellation

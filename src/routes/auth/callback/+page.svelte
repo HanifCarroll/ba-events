@@ -1,51 +1,33 @@
 <script lang="ts">
+	import { useMachine } from '@xstate/svelte';
+	import { createAuthCallbackMachine } from '#features/auth/hooks/sign-in.machine.ts';
 	import { onMount } from 'svelte';
 	import { exchangeCode } from '#features/auth/api/auth.remote.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	let clientError = $state<string | null>(null);
-	let error = $derived(data.error ?? clientError);
-	let status = $state('Completing sign in...');
+	const { snapshot, send } = useMachine(createAuthCallbackMachine({
+		exchange: exchangeCode,
+		redirect: () => { window.location.href = '/'; }
+	}));
+	const error = $derived(data.error ?? $snapshot.context.error);
+	const status = $derived($snapshot.matches('redirecting') ? 'Redirecting...' : $snapshot.matches('verifying') ? 'Verifying authentication...' : 'Completing sign in...');
 
-	onMount(async () => {
-		// The `?code=` flow is exchanged in +page.server.ts (which redirects on
-		// success). Here we only handle the implicit `#token_hash` flow, whose
-		// parameters live in the URL fragment and are never sent to the server.
+	onMount(() => {
 		if (data.error) return;
-
-		try {
-			const hashParams = new URLSearchParams(window.location.hash.substring(1));
-
-			const errorParam = hashParams.get('error');
-			const errorDescription = hashParams.get('error_description');
-
-			if (errorParam) {
-				clientError = errorDescription || errorParam;
-				return;
-			}
-
-			const tokenHash = hashParams.get('token_hash');
-			const type = hashParams.get('type');
-
-			if (!tokenHash) {
-				clientError = 'No authentication token found. The link may have expired.';
-				return;
-			}
-
-			status = 'Verifying authentication...';
-
-			await exchangeCode({ tokenHash, type: type ?? undefined });
-
-			status = 'Redirecting...';
-			// Full navigation so the root layout re-seeds auth state from the
-			// session cookies set by the exchange above.
-			window.location.href = '/';
-		} catch (err) {
-			console.error('Auth callback error:', err);
-			clientError = err instanceof Error ? err.message : 'Authentication failed';
+		const params = new URLSearchParams(window.location.hash.substring(1));
+		const linkError = params.get('error');
+		if (linkError) {
+			send({ type: 'FAIL', error: params.get('error_description') || linkError });
+			return;
 		}
+		const tokenHash = params.get('token_hash');
+		if (!tokenHash) {
+			send({ type: 'FAIL', error: 'No authentication token found. The link may have expired.' });
+			return;
+		}
+		send({ type: 'VERIFY', tokenHash, tokenType: params.get('type') ?? undefined });
 	});
 </script>
 

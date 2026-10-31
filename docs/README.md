@@ -8,6 +8,7 @@ Start with [exploring the code](getting-started.md), [architecture](architecture
 
 - [`development.md`](./development.md) — stack, checks, chat diagnosis, search configuration, and canonical contracts
 - [`effect-4.md`](./effect-4.md) — version-matched Effect boundaries and deliberate exceptions
+- [`state-machines.md`](./state-machines.md) — XState ownership, audit coverage and persistence boundaries
 - [`applied-ai-engineering-work.md`](./applied-ai-engineering-work.md) — remaining work and verification receipts
 
 Canonical chat contract and trust model:

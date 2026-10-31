@@ -1,5 +1,7 @@
 import { refreshAll } from '$app/navigation';
 import type { Attachment } from 'svelte/attachments';
+import { createActor } from 'xstate';
+import { pullToRefreshMachine } from './pull-to-refresh.machine.ts';
 
 export interface PullToRefreshOptions {
 	/** Callback when refresh is triggered */
@@ -10,15 +12,6 @@ export interface PullToRefreshOptions {
 	maxPull?: number;
 	/** Whether pull-to-refresh is enabled (default: true) */
 	enabled?: boolean;
-}
-
-/**
- * Attempt function for smooth pull resistance (exponential decay).
- * Prevents pulling too far while maintaining smooth feel.
- */
-function applyResistance(distance: number, maxPull: number): number {
-	const k = 0.4;
-	return maxPull * (1 - Math.exp((-k * distance) / maxPull));
 }
 
 /**
@@ -46,12 +39,7 @@ export function pullToRefresh(options: PullToRefreshOptions = {}): Attachment<HT
 	} = options;
 
 	return (container: HTMLElement) => {
-		// Touch tracking (no state updates during touch!)
-		let touchStartY = 0;
-		let currentPull = 0;
-		let isAtTop = false;
-		let isPulling = false;
-		let isRefreshing = false;
+		const actor = createActor(pullToRefreshMachine, { input: { threshold, maxPull, onRefresh } });
 
 		// Update indicator DOM directly (no Svelte re-renders)
 		const updateIndicator = (distance: number, refreshing: boolean) => {
@@ -61,6 +49,7 @@ export function pullToRefresh(options: PullToRefreshOptions = {}): Attachment<HT
 			if (distance === 0 && !refreshing) {
 				indicator.style.height = '0px';
 				indicator.style.opacity = '0';
+				indicator.querySelector('[data-pull-icon]')?.classList.remove('animate-spin');
 				return;
 			}
 
@@ -92,108 +81,55 @@ export function pullToRefresh(options: PullToRefreshOptions = {}): Attachment<HT
 			}
 		};
 
-		const handleTouchStart = (e: TouchEvent) => {
-			if (!enabled || isRefreshing) return;
+		const subscription = actor.subscribe((snapshot) => {
+			const refreshing = snapshot.matches('refreshing');
+			updateIndicator(refreshing ? threshold : snapshot.context.distance, refreshing);
+		});
+		actor.start();
 
-			// Horizontal carousels own their gestures. Letting pull-to-refresh track
-			// the same touch can cancel a slightly diagonal swipe on mobile.
-			if (e.target instanceof Element && e.target.closest('[data-horizontal-scroll]')) {
-				isAtTop = false;
+		const handleTouchStart = (event: TouchEvent) => {
+			if (!enabled || !event.touches[0] || actor.getSnapshot().matches('refreshing')) return;
+			// Horizontal carousels own their gestures.
+			if (container.scrollTop > 0 || (event.target instanceof Element && event.target.closest('[data-horizontal-scroll]'))) {
+				actor.send({ type: 'CANCEL' });
 				return;
 			}
-
-			// Only enable pull-to-refresh when scrolled to top
-			isAtTop = container.scrollTop <= 0;
-			if (!isAtTop) return;
-
-			touchStartY = e.touches[0].clientY;
-			currentPull = 0;
-			isPulling = false;
-
-			// Remove transition during touch for responsive feel
 			const indicator = container.querySelector<HTMLElement>('[data-pull-indicator]');
-			if (indicator) {
-				indicator.style.transition = 'none';
-			}
+			if (indicator) indicator.style.transition = 'none';
+			actor.send({ type: 'START', y: event.touches[0].clientY });
 		};
 
-		const handleTouchMove = (e: TouchEvent) => {
-			if (!enabled || isRefreshing || !isAtTop) return;
-
-			// Re-check if at top (user might have scrolled)
+		const handleTouchMove = (event: TouchEvent) => {
+			if (!enabled || !event.touches[0] || !actor.getSnapshot().matches('tracking')) return;
 			if (container.scrollTop > 0) {
-				isAtTop = false;
-				isPulling = false;
-				updateIndicator(0, false);
+				actor.send({ type: 'CANCEL' });
 				return;
 			}
-
-			const touchY = e.touches[0].clientY;
-			const deltaY = touchY - touchStartY;
-
-			// Only trigger on pull down (positive delta)
-			if (deltaY <= 0) {
-				isPulling = false;
-				updateIndicator(0, false);
-				currentPull = 0;
-				return;
-			}
-
-			// Apply resistance for natural feel
-			const adjustedPull = applyResistance(deltaY, maxPull);
-			currentPull = adjustedPull;
-			isPulling = true;
-
-			// Update DOM directly (no state!)
-			updateIndicator(adjustedPull, false);
-
-			// Prevent default scrolling while pulling
-			if (adjustedPull > 10) {
-				e.preventDefault();
-			}
+			actor.send({ type: 'MOVE', y: event.touches[0].clientY });
+			if (actor.getSnapshot().context.distance > 10) event.preventDefault();
 		};
 
-		const handleTouchEnd = async () => {
-			if (!enabled || isRefreshing) return;
-
-			const pulled = currentPull;
+		const handleTouchEnd = () => {
 			const indicator = container.querySelector<HTMLElement>('[data-pull-indicator]');
-
-			// Add transition for smooth snap-back
-			if (indicator) {
-				indicator.style.transition = 'height 0.2s ease-out, opacity 0.2s ease-out';
-			}
-
-			if (pulled >= threshold) {
-				// Trigger refresh
-				isRefreshing = true;
-				updateIndicator(threshold, true); // Hold at threshold during refresh
-
-				try {
-					await onRefresh();
-				} finally {
-					isRefreshing = false;
-					updateIndicator(0, false);
-				}
-			} else {
-				// Snap back
-				updateIndicator(0, false);
-			}
-
-			isPulling = false;
-			currentPull = 0;
-			isAtTop = false;
+			if (indicator) indicator.style.transition = 'height 0.2s ease-out, opacity 0.2s ease-out';
+			actor.send({ type: 'END' });
 		};
+		const handleTouchCancel = () => actor.send({ type: 'CANCEL' });
 
 		// Use passive: false for touchmove to allow preventDefault
 		container.addEventListener('touchstart', handleTouchStart, { passive: true });
 		container.addEventListener('touchmove', handleTouchMove, { passive: false });
 		container.addEventListener('touchend', handleTouchEnd, { passive: true });
+		container.addEventListener('touchcancel', handleTouchCancel, { passive: true });
 
 		return () => {
 			container.removeEventListener('touchstart', handleTouchStart);
 			container.removeEventListener('touchmove', handleTouchMove);
 			container.removeEventListener('touchend', handleTouchEnd);
+			container.removeEventListener('touchcancel', handleTouchCancel);
+			subscription.unsubscribe();
+			actor.stop();
+			updateIndicator(0, false);
 		};
 	};
 }

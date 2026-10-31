@@ -78,6 +78,25 @@ describe('Telegram inbox worker', () => {
     expect(fakeStorage.values.get('alarm') as number).toBeGreaterThanOrEqual(before + 1_000)
   })
 
+  it('resumes acknowledgement after cleanup failure without processing the turn again', async () => {
+    const fakeStorage = storage()
+    const originalDelete = fakeStorage.delete
+    let failCleanup = true
+    fakeStorage.delete = async (key) => {
+      if (key.startsWith('item:') && failCleanup) { failCleanup = false; throw new Error('storage unavailable') }
+      await originalDelete(key)
+    }
+    let calls = 0
+    const inbox = new TelegramInbox({ storage: fakeStorage }, {} as never, async () => { calls++ })
+    await enqueue(inbox, '7')
+    await expect(inbox.alarm()).rejects.toThrow('storage unavailable')
+    expect(fakeStorage.values.get('item:0000000000000000')).toMatchObject({ phase: 'acknowledging' })
+    const restarted = new TelegramInbox({ storage: fakeStorage }, {} as never, async () => { calls++ })
+    await restarted.alarm()
+    expect(calls).toBe(1)
+    expect(fakeStorage.values.has('seen:7')).toBe(false)
+  })
+
   it('uses the full positive Telegram retry_after for scheduling', async () => {
     const fakeStorage = storage()
     const inbox = new TelegramInbox(

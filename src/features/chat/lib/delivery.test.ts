@@ -94,6 +94,26 @@ describe('reconnectable delivery transport', () => {
 		await new Promise((resolve) => setTimeout(resolve, 550))
 		expect(calls).toBe(1)
 	})
+	it('external abort settles the consumer even when the source ignores the fetch signal', async () => {
+		const abort = new AbortController()
+		let sourceCancelled = false
+		const delivered = await createDeliveryFetch(identity, async () => new Response(new ReadableStream({
+			cancel() { sourceCancelled = true },
+		}), { headers: { 'x-chat-reconnectable': '1' } }))('/api/chat', { signal: abort.signal })
+		const consumed = delivered.text()
+		abort.abort()
+		await expect(consumed).rejects.toThrow()
+		expect(sourceCancelled).toBe(true)
+	})
+	it('a terminal frame completes without waiting for a transport EOF', async () => {
+		let cancelled = false
+		const delivered = await createDeliveryFetch(identity, async () => new Response(new ReadableStream({
+			start(controller) { controller.enqueue(encoder.encode('id: 0\ndata: {"type":"finish","finishReason":"stop"}\n\n')) },
+			cancel() { cancelled = true },
+		}), { headers: { 'x-chat-reconnectable': '1' } }))('/api/chat')
+		expect(await delivered.text()).toContain('[DONE]')
+		expect(cancelled).toBe(true)
+	})
 	it('frames arbitrary byte boundaries and bounds unterminated events', () => {
 		const decoder = new ChatEventDecoder()
 		expect(decoder.push('id: 0\r')).toEqual([])

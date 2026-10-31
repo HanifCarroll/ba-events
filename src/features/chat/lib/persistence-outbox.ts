@@ -9,9 +9,12 @@ import type { LocalOutboxItem } from '#shared/lib/db/local-outbox.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import type { MessageAttachedData, MessageExecutionStep, MessageRole } from '#shared/lib/types.ts'
 
+import { createActor, toPromise } from 'xstate'
+import { outboxAttemptMachine } from './persistence-outbox.machine.ts'
+export { MAX_OUTBOX_ATTEMPTS } from './persistence-outbox.machine.ts'
+
 const BASE_RETRY_DELAY_MS = 2_000
 const MAX_RETRY_DELAY_MS = 120_000
-export const MAX_OUTBOX_ATTEMPTS = 6
 
 export interface MessagePersistencePayload {
   conversationId: string
@@ -92,29 +95,41 @@ export async function persistMessageWithOutbox(
   persistMessage: PersistMessageFn,
   payload: MessagePersistencePayload
 ): Promise<MessagePersistenceResult> {
-  try {
-    const persisted = await persistMessage(payload)
-    const messageId =
-      persisted && typeof persisted === 'object' && typeof persisted.id === 'string'
-        ? persisted.id
-        : undefined
-
-    const existing = await getOutboxItemByClientMessageId(
-      payload.conversationId,
-      payload.clientMessageId
-    )
-    if (existing) {
-      await deleteOutboxItem(existing.id)
-    }
-
-    return { status: 'persisted', messageId }
-  } catch {
+  let existing: LocalOutboxItem | undefined
+  let messageId: string | undefined
+  const actor = createActor(outboxAttemptMachine, { input: {
+    attemptCount: 0, alreadyPersisted: false,
+    persist: async () => {
+      const result = await persistMessage(payload)
+      messageId = result && typeof result.id === 'string' ? result.id : undefined
+    },
+    acknowledge: async () => {
+      existing = await getOutboxItemByClientMessageId(payload.conversationId, payload.clientMessageId)
+      if (existing) await updateOutboxItem(existing.id, { status: 'persisted', last_error: null })
+    },
+    cleanup: async () => { if (existing) await deleteOutboxItem(existing.id) },
+  } }).start()
+  const result = await toPromise(actor)
+  if (result.outcome === 'retry_wait' || result.outcome === 'failed') {
     await ensureOutboxItem(payload)
     return { status: 'queued' }
   }
+  return { status: 'persisted', messageId }
 }
 
-export async function flushMessagePersistenceOutbox(
+let flushInFlight: Promise<FlushOutboxResult> | null = null
+
+/** One flush per browser, and per origin when Web Locks is available. */
+export function flushMessagePersistenceOutbox(persistMessage: PersistMessageFn): Promise<FlushOutboxResult> {
+  if (flushInFlight) return flushInFlight
+  const run = () => flushOutbox(persistMessage)
+  flushInFlight = (typeof navigator !== 'undefined' && navigator.locks
+    ? navigator.locks.request('ba-events:legacy-message-outbox', run)
+    : run()).finally(() => { flushInFlight = null })
+  return flushInFlight
+}
+
+async function flushOutbox(
   persistMessage: PersistMessageFn
 ): Promise<FlushOutboxResult> {
   const due = await listDueOutboxItems()
@@ -135,39 +150,29 @@ export async function flushMessagePersistenceOutbox(
       attachedData: item.attached_data,
     }
 
-    try {
-      await persistMessage(payload)
-      await deleteOutboxItem(item.id)
+    const actor = createActor(outboxAttemptMachine, { input: {
+      attemptCount: item.attempt_count, alreadyPersisted: item.status === 'persisted',
+      persist: () => persistMessage(payload),
+      acknowledge: () => updateOutboxItem(item.id, { status: 'persisted', last_error: null }),
+      cleanup: () => deleteOutboxItem(item.id),
+    } }).start()
+    const result = await toPromise(actor)
+    if (result.outcome !== 'retry_wait' && result.outcome !== 'failed') {
+      // Receipt failure remains uncertain locally; stable client IDs make a later
+      // retry idempotent. A recorded receipt skips the remote write on reload.
       persisted++
       continue
-    } catch (error) {
-      const attemptCount = item.attempt_count + 1
-      const errorMessage = toErrorMessage(error)
-
-      if (attemptCount >= MAX_OUTBOX_ATTEMPTS) {
-        await updateOutboxItem(item.id, {
-          status: 'failed',
-          attempt_count: attemptCount,
-          last_error: errorMessage,
-          next_retry_at: item.next_retry_at,
-        })
-
-        terminalFailures.push({
-          ...item,
-          status: 'failed',
-          attempt_count: attemptCount,
-          last_error: errorMessage,
-        })
-        continue
-      }
-
-      await updateOutboxItem(item.id, {
-        status: 'pending',
-        attempt_count: attemptCount,
-        last_error: errorMessage,
-        next_retry_at: getNextRetryIso(attemptCount),
-      })
     }
+    const errorMessage = toErrorMessage(result.error)
+    const failed = result.outcome === 'failed'
+    await updateOutboxItem(item.id, {
+      status: failed ? 'failed' : 'pending',
+      attempt_count: result.attemptCount,
+      last_error: errorMessage,
+      next_retry_at: failed ? item.next_retry_at : getNextRetryIso(result.attemptCount),
+    })
+    if (failed) terminalFailures.push({ ...item, status: 'failed', attempt_count: result.attemptCount, last_error: errorMessage })
+
   }
 
   return {

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { useMachine } from '@xstate/svelte';
+	import { createSavedMembershipMachine } from '../lib/saved-membership.machine.ts';
 	import { Heart } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { useAuthContext } from '#features/auth/hooks/auth-context.svelte.ts';
@@ -40,60 +41,22 @@
 
 	const auth = useAuthContext();
 
-	let isSaved = $state(untrack(() => initialSaved));
-	let isUpdating = $state(false);
-
-	onMount(() => {
-		let cancelled = false;
-
-		if (!auth.user) {
-			isSaved = false;
-			return;
-		}
-
-		void isEventSaved(eventId)
-			.then((saved) => {
-				if (!cancelled) {
-					isSaved = saved;
-				}
-			})
-			.catch((error) => {
-				console.error('Failed to load saved state:', error);
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	});
-
-	const handleToggle = async () => {
-		if (!auth.user) return;
-		if (isUpdating) return;
-
-		isUpdating = true;
-		const newSavedState = !isSaved;
-
-		// Optimistic update
-		isSaved = newSavedState;
-
-		try {
-			if (newSavedState) {
-				await saveEvent(eventId);
-				track('event:saved', { event_id: eventId, source, ...(responseId ? { response_id: responseId } : {}) });
-			} else {
-				await unsaveEvent(eventId);
-				track('event:unsaved', { event_id: eventId, source, ...(responseId ? { response_id: responseId } : {}) });
-			}
-			onSaveChange?.(newSavedState);
-		} catch (error) {
-			// Revert on error
-			isSaved = !newSavedState;
+	const { snapshot, send } = useMachine(createSavedMembershipMachine({
+		read: (id, userId) => isEventSaved(id, userId),
+		write: (id, userId, saved) => saved ? saveEvent(id, userId) : unsaveEvent(id, userId),
+		changed: ({ eventId: id, saved }) => {
+			track(saved ? 'event:saved' : 'event:unsaved', { event_id: id, source, ...(responseId ? { response_id: responseId } : {}) });
+			onSaveChange?.(saved);
+		},
+		failed: (error) => {
 			console.error('Failed to update saved state:', error);
 			toast.error('Failed to update saved status');
-		} finally {
-			isUpdating = false;
 		}
-	};
+	}));
+	const isSaved = $derived($snapshot.context.saved);
+	const isUpdating = $derived($snapshot.matches('loading') || $snapshot.matches('updating'));
+	$effect(() => { send({ type: 'SYNC', userId: auth.user?.id ?? null, eventId, initialSaved }); });
+	const handleToggle = () => send({ type: 'TOGGLE' });
 
 	const iconSize = $derived(size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4');
 	const buttonSize = $derived(

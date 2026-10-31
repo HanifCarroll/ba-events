@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { installState, promptInstall } from './install.svelte'
+import { createInstallController } from './install.machine.ts'
 import type { BeforeInstallPromptEvent } from './install'
 import { isIosDevice, isStandalone } from './install'
 
@@ -17,17 +17,67 @@ describe('PWA install platform detection', () => {
 		expect(isStandalone(false, false)).toBe(false)
 	})
 
-	it('clears the deferred prompt after the user chooses', async () => {
+	it('consumes a prompt once while waiting for the choice', async () => {
+		let resolveChoice!: (choice: { outcome: 'accepted' | 'dismissed' }) => void
 		const prompt = vi.fn(async () => {})
-		installState.deferredPrompt = {
-			preventDefault: () => {},
+		const controller = createInstallController()
+		controller.actor.start()
+		controller.actor.send({ type: 'INITIALIZE', isIos: false, installed: false })
+		controller.actor.send({ type: 'AVAILABLE', prompt: {
 			prompt,
-			userChoice: Promise.resolve({ outcome: 'dismissed' })
-		} as unknown as BeforeInstallPromptEvent
-
-		await promptInstall()
-
+			userChoice: new Promise((resolve) => { resolveChoice = resolve })
+		} as unknown as BeforeInstallPromptEvent })
+		const pending = controller.prompt()
+		await controller.prompt()
 		expect(prompt).toHaveBeenCalledOnce()
-		expect(installState.deferredPrompt).toBeNull()
+		expect(controller.actor.getSnapshot().value).toBe('prompting')
+		resolveChoice({ outcome: 'dismissed' })
+		await pending
+		expect(controller.actor.getSnapshot().value).toBe('dismissed')
+		expect(controller.actor.getSnapshot().context.prompt).toBeNull()
+		controller.actor.stop()
+	})
+
+	it('waits for installation after acceptance', async () => {
+		const controller = createInstallController()
+		controller.actor.start()
+		controller.actor.send({ type: 'INITIALIZE', isIos: false, installed: false })
+		controller.actor.send({ type: 'AVAILABLE', prompt: {
+			prompt: async () => {}, userChoice: Promise.resolve({ outcome: 'accepted' })
+		} as unknown as BeforeInstallPromptEvent })
+		await controller.prompt()
+		expect(controller.actor.getSnapshot().value).toBe('accepted_waiting')
+		controller.actor.send({ type: 'INSTALLED' })
+		expect(controller.actor.getSnapshot().value).toBe('installed')
+		expect(controller.actor.getSnapshot().context.prompt).toBeNull()
+	})
+
+	it('handles rejected browser prompts and can accept a fresh prompt', async () => {
+		const controller = createInstallController()
+		controller.actor.start()
+		controller.actor.send({ type: 'INITIALIZE', isIos: false, installed: false })
+		const event = { prompt: async () => { throw new Error('expired') }, userChoice: Promise.resolve({ outcome: 'accepted' }) } as unknown as BeforeInstallPromptEvent
+		controller.actor.send({ type: 'AVAILABLE', prompt: event })
+		await controller.prompt()
+		expect(controller.actor.getSnapshot().value).toBe('failed')
+		controller.actor.send({ type: 'AVAILABLE', prompt: event })
+		expect(controller.actor.getSnapshot().value).toBe('available')
+		controller.actor.stop()
+	})
+
+	it('does not let a late dismissal overwrite appinstalled', async () => {
+		let resolveChoice!: (choice: { outcome: 'dismissed' }) => void
+		const controller = createInstallController()
+		controller.actor.start()
+		controller.actor.send({ type: 'INITIALIZE', isIos: false, installed: false })
+		controller.actor.send({ type: 'AVAILABLE', prompt: {
+			prompt: async () => {}, userChoice: new Promise((resolve) => { resolveChoice = resolve })
+		} as unknown as BeforeInstallPromptEvent })
+		const pending = controller.prompt()
+		controller.actor.send({ type: 'INSTALLED' })
+		resolveChoice({ outcome: 'dismissed' })
+		await pending
+		await Promise.resolve()
+		expect(controller.actor.getSnapshot().value).toBe('installed')
 	})
 })
