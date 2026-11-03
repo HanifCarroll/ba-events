@@ -206,6 +206,61 @@ describe('enrichSingleEvent facets-only path', () => {
 })
 
 describe('enrichSingleEvent source provenance', () => {
+  it('starts presentation only after embedding succeeds and writes both results together', async () => {
+    let releaseEmbedding!: () => void
+    let releasePresentation!: () => void
+    const embedding = new Promise<void>((resolve) => { releaseEmbedding = resolve })
+    const presentation = new Promise<void>((resolve) => { releasePresentation = resolve })
+    embedEventWithDocumentMock.mockReset()
+    embedEventWithDocumentMock.mockImplementation(async () => { await embedding; return { embedding: [0.1], searchDocument: 'Synthetic Jazz' } })
+    const buildPresentationFields = vi.fn(async () => {
+      await presentation
+      return { description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null }
+    })
+    const client = makeClient()
+    const running = enrichSingleEvent(client as never, {
+      id: 'ordered', name: 'Synthetic Jazz', link: 'https://example.com/jazz', source: 'meetup',
+      description_es: 'Jazz.', description_en: 'Jazz.',
+    }, { extractFacets: async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] }), buildPresentationFields })
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(embedEventWithDocumentMock).toHaveBeenCalledTimes(1)
+      expect(buildPresentationFields).not.toHaveBeenCalled()
+      expect(client.updates).toHaveLength(0)
+      releaseEmbedding()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(buildPresentationFields).toHaveBeenCalledTimes(1)
+      expect(client.updates).toHaveLength(0)
+    } finally {
+      releaseEmbedding()
+      releasePresentation()
+      await running
+    }
+    expect((await running).success).toBe(true)
+    expect(client.updates).toHaveLength(1)
+    expect(client.updates[0].data).toMatchObject({ embedding: [0.1], search_document: 'Synthetic Jazz', description_display_es: 'Jazz.', enrichment_status: 'completed' })
+  })
+
+  it('does not start presentation when embedding fails', async () => {
+    embedEventWithDocumentMock.mockReset()
+    embedEventWithDocumentMock.mockRejectedValue(new Error('Synthetic embedding outage'))
+    const buildPresentationFields = vi.fn().mockResolvedValue({
+      description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null,
+    })
+    const client = makeClient()
+    const result = await enrichSingleEvent(client as never, {
+      id: 'failed-embedding', name: 'Synthetic Jazz', link: 'https://example.com/jazz', source: 'meetup',
+      description_es: 'Jazz.', description_en: 'Jazz.',
+    }, { extractFacets: async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] }), buildPresentationFields })
+    expect(result).toMatchObject({ success: false, enriched: false })
+    expect(embedEventWithDocumentMock).toHaveBeenCalledTimes(1)
+    expect(buildPresentationFields).not.toHaveBeenCalled()
+    expect(client.updates).toHaveLength(1)
+    expect(client.updates[0].data).toMatchObject({ enrichment_status: 'failed' })
+    expect(client.updates[0].data).not.toHaveProperty('embedding')
+    expect(client.updates[0].data).not.toHaveProperty('enrichment_provenance')
+  })
+
   it('persists a detail observation separately from processing time and keeps stored input age unknown', async () => {
     const sourceObservedAt = '2026-10-01T10:00:00.000Z'
     const sourceValidatedAt = '2026-10-02T10:00:00.000Z'

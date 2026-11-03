@@ -46,16 +46,11 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
     options?: ServerEnrichmentOptions
   ): Promise<ServerEnrichmentResult | null> => {
     try {
-      // Fetch description
-      const description = await fetchLumaDescriptionFromDetailPage(link)
-      const sourceObservedAt = new Date().toISOString()
-
-      // Optionally fetch venue
-      let venueName: string | null = null
-      if (options?.extractVenue) {
-        const venue = await fetchLumaVenueFromUrl(link)
-        venueName = venue?.name ?? null
-      }
+      const [{ description, sourceObservedAt }, venue] = await Promise.all([
+        fetchLumaDescriptionFromDetailPage(link).then(description => ({ description, sourceObservedAt: new Date().toISOString() })),
+        options?.extractVenue ? fetchLumaVenueFromUrl(link) : Promise.resolve(null),
+      ])
+      const venueName = venue?.name ?? null
 
       // Return null if no description found (primary enrichment target)
       if (!description) {

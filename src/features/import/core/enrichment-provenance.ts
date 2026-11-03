@@ -2,7 +2,7 @@ import { AI_MODEL, EMBEDDING_MODEL } from '#shared/lib/ai/constants.ts'
 import { CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 
 // Bump when enrichment prompts, extraction schemas or orchestration change.
-export const ENRICHMENT_VERSION = 'event-enrichment-v1'
+export const ENRICHMENT_VERSION = 'event-enrichment-v2'
 // Covers catalog transformers, categorization and presentation generation.
 export const CATALOG_IMPORT_VERSION = 'catalog-import-v1'
 

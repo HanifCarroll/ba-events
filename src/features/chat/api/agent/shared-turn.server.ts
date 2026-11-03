@@ -9,7 +9,7 @@ import { detectResponseLanguage, MAX_USER_TEXT } from './context.ts'
 import {
   collectEventIds,
   homeHintsFromIds,
-  rehydratePriorContextEffect,
+  buildPriorContext,
   sanitizeText,
   type PriorContext,
   type PriorResponseHint,
@@ -69,23 +69,35 @@ export function runSharedChatTurnEffect(
   return Effect.gen(function* () {
     const normalized = normalizeChatTurn(input.text, input.locale)
     const contextProgram = Effect.gen(function* () {
-      const membershipIds = collectEventIds(input.priorHints)
-      const membershipStarted = performance.now()
-      const membership = input.userContext.isAuthenticated
-        ? yield* Effect.tryPromise({
-            try: (fiberSignal) => getSavedMembership(input.userContext, membershipIds, input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal),
-            catch: (cause) => new SharedChatTurnError({ message: 'Failed to load saved membership', cause }),
-          })
-        : undefined
-      logger.info('[chat] pre-agent membership stage', {
-        durationMs: Math.round(performance.now() - membershipStarted),
-        requestedCount: membershipIds.length,
-        authenticated: input.userContext.isAuthenticated,
-        resultCount: membership?.status === 'complete' ? membership.savedIds.size : 0,
+      const rehydrate = (hints: PriorResponseHint[]) => Effect.gen(function* () {
+        const ids = collectEventIds(hints)
+        const started = performance.now()
+        const [membership, facts] = yield* Effect.all([
+          input.userContext.isAuthenticated
+            ? Effect.tryPromise({
+                try: (fiberSignal) => getSavedMembership(input.userContext, ids, input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal),
+                catch: (cause) => new SharedChatTurnError({ message: 'Failed to load saved membership', cause }),
+              }).pipe(Effect.tap((membership) => Effect.sync(() => {
+                logger.info('[chat] pre-agent membership stage', {
+                  durationMs: Math.round(performance.now() - started),
+                  requestedCount: ids.length,
+                  authenticated: true,
+                  resultCount: membership.status === 'complete' ? membership.savedIds.size : 0,
+                })
+              })))
+            : Effect.succeed(undefined),
+          ids.length
+            ? Effect.tryPromise({
+                try: (fiberSignal) => fetchEventFacts(ids, input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal),
+                catch: (cause) => new SharedChatTurnError({ message: 'Failed to rehydrate prior context', cause }),
+              })
+            : Effect.succeed([]),
+        ], { concurrency: 2 })
+        return buildPriorContext(hints, facts, membership)
       })
 
       const rehydrateStarted = performance.now()
-      let priorContext = yield* rehydratePriorContextEffect(input.priorHints, fetchEventFacts, membership, input.abortSignal)
+      let priorContext = yield* rehydrate(input.priorHints)
       logger.info('[chat] pre-agent history stage', {
         durationMs: Math.round(performance.now() - rehydrateStarted),
         hintCount: input.priorHints.length,
@@ -95,18 +107,11 @@ export function runSharedChatTurnEffect(
       if (priorContext.groups.length === 0) {
         const homeHint = homeHintsFromIds(input.homeEventIds ?? [])
         if (homeHint) {
-          const homeIds = collectEventIds([homeHint])
           const homeStarted = performance.now()
-          const homeMembership = input.userContext.isAuthenticated
-            ? yield* Effect.tryPromise({
-                try: (fiberSignal) => getSavedMembership(input.userContext, homeIds, input.abortSignal ? AbortSignal.any([input.abortSignal, fiberSignal]) : fiberSignal),
-                catch: (cause) => new SharedChatTurnError({ message: 'Failed to load saved membership', cause }),
-              })
-            : undefined
-          priorContext = yield* rehydratePriorContextEffect([homeHint], fetchEventFacts, homeMembership, input.abortSignal)
+          priorContext = yield* rehydrate([homeHint])
           logger.info('[chat] pre-agent home fallback stage', {
             durationMs: Math.round(performance.now() - homeStarted),
-            requestedCount: homeIds.length,
+            requestedCount: homeHint.events.length,
             eventCount: priorContext.groups.reduce((count, group) => count + group.events.length, 0),
           })
         }

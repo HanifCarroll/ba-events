@@ -49,6 +49,59 @@ describe('shared chat turn', () => {
     })
   }
 
+  for (const homeFallback of [false, true]) {
+    it(`reads facts while saved membership is pending (${homeFallback ? 'home fallback' : 'history'})`, async () => {
+      let release!: () => void
+      const membership = new Promise<void>((resolve) => { release = resolve })
+      const fetchEventFacts = vi.fn().mockResolvedValue([{
+        id: EVENT_ID, name: 'Synthetic Jazz', venue_id: null, venue_name: null, status: 'scheduled',
+      }])
+      const orchestrateFn = vi.fn().mockResolvedValue(result)
+      const running = runSharedChatTurn({
+        requestId: 'parallel-context', userContext: { userId: 'user', isAuthenticated: true },
+        text: 'Tell me more', locale: 'en', priorHints: homeFallback ? [] : [hint],
+        homeEventIds: homeFallback ? [EVENT_ID] : [],
+      }, {
+        getSavedMembership: async (_context, ids) => {
+          if (ids.length) await membership
+          return { status: 'complete', savedIds: new Set([EVENT_ID]) }
+        },
+        fetchEventFacts, orchestrateFn,
+      })
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(fetchEventFacts).toHaveBeenCalledTimes(1)
+        expect(orchestrateFn).not.toHaveBeenCalled()
+      } finally {
+        release()
+      }
+      await running
+      expect(orchestrateFn).toHaveBeenCalledWith(expect.objectContaining({
+        priorDisplayedEvents: [expect.objectContaining({ events: [expect.objectContaining({ saved: true })] })],
+      }))
+    })
+  }
+
+  it('cancels a sibling facts read when membership fails, retaining the empty-context fallback', async () => {
+    let fail!: (error: Error) => void
+    const membership = new Promise<never>((_resolve, reject) => { fail = reject })
+    let factsSignal: AbortSignal | undefined
+    const orchestrateFn = vi.fn().mockResolvedValue(result)
+    const running = runSharedChatTurn({
+      requestId: 'failed-context', userContext: { userId: 'user', isAuthenticated: true },
+      text: 'Tell me more', locale: 'en', priorHints: [hint],
+    }, {
+      getSavedMembership: () => membership,
+      fetchEventFacts: async (_ids, signal) => { factsSignal = signal; return new Promise(() => {}) },
+      orchestrateFn,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fail(new Error('Synthetic membership outage'))
+    await running
+    expect(factsSignal?.aborted).toBe(true)
+    expect(orchestrateFn).toHaveBeenCalledWith(expect.objectContaining({ priorDisplayedEvents: [] }))
+  })
+
   it('normalizes text and detects the response language', () => {
     expect(normalizeChatTurn('  qué\n\u0000 eventos  ', 'en')).toEqual({
       originalQuery: 'qué eventos',

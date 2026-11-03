@@ -236,11 +236,13 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
     }
 
     // Generate embedding + search document together (they must not drift)
-    const { embedding, searchDocument } = await embedEventWithDocument(eventData)
-    const presentationFields = await buildDescriptionPresentationFields({
-      description_es: eventData.description_es,
-      description_en: eventData.description_en,
-    })
+    const [{ embedding, searchDocument }, presentationFields] = await Promise.all([
+      embedEventWithDocument(eventData),
+      buildDescriptionPresentationFields({
+        description_es: eventData.description_es,
+        description_en: eventData.description_en,
+      }),
+    ])
 
     // Create the event
     const event = await createEvent({

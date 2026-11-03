@@ -435,50 +435,34 @@ export async function enrichEventFull(
   }
   console.log(`[enrichment] Jina returned ${markdown.length} chars`)
 
-  // Step 2: Use known language or detect
-  let sourceLanguage: 'spanish' | 'english'
-  if (knownLanguage) {
-    sourceLanguage = knownLanguage
-    console.log(`[enrichment] Using known language: ${sourceLanguage}`)
-  } else {
-    console.log(`[enrichment] Detecting language...`)
-    sourceLanguage = await detectLanguage(markdown)
-    console.log(`[enrichment] Detected language: ${sourceLanguage}`)
+  const describe = async () => {
+    let sourceLanguage: 'spanish' | 'english'
+    if (knownLanguage) {
+      sourceLanguage = knownLanguage
+      console.log(`[enrichment] Using known language: ${sourceLanguage}`)
+    } else {
+      console.log('[enrichment] Detecting language...')
+      sourceLanguage = await detectLanguage(markdown)
+      console.log(`[enrichment] Detected language: ${sourceLanguage}`)
+    }
+    const sourceDescription = await extractDescription(markdown, sourceLanguage)
+    if (!sourceDescription) {
+      console.log(`[enrichment] ${sourceLanguage} extraction failed`)
+      return null
+    }
+    console.log(`[enrichment] ${sourceLanguage}: ${sourceDescription.substring(0, 100)}...`)
+    return translateToBilingual(sourceDescription, sourceLanguage)
   }
 
-  // Step 3: Extract description and venue in parallel
-  console.log(`[enrichment] Extracting description and ${extractVenue ? 'venue' : 'skipping venue'}...`)
-
-  const [sourceDescription, venueName] = await Promise.all([
-    extractDescription(markdown, sourceLanguage),
+  const [bilingual, venueName] = await Promise.all([
+    describe(),
     extractVenue ? extractVenueName(markdown) : Promise.resolve(null),
   ])
-
-  if (!sourceDescription) {
-    console.log(`[enrichment] ${sourceLanguage} extraction failed`)
-    // Still return venue if we got it
-    if (venueName) {
-      console.log(`[enrichment] Got venue but no description: ${venueName}`)
-      return {
-        description_es: null,
-        description_en: null,
-        venue_name: venueName,
-        sourceObservedAt,
-      }
-    }
-    return null
-  }
-
-  console.log(`[enrichment] ${sourceLanguage}: ${sourceDescription.substring(0, 100)}...`)
-  if (venueName) {
-    console.log(`[enrichment] Venue: ${venueName}`)
-  }
-
-  // Step 4: Translate description to other language
-  const bilingual = await translateToBilingual(sourceDescription, sourceLanguage)
+  if (!bilingual && !venueName) return null
+  if (venueName) console.log(`[enrichment] Venue: ${venueName}`)
 
   return {
-    ...bilingual,
+    ...(bilingual ?? { description_es: null, description_en: null }),
     venue_name: venueName,
     sourceObservedAt,
   }

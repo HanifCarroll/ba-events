@@ -238,23 +238,28 @@ export function processVentiImportEffect(
           return
         }
 
-        const presentationFields = !existing || sourceDescriptionsChanged(transformed, existing)
-          ? yield* ventiTry('venti.presentation-fields', () => buildDescriptionPresentationFields({
+        // Drain both provider calls on failure before advancing the rate-limited item loop.
+        const [presentationResult, embeddingResult] = yield* Effect.all([
+          !existing || sourceDescriptionsChanged(transformed, existing)
+            ? ventiTry('venti.presentation-fields', () => buildDescriptionPresentationFields({
               description_es: transformed.description_es,
               description_en: transformed.description_en,
             }))
-          : {}
-        const { embedding, searchDocument } = yield* ventiTry('venti.embed', () => embedEventWithDocument({
-          name: transformed.name,
-          description_es: transformed.description_es,
-          description_en: transformed.description_en,
-          categories: transformed.categories,
-          price: transformed.price,
-          is_free: transformed.is_free,
-          facets: transformed.facets,
-          venue_name: getVenueName(event) ?? null,
-          venue_neighborhood: getVenueNeighborhoodFromResults(venueResults, getVenueName(event)),
-        }))
+            : Effect.succeed({}),
+          ventiTry('venti.embed', () => embedEventWithDocument({
+            name: transformed.name,
+            description_es: transformed.description_es,
+            description_en: transformed.description_en,
+            categories: transformed.categories,
+            price: transformed.price,
+            is_free: transformed.is_free,
+            facets: transformed.facets,
+            venue_name: getVenueName(event) ?? null,
+            venue_neighborhood: getVenueNeighborhoodFromResults(venueResults, getVenueName(event)),
+          })),
+        ], { concurrency: 2, mode: 'result' })
+        const presentationFields = yield* Effect.fromResult(presentationResult)
+        const { embedding, searchDocument } = yield* Effect.fromResult(embeddingResult)
         const eventWithEmbedding = {
           ...transformed,
           ...presentationFields,

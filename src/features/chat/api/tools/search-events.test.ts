@@ -103,6 +103,42 @@ const NOW_FIXTURES = [
   },
 ]
 
+describe('search_events independent reads', () => {
+  for (const input of [{ objective: 'search' as const }, { query: 'orchestra concert' }, { timeFilter: 'now' as const }, { objective: 'surprise' as const }]) {
+    it(`overlaps retrieval, ranking and coverage for ${JSON.stringify(input)}`, async () => {
+      vi.resetAllMocks()
+      let releaseCoverage!: () => void
+      const coverage = new Promise<void>((resolve) => { releaseCoverage = resolve })
+      let releaseCandidates!: () => void
+      const candidates = new Promise<typeof NOW_FIXTURES>((resolve) => { releaseCandidates = () => resolve(NOW_FIXTURES) })
+      mockedGetFurthestEventDate.mockImplementation(async () => { await coverage; return '2026-12-31T00:00:00.000Z' })
+      mockedCountEventsWithFilters.mockImplementation(async () => { await coverage; return 9 })
+      mockedSearchEventsWithFilters.mockReturnValue(candidates)
+      mockedHybridEventSearch.mockReturnValue(candidates)
+      mockedGetEventsHappeningNow.mockReturnValue(candidates)
+      mockedRerankEvents.mockImplementation(async (events) => ({ ordered: events, meta: { status: 'disabled' } }))
+      let settled = false
+      const running = searchEventsTool.execute(input, context).then((result) => { settled = true; return result })
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(mockedGetFurthestEventDate).toHaveBeenCalledTimes(1)
+        expect(mockedCountEventsWithFilters).toHaveBeenCalledTimes('timeFilter' in input ? 0 : 1)
+        expect(mockedSearchEventsWithFilters.mock.calls.length + mockedHybridEventSearch.mock.calls.length + mockedGetEventsHappeningNow.mock.calls.length).toBe(1)
+        releaseCandidates()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(mockedRerankEvents).toHaveBeenCalledTimes(input.objective === 'surprise' ? 0 : 1)
+        expect(settled).toBe(false)
+      } finally {
+        releaseCandidates()
+        releaseCoverage()
+      }
+      const result = await running
+      expect(result.success).toBe(true)
+      expect(result.metadata?.coverage).toMatchObject({ totalMatches: 'timeFilter' in input ? 3 : 9, maxEventDate: '2026-12-31T00:00:00.000Z' })
+    })
+  }
+})
+
 // ============================================================================
 // Phase 1 — candidateLimit ≠ displayLimit
 //

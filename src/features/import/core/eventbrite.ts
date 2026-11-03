@@ -289,27 +289,32 @@ export function processEventbriteImportEffect(
           return
         }
 
-        const presentationFields = !existing || sourceDescriptionsChanged(transformed, existing)
-          ? yield* eventbriteTry('eventbrite.presentation-fields', () => buildDescriptionPresentationFields({
+        const eventbriteVenueName = event.location?.name ?? null
+        const eventbriteNeighborhood = event.location?.address?.addressLocality ?? null
+        // Drain both provider calls on failure before advancing the rate-limited item loop.
+        const [presentationResult, embeddingResult] = yield* Effect.all([
+          !existing || sourceDescriptionsChanged(transformed, existing)
+            ? eventbriteTry('eventbrite.presentation-fields', () => buildDescriptionPresentationFields({
               description_es: transformed.description_es,
               description_en: transformed.description_en,
             }))
-          : {}
-        const eventbriteVenueName = event.location?.name ?? null
-        const eventbriteNeighborhood = event.location?.address?.addressLocality ?? null
-        const { embedding, searchDocument } = yield* eventbriteTry('eventbrite.embed', () =>
-          embedEventWithDocument({
-            name: transformed.name,
-            description_es: transformed.description_es,
-            description_en: transformed.description_en,
-            categories: transformed.categories,
-            price: transformed.price,
-            is_free: transformed.is_free,
-            facets: transformed.facets,
-            venue_name: eventbriteVenueName,
-            venue_neighborhood: eventbriteNeighborhood,
-          })
-        )
+            : Effect.succeed({}),
+          eventbriteTry('eventbrite.embed', () =>
+            embedEventWithDocument({
+              name: transformed.name,
+              description_es: transformed.description_es,
+              description_en: transformed.description_en,
+              categories: transformed.categories,
+              price: transformed.price,
+              is_free: transformed.is_free,
+              facets: transformed.facets,
+              venue_name: eventbriteVenueName,
+              venue_neighborhood: eventbriteNeighborhood,
+            })
+          ),
+        ], { concurrency: 2, mode: 'result' })
+        const presentationFields = yield* Effect.fromResult(presentationResult)
+        const { embedding, searchDocument } = yield* Effect.fromResult(embeddingResult)
         const eventWithEmbedding = {
           ...transformed,
           ...presentationFields,

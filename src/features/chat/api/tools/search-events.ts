@@ -266,174 +266,171 @@ The result includes coverage metadata: the window you searched, total matches, a
         }
       }
 
-      let results
-      // The retrieval mode, reported in metadata/telemetry.
-      let searchMode: 'semantic' | 'filter_only' | 'now' | 'surprise' = 'filter_only'
-      // Hosted rerank diagnostics, reported in metadata/telemetry.
-      let rerankMeta: RerankMeta | null = null
-
-      // Coverage bookkeeping: how many events actually match the window (vs.
-      // how many were returned), and how far the calendar truly reaches.
-      let totalMatches: number
-
-      if (input.timeFilter === 'now') {
-        // "Now" can't be expressed as a starts_at range - it means events that
-        // already started and haven't ended. Fetch those, then apply the
-        // remaining `must` filters in memory.
-        searchMode = 'now'
-        let nowEvents = await getEventsHappeningNow(context.abortSignal)
-        // A dateFrom/dateTo window on the now-path applies as hard bounds on
-        // starts_at (canonicalize set them even though 'now' alone sets no
-        // range). An empty intersection → zero events, and we must not widen.
-        if (filters.startsAfter || filters.startsBefore) {
-          // Parse with Date so ISO format variants still compare correctly
-          // (raw string comparison would break on offset/fractional variants).
-          const after = filters.startsAfter ? new Date(filters.startsAfter).getTime() : null
-          const before = filters.startsBefore ? new Date(filters.startsBefore).getTime() : null
-          nowEvents = nowEvents.filter((e) => {
-            const start = new Date(e.starts_at).getTime()
-            if (after !== null && start < after) return false
-            if (before !== null && start > before) return false
-            return true
-          })
-        }
-        if (filters.categories?.length) {
-          nowEvents = nowEvents.filter((e) =>
-            filters.categories!.some((c) => e.categories.includes(c))
-          )
-        }
-        if (filters.neighborhoods?.length) {
-          nowEvents = nowEvents.filter(
-            (e) => !!e.venue_neighborhood && filters.neighborhoods!.includes(e.venue_neighborhood)
-          )
-        }
-        if (filters.venueIds?.length) {
-          nowEvents = nowEvents.filter(
-            (e) => !!e.venue_id && filters.venueIds!.includes(e.venue_id)
-          )
-        }
-        if (filters.isFree !== undefined) {
-          nowEvents = nowEvents.filter((e) => e.is_free === filters.isFree)
-        }
-        if (filters.maxPrice !== undefined) {
-          nowEvents = nowEvents.filter((e) => (e.price ?? 0) <= filters.maxPrice!)
-        }
-        if (filters.minAge !== undefined) {
-          nowEvents = nowEvents.filter((e) => e.min_age == null || e.min_age <= filters.minAge!)
-        }
-        if (filters.avoidGenres?.length) {
-          nowEvents = nowEvents.filter((e) => {
-            if (!e.facets?.genres?.length) return true
-            return !e.facets.genres.some((g) => filters.avoidGenres!.includes(g))
-          })
-        }
-        totalMatches = nowEvents.length
-        const genreResult = filterNamedGenre(nowEvents, namedGenre)
-        nowEvents = genreResult.candidates
-        if (genreResult.mismatch) genreMismatch = namedGenre
-        if (objective === 'surprise') {
-          searchMode = 'surprise'
-          // Surprise is always exactly one pick, ignoring displayLimit.
-          results = surpriseRank(nowEvents, getNowInBA().getTime()).slice(0, 1)
-        } else {
-          // The happening-now list is reranked by the hosted reranker (input
-          // order = chronological RPC order = baseRank), then gets the same
-          // diversity pass as other lists before slicing to the display limit.
-          // A pure "what's happening now" with no query/prefer/avoid no-ops.
-          const { ordered: reranked, meta } = await rerankEvents(nowEvents, {
-            semanticQuery: query,
-            prefer: intent.prefer,
-            avoid: rerankAvoid,
-          }, context.abortSignal)
-          rerankMeta = meta
-          results =
-            displayLimit > 1
-              ? applyDiversity(reranked, displayLimit)
-              : reranked.slice(0, displayLimit)
-        }
-      } else {
-        // Coverage count reflects the full window (ignores semantic ranking and
-        // limit) so the model can see how much exists vs. how much it got back.
-        // Disjoint weekday windows are counted separately (disjoint → sum).
-        totalMatches = weekdayWindows
-          ? (
-              await Promise.all(
-                weekdayWindows.map((w) =>
-                  countEventsWithFilters({
-                    ...filters,
-                    startsAfter: w.startsAfter,
-                    startsBefore: w.startsBefore,
-                  }, context.abortSignal)
-                )
-              )
-            ).reduce((sum, n) => sum + n, 0)
-          : await countEventsWithFilters(filters, context.abortSignal)
-        if (objective === 'surprise') {
-          // Surprise: no query, no hard must. Rank the filtered upcoming set by
-          // quality + near-term decay (NOT chronological "soonest"), return one.
-          searchMode = 'surprise'
-          const rankStartedAt = performance.now()
-          const candidates = await searchEventsWithFilters(filters, CANDIDATE_LIMIT, context.abortSignal)
-          const ranked = surpriseRank(candidates, getNowInBA().getTime())
-          // Surprise always returns exactly 1, ignoring displayLimit.
-          results = ranked.slice(0, 1)
-          logger.debug('[search_events] Using surprise ranking', {
-            candidates: candidates.length,
-            topId: ranked[0]?.id,
-            rankMs: Math.round(performance.now() - rankStartedAt),
-          })
-        } else if (query) {
-          searchMode = 'semantic'
-          logger.debug('[search_events] Using hybrid search', { query })
-          // Retrieve CANDIDATE_LIMIT nearest vector neighbors, then rerank
-          // them with the hosted reranker (input order = fused retrieval order
-          // = baseRank) before the diversity pass. Ranking only — never drops
-          // events, and never applies to the surprise path.
-          const candidates = weekdayWindows
-            ? await fetchAcrossWeekdayWindows(weekdayWindows, filters, (f) =>
-                hybridEventSearch(query, f, CANDIDATE_LIMIT, context.abortSignal)
-              )
-            : await hybridEventSearch(query, filters, CANDIDATE_LIMIT, context.abortSignal)
-          const genreResult = filterNamedGenre(candidates, namedGenre)
-          if (genreResult.mismatch) genreMismatch = namedGenre
-          const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
-            semanticQuery: query,
-            prefer: intent.prefer,
-            avoid: rerankAvoid,
-          }, context.abortSignal)
-          rerankMeta = meta
-          results =
-            displayLimit > 1
-              ? applyDiversity(reranked, displayLimit)
-              : reranked.slice(0, displayLimit)
-        } else {
-          // No semantic text left after canonicalize — filter-only search
-          // (chronological), reranked by the hosted reranker when a non-empty
-          // prefer gives it signal (e.g. "jazz tonight"), then list diversity
-          // applied when displaying >1. Nothing subjective → no-op, stays
-          // chronological.
-          logger.debug('[search_events] Using filter-only search')
-          const candidates = weekdayWindows
-            ? await fetchAcrossWeekdayWindows(weekdayWindows, filters, (f) =>
-                searchEventsWithFilters(f, CANDIDATE_LIMIT, context.abortSignal)
-              )
-            : await searchEventsWithFilters(filters, CANDIDATE_LIMIT, context.abortSignal)
-          const genreResult = filterNamedGenre(candidates, namedGenre)
-          if (genreResult.mismatch) genreMismatch = namedGenre
-          const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
-            semanticQuery: query,
-            prefer: intent.prefer,
-            avoid: rerankAvoid,
-          }, context.abortSignal)
-          rerankMeta = meta
-          results =
-            displayLimit > 1 ? applyDiversity(reranked, displayLimit) : reranked.slice(0, displayLimit)
-        }
+      const retrieveCandidates = () => {
+        if (input.timeFilter === 'now') return getEventsHappeningNow(context.abortSignal)
+        if (objective === 'surprise') return searchEventsWithFilters(filters, CANDIDATE_LIMIT, context.abortSignal)
+        const retrieve = query
+          ? (f: EventFilters) => hybridEventSearch(query, f, CANDIDATE_LIMIT, context.abortSignal)
+          : (f: EventFilters) => searchEventsWithFilters(f, CANDIDATE_LIMIT, context.abortSignal)
+        return weekdayWindows
+          ? fetchAcrossWeekdayWindows(weekdayWindows, filters, retrieve)
+          : retrieve(filters)
       }
+      const rankCandidates = async () => {
+        const candidates = await retrieveCandidates()
+        let results
+        // The retrieval mode, reported in metadata/telemetry.
+        let searchMode: 'semantic' | 'filter_only' | 'now' | 'surprise' = 'filter_only'
+        // Hosted rerank diagnostics, reported in metadata/telemetry.
+        let rerankMeta: RerankMeta | null = null
 
-      // Furthest future event on record — the true coverage horizon the model
-      // must answer "furthest into the future" from.
-      const maxEventDate = await getFurthestEventDate(context.abortSignal)
+        // Coverage bookkeeping: how many events actually match the window (vs.
+        // how many were returned), and how far the calendar truly reaches.
+        let totalMatches = 0
+
+        if (input.timeFilter === 'now') {
+          // "Now" can't be expressed as a starts_at range - it means events that
+          // already started and haven't ended. Fetch those, then apply the
+          // remaining `must` filters in memory.
+          searchMode = 'now'
+          let nowEvents = candidates
+          // A dateFrom/dateTo window on the now-path applies as hard bounds on
+          // starts_at (canonicalize set them even though 'now' alone sets no
+          // range). An empty intersection → zero events, and we must not widen.
+          if (filters.startsAfter || filters.startsBefore) {
+            // Parse with Date so ISO format variants still compare correctly
+            // (raw string comparison would break on offset/fractional variants).
+            const after = filters.startsAfter ? new Date(filters.startsAfter).getTime() : null
+            const before = filters.startsBefore ? new Date(filters.startsBefore).getTime() : null
+            nowEvents = nowEvents.filter((e) => {
+              const start = new Date(e.starts_at).getTime()
+              if (after !== null && start < after) return false
+              if (before !== null && start > before) return false
+              return true
+            })
+          }
+          if (filters.categories?.length) {
+            nowEvents = nowEvents.filter((e) =>
+              filters.categories!.some((c) => e.categories.includes(c))
+            )
+          }
+          if (filters.neighborhoods?.length) {
+            nowEvents = nowEvents.filter(
+              (e) => !!e.venue_neighborhood && filters.neighborhoods!.includes(e.venue_neighborhood)
+            )
+          }
+          if (filters.venueIds?.length) {
+            nowEvents = nowEvents.filter(
+              (e) => !!e.venue_id && filters.venueIds!.includes(e.venue_id)
+            )
+          }
+          if (filters.isFree !== undefined) {
+            nowEvents = nowEvents.filter((e) => e.is_free === filters.isFree)
+          }
+          if (filters.maxPrice !== undefined) {
+            nowEvents = nowEvents.filter((e) => (e.price ?? 0) <= filters.maxPrice!)
+          }
+          if (filters.minAge !== undefined) {
+            nowEvents = nowEvents.filter((e) => e.min_age == null || e.min_age <= filters.minAge!)
+          }
+          if (filters.avoidGenres?.length) {
+            nowEvents = nowEvents.filter((e) => {
+              if (!e.facets?.genres?.length) return true
+              return !e.facets.genres.some((g) => filters.avoidGenres!.includes(g))
+            })
+          }
+          totalMatches = nowEvents.length
+          const genreResult = filterNamedGenre(nowEvents, namedGenre)
+          nowEvents = genreResult.candidates
+          if (genreResult.mismatch) genreMismatch = namedGenre
+          if (objective === 'surprise') {
+            searchMode = 'surprise'
+            // Surprise is always exactly one pick, ignoring displayLimit.
+            results = surpriseRank(nowEvents, getNowInBA().getTime()).slice(0, 1)
+          } else {
+            // The happening-now list is reranked by the hosted reranker (input
+            // order = chronological RPC order = baseRank), then gets the same
+            // diversity pass as other lists before slicing to the display limit.
+            // A pure "what's happening now" with no query/prefer/avoid no-ops.
+            const { ordered: reranked, meta } = await rerankEvents(nowEvents, {
+              semanticQuery: query,
+              prefer: intent.prefer,
+              avoid: rerankAvoid,
+            }, context.abortSignal)
+            rerankMeta = meta
+            results =
+              displayLimit > 1
+                ? applyDiversity(reranked, displayLimit)
+                : reranked.slice(0, displayLimit)
+          }
+        } else {
+          if (objective === 'surprise') {
+            // Surprise: no query, no hard must. Rank the filtered upcoming set by
+            // quality + near-term decay (NOT chronological "soonest"), return one.
+            searchMode = 'surprise'
+            const rankStartedAt = performance.now()
+            const ranked = surpriseRank(candidates, getNowInBA().getTime())
+            // Surprise always returns exactly 1, ignoring displayLimit.
+            results = ranked.slice(0, 1)
+            logger.debug('[search_events] Using surprise ranking', {
+              candidates: candidates.length,
+              topId: ranked[0]?.id,
+              rankMs: Math.round(performance.now() - rankStartedAt),
+            })
+          } else if (query) {
+            searchMode = 'semantic'
+            logger.debug('[search_events] Using hybrid search', { query })
+            // Retrieve CANDIDATE_LIMIT nearest vector neighbors, then rerank
+            // them with the hosted reranker (input order = fused retrieval order
+            // = baseRank) before the diversity pass. Ranking only — never drops
+            // events, and never applies to the surprise path.
+            const genreResult = filterNamedGenre(candidates, namedGenre)
+            if (genreResult.mismatch) genreMismatch = namedGenre
+            const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
+              semanticQuery: query,
+              prefer: intent.prefer,
+              avoid: rerankAvoid,
+            }, context.abortSignal)
+            rerankMeta = meta
+            results =
+              displayLimit > 1
+                ? applyDiversity(reranked, displayLimit)
+                : reranked.slice(0, displayLimit)
+          } else {
+            // No semantic text left after canonicalize — filter-only search
+            // (chronological), reranked by the hosted reranker when a non-empty
+            // prefer gives it signal (e.g. "jazz tonight"), then list diversity
+            // applied when displaying >1. Nothing subjective → no-op, stays
+            // chronological.
+            logger.debug('[search_events] Using filter-only search')
+            const genreResult = filterNamedGenre(candidates, namedGenre)
+            if (genreResult.mismatch) genreMismatch = namedGenre
+            const { ordered: reranked, meta } = await rerankEvents(genreResult.candidates, {
+              semanticQuery: query,
+              prefer: intent.prefer,
+              avoid: rerankAvoid,
+            }, context.abortSignal)
+            rerankMeta = meta
+            results =
+              displayLimit > 1 ? applyDiversity(reranked, displayLimit) : reranked.slice(0, displayLimit)
+          }
+        }
+        return { results, totalMatches, searchMode, rerankMeta }
+      }
+      const [ranked, coverageCount, maxEventDate] = await Promise.all([
+        rankCandidates(),
+        input.timeFilter === 'now'
+          ? Promise.resolve(0)
+          : weekdayWindows
+            ? Promise.all(weekdayWindows.map((w) => countEventsWithFilters({
+                ...filters, startsAfter: w.startsAfter, startsBefore: w.startsBefore,
+              }, context.abortSignal))).then((counts) => counts.reduce((sum, n) => sum + n, 0))
+            : countEventsWithFilters(filters, context.abortSignal),
+        getFurthestEventDate(context.abortSignal),
+      ])
+
+      const { results, searchMode, rerankMeta } = ranked
+      const totalMatches = input.timeFilter === 'now' ? ranked.totalMatches : coverageCount
 
       const durationMs = Math.round(performance.now() - searchStartedAt)
 

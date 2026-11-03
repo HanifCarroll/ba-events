@@ -242,67 +242,78 @@ export const POST = async (event: RequestEvent, dependencies: { rateLimit?: type
   // Pinned event: validate the hint as a UUID, rehydrate from the DB, and
   // resolve a typed PinResolution. A requested-but-unresolved pin is a typed
   // failure (no discovery fallback); never interpolate its name.
-  let pin: PinResolution = { requested: false }
-  let pinFacts: { name: string; venueName: string | null } | null = null
-  if (happeningSoonEventId != null) {
-    if (!UUID_RE.test(happeningSoonEventId)) {
-      pin = { requested: true, status: 'invalid', eventIdHint: happeningSoonEventId.slice(0, 128) }
-    } else {
-      try {
-        const facts = await getEventFactsByIds([happeningSoonEventId], request.signal)
-        const fact = facts.find((f) => f.id === happeningSoonEventId)
-        if (fact && isDisplayableStatus(fact.status)) {
-          pin = { requested: true, status: 'resolved', eventId: fact.id, venueId: fact.venue_id }
-          pinFacts = {
-            name: sanitizeText(fact.name),
-            venueName: fact.venue_name ? sanitizeText(fact.venue_name) : null,
+  const preparePin = async () => {
+    let pin: PinResolution = { requested: false }
+    let pinFacts: { name: string; venueName: string | null } | null = null
+    if (happeningSoonEventId != null) {
+      if (!UUID_RE.test(happeningSoonEventId)) {
+        pin = { requested: true, status: 'invalid', eventIdHint: happeningSoonEventId.slice(0, 128) }
+      } else {
+        try {
+          const facts = await getEventFactsByIds([happeningSoonEventId], request.signal)
+          const fact = facts.find((f) => f.id === happeningSoonEventId)
+          if (fact && isDisplayableStatus(fact.status)) {
+            pin = { requested: true, status: 'resolved', eventId: fact.id, venueId: fact.venue_id }
+            pinFacts = {
+              name: sanitizeText(fact.name),
+              venueName: fact.venue_name ? sanitizeText(fact.venue_name) : null,
+            }
+          } else if (fact) {
+            pin = { requested: true, status: 'unavailable', eventIdHint: happeningSoonEventId }
+          } else {
+            pin = { requested: true, status: 'missing', eventIdHint: happeningSoonEventId }
           }
-        } else if (fact) {
+        } catch {
           pin = { requested: true, status: 'unavailable', eventIdHint: happeningSoonEventId }
-        } else {
-          pin = { requested: true, status: 'missing', eventIdHint: happeningSoonEventId }
         }
-      } catch {
-        pin = { requested: true, status: 'unavailable', eventIdHint: happeningSoonEventId }
       }
     }
-  }
 
-  timing.mark('pin_ready')
+    timing.mark('pin_ready')
+    return { pin, pinFacts }
+  }
   // Prior displayed-event context and previous-search context: guest and auth
   // share bounded validation, while authenticated history is read from the
   // server-owned persisted conversation instead of client-supplied canonicals.
-  let priorHints: PriorResponseHint[] = []
-  let lastSearch: LastSearchContext | null = null
-  let historyLoadFailed = false
-  let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
-  if (userContext.isAuthenticated && conversationId) {
-    try {
-      const conversation = await Effect.runPromise(getConversationEffect(event, { id: conversationId }), { signal: request.signal })
-      if (conversation) {
-        const storedMessages = (conversation.messages ?? []) as Message[]
-        priorHints = hintsFromMessages(storedMessages)
-        lastSearch = lastSearchContextFromMessages(storedMessages)
-        recentMessages = buildAgentHistoryFromStoredMessages(storedMessages, originalQuery)
-		} else if (authoritativeTurn?.status === 'running' && turnId) {
-			await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch(() => {})
-			return createErrorStream('Chat turn unavailable')
+  const prepareHistory = async () => {
+    let priorHints: PriorResponseHint[] = []
+    let lastSearch: LastSearchContext | null = null
+    let historyLoadFailed = false
+    let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    if (userContext.isAuthenticated && conversationId) {
+      try {
+        const conversation = await Effect.runPromise(getConversationEffect(event, { id: conversationId }), { signal: request.signal })
+        if (conversation) {
+          const storedMessages = (conversation.messages ?? []) as Message[]
+          priorHints = hintsFromMessages(storedMessages)
+          lastSearch = lastSearchContextFromMessages(storedMessages)
+          recentMessages = buildAgentHistoryFromStoredMessages(storedMessages, originalQuery)
+        } else if (authoritativeTurn?.status === 'running' && turnId) {
+          await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch(() => {})
+          return createErrorStream('Chat turn unavailable')
+        }
+      } catch (error) {
+        historyLoadFailed = true
+        console.error('[chat] failed to load conversation context:', error)
+        if (authoritativeTurn?.status === 'running' && turnId) {
+          await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch(() => {})
+          return createErrorStream('Chat turn unavailable')
+        }
       }
-    } catch (error) {
-      historyLoadFailed = true
-      console.error('[chat] failed to load conversation context:', error)
-		if (authoritativeTurn?.status === 'running' && turnId) {
-			await Effect.runPromise(failChatTurnEffect(event, turnId, requestId)).catch(() => {})
-			return createErrorStream('Chat turn unavailable')
-      }
+    } else {
+      priorHints = hintsFromUIMessages(uiMessages)
+      lastSearch = lastSearchContextFromUIMessages(uiMessages)
+      recentMessages = buildAgentHistoryFromUIMessages(uiMessages, originalQuery)
     }
-  } else {
-    priorHints = hintsFromUIMessages(uiMessages)
-    lastSearch = lastSearchContextFromUIMessages(uiMessages)
-    recentMessages = buildAgentHistoryFromUIMessages(uiMessages, originalQuery)
-  }
 
-  timing.mark('history_ready')
+    timing.mark('history_ready')
+    return { priorHints, lastSearch, historyLoadFailed, recentMessages }
+  }
+  const [pinContext, historyContext] = await Promise.all([preparePin(), prepareHistory()])
+  if (historyContext instanceof Response) return historyContext
+  const { pin, pinFacts } = pinContext
+  const { priorHints, lastSearch, historyLoadFailed, recentMessages } = historyContext
+
   const stream = createUIMessageStream({
     execute: ({ writer }) => {
       const execution = (async () => {

@@ -29,11 +29,14 @@ export const submitCandidateEffect = Effect.fn('intake.submit')(function*(client
 
 export const readEvidenceEffect = Effect.fn('intake.evidence')(function*(client: SupabaseClient, candidate: Candidate) {
   const ids = [...new Set(candidate.evidence.map(item => item.observation_id))]
-  const posts = yield* dbEffect('intake.observations', () => client.from('intake_observations').select('*').in('id', ids))
-  const sources = yield* dbEffect('intake.sources', () => client.from('instagram_sources').select('username,authority').in('username', [...new Set(posts.map(post => post.source_username))]))
-  const observations: Observation[] = posts.map(post => ({ ...post, authority: sources.find(source => source.username === post.source_username)?.authority }))
-  const media = yield* dbEffect('intake.media', () => client.from('intake_media').select('*').in('observation_id', ids))
-  return { observations, media: media as Media[] }
+  return yield* Effect.all({
+    observations: Effect.gen(function* () {
+      const posts = yield* dbEffect('intake.observations', () => client.from('intake_observations').select('*').in('id', ids))
+      const sources = yield* dbEffect('intake.sources', () => client.from('instagram_sources').select('username,authority').in('username', [...new Set(posts.map(post => post.source_username))]))
+      return posts.map(post => ({ ...post, authority: sources.find(source => source.username === post.source_username)?.authority })) as Observation[]
+    }),
+    media: dbEffect('intake.media', () => client.from('intake_media').select('*').in('observation_id', ids)).pipe(Effect.map(media => media as Media[])),
+  }, { concurrency: 2 })
 })
 
 export function publicArtworkUrl(storageOrigin: string, media: Media): string {
@@ -48,10 +51,11 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(clie
   const { observations, media } = yield* readEvidenceEffect(client, candidate)
   const reasons = validateEvidence(candidate, observations, media, now)
   // Changed source observations invalidate earlier evidence even if the candidate was not edited yet.
-  for (const post of observations) {
+  const currentObservations = yield* Effect.forEach(observations, post => Effect.gen(function* () {
     const latest = yield* dbEffect('intake.latest', () => client.from('intake_observations').select('id').eq('post_id', post.post_id).order('observed_at', { ascending: false }).limit(1))
-    if (latest[0]?.id !== post.id) reasons.push('Source post changed; review the newest observation')
-  }
+    return latest[0]?.id === post.id
+  }), { concurrency: 4 })
+  if (currentObservations.includes(false)) reasons.push('Source post changed; review the newest observation')
   let venueName = candidate.venue_name
   if (candidate.venue_id) {
     const venues = yield* dbEffect('intake.venue', () => client.from('venues').select('id,name,neighborhood').eq('id', candidate.venue_id).limit(1))
@@ -136,11 +140,13 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(client: Sup
   yield* dbEffect('intake.check-plan', () => client.rpc('check_intake_plan', { p_plan_id: id }))
   if (plan.action !== 'link' && !plan.payload.embedding) {
     const venue = yield* dbEffect('intake.venue', () => client.from('venues').select('name,neighborhood').eq('id', plan.payload.venue_id).single())
-    const { embedding, searchDocument } = yield* importTry('intake.embedding', () => publishers.embed({ ...plan.payload,
-      is_free: plan.payload.is_free || plan.payload.price != null ? plan.payload.is_free : undefined,
-      venue_name: venue.name, venue_neighborhood: venue.neighborhood }))
+    const [{ embedding, searchDocument }, presentation] = yield* Effect.all([
+      importTry('intake.embedding', () => publishers.embed({ ...plan.payload,
+        is_free: plan.payload.is_free || plan.payload.price != null ? plan.payload.is_free : undefined,
+        venue_name: venue.name, venue_neighborhood: venue.neighborhood })),
+      importTry('intake.presentation', () => publishers.presentation(plan.payload)),
+    ], { concurrency: 2 })
     if (!embedding || embedding.length !== 1536 || !embedding.every(Number.isFinite)) return yield* failure('A valid embedding is required before publishing')
-    const presentation = yield* importTry('intake.presentation', () => publishers.presentation(plan.payload))
     yield* dbEffect('intake.prepare', () => client.from('intake_plans').update({ payload: {
       ...plan.payload, ...presentation, embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION,
     } }).eq('id', id).is('receipt', null).select().single())
