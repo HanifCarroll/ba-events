@@ -22,7 +22,7 @@ The suite combines generated business histories, hostile parser inputs, and loca
 
 ## Run locally
 
-Use Node.js 24, Bun 1.3.14, Python 3.10+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Use Node.js 24, Bun 1.3.14, Python 3.10+ and [uv](https://docs.astral.sh/uv/getting-started/installation/). `mise install` provides the pinned Bun, Node.js and uv.
 The lockfile pins `fast-check@4.10.2` and `@jazzer.js/core@4.0.0`. The API runner uses `uvx --from schemathesis==4.32.7`; uv installs it in an isolated cache. For a standalone CLI, run `uv tool install schemathesis==4.32.7`.
 
 ```sh

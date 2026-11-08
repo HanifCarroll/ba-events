@@ -16,7 +16,7 @@ This repository shares the code behind [baeventos.com](https://baeventos.com) so
 
 ## Start with the code
 
-Requirements: **Bun 1.3.14** and Git. Use the committed lockfile; the app currently uses SvelteKit 3 and Effect 4 release candidates.
+Requirements: **Bun 1.3.14** and Git. `mise.toml` pins Bun, Node.js and uv; with [mise](https://mise.jdx.dev), run `mise install` once. Use the committed lockfile; the app currently uses SvelteKit 3 and Effect 4 release candidates.
 
 ```sh
 git clone https://github.com/HanifCarroll/ba-events.git
