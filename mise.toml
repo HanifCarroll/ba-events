@@ -1,0 +1,6 @@
+# Local toolchain for mise (https://mise.jdx.dev). Run `mise install` once.
+# CI and Cloudflare Workers Builds pin their own versions; keep them in step.
+[tools]
+bun = "1.3.14"
+node = "24.18.0"
+uv = "0.9.26" # runs Schemathesis for `bun run test:api`
