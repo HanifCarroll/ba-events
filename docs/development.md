@@ -39,6 +39,10 @@ The main specs under [openspec/specs](../openspec/specs/) are the canonical requ
 
 [Applied AI engineering work](applied-ai-engineering-work.md) tracks the remaining work for BA Eventos and Casamo, including task status and verification receipts. Local implementation and production release are separate checkpoints. Historical problem-solving records live under `docs/solutions/`; [the documentation index](README.md) links current architecture and archived plans.
 
+## Deployment
+
+Production deploys only from the `deploy` job in `.github/workflows/ci.yml`, after the checks pass on a push to `main`. It deploys the four Cloudflare Workers, then the Trigger.dev jobs. Cloudflare Workers Builds and the Trigger.dev GitHub app are disconnected. See [deployment](deployment.md).
+
 ## Generative tests
 
 See [generative testing](generative-testing.md) for fast-check properties, Jazzer.js fuzz targets, and local Schemathesis API checks. Run `bun run test:generative` for all three.

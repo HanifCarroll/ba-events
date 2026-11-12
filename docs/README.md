@@ -27,7 +27,7 @@ Broader architecture and planning:
 - [`analytics.md`](./analytics.md)
 - [`concierge-evals.md`](./concierge-evals.md)
 - [`event-import-enrichment.md`](./event-import-enrichment.md)
-- [`cloudflare-workers-builds.md`](./cloudflare-workers-builds.md)
+- [`deployment.md`](./deployment.md)
 - [`seo.md`](./seo.md)
 
 ## Archived
