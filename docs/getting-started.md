@@ -38,7 +38,7 @@ Deployment files, database migrations, channel integrations, and import jobs are
 - [Chat streaming](chat-streaming.md) explains durable delivery.
 - [The MCP specification](../openspec/specs/public-event-mcp/spec.md) describes public event discovery.
 - [Import/enrichment](event-import-enrichment.md) describes the catalog pipeline.
-- [Workers Builds](cloudflare-workers-builds.md) documents the hosted deployment topology.
+- [Deployment](deployment.md) documents the hosted deployment topology.
 
 Deployment and webhook commands target the maintained installation. Live evaluations and imports can call providers, read configured databases, export traces, or incur costs. They are not part of local code exploration. Use the deterministic tests and Storybook fixtures above.
 

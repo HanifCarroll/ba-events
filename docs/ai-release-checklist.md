@@ -1,6 +1,6 @@
 # AI release checkpoint
 
-Use the existing [Workers Builds gate](cloudflare-workers-builds.md) and eval
+Use the existing [GitHub Actions deploy gate](deployment.md) and eval
 adapter. Record this checkpoint in the PR before merging. The automated gate
 checks code and deterministic contracts; AI-quality approval is a manual merge
 checkpoint owned by the project owner.
@@ -60,7 +60,7 @@ Copy these fields into the private release record and summarize them in the PR:
 | Results | Report path/hash, original failures, review and acceptance decision |
 | Checks | Commands, exit outcomes, observation date and tested commit |
 | Data changes | Migration names/order, backup receipt and compatibility boundary |
-| Deployment | Workers Build ID, deployed Worker version IDs and smoke-test results |
+| Deployment | GitHub Actions run ID, deployed Worker version IDs and smoke-test results |
 | Rollback | Previous Worker version IDs, preserved secrets and migration strategy |
 
 The deployment sequence remains Telegram, MCP, application, then chat delivery.

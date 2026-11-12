@@ -40,6 +40,6 @@ The concierge consumes untrusted user text and catalog content. It can call read
 
 User saves and account operations have separate authenticated boundaries. Supabase service-role access is server-only. The public MCP surface must expose catalog data without leaking user conversations or internal records.
 
-Cloudflare runs the web, Telegram, MCP, and durable-delivery Workers. Trigger.dev owns background import jobs. Their credentials and release processes are separate; see [Workers Builds](cloudflare-workers-builds.md).
+Cloudflare runs the web, Telegram, MCP, and durable-delivery Workers. Trigger.dev owns background import jobs. Their credentials and release processes are separate; see [deployment](deployment.md).
 
 Historical decisions and migration records describe earlier implementations as well as the current system. Prefer current source, specifications, and [development instructions](development.md) when a historical note disagrees.
