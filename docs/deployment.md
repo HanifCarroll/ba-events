@@ -1,6 +1,6 @@
 # Deployment
 
-Production deploys only from the `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). The job runs for a push to `main` after the "Tests, types, and build" and "Secret scan" jobs pass. Pull requests and other branches run the checks but never deploy. On `main`, a running deploy is never cancelled. GitHub keeps at most one running and one pending run: a newer push waits as the pending run, and a later push replaces it. So not every commit deploys on its own, but the newest push always runs and deploys everything on `main` up to it.
+Production deploys only from the `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). The job runs for a push to `main` after the "Tests, types, and build" and "Secret scan" jobs pass. Pull requests and other branches run the checks but never deploy. On `main`, a running deploy is never cancelled. GitHub keeps at most one running and one pending run: a newer push waits as the pending run, and a later push replaces it. So not every commit deploys on its own, but the newest push always runs and deploys everything on `main` up to it. Re-running an older `main` run from the Actions page deploys that older commit over newer code, so do it only to roll back on purpose. GitHub matches branch names without regard to case, so a branch named `Main` or `MAIN` would deploy too.
 
 Cloudflare Workers Builds and the Trigger.dev GitHub app are disconnected. Neither deploys on push any more; do not reconnect them, because they would deploy every push whatever CI says.
 
