@@ -9,8 +9,9 @@ on:
 permissions:
   contents: read
 
-# Newer runs replace older ones on pull requests and other branches. Runs on
-# main queue instead, so a newer push waits and never cancels a deploy.
+# Newer runs cancel older ones on pull requests and other branches. On main a
+# running deploy is never cancelled: a newer push waits as the one pending run,
+# and a later push replaces that pending run, so not every commit deploys.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
