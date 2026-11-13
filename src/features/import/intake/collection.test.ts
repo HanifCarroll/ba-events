@@ -5,7 +5,7 @@ import { retainPostsEffect, sourceCoverage } from './collection.ts'
 
 /** In-memory intake_observations/intake_media with only the query shapes retainPostsEffect uses. */
 function memoryDb() {
-  const observations: Array<{ id: string; run_id: string; post_id: string; content_hash: string }> = []
+  const observations: Array<{ id: string; run_id: string; post_id: string; content_hash: string; source_username: string }> = []
   const table = (name: string) => {
     let op = 'select'; let row: Record<string, string> = {}; const filters: Record<string, unknown> = {}
     const chain: Record<string, unknown> = {
@@ -17,7 +17,7 @@ function memoryDb() {
         if (name === 'intake_media') return resolve({ data: [], error: null })
         if (op === 'update') return resolve({ data: { id: filters.id }, error: null })
         if (op === 'upsert') {
-          const saved = { id: `obs-${observations.length}`, run_id: row.run_id, post_id: row.post_id, content_hash: row.content_hash }
+          const saved = { id: `obs-${observations.length}`, run_id: row.run_id, post_id: row.post_id, content_hash: row.content_hash, source_username: row.source_username }
           observations.push(saved); return resolve({ data: saved, error: null })
         }
         return resolve({ data: observations.filter(item => item.post_id === filters.post_id).slice(-1), error: null })
@@ -54,6 +54,23 @@ describe('incremental Instagram collection', () => {
       'Sources not found or restricted (consider disabling): gone_one, adults_only',
       expect.stringContaining('Run stopped before covering 1 sources'),
     ])
+  })
+
+  it('attributes collab posts to a configured coauthor and keeps one observation per post', async () => {
+    const { db, observations } = memoryDb()
+    // Shaped like a real 0.0.679 row: owner is an unconfigured co-poster, no inputUrl.
+    const collab = { id: '9', shortCode: 'sc9', ownerUsername: 'synthetic_artist', caption: 'Synthetic collab', timestamp: '2026-11-12T12:00:00Z',
+      url: 'https://www.instagram.com/p/sc9/', coauthorProducers: [
+        { username: 'unrelated_brand', is_verified: false, profile_pic_url: 'https://scontent.cdninstagram.com/a.jpg', id: '1' },
+        { username: 'Synthetic_Venue', is_verified: false, profile_pic_url: 'https://scontent.cdninstagram.com/b.jpg', id: '2' },
+        { username: 'synthetic_club', is_verified: true, profile_pic_url: 'https://scontent.cdninstagram.com/c.jpg', id: '3' }] }
+    const stranger = { ...post('10', 'synthetic_artist'), coauthorProducers: [{ username: 'unrelated_brand' }] }
+    const usernames = ['synthetic_venue', 'synthetic_club']
+    const result = await Effect.runPromise(retainPostsEffect(db, 'run', [collab, collab, stranger], usernames, 20))
+    expect(observations.map(item => item.source_username)).toEqual(['synthetic_venue'])
+    expect(result).toMatchObject({ changed: 1, failures: ['A post owner did not match the configured source'] })
+    expect(result.coverage.uncovered_sources).toEqual(['synthetic_club'])
+    expect(sourceCoverage([collab], ['synthetic_venue'], 1)).toMatchObject({ uncovered_sources: [], at_ceiling_sources: ['synthetic_venue'] })
   })
 
   it('flags accounts that reached the per-run ceiling', () => {

@@ -11,6 +11,7 @@ const PostSchema = Schema.Struct({
   inputUrl: Schema.optional(Schema.String), displayUrl: Schema.optional(Schema.String), images: Schema.optional(Schema.Array(Schema.String)),
   childPosts: Schema.optional(Schema.Array(Child)), error: Schema.optional(Schema.String),
   errorDescription: Schema.optional(Schema.String), username: Schema.optional(Schema.String),
+  coauthorProducers: Schema.optional(Schema.Array(Schema.Struct({ username: Schema.String }))),
 })
 export type Post = typeof PostSchema.Type
 const sha256 = async (value: string | Uint8Array<ArrayBuffer>) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', typeof value === 'string' ? new TextEncoder().encode(value) : value))].map(byte => byte.toString(16).padStart(2, '0')).join('')
@@ -23,21 +24,29 @@ export function mediaUrls(post: Post): string[] {
   const children = post.childPosts?.flatMap(child => [...(child.images ?? []), ...(child.displayUrl ? [child.displayUrl] : [])]) ?? []
   return [...new Set([...(post.images ?? []), ...children, ...(children.length || post.images?.length ? [] : post.displayUrl ? [post.displayUrl] : [])])]
 }
+/** Collab posts arrive under the co-poster's account; attribute them to the first configured coauthor. */
+export function postSource(post: Post, usernames: readonly string[]): string | undefined {
+  return [post.ownerUsername, ...(post.coauthorProducers ?? []).map(coauthor => coauthor.username)]
+    .map(name => name?.toLowerCase()).find(name => name !== undefined && usernames.includes(name))
+}
 /** Apify writes (and bills) one error row per account that returned no posts; name the account so dead ones can be switched off. */
 export function sourceCoverage(posts: readonly Post[], usernames: readonly string[], ceiling: number) {
-  const counts = new Map<string, number>()
+  const counts = new Map<string, number>(); const counted = new Set<string>()
   const quiet: string[] = []; const dead: Array<{ username: string; reason: string }> = []; const errored: Array<{ username: string; reason: string }> = []
   for (const post of posts) {
     if (post.error) {
       const handle = (post.username ?? [post.inputUrl, post.url].map(url => url?.match(/instagram\.com\/([^/?#]+)/i)?.[1]).find(Boolean) ?? '').toLowerCase()
-      const reason = `${post.error}: ${post.errorDescription ?? ''}`.trim()
+      const reason = [post.error, post.errorDescription].filter(Boolean).join(': ')
       if (handle) counts.set(handle, counts.get(handle) ?? 0)
       const entry = { username: handle || 'unknown', reason }
       if (post.error === 'no_items') quiet.push(entry.username)
       else if (post.error === 'not_found' || /restricted/i.test(reason)) dead.push(entry)
       else errored.push(entry)
-    } else if (post.ownerUsername) {
-      const owner = post.ownerUsername.toLowerCase(); counts.set(owner, (counts.get(owner) ?? 0) + 1)
+    } else {
+      const source = postSource(post, usernames)
+      if (!source || (post.id && counted.has(post.id))) continue
+      if (post.id) counted.add(post.id)
+      counts.set(source, (counts.get(source) ?? 0) + 1)
     }
   }
   return { charged_rows: posts.length, quiet_sources: quiet, dead_sources: dead, errored_sources: errored,
@@ -87,8 +96,8 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(clien
     if (post.error) continue
     if (!post.id || !post.shortCode) { failures.push('A requested profile returned an invalid post'); continue }
     if (seen.has(post.id)) continue; seen.add(post.id)
-    const source = post.ownerUsername?.toLowerCase()
-    if (!source || !usernames.includes(source)) { failures.push('A post owner did not match the configured source'); continue }
+    const source = postSource(post, usernames)
+    if (!source) { failures.push('A post owner did not match the configured source'); continue }
     const urls = mediaUrls(post)
     if (urls.length > 30) { failures.push('A post exceeded the supported carousel size'); continue }
     const hash = yield* importTry('intake.hash', () => sha256(JSON.stringify({ caption: post.caption ?? '', images: urls.map(url => { try { const u = new URL(url); return u.origin + u.pathname } catch { return url } }) })))
