@@ -12,4 +12,5 @@ until docker exec "$intake_test_container" pg_isready -U postgres >/dev/null 2>&
 done
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/fixtures/intake-schema.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261025205334_instagram_intake.sql
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261113220000_instagram_incremental_collection.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/instagram-intake.sql
