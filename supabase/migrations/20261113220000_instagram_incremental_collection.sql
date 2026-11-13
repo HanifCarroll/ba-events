@@ -22,8 +22,9 @@ begin
   if used + p.run_cap_usd > p.monthly_cap_usd then raise exception 'Monthly collection budget exhausted'; end if;
   select jsonb_agg(username order by username) into handles from public.instagram_sources where enabled;
   if coalesce(jsonb_array_length(handles), 0) not between 1 and p.max_sources then raise exception 'Source watchlist exceeds policy or is empty'; end if;
-  -- One day of overlap after the last successful run; never reach back more than 7 days (also the first-run window).
-  select greatest(d - 7, coalesce(max(local_date) - 1, d - 7)) into since from public.intake_runs where state = 'succeeded';
+  -- One day of overlap after the last successful run, so a pause (e.g. monthly cap) is caught up; 7 days with no successful run.
+  -- Bounded at the old 30-day window; the per-source ceiling and run cap bound a catch-up run's cost.
+  select greatest(d - 30, coalesce(max(local_date) - 1, d - 7)) into since from public.intake_runs where state = 'succeeded';
   insert into public.intake_runs(local_date, reserved_usd, input)
   values (d, p.run_cap_usd, jsonb_build_object('username', handles, 'resultsLimit', p.posts_per_source,
     'onlyPostsNewerThan', since::text, 'skipPinnedPosts', false, 'dataDetailLevel', p.data_detail_level, 'includeMusicData', false))

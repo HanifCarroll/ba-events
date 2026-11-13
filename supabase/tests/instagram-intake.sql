@@ -12,13 +12,14 @@ begin
   update public.intake_policy set collection_enabled=true, publishing_enabled=true;
   if (select actor_build from public.intake_policy) <> '0.0.679' then raise exception 'Actor build not moved off 0.0.646'; end if;
   -- Probe the collection window in subtransactions that roll back.
-  for probe in 0..2 loop
+  for probe in 0..3 loop
     begin
       today := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
       if probe = 1 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-3,'succeeded',0.01,'{}'),(today-2,'failed',0.01,'{}'); end if;
-      if probe = 2 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-30,'succeeded',0.01,'{}'); end if;
+      if probe = 2 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-12,'succeeded',0.01,'{}'); end if;
+      if probe = 3 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-45,'succeeded',0.01,'{}'); end if;
       reserved := public.reserve_instagram_collection();
-      if reserved->'input'->>'onlyPostsNewerThan' <> (today - case probe when 1 then 4 else 7 end)::text then
+      if reserved->'input'->>'onlyPostsNewerThan' <> (today - case probe when 1 then 4 when 2 then 13 when 3 then 30 else 7 end)::text then
         raise exception 'Wrong collection window in probe %: %', probe, reserved->'input'->>'onlyPostsNewerThan'; end if;
       if (reserved->'input'->>'resultsLimit')::int <> 20 or reserved->'input'->>'dataDetailLevel' <> 'detailedData' then raise exception 'Wrong ceiling or detail level'; end if;
       raise exception 'probe rollback';
