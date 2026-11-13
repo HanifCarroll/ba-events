@@ -165,6 +165,15 @@ Daily scrape metadata SHALL retain per-source catalog/filter/expansion/unchanged
 
 ### Requirement: Instagram intake retains evidence before publication
 Instagram collection SHALL reserve at most one paid run per Buenos Aires date, obey per-run and monthly Actor budgets, and check included account credit without upgrading or purchasing. An uncertain run start MUST be reconciled rather than retried as a new paid run. Collection SHALL retain source captions, observation revisions and bounded copies of carousel media privately, report incomplete coverage, and distinguish unchanged posts from new observations. Stories and video speech SHALL NOT be claimed as covered.
+Each run SHALL request only posts newer than one day before the latest successful run, reaching back at most 7 days, with a per-account ceiling from policy. Re-observed unchanged posts SHALL NOT create new observations. Per-account error rows SHALL NOT create observations; accounts that were not found, restricted, errored, at the ceiling or not reached before the run stopped SHALL be named in the run summary.
+
+#### Scenario: A daily run overlaps the previous successful run
+- **WHEN** a post collected yesterday is returned again in today's overlap day
+- **THEN** its existing observation is marked seen and no new observation is created
+
+#### Scenario: Apify returns error rows or stops at the run cap
+- **WHEN** the dataset contains `no_items`, `not_found` or restricted rows, or omits some requested accounts
+- **THEN** collection succeeds without observations for those rows and the summary names each affected account
 
 #### Scenario: The collection process stops after starting Apify
 - **WHEN** the collector resumes with a retained Apify run identity
@@ -203,6 +212,7 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/`
 - `scripts/instagram-intake.ts`
 - `supabase/migrations/20261025205334_instagram_intake.sql`
+- `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
@@ -212,6 +222,7 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/trigger/jobs/enrichment-catchup.test.ts`
 - `src/features/import/intake/planning.test.ts`
 - `src/features/import/intake/service.test.ts`
+- `src/features/import/intake/collection.test.ts`
 - `supabase/tests/instagram-intake.sql`
 
 ### Verification command

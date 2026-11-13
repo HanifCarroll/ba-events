@@ -3,13 +3,33 @@ begin;
 do $$
 declare candidate uuid := '10000000-0000-4000-8000-000000000001'; venue uuid := gen_random_uuid();
   observation uuid; run uuid; event uuid := gen_random_uuid(); plan uuid; revised_plan uuid;
-  body jsonb; first_receipt jsonb; second_receipt jsonb; reserved jsonb; other uuid;
+  body jsonb; first_receipt jsonb; second_receipt jsonb; reserved jsonb; other uuid; today date; probe int;
 begin
   if has_table_privilege('anon','public.intake_observations','SELECT') then raise exception 'Evidence exposed to anon'; end if;
   if has_function_privilege('authenticated','public.commit_intake_plan(uuid)','EXECUTE') then raise exception 'Publication exposed'; end if;
   if has_function_privilege('anon','public.protect_intake_event_facts()','EXECUTE') then raise exception 'Trigger exposed'; end if;
   insert into public.instagram_sources(username,authority,enabled,qualification) values('synthetic_venue','venue',true,'Synthetic fixture');
   update public.intake_policy set collection_enabled=true, publishing_enabled=true;
+  if (select actor_build from public.intake_policy) <> '0.0.679' then raise exception 'Actor build not moved off 0.0.646'; end if;
+  -- Probe the collection window in subtransactions that roll back.
+  for probe in 0..2 loop
+    begin
+      today := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+      if probe = 1 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-3,'succeeded',0.01,'{}'),(today-2,'failed',0.01,'{}'); end if;
+      if probe = 2 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-30,'succeeded',0.01,'{}'); end if;
+      reserved := public.reserve_instagram_collection();
+      if reserved->'input'->>'onlyPostsNewerThan' <> (today - case probe when 1 then 4 else 7 end)::text then
+        raise exception 'Wrong collection window in probe %: %', probe, reserved->'input'->>'onlyPostsNewerThan'; end if;
+      if (reserved->'input'->>'resultsLimit')::int <> 20 or reserved->'input'->>'dataDetailLevel' <> 'detailedData' then raise exception 'Wrong ceiling or detail level'; end if;
+      raise exception 'probe rollback';
+    exception when others then if sqlerrm <> 'probe rollback' then raise; end if; end;
+  end loop;
+  update public.intake_policy set data_detail_level='basicData';
+  begin
+    if public.reserve_instagram_collection()->'input'->>'dataDetailLevel' <> 'basicData' then raise exception 'Detail level not taken from policy'; end if;
+    raise exception 'probe rollback';
+  exception when others then if sqlerrm <> 'probe rollback' then raise; end if; end;
+  update public.intake_policy set data_detail_level='detailedData';
   reserved := public.reserve_instagram_collection(); run := (reserved->>'id')::uuid;
   if not (reserved->>'fresh')::boolean then raise exception 'First reservation not fresh'; end if;
   if (public.reserve_instagram_collection()->>'fresh')::boolean then raise exception 'Duplicate paid run permitted'; end if;
@@ -52,6 +72,6 @@ begin
     raise exception 'Expected stale evidence rejection';
   exception when others then if sqlerrm <> 'Source changed after review' then raise; end if; end;
   if (select receipt from public.intake_plans where id=other) is not null then raise exception 'Failed commit left a receipt'; end if;
-  raise notice 'PASS: permissions, budget reservation, revisions, idempotency, stable identity, stale evidence, and correction protection';
+  raise notice 'PASS: permissions, incremental window, policy ceiling/detail/build, budget reservation, revisions, idempotency, stable identity, stale evidence, and correction protection';
 end $$;
 rollback;
