@@ -220,6 +220,7 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/venues.ts`
 - `supabase/migrations/20261025205334_instagram_intake.sql`
 - `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
+- `supabase/migrations/20261115120000_intake_similar_venues.sql`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
