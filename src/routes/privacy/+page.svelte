@@ -6,7 +6,7 @@
 		en: {
 			title: 'Privacy policy',
 			intro:
-				'This policy explains what Salidas BA collects, why we use it, and the choices available to you.',
+				'This policy explains what BA Eventos collects, why we use it, and the choices available to you.',
 			updated: 'Last updated: October 14, 2026',
 			sections: [
 				{
@@ -15,13 +15,13 @@
 						'If you create an account, we receive your email address and basic profile information. Google sign-in may provide your name and profile image. We use this information only to create your account, authenticate you, and display your profile.',
 						'If you are signed in, we store your saved events, language preference, profile name, and chat conversations. Guest chat history is stored in your browser. To troubleshoot failures, we also keep a protected server-side diagnostic copy of guest chat text, language, IP address, and request details for up to 30 days.',
 						'When you send feedback, we store the message and, if you are signed in, your user ID. We may email the feedback to the site operator so it can be reviewed.',
-						'In the Telegram private-chat pilot, we process your Telegram user and chat identifiers and the messages you send. For identity, Salidas BA stores only a one-way HMAC, not your raw Telegram identifiers, username, or name; conversation messages are stored for the retention period below after the bot shows a privacy notice and you continue using it. Telegram is not linked to a Salidas BA account, and event saving is unavailable there.'
+						'In the Telegram private-chat pilot, we process your Telegram user and chat identifiers and the messages you send. For identity, BA Eventos stores only a one-way HMAC, not your raw Telegram identifiers, username, or name; conversation messages are stored for the retention period below after the bot shows a privacy notice and you continue using it. Telegram is not linked to a BA Eventos account, and event saving is unavailable there.'
 					]
 				},
 				{
 					title: 'Google user data',
 					body: [
-						'Salidas BA uses Google only for sign-in. We request basic identity information: your email address and public profile information. We do not request access to Gmail, Drive, Calendar, contacts, or other Google services.',
+						'BA Eventos uses Google only for sign-in. We request basic identity information: your email address and public profile information. We do not request access to Gmail, Drive, Calendar, contacts, or other Google services.',
 						'We do not sell Google user data or use it for advertising.'
 					]
 				},
@@ -34,20 +34,20 @@
 				{
 					title: 'Product analytics',
 					body: [
-						'On salidasba.com, PostHog records page views, interaction and scroll metadata, session replays, and limited product events such as message length, response time, event clicks, saves, optional helpfulness ratings linked by an opaque response identifier, errors, and language. Session replay records page text, attributes and entered values without masking. People with access to our PostHog recordings can view that content. Google Analytics records acquisition, redacted page paths, and the same limited product outcomes without user IDs. We do not include email addresses, chat text, search text, feedback text, or error messages in custom analytics events. PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.'
+						'On baeventos.com, PostHog records page views, interaction and scroll metadata, session replays, and limited product events such as message length, response time, event clicks, saves, optional helpfulness ratings linked by an opaque response identifier, errors, and language. Session replay records page text, attributes and entered values without masking. People with access to our PostHog recordings can view that content. Google Analytics records acquisition, redacted page paths, and the same limited product outcomes without user IDs. We do not include email addresses, chat text, search text, feedback text, or error messages in custom analytics events. PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.'
 					]
 				},
 				{
 					title: 'Service providers',
 					body: [
-						'We use service providers to run Salidas BA: Supabase for authentication, stored account data, and Telegram pilot conversations; Cloudflare Workers for the Telegram webhook and encrypted background processing; Google for optional sign-in and limited analytics; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
+						'We use service providers to run BA Eventos: Supabase for authentication, stored account data, and Telegram pilot conversations; Cloudflare Workers for the Telegram webhook and encrypted background processing; Google for optional sign-in and limited analytics; DeepSeek and OpenAI for AI processing; PostHog for limited product analytics; and Resend for feedback alerts. These providers may process data outside Argentina under their own terms and privacy policies.'
 					]
 				},
 				{
 					title: 'Retention and your choices',
 					body: [
 						'Account data is kept while your account is active. You can delete your account, profile, saved events, and account conversations from Settings. You can delete guest conversations in the app or clear them by removing this site’s browser data. Telegram pilot data is kept for no more than 30 days. Using /delete immediately removes the conversation and HMAC identity; a minimal operational delivery record, without chat or user identifiers or message text, may remain until it ages out. A feedback message may be retained for review after account deletion, without its link to your account.',
-						'You may ask to access, correct, update, or delete your personal data. In Argentina, these rights are protected by Law 25,326. Use the Feedback option in Salidas BA to contact us about a privacy request.'
+						'You may ask to access, correct, update, or delete your personal data. In Argentina, these rights are protected by Law 25,326. Use the Feedback option in BA Eventos to contact us about a privacy request.'
 					]
 				},
 				{
@@ -61,7 +61,7 @@
 		es: {
 			title: 'Política de privacidad',
 			intro:
-				'Esta política explica qué recopila Salidas BA, para qué lo usamos y qué opciones tenés.',
+				'Esta política explica qué recopila BA Eventos, para qué lo usamos y qué opciones tenés.',
 			updated: 'Última actualización: 14 de octubre de 2026',
 			sections: [
 				{
@@ -70,13 +70,13 @@
 						'Si creás una cuenta, recibimos tu correo electrónico e información básica de perfil. El acceso con Google puede proporcionar tu nombre y foto de perfil. Usamos esta información únicamente para crear tu cuenta, autenticarte y mostrar tu perfil.',
 						'Si iniciás sesión, guardamos tus eventos, preferencia de idioma, nombre de perfil y conversaciones. El historial de chat de invitado se guarda en tu navegador. Para diagnosticar fallas, también conservamos una copia protegida en el servidor con el texto del chat, idioma, dirección IP y detalles de la solicitud durante un máximo de 30 días.',
 						'Cuando enviás comentarios, guardamos el mensaje y, si iniciaste sesión, tu identificador de usuario. Podemos enviar el comentario por correo al responsable del sitio para revisarlo.',
-						'En el piloto de chat privado de Telegram, procesamos tus identificadores de usuario y chat de Telegram y los mensajes que enviás. Para la identidad, Salidas BA guarda únicamente un HMAC unidireccional, no tus identificadores sin procesar, usuario ni nombre de Telegram; los mensajes se guardan durante el plazo indicado abajo después de que el bot muestra un aviso de privacidad y continuás usándolo. No vinculamos Telegram con una cuenta de Salidas BA y allí no se pueden guardar eventos.'
+						'En el piloto de chat privado de Telegram, procesamos tus identificadores de usuario y chat de Telegram y los mensajes que enviás. Para la identidad, BA Eventos guarda únicamente un HMAC unidireccional, no tus identificadores sin procesar, usuario ni nombre de Telegram; los mensajes se guardan durante el plazo indicado abajo después de que el bot muestra un aviso de privacidad y continuás usándolo. No vinculamos Telegram con una cuenta de BA Eventos y allí no se pueden guardar eventos.'
 					]
 				},
 				{
 					title: 'Datos de Google',
 					body: [
-						'Salidas BA usa Google únicamente para iniciar sesión. Solicitamos información básica de identidad: tu correo electrónico y datos públicos de perfil. No solicitamos acceso a Gmail, Drive, Calendar, contactos ni otros servicios de Google.',
+						'BA Eventos usa Google únicamente para iniciar sesión. Solicitamos información básica de identidad: tu correo electrónico y datos públicos de perfil. No solicitamos acceso a Gmail, Drive, Calendar, contactos ni otros servicios de Google.',
 						'No vendemos datos de Google ni los usamos para publicidad.'
 					]
 				},
@@ -89,20 +89,20 @@
 				{
 					title: 'Analítica del producto',
 					body: [
-						'En salidasba.com, PostHog registra visitas de páginas, metadatos de interacción y desplazamiento, repeticiones de sesión y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, valoraciones opcionales de utilidad vinculadas por un identificador opaco de respuesta, errores e idioma. Las repeticiones de sesión registran el texto de las páginas, atributos y valores ingresados sin ocultarlos. Las personas con acceso a nuestras grabaciones de PostHog pueden ver ese contenido. Google Analytics registra la adquisición, rutas de página protegidas y los mismos resultados limitados del producto sin identificadores de usuario. No incluimos correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error en eventos de analítica personalizados. Google Analytics respeta Do Not Track.'
+						'En baeventos.com, PostHog registra visitas de páginas, metadatos de interacción y desplazamiento, repeticiones de sesión y eventos limitados del producto, como longitud del mensaje, tiempo de respuesta, clics en eventos, guardados, valoraciones opcionales de utilidad vinculadas por un identificador opaco de respuesta, errores e idioma. Las repeticiones de sesión registran el texto de las páginas, atributos y valores ingresados sin ocultarlos. Las personas con acceso a nuestras grabaciones de PostHog pueden ver ese contenido. Google Analytics registra la adquisición, rutas de página protegidas y los mismos resultados limitados del producto sin identificadores de usuario. No incluimos correos electrónicos, texto de chats o búsquedas, comentarios ni mensajes de error en eventos de analítica personalizados. Google Analytics respeta Do Not Track.'
 					]
 				},
 				{
 					title: 'Proveedores',
 					body: [
-						'Usamos proveedores para operar Salidas BA: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Cloudflare Workers para el webhook de Telegram y el procesamiento cifrado en segundo plano; Google para el acceso opcional y analítica limitada; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
+						'Usamos proveedores para operar BA Eventos: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Cloudflare Workers para el webhook de Telegram y el procesamiento cifrado en segundo plano; Google para el acceso opcional y analítica limitada; DeepSeek y OpenAI para procesamiento con IA; PostHog para analítica limitada; y Resend para alertas de comentarios. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
 					]
 				},
 				{
 					title: 'Conservación y tus opciones',
 					body: [
 						'Conservamos los datos de la cuenta mientras esté activa. Podés eliminar tu cuenta, perfil, eventos guardados y conversaciones de la cuenta desde Configuración. Podés borrar conversaciones de invitado en la app o eliminar los datos de este sitio del navegador. Los datos del piloto de Telegram se conservan como máximo 30 días. Al usar /delete se borran inmediatamente la conversación y la identidad HMAC; un registro operativo mínimo de entrega, sin identificadores de chat o usuario ni texto de mensajes, puede permanecer hasta vencer. Un comentario puede conservarse para revisión después de eliminar la cuenta, sin el vínculo con tu cuenta.',
-						'Podés pedir acceso, rectificación, actualización o supresión de tus datos personales. En Argentina, estos derechos están protegidos por la Ley 25.326. Usá la opción Comentarios de Salidas BA para contactarnos por una solicitud de privacidad.'
+						'Podés pedir acceso, rectificación, actualización o supresión de tus datos personales. En Argentina, estos derechos están protegidos por la Ley 25.326. Usá la opción Comentarios de BA Eventos para contactarnos por una solicitud de privacidad.'
 					]
 				},
 				{
@@ -120,7 +120,7 @@
 </script>
 
 <svelte:head>
-	<title>{text.title} | Salidas BA</title>
+	<title>{text.title} | BA Eventos</title>
 	<meta name="description" content={text.intro} />
 </svelte:head>
 
@@ -131,7 +131,7 @@
 			class="mb-8 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
 		>
 			<ArrowLeft class="h-4 w-4" />
-			Salidas BA
+			BA Eventos
 		</a>
 
 		<header class="mb-10 border-b border-border/60 pb-8">

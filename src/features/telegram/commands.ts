@@ -1,7 +1,7 @@
 import type { TelegramCommand } from './update.ts'
 import type { TelegramReplyMarkup } from './client.ts'
 
-export const PRIVACY_URL = 'https://salidasba.com/privacy'
+export const PRIVACY_URL = 'https://baeventos.com/privacy'
 
 export const COPY = {
   en: {

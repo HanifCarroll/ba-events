@@ -160,16 +160,16 @@ describe('Telegram canonical renderer', () => {
     expect(rendered.text.match(/^1\./m)).toHaveLength(1)
   })
 
-  it('uses one sanitized named Salidas BA button per event', () => {
+  it('uses one sanitized named BA Eventos button per event', () => {
     const rendered = renderTelegramMessage(response(), 'en')
     const buttons = rendered.replyMarkup?.inline_keyboard.flat() ?? []
-    const eventButtons = buttons.filter((button) => button.url?.startsWith('https://salidasba.com/events/'))
+    const eventButtons = buttons.filter((button) => button.url?.startsWith('https://baeventos.com/events/'))
 
     expect(eventButtons).toHaveLength(5)
     expect(eventButtons.every((button) => button.text.length <= 64 && !button.text.includes('↗'))).toBe(true)
     expect(eventButtons[0]).toMatchObject({
       text: expect.stringMatching(/^1 · Tango 0 night /),
-      url: 'https://salidasba.com/events/event%200',
+      url: 'https://baeventos.com/events/event%200',
     })
     expect(buttons.some((button) => button.text === 'Details' || button.text === 'Tickets / event page')).toBe(false)
     expect(buttons.some((button) => button.url === 'https://events.example/tango')).toBe(false)
@@ -179,8 +179,8 @@ describe('Telegram canonical renderer', () => {
   })
 
   it.each([
-    ['salidasba', 'https://www.instagram.com/salidasba'],
-    ['https://instagram.com/salidasba/', 'https://instagram.com/salidasba/'],
+    ['baeventos', 'https://www.instagram.com/baeventos'],
+    ['https://instagram.com/baeventos/', 'https://instagram.com/baeventos/'],
   ])('accepts safe Instagram value %s', (instagram, expected) => {
     const canonical = response({ venue: { ...response().venue!, instagram } })
     const buttons = renderTelegramMessage(canonical, 'en').replyMarkup?.inline_keyboard.flat() ?? []

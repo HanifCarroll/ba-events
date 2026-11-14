@@ -10,7 +10,7 @@ describe('web chat admission outage', () => {
     it(`returns a retryable ${locale} error before identity, persistence or model work`, async () => {
       let downstream = 0
       const event = {
-        request: new Request('https://salidasba.com/api/chat/execute', {
+        request: new Request('https://baeventos.com/api/chat/execute', {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ messages: [{ id: 'user', role: 'user', parts: [{ type: 'text', text: 'Find events' }] }], locale }),
         }),

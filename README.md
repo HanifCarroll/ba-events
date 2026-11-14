@@ -1,10 +1,10 @@
-# Salidas BA
+# BA Eventos
 
 Find things to do in Buenos Aires through a bilingual AI concierge, a browsable event catalog, Telegram, or an MCP client.
 
-This repository shares the code behind [salidasba.com](https://salidasba.com) so you can inspect how the product is built.
+This repository shares the code behind [baeventos.com](https://baeventos.com) so you can inspect how the product is built.
 
-[Try Salidas BA](https://salidasba.com) · [Explore the code](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md)
+[Try BA Eventos](https://baeventos.com) · [Explore the code](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md)
 
 ## What it does
 
@@ -31,7 +31,7 @@ The deterministic tests and type checks run without API keys or a production dat
 bun run storybook
 ```
 
-Storybook runs on port 6006 with fixture data. See [exploring the code](docs/getting-started.md) for ways to explore and check the code locally. Use [salidasba.com](https://salidasba.com) to try the complete product.
+Storybook runs on port 6006 with fixture data. See [exploring the code](docs/getting-started.md) for ways to explore and check the code locally. Use [baeventos.com](https://baeventos.com) to try the complete product.
 
 ## How it fits together
 
@@ -48,7 +48,7 @@ See the [architecture overview](docs/architecture.md), [chat trust boundary](doc
 
 ## Project status
 
-Salidas BA is a maintained hosted application. The source is public for transparency, learning, and code review. Self-hosting is outside the project’s scope. Deployment configuration and operational notes document how the hosted service works.
+BA Eventos is a maintained hosted application. The source is public for transparency, learning, and code review. Self-hosting is outside the project’s scope. Deployment configuration and operational notes document how the hosted service works.
 
 Event coverage depends on upstream sources. Listings and AI-written recommendations can be incomplete or outdated; follow the event's source link to confirm details.
 

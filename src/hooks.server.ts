@@ -6,18 +6,13 @@ import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 
-const CANONICAL_HOST = 'salidasba.com';
-
 export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
 	if (dev) return resolve(event);
-	if (event.url.protocol === 'https:' && event.url.hostname === CANONICAL_HOST) return resolve(event);
+	if (event.url.protocol === 'https:' && event.url.hostname === 'baeventos.com') return resolve(event);
 	const destination = new URL(event.url);
 	destination.protocol = 'https:';
-	destination.hostname = CANONICAL_HOST;
-	destination.port = '';
-	// 308 keeps the method and body of non-GET requests across the redirect.
-	const { method } = event.request;
-	return Response.redirect(destination, method === 'GET' || method === 'HEAD' ? 301 : 308);
+	destination.hostname = 'baeventos.com';
+	return Response.redirect(destination, 301);
 };
 
 // (a) Supabase handle — create a per-request server client, load the

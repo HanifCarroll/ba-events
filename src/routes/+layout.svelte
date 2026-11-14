@@ -150,12 +150,12 @@
 	// Locale-specific title & descriptions (voseo for es, plain for en).
 	const SEO: Record<AppLocale, { title: string; description: string }> = {
 		en: {
-			title: 'Salidas BA - Discover Buenos Aires',
+			title: 'BA Events - Discover Buenos Aires',
 			description:
 				"Discover events in Buenos Aires based on when, where, and what you're into. Culture, music, food, markets, and more."
 		},
 		es: {
-			title: 'Salidas BA - Descubrí Buenos Aires',
+			title: 'BA Eventos - Descubrí Buenos Aires',
 			description:
 				'Descubrí eventos en Buenos Aires según cuándo, dónde y qué te interesa. Cultura, música, gastronomía, mercados y más.'
 		}
@@ -175,7 +175,7 @@
 	const webAppSchema = JSON.stringify({
 		'@context': 'https://schema.org',
 		'@type': 'WebApplication',
-		name: 'Salidas BA',
+		name: 'BA Eventos',
 		description: seo.description,
 		url: siteUrl,
 		applicationCategory: 'EntertainmentApplication',
@@ -188,7 +188,7 @@
 		},
 		author: {
 			'@type': 'Organization',
-			name: 'Salidas BA',
+			name: 'BA Eventos',
 			url: siteUrl
 		}
 	}).replace(/</g, '\\u003c')
@@ -225,7 +225,7 @@
 		<meta name="description" content={seo.description} />
 
 		<meta property="og:type" content="website" />
-		<meta property="og:site_name" content="Salidas BA" />
+		<meta property="og:site_name" content="BA Eventos" />
 		<meta property="og:title" content={seo.title} />
 		<meta property="og:description" content={seo.description} />
 		<meta property="og:image" content={ogImageUrl} />

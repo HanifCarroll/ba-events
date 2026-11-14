@@ -1,6 +1,6 @@
-# Salidas BA analytics
+# BA Eventos analytics
 
-Salidas BA uses PostHog for a small, privacy-conscious product funnel. PostHog is enabled only on `salidasba.com`, `www.salidasba.com`, `baeventos.com`, and `www.baeventos.com` (the old hosts redirect to `salidasba.com`).
+BA Eventos uses PostHog for a small, privacy-conscious product funnel. PostHog is enabled only on `baeventos.com` and `www.baeventos.com`.
 PostHog respects Do Not Track and Global Privacy Control. Google Analytics respects Do Not Track.
 
 ## What is collected
@@ -81,7 +81,7 @@ Every successfully saved feedback submission can send an immediate email through
 | Variable | Purpose |
 | --- | --- |
 | `RESEND_API_KEY` | Resend API key |
-| `FEEDBACK_ALERT_FROM` | Verified Resend sender, for example `Salidas BA <feedback@salidasba.com>` |
+| `FEEDBACK_ALERT_FROM` | Verified Resend sender, for example `BA Eventos <feedback@baeventos.com>` |
 | `FEEDBACK_ALERT_TO` | Alert recipient, for example `hanif@hanifcarroll.com` |
 
 If delivery fails, the feedback remains saved and the person sees a successful submission. The alert includes the submitted feedback and is sent only to the configured recipient; it is never sent to PostHog.

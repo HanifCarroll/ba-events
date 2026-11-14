@@ -9,7 +9,7 @@ export function getSiteUrl(): string {
     return window.location.origin
   }
 
-  return 'https://salidasba.com'
+  return 'https://baeventos.com'
 }
 
 export function resolveSiteUrl(path: string): string {

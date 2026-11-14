@@ -1,6 +1,6 @@
 ---
 name: openspec-review-conformance
-description: Run a read-only, citation-based advisory review of Salidas BA OpenSpec requirements against implementation and deterministic tests.
+description: Run a read-only, citation-based advisory review of BA Events OpenSpec requirements against implementation and deterministic tests.
 allowed-tools: Bash(openspec:*), Bash(rg:*), Bash(git:*), Read
 license: MIT
 compatibility: Requires openspec CLI.

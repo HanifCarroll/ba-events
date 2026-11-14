@@ -22,7 +22,7 @@ describe('sendFeedbackAlert', () => {
 		await expect(
 			sendFeedbackAlert(
 				'Great events!',
-				{ apiKey: 're_test', from: 'Salidas BA <feedback@salidasba.com>', to: 'hanif@hanifcarroll.com' },
+				{ apiKey: 're_test', from: 'BA Eventos <feedback@baeventos.com>', to: 'hanif@hanifcarroll.com' },
 				fetcher,
 			),
 		).resolves.toEqual({ delivered: true })
@@ -35,9 +35,9 @@ describe('sendFeedbackAlert', () => {
 			}),
 		)
 		expect(deliveredPayload).toEqual({
-			from: 'Salidas BA <feedback@salidasba.com>',
+			from: 'BA Eventos <feedback@baeventos.com>',
 			to: ['hanif@hanifcarroll.com'],
-			subject: 'New Salidas BA feedback',
+			subject: 'New BA Eventos feedback',
 			text: 'New feedback received:\n\nGreat events!',
 		})
 	})

@@ -5,7 +5,7 @@ import { deliveryHeaders } from '#features/chat/lib/delivery-protocol.ts'
 
 describe('chat recovery authentication boundaries', () => {
  it('encrypts credentials with object-bound authenticated encryption', async () => {
-  const envelope = { url: 'https://salidasba.com/start', headers: [['cookie', 'private-session'], ['x-chat-token', 'a'.repeat(64)]] as [string, string][], body: '{"messages":[]}' }
+  const envelope = { url: 'https://baeventos.com/start', headers: [['cookie', 'private-session'], ['x-chat-token', 'a'.repeat(64)]] as [string, string][], body: '{"messages":[]}' }
   const sealed = await sealEnvelope(envelope, 'private-worker-key', 'object-a')
   expect(JSON.stringify(sealed)).not.toContain('private-session'); expect(JSON.stringify(sealed)).not.toContain('a'.repeat(64))
   expect(await openEnvelope(sealed, 'private-worker-key', 'object-a')).toEqual(envelope)

@@ -1,6 +1,6 @@
 # Telegram private-chat pilot
 
-The bot supports anonymous one-to-one chats only. It does not link Salidas BA accounts or save events.
+The bot supports anonymous one-to-one chats only. It does not link BA Eventos accounts or save events.
 
 ## 1. Create bots in BotFather
 

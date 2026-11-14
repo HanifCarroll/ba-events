@@ -10,7 +10,7 @@ Date: 2026-10-13. Scope: selected ideation option 1, implemented in the existing
 - Mobile: `/Users/hanifcarroll/.codex/visualizations/2026/10/13/01a13569-b694-7ce1-a6c2-703987fc27a3/retry-polished-mobile.jpg` (390 x 844 pixels, matching CSS viewport, density 1).
 - Keyboard focus: `/Users/hanifcarroll/.codex/visualizations/2026/10/13/01a13569-b694-7ce1-a6c2-703987fc27a3/retry-polished-focus-mobile.jpg`.
 - Spanish follow-up: `/Users/hanifcarroll/.codex/visualizations/2026/10/13/01a13569-b694-7ce1-a6c2-703987fc27a3/retry-polished-spanish-mobile.jpg`.
-- Deployed application: https://salidasba.com (formerly https://baeventos.com). Initial verified release: `b5c2a638-9da8-443e-a4c9-95bea22b8814`.
+- Deployed application: https://baeventos.com. Initial verified release: `b5c2a638-9da8-443e-a4c9-95bea22b8814`.
 
 The generated reference is an enlarged component illustration, rather than a literal product viewport. Its 1983 x 793 canvas corresponds approximately to the 794 x 318 production crop at 2.5x scale. Source and production images were opened together in one comparison input; no reference pixels were modified. Fidelity was assessed on component-relative alignment and the existing product typography, not invented pixel precision. The live timestamp differs intentionally. Full desktop and focused captures were inspected, along with mobile and keyboard states.
 

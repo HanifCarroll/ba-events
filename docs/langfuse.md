@@ -1,6 +1,6 @@
 # Langfuse
 
-Salidas BA has its own project in the **HC Studio** organization on the US
+BA Eventos has its own project in the **HC Studio** organization on the US
 Langfuse Cloud instance. Casamo uses a separate project and separate credentials.
 
 ## Configuration

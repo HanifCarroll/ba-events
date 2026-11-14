@@ -194,7 +194,7 @@
 			aria-label={m.landing_nav_label()}
 		>
 			<a href="/" class="flex items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
-				Salidas BA
+				BA Eventos
 			</a>
 			<div class="flex items-center gap-2 text-xs font-medium sm:gap-4 sm:text-sm">
 				<a href="#what-it-does" class="hidden hover:text-indigo-200 sm:inline">{m.landing_what_it_does()}</a>

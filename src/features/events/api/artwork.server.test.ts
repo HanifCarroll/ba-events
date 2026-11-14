@@ -5,7 +5,7 @@ import { artworkVersion } from '../lib/artwork-delivery.ts'
 const id = 'e739fcbc-a83e-4a2e-b47d-0fd6e55b93e4'
 const original = 'https://images.venti.live/user-images/test.jpg'
 function setup(imageUrl = original) {
-  const request = new Request(`https://salidasba.com/api/event-artwork/${id}/320.webp?v=${artworkVersion(imageUrl)}`)
+  const request = new Request(`https://baeventos.com/api/event-artwork/${id}/320.webp?v=${artworkVersion(imageUrl)}`)
   const lookup = vi.fn(async () => ({ image_url: imageUrl }))
   const fetchImage = vi.fn(async () => new Response('jpeg', { headers: { 'Content-Type': 'image/jpeg' } }))
   const transform = vi.fn()

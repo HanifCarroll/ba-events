@@ -5,7 +5,7 @@ adding agents, tools or model stages. Contract checks and model-quality judgment
 are separate evidence. Passing an execution test cannot establish that a response
 is accurate or useful, and a model grader cannot certify its own calibration.
 
-## Salidas BA
+## BA Eventos
 
 Description provenance varies: some stored bilingual descriptions retain native
 provider text, while other imports store AI-extracted semantic text and its
