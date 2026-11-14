@@ -2,7 +2,7 @@ import type { CanonicalChatResponse, CanonicalChatEventPayload } from '#shared/l
 import type { TelegramInlineKeyboardMarkup } from './client.ts'
 import { extractRecommendationFraming, warmRecommendationFallback, type RecommendationFraming } from '#shared/lib/recommendation-framing.ts'
 
-const SITE_ORIGIN = 'https://salidasba.com'
+const SITE_ORIGIN = 'https://baeventos.com'
 const TIME_ZONE = 'America/Argentina/Buenos_Aires'
 const MAX_MESSAGE = 4096
 

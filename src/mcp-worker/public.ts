@@ -74,7 +74,7 @@ export function toPublicEvent(event: PublicEventRecord): PublicEvent {
   }
   return {
     id: event.id,
-    url: `https://salidasba.com/events/${encodeURIComponent(event.id)}`,
+    url: `https://baeventos.com/events/${encodeURIComponent(event.id)}`,
     name: event.name,
     description: publicDescription(event),
     startsAt: event.starts_at,

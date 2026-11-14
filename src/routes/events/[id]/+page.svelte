@@ -142,7 +142,7 @@
 	<title>{data.meta.title}</title>
 	<meta name="description" content={data.meta.description} />
 	<meta property="og:type" content="event" />
-	<meta property="og:site_name" content="Salidas BA" />
+	<meta property="og:site_name" content="BA Eventos" />
 	<meta property="og:title" content={data.event.name} />
 	<meta property="og:description" content={data.meta.description} />
 	<meta property="og:image" content={data.meta.imageUrl} />

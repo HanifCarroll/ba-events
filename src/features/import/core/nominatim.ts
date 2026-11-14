@@ -179,7 +179,7 @@ export function searchNominatimEffect(query: string, retries: number = 1): Effec
   const attempt = Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: () => fetch(url, {
-        headers: { 'User-Agent': 'SalidasBA/1.0 (salidasba.com)' },
+        headers: { 'User-Agent': 'BAEventos/1.0 (baeventos.com)' },
         signal: AbortSignal.timeout(15000),
       }),
       catch: (error) => new NominatimRequestError(error instanceof Error ? error.message : 'Unknown error', timeoutLike(error)),
@@ -235,7 +235,7 @@ export function reverseGeocodeEffect(lat: number, lng: number, retries: number =
   const attempt = Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: () => fetch(url, {
-        headers: { 'User-Agent': 'SalidasBA/1.0 (salidasba.com)' },
+        headers: { 'User-Agent': 'BAEventos/1.0 (baeventos.com)' },
         signal: AbortSignal.timeout(15000),
       }),
       catch: (error) => new NominatimRequestError(error instanceof Error ? error.message : 'Unknown error', timeoutLike(error)),

@@ -58,7 +58,7 @@ export async function serveArtwork(options: Options): Promise<Response> {
     !/^[a-z0-9]{1,7}$/.test(url.searchParams.get('v') ?? '')) {
     return new Response('Invalid artwork request', { status: 400, headers: { 'Cache-Control': 'no-store' } })
   }
-  const key = new Request(`https://salidasba.com/api/event-artwork/${id}/${variant}?v=${url.searchParams.get('v')}`)
+  const key = new Request(`https://baeventos.com/api/event-artwork/${id}/${variant}?v=${url.searchParams.get('v')}`)
   const cached = await cache?.match(key).catch(() => undefined)
   if (cached) {
     const response = new Response(cached.body, cached)

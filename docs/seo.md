@@ -1,8 +1,8 @@
-# SEO Strategy for Salidas BA
+# SEO Strategy for BA Eventos
 
 ## Overview
 
-Salidas BA is a conversational application for discovering events in Buenos Aires. The homepage centers on chat-based discovery, with public pages for sharing individual events.
+BA Eventos is a conversational application for discovering events in Buenos Aires. The homepage centers on chat-based discovery, with public pages for sharing individual events.
 
 ### Key Architectural Considerations
 
@@ -97,7 +97,7 @@ Disallow: /register
 {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  "name": "Salidas BA",
+  "name": "BA Eventos",
   "description": "AI-powered event discovery for Buenos Aires",
   "applicationCategory": "EventApplication",
   "operatingSystem": "Web",
@@ -197,7 +197,7 @@ Current implementation uses Paraglide's `getLocale()`. Ensure URL structure or h
 - Added canonical URL link tag
 - Created 1200x630px OG image (`public/og-image.png`) with Buenos Aires nightlife theme (superseded in 2026)
 - Updated `public/robots.txt` to block /admin/, /saved, /profile, /api/, /login, /register, /auth/
-- Updated `public/manifest.json` with Salidas BA branding; theme colors aligned to the light UI (#fafaf8, matching the `theme-color` meta)
+- Updated `public/manifest.json` with BA Eventos branding; theme colors aligned to the light UI (#fafaf8, matching the `theme-color` meta)
 - Added SEO info section to `SuggestedPrompts.tsx` with H2 heading and descriptive text
 - Added i18n keys for EN/ES (home_about_title, home_about_text)
 - SEO section styled to be subtle (muted-foreground/50) so it doesn't compete with main UI

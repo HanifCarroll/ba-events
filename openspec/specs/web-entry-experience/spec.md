@@ -51,19 +51,19 @@ The homepage link to MCP setup SHALL address people using AI assistants without 
 
 #### Scenario: Visitor reads the MCP setup link
 - **WHEN** the homepage renders in English or Spanish
-- **THEN** the link invites AI assistant users to connect Salidas BA and identifies the integration as public beta
+- **THEN** the link invites AI assistant users to connect BA Eventos and identifies the integration as public beta
 
 ### Requirement: MCP setup includes Claude and ChatGPT instructions
-The MCP setup page SHALL provide localized Claude web and desktop connector instructions followed by ChatGPT web plugin instructions. Both SHALL use the public endpoint without Salidas BA sign-in and link to their official setup guides. The page SHALL NOT claim verification in a client unless the project has verified it.
+The MCP setup page SHALL provide localized Claude web and desktop connector instructions followed by ChatGPT web plugin instructions. Both SHALL use the public endpoint without BA Eventos sign-in and link to their official setup guides. The page SHALL NOT claim verification in a client unless the project has verified it.
 
 #### Scenario: Visitor connects from Claude
 - **WHEN** a visitor opens MCP setup in English or Spanish
-- **THEN** the page explains adding a custom connector, naming it Salidas BA, entering the displayed endpoint, selecting No sign in, and enabling it in a chat
+- **THEN** the page explains adding a custom connector, naming it BA Eventos, entering the displayed endpoint, selecting No sign in, and enabling it in a chat
 - **AND** explains that a Team or Enterprise owner may need to add the connector first
 
 #### Scenario: Visitor connects from ChatGPT
 - **WHEN** a visitor opens MCP setup in English or Spanish
-- **THEN** the page explains adding a custom MCP server from Plugins, naming it Salidas BA, entering the displayed endpoint, selecting No authentication, creating and installing the plugin, and invoking it with @ in a Work chat
+- **THEN** the page explains adding a custom MCP server from Plugins, naming it BA Eventos, entering the displayed endpoint, selecting No authentication, creating and installing the plugin, and invoking it with @ in a Work chat
 - **AND** explains that workspace permissions must allow custom MCP servers
 - **AND** the ChatGPT section contains no Codex terminal command
 

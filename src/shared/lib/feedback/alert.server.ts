@@ -46,7 +46,7 @@ export async function sendFeedbackAlert(
 				body: JSON.stringify({
 					from: config.from,
 					to: [config.to],
-					subject: 'New Salidas BA feedback',
+					subject: 'New BA Eventos feedback',
 					text: `New feedback received:\n\n${message}`,
 				}),
 			}),

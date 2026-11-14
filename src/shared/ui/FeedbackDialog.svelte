@@ -54,7 +54,7 @@
 				</div>
 				<DialogTitle class="font-display text-foreground mb-2">Thank you!</DialogTitle>
 				<DialogDescription class="text-muted-foreground">
-					Your feedback helps us improve Salidas BA.
+					Your feedback helps us improve BA Eventos.
 				</DialogDescription>
 			</div>
 		{:else}

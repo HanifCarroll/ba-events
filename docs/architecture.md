@@ -1,6 +1,6 @@
 # Architecture overview
 
-Salidas BA keeps catalog ingestion, recommendation reasoning, and user-facing delivery separate.
+BA Eventos keeps catalog ingestion, recommendation reasoning, and user-facing delivery separate.
 
 ```mermaid
 flowchart LR

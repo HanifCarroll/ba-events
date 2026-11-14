@@ -6,7 +6,7 @@ import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 
-const CANONICAL_HOST = 'salidasba.com';
+const CANONICAL_HOST = 'baeventos.com';
 
 export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
 	if (dev) return resolve(event);

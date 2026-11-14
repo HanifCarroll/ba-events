@@ -19,7 +19,7 @@ export type AnalyticsEvent =
 // Lazy-loaded PostHog instance (client-side only)
 let posthogInstance: typeof import('posthog-js').default | null = null
 let posthogPromise: Promise<typeof import('posthog-js').default> | null = null
-const ANALYTICS_HOSTS = new Set(['salidasba.com', 'www.salidasba.com', 'baeventos.com', 'www.baeventos.com'])
+const ANALYTICS_HOSTS = new Set(['baeventos.com', 'www.baeventos.com'])
 const GA_MEASUREMENT_ID = 'G-CXEY3D4SW6'
 const CAMPAIGN_PARAMETERS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']
 const GA_OUTCOME_EVENTS = new Set<AnalyticsEvent>([
@@ -58,7 +58,7 @@ export function initializeGoogleAnalytics(pageUrl = window.location.href): void 
     })
   }
   const source = new URL(pageUrl)
-  const pageLocation = new URL(source.pathname, 'https://salidasba.com')
+  const pageLocation = new URL(source.pathname, 'https://baeventos.com')
   for (const key of CAMPAIGN_PARAMETERS) {
     const value = source.searchParams.get(key)
     if (value) pageLocation.searchParams.set(key, value)
