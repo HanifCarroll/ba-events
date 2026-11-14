@@ -188,8 +188,8 @@ The agent SHALL submit validated structured candidates with supporting observati
 - **THEN** each occurrence retains its own stable candidate/event identity, and repeated promotion may attach additional evidence to the existing event
 
 #### Scenario: A held candidate's venue is not in the catalog
-- **WHEN** the operator submits a sourced venue name, numbered street address, optional barrio and evidence URLs to the intake `venue` operation
-- **THEN** a confident name match with a compatible address returns the existing venue, and a review-band name, the same name at another address, or another venue at the same address returns `ambiguous` without creating anything
+- **WHEN** the operator submits a sourced venue name, street address with a house number after the street name, optional barrio and evidence URLs to the intake `venue` operation
+- **THEN** exactly one venue with the same normalized name and no conflicting address or barrio returns that venue, and several same-name venues, a conflicting location, a similar name, a possible alias, or another venue at the same address returns `ambiguous` without writing anything
 - **AND** otherwise a venue is created only inside the city of Buenos Aires with a valid barrio, its evidence is kept as an approved `instagram-intake` row in `venue_review_queue`, and repeating the request returns the same venue
 - **AND** the `held` operation lists unpublished future candidates grouped by venue with their hold reasons
 

@@ -15,7 +15,7 @@ function fakeDb(venues: Row[], options: { similar?: Record<string, number>; fail
     const builder: Record<string, unknown> = {
       update: (values: Partial<Row>) => { patch = values; return builder },
       is: (column: keyof Row, value: null) => { filters.push(row => row[column] === value); return builder },
-      select: () => builder, limit: () => builder, order: () => builder,
+      select: () => builder, limit: () => builder, order: () => builder, range: () => builder,
       ilike: (column: 'name' | 'address', pattern: string) => {
         const needle = pattern.replaceAll('%', '').toLowerCase()
         filters.push(row => pattern.startsWith('%') ? !!row[column]?.toLowerCase().includes(needle) : row[column]?.toLowerCase() === needle)
@@ -60,6 +60,15 @@ describe('intake venue resolution', () => {
     expect(addressKey('Avenida Ficticia 1234')).toBe('ficticia 1234')
     expect(addressKey('Ficticia sin número')).toBeNull()
     expect(addressKey('3 de Febrero 1378')).toBe('3 de febrero 1378')
+    expect(addressKey('Av. 9 de Julio 1000')).toBe('9 de julio 1000')
+    for (const street of ['3 de Febrero', 'Av. 9 de Julio', '25 de Mayo, CABA', '1378']) expect(addressKey(street)).toBeNull()
+  })
+  it('rejects a street whose only number is part of its name', async () => {
+    const { db, inserts } = fakeDb([])
+    expect(await run(db, request({ address: '3 de Febrero' }))).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('house number')] })
+    expect(await run(db, request({ address: 'Av. 9 de Julio' }))).toMatchObject({ outcome: 'rejected' })
+    expect(inserts).toHaveLength(0)
+    expect(await run(db, request({ address: '3 de Febrero 1378' }))).toMatchObject({ outcome: 'created' })
   })
   it('requires evidence with public HTTPS URLs and rejects unknown fields', () => {
     expect(() => request({ evidence: [] })).toThrow()
@@ -77,10 +86,17 @@ describe('intake venue resolution', () => {
     expect(second).toMatchObject({ outcome: 'existing', venue: { id: first.outcome === 'created' && first.venue.id } })
     expect(inserts.filter(item => item.table === 'venues')).toHaveLength(1)
   })
-  it('returns a confident fuzzy match without creating anything', async () => {
-    const { db, inserts } = fakeDb([{ id: 'v1', name: 'Sala Sintetica', address: 'Ficticia 1234', neighborhood: 'Almagro' }], { similar: { v1: 0.9 } })
+  it('reuses one venue whose name differs only by accents, case and spacing', async () => {
+    const { db, inserts } = fakeDb([{ id: 'v1', name: 'SALA  sintetica', address: 'Ficticia 1234', neighborhood: 'Almagro' }])
     expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'v1' } })
     expect(inserts).toHaveLength(0)
+  })
+  it('never reuses a different room or branch, even with a high similarity score', async () => {
+    const room = fakeDb([{ id: 'r2', name: 'Sala Sintética 2', address: 'Ficticia 1234', neighborhood: 'Almagro' }], { similar: { r2: 0.9 } })
+    expect(await run(room.db, request({ name: 'Sala Sintética 1' }))).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'r2' }] })
+    const branch = fakeDb([{ id: 'b1', name: 'Humboldt | Niceto Club', address: null, neighborhood: null }])
+    expect(await run(branch.db, request({ name: 'Niceto Club' }))).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'b1', why: 'possible alias' }] })
+    expect([...room.inserts, ...branch.inserts]).toHaveLength(0)
   })
   it('fills an existing venue\'s empty address and barrio instead of creating a duplicate', async () => {
     const { db, inserts, venues } = fakeDb([{ id: 'v1', name: 'Sala Sintética', address: null, neighborhood: null }])
@@ -90,11 +106,25 @@ describe('intake venue resolution', () => {
     expect(inserts).toHaveLength(1)
     expect(venues).toHaveLength(1)
   })
-  it('picks the alias at the same address when several venues share the name', async () => {
+  it('holds when several venues share the name', async () => {
     const { db, inserts } = fakeDb([
       { id: 'a1', name: 'Sala Sintética', address: null, neighborhood: 'Almagro' },
       { id: 'a2', name: 'SALA SINTÉTICA', address: 'Ficticia 1234', neighborhood: 'Almagro' }])
-    expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'a2' } })
+    expect(await run(db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'a1' }, { id: 'a2' }] })
+    expect(inserts).toHaveLength(0)
+  })
+  it('holds a same-name venue whose barrio conflicts instead of giving it an address elsewhere', async () => {
+    const stated = fakeDb([{ id: 'v1', name: 'Sala Sintética', address: null, neighborhood: 'Boedo' }])
+    expect(await run(stated.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v1', why: 'same name, different barrio' }] })
+    const derived = fakeDb([{ id: 'v1', name: 'Sala Sintética', address: null, neighborhood: 'Boedo' }])
+    expect(await run(derived.db, request({ neighborhood: null }))).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v1' }] })
+    expect([...stated.inserts, ...derived.inserts]).toHaveLength(0)
+    expect(stated.venues[0].address).toBeNull()
+  })
+  it('flags Biri Biri against BIRIBIRI CLUB SOCIAL as a possible alias instead of creating a duplicate', async () => {
+    const { db, inserts } = fakeDb([{ id: 'bb', name: 'BIRIBIRI CLUB SOCIAL', address: 'Malabia 1171', neighborhood: null }])
+    expect(await run(db, request({ name: 'Biri Biri', address: 'Malabia 1175', neighborhood: 'Villa Crespo' }))).toMatchObject({
+      outcome: 'ambiguous', candidates: [{ id: 'bb', why: 'possible alias' }] })
     expect(inserts).toHaveLength(0)
   })
   it('does not fill an existing venue from an address outside the city', async () => {
@@ -106,9 +136,9 @@ describe('intake venue resolution', () => {
     const band = fakeDb([{ id: 'v1', name: 'Sala Sint', address: null, neighborhood: 'Almagro' }], { similar: { v1: 0.7 } })
     expect(await run(band.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v1' }] })
     const moved = fakeDb([{ id: 'v2', name: 'Sala Sintética', address: 'Otra Calle 99', neighborhood: 'Boedo' }])
-    expect(await run(moved.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v2', why: 'same name at a different address' }] })
+    expect(await run(moved.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v2', why: 'same name, different address' }] })
     const shared = fakeDb([{ id: 'v3', name: 'Centro Cultural Ficticio', address: 'Avenida Ficticia 1234', neighborhood: 'Almagro' }])
-    expect(await run(shared.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v3', why: 'same address, different name' }] })
+    expect(await run(shared.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v3', why: 'same address' }] })
     expect([...band.inserts, ...moved.inserts, ...shared.inserts]).toHaveLength(0)
   })
   it('rejects addresses outside the city and invalid barrios, and derives a missing barrio', async () => {

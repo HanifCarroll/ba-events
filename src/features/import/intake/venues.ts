@@ -6,7 +6,7 @@ import { createVenueSchema } from '#shared/lib/schemas.ts'
 import { NEIGHBORHOODS, type Neighborhood, type Venue } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult } from '../core/nominatim.ts'
-import { AUTO_USE_THRESHOLD, REVIEW_QUEUE_THRESHOLD, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
+import { REVIEW_QUEUE_THRESHOLD, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
 import { validPublicUrl, type Candidate } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
 import { allRowsEffect, dbEffect } from './repository.ts'
@@ -35,12 +35,27 @@ const CITY_STATE = 'ciudad autonoma de buenos aires'
 const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 const failure = (message: string) => new ImportOperationError({ operation: 'intake.venue', message })
 
-/** "Av. Corrientes 1530, CABA" and "Avenida Corrientes 1530" share the key "corrientes 1530". Null without a street number. */
+/**
+ * "Av. Corrientes 1530, CABA" and "Avenida Corrientes 1530" share the key "corrientes 1530". The house number must follow
+ * the street name, so "3 de Febrero" or "Av. 9 de Julio" alone has no key while "3 de Febrero 1378" does.
+ */
 export function addressKey(address: string | null | undefined): string | null {
   if (!address) return null
   const key = fold(address.split(',')[0]).replace(/[.#°º]/g, ' ')
     .replace(/^\s*(avenida|avda|av|calle|pasaje|pje)\s+/, '').replace(/\s+/g, ' ').trim()
-  return /\d/.test(key) ? key : null
+  const parts = key.match(/^(.*\p{L}.*)\s(\d{1,5})$/u)
+  return parts ? `${parts[1]} ${parts[2]}` : null
+}
+
+/** Accents, case, spacing and punctuation removed: "BIRIBIRI  Club-Social" and "Biribiri club social" are the same name. */
+export const nameKey = (name: string) => fold(name).replace(/[^\p{L}\p{N}]+/gu, '')
+// Generic words around a venue's own name; dropped only to find possible aliases, never to reuse automatically.
+const AFFIXES = /\b(club social|club|espacio cultural|espacio|centro cultural|cc|teatro|bar|la|el|los|las)\b/g
+const aliasKey = (name: string) => nameKey(fold(name).replace(/[^\p{L}\p{N}]+/gu, ' ').replace(AFFIXES, ' '))
+/** Conservative alias test: the distinctive parts of the names are equal or one contains the other. */
+export function possibleAlias(a: string, b: string): boolean {
+  const x = aliasKey(a), y = aliasKey(b)
+  return x.length >= 4 && y.length >= 4 && (x.includes(y) || y.includes(x))
 }
 
 export function decodeVenueRequest(input: unknown): VenueRequest {
@@ -50,8 +65,9 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
 }
 
 /**
- * Same name (case-insensitive, or trigram similarity at the importers' auto-use threshold) and a compatible address returns the existing venue,
- * which also makes a repeated request idempotent. Review-band names, or another venue at the same address, are ambiguous.
+ * Reuses a catalog venue automatically only when exactly one venue has the same normalized name, no other venue could be the
+ * same place (similar name, alias, or the same address), and nothing about its location conflicts. Everything else that
+ * might be a match is `ambiguous`. A repeated request finds the venue it created, so `venue` is idempotent.
  */
 export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(client: SupabaseClient, request: VenueRequest,
   geocode: Geocode = query => searchNominatimEffect(query)) {
@@ -60,23 +76,33 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
     return { outcome: 'rejected', reasons: ['Name or address is a placeholder, not a physical venue'] } satisfies VenueOutcome
   }
   const key = addressKey(address)
-  if (!key) return { outcome: 'rejected', reasons: ['Address needs a street and number'] } satisfies VenueOutcome
+  if (!key) return { outcome: 'rejected', reasons: ['Address needs a street name followed by a house number'] } satisfies VenueOutcome
   // Strict reads: a database outage must fail here rather than look like "no match" and create a duplicate.
-  const number = key.match(/\d+/g)!.at(-1)!
-  const sameAddress = ((yield* dbEffect('intake.venue-address', () => client.from('venues')
-    .select('id,name,address,neighborhood').ilike('address', `%${number}%`).limit(200))) as VenueRow[])
-    .filter(venue => addressKey(venue.address) === key)
-  // Not the importers' matchVenueEffect: it reads any RPC error as "no match" and misses names shared by several rows.
+  const venues = (yield* allRowsEffect(client, 'venues', 'id,name,address,neighborhood', query => query.order('id'))) as unknown as VenueRow[]
+  // Not the importers' matchVenueEffect: it reads any RPC error as "no match".
   const similar = (yield* dbEffect('intake.venue-similar', () => client.rpc('intake_similar_venues', {
     p_name: name, p_threshold: REVIEW_QUEUE_THRESHOLD }))) as Array<VenueRow & { similarity: number }>
-  const compatible = similar.filter(venue => venue.similarity >= AUTO_USE_THRESHOLD && (!addressKey(venue.address) || addressKey(venue.address) === key))
-  const named = compatible.find(venue => addressKey(venue.address) === key) ?? compatible[0]
-  if (named) {
-    const found = { outcome: 'existing', venue: pick(named), match: named.similarity === 1 ? 'same name' : `similar name (${named.similarity.toFixed(2)})` } as const
+  const candidates = new Map<string, VenueRow & { why: string }>()
+  const flag = (venue: VenueRow, why: string) => { if (!candidates.has(venue.id)) candidates.set(venue.id, { ...pick(venue), why }) }
+  const stated = request.neighborhood ? barrio(request.neighborhood) : null
+  const conflict = (venue: VenueRow, neighborhood: string | null) => !!venue.address && addressKey(venue.address) !== key ||
+    !!venue.neighborhood && !!neighborhood && venue.neighborhood !== neighborhood
+  const same = venues.filter(venue => nameKey(venue.name) === nameKey(name))
+  for (const venue of same) flag(venue, !conflict(venue, stated) ? 'same name'
+    : venue.address && addressKey(venue.address) !== key ? 'same name, different address' : 'same name, different barrio')
+  for (const venue of similar) flag(venue, `similar name (${Number(venue.similarity).toFixed(2)})`)
+  for (const venue of venues) if (possibleAlias(venue.name, name)) flag(venue, 'possible alias')
+  for (const venue of venues) if (addressKey(venue.address) === key) flag(venue, 'same address')
+  const named = same.length === 1 && candidates.size === 1 ? same[0] : null
+  if (named && !conflict(named, stated)) {
+    const found = { outcome: 'existing', venue: pick(named), match: 'same name' } as const
     if (named.address && named.neighborhood) return found satisfies VenueOutcome
     // An incomplete catalog venue gets its empty fields filled, never overwritten, after the same city and barrio checks.
     const located = yield* locateEffect(geocode, address, request.neighborhood ?? null)
     if ('reasons' in located) return { outcome: 'rejected', reasons: located.reasons } satisfies VenueOutcome
+    if (conflict(named, located.neighborhood)) {
+      return { outcome: 'ambiguous', candidates: [{ ...pick(named), why: `same name, but this address is in ${located.neighborhood}` }] } satisfies VenueOutcome
+    }
     const fill = { ...(named.address ? {} : { address }), ...(named.neighborhood ? {} : { neighborhood: located.neighborhood }) }
     let update = client.from('venues').update(fill).eq('id', named.id)
     for (const field of Object.keys(fill)) update = update.is(field, null)
@@ -86,10 +112,6 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
     const current = rows[0] ?? ((yield* dbEffect('intake.venue-read', () => client.from('venues').select('id,name,address,neighborhood').eq('id', named.id).single())) as VenueRow)
     return { ...found, venue: pick(current), completed: rows.length ? Object.keys(fill) : [], warnings: located.warnings } satisfies VenueOutcome
   }
-  const candidates = new Map<string, VenueRow & { why: string }>()
-  for (const venue of similar) candidates.set(venue.id, { ...pick(venue), why: venue.similarity >= AUTO_USE_THRESHOLD
-    ? 'same name at a different address' : `similar name (${venue.similarity.toFixed(2)})` })
-  for (const venue of sameAddress) if (!candidates.has(venue.id)) candidates.set(venue.id, { ...pick(venue), why: 'same address, different name' })
   if (candidates.size) return { outcome: 'ambiguous', candidates: [...candidates.values()] } satisfies VenueOutcome
 
   const located = yield* locateEffect(geocode, address, request.neighborhood ?? null)
@@ -109,15 +131,16 @@ const recordEvidenceEffect = (client: SupabaseClient, venue: VenueRow, request: 
   final_venue_id: venue.id, best_match_venue_id: null, match_confidence: null, reviewed_at: new Date().toISOString(),
   notes: JSON.stringify({ action, evidence: request.evidence, neighborhood_method: located.method, warnings: located.warnings }),
 }).select('id').single()).pipe(Effect.mapError(error => failure(
-  `Venue ${venue.id} was ${action} but its evidence was not recorded (${error.message}); record it before using the venue`)))
+  `Venue ${venue.id} (${venue.name}) was ${action} but has no evidence row (${error.message}). A retry returns it as existing without adding one, so note this venue ID in the run memory and report`)))
 
 const pick = (venue: VenueRow): VenueRow => ({ id: venue.id, name: venue.name, address: venue.address, neighborhood: venue.neighborhood })
 
 /** The operator's barrio, from an authoritative source, wins; the geocoder rejects places outside the city and fills a missing barrio. */
+// Exact barrio names only: the importers' partial matching would turn "Villa" into Villa Crespo.
+const barrio = (given: string) => NEIGHBORHOODS.find(item => fold(item) === fold(given.trim())) ?? null
 type Located = { neighborhood: Neighborhood; method: 'stated' | 'geocoded'; warnings: string[] } | { reasons: string[] }
 const locateEffect = Effect.fn('intake.venue-locate')(function*(geocode: Geocode, address: string, given: string | null) {
-  // Exact barrio names only: the importer's partial matching would turn "Villa" into Villa Crespo.
-  const stated = given ? NEIGHBORHOODS.find(item => fold(item) === fold(given.trim())) ?? null : null
+  const stated = given ? barrio(given) : null
   if (given && !stated) return { reasons: [`"${given}" is not a Buenos Aires city neighborhood`] } as Located
   const found = yield* geocode(address).pipe(Effect.map(result => ({ result, error: false })),
     Effect.catchCause(() => Effect.succeed({ result: null, error: true })))
