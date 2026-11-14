@@ -18,7 +18,8 @@ The normal command is `bun run instagram:intake <operation>`. Invoke it from the
 6. Run `submit <absolute-private-json-path>`, then `preview <candidate-id>`. Inspect the preview's action and reasons. A `link` adds evidence to an existing event without replacing its source identity. For a verified cancellation/reschedule, explicitly submit `intent: update` with the existing event ID and current organizer/venue evidence. A curator repost cannot authorize a correction. Any issue keeps the candidate held.
 7. When publishing is enabled, commit supported plans using `commit <plan-id>`. This is the authorized publication interface; do not write SQL, use the older generic events API, or invent another import script. Retry an interrupted commit with the same plan ID. Return the recorded event ID and outcome; a successful command is not a new event if the receipt says `link` or `update`.
 8. Record the disposition of each completely reviewed observation with `review <file.json>`, containing `observation_id` and a meaningful `note` (candidate IDs, non-event/past promotion, or unresolved details). Do not mark an observation reviewed before all its occurrences/slides are considered. Leave unfinished observations pending. Held candidates remain durable in `candidates`; reconsider them when new evidence arrives.
-9. Summarize created, updated, linked and held occurrences, source failures, unreviewed backlog and measured Actor charges. Notify only on meaningful new results, corrections/cancellations, failures, budget limits or required action. Stay quiet when nothing actionable changed.
+9. After the pending backlog, work the held-venue backlog (see "Held venues" below). Run `held`, and resolve each group whose candidates are held only for their venue: confirm the venue, run `venue`, then revise, preview and commit each of its candidates.
+10. Summarize created, updated, linked and held occurrences, venues added and events published from the held backlog, source failures, unreviewed backlog and measured Actor charges. source failures, unreviewed backlog and measured Actor charges. Notify only on meaningful new results, corrections/cancellations, failures, budget limits or required action. Stay quiet when nothing actionable changed.
 
 Each run asks Apify only for posts newer than 2 hours before the last successful run was reserved (`onlyPostsNewerThan`, an ISO UTC timestamp such as `2026-11-14T10:00:00Z`); with no successful run it reaches back 7 days. Apify bills every post it returns, so the cutoff is a precise time rather than a date: a date cutoff (the day before the last run, from midnight UTC) asked for about 57 hours each day and paid for most posts two or three times. With the precise cutoff each post is billed about once, and the 2-hour margin covers posts Instagram shows a little late and small differences between the reservation time and when the Actor actually ran. After a pause, such as a month stopped by the monthly cap, the next run catches up on the whole gap, but it never reaches back more than 30 days. The per-account ceiling and the run cap bound what a catch-up run costs, and accounts it cuts off are listed as uncovered. Re-fetching posts in the margin is harmless: a post with the same caption and images only updates `last_seen_at` on its existing observation. `posts_per_source` (default 20) is a per-account ceiling for one run, not a fetch count; the run summary lists accounts that hit it in `coverage.at_ceiling_sources`. `data_detail_level` defaults to `detailedData`, which returns every carousel slide. `basicData` costs about 40% less but returns only the first image, so carousel flyer slides would be lost. The pinned Actor build is `0.0.679`; build `0.0.646` failed every profile lookup on November 4 and 5.
 
@@ -31,6 +32,39 @@ Collection covers new posts only, not a complete account history. Pinned posts a
 BA Eventos lists independent culture. Mainstream large-venue shows are out of scope, even when a curator or agenda account reposts them. That means arena and stadium concerts (for example Movistar Arena, Luna Park, and the River, Vélez, and Huracán stadiums), shows at Hipódromo de Palermo and large commercial halls such as Teatro Gran Rex and Teatro Ópera, chart and arena-level touring headliners, and mass festivals sold by the big promoters (for example DF Entertainment, Fénix, PopArt, Move Concerts, and T4F). Don't create or link new catalog events for them. When every occurrence in a post is out of scope, record the observation as reviewed with the note `out of scope: mainstream large-venue show`. In a mixed post or carousel, skip only those occurrences, and still handle the rest (step 8). If a mainstream event is already in the catalog, a verified correction, cancellation, or reschedule still goes through `intent: update` (step 6), so the listing doesn't stay wrong.
 
 The venue or the artist's fame alone doesn't decide it: an independently organized cultural event at Tecnópolis, a city venue, or a mid-size theatre, or a touring jazz or folk artist at a small club, stays in scope. Hold the candidate and say why in the report only when it's genuinely unclear. Small and mid-size independent rooms, cultural centers, jazz clubs, peñas, independent theatres, and public institutions (museums, the city's cultural centers, and university halls) stay in scope. This rule doesn't remove events already in the catalog.
+
+## Held venues
+
+A candidate whose venue isn't in the `venues` table stays held. Nothing else creates the venue, so the daily run resolves these itself, after the pending backlog.
+
+1. Run `held`. It lists unpublished candidates dated today or later, grouped by the venue they name, with each candidate's hold reasons from its latest preview and its own `issues`. `venue_only` marks candidates whose only blocker is the venue. Work the groups with the most `venue_only` candidates first, and resolve each physical venue once for all its events.
+2. Confirm the venue's official name, street address with number, and barrio from an authoritative source: the venue's own website or Instagram profile, a city or national government page, or the organizer's ticket page. A caption or a curator repost alone is not enough. Use `lookup <name>` first; a venue already in the catalog under a slightly different name only needs its ID.
+3. Write a private JSON file and run `venue <file.json>`:
+
+```json
+{
+  "name": "Sala Sintética",
+  "address": "Av. Ficticia 1234",
+  "neighborhood": "Almagro",
+  "website": "https://example.org",
+  "instagram_handle": "salasintetica",
+  "evidence": [
+    { "url": "https://example.org/contacto", "confirms": "official name and street address" },
+    { "url": "https://example.org/", "confirms": "barrio Almagro in the footer" }
+  ]
+}
+```
+
+`neighborhood`, `website` and `instagram_handle` are optional; `neighborhood` must be one of the city's 48 barrios exactly as the catalog spells them. The command answers with one `outcome`:
+
+- `existing`: the venue is already in the catalog (same name and compatible address). Use its ID. Running the same request again also returns `existing`, so a retry never creates a second venue.
+- `created`: the venue was added and its evidence saved. Read any `warnings`; a geocoder that disagrees with your barrio, or couldn't confirm the address is in the city, means you check again before publishing.
+- `ambiguous`: a similar name, the same name at another address, or another venue at the same address is already in the catalog. Nothing was created. Use `lookup` and the listed candidates to decide; if it's the same place, use that ID. If it's genuinely different, keep the events held and report it.
+- `rejected`: the address is outside the city of Buenos Aires, has no street number, or the barrio is not valid. Nothing was created.
+
+4. Submit a new revision of each original candidate (same UUID, current revision as `expected_revision`) with the `venue_id` and the venue's catalog name as `venue_name`, and drop the `issues` entries the venue resolved, then `preview`. Commit only when the preview has no reasons, under the normal rules above.
+
+Keep held, and don't run `venue`, when no physical location is named, the place is outside the city (begin the candidate's issue with "Outside the city"), a multi-venue teaser gives no per-venue dates, or the match is `ambiguous`. Ask Hanif only about cases that truly need a person, such as two catalog venues that might be the same place. The `venue` command is the only allowed way to add a venue: don't write catalog SQL or call other venue helpers. Each venue it creates keeps its evidence as an `approved` row with source `instagram-intake` in `venue_review_queue` (`final_venue_id` is the venue, `notes` holds the evidence JSON).
 
 ## Source discovery
 

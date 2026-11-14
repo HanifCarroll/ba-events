@@ -9,6 +9,7 @@ import { collectInstagramEffect, type ApifyRequest } from '../src/features/impor
 import { SourceSchema } from '../src/features/import/intake/schema.ts'
 import { submitCandidateEffect, previewCandidateEffect, commitPlanEffect } from '../src/features/import/intake/service.ts'
 import { allRowsEffect, dbEffect } from '../src/features/import/intake/repository.ts'
+import { decodeVenueRequest, heldBacklogEffect, resolveIntakeVenueEffect } from '../src/features/import/intake/venues.ts'
 
 const HELP = `Instagram event intake
   preflight                    Read configuration readiness; no paid or catalog writes
@@ -18,7 +19,9 @@ const HELP = `Instagram event intake
   pending                      List unreviewed observations and media metadata
   export                       Save pending evidence privately for Codex image inspection
   candidates                   List saved candidate revisions
+  held                         List future unpublished candidates grouped by venue, with hold reasons
   lookup <name>                Find venues and catalog events by name
+  venue <file.json>             Find or create a Buenos Aires venue from sourced name, address and evidence
   submit <file.json>            Validate and save a structured candidate revision
   preview <candidate-uuid>      Save a proposed create/update/link/held plan
   commit <plan-uuid>            Publish the prepared plan and return its durable receipt
@@ -103,6 +106,13 @@ export async function main(args: string[]) {
       break
     }
     case 'candidates': result = await run(allRowsEffect(db, 'intake_candidates', '*', query => query.order('updated_at'))); break
+    case 'held': result = await run(heldBacklogEffect(db)); break
+    case 'venue': {
+      let request
+      try { request = decodeVenueRequest(JSON.parse(await readFile(input, 'utf8'))) }
+      catch (error) { throw new Error(`Invalid venue request: ${error instanceof Error ? error.message : 'see docs/instagram-intake.md'}`) }
+      result = await run(resolveIntakeVenueEffect(db, request)); break
+    }
     case 'lookup': {
       if (!input || input.length > 100 || /[%_,()]/.test(input)) throw new Error('Use a plain name fragment')
       const venues = await run(dbEffect('intake.venues', () => db.from('venues').select('id,name,address,neighborhood').ilike('name', `%${input}%`).limit(30)))

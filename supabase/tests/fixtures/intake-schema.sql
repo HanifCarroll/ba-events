@@ -22,3 +22,13 @@ grant usage on schema public to service_role;
 grant all on public.events, public.venues to service_role;
 create function public.synthetic_event_timestamp() returns trigger language plpgsql as $$begin new.updated_at=clock_timestamp(); return new; end$$;
 create trigger events_updated_at before update on public.events for each row execute function public.synthetic_event_timestamp();
+-- Mirrors the production venue_review_queue columns the intake `venue` operation writes (20260108000001_add_scrape_runs.sql).
+create table public.venue_review_queue(
+  id uuid primary key default gen_random_uuid(), scrape_run_id uuid, source text not null, source_venue_name text not null,
+  source_address text, source_coordinates jsonb, source_event_ids uuid[],
+  best_match_venue_id uuid references public.venues(id) on delete set null, match_confidence decimal(3,2),
+  status text not null default 'pending', reviewed_at timestamptz, reviewed_by uuid,
+  final_venue_id uuid references public.venues(id) on delete set null, notes text,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+grant all on public.venue_review_queue to service_role;

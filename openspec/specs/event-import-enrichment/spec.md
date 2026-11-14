@@ -187,6 +187,12 @@ The agent SHALL submit validated structured candidates with supporting observati
 - **WHEN** candidates are prepared from the observations
 - **THEN** each occurrence retains its own stable candidate/event identity, and repeated promotion may attach additional evidence to the existing event
 
+#### Scenario: A held candidate's venue is not in the catalog
+- **WHEN** the operator submits a sourced venue name, numbered street address, optional barrio and evidence URLs to the intake `venue` operation
+- **THEN** a confident name match with a compatible address returns the existing venue, and a review-band name, the same name at another address, or another venue at the same address returns `ambiguous` without creating anything
+- **AND** otherwise a venue is created only inside the city of Buenos Aires with a valid barrio, its evidence is kept as an approved `instagram-intake` row in `venue_review_queue`, and repeating the request returns the same venue
+- **AND** the `held` operation lists unpublished future candidates grouped by venue with their hold reasons
+
 ### Requirement: Intake publication is transactional and revision checked
 The shared preview/commit interface SHALL persist candidate revisions, proposed actions and durable receipts. A repeated commit SHALL return its original receipt. Changed candidates, changed catalog rows, newer source observations, expired plans and held cases SHALL reject publication. A successful create or correction SHALL prepare the existing search document/embedding and description presentation before the catalog transaction.
 
@@ -211,6 +217,7 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/trigger/jobs/enrichment-catchup.ts`
 - `src/features/import/intake/`
 - `scripts/instagram-intake.ts`
+- `src/features/import/intake/venues.ts`
 - `supabase/migrations/20261025205334_instagram_intake.sql`
 - `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
 
@@ -223,7 +230,9 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/planning.test.ts`
 - `src/features/import/intake/service.test.ts`
 - `src/features/import/intake/collection.test.ts`
+- `src/features/import/intake/venues.test.ts`
 - `supabase/tests/instagram-intake.sql`
+- `supabase/tests/instagram-intake-venues.sql`
 
 ### Verification command
 ```sh
