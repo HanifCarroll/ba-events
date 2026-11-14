@@ -14,4 +14,9 @@ docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < su
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261025205334_instagram_intake.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261113220000_instagram_incremental_collection.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261114190000_instagram_wider_watchlist.sql
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20260105000002_add_find_similar_venue.sql
+# Applied twice: production migrations are run by hand and a retry must succeed.
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261115120000_intake_similar_venues.sql
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261115120000_intake_similar_venues.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/instagram-intake.sql
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/instagram-intake-venues.sql
