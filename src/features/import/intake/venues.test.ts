@@ -11,7 +11,10 @@ function fakeDb(venues: Row[], options: { similar?: { id: string; similarity: nu
   const from = (table: string) => {
     const filters: Array<(row: Row) => boolean> = []
     let pending: Record<string, unknown> | null = null
+    let patch: Partial<Row> | null = null
     const builder: Record<string, unknown> = {
+      update: (values: Partial<Row>) => { patch = values; return builder },
+      is: (column: keyof Row, value: null) => { filters.push(row => row[column] === value); return builder },
       select: () => builder, limit: () => builder, order: () => builder,
       ilike: (column: 'name' | 'address', pattern: string) => {
         const needle = pattern.replaceAll('%', '').toLowerCase()
@@ -29,7 +32,9 @@ function fakeDb(venues: Row[], options: { similar?: { id: string; similarity: nu
         const found = venues.filter(row => filters.every(filter => filter(row)))[0]
         return Promise.resolve(found ? { data: found, error: null } : { data: null, error: { message: 'no rows' } })
       },
-      then: (resolve: (value: unknown) => void) => resolve(options.failReads
+      then: (resolve: (value: unknown) => void) => patch
+        ? resolve({ data: venues.filter(row => filters.every(filter => filter(row))).map(row => Object.assign(row, patch)), error: null })
+        : resolve(options.failReads
         ? { data: null, error: { message: 'database unavailable' } }
         : { data: venues.filter(row => filters.every(filter => filter(row))), error: null }),
     }
@@ -51,6 +56,7 @@ describe('intake venue resolution', () => {
     expect(addressKey('Av. Ficticia 1234, CABA')).toBe('ficticia 1234')
     expect(addressKey('Avenida Ficticia 1234')).toBe('ficticia 1234')
     expect(addressKey('Ficticia sin número')).toBeNull()
+    expect(addressKey('3 de Febrero 1378')).toBe('3 de febrero 1378')
   })
   it('requires evidence with public HTTPS URLs and rejects unknown fields', () => {
     expect(() => request({ evidence: [] })).toThrow()
@@ -72,6 +78,19 @@ describe('intake venue resolution', () => {
     const { db, inserts } = fakeDb([{ id: 'v1', name: 'Sala Sintetica', address: 'Ficticia 1234', neighborhood: 'Almagro' }], { similar: { id: 'v1', similarity: 0.9 } })
     expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'v1' } })
     expect(inserts).toHaveLength(0)
+  })
+  it('fills an existing venue\'s empty address and barrio instead of creating a duplicate', async () => {
+    const { db, inserts, venues } = fakeDb([{ id: 'v1', name: 'Sala Sintética', address: null, neighborhood: null }])
+    expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'v1', address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro' }, completed: ['address', 'neighborhood'] })
+    expect(inserts.map(item => item.table)).toEqual(['venue_review_queue'])
+    expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'v1' } })
+    expect(inserts).toHaveLength(1)
+    expect(venues).toHaveLength(1)
+  })
+  it('does not fill an existing venue from an address outside the city', async () => {
+    const { db, venues } = fakeDb([{ id: 'v1', name: 'Sala Sintética', address: null, neighborhood: null }])
+    expect(await run(db, request(), geocoded('Buenos Aires', 'Olivos'))).toMatchObject({ outcome: 'rejected' })
+    expect(venues[0].address).toBeNull()
   })
   it('holds review-band names, same name elsewhere, and other venues at the same address', async () => {
     const band = fakeDb([{ id: 'v1', name: 'Sala Sint', address: null, neighborhood: 'Almagro' }], { similar: { id: 'v1', similarity: 0.7 } })

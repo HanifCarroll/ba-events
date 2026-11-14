@@ -25,7 +25,7 @@ export const VenueRequestSchema = Schema.Struct({
 export type VenueRequest = typeof VenueRequestSchema.Type
 type VenueRow = Pick<Venue, 'id' | 'name' | 'address' | 'neighborhood'>
 export type VenueOutcome =
-  | { outcome: 'existing'; venue: VenueRow; match: string }
+  | { outcome: 'existing'; venue: VenueRow; match: string; completed?: string[]; warnings?: string[] }
   | { outcome: 'created'; venue: VenueRow; warnings: string[] }
   | { outcome: 'ambiguous'; candidates: Array<VenueRow & { why: string }> }
   | { outcome: 'rejected'; reasons: string[] }
@@ -70,7 +70,19 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
   const match = yield* matchVenueEffect(name, REVIEW_QUEUE_THRESHOLD, client).pipe(Effect.mapError(error => failure(error.message)))
   const named = match.venue as VenueRow | null
   if (named && match.confidence >= AUTO_USE_THRESHOLD && (!addressKey(named.address) || addressKey(named.address) === key)) {
-    return { outcome: 'existing', venue: pick(named), match: match.matchType === 'exact' ? 'exact name' : `similar name (${match.confidence.toFixed(2)})` } satisfies VenueOutcome
+    const found = { outcome: 'existing', venue: pick(named), match: match.matchType === 'exact' ? 'exact name' : `similar name (${match.confidence.toFixed(2)})` } as const
+    if (named.address && named.neighborhood) return found satisfies VenueOutcome
+    // An incomplete catalog venue gets its empty fields filled, never overwritten, after the same city and barrio checks.
+    const located = yield* locateEffect(geocode, address, request.neighborhood ?? null)
+    if ('reasons' in located) return { outcome: 'rejected', reasons: located.reasons } satisfies VenueOutcome
+    const fill = { ...(named.address ? {} : { address }), ...(named.neighborhood ? {} : { neighborhood: located.neighborhood }) }
+    let update = client.from('venues').update(fill).eq('id', named.id)
+    for (const field of Object.keys(fill)) update = update.is(field, null)
+    const rows = (yield* dbEffect('intake.venue-complete', () => update.select('id,name,address,neighborhood'))) as VenueRow[]
+    if (rows.length) yield* recordEvidenceEffect(client, rows[0], request, `completed ${Object.keys(fill).join(', ')}`, located)
+    const venue = rows[0] ?? named // no row: another writer filled it first, so re-read below
+    const current = rows[0] ? venue : ((yield* dbEffect('intake.venue-read', () => client.from('venues').select('id,name,address,neighborhood').eq('id', named.id).single())) as VenueRow)
+    return { ...found, venue: pick(current), completed: rows.length ? Object.keys(fill) : [], warnings: located.warnings } satisfies VenueOutcome
   }
   const candidates = new Map<string, VenueRow & { why: string }>()
   if (named) candidates.set(named.id, { ...pick(named), why: match.confidence >= AUTO_USE_THRESHOLD
@@ -84,15 +96,18 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
     website: request.website ?? '', instagram_handle: request.instagram_handle ?? '' })
   if (!parsed.success) return { outcome: 'rejected', reasons: parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`) } satisfies VenueOutcome
   const venue = yield* importTry('intake.venue-create', () => createVenue(parsed.data, client))
-  // The venue's evidence lives in the existing review log; the row stays tied to the venue even if it is merged later.
-  yield* dbEffect('intake.venue-evidence', () => client.from('venue_review_queue').insert({
-    source: INTAKE_VENUE_SOURCE, source_venue_name: name, source_address: address, status: 'approved',
-    final_venue_id: venue.id, best_match_venue_id: null, match_confidence: null, reviewed_at: new Date().toISOString(),
-    notes: JSON.stringify({ evidence: request.evidence, neighborhood_method: located.method, warnings: located.warnings }),
-  }).select('id').single()).pipe(Effect.mapError(error => failure(
-    `Venue ${venue.id} was created but its evidence was not recorded (${error.message}); record it before using the venue`)))
+  yield* recordEvidenceEffect(client, venue, request, 'created', located)
   return { outcome: 'created', venue: pick(venue), warnings: located.warnings } satisfies VenueOutcome
 })
+
+/** The venue's evidence lives in the existing review log as an approved row tied to the venue. A rerun of `venue` repeats it. */
+const recordEvidenceEffect = (client: SupabaseClient, venue: VenueRow, request: VenueRequest, action: string,
+  located: { method: string; warnings: string[] }) => dbEffect('intake.venue-evidence', () => client.from('venue_review_queue').insert({
+  source: INTAKE_VENUE_SOURCE, source_venue_name: request.name.trim(), source_address: request.address.trim(), status: 'approved',
+  final_venue_id: venue.id, best_match_venue_id: null, match_confidence: null, reviewed_at: new Date().toISOString(),
+  notes: JSON.stringify({ action, evidence: request.evidence, neighborhood_method: located.method, warnings: located.warnings }),
+}).select('id').single()).pipe(Effect.mapError(error => failure(
+  `Venue ${venue.id} was ${action} but its evidence was not recorded (${error.message}); record it before using the venue`)))
 
 const pick = (venue: VenueRow): VenueRow => ({ id: venue.id, name: venue.name, address: venue.address, neighborhood: venue.neighborhood })
 
