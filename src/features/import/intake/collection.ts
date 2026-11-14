@@ -154,7 +154,8 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
     // Existing runs can still be retrieved when no credit remains for a new run.
     yield* checkCreditEffect(api, Number(reservation.reserved_usd))
     const started = yield* importTry('apify.start', () => api('POST', 'actors/apify~instagram-post-scraper/runs', {
-      maxTotalChargeUsd: Number(reservation.reserved_usd), build: reservation.actor_build, timeout: 300, memory: 1024, restartOnError: false,
+      // A 200-account run took about 200 s, so 300 s would time out a ~160-source watchlist and waste the charged rows.
+      maxTotalChargeUsd: Number(reservation.reserved_usd), build: reservation.actor_build, timeout: 1800, memory: 1024, restartOnError: false,
     }, reservation.input))
     const run = yield* Effect.try({ try: () => readRun(started), catch: () => fail('Unknown Apify start result; reconcile the reserved run before retrying') })
     runId = run.id
