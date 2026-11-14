@@ -32,7 +32,7 @@ const post = (id: string, owner = 'synthetic_venue') => ({ id, shortCode: `sc${i
 const noItems = (name: string) => ({ url: `https://www.instagram.com/${name}`, inputUrl: `https://www.instagram.com/${name}`, error: 'no_items', errorDescription: 'Empty or private data for provided input' })
 
 describe('incremental Instagram collection', () => {
-  it('treats posts re-fetched in the one-day overlap as unchanged, not new observations', async () => {
+  it('treats posts re-fetched in the overlap margin as unchanged, not new observations', async () => {
     const { db, observations } = memoryDb()
     const first = await Effect.runPromise(retainPostsEffect(db, 'run-1', [post('1'), post('2')], ['synthetic_venue'], 20))
     const second = await Effect.runPromise(retainPostsEffect(db, 'run-2', [post('2'), post('3')], ['synthetic_venue'], 20))

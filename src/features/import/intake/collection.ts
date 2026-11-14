@@ -154,7 +154,8 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
     // Existing runs can still be retrieved when no credit remains for a new run.
     yield* checkCreditEffect(api, Number(reservation.reserved_usd))
     const started = yield* importTry('apify.start', () => api('POST', 'actors/apify~instagram-post-scraper/runs', {
-      maxTotalChargeUsd: Number(reservation.reserved_usd), build: reservation.actor_build, timeout: 300, memory: 1024, restartOnError: false,
+      // A 200-account run took about 200 s, so 300 s would time out a ~160-source watchlist and waste the charged rows.
+      maxTotalChargeUsd: Number(reservation.reserved_usd), build: reservation.actor_build, timeout: 1800, memory: 1024, restartOnError: false,
     }, reservation.input))
     const run = yield* Effect.try({ try: () => readRun(started), catch: () => fail('Unknown Apify start result; reconcile the reserved run before retrying') })
     runId = run.id
@@ -176,5 +177,5 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
   }
   const result = yield* retainPostsEffect(client, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit))
   yield* dbEffect('intake.finished', () => client.from('intake_runs').update({ state: 'succeeded', charged_usd: run.usageTotalUsd ?? null, completed_at: new Date().toISOString() }).eq('id', reservation.id).select('id').single())
-  return { state: 'succeeded', run_id: runId, scope: 'posts since the day before the last successful run (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result }
+  return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result }
 })

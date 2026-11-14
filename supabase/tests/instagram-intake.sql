@@ -11,15 +11,22 @@ begin
   insert into public.instagram_sources(username,authority,enabled,qualification) values('synthetic_venue','venue',true,'Synthetic fixture');
   update public.intake_policy set collection_enabled=true, publishing_enabled=true;
   if (select actor_build from public.intake_policy) <> '0.0.679' then raise exception 'Actor build not moved off 0.0.646'; end if;
+  if (select (max_sources, run_cap_usd, monthly_cap_usd) from public.intake_policy) <> (200, 1.5::numeric, 18::numeric) then raise exception 'Wider watchlist policy not applied'; end if;
+  begin
+    update public.intake_policy set max_sources = 501;
+    raise exception 'max_sources above 500 accepted';
+  exception when check_violation then null;
+  end;
   -- Probe the collection window in subtransactions that roll back.
   for probe in 0..3 loop
     begin
       today := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
-      if probe = 1 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-3,'succeeded',0.01,'{}'),(today-2,'failed',0.01,'{}'); end if;
-      if probe = 2 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-12,'succeeded',0.01,'{}'); end if;
-      if probe = 3 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-45,'succeeded',0.01,'{}'); end if;
+      -- The cutoff is the last succeeded run's reservation time minus 2 hours, 7 days back with none, never past 30 days.
+      if probe = 1 then insert into public.intake_runs(local_date,state,reserved_usd,input,created_at) values(today-3,'succeeded',0.01,'{}',now()-interval '27 hours'),(today-2,'failed',0.01,'{}',now()-interval '3 hours'),(today-5,'succeeded',0.01,'{}',now()-interval '5 days'); end if;
+      if probe = 2 then insert into public.intake_runs(local_date,state,reserved_usd,input,created_at) values(today-12,'succeeded',0.01,'{}',now()-interval '12 days'); end if;
+      if probe = 3 then insert into public.intake_runs(local_date,state,reserved_usd,input,created_at) values(today-30,'succeeded',0.01,'{}',now()-interval '29 days 23 hours'); end if;
       reserved := public.reserve_instagram_collection();
-      if reserved->'input'->>'onlyPostsNewerThan' <> (today - case probe when 1 then 4 when 2 then 13 when 3 then 30 else 7 end)::text then
+      if reserved->'input'->>'onlyPostsNewerThan' <> to_char((now() - case probe when 1 then interval '29 hours' when 2 then interval '12 days 2 hours' when 3 then interval '30 days' else interval '7 days' end) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') then
         raise exception 'Wrong collection window in probe %: %', probe, reserved->'input'->>'onlyPostsNewerThan'; end if;
       if (reserved->'input'->>'resultsLimit')::int <> 20 or reserved->'input'->>'dataDetailLevel' <> 'detailedData' then raise exception 'Wrong ceiling or detail level'; end if;
       raise exception 'probe rollback';
@@ -73,6 +80,6 @@ begin
     raise exception 'Expected stale evidence rejection';
   exception when others then if sqlerrm <> 'Source changed after review' then raise; end if; end;
   if (select receipt from public.intake_plans where id=other) is not null then raise exception 'Failed commit left a receipt'; end if;
-  raise notice 'PASS: permissions, incremental window, policy ceiling/detail/build, budget reservation, revisions, idempotency, stable identity, stale evidence, and correction protection';
+  raise notice 'PASS: permissions, incremental window, policy ceiling/detail/build/watchlist limits, budget reservation, revisions, idempotency, stable identity, stale evidence, and correction protection';
 end $$;
 rollback;
