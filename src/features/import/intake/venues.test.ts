@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NominatimResult } from '../core/nominatim.ts'
-import { addressKey, decodeVenueRequest, groupHeldByVenue, resolveIntakeVenueEffect, type VenueRequest } from './venues.ts'
+import { addressKey, decodeVenueRequest, type Geocode, groupHeldByVenue, resolveIntakeVenueEffect, type VenueRequest } from './venues.ts'
 
 type Row = { id: string; name: string; address: string | null; neighborhood: string | null }
 /** A synthetic venues table behind the few query shapes the matcher and resolver use. */
@@ -43,7 +43,7 @@ const geocoded = (state: string, suburb?: string) => () => Effect.succeed({ lat:
 const request = (overrides: Partial<VenueRequest> = {}): VenueRequest => decodeVenueRequest({
   name: 'Sala Sintética', address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro',
   evidence: [{ url: 'https://example.org/sala', confirms: 'name, address and barrio on the official site' }], ...overrides })
-const run = (db: SupabaseClient, input: VenueRequest, geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro')) =>
+const run = (db: SupabaseClient, input: VenueRequest, geocode: Geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro')) =>
   Effect.runPromise(resolveIntakeVenueEffect(db, input, geocode))
 
 describe('intake venue resolution', () => {

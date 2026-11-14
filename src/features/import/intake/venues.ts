@@ -29,7 +29,7 @@ export type VenueOutcome =
   | { outcome: 'created'; venue: VenueRow; warnings: string[] }
   | { outcome: 'ambiguous'; candidates: Array<VenueRow & { why: string }> }
   | { outcome: 'rejected'; reasons: string[] }
-type Geocode = (query: string) => Effect.Effect<NominatimResult | null, unknown>
+export type Geocode = (query: string) => Effect.Effect<NominatimResult | null, unknown>
 
 export const INTAKE_VENUE_SOURCE = 'instagram-intake'
 const CITY_STATE = 'ciudad autonoma de buenos aires'
@@ -97,27 +97,28 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
 const pick = (venue: VenueRow): VenueRow => ({ id: venue.id, name: venue.name, address: venue.address, neighborhood: venue.neighborhood })
 
 /** The operator's barrio, from an authoritative source, wins; the geocoder rejects places outside the city and fills a missing barrio. */
+type Located = { neighborhood: Neighborhood; method: 'stated' | 'geocoded'; warnings: string[] } | { reasons: string[] }
 const locateEffect = Effect.fn('intake.venue-locate')(function*(geocode: Geocode, address: string, given: string | null) {
   // Exact barrio names only: the importer's partial matching would turn "Villa" into Villa Crespo.
   const stated = given ? NEIGHBORHOODS.find(item => fold(item) === fold(given.trim())) ?? null : null
-  if (given && !stated) return { reasons: [`"${given}" is not a Buenos Aires city neighborhood`] }
+  if (given && !stated) return { reasons: [`"${given}" is not a Buenos Aires city neighborhood`] } as Located
   const found = yield* geocode(address).pipe(Effect.map(result => ({ result, error: false })),
     Effect.catchCause(() => Effect.succeed({ result: null, error: true })))
   const warnings: string[] = []
   if (found.result) {
     const { state, country_code } = found.result.address
     if (country_code !== 'ar' || !state || fold(state) !== CITY_STATE) {
-      return { reasons: [`The address geocodes outside the city of Buenos Aires (${[state, country_code].filter(Boolean).join(', ')})`] }
+      return { reasons: [`The address geocodes outside the city of Buenos Aires (${[state, country_code].filter(Boolean).join(', ')})`] } as Located
     }
   }
   const derived = found.result ? mapNominatimNeighborhood(found.result.address.neighbourhood, found.result.address.suburb) : null
   if (!found.result) warnings.push(found.error ? 'Geocoder unavailable; city not confirmed' : 'Geocoder did not find the address; city not confirmed')
   if (stated) {
     if (derived && derived !== stated) warnings.push(`Geocoder places the address in ${derived}; kept the stated ${stated}`)
-    return { neighborhood: stated, method: 'stated', warnings }
+    return { neighborhood: stated, method: 'stated', warnings } as Located
   }
-  return derived ? { neighborhood: derived, method: 'geocoded', warnings }
-    : { reasons: ['Neighborhood not found; supply it from an authoritative source'] }
+  return (derived ? { neighborhood: derived, method: 'geocoded', warnings }
+    : { reasons: ['Neighborhood not found; supply it from an authoritative source'] }) as Located
 })
 
 // ---------------------------------------------------------------------------
