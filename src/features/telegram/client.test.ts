@@ -81,11 +81,11 @@ describe('Telegram Bot API client', () => {
     )
     const client = createTelegramClient({ token: '123:secret', fetch: fetchMock as typeof fetch })
 
-    await client.setWebhook('https://baeventos.com/api/telegram', 'webhook-secret')
+    await client.setWebhook('https://salidasba.com/api/telegram', 'webhook-secret')
 
     const [, init] = fetchMock.mock.calls[0]!
     expect(JSON.parse(String(init?.body))).toEqual({
-      url: 'https://baeventos.com/api/telegram',
+      url: 'https://salidasba.com/api/telegram',
       allowed_updates: ['message', 'callback_query'],
       secret_token: 'webhook-secret',
     })

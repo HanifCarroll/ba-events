@@ -25,18 +25,18 @@
 </script>
 
 <svelte:head>
-	<title>{title} | BA Eventos</title>
+	<title>{title} | Salidas BA</title>
 	<meta name="description" content={description} />
 	<link rel="canonical" href={`${siteUrl}/mcp`} />
 	<meta property="og:type" content="website" />
-	<meta property="og:site_name" content="BA Eventos" />
-	<meta property="og:title" content={`${title} | BA Eventos`} />
+	<meta property="og:site_name" content="Salidas BA" />
+	<meta property="og:title" content={`${title} | Salidas BA`} />
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={`${siteUrl}/mcp`} />
 	<meta property="og:locale" content={locale === 'es' ? 'es_AR' : 'en_US'} />
 	<meta property="og:image" content={`${siteUrl}/og-image-2026.jpg`} />
 	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content={`${title} | BA Eventos`} />
+	<meta name="twitter:title" content={`${title} | Salidas BA`} />
 	<meta name="twitter:description" content={description} />
 	<meta name="twitter:image" content={`${siteUrl}/og-image-2026.jpg`} />
 </svelte:head>

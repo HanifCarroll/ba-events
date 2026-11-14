@@ -1,6 +1,6 @@
 # Exploring the code
 
-The repository is public so you can inspect the implementation behind [baeventos.com](https://baeventos.com). Start with the [architecture overview](architecture.md) and its code map. The checks and component gallery below let you explore locally without production accounts or credentials.
+The repository is public so you can inspect the implementation behind [salidasba.com](https://salidasba.com). Start with the [architecture overview](architecture.md) and its code map. The checks and component gallery below let you explore locally without production accounts or credentials.
 
 ## 1. Run the checks
 

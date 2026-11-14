@@ -49,11 +49,11 @@ Time-TBA, location-TBA, missing price, missing description, and missing source d
 - **AND** canonical cards retain the source timestamps and time-TBA flag for their existing presentation rules
 
 ### Requirement: Source presentation preserves provenance
-Event detail and summaries SHALL distinguish BA Eventos pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
+Event detail and summaries SHALL distinguish Salidas BA pages, original event sources, and ticket links using the stored source fields. Sanitization or summary generation MUST NOT create a source URL.
 
 #### Scenario: Event has an original source link
 - **WHEN** source presentation is built
-- **THEN** the link remains identified as external source evidence rather than BA Eventos-authored fact
+- **THEN** the link remains identified as external source evidence rather than Salidas BA-authored fact
 
 ### Requirement: Homepage cards are discovered early without delaying the hero
 The homepage SHALL render a fresh shared cache of at most four compact public cards in server HTML. A cold cache SHALL stream the feed independently of the hero. Cached cards SHALL be fresh for 60 seconds and MAY be served for a further 300 seconds while a retained background refresh runs. Failed refreshes MUST NOT be cached as successful empty feeds. Browser/CDN cache policy MUST NOT extend the feed's intended freshness to the zone's four-hour browser TTL.

@@ -3,7 +3,7 @@ import { getHappeningSoonEventsForGridEffect } from './crud.server.ts'
 import { HOME_FEED_FRESH_SECONDS, HOME_FEED_STALE_SECONDS, type HomeEventCard } from '../lib/home-feed.ts'
 import type { PublicCache } from './platform-cache.ts'
 
-const CACHE_KEY = 'https://baeventos.com/__cache/home-feed-v1'
+const CACHE_KEY = 'https://salidasba.com/__cache/home-feed-v1'
 type Entry = { events: HomeEventCard[]; storedAt: number }
 type Options = { cache?: PublicCache; retain?: (task: Promise<unknown>) => void; now?: () => number; load?: () => Promise<HomeEventCard[]> }
 

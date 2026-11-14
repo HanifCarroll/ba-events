@@ -23,7 +23,7 @@ The job reads these GitHub repository settings:
 
 | Kind | Name | Use |
 | --- | --- | --- |
-| Secret | `CLOUDFLARE_API_TOKEN` | Wrangler deploys. It must be allowed to deploy all four Workers and update the `baeventos.com` routes. |
+| Secret | `CLOUDFLARE_API_TOKEN` | Wrangler deploys. It must be allowed to deploy all four Workers and update the `salidasba.com` and `baeventos.com` routes (the old domain stays routed so it can redirect). |
 | Secret | `CLOUDFLARE_ACCOUNT_ID` | Wrangler account. |
 | Secret | `TRIGGER_ACCESS_TOKEN` | Trigger.dev personal access token (`tr_pat_…`) for project `proj_lqttmibcdepaslelatth`. |
 | Variable | `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, `PUBLIC_POSTHOG_KEY`, `PUBLIC_POSTHOG_HOST` | Public values compiled into the web build. |

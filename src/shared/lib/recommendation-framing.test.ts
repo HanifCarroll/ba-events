@@ -55,7 +55,7 @@ describe('recommendation framing contract', () => {
   it.each([
     'ACK: one\nACK: two\nNEXT: question',
     'ACK: one\nNEXT: question\nextra text',
-    'ACK: one\nNEXT: https://baeventos.com/events/1',
+    'ACK: one\nNEXT: https://salidasba.com/events/1',
     'ACK: one\nNEXT: - details or directions',
     'ACK: Event starts at 8\nNEXT: question',
     'ACK: one\nNEXT: ARS $5000',

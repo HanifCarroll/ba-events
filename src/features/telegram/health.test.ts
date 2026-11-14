@@ -9,7 +9,7 @@ import {
 } from './health.ts'
 
 const now = new Date('2026-08-25T12:00:00Z')
-const webhook = { url: 'https://baeventos.com/api/telegram', pending_update_count: 0 }
+const webhook = { url: 'https://salidasba.com/api/telegram', pending_update_count: 0 }
 
 describe('Telegram health check', () => {
   it('accepts healthy and old-error webhook info, but rejects malformed data', () => {

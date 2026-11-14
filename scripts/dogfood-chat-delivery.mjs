@@ -89,9 +89,9 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
    if (await file.exists()) return new Response(file);
   }
   // Local production fixture preserves the app's canonical HTTPS origin and CSRF rules.
-  url.protocol = 'https:'; url.hostname = 'baeventos.com'; url.port = '';
-  const headers = new Headers(request.headers); headers.set('host', 'baeventos.com');
-  if (headers.has('origin')) headers.set('origin', 'https://baeventos.com');
+  url.protocol = 'https:'; url.hostname = 'salidasba.com'; url.port = '';
+  const headers = new Headers(request.headers); headers.set('host', 'salidasba.com');
+  if (headers.has('origin')) headers.set('origin', 'https://salidasba.com');
   return production.respond(new Request(url, { method: request.method, headers, signal: request.signal,
    ...(!['GET', 'HEAD'].includes(request.method) ? { body: await request.text() } : {}) }), {
    platform: { env: { CHAT_DELIVERY: namespace, CHAT_DELIVERY_SECRET: secret } }, getClientAddress: () => '127.0.0.1',

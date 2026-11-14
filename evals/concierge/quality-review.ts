@@ -65,9 +65,9 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': 
 export function renderHumanReview(items: ReviewItem[], key: ReviewKey): string {
   // No model scores, original case names or control labels are delivered to the reviewer.
   const payload = JSON.stringify({ reviewId: key.reviewId, rubricHash: key.rubricHash, items }).replace(/</g, '\\u003c')
-  return String.raw`<!doctype html><html lang="en"><meta charset="utf-8"><title>BA Eventos quality review</title>
+  return String.raw`<!doctype html><html lang="en"><meta charset="utf-8"><title>Salidas BA quality review</title>
 <style>body{font:16px system-ui;background:#f7f5f1;color:#25221e;max-width:950px;margin:40px auto;padding:0 20px}h1{font-size:28px}section{background:white;padding:24px;margin:20px 0;border:1px solid #ddd;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}select,input,button{font:inherit;padding:8px}label{display:block;margin:12px 0}button{background:#243f31;color:white;border:0;border-radius:6px;cursor:pointer}.muted{color:#666}blockquote{border-left:3px solid #abc;padding-left:16px;white-space:pre-wrap}</style>
-<h1>BA Eventos quality review</h1><p>Review the response and the source evidence independently. Your answers are not prefilled. Model grades are hidden. This file makes no network requests.</p>
+<h1>Salidas BA quality review</h1><p>Review the response and the source evidence independently. Your answers are not prefilled. Model grades are hidden. This file makes no network requests.</p>
 <p>Factuality: 1 = all factual prose is supported; 0 = any invented or contradicted claim; N/A = no factual claim. Suitability: 2 = clear source-backed fit; 1 = uncertain/partial; 0 = mismatch; N/A = no event card. Explanation accuracy: 1 = every recommendation reason is grounded; 0 = any invented/overstated reason; N/A = no reasons. Usefulness: 2 = directly helps; 1 = partly helps; 0 = misleading or wrong task. Judge the card and prose together; concise prose need not repeat card facts.</p>
 <details><summary>Full scoring rubric</summary><pre>${escapeHtml(QUALITY_SYSTEM)}</pre></details>
 <label>Your name or reviewer identifier <input id="reviewer" autocomplete="off"></label>

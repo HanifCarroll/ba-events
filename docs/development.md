@@ -1,6 +1,6 @@
 # Development
 
-BA Eventos uses SvelteKit 3 RC, Svelte 5 runes, Vite 8, and TypeScript 6. Bun is the package manager and command runner.
+Salidas BA uses SvelteKit 3 RC, Svelte 5 runes, Vite 8, and TypeScript 6. Bun is the package manager and command runner.
 
 ## Checks
 
@@ -37,7 +37,7 @@ The exact installed `effect@4.0.0-rc.112` package provides version-matched guida
 
 The main specs under [openspec/specs](../openspec/specs/) are the canonical requirements for product behavior. Changes to observable behavior, persisted shapes, security, compatibility, or channel/search/import/agent contracts belong in the affected specs alongside code and deterministic tests. Implementation-only refactors do not require spec changes. Validate changed specs with `openspec validate --specs --json`; separate proposal/design/task artifacts are not required for work planned outside OpenSpec, and existing active changes retain their lifecycle.
 
-[Applied AI engineering work](applied-ai-engineering-work.md) tracks the remaining work for BA Eventos and Casamo, including task status and verification receipts. Local implementation and production release are separate checkpoints. Historical problem-solving records live under `docs/solutions/`; [the documentation index](README.md) links current architecture and archived plans.
+[Applied AI engineering work](applied-ai-engineering-work.md) tracks the remaining work for Salidas BA and Casamo, including task status and verification receipts. Local implementation and production release are separate checkpoints. Historical problem-solving records live under `docs/solutions/`; [the documentation index](README.md) links current architecture and archived plans.
 
 ## Deployment
 

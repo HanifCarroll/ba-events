@@ -87,11 +87,11 @@ describe('buildEventSummary', () => {
 
 describe('buildEventJsonLd', () => {
 	it('emits Event structured data with a free offer and venue address', () => {
-		const jsonLd = buildEventJsonLd(makeEvent(), 'https://baeventos.com/events/evt-1', '/og-image.png');
+		const jsonLd = buildEventJsonLd(makeEvent(), 'https://salidasba.com/events/evt-1', '/og-image.png');
 
 		expect(jsonLd['@type']).toBe('Event');
 		expect(jsonLd.name).toBe('Jazz Night at Niceto');
-		expect(jsonLd.url).toBe('https://baeventos.com/events/evt-1');
+		expect(jsonLd.url).toBe('https://salidasba.com/events/evt-1');
 		expect(jsonLd.location).toEqual({
 			'@type': 'Place',
 			name: 'Niceto Club',
@@ -109,7 +109,7 @@ describe('buildEventJsonLd', () => {
 	it('omits the street address when the location is hidden', () => {
 		const jsonLd = buildEventJsonLd(
 			makeEvent({ location_hidden: true }),
-			'https://baeventos.com/events/evt-1',
+			'https://salidasba.com/events/evt-1',
 			'/og-image.png'
 		);
 

@@ -1,4 +1,4 @@
-title = "BA Eventos secret scanning"
+title = "Salidas BA secret scanning"
 
 [extend]
 useDefault = true
