@@ -11,7 +11,7 @@ export function buildEventDetailData(event: EventWithVenue) {
 	return {
 		event,
 		meta: {
-			title: `${event.name} - BA Eventos`,
+			title: `${event.name} - Salidas BA`,
 			description: buildEventSummary(event),
 			imageUrl,
 			eventUrl,

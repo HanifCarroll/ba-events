@@ -6,7 +6,7 @@
  * the web UI. Reads the UIMessage SSE stream and prints a readable transcript.
  *
  * Usage:
- *   bun scripts/chat-smoke.ts --url https://baeventos.com --prompt "what's on tonight?"
+ *   bun scripts/chat-smoke.ts --url https://salidasba.com --prompt "what's on tonight?"
  *   bun scripts/chat-smoke.ts --url http://localhost:3000 --prompt "techno in Palermo" --locale es
  *
  * Exit code 0 = assistant produced text; 1 = HTTP/stream failure or empty reply.

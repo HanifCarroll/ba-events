@@ -31,7 +31,7 @@ const base = {
 }
 
 function request(body: unknown, secret = 'webhook-secret') {
-  return new Request('https://baeventos.com/api/telegram', {
+  return new Request('https://salidasba.com/api/telegram', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -65,7 +65,7 @@ const promptCallbackUpdate = {
 describe('Telegram webhook', () => {
   it('authenticates before parsing and fails closed without config', async () => {
     const trigger = triggerMock()
-    const malformed = new Request('https://baeventos.com/api/telegram', {
+    const malformed = new Request('https://salidasba.com/api/telegram', {
       method: 'POST',
       headers: { 'x-telegram-bot-api-secret-token': 'wrong' },
       body: '{',
@@ -90,7 +90,7 @@ describe('Telegram webhook', () => {
 
   it('rejects declared and chunked bodies as soon as they exceed 64 KiB', async () => {
     const trigger = triggerMock()
-    const declared = new Request('https://baeventos.com/api/telegram', {
+    const declared = new Request('https://salidasba.com/api/telegram', {
       method: 'POST',
       headers: {
         'content-length': String(64 * 1024 + 1),
@@ -109,7 +109,7 @@ describe('Telegram webhook', () => {
       },
       cancel,
     })
-    const chunked = new Request('https://baeventos.com/api/telegram', {
+    const chunked = new Request('https://salidasba.com/api/telegram', {
       method: 'POST',
       headers: { 'x-telegram-bot-api-secret-token': 'webhook-secret' },
       body: stream,

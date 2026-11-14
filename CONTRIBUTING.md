@@ -1,4 +1,4 @@
-# Contributing to BA Eventos
+# Contributing to Salidas BA
 
 Thanks for helping improve event discovery in Buenos Aires. Start with a focused issue or pull request; discuss large changes before implementing them.
 

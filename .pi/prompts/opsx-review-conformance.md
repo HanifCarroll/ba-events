@@ -2,7 +2,7 @@
 description: "Advisory review of OpenSpec conformance against implementation and tests"
 ---
 
-Review OpenSpec conformance for the current BA Events change or affected area.
+Review OpenSpec conformance for the current Salidas BA change or affected area.
 
 1. Identify the affected requirements in `openspec/specs/` and cite them by file
    and requirement name.

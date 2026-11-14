@@ -23,7 +23,7 @@ describe('chat startup timing', () => {
   it('reuses the hook timing without logging request data or delivery credentials', () => {
     const samples: ChatTimingSample[] = []
     const timing = createChatTiming({ requestId, phase: 'ingress' }, { emit: row => samples.push(row) })
-    const request = new Request('https://baeventos.com/api/chat?private=secret', { method: 'POST',
+    const request = new Request('https://salidasba.com/api/chat?private=secret', { method: 'POST',
       headers: { 'x-chat-attempt': requestId, 'x-chat-token': 'private-capability', authorization: 'Bearer private-key' }, body: 'private text' })
     const event = { request, locals: { chatTiming: timing } }
     expect(requestChatTiming(event)).toBe(timing)
@@ -34,7 +34,7 @@ describe('chat startup timing', () => {
   })
 
   it('ignores invalid identifiers and unrelated requests without loading context', () => {
-    for (const url of ['https://baeventos.com/api/chat', 'https://baeventos.com/']) {
+    for (const url of ['https://salidasba.com/api/chat', 'https://salidasba.com/']) {
       const event = { request: new Request(url, { headers: { 'x-chat-attempt': 'sk-private-key' } }),
         get locals(): never { throw new Error('Context must not be loaded') } }
       expect(() => requestChatTiming(event).mark('request_entry')).not.toThrow()

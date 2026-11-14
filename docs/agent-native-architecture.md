@@ -1,6 +1,6 @@
 # Concierge architecture
 
-BA Events uses one bounded Vercel AI SDK 7 `ToolLoopAgent` in `src/features/chat/api/agent/orchestrate.ts`.
+Salidas BA uses one bounded Vercel AI SDK 7 `ToolLoopAgent` in `src/features/chat/api/agent/orchestrate.ts`.
 
 ```text
 recent visible DATA + server-rehydrated event facts

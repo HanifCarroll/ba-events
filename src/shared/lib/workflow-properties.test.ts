@@ -140,7 +140,7 @@ describe('critical workflow properties', () => {
           if (action === 'complete') { completed = true; continue }
           shouldFail = action === 'dispatch-fails'
           const before = triggerCount
-          const response = await handleTelegramWebhook(new Request('https://baeventos.test/api/telegram', {
+          const response = await handleTelegramWebhook(new Request('https://salidasba.test/api/telegram', {
             method: 'POST', headers: { 'x-telegram-bot-api-secret-token': action === 'wrong-secret' ? 'wrong' : 'synthetic-secret' },
             body: JSON.stringify({ update_id: 42, message: { message_id: 1, from: { id: 123, is_bot: false }, chat: { id: 123, type: 'private' }, date: 1, text } }),
           }), dependencies)

@@ -421,7 +421,7 @@ describe('Telegram turn processor', () => {
       await processTelegramTurn(payload({ chatId: '123', text: '/start', languageCode }), deps)
       expect(deps.sendMessage).toHaveBeenCalledOnce()
       expect(deps.sendMessage).toHaveBeenCalledWith('123', {
-        text: expect.stringContaining('https://baeventos.com/privacy'),
+        text: expect.stringContaining('https://salidasba.com/privacy'),
         replyMarkup: { remove_keyboard: true },
       }, expect.any(AbortSignal))
     }

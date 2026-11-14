@@ -10,7 +10,7 @@ const events = await import('../../../routes/api/events/+server.ts')
 const feedback = await import('../../../routes/api/feedback/+server.ts')
 const results = []
 for (const [name, method, handler] of [['events-read', 'GET', events.GET], ['events-write', 'POST', events.POST], ['feedback', 'POST', feedback.POST]] as const) {
-  const event = { request: new Request('https://baeventos.com/api/events', {
+  const event = { request: new Request('https://salidasba.com/api/events', {
     method, headers: { Authorization: 'Bearer test-only-key', 'content-type': 'application/json' },
     ...(method === 'POST' ? { body: 'not-json' } : {}),
   }), getClientAddress: () => '203.0.113.1',

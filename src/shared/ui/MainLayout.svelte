@@ -157,7 +157,7 @@
 			{#if mobileMenuOpen}<X class="h-5 w-5" />{:else}<Menu class="h-5 w-5" />{/if}
 		</Button>
 		<a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-			<span class="text-base font-semibold tracking-tight">BA Eventos</span>
+			<span class="text-base font-semibold tracking-tight">Salidas BA</span>
 		</a>
 	</header>
 
@@ -244,7 +244,7 @@
 		<div class="h-20 flex items-center px-5 shrink-0">
 			<a href="/" class="hover:opacity-80 transition-opacity">
 				<span class="text-base font-semibold tracking-tight text-foreground whitespace-nowrap">
-					BA Eventos
+					Salidas BA
 				</span>
 			</a>
 		</div>
