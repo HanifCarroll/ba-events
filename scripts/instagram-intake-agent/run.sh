@@ -23,12 +23,8 @@ log="$state/runs/$day.log"
 report="$state/runs/$day.report.md"
 touch "$state/memory.md"
 
-lock="$state/run.lock"
-if ! mkdir "$lock" 2>/dev/null; then
-  echo "$(date -u +%FT%TZ) another run holds $lock; exiting" >>"$log"
-  exit 0
-fi
-trap 'rmdir "$lock" 2>/dev/null' EXIT
+# No lock file: launchd never starts a job while its previous run is still going, and manual runs go through
+# `launchctl kickstart`. A lock left behind by a killed run would silently stop every later run.
 
 vps_alert() { # vps_alert raise|resolve [text]
   if [ "$1" = raise ]; then
@@ -56,7 +52,7 @@ INTAKE_MEMORY="$state/memory.md" caffeinate -i timeout --kill-after=120 "$limit"
   "Automation run: follow the instructions in $prompt exactly. Read that file first." \
   >"$report.raw" 2>>"$log"
 rc=$?
-set -e
+set -e  # only after the Pi exit code is captured
 grep -v -E '^Warning: Extension package' "$report.raw" >"$report" || true
 rm -f "$report.raw"
 echo "end $(date -u +%FT%TZ) rc=$rc report_bytes=$(wc -c <"$report" | tr -d ' ')" >>"$log"
@@ -68,11 +64,17 @@ if [ "$rc" -ne 0 ]; then
   exit 1
 fi
 
-vps_alert resolve
-if [ "$(tr -d '[:space:]' <"$report")" = "NOTHINGTOREPORT" ] || [ ! -s "$report" ]; then
+# Only the explicit sentinel means "quiet day". Pi can exit 0 with no final text (e.g. a failed context
+# compaction), so an empty report is a failure. The alert clears only after the report was handled.
+body=$(tr -d '[:space:]' <"$report")
+if [ -z "$body" ]; then
+  vps_alert raise "BA Eventos intake on the Pro ended without a report, so it may not have finished. Unfinished posts stay pending for tomorrow's 09:00 run. Log: $log on the Pro."
+  exit 1
+elif [ "$body" = "NOTHINGTOREPORT" ]; then
   echo "nothing to report" >>"$log"
 elif ! slack_post "$report"; then
   vps_alert raise "BA Eventos intake ran, but its report couldn't be posted to #ba-eventos. Report: $report on the Pro."
   exit 1
 fi
+vps_alert resolve
 exit 0
