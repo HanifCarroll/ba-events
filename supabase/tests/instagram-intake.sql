@@ -11,6 +11,12 @@ begin
   insert into public.instagram_sources(username,authority,enabled,qualification) values('synthetic_venue','venue',true,'Synthetic fixture');
   update public.intake_policy set collection_enabled=true, publishing_enabled=true;
   if (select actor_build from public.intake_policy) <> '0.0.679' then raise exception 'Actor build not moved off 0.0.646'; end if;
+  if (select (max_sources, run_cap_usd, monthly_cap_usd) from public.intake_policy) <> (200, 1.5::numeric, 18::numeric) then raise exception 'Wider watchlist policy not applied'; end if;
+  begin
+    update public.intake_policy set max_sources = 501;
+    raise exception 'max_sources above 500 accepted';
+  exception when check_violation then null;
+  end;
   -- Probe the collection window in subtransactions that roll back.
   for probe in 0..3 loop
     begin
@@ -73,6 +79,6 @@ begin
     raise exception 'Expected stale evidence rejection';
   exception when others then if sqlerrm <> 'Source changed after review' then raise; end if; end;
   if (select receipt from public.intake_plans where id=other) is not null then raise exception 'Failed commit left a receipt'; end if;
-  raise notice 'PASS: permissions, incremental window, policy ceiling/detail/build, budget reservation, revisions, idempotency, stable identity, stale evidence, and correction protection';
+  raise notice 'PASS: permissions, incremental window, policy ceiling/detail/build/watchlist limits, budget reservation, revisions, idempotency, stable identity, stale evidence, and correction protection';
 end $$;
 rollback;
