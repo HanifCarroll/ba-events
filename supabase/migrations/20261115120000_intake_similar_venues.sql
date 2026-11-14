@@ -8,8 +8,8 @@ language sql stable security invoker set search_path = public, extensions as $$
     case when lower(v.name) = lower(p_name) then 1.0::float else similarity(v.name, p_name)::float end
   from public.venues v
   where lower(v.name) = lower(p_name) or similarity(v.name, p_name) >= p_threshold
+  -- No limit: the caller must see every lookalike above the threshold, or an unlisted one could be cleared past.
   order by 5 desc, v.name
-  limit 5
 $$;
 revoke all on function public.intake_similar_venues(text, float) from public, anon, authenticated;
 grant execute on function public.intake_similar_venues(text, float) to service_role;

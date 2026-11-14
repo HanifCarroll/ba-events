@@ -40,7 +40,7 @@ function fakeDb(venues: Row[], options: { similar?: Record<string, number>; fail
     }
     return builder
   }
-  // Stands in for intake_similar_venues: case-insensitive equality scores 1, other scores come from the test.
+  // Stands in for intake_similar_venues: every row at or above the threshold, no limit; case-insensitive equality scores 1, other scores come from the test.
   const rpc = (_name: string, args: { p_name: string }) => Promise.resolve(options.failReads ? { data: null, error: { message: 'database unavailable' } } : {
     data: venues.map(row => ({ ...row, similarity: row.name.toLowerCase() === args.p_name.toLowerCase() ? 1 : options.similar?.[row.id] ?? 0 }))
       .filter(row => row.similarity >= 0.6).sort((a, b) => b.similarity - a.similarity), error: null })
@@ -61,7 +61,13 @@ describe('intake venue resolution', () => {
     expect(addressKey('Ficticia sin número')).toBeNull()
     expect(addressKey('3 de Febrero 1378')).toBe('3 de febrero 1378')
     expect(addressKey('Av. 9 de Julio 1000')).toBe('9 de julio 1000')
-    for (const street of ['3 de Febrero', 'Av. 9 de Julio', '25 de Mayo, CABA', '1378']) expect(addressKey(street)).toBeNull()
+    for (const street of ['3 de Febrero', 'Av. 9 de Julio', '25 de Mayo, CABA', '1378', 'Av. 9 de Julio - CABA']) expect(addressKey(street)).toBeNull()
+    for (const variant of ['Av. Corrientes 1530 - CABA', 'Av. Corrientes N° 1530', 'Avenida Corrientes Nº 1530, C.A.B.A.',
+      'Corrientes nro. 1530, C1043AAB', 'Avda. Corrientes n. 1530, Ciudad de Buenos Aires', 'CORRIENTES 1530 Buenos Aires, Argentina',
+      'Corrientes 1530, Ciudad Autónoma de Buenos Aires', '1530 Avenida Corrientes, San Nicolás, CABA, C1042',
+      '1530 Corrientes, Buenos Aires, Cdad. Autónoma de Buenos Aires, C1071']) expect(addressKey(variant)).toBe('corrientes 1530')
+    expect(addressKey('Pje. 3 de Febrero Nº 1378 - CABA')).toBe('3 de febrero 1378')
+    expect(addressKey('Av. Corrientes 1530 piso 2')).toBe('corrientes 1530')
   })
   it('rejects a street whose only number is part of its name', async () => {
     const { db, inserts } = fakeDb([])
@@ -126,6 +132,15 @@ describe('intake venue resolution', () => {
       // Repeating the request finds the venue it created instead of creating another.
       expect(await run(db, input, geocoded('Ciudad Autónoma de Buenos Aires', 'Saavedra'))).toMatchObject({ outcome: 'existing' })
     })
+    it('checks every lookalike, not just the top five', async () => {
+      const lookalikes = Array.from({ length: 7 }, (_, n) => ({ id: id(n + 1), name: `Museo Sintético Saavedra ${'x'.repeat(n + 1)}`, address: null, neighborhood: null }))
+      const scores = Object.fromEntries(lookalikes.map((venue, n) => [venue.id, 0.84 - n * 0.02]))
+      const sixListed = fakeDb(structuredClone(lookalikes), { similar: scores })
+      const listed = (count: number) => lookalikes.slice(0, count).map(venue => ({ venue_id: venue.id, reason: why }))
+      expect(await run(sixListed.db, request({ ...museum, distinct_from: listed(6) }))).toMatchObject({ outcome: 'ambiguous' })
+      expect(sixListed.inserts).toHaveLength(0)
+      expect(await run(fakeDb(structuredClone(lookalikes), { similar: scores }).db, request({ ...museum, distinct_from: listed(7) }))).toMatchObject({ outcome: 'created' })
+    })
     it('stays ambiguous for an unlisted candidate, an empty reason, the same name, or the same street and number', async () => {
       const alias = () => fakeDb([{ id: id(1), name: 'Saavedra', address: null, neighborhood: null },
         { id: id(2), name: 'Saavedra Club', address: null, neighborhood: null }])
@@ -137,6 +152,12 @@ describe('intake venue resolution', () => {
       // Also similar by name, but at the same street and number: never overridable.
       const sameAddress = fakeDb([{ id: id(4), name: 'Saavedra', address: 'Ficticia 1234', neighborhood: 'Saavedra' }])
       expect(await run(sameAddress.db, request({ ...museum, distinct_from: [{ venue_id: id(4), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
+      for (const variant of ['Av. Corrientes 1530 - CABA', 'Av. Corrientes N° 1530', 'Corrientes nro. 1530, C1043AAB', 'Avenida Corrientes Nº 1530, C.A.B.A.', '1530 Avenida Corrientes, CABA, C1042']) {
+        const messy = fakeDb([{ id: id(7), name: 'Saavedra', address: variant, neighborhood: null }])
+        expect(await run(messy.db, request({ ...museum, address: 'Corrientes 1530', distinct_from: [{ venue_id: id(7), reason: why }] })))
+          .toMatchObject({ outcome: 'ambiguous', candidates: [{ id: id(7) }] })
+        expect(messy.inserts).toHaveLength(0)
+      }
       const twins = fakeDb([{ id: id(5), name: 'Museo Sintético Saavedra', address: null, neighborhood: null }, { id: id(6), name: 'museo sintetico saavedra', address: null, neighborhood: null }])
       expect(await run(twins.db, request({ ...museum, distinct_from: [{ venue_id: id(5), reason: why }, { venue_id: id(6), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
       expect([...sameName.inserts, ...sameAddress.inserts, ...twins.inserts]).toHaveLength(0)

@@ -39,15 +39,25 @@ const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').to
 const failure = (message: string) => new ImportOperationError({ operation: 'intake.venue', message })
 
 /**
- * "Av. Corrientes 1530, CABA" and "Avenida Corrientes 1530" share the key "corrientes 1530". The house number must follow
+ * Street name plus house number, so the catalog's messy formats compare equal: "Av. Corrientes N° 1530 - C.A.B.A.",
+ * "Avenida Corrientes 1530, C1043AAB" and "Corrientes 1530" all give "corrientes 1530". The house number must follow
  * the street name, so "3 de Febrero" or "Av. 9 de Julio" alone has no key while "3 de Febrero 1378" does.
  */
 export function addressKey(address: string | null | undefined): string | null {
   if (!address) return null
-  const key = fold(address.split(',')[0]).replace(/[.#°º]/g, ' ')
-    .replace(/^\s*(avenida|avda|av|calle|pasaje|pje)\s+/, '').replace(/\s+/g, ' ').trim()
-  const parts = key.match(/^(.*\p{L}.*)\s(\d{1,5})$/u)
-  return parts ? `${parts[1]} ${parts[2]}` : null
+  const normalize = (value: string) => fold(value) // "N°" folds to "n°", so markers are matched after folding
+    .replace(/\b(cp\s*)?[a-z]\d{4}[a-z]{0,3}\b|\bcp\s*\d{4}\b/g, ' ') // postal codes: C1043AAB, C1043, CP 1043
+    .replace(/\b(numero|nro|num|n)\s*[.°º]*\s*(?=\d)/g, ' ') // number markers: N° 1530, nro. 1530
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\b(ciudad autonoma de buenos aires|cdad autonoma de buenos aires|ciudad de buenos aires|capital federal|c a b a|caba|buenos aires|argentina)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim()
+  const plain = normalize(address)
+  const street = (value: string) => value.replace(/^(avenida|avda|av|calle|pasaje|pje)\s+/, '')
+  const parts = street(plain).match(/^(.*?\p{L}.*?)\s(\d{1,5})\b/u)
+  if (parts) return `${parts[1]} ${parts[2]}`
+  // Number first, as some ticket sites write it: "1660 Avenida Corrientes". "25 de Mayo" is a street name, not this.
+  const first = normalize(address.split(',')[0]).match(/^(\d{1,5})\s(?!de\b)(\p{L}[\p{L} ]*)$/u)
+  return first ? `${street(first[2])} ${first[1]}` : null
 }
 
 /** Accents, case, spacing and punctuation removed: "BIRIBIRI  Club-Social" and "Biribiri club social" are the same name. */
@@ -86,6 +96,8 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
   // Not the importers' matchVenueEffect: it reads any RPC error as "no match".
   const similar = (yield* dbEffect('intake.venue-similar', () => client.rpc('intake_similar_venues', {
     p_name: name, p_threshold: REVIEW_QUEUE_THRESHOLD }))) as Array<VenueRow & { similarity: number }>
+  // PostgREST caps responses at 1000 rows; a full page could be truncated, so don't decide on it.
+  if (similar.length >= 1000) return yield* failure('Too many similar venue names to check; use a more specific name')
   const candidates = new Map<string, VenueRow & { why: string }>()
   const blocking = new Set<string>() // same name or same address: `distinct_from` can never override these
   const flag = (venue: VenueRow, why: string, blocks = false) => {

@@ -9,6 +9,8 @@ begin
   if (select count(*) from public.intake_similar_venues('sala sintética', 0.6) where similarity = 1) <> 2 then raise exception 'Same-name aliases not all returned'; end if;
   if (select id from public.intake_similar_venues('Sala Sintetica', 0.6) limit 1) <> v then raise exception 'Close name not matched'; end if;
   if (select max(similarity) from public.intake_similar_venues('Sala Sintética Bar Cultural', 0.3)) >= 0.85 then raise exception 'Longer name reached auto-use'; end if;
+  insert into public.venues(name) select 'Sala Sintética ' || n from generate_series(1,7) n;
+  if (select count(*) from public.intake_similar_venues('Sala Sintética', 0.6)) < 9 then raise exception 'Similar venues were truncated'; end if;
   if exists(select 1 from public.intake_similar_venues('Teatro Distinto', 0.6)) then raise exception 'Unrelated name matched'; end if;
   if has_function_privilege('anon','public.intake_similar_venues(text,float)','EXECUTE') then raise exception 'Venue search exposed to anon'; end if;
   -- The evidence row the venue operation writes is accepted as-is.
