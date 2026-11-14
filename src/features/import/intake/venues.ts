@@ -7,7 +7,6 @@ import { NEIGHBORHOODS, type Neighborhood, type Venue } from '#shared/lib/types.
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult } from '../core/nominatim.ts'
 import { AUTO_USE_THRESHOLD, REVIEW_QUEUE_THRESHOLD, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
-import { matchVenueEffect } from '../scrapers/venue-matcher.ts'
 import { validPublicUrl, type Candidate } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
 import { allRowsEffect, dbEffect } from './repository.ts'
@@ -51,7 +50,7 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
 }
 
 /**
- * Same name (exact, or fuzzy at the importer's auto-use threshold) and a compatible address returns the existing venue,
+ * Same name (case-insensitive, or trigram similarity at the importers' auto-use threshold) and a compatible address returns the existing venue,
  * which also makes a repeated request idempotent. Review-band names, or another venue at the same address, are ambiguous.
  */
 export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(client: SupabaseClient, request: VenueRequest,
@@ -62,15 +61,18 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
   }
   const key = addressKey(address)
   if (!key) return { outcome: 'rejected', reasons: ['Address needs a street and number'] } satisfies VenueOutcome
-  // A strict read first: a database outage must fail here rather than look like "no match" and create a duplicate.
+  // Strict reads: a database outage must fail here rather than look like "no match" and create a duplicate.
   const number = key.match(/\d+/g)!.at(-1)!
   const sameAddress = ((yield* dbEffect('intake.venue-address', () => client.from('venues')
     .select('id,name,address,neighborhood').ilike('address', `%${number}%`).limit(200))) as VenueRow[])
     .filter(venue => addressKey(venue.address) === key)
-  const match = yield* matchVenueEffect(name, REVIEW_QUEUE_THRESHOLD, client).pipe(Effect.mapError(error => failure(error.message)))
-  const named = match.venue as VenueRow | null
-  if (named && match.confidence >= AUTO_USE_THRESHOLD && (!addressKey(named.address) || addressKey(named.address) === key)) {
-    const found = { outcome: 'existing', venue: pick(named), match: match.matchType === 'exact' ? 'exact name' : `similar name (${match.confidence.toFixed(2)})` } as const
+  // Not the importers' matchVenueEffect: it reads any RPC error as "no match" and misses names shared by several rows.
+  const similar = (yield* dbEffect('intake.venue-similar', () => client.rpc('intake_similar_venues', {
+    p_name: name, p_threshold: REVIEW_QUEUE_THRESHOLD }))) as Array<VenueRow & { similarity: number }>
+  const compatible = similar.filter(venue => venue.similarity >= AUTO_USE_THRESHOLD && (!addressKey(venue.address) || addressKey(venue.address) === key))
+  const named = compatible.find(venue => addressKey(venue.address) === key) ?? compatible[0]
+  if (named) {
+    const found = { outcome: 'existing', venue: pick(named), match: named.similarity === 1 ? 'same name' : `similar name (${named.similarity.toFixed(2)})` } as const
     if (named.address && named.neighborhood) return found satisfies VenueOutcome
     // An incomplete catalog venue gets its empty fields filled, never overwritten, after the same city and barrio checks.
     const located = yield* locateEffect(geocode, address, request.neighborhood ?? null)
@@ -80,13 +82,13 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
     for (const field of Object.keys(fill)) update = update.is(field, null)
     const rows = (yield* dbEffect('intake.venue-complete', () => update.select('id,name,address,neighborhood'))) as VenueRow[]
     if (rows.length) yield* recordEvidenceEffect(client, rows[0], request, `completed ${Object.keys(fill).join(', ')}`, located)
-    const venue = rows[0] ?? named // no row: another writer filled it first, so re-read below
-    const current = rows[0] ? venue : ((yield* dbEffect('intake.venue-read', () => client.from('venues').select('id,name,address,neighborhood').eq('id', named.id).single())) as VenueRow)
+    // No row means another writer filled it first; report what is there now.
+    const current = rows[0] ?? ((yield* dbEffect('intake.venue-read', () => client.from('venues').select('id,name,address,neighborhood').eq('id', named.id).single())) as VenueRow)
     return { ...found, venue: pick(current), completed: rows.length ? Object.keys(fill) : [], warnings: located.warnings } satisfies VenueOutcome
   }
   const candidates = new Map<string, VenueRow & { why: string }>()
-  if (named) candidates.set(named.id, { ...pick(named), why: match.confidence >= AUTO_USE_THRESHOLD
-    ? 'same name at a different address' : `similar name (${match.confidence.toFixed(2)})` })
+  for (const venue of similar) candidates.set(venue.id, { ...pick(venue), why: venue.similarity >= AUTO_USE_THRESHOLD
+    ? 'same name at a different address' : `similar name (${venue.similarity.toFixed(2)})` })
   for (const venue of sameAddress) if (!candidates.has(venue.id)) candidates.set(venue.id, { ...pick(venue), why: 'same address, different name' })
   if (candidates.size) return { outcome: 'ambiguous', candidates: [...candidates.values()] } satisfies VenueOutcome
 

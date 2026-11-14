@@ -6,7 +6,7 @@ import { addressKey, decodeVenueRequest, type Geocode, groupHeldByVenue, resolve
 
 type Row = { id: string; name: string; address: string | null; neighborhood: string | null }
 /** A synthetic venues table behind the few query shapes the matcher and resolver use. */
-function fakeDb(venues: Row[], options: { similar?: { id: string; similarity: number }; failReads?: boolean } = {}) {
+function fakeDb(venues: Row[], options: { similar?: Record<string, number>; failReads?: boolean } = {}) {
   const inserts: Array<{ table: string; row: Record<string, unknown> }> = []
   const from = (table: string) => {
     const filters: Array<(row: Row) => boolean> = []
@@ -40,7 +40,10 @@ function fakeDb(venues: Row[], options: { similar?: { id: string; similarity: nu
     }
     return builder
   }
-  const rpc = () => Promise.resolve({ data: options.similar ? [options.similar] : [], error: null })
+  // Stands in for intake_similar_venues: case-insensitive equality scores 1, other scores come from the test.
+  const rpc = (_name: string, args: { p_name: string }) => Promise.resolve(options.failReads ? { data: null, error: { message: 'database unavailable' } } : {
+    data: venues.map(row => ({ ...row, similarity: row.name.toLowerCase() === args.p_name.toLowerCase() ? 1 : options.similar?.[row.id] ?? 0 }))
+      .filter(row => row.similarity >= 0.6).sort((a, b) => b.similarity - a.similarity), error: null })
   return { db: { from, rpc } as unknown as SupabaseClient, inserts, venues }
 }
 const geocoded = (state: string, suburb?: string) => () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic',
@@ -75,7 +78,7 @@ describe('intake venue resolution', () => {
     expect(inserts.filter(item => item.table === 'venues')).toHaveLength(1)
   })
   it('returns a confident fuzzy match without creating anything', async () => {
-    const { db, inserts } = fakeDb([{ id: 'v1', name: 'Sala Sintetica', address: 'Ficticia 1234', neighborhood: 'Almagro' }], { similar: { id: 'v1', similarity: 0.9 } })
+    const { db, inserts } = fakeDb([{ id: 'v1', name: 'Sala Sintetica', address: 'Ficticia 1234', neighborhood: 'Almagro' }], { similar: { v1: 0.9 } })
     expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'v1' } })
     expect(inserts).toHaveLength(0)
   })
@@ -87,13 +90,20 @@ describe('intake venue resolution', () => {
     expect(inserts).toHaveLength(1)
     expect(venues).toHaveLength(1)
   })
+  it('picks the alias at the same address when several venues share the name', async () => {
+    const { db, inserts } = fakeDb([
+      { id: 'a1', name: 'Sala Sintética', address: null, neighborhood: 'Almagro' },
+      { id: 'a2', name: 'SALA SINTÉTICA', address: 'Ficticia 1234', neighborhood: 'Almagro' }])
+    expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'a2' } })
+    expect(inserts).toHaveLength(0)
+  })
   it('does not fill an existing venue from an address outside the city', async () => {
     const { db, venues } = fakeDb([{ id: 'v1', name: 'Sala Sintética', address: null, neighborhood: null }])
     expect(await run(db, request(), geocoded('Buenos Aires', 'Olivos'))).toMatchObject({ outcome: 'rejected' })
     expect(venues[0].address).toBeNull()
   })
   it('holds review-band names, same name elsewhere, and other venues at the same address', async () => {
-    const band = fakeDb([{ id: 'v1', name: 'Sala Sint', address: null, neighborhood: 'Almagro' }], { similar: { id: 'v1', similarity: 0.7 } })
+    const band = fakeDb([{ id: 'v1', name: 'Sala Sint', address: null, neighborhood: 'Almagro' }], { similar: { v1: 0.7 } })
     expect(await run(band.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v1' }] })
     const moved = fakeDb([{ id: 'v2', name: 'Sala Sintética', address: 'Otra Calle 99', neighborhood: 'Boedo' }])
     expect(await run(moved.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v2', why: 'same name at a different address' }] })
