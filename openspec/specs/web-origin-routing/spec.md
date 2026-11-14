@@ -13,11 +13,15 @@ When the SvelteKit development server is running, the web request hook MUST reso
 - **THEN** the app renders on that origin without a canonical-domain redirect
 
 ### Requirement: Deployed requests use the canonical origin
-Outside development, HTTP or non-canonical-host requests MUST receive a permanent redirect to HTTPS on `baeventos.com`, preserving the path and query. Requests already on the HTTPS apex MUST resolve without a canonical-origin redirect.
+Outside development, HTTP or non-canonical-host requests MUST receive a permanent redirect to HTTPS on `baeventos.com`, preserving the path and query. Non-canonical hosts include `www.baeventos.com`, the former domain `salidasba.com` and `www.salidasba.com`, and the redirect-only domain `baeventos.app` and `www.baeventos.app`. GET and HEAD requests MUST receive a 301; other methods MUST receive a 308 so the method and body are preserved. Requests already on the HTTPS apex MUST resolve without a canonical-origin redirect.
 
-#### Scenario: HTTP or www request
-- **WHEN** a deployed request uses HTTP or the `www.baeventos.com` hostname
-- **THEN** the hook returns a 301 redirect to the HTTPS apex with the same path and query
+#### Scenario: HTTP, www, or redirect-domain request
+- **WHEN** a deployed GET or HEAD request uses HTTP or the `www.baeventos.com`, `salidasba.com`, `www.salidasba.com`, `baeventos.app`, or `www.baeventos.app` hostname
+- **THEN** the hook returns a 301 redirect to `https://baeventos.com` with the same path and query
+
+#### Scenario: Non-GET request on a non-canonical origin
+- **WHEN** a deployed POST or other non-GET, non-HEAD request uses a non-canonical origin
+- **THEN** the hook returns a 308 redirect to `https://baeventos.com` with the same path and query
 
 #### Scenario: Canonical request
 - **WHEN** a request uses `https://baeventos.com`

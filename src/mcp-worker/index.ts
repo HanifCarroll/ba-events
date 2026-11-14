@@ -13,6 +13,8 @@ import type { PublicEventRecord } from '#shared/lib/types.ts'
 const MAX_REQUEST_BYTES = 64 * 1024
 const TOOL_TIMEOUT_MS = 20_000
 const ALLOWED_ORIGIN_HOSTNAMES = [
+  'salidasba.com',
+  'www.salidasba.com',
   'baeventos.com',
   'www.baeventos.com',
   'chatgpt.com',

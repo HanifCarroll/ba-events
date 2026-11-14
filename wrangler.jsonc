@@ -40,6 +40,22 @@
     {
       "pattern": "www.baeventos.com/*",
       "zone_name": "baeventos.com"
+    },
+    {
+      "pattern": "salidasba.com/*",
+      "zone_name": "salidasba.com"
+    },
+    {
+      "pattern": "www.salidasba.com/*",
+      "zone_name": "salidasba.com"
+    },
+    {
+      "pattern": "baeventos.app/*",
+      "zone_name": "baeventos.app"
+    },
+    {
+      "pattern": "www.baeventos.app/*",
+      "zone_name": "baeventos.app"
     }
   ]
 }
