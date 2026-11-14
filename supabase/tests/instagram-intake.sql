@@ -21,11 +21,12 @@ begin
   for probe in 0..3 loop
     begin
       today := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
-      if probe = 1 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-3,'succeeded',0.01,'{}'),(today-2,'failed',0.01,'{}'); end if;
-      if probe = 2 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-12,'succeeded',0.01,'{}'); end if;
-      if probe = 3 then insert into public.intake_runs(local_date,state,reserved_usd,input) values(today-45,'succeeded',0.01,'{}'); end if;
+      -- The cutoff is the last succeeded run's reservation time minus 2 hours, 7 days back with none, never past 30 days.
+      if probe = 1 then insert into public.intake_runs(local_date,state,reserved_usd,input,created_at) values(today-3,'succeeded',0.01,'{}',now()-interval '27 hours'),(today-2,'failed',0.01,'{}',now()-interval '3 hours'),(today-5,'succeeded',0.01,'{}',now()-interval '5 days'); end if;
+      if probe = 2 then insert into public.intake_runs(local_date,state,reserved_usd,input,created_at) values(today-12,'succeeded',0.01,'{}',now()-interval '12 days'); end if;
+      if probe = 3 then insert into public.intake_runs(local_date,state,reserved_usd,input,created_at) values(today-30,'succeeded',0.01,'{}',now()-interval '29 days 23 hours'); end if;
       reserved := public.reserve_instagram_collection();
-      if reserved->'input'->>'onlyPostsNewerThan' <> (today - case probe when 1 then 4 when 2 then 13 when 3 then 30 else 7 end)::text then
+      if reserved->'input'->>'onlyPostsNewerThan' <> to_char((now() - case probe when 1 then interval '29 hours' when 2 then interval '12 days 2 hours' when 3 then interval '30 days' else interval '7 days' end) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') then
         raise exception 'Wrong collection window in probe %: %', probe, reserved->'input'->>'onlyPostsNewerThan'; end if;
       if (reserved->'input'->>'resultsLimit')::int <> 20 or reserved->'input'->>'dataDetailLevel' <> 'detailedData' then raise exception 'Wrong ceiling or detail level'; end if;
       raise exception 'probe rollback';

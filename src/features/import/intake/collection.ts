@@ -176,5 +176,5 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
   }
   const result = yield* retainPostsEffect(client, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit))
   yield* dbEffect('intake.finished', () => client.from('intake_runs').update({ state: 'succeeded', charged_usd: run.usageTotalUsd ?? null, completed_at: new Date().toISOString() }).eq('id', reservation.id).select('id').single())
-  return { state: 'succeeded', run_id: runId, scope: 'posts since the day before the last successful run (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result }
+  return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result }
 })
