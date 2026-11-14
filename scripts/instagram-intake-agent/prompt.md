@@ -19,7 +19,7 @@ Follow the daily procedure with Bun 1.3.14 and `bun run instagram:intake <operat
 - Review the whole pending backlog if you can. If time runs short, finish and record the observations you've started, leave the rest pending, and report how many are left.
 - On Mondays only, propose at most five qualified new sources as disabled entries, without expanding paid collection.
 
-After the pending backlog, work the held-venue backlog as the runbook's "Held venues" section describes: run `held`, confirm each missing venue from an authoritative source, add it with `venue`, then revise, preview, and commit its held events. Keep held anything with no named location, outside the city, a multi-venue teaser without per-venue dates, or an `ambiguous` venue match. The report lists the venues you added and the events you published from the backlog.
+After the pending backlog, work the held-venue backlog as the runbook's "Held venues" section describes: run `held`, confirm each missing venue from an authoritative source, add it with `venue`, then revise, preview, and commit its held events. When `venue` answers `ambiguous`, check each candidate: use its ID if it's the same place, or re-run `venue` with `distinct_from` and a concrete reason for each candidate if they are all clearly different places. Keep held anything with no named location, outside the city, a multi-venue teaser without per-venue dates, or a venue match you can't settle. The report lists the venues you added, with the `distinct_from` reasons for any created that way, and the events you published from the backlog.
 
 Follow the runbook's "Scope" section: skip mainstream large-venue shows (arenas, stadiums, touring headliners, and big-promoter festivals), and say in the report how many you skipped.
 

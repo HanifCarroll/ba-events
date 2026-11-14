@@ -20,12 +20,15 @@ export const VenueRequestSchema = Schema.Struct({
   instagram_handle: Schema.optional(Schema.NullOr(Schema.String.pipe(Schema.check(Schema.isPattern(/^@?[A-Za-z0-9_.]{1,30}$/))))),
   evidence: Schema.Array(Schema.Struct({ url: text(1, 2048), confirms: text(3, 1000) }))
     .pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(20))),
+  // Catalog lookalikes the operator checked and found to be other places, each with a concrete reason.
+  distinct_from: Schema.optional(Schema.Array(Schema.Struct({ venue_id: text(36, 36), reason: text(10, 1000) }))
+    .pipe(Schema.check(Schema.isMaxLength(20)))),
 })
 export type VenueRequest = typeof VenueRequestSchema.Type
 type VenueRow = Pick<Venue, 'id' | 'name' | 'address' | 'neighborhood'>
 export type VenueOutcome =
   | { outcome: 'existing'; venue: VenueRow; match: string; completed?: string[]; warnings?: string[] }
-  | { outcome: 'created'; venue: VenueRow; warnings: string[] }
+  | { outcome: 'created'; venue: VenueRow; warnings: string[]; distinct_from?: VenueRequest['distinct_from'] }
   | { outcome: 'ambiguous'; candidates: Array<VenueRow & { why: string }> }
   | { outcome: 'rejected'; reasons: string[] }
 export type Geocode = (query: string) => Effect.Effect<NominatimResult | null, unknown>
@@ -67,7 +70,8 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
 /**
  * Reuses a catalog venue automatically only when exactly one venue has the same normalized name, no other venue could be the
  * same place (similar name, alias, or the same address), and nothing about its location conflicts. Everything else that
- * might be a match is `ambiguous`. A repeated request finds the venue it created, so `venue` is idempotent.
+ * might be a match is `ambiguous`, unless every candidate is only a similar name or alias that the operator lists in
+ * `distinct_from` with a reason. A repeated request finds the venue it created (same name), so `venue` is idempotent.
  */
 export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(client: SupabaseClient, request: VenueRequest,
   geocode: Geocode = query => searchNominatimEffect(query)) {
@@ -83,17 +87,24 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
   const similar = (yield* dbEffect('intake.venue-similar', () => client.rpc('intake_similar_venues', {
     p_name: name, p_threshold: REVIEW_QUEUE_THRESHOLD }))) as Array<VenueRow & { similarity: number }>
   const candidates = new Map<string, VenueRow & { why: string }>()
-  const flag = (venue: VenueRow, why: string) => { if (!candidates.has(venue.id)) candidates.set(venue.id, { ...pick(venue), why }) }
+  const blocking = new Set<string>() // same name or same address: `distinct_from` can never override these
+  const flag = (venue: VenueRow, why: string, blocks = false) => {
+    if (blocks) blocking.add(venue.id)
+    if (!candidates.has(venue.id)) candidates.set(venue.id, { ...pick(venue), why })
+  }
   const stated = request.neighborhood ? barrio(request.neighborhood) : null
   const conflict = (venue: VenueRow, neighborhood: string | null) => !!venue.address && addressKey(venue.address) !== key ||
     !!venue.neighborhood && !!neighborhood && venue.neighborhood !== neighborhood
   const same = venues.filter(venue => nameKey(venue.name) === nameKey(name))
   for (const venue of same) flag(venue, !conflict(venue, stated) ? 'same name'
-    : venue.address && addressKey(venue.address) !== key ? 'same name, different address' : 'same name, different barrio')
+    : venue.address && addressKey(venue.address) !== key ? 'same name, different address' : 'same name, different barrio', true)
   for (const venue of similar) flag(venue, `similar name (${Number(venue.similarity).toFixed(2)})`)
   for (const venue of venues) if (possibleAlias(venue.name, name)) flag(venue, 'possible alias')
-  for (const venue of venues) if (addressKey(venue.address) === key) flag(venue, 'same address')
-  const named = same.length === 1 && candidates.size === 1 ? same[0] : null
+  for (const venue of venues) if (addressKey(venue.address) === key) flag(venue, 'same address', true)
+  const distinct = new Map((request.distinct_from ?? []).map(item => [item.venue_id, item.reason.trim()]))
+  const cleared = (id: string) => !blocking.has(id) && !!distinct.get(id)
+  // Other lookalikes the operator cleared don't stop the one same-name venue from matching, which keeps a retry idempotent.
+  const named = same.length === 1 && [...candidates.keys()].every(id => id === same[0].id || cleared(id)) ? same[0] : null
   if (named && !conflict(named, stated)) {
     const found = { outcome: 'existing', venue: pick(named), match: 'same name' } as const
     if (named.address && named.neighborhood) return found satisfies VenueOutcome
@@ -112,7 +123,7 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
     const current = rows[0] ?? ((yield* dbEffect('intake.venue-read', () => client.from('venues').select('id,name,address,neighborhood').eq('id', named.id).single())) as VenueRow)
     return { ...found, venue: pick(current), completed: rows.length ? Object.keys(fill) : [], warnings: located.warnings } satisfies VenueOutcome
   }
-  if (candidates.size) return { outcome: 'ambiguous', candidates: [...candidates.values()] } satisfies VenueOutcome
+  if (![...candidates.keys()].every(cleared)) return { outcome: 'ambiguous', candidates: [...candidates.values()] } satisfies VenueOutcome
 
   const located = yield* locateEffect(geocode, address, request.neighborhood ?? null)
   if ('reasons' in located) return { outcome: 'rejected', reasons: located.reasons } satisfies VenueOutcome
@@ -121,7 +132,8 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
   if (!parsed.success) return { outcome: 'rejected', reasons: parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`) } satisfies VenueOutcome
   const venue = yield* importTry('intake.venue-create', () => createVenue(parsed.data, client))
   yield* recordEvidenceEffect(client, venue, request, 'created', located)
-  return { outcome: 'created', venue: pick(venue), warnings: located.warnings } satisfies VenueOutcome
+  return { outcome: 'created', venue: pick(venue), warnings: located.warnings,
+    ...(candidates.size ? { distinct_from: request.distinct_from } : {}) } satisfies VenueOutcome
 })
 
 /** The venue's evidence lives in the existing review log as an approved row tied to the venue. A rerun of `venue` repeats it. */
@@ -129,7 +141,8 @@ const recordEvidenceEffect = (client: SupabaseClient, venue: VenueRow, request: 
   located: { method: string; warnings: string[] }) => dbEffect('intake.venue-evidence', () => client.from('venue_review_queue').insert({
   source: INTAKE_VENUE_SOURCE, source_venue_name: request.name.trim(), source_address: request.address.trim(), status: 'approved',
   final_venue_id: venue.id, best_match_venue_id: null, match_confidence: null, reviewed_at: new Date().toISOString(),
-  notes: JSON.stringify({ action, evidence: request.evidence, neighborhood_method: located.method, warnings: located.warnings }),
+  notes: JSON.stringify({ action, evidence: request.evidence, distinct_from: request.distinct_from ?? [],
+    neighborhood_method: located.method, warnings: located.warnings }),
 }).select('id').single()).pipe(Effect.mapError(error => failure(
   `Venue ${venue.id} (${venue.name}) was ${action} but has no evidence row (${error.message}). A retry returns it as existing without adding one, so note this venue ID in the run memory and report`)))
 

@@ -113,6 +113,35 @@ describe('intake venue resolution', () => {
     expect(await run(db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'a1' }, { id: 'a2' }] })
     expect(inserts).toHaveLength(0)
   })
+  describe('distinct_from', () => {
+    const id = (n: number) => `00000000-0000-4000-8000-00000000000${n}`
+    const museum = { name: 'Museo Sintético Saavedra', address: 'Av. Ficticia 1234', neighborhood: 'Saavedra' }
+    const why = 'Different place: a plaza in another barrio, per its official site'
+    it('creates the venue when every lookalike is listed with a reason, and keeps the reasons', async () => {
+      const { db, inserts } = fakeDb([{ id: id(1), name: 'Saavedra', address: null, neighborhood: null },
+        { id: id(2), name: 'Teatro Sintetico', address: 'Otra 10', neighborhood: 'Boedo' }], { similar: { [id(2)]: 0.7 } })
+      const input = request({ ...museum, name: 'Museo Sintético Saavedra Teatro', distinct_from: [{ venue_id: id(1), reason: why }, { venue_id: id(2), reason: why }] })
+      expect(await run(db, input, geocoded('Ciudad Autónoma de Buenos Aires', 'Saavedra'))).toMatchObject({ outcome: 'created', distinct_from: [{ venue_id: id(1) }, { venue_id: id(2) }] })
+      expect(JSON.parse(inserts.find(item => item.table === 'venue_review_queue')!.row.notes as string).distinct_from).toHaveLength(2)
+      // Repeating the request finds the venue it created instead of creating another.
+      expect(await run(db, input, geocoded('Ciudad Autónoma de Buenos Aires', 'Saavedra'))).toMatchObject({ outcome: 'existing' })
+    })
+    it('stays ambiguous for an unlisted candidate, an empty reason, the same name, or the same street and number', async () => {
+      const alias = () => fakeDb([{ id: id(1), name: 'Saavedra', address: null, neighborhood: null },
+        { id: id(2), name: 'Saavedra Club', address: null, neighborhood: null }])
+      expect(await run(alias().db, request({ ...museum, distinct_from: [{ venue_id: id(1), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
+      expect(() => request({ ...museum, distinct_from: [{ venue_id: id(1), reason: '' }] })).toThrow()
+      expect(await run(alias().db, request({ ...museum, distinct_from: [{ venue_id: id(1), reason: why }, { venue_id: id(2), reason: '          ' }] }))).toMatchObject({ outcome: 'ambiguous' })
+      const sameName = fakeDb([{ id: id(3), name: 'MUSEO SINTETICO  SAAVEDRA', address: 'Lejana 99', neighborhood: 'Boedo' }])
+      expect(await run(sameName.db, request({ ...museum, distinct_from: [{ venue_id: id(3), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
+      // Also similar by name, but at the same street and number: never overridable.
+      const sameAddress = fakeDb([{ id: id(4), name: 'Saavedra', address: 'Ficticia 1234', neighborhood: 'Saavedra' }])
+      expect(await run(sameAddress.db, request({ ...museum, distinct_from: [{ venue_id: id(4), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
+      const twins = fakeDb([{ id: id(5), name: 'Museo Sintético Saavedra', address: null, neighborhood: null }, { id: id(6), name: 'museo sintetico saavedra', address: null, neighborhood: null }])
+      expect(await run(twins.db, request({ ...museum, distinct_from: [{ venue_id: id(5), reason: why }, { venue_id: id(6), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
+      expect([...sameName.inserts, ...sameAddress.inserts, ...twins.inserts]).toHaveLength(0)
+    })
+  })
   it('holds a same-name venue whose barrio conflicts instead of giving it an address elsewhere', async () => {
     const stated = fakeDb([{ id: 'v1', name: 'Sala Sintética', address: null, neighborhood: 'Boedo' }])
     expect(await run(stated.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v1', why: 'same name, different barrio' }] })
