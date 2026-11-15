@@ -176,6 +176,15 @@ describe('intake failure and retry orchestration', () => {
     expect(await Effect.runPromise(collectInstagramEffect(allowed.db, raised))).toEqual({ state: 'running', run_id: 'new-run' })
     expect(calls).toContain('POST actors/apify~instagram-post-scraper/runs')
   })
+  it('refuses a paid run when the Apify usage limit cannot be read', async () => {
+    const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'] }, apify_run_id: null }
+    const { db } = fakeDb([ok({ collection_enabled: true }), ok(reservation)])
+    const api: ApifyRequest = async (method, path) => {
+      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: null }, current: { monthlyUsageUsd: 3 } } }
+      throw new Error(`Unexpected ${method} ${path}`)
+    }
+    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('Could not verify the Apify monthly usage limit')
+  })
   it('resumes an existing paid run without needing new credit', async () => {
     const { db } = fakeDb([ok({ collection_enabled: true }), ok({ fresh: false, apify_run_id: 'existing-run' })])
     const api: ApifyRequest = async (method, path) => {
