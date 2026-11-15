@@ -109,6 +109,7 @@ echo "# a batch without progress stops the loop"
 setup 40 stall; go
 check "one review, then venues and report" [ "$(phases)" = "collect review venues report " ]
 check "stop is noted" grep -q 'left 40 observations pending' "$t"/state/runs/*.notes.md
+check "backlog is noted for the report" grep -q 'After review: 40 observations pending and not deferred, 0 deferred, in 1 batches' "$t"/state/runs/*.notes.md
 check "a batch that took nothing still exits 0 with its note" [ "$rc" -eq 0 ]
 rm -rf "$t"
 

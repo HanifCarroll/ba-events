@@ -134,6 +134,7 @@ if counts=$(pending_count); then
     if [ "$count" -ge "$before" ]; then note "Review stopped: batch $batches left $count observations pending that weren't deferred."; break; fi
   done
   [ "$held" -gt 0 ] && note "$held observations were deferred this run and stay pending (IDs in $deferred)."
+  note "After review: $count observations pending and not deferred, $held deferred, in $batches batches."
 else
   fail "pending count" "bun run instagram:intake pending failed after collect, so no review ran"
 fi

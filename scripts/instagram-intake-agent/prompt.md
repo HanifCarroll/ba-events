@@ -44,11 +44,11 @@ Do no image work and change nothing in the catalog. Read today's notes from the 
 
 1. Append one entry to the end of `$INTAKE_MEMORY`: a `## Intake on <ISO time>` heading and at most eight bullets covering the run's charge, what was published, corrected, and held, the remaining backlog, and anything the next run must know. Don't rewrite or delete earlier entries.
 2. Write the report to `$INTAKE_REPORT` (replace the file). It is posted to Slack exactly as written. Hanif reads it on his phone and wants counts, not lists. The details belong in the notes and memory.
-   - If nothing was published, corrected, or cancelled and nothing needs him, the file contains exactly `NOTHING TO REPORT`.
-   - Otherwise write at most 5 lines. Line 1 is `✅ *Instagram intake, <Mon D>:* <N> new events, <N> corrections<, N cancellations>. No action needed.` Use ⚠️ instead of ✅, and `Needs you: <the decision>.` instead of `No action needed.`, when a person must decide something or a phase failed.
-   - Then add only the bullets that apply, one short line each, in this order:
+   - The file contains exactly `NOTHING TO REPORT` only when all of these hold: nothing was published, corrected, or cancelled; no posts are left pending or deferred; no phase failed; no account is dead, uncovered, or errored; no venue was created with `distinct_from`; and nothing needs a decision from Hanif. Anything else gets a short report.
+   - Otherwise aim for 5 lines, combining related facts on one line. Several decisions, account problems, or `distinct_from` venues can share a bullet. Never drop a required fact (a decision, a failure, account problems, the backlog, a `distinct_from` venue, or the cost) to fit the length. Line 1 is `✅ *Instagram intake, <Mon D>:* <N> new events, <N> corrections<, N cancellations>. No action needed.` Use ⚠️ instead of ✅, and `Needs you: <the decision>.` instead of `No action needed.`, when a person must decide something or a phase failed.
+   - Then add only the bullets that apply, short lines, in this order:
      - Each case only Hanif can settle, naming the venue or event and the decision (for example, two catalog venues that might be the same place).
-     - Failed phases, dead accounts, or uncovered accounts, as counts (with names only when there are 3 or fewer).
+     - Failed phases, and dead, uncovered, or errored accounts (`coverage.dead_sources`, `uncovered_sources`, and `errored_sources`), as counts, with names only when there are 3 or fewer.
      - Posts still pending or deferred, and that the next run picks them up.
      - Each venue created with `distinct_from`: its name and the reason in a few words, so he can spot a wrong venue.
      - Today's cost and the month's total against the cap, for example `US$0.65 today; US$2.00 of US$18 this month.`
