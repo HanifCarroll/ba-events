@@ -8,6 +8,10 @@
 # batches skip them. Every collect, review, and venues session writes a completion note to its own .done file.
 # A failed phase, a missing completion note, a failed pending count, or a missing report raises pro/ba-events-intake on the VPS's
 # shared alert list, naming what failed; a good run clears it.
+# The report phase also writes the fixes for Hermes (tool bugs and verified catalog errors the operator can't fix)
+# to a per-run fixes file. When it isn't empty, run.sh raises the separate key pro/ba-events-intake/fixes, whose
+# Hermes triage fixes them; otherwise it resolves that key quietly. The fixes key never fails the run, and a run
+# without a report leaves it alone.
 # State lives in ~/agents/ba-events-intake: memory.md (the agent's notes between runs), runs/ (logs, notes and
 # reports, disposable) and sessions/ (Pi session files, which are kept).
 # Overrides: INTAKE_CHECKOUT, INTAKE_STATE, INTAKE_NO_POST=1 (log instead of posting or alerting; for tests and
@@ -36,6 +40,7 @@ mkdir -p "$state/runs" "$state/sessions"
 log="$state/runs/$day.log"
 notes="$state/runs/$day.notes.md"
 report="$state/runs/$day.report.md"
+fixes="$state/runs/$day.fixes.md" # the report phase's fix list for Hermes, one item per line
 deferred="$state/runs/$day.deferred" # observation IDs review sessions left pending this run, one per line
 touch "$state/memory.md" "$notes"
 : >"$deferred" # every run (and so every day) gives stuck observations one fresh attempt
@@ -53,6 +58,30 @@ vps_alert() { # vps_alert raise|resolve [text]
   else
     ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner "~/.local/bin/alert resolve $alert_key" >>"$log" 2>&1 || true
   fi
+}
+
+fix_alert() { # raise pro/ba-events-intake/fixes with the fix list, or resolve it quietly; never fails the run.
+  # A raise on a key that is still open only replies in its thread, so a changed list ("updated") queues triage again
+  # with --auto, which respects triage's rate limits. The fingerprint hashes the sorted, trimmed items, so the same list
+  # stays quiet across days and a change in any digit (a street number, an error code) still counts as a change.
+  local key="$alert_key/fixes" text fp
+  if [ -z "$(tr -d '[:space:]' <"$fixes" 2>/dev/null)" ]; then
+    if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert resolve $key" >>"$log"; return 0; fi
+    ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner "~/.local/bin/alert resolve $key --quiet" >>"$log" 2>&1 || true
+    return 0
+  fi
+  text="BA Eventos intake on the Pro hit problems it could not fix itself: tool bugs, or catalog facts it verified that its CLI can not change. The events they block stay held until they are fixed.
+$(sed -e '/^[[:space:]]*$/d' -e 's/^[[:space:]]*[-*][[:space:]]*//' -e 's/^/• /' "$fixes")
+Fixes file: $fixes on the Pro. {triage}"
+  fp=$(python3 -I -c '
+import hashlib, sys
+items = sorted({l.strip() for l in open(sys.argv[1]) if l.strip()})
+print(hashlib.sha256("\n".join(items).encode()).hexdigest()[:16])' "$fixes") || fp=""
+  if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert raise $key fingerprint=$fp $text" >>"$log"; return 0; fi
+  printf '%s\n' "$text" | ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner \
+    "out=\$(~/.local/bin/alert raise $key --title 'BA Eventos intake fixes' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events${fp:+ --fingerprint $fp}) && echo \"\$out\" && case \"\$out\" in *'\"action\": \"updated\"'*) ~/.local/bin/alert triage $key --auto ;; esac" >>"$log" 2>&1 ||
+    echo "fix alert failed" >>"$log"
+  return 0
 }
 
 slack_post() { # slack_post <file>: post the file's text to #ba-eventos as the Chipa bot
@@ -78,7 +107,7 @@ phase() { # phase <name> <minutes> [batch number]: one fresh Pi session; returns
   rm -f "$done_file"
   echo "phase $label start $(date -u +%FT%TZ) limit=${minutes}m" >>"$log"
   INTAKE_PHASE="$name" INTAKE_DAY="$day" INTAKE_BATCH="$batch" INTAKE_MEMORY="$state/memory.md" \
-    INTAKE_NOTES="$notes" INTAKE_REPORT="$report" INTAKE_DEFERRED="$deferred" INTAKE_DONE="$done_file" \
+    INTAKE_NOTES="$notes" INTAKE_REPORT="$report" INTAKE_FIXES="$fixes" INTAKE_DEFERRED="$deferred" INTAKE_DONE="$done_file" \
     caffeinate -i timeout --kill-after=120 "${minutes}m" \
     pi -p --approve --model "$model" --thinking "$thinking" --session-dir "$state/sessions" --exclude-tools "$exclude" \
     "Automation run, $name phase: follow the instructions in $prompt for the $name phase exactly. Read that file first." \
@@ -112,6 +141,7 @@ print(len(ids) - held, held)' "$deferred" 2>>"$log"
 echo "start $(date -u +%FT%TZ) model=$model thinking=$thinking total=${total_min}m session=${session_min}m batch=$batch max_batches=$max_batches" >>"$log"
 cd "$checkout" || { vps_alert raise "BA Eventos intake didn't run: the checkout $checkout is missing on the Pro. Next run tomorrow at 09:00."; exit 1; }
 printf '\n## run.sh: run started at %s\n' "$(date -u +%FT%TZ)" >>"$notes"
+rm -f "$fixes" # only this run's fixes are queued
 
 phase collect "$session_min"
 
@@ -153,18 +183,20 @@ phase report "$report_min"
 # Only the explicit sentinel means "quiet day". A missing or empty report is a failure.
 if [ -f "$report" ]; then body=$(tr -d '[:space:]' <"$report"); else body=""; fi
 echo "end $(date -u +%FT%TZ) batches=$batches report_bytes=$(wc -c <"$report" 2>/dev/null | tr -d ' ') failed=${failed:-none}" >>"$log"
+rc=0
 if [ -z "$body" ]; then
   vps_alert raise "BA Eventos intake on the Pro ended without a report.${failed:+ Failed: $failed.} Unfinished posts stay pending for tomorrow's 09:00 run. Log: $log on the Pro."
-  exit 1
+  rc=1
 elif [ "$body" = "NOTHINGTOREPORT" ]; then
   echo "nothing to report" >>"$log"
 elif ! slack_post "$report"; then
   vps_alert raise "BA Eventos intake ran, but its report couldn't be posted to #ba-eventos.${failed:+ Failed: $failed.} Report: $report on the Pro."
-  exit 1
+  rc=1
 fi
-if [ -n "$failed" ]; then
+[ -n "$body" ] && fix_alert # without a report the fix list is unknown, so the fixes key is left as it is
+if [ "$rc" -eq 0 ] && [ -n "$failed" ]; then
   vps_alert raise "BA Eventos intake on the Pro had a failed phase: $failed. The report was handled; unfinished posts stay pending for tomorrow's 09:00 run. Log: $log on the Pro."
-  exit 1
+  rc=1
 fi
-vps_alert resolve
-exit 0
+[ "$rc" -eq 0 ] && vps_alert resolve
+exit "$rc"
