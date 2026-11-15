@@ -129,20 +129,20 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(clien
   return { posts: seen.size, changed, unchanged, failures, coverage }
 })
 
+/**
+ * The Apify account's monthly usage limit is the spending cap. At the plan's included credit (the default) no run can
+ * cause overage; raising the limit above it is how Hanif approves overage for a cycle.
+ */
 const checkCreditEffect = Effect.fn('intake.checkCredit')(function*(api: ApifyRequest, cap: number) {
-  const account = yield* importTry('apify.account', () => api('GET', 'users/me'))
-  const usage = yield* importTry('apify.usage', () => api('GET', 'users/me/usage/monthly'))
-  const creditSchema = Schema.Struct({ data: Schema.Struct({ plan: Schema.Struct({ monthlyUsageCreditsUsd: Schema.Number }) }) })
-  const usageSchema = Schema.Struct({ data: Schema.Struct({ monthlyServiceUsage: Schema.Record(Schema.String, Schema.Struct({
-    amountAfterVolumeDiscountUsd: Schema.optional(Schema.Number), baseAmountUsd: Schema.optional(Schema.Number),
-  })) }) })
-  const balance = yield* Effect.try({ try: () => {
-    const credits = Schema.decodeUnknownSync(creditSchema)(account).data.plan.monthlyUsageCreditsUsd
-    const items = Object.values(Schema.decodeUnknownSync(usageSchema)(usage).data.monthlyServiceUsage)
-    if (items.some(item => item.amountAfterVolumeDiscountUsd === undefined && item.baseAmountUsd === undefined)) throw new Error('Unknown charges')
-    return credits - items.reduce((sum, item) => sum + (item.amountAfterVolumeDiscountUsd ?? item.baseAmountUsd ?? 0), 0)
-  }, catch: () => fail('Could not verify available Apify credit') })
-  if (balance < cap + 0.02) return yield* fail('Insufficient included Apify credit; no run started')
+  const limits = yield* importTry('apify.limits', () => api('GET', 'users/me/limits'))
+  const limitsSchema = Schema.Struct({ data: Schema.Struct({
+    limits: Schema.Struct({ maxMonthlyUsageUsd: Schema.Number }), current: Schema.Struct({ monthlyUsageUsd: Schema.Number }),
+  }) })
+  const headroom = yield* Effect.try({ try: () => {
+    const { limits: limit, current } = Schema.decodeUnknownSync(limitsSchema)(limits).data
+    return limit.maxMonthlyUsageUsd - current.monthlyUsageUsd
+  }, catch: () => fail('Could not verify the Apify monthly usage limit') })
+  if (headroom < cap + 0.02) return yield* fail('Apify monthly usage limit reached; no run started')
 })
 
 export const collectInstagramEffect = Effect.fn('intake.collect')(function*(client: SupabaseClient, api: ApifyRequest) {
