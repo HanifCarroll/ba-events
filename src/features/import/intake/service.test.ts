@@ -154,6 +154,37 @@ describe('intake failure and retry orchestration', () => {
     const api: ApifyRequest = async () => { throw new Error('No API call is allowed') }
     await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('unknown start outcome')
   })
+  it('starts a fresh paid run only within the Apify monthly usage limit', async () => {
+    const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'] }, apify_run_id: null }
+    const calls: string[] = []
+    const limited: ApifyRequest = async (method, path) => {
+      calls.push(`${method} ${path}`)
+      if (path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 19 }, current: { monthlyUsageUsd: 17.6 } } }
+      throw new Error(`Unexpected ${method} ${path}`)
+    }
+    const refused = fakeDb([ok({ collection_enabled: true }), ok(reservation)])
+    await expect(Effect.runPromise(collectInstagramEffect(refused.db, limited))).rejects.toThrow('usage limit reached')
+    expect(calls).toEqual(['GET users/me/limits'])
+
+    const raised: ApifyRequest = async (method, path) => {
+      calls.push(`${method} ${path}`)
+      if (path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: 24 }, current: { monthlyUsageUsd: 17.6 } } }
+      if (method === 'POST') return { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
+      return { data: { id: 'new-run', status: 'RUNNING', defaultDatasetId: 'dataset' } }
+    }
+    const allowed = fakeDb([ok({ collection_enabled: true }), ok(reservation), ok({ id: 'run' })])
+    expect(await Effect.runPromise(collectInstagramEffect(allowed.db, raised))).toEqual({ state: 'running', run_id: 'new-run' })
+    expect(calls).toContain('POST actors/apify~instagram-post-scraper/runs')
+  })
+  it('refuses a paid run when the Apify usage limit cannot be read', async () => {
+    const reservation = { fresh: true, id: 'run', reserved_usd: 1.5, actor_build: '0.0.679', input: { username: ['a'] }, apify_run_id: null }
+    const { db } = fakeDb([ok({ collection_enabled: true }), ok(reservation)])
+    const api: ApifyRequest = async (method, path) => {
+      if (method === 'GET' && path === 'users/me/limits') return { data: { limits: { maxMonthlyUsageUsd: null }, current: { monthlyUsageUsd: 3 } } }
+      throw new Error(`Unexpected ${method} ${path}`)
+    }
+    await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('Could not verify the Apify monthly usage limit')
+  })
   it('resumes an existing paid run without needing new credit', async () => {
     const { db } = fakeDb([ok({ collection_enabled: true }), ok({ fresh: false, apify_run_id: 'existing-run' })])
     const api: ApifyRequest = async (method, path) => {
