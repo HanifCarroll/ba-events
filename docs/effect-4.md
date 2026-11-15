@@ -1,9 +1,9 @@
 # Effect 4 architecture and async census
 
-BA Eventos uses the exact `effect@4.0.0-rc.112` package installed in
+BA Eventos uses the exact `effect@4.1.4` package installed in
 `node_modules/effect`. Its `AGENTS.md`, `ai-docs/`, and `src/` are the
 version-matched source of truth. We do not vendor or duplicate an Effect
-subtree. `@effect/language-service@0.87.2` runs after the Svelte plugin and is
+subtree. `@effect/language-service@0.87.5` runs after the Svelte plugin and is
 part of `bun run check`.
 
 ## Boundary policy
