@@ -33,7 +33,7 @@ The service-role database read is the primary diagnostic record. A rendered page
 
 ## Contracts and architecture
 
-The exact installed `effect@4.0.0-rc.112` package provides version-matched guidance in `node_modules/effect/AGENTS.md`, `ai-docs/`, and `src/`. [Effect 4](effect-4.md) documents application boundaries and deliberate exceptions.
+The exact installed `effect@4.1.4` package provides version-matched guidance in `node_modules/effect/AGENTS.md`, `ai-docs/`, and `src/`. [Effect 4](effect-4.md) documents application boundaries and deliberate exceptions.
 
 The main specs under [openspec/specs](../openspec/specs/) are the canonical requirements for product behavior. Changes to observable behavior, persisted shapes, security, compatibility, or channel/search/import/agent contracts belong in the affected specs alongside code and deterministic tests. Implementation-only refactors do not require spec changes. Validate changed specs with `openspec validate --specs --json`; separate proposal/design/task artifacts are not required for work planned outside OpenSpec, and existing active changes retain their lifecycle.
 
