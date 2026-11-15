@@ -345,3 +345,29 @@ export async function recordEnrichmentAudit(
     console.error('[enrichment-audit] Failed to write enrichment audit:', updateError)
   }
 }
+
+/** The part of a Workflow step this module needs; tests pass a fake with real timeouts. */
+export interface StepRunner {
+  do<T>(name: string, config: { retries: { limit: number; delay: string; backoff: 'exponential' }; timeout: string }, callback: () => Promise<T>): Promise<T>
+}
+
+/**
+ * Run every source as its own step, concurrently. A source that fails or times
+ * out on every attempt becomes a failed outcome; it never delays or blocks the
+ * other sources, and the caller finalizes once all of them have settled.
+ */
+export async function importAllSources<Id extends string>(
+  step: StepRunner,
+  sources: readonly { id: Id }[],
+  budget: (id: Id) => string,
+  importOne: (id: Id) => Promise<unknown>
+): Promise<BatchRunLike[]> {
+  return Promise.all(sources.map(async ({ id }) => {
+    try {
+      const output = await step.do(`import ${id}`, { retries: { limit: 2, delay: '1 second', backoff: 'exponential' }, timeout: budget(id) }, () => importOne(id))
+      return { taskIdentifier: id, ok: true, output }
+    } catch (error) {
+      return { taskIdentifier: id, ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }))
+}

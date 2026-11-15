@@ -30,11 +30,11 @@ Each Worker keeps its runtime variables and secrets in its own Cloudflare Settin
 
 ## Jobs Worker
 
-`baeventos-jobs` has no routes and no `workers.dev` URL. Its Workflows start from cron `schedules` on their bindings, in UTC:
+`baeventos-jobs` has no routes and no `workers.dev` URL. Cron Triggers (`triggers.crons`, UTC) call its `scheduled()` handler, which starts an ordinary Workflow instance with one ID per firing (`src/jobs-worker/schedule.ts`). Ordinary instances have no overall deadline; Workflow binding `schedules` were not used because their instances get only a one-hour budget.
 
 | Workflow | Schedule | Buenos Aires | Work |
 | --- | --- | --- | --- |
-| `baeventos-daily-scrape` | `0 9 * * *` | 06:00 | Meetup, BA Tourism, and Luma imports, one retried step each; then enrichment of the new events |
+| `baeventos-daily-scrape` | `0 9 * * *` | 06:00 | Meetup, BA Tourism, and Luma imports, one retried step each, run concurrently so a hung source cannot delay the others; then finalization and enrichment of the new events |
 | `baeventos-guest-retention` | `0 10 * * *` | 07:00 | Delete guest lifecycle and transcript rows older than 30 days |
 | `baeventos-enrichment-catchup` | `0 13 * * *` | 10:00 | Retry failed enrichment once and drain the pending backlog |
 | `baeventos-source-check` | none | | Manual no-write catalog read of each source |

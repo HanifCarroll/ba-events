@@ -1,26 +1,33 @@
 /**
  * baeventos-jobs: the scheduled import, enrichment, and retention jobs.
  *
- * Each job is a Cloudflare Workflow started by a cron `schedules` entry on its
- * binding (UTC; Buenos Aires is UTC-3 all year). Every unit of work is a
- * `step.do` with Trigger.dev's old policy: 3 attempts with exponential backoff
- * from 1 second, and the old per-task time budget as the step timeout.
+ * Each job is a Cloudflare Workflow. Cron Triggers (UTC; Buenos Aires is UTC-3
+ * all year) call `scheduled()`, which starts an ordinary instance: no overall
+ * deadline and no one-hour scheduled budget. Every unit of work is a `step.do` with
+ * Trigger.dev's old policy: 3 attempts with exponential backoff from 1 second,
+ * and the old per-task time budget as the step timeout.
  */
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { BrowserWorker } from '@cloudflare/playwright'
 import { Schema } from 'effect'
-import { mapBatchRunsToResults, type BatchRunLike } from './daily-scrape-outcome.ts'
+import { importAllSources, mapBatchRunsToResults } from './daily-scrape-outcome.ts'
 import { closeScrapeRun, openScrapeRun, timed } from './daily-scrape.ts'
 import { catchupMaxBatches, countCatchupBacklog, dailyMaxBatches, runCatchupBatch, runDailyEnrichmentBatch } from './enrichment.ts'
 import { purgeGuestLifecycleRetention } from './guest-lifecycle-retention.ts'
 import { SOURCES } from './source-health.ts'
+import { cronInstance } from './schedule.ts'
 import { importSource, readSourceCatalog } from './sources.ts'
+
+interface WorkflowBinding { create(options: { id: string; params?: unknown }): Promise<unknown> }
 
 export interface JobsEnv {
   SUPABASE_URL: string
   SUPABASE_SERVICE_ROLE_KEY: string
   BROWSER: BrowserWorker
+  DAILY_SCRAPE: WorkflowBinding
+  GUEST_RETENTION: WorkflowBinding
+  ENRICHMENT_CATCHUP: WorkflowBinding
 }
 
 type Budget = '10 minutes' | '30 minutes' | '1 hour'
@@ -40,19 +47,13 @@ function message(error: unknown): string {
 /** 09:00 UTC (06:00 Buenos Aires): import every source, then drain the new events' enrichment. */
 export class DailyScrapeWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
-    const scheduledTime = event.schedule ? new Date(event.schedule.scheduledTime).toISOString() : null
+    const params = event.payload as { scheduledTime?: string } | undefined
+    const scheduledTime = params?.scheduledTime ?? null
     const run = await step.do('open scrape run', policy('10 minutes'), () => openScrapeRun(serviceClient(this.env), event.instanceId, scheduledTime))
 
-    const outcomes: BatchRunLike[] = []
-    for (const source of SOURCES) {
-      try {
-        const output = await step.do(`import ${source.id}`, policy(SOURCE_BUDGET[source.id]), () =>
-          timed(source.id, () => importSource(source.id, serviceClient(this.env), this.env.BROWSER, event.instanceId, run.id)))
-        outcomes.push({ taskIdentifier: source.id, ok: true, output })
-      } catch (error) {
-        outcomes.push({ taskIdentifier: source.id, ok: false, error: message(error) })
-      }
-    }
+    // Sources run concurrently, so a hung source cannot delay the others.
+    const outcomes = await importAllSources(step, SOURCES, id => SOURCE_BUDGET[id], id =>
+      timed(id, () => importSource(id, serviceClient(this.env), this.env.BROWSER, event.instanceId, run.id)))
 
     const results = mapBatchRunsToResults(outcomes, SOURCES)
     const eligible = await step.do('close scrape run', policy('10 minutes'), () => closeScrapeRun(serviceClient(this.env), run, outcomes, results))
@@ -125,4 +126,12 @@ export class SourceCheckWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
 
 export default {
   fetch: () => new Response(null, { status: 404 }),
+  async scheduled(controller: { cron: string; scheduledTime: number }, env: JobsEnv) {
+    const { binding, id, scheduledTime } = cronInstance(controller.cron, controller.scheduledTime)
+    try {
+      await env[binding].create({ id, params: { scheduledTime } })
+    } catch (error) {
+      if (!/already exists/i.test(String(error))) throw error
+    }
+  },
 }

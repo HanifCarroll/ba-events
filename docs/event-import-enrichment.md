@@ -102,7 +102,7 @@ Use `getEnrichmentAdapter(source)` to get the adapter for routing decisions.
 ### Phase 1: Automated Import (Daily Scrape)
 
 The `baeventos-daily-scrape` Workflow (6 AM Buenos Aires) runs one retried step per source
-(Meetup, BA Tourism, Luma). Each step runs its `process<Source>ImportEffect` in
+(Meetup, BA Tourism, Luma), concurrently, then finalizes after all have settled. Each step runs its `process<Source>ImportEffect` in
 `src/features/import/core/`:
 
 1. Fetch raw events from the source (Cloudflare Browser Rendering for Meetup and BA Tourism)
@@ -127,7 +127,10 @@ steps, via `core/event-enrichment.ts`:
 - **Events with no description at all**: marked `failed` — a source data limitation, not a
   scrape gap.
 
-Eligibility: `enrichment_status = 'pending'` and `link` not null.
+Eligibility: `enrichment_status = 'pending'` and `link` not null, from a source other than the
+retired `passline`, `eventbrite`, and `venti`. Imports arrive `pending` with an embedding; they take
+the full path (reusing the stored description) and are written `completed`, so they leave the queue.
+Only `completed` rows get the facets-only backfill.
 
 ## Automated Enrichment Job
 
@@ -147,7 +150,8 @@ The daily enrichment job routes each source through its enrichment adapter
 | `luma` | Server direct fetch | Requires browser for JS content |
 | `meetup` | Server direct fetch | Jina Reader returns HTTP 451 |
 | `ba-tourism` | Server-side Jina + AI | Works normally |
-| other (`passline`, `eventbrite`, `venti`, `instagram`) | Generic Jina + AI | No adapter; stored descriptions use the translate-only path |
+| `instagram` | Generic Jina + AI | No adapter; stored descriptions use the translate-only path |
+| `passline`, `eventbrite`, `venti` | Not enriched | Retired sources (`RETIRED_SOURCES`); their events are excluded from selection and counts and age out |
 
 ### Adding a New Source
 

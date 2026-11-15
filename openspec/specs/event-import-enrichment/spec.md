@@ -56,6 +56,17 @@ Enrichment SHALL use the registered source strategy, retain available source dat
 - **THEN** the model boundary normalizes those scalars to omitted canonical values while retaining supported array facets
 - **AND** invalid non-null enum values still fail validation
 
+### Requirement: Enrichment selects each event once and skips retired sources
+Enrichment SHALL move an imported `pending` event to a terminal status in the pass that processes it, so reselection and step retries do not repeat model or embedding calls. Events from the retired `passline`, `eventbrite`, and `venti` sources SHALL be excluded from enrichment selection and counts without changing or deleting them.
+
+#### Scenario: An imported event with an embedding and a Spanish description is enriched
+- **WHEN** a batch enriches it and a later batch or a retried step reselects pending events
+- **THEN** it is written `completed` once and is not selected again
+
+#### Scenario: A retired source still has pending or failed events
+- **WHEN** the daily chain or catch-up selects or counts events needing enrichment
+- **THEN** those events are excluded and keep their stored values
+
 ### Requirement: Catch-up retries are bounded per scheduled chain
 The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
 
@@ -69,7 +80,7 @@ Daily imports SHALL acquire the full configured discovery window without deferri
 
 #### Scenario: Daily discovery acquires its complete configured source window
 - **WHEN** daily discovery acquires its complete configured source window
-- **THEN** the daily run SHALL import Meetup, BA Tourism, and Luma, each as its own retried Workflow step, so one failing source does not prevent the others from importing.
+- **THEN** the daily run SHALL import Meetup, BA Tourism, and Luma, each as its own retried Workflow step, concurrently and without an overall instance deadline, so a source that fails or times out on every attempt does not prevent the others or finalization from running.
 - **AND** Daily enrichment chains SHALL be sized to their observed eligible set.
 - **AND** Meetup date filtering SHALL include the complete last calendar day in Buenos Aires time.
 

@@ -231,11 +231,10 @@ export function enrichSingleEventEffect(
       } satisfies EventEnrichmentResult
     }
 
-    const alreadyEnriched =
-      input.enrichment_status === 'completed' ||
-      (Array.isArray(input.embedding) && input.embedding.length > 0)
-
-    if (input.description_es && alreadyEnriched) {
+    // Only a completed row gets the facets-only backfill. Imports arrive with an
+    // embedding but still `pending`; they take the full path below, which reuses the
+    // stored description and writes `completed`, so they leave the queue.
+    if (input.description_es && input.enrichment_status === 'completed') {
       console.log(`[event-enrichment] Backfilling facets only for: ${name}`)
       const facets = yield* enrichmentTry('event-enrichment.extract-facets', () => extractFacets({
         name,
@@ -519,11 +518,10 @@ export async function enrichSingleEvent(
 // BATCH ENRICHMENT
 // ============================================================================
 
-interface BatchEnrichmentOptions {
+interface BatchEnrichmentOptions extends EnrichSingleEventOptions {
   delayMs?: number
   concurrency?: number
   onProgress?: (current: number, total: number, result: EventEnrichmentResult) => void
-  extractFacets?: ExtractFacetsFn
 }
 
 type EnrichmentHandler = (
@@ -553,8 +551,8 @@ function processBatchEffect(
 ): Effect.Effect<EnrichmentStats, EventEnrichmentError> {
   const delayMs = options?.delayMs ?? 0
   const concurrency = Math.max(1, options?.concurrency ?? DEFAULT_ENRICHMENT_CONCURRENCY)
-  const enrichOptions = options?.extractFacets
-    ? { extractFacets: options.extractFacets }
+  const enrichOptions = options?.extractFacets || options?.buildPresentationFields
+    ? { extractFacets: options.extractFacets, buildPresentationFields: options.buildPresentationFields }
     : undefined
 
   return Effect.gen(function* () {
@@ -632,6 +630,10 @@ export function enrichEventsEffect(
  * not canceled, and not already started (`starts_at >= now`).
  * `failed` stays retryable; `skipped`/`completed` are terminal for this job.
  */
+/** Sources removed from the daily import. Their events stay and age out without paid enrichment. */
+export const RETIRED_SOURCES = ['passline', 'eventbrite', 'venti'] as const
+const RETIRED_SOURCE_FILTER = `(${RETIRED_SOURCES.join(',')})`
+
 interface EnrichmentQueryOptions {
   source?: string
   limit?: number
@@ -653,6 +655,7 @@ export function getEventsNeedingEnrichmentEffect(
     .neq('status', 'past')
     .gte('starts_at', enrichmentStartsAtFloor())
     .not('link', 'is', null)
+    .not('source', 'in', RETIRED_SOURCE_FILTER)
     .order('starts_at', { ascending: true })
 
   if (options?.source) query = query.eq('source', options.source)
@@ -692,6 +695,7 @@ export function countEventsNeedingEnrichmentEffect(
     .neq('status', 'past')
     .gte('starts_at', enrichmentStartsAtFloor())
     .not('link', 'is', null)
+    .not('source', 'in', RETIRED_SOURCE_FILTER)
 
   if (options?.source) query = query.eq('source', options.source)
   if (options?.createdAfter) query = query.gte('created_at', options.createdAfter)

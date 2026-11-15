@@ -10,6 +10,7 @@ import {
   mergeEnrichmentMetadata,
   shouldChainNextBatch,
   recordEnrichmentAudit,
+  importAllSources,
   type DailyScrapeResult,
 } from './daily-scrape-outcome.ts'
 
@@ -346,5 +347,57 @@ describe('recordEnrichmentAudit', () => {
     await expect(
       recordEnrichmentAudit(client, 'run-3', { enriched: 1 })
     ).resolves.toBeUndefined()
+  })
+})
+
+describe('importAllSources', () => {
+  /** Fake Workflow step: real per-attempt timeout, `limit` retries, no backoff wait. */
+  function fakeStep(timeoutMs: number) {
+    const attempts: Record<string, number> = {}
+    const step = {
+      async do<T>(name: string, config: { retries: { limit: number } }, callback: () => Promise<T>): Promise<T> {
+        for (let attempt = 0; ; attempt++) {
+          attempts[name] = attempt + 1
+          let timer: ReturnType<typeof setTimeout> | undefined
+          try {
+            return await Promise.race([callback(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeoutMs) })])
+          } catch (error) {
+            if (attempt >= config.retries.limit) throw error
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+      },
+    }
+    return { step, attempts }
+  }
+
+  it('lets the other sources and finalization run when one source times out on every attempt', async () => {
+    const { step, attempts } = fakeStep(20)
+    const finished: string[] = []
+    const outcomes = await importAllSources(step, SOURCE_JOBS, () => '30 minutes', async (id) => {
+      if (id === 'meetup') return new Promise(() => {}) // hangs forever
+      finished.push(id)
+      return { eventsInserted: 1 }
+    })
+    const results = mapBatchRunsToResults(outcomes, SOURCE_JOBS)
+
+    expect(attempts['import meetup']).toBe(3)
+    expect(finished.sort()).toEqual(['ba-tourism', 'luma'])
+    expect(results.map(result => [result.source, result.success])).toEqual([['Meetup', false], ['BA Tourism', true], ['Luma', true]])
+    expect(results[0].error).toBe('import meetup timed out')
+    expect(determineScrapeRunStatus(results)).toBe('partial')
+  })
+
+  it('starts every source before any finishes, so a slow source does not delay the rest', async () => {
+    const { step } = fakeStep(1000)
+    const started: string[] = []
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const running = importAllSources(step, SOURCE_JOBS, () => '30 minutes', async (id) => { started.push(id); await gate; return {} })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(started).toEqual(['meetup', 'ba-tourism', 'luma'])
+    release()
+    expect((await running).every(outcome => outcome.ok)).toBe(true)
   })
 })
