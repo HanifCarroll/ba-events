@@ -40,7 +40,9 @@ const nominatimResultSchema = Schema.Struct({
   lon: Schema.String,
   display_name: Schema.String,
   address: nominatimAddressSchema,
-  extratags: Schema.optional(nominatimExtratagsSchema),
+  // Nominatim sends `"extratags": null` for most addresses; rejecting that sent every such result to the partial
+  // fallback below, which used to drop `state` and `country_code`.
+  extratags: Schema.optional(Schema.NullOr(nominatimExtratagsSchema)),
 })
 
 const nominatimResponseSchema = Schema.Array(nominatimResultSchema)
@@ -141,11 +143,8 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
 
   if (typeof result.address === 'object' && result.address !== null) {
     const rawAddress = result.address as Record<string, unknown>
-    if (typeof rawAddress.house_number === 'string') address.house_number = rawAddress.house_number
-    if (typeof rawAddress.road === 'string') address.road = rawAddress.road
-    if (typeof rawAddress.neighbourhood === 'string') address.neighbourhood = rawAddress.neighbourhood
-    if (typeof rawAddress.suburb === 'string') address.suburb = rawAddress.suburb
-    if (typeof rawAddress.city === 'string') address.city = rawAddress.city
+    // Keep every string component, including state and country_code, which the intake's city check needs.
+    for (const [key, value] of Object.entries(rawAddress)) if (typeof value === 'string') address[key] = value
   }
 
   let extratags: Record<string, string> | undefined
