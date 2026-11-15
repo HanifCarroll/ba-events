@@ -4,7 +4,9 @@
 # of prompt.md (the runbook's daily procedure): collect, then review batches while posts are pending and each batch
 # makes progress, then venues, then report. Phases share a per-day notes file; the report phase writes the Slack
 # report to a file, which goes to #ba-eventos unless it is exactly NOTHING TO REPORT. A model's stdout is never
-# the report. A failed phase, a failed pending count, or a missing report raises pro/ba-events-intake on the VPS's
+# the report. Review sessions list the observations they leave pending in a per-run deferral file, and later
+# batches skip them. Every collect, review, and venues session writes a completion note to its own .done file.
+# A failed phase, a missing completion note, a failed pending count, or a missing report raises pro/ba-events-intake on the VPS's
 # shared alert list, naming what failed; a good run clears it.
 # State lives in ~/agents/ba-events-intake: memory.md (the agent's notes between runs), runs/ (logs, notes and
 # reports, disposable) and sessions/ (Pi session files, which are kept).
@@ -34,7 +36,9 @@ mkdir -p "$state/runs" "$state/sessions"
 log="$state/runs/$day.log"
 notes="$state/runs/$day.notes.md"
 report="$state/runs/$day.report.md"
+deferred="$state/runs/$day.deferred" # observation IDs review sessions left pending this run, one per line
 touch "$state/memory.md" "$notes"
+: >"$deferred" # every run (and so every day) gives stuck observations one fresh attempt
 started=$(date +%s)
 failed="" # phases that failed, for the alert
 
@@ -70,9 +74,11 @@ fail() { # fail <phase> <why>: record a failure for the alert and for the report
 
 phase() { # phase <name> <minutes> [batch number]: one fresh Pi session; returns its exit code
   local name="$1" minutes="$2" label="$1${3:+ $3}" rc
+  local done_file="$state/runs/$day.$name${3:+-$3}.done"
+  rm -f "$done_file"
   echo "phase $label start $(date -u +%FT%TZ) limit=${minutes}m" >>"$log"
   INTAKE_PHASE="$name" INTAKE_DAY="$day" INTAKE_BATCH="$batch" INTAKE_MEMORY="$state/memory.md" \
-    INTAKE_NOTES="$notes" INTAKE_REPORT="$report" \
+    INTAKE_NOTES="$notes" INTAKE_REPORT="$report" INTAKE_DEFERRED="$deferred" INTAKE_DONE="$done_file" \
     caffeinate -i timeout --kill-after=120 "${minutes}m" \
     pi -p --approve --model "$model" --thinking "$thinking" --session-dir "$state/sessions" --exclude-tools "$exclude" \
     "Automation run, $name phase: follow the instructions in $prompt for the $name phase exactly. Read that file first." \
@@ -80,14 +86,27 @@ phase() { # phase <name> <minutes> [batch number]: one fresh Pi session; returns
   rc=$?
   echo "phase $label end $(date -u +%FT%TZ) rc=$rc" >>"$log"
   if [ "$rc" -eq 124 ]; then fail "$label" "hit the ${minutes}-minute limit"
-  elif [ "$rc" -ne 0 ]; then fail "$label" "exited with code $rc"; fi
+  elif [ "$rc" -ne 0 ]; then fail "$label" "exited with code $rc"
+  # Pi can exit 0 without finishing (an early stop or a failed context recovery). The report phase is checked
+  # through its report file instead.
+  elif [ "$name" != report ] && [ -z "$(tr -d '[:space:]' <"$done_file" 2>/dev/null)" ]; then
+    fail "$label" "no completion note"; rc=1
+  fi
   return "$rc"
 }
 
-pending_count() { # prints the number of unreviewed observations; fails if the CLI or its output fails
+pending_count() { # prints "<eligible> <deferred>": unreviewed observations not deferred this run, and deferred
+  # ones still pending. Fails if the CLI or its output fails.
   local out
   out=$(bun run instagram:intake pending 2>>"$log") || return 1
-  printf '%s' "$out" | python3 -I -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d, list); print(len(d))' 2>>"$log"
+  printf '%s' "$out" | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+assert isinstance(d, list)
+deferred = {line.strip() for line in open(sys.argv[1]) if line.strip()}
+ids = [o["id"] for o in d]
+held = sum(1 for i in ids if i in deferred)
+print(len(ids) - held, held)' "$deferred" 2>>"$log"
 }
 
 echo "start $(date -u +%FT%TZ) model=$model thinking=$thinking total=${total_min}m session=${session_min}m batch=$batch max_batches=$max_batches" >>"$log"
@@ -98,19 +117,23 @@ phase collect "$session_min"
 
 # Review in fresh sessions while posts are pending, each batch makes progress, and enough time is left for one
 # more review plus venues and report.
+# Progress is measured on pending minus deferred: posts a batch deliberately leaves pending don't block newer ones.
 batches=0
-if count=$(pending_count); then
-  echo "pending $count" >>"$log"
+if counts=$(pending_count); then
+  set -- $counts; count=$1; held=$2
+  echo "pending $count deferred $held" >>"$log"
   while [ "$count" -gt 0 ]; do
     if [ "$batches" -ge "$max_batches" ]; then note "Review stopped at the $max_batches-batch cap with $count observations pending."; break; fi
     if [ "$(minutes_left)" -lt $(( 2 * session_min + report_min )) ]; then note "Review stopped for time with $count observations pending."; break; fi
     batches=$(( batches + 1 ))
     phase review "$session_min" "$batches"
     before=$count
-    if ! count=$(pending_count); then fail "pending count" "bun run instagram:intake pending failed after review $batches"; break; fi
-    echo "pending $count" >>"$log"
-    if [ "$count" -ge "$before" ]; then note "Review stopped: batch $batches left the pending count at $count."; break; fi
+    if ! counts=$(pending_count); then fail "pending count" "bun run instagram:intake pending failed after review $batches"; break; fi
+    set -- $counts; count=$1; held=$2
+    echo "pending $count deferred $held" >>"$log"
+    if [ "$count" -ge "$before" ]; then note "Review stopped: batch $batches left $count observations pending that weren't deferred."; break; fi
   done
+  [ "$held" -gt 0 ] && note "$held observations were deferred this run and stay pending (IDs in $deferred)."
 else
   fail "pending count" "bun run instagram:intake pending failed after collect, so no review ran"
 fi

@@ -11,10 +11,13 @@ check() { # check <description> <command...>
   if "${@:2}"; then echo "ok   $1"; else echo "FAIL $1"; failures=$((failures + 1)); fi
 }
 
-setup() { # setup <pending> <scenario>: fresh temp HOME with stubs
+setup() { # setup <pending> <scenario> [stuck]: fresh temp HOME with stubs. $HOME/pending lists observation IDs,
+  # oldest first; the [stuck] oldest ones can't be finished (like images that failed to save).
   t=$(mktemp -d)
   mkdir -p "$t/.local/bin" "$t/checkout" "$t/state"
-  echo "$1" >"$t/pending"
+  : >"$t/pending"; i=0
+  while [ "$i" -lt "${3:-0}" ]; do echo "stuck-$i" >>"$t/pending"; i=$((i + 1)); done
+  i=0; while [ "$i" -lt "$1" ]; do echo "obs-$i" >>"$t/pending"; i=$((i + 1)); done
   echo "$2" >"$t/scenario"
   : >"$t/pi-calls"; : >"$t/ssh-calls"
 
@@ -22,15 +25,22 @@ setup() { # setup <pending> <scenario>: fresh temp HOME with stubs
 #!/bin/bash
 echo "$*" >>"$HOME/pi-calls"
 case "$*" in *"--exclude-tools "*'*schedule*'*) ;; *) echo "scheduler tools not excluded" >&2; exit 3 ;; esac
-scenario=$(cat "$HOME/scenario"); n=$(cat "$HOME/pending")
+scenario=$(cat "$HOME/scenario")
 echo "NOTHING TO REPORT" # stdout must never become the report
 case "$INTAKE_PHASE" in
   review)
     [ "$scenario" = review-fails ] && { echo "[review] crashed" >>"$INTAKE_NOTES"; exit 1; }
-    [ "$scenario" = stall ] && exit 0
-    take=$INTAKE_BATCH; [ "$take" -gt "$n" ] && take=$n
-    echo $((n - take)) >"$HOME/pending"
-    echo "[review] reviewed $take" >>"$INTAKE_NOTES" ;;
+    if [ "$scenario" != stall ]; then
+      taken=0; : >"$HOME/left"
+      while read -r id; do
+        if [ "$taken" -lt "$INTAKE_BATCH" ] && ! grep -qx "$id" "$INTAKE_DEFERRED"; then
+          taken=$((taken + 1))
+          case "$id" in stuck-*) echo "$id" >>"$INTAKE_DEFERRED"; echo "$id" >>"$HOME/left" ;; esac
+        else echo "$id" >>"$HOME/left"; fi
+      done <"$HOME/pending"
+      mv "$HOME/left" "$HOME/pending"
+      echo "[review] took $taken" >>"$INTAKE_NOTES"
+    fi ;;
   report)
     echo "## Intake on test" >>"$INTAKE_MEMORY"
     case "$scenario" in
@@ -39,14 +49,16 @@ case "$INTAKE_PHASE" in
       *) printf 'Run went fine.\n- notes: %s\n' "$(grep -c . "$INTAKE_NOTES")" >"$INTAKE_REPORT" ;;
     esac ;;
 esac
+# Every phase but report confirms it finished, unless this scenario's phase stops early.
+[ "$INTAKE_PHASE" = report ] || [ "$scenario" = "no-done-$INTAKE_PHASE" ] || echo "$INTAKE_PHASE done" >"$INTAKE_DONE"
 exit 0
 EOF
   cat >"$t/.local/bin/bun" <<'EOF'
 #!/bin/bash
 [ "$*" = "run instagram:intake pending" ] || { echo "unexpected bun $*" >&2; exit 2; }
 [ "$(cat "$HOME/scenario")" = count-fails ] && { echo "db down" >&2; exit 1; }
-n=$(cat "$HOME/pending"); printf '['; i=0
-while [ "$i" -lt "$n" ]; do [ "$i" -gt 0 ] && printf ','; printf '{"id":"%s"}' "$i"; i=$((i + 1)); done
+printf '['; sep=''
+while read -r id; do printf '%s{"id":"%s"}' "$sep" "$id"; sep=','; done <"$HOME/pending"
 echo ']'
 EOF
   cat >"$t/.local/bin/ssh" <<'EOF'
@@ -83,12 +95,12 @@ echo "# backlog cleared over several batches"
 setup 75 report; go
 check "exit 0" [ "$rc" -eq 0 ]
 check "collect, 3 reviews, venues, report" [ "$(phases)" = "collect review review review venues report " ]
-check "backlog cleared" [ "$(cat "$t/pending")" -eq 0 ]
+check "backlog cleared" [ ! -s "$t/pending" ]
 check "report posted, not stdout" posted
 check "posted text is the report file" grep -q 'Run went fine' "$t/ssh-calls"
 check "alert resolved" resolved
 check "no alert raised" eval '! grep -q "alert raise" "$t/ssh-calls"'
-check "log has pending counts" grep -q '^pending 0$' "$t"/state/runs/*.log
+check "log has pending counts" grep -q '^pending 0 deferred 0$' "$t"/state/runs/*.log
 check "every pi call excludes the scheduler tools" [ "$(grep -c -- "--exclude-tools .*\*schedule\*" "$t/pi-calls")" -eq "$(wc -l <"$t/pi-calls")" ]
 check "memory appended once" [ "$(grep -c '^## Intake on' "$t/state/memory.md")" -eq 1 ]
 rm -rf "$t"
@@ -96,8 +108,8 @@ rm -rf "$t"
 echo "# a batch without progress stops the loop"
 setup 40 stall; go
 check "one review, then venues and report" [ "$(phases)" = "collect review venues report " ]
-check "stop is noted" grep -q 'left the pending count at 40' "$t"/state/runs/*.notes.md
-check "exit 0" [ "$rc" -eq 0 ]
+check "stop is noted" grep -q 'left 40 observations pending' "$t"/state/runs/*.notes.md
+check "a batch that took nothing still exits 0 with its note" [ "$rc" -eq 0 ]
 rm -rf "$t"
 
 echo "# a failed review still reports and alerts"
@@ -141,5 +153,32 @@ echo "# no time left for review"
 setup 50 report; HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_TOTAL_MINUTES=60 /bin/bash "$run" </dev/null >/dev/null 2>&1
 check "no review when time is short" [ "$(phases)" = "collect venues report " ]
 rm -rf "$t"
+
+echo "# stuck observations are deferred, and later batches review newer ones"
+setup 50 report 35; go
+check "batches 1 and 2 defer the 35 stuck ones, then 2 and 3 clear the rest" [ "$(phases)" = "collect review review review venues report " ]
+check "only stuck observations remain" eval '[ "$(grep -c . "$t/pending")" -eq 35 ] && ! grep -q obs- "$t/pending"'
+check "each stuck one deferred once" eval '[ "$(sort -u "$t"/state/runs/*.deferred | grep -c .)" -eq 35 ] && [ "$(grep -c . "$t"/state/runs/*.deferred)" -eq 35 ]'
+check "deferrals noted for the report" grep -q '35 observations were deferred' "$t"/state/runs/*.notes.md
+check "no alert, resolved" eval '! grep -q "alert raise" "$t/ssh-calls" && resolved'
+check "exit 0" [ "$rc" -eq 0 ]
+rm -rf "$t"
+
+echo "# a new run starts with an empty deferral file"
+setup 0 report 5
+mkdir -p "$t/state/runs"; for i in 0 1 2 3 4; do echo "stuck-$i"; done >"$t/state/runs/$(TZ=America/Argentina/Buenos_Aires date +%F).deferred"
+go
+check "stuck observations get a fresh attempt" [ "$(phases)" = "collect review venues report " ]
+rm -rf "$t"
+
+for p in collect review venues; do
+  echo "# $p exits 0 without its completion note"
+  setup 10 "no-done-$p"; go
+  check "report still posted" posted
+  check "alert names $p" alerted "$p.*(no completion note)"
+  check "no resolve" eval '! resolved'
+  check "exit 1" [ "$rc" -eq 1 ]
+  rm -rf "$t"
+done
 
 [ "$failures" -eq 0 ] && echo "all passed" || { echo "$failures failed"; exit 1; }
