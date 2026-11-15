@@ -1,7 +1,7 @@
 /**
- * Pure purge body for the guest lifecycle retention scheduled task, extracted
- * so it can be unit-tested with a fake client — without the Trigger.dev runtime
- * or the Supabase service-role client.
+ * Guest lifecycle retention. Bounds growth of the guest lifecycle and
+ * transcript debug tables by deleting rows older than RETENTION_DAYS. Runs
+ * daily from the jobs Worker; takes the client so tests can pass a fake.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 

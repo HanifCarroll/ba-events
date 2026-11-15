@@ -5,10 +5,12 @@
  * The website loads content dynamically via JavaScript, so we need
  * a real browser to execute the page scripts.
  *
- * Runs with local Playwright + Chromium (bundled by the Trigger.dev
- * playwright build extension in production).
+ * Runs in the jobs Worker against Cloudflare Browser Rendering; the caller
+ * supplies the browser opener.
  */
 
+import type { Browser } from '@cloudflare/playwright'
+import { withOwnedBrowser, type OpenBrowser } from '../../acquisition/run.ts'
 import type { BATourismEvent, WeekContext } from './types.ts'
 import { parseWeekContext } from './date-parser.ts'
 import { logger } from '#shared/lib/logger.ts'
@@ -36,7 +38,7 @@ interface ExtractionResult {
  * Extraction script to run in the browser context
  * Returns events and week context text
  *
- * NOTE: This is a string to avoid Trigger.dev/esbuild bundling issues.
+ * NOTE: This is a string to avoid esbuild bundling issues.
  * When passed as a function reference, esbuild adds __name helpers that
  * don't exist in the browser context, causing "ReferenceError: __name is not defined"
  */
@@ -176,22 +178,12 @@ const extractionScript = `(() => {
   return { events, weekContextText }
 })()`
 
-/**
- * Scrape events using local Playwright (development mode)
- */
-async function scrapeWithPlaywright(): Promise<{
+async function scrapeWithBrowser(browser: Browser): Promise<{
   events: BATourismEvent[]
   weekContext: WeekContext
 }> {
-  const { chromium } = await import('playwright')
-
-  const browser = await chromium.launch({
-    headless: true,
-  })
-
+  const page = await browser.newPage()
   try {
-    const page = await browser.newPage()
-
     logger.info('[BA Tourism] Navigating to page')
     await page.goto(BA_TOURISM_URL, {
       waitUntil: 'networkidle',
@@ -232,17 +224,13 @@ async function scrapeWithPlaywright(): Promise<{
       weekContext,
     }
   } finally {
-    await browser.close()
+    await page.close().catch(() => {})
   }
 }
 
-/**
- * Main scraper function - uses local Playwright with Chromium.
- */
-export async function scrapeBATourismEventsWithBrowser(): Promise<{
+export async function scrapeBATourismEventsWithBrowser(openBrowser: OpenBrowser): Promise<{
   events: BATourismEvent[]
   weekContext: WeekContext
 }> {
-  logger.info('[BA Tourism] Using local Playwright for scraping')
-  return scrapeWithPlaywright()
+  return withOwnedBrowser('ba-tourism:cloudflare', openBrowser, scrapeWithBrowser)
 }

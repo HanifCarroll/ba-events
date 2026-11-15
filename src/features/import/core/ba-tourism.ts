@@ -2,7 +2,7 @@
  * Core BA Tourism Import Logic
  *
  * HTTP-independent logic for importing BA Tourism events.
- * Can be called from both manual import wizard and Trigger.dev jobs.
+ * Called by the jobs Worker's daily scrape Workflow.
  *
  * Note: BA Tourism website shows events for the current week only.
  * The site is updated weekly, so we import all events (no date range filter).
@@ -17,6 +17,7 @@ import {
   getUniqueVenueNames,
 } from '../scrapers/ba-tourism/transformer.ts'
 import type { BATourismEvent } from '../scrapers/ba-tourism/types.ts'
+import type { OpenBrowser } from '../acquisition/run.ts'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
   embedEventWithDocument,
@@ -38,6 +39,8 @@ import type { EventInsert } from '#shared/lib/types.ts'
 // ============================================================================
 
 export interface BATourismImportOptions {
+  /** Opens the Browser Rendering session used for the weekly page */
+  openBrowser: OpenBrowser
   /** Skip duplicate checking (for testing) */
   skipDuplicateCheck?: boolean
   /** Scrape run ID for audit trail */
@@ -122,7 +125,7 @@ function asBATourismError(operation: string, error: unknown): ImportOperationErr
  * filtering, persistence, and per-event fallback are controlled here. */
 export function processBATourismImportEffect(
   client: SupabaseClient,
-  options: BATourismImportOptions = {}
+  options: BATourismImportOptions
 ): Effect.Effect<BATourismImportResult, ImportOperationError> {
   return Effect.gen(function* () {
     const referenceDate = options.referenceDate ?? new Date()
@@ -146,7 +149,7 @@ export function processBATourismImportEffect(
     console.log('[ba-tourism] Scraping events from website (browser mode)...')
     const { events: allEvents, weekContext } = yield* baTourismTry(
       'ba-tourism.scrape',
-      () => scrapeBATourismEventsWithBrowser()
+      () => scrapeBATourismEventsWithBrowser(options.openBrowser)
     )
     result.catalogProvenance = catalogImportProvenance(new Date().toISOString())
     result.eventsFetched = allEvents.length
@@ -352,7 +355,7 @@ export function processBATourismImportEffect(
 
 export async function processBATourismImport(
   client: SupabaseClient,
-  options: BATourismImportOptions = {}
+  options: BATourismImportOptions
 ): Promise<BATourismImportResult> {
   try {
     return await Effect.runPromise(processBATourismImportEffect(client, options))

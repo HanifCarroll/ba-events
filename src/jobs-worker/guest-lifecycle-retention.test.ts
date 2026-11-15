@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { purgeGuestLifecycleRetention } from './purge-guest-lifecycle-retention.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { purgeGuestLifecycleRetention } from './guest-lifecycle-retention.ts'
 
 describe('guest lifecycle retention', () => {
+  afterEach(() => vi.restoreAllMocks())
+
   it('purges lifecycle rows and guest transcript copies', async () => {
     const lt = vi
       .fn()
@@ -19,7 +21,7 @@ describe('guest lifecycle retention', () => {
     expect(client.from).toHaveBeenNthCalledWith(2, 'guest_chat_debug')
   })
 
-  it('throws when the purge fails so Trigger retries the run', async () => {
+  it('throws when the purge fails so the Workflow step retries', async () => {
     const error = { message: 'database unavailable' }
     const lt = vi.fn().mockResolvedValue({ error, count: null })
     const deleteRows = vi.fn(() => ({ lt }))

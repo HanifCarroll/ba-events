@@ -1,21 +1,19 @@
-import { reuseCatalogAcquisition, withOwnedBrowser, type CatalogAcquisition } from '../../acquisition/run.ts'
-import { isCloudflareBrowserAvailable, openCloudflareBrowser, openBrowserbaseBrowser } from '#shared/lib/browser/managed.ts'
+import { reuseCatalogAcquisition, withOwnedBrowser, type CatalogAcquisition, type OpenBrowser } from '../../acquisition/run.ts'
 /**
  * Meetup Browser Scraper
  *
  * Uses Playwright to load the Meetup events page and intercept GraphQL responses.
  * This provides structured JSON data while handling client-side rendering.
  *
- * Runs in Trigger.dev with the Playwright build extension which installs Chromium
- * in the container at deploy time.
+ * Runs in the jobs Worker against Cloudflare Browser Rendering; the caller
+ * supplies the browser opener.
  */
 
-import type { Browser, Page } from 'playwright'
+import type { Browser, Page } from '@cloudflare/playwright'
 import { parseISO, eachDayOfInterval } from 'date-fns'
 import { fromZonedTime } from 'date-fns-tz'
 import type { MeetupEvent, MeetupGraphQLEvent } from './types.ts'
 import { extractRecurrencePattern, isRecurringEvent } from './date-parser.ts'
-import { isBrowserbaseAvailable } from '#shared/lib/browser/index.ts'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import { sanitizeError } from '#shared/lib/security.ts'
 import { logger } from '#shared/lib/logger.ts'
@@ -26,14 +24,6 @@ const MEETUP_BASE_URL = 'https://www.meetup.com/find/'
 const MAX_PAGE_RETRIES = 3
 const RETRY_DELAY_MS = 2000
 
-// Browser args to mitigate frame detachment issues
-// --disable-features=site-per-process is the most commonly suggested workaround
-// for the "Navigating frame was detached" Chromium bug
-const BROWSER_ARGS = [
-  '--disable-features=site-per-process',
-  '--no-sandbox',
-  '--disable-setuid-sandbox',
-]
 
 /**
  * Check if an error is a frame detachment error
@@ -236,7 +226,7 @@ interface DOMExtractionResult {
  * Line 6: Rating (e.g., "4.7") - optional
  * Line 7: "X attendees"
  *
- * NOTE: This is a string to avoid Trigger.dev/esbuild bundling issues.
+ * NOTE: This is a string to avoid esbuild bundling issues.
  * When passed as a function reference, esbuild adds __name helpers that
  * don't exist in the browser context, causing "ReferenceError: __name is not defined"
  */
@@ -461,7 +451,6 @@ async function scrapePageForEvents(
 /**
  * Scrape a date range against an already-connected browser instance.
  * Includes retry logic with page recreation for frame detachment errors.
- * Shared by the local Playwright and Browserbase paths.
  */
 async function scrapeWithBrowserInstance(
   browser: Browser,
@@ -531,44 +520,13 @@ async function scrapeWithBrowserInstance(
   } finally { await context.close().catch(() => {}) }
 }
 
-/**
- * Scrape events using local Playwright for a date range
- */
-async function scrapeWithPlaywright(options: ScraperOptions): Promise<MeetupEvent[]> {
-  const { chromium } = await import('playwright')
-
-  const browser = await chromium.launch({
-    headless: true,
-    args: BROWSER_ARGS,
-  })
-
-  try {
-    return await scrapeWithBrowserInstance(browser, options)
-  } finally {
-    await browser.close()
-  }
+export async function scrapeMeetupEvents(options: ScraperOptions, openBrowser: OpenBrowser): Promise<MeetupEvent[]> {
+  return (await scrapeMeetupCatalog(options, openBrowser)).events
 }
 
-/**
- * Scrape events using a Browserbase cloud browser for a date range
- */
-export async function scrapeMeetupEvents(options: ScraperOptions): Promise<MeetupEvent[]> {
-  return (await scrapeMeetupCatalog(options)).events
-}
-
-export async function scrapeMeetupCatalog(options: ScraperOptions): Promise<CatalogAcquisition<MeetupEvent>> {
-  return reuseCatalogAcquisition(`meetup:catalog:v1:${options.startDate}:${options.endDate}`, async () => {
-    if (isCloudflareBrowserAvailable()) {
-      logger.info('[Meetup] Using Cloudflare Browser Rendering for daily discovery')
-      return withOwnedBrowser('meetup:cloudflare', openCloudflareBrowser, browser => scrapeWithBrowserInstance(browser, options))
-    }
-    if (isBrowserbaseAvailable()) {
-      logger.warn('[Meetup] Cloudflare is unconfigured; retaining explicit legacy Browserbase routing')
-      return withOwnedBrowser('meetup:browserbase', () => openBrowserbaseBrowser('meetup'), browser => scrapeWithBrowserInstance(browser, options))
-    }
-    logger.info('[Meetup] Using local Playwright for scraping')
-    return scrapeWithPlaywright(options)
-  })
+export async function scrapeMeetupCatalog(options: ScraperOptions, openBrowser: OpenBrowser): Promise<CatalogAcquisition<MeetupEvent>> {
+  return reuseCatalogAcquisition(`meetup:catalog:v1:${options.startDate}:${options.endDate}`, () =>
+    withOwnedBrowser('meetup:cloudflare', openBrowser, browser => scrapeWithBrowserInstance(browser, options)))
 }
 
 /**

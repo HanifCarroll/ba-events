@@ -20,7 +20,7 @@ XState v6 owns event-driven feature lifecycles described in
 [the state-machine inventory](state-machines.md). Pure XState transitions can
 govern admission and persisted-phase changes inside an Effect or platform
 operation. Component actors own cancellable UI work; they do not add an Effect
-runtime. Cloudflare storage/alarms, Trigger checkpoints/retries, database
+runtime. Cloudflare storage/alarms, Workflow checkpoints/retries, database
 transactions and provider receipts remain the durability authority. XState
 snapshots are not a second server-side persistence format.
 
@@ -44,7 +44,7 @@ Schemas preserve the old nullable, default, bounding, status-code, and error
 contracts. Strict legacy shapes opt into `{ onExcessProperty: "error" }`;
 ordinary Struct schemas retain Effect's default excess-field stripping.
 AI SDK/provider and MCP SDK schemas remain their SDK-owned Zod schemas because
-those SDKs consume and register them. Supabase, Dexie, Browserbase, Playwright,
+those SDKs consume and register them. Supabase, Dexie, Cloudflare Playwright,
 AI streaming/providers, PostHog, Web Crypto, generated Paraglide code, and
 browser automation remain direct SDK/platform boundaries.
 
@@ -62,14 +62,13 @@ application graph.
 | Chat/AI turn | `src/features/chat/api/agent/{follow-up,orchestrate,persist,shared-turn.server}.ts` and `src/routes/api/chat/+server.ts` | AI SDK generation/tool callbacks, streaming response construction, and the request/stream lifecycle. Planner partial-read fallback, persistence fail-open behavior, turn claims, and terminal writes remain unchanged. |
 | Event reads | `src/features/events/api/{crud,detail}.server.ts` | Existing event repository/Supabase reads and SvelteKit page loads. Pure event shaping remains TypeScript. |
 | Telegram/Worker | `src/features/telegram/{turn,delivery.server,webhook.server,health,retention,client}.ts`; `src/telegram-worker/index.ts` | Bot API Promise calls, Worker `fetch`/`scheduled`, DO storage/alarm/retry/ack, `waitUntil`, and envelope key semantics remain platform-owned. `retry_after`, retry caps, and acknowledgement ordering are unchanged. |
-| Import coordinators | `src/features/import/core/{ba-tourism,eventbrite,luma,meetup,passline,venti}.ts` | Browser scraping, source HTTP clients, AI categorization/embeddings, and Supabase writes are explicit leaves. Source transforms, filtering, venue IDs, persisted shapes, progressive batches, and item-level skip behavior remain unchanged. |
+| Import coordinators | `src/features/import/core/{ba-tourism,luma,meetup}.ts` | Browser scraping, source HTTP clients, AI categorization/embeddings, and Supabase writes are explicit leaves. Source transforms, filtering, venue IDs, persisted shapes, progressive batches, and item-level skip behavior remain unchanged. |
 | Import enrichment | `src/features/import/core/{event-enrichment,venue-settlement,venue-review,nominatim}.ts`; `src/features/import/api/duplicate-detection.ts`; `src/features/import/scrapers/venue-matcher.ts` | Vendor enrichment adapters, Nominatim's native timeout and one retry, Supabase venue/event writes, and review workflows. Partial failure and fail-open/fail-closed behavior are preserved. |
-| Trigger enrichment/import | `src/trigger/jobs/{enrich-events,enrichment-catchup,scrape-ba-tourism,scrape-eventbrite,scrape-luma,scrape-meetup,scrape-passline,scrape-venti}.ts` | Trigger task callback is the runtime root. Trigger retry/outcome semantics, queues, schedules, and batch ownership remain Trigger-owned. |
+| Scheduled jobs | `src/jobs-worker/{index,sources,daily-scrape,enrichment}.ts` | Each Workflow `step.do` callback is the runtime root and calls `Effect.runPromise`. The Workflow owns schedules, step retries, timeouts, and checkpoints. |
 
 The import coordinators retain named legacy Promise adapters only to avoid
 breaking existing callers: `processBATourismImport`,
-`processEventbriteImport`, `processLumaImport`, `processMeetupImport`,
-`processPasslineImport`, and `processVentiImport`. Trigger jobs call the
+`processLumaImport`, and `processMeetupImport`. The jobs Worker calls the
 corresponding `*ImportEffect` program directly. The same rule applies to
 repository helpers such as `listConversations`, `addMessage`, venue
 settlement, duplicate detection, and Nominatim: canonical `*Effect` exports
@@ -115,17 +114,17 @@ included where they exercise a runtime boundary.
   provider leaf called by the import Effect graph; rendering and runes are
   pure/client code.
 - **Import core:** `src/features/import/api/duplicate-detection.ts`,
-  `core/{ba-tourism,event-enrichment,eventbrite,luma,meetup,nominatim,passline,
-  passline-existing,venue-review,venue-settlement,venti}.ts`,
-  `core/{event-enrichment,eventbrite/detail,meetup/detail}.test.ts` where
+  `core/{ba-tourism,event-enrichment,luma,meetup,nominatim,venue-review,
+  venue-settlement}.ts`, `core/event-enrichment.test.ts` and
+  `scrapers/meetup/detail.test.ts` where
   present, and `scrapers/venue-matcher.ts`. Canonical coordinators and
   repository/venue programs are Effect-native; direct source clients,
-  Browserbase, Playwright, and test doubles are leaves.
+  Cloudflare Playwright, and test doubles are leaves.
 - **Import adapters/scrapers:** `src/features/import/adapters/` enrichment
   adapters; `scrapers/ai-categorizer.ts`; source `api.ts`, `client.ts`,
   `detail.ts`, `enrichment.ts`, `description-enrichment.ts`,
-  `venue-enrichment.ts`, `address-enrichment.ts`, and browser scrapers under
-  `scrapers/{ba-tourism,eventbrite,luma,meetup,passline}`; plus focused tests.
+  `venue-enrichment.ts`, and browser scrapers under
+  `scrapers/{ba-tourism,luma,meetup}`; plus focused tests.
   These are plain transforms or direct source/AI/browser SDK adapters. Their
   Promise APIs are deliberate leaves called by the core Effect programs.
 - **Telegram:** `src/features/telegram/client.ts`, `delivery.server.ts`,
@@ -134,13 +133,13 @@ included where they exercise a runtime boundary.
   Supabase, rendering callbacks, and test promises are leaves.
 - **Framework roots and generated code:** `src/hooks.server.ts`, the route
   server files under `src/routes/` (chat, event, auth, feedback, MCP and
-  layout/page loads), `src/telegram-worker/index.ts`, `src/trigger/jobs/`,
+  layout/page loads), `src/telegram-worker/index.ts`, `src/jobs-worker/`,
   `src/mcp-worker/index.ts`, `src/service-worker.ts`, and generated
-  `src/lib/paraglide/{runtime,server}.d.ts`. SvelteKit/Worker/Trigger/MCP
+  `src/lib/paraglide/{runtime,server}.d.ts`. SvelteKit/Worker/Workflow/MCP
   callbacks are runtime roots; Paraglide declarations are generated code.
 - **Shared server/client integrations:** `src/shared/lib/ai/{embeddings,
   enrichment,extract-facets}.ts` and tests, `shared/lib/analytics.ts`,
-  `shared/lib/browser/browserbase.ts` and test, `shared/lib/db/{blocklist,
+  `shared/lib/db/{blocklist,
   client.server,guest-conversations,local-outbox}.ts` and tests,
   `shared/lib/feedback/alert.server.ts` and test,
   `shared/lib/html-parsing.ts`, `shared/lib/search/rerank.ts` and test,
@@ -160,20 +159,18 @@ entrypoint or a direct Supabase/source/AI/browser call. This includes the
 backfill, cleanup, venue audit/update, embedding, categorization, import,
 snapshot, verification, and guest-debug scripts:
 `audit-all-venues.ts`, `backfill-description-presentation.ts`,
-`backfill-eventbrite-images.ts`, `backfill-facets.ts`,
+`backfill-facets.ts`,
 `categorize-flagged-venues.ts`, `check-passline-desc-status.ts`,
 `cleanup-non-ba-events.ts`, `convert-tba-venues.ts`,
 `delete-{non-ba,va}-venues.ts`, `detect-address-venues.ts`,
-`enrich-{passline-venues-feb2,venues-feb2}.ts`, `eventbrite-jsonld-test.ts`,
+`enrich-{passline-venues-feb2,venues-feb2}.ts`,
 `find-venues-missing-info.ts`, `fix-description-prefix.ts`,
 `get-{desc-unavailable,flagged-venues,passline-to-enrich}.ts`,
 `guest-chat-debug.ts`, `mark-{past-no-desc,venues-cannot-enrich}.ts`,
 `populate-embeddings.ts`, `query-va-venues.ts`, `recategorize-events.ts`,
-`reembed-stale.ts`, `run-venti-import.ts`, `snapshot-search-corpus.ts`,
-`test-{ba-tourism,eventbrite-scraper,meetup}.ts`,
+`reembed-stale.ts`, `snapshot-search-corpus.ts`,
 `update-{descriptions,escuela-enfermeria,found-venues,passline-descriptions}.ts`,
-`update-venue-addresses-batch{,-2,-3,-4,-5,-6}.ts`, and
-`verify-venti-import.ts`. They remain script runtime roots by design; their
+and `update-venue-addresses-batch{,-2,-3,-4,-5,-6}.ts`. They remain script runtime roots by design; their
 operator-facing Promise and CLI contracts are not application call graphs.
 
 The `evals/` files (`concierge/{deterministic.test,run,langfuse,multi-turn,
@@ -195,10 +192,10 @@ be added here with its owning runtime and behavior.
    adapters in auth, chat, event, import, Telegram, and shared leaf modules
    bridge into the Effect graph. They preserve SvelteKit's `RequestEvent`,
    `Response`, redirect, `RemoteForm`, nullable, and streaming contracts.
-2. **Trigger roots.** `src/trigger/jobs/*.ts` task `run` callbacks call
-   `Effect.runPromise` at the Trigger boundary. Trigger owns retries,
-   schedules, queue serialization, partial batch outcomes, and task result
-   reporting; Effect does not replace those policies.
+2. **Jobs Workflow roots.** `src/jobs-worker/*.ts` `step.do` callbacks call
+   `Effect.runPromise` at the Workflow boundary. The Workflow owns retries,
+   schedules, per-source step isolation, and step results; Effect does not
+   replace those policies.
 3. **Cloudflare/Worker roots.** `src/telegram-worker/index.ts`,
    `src/service-worker.ts`, and Worker/DO methods use the platform's Promise
    callback contracts. DO storage, alarms, `waitUntil`, native fetch, ack
@@ -210,7 +207,7 @@ be added here with its owning runtime and behavior.
    underlying Promise implementation.
 5. **Source HTTP and browser adapters.** The source files under
    `src/features/import/scrapers/`, `shared/lib/html-parsing.ts`, Nominatim,
-   Browserbase/Playwright, and source detail/enrichment helpers retain fetch,
+   Cloudflare Playwright, and source detail/enrichment helpers retain fetch,
    browser-session, cleanup, native timeout, and one-retry contracts. The
    import core calls them as explicit leaves.
 6. **AI/provider and MCP SDK contracts.** `shared/lib/ai/*`, chat tool and
@@ -261,12 +258,11 @@ be added here with its owning runtime and behavior.
   Interrupted programs cannot advance, while already committed writes remain durable.
   Telegram keeps Bot API `retry_after`, update claim/retry caps, DO storage
   keys, alarms, and ack ordering.
-- Trigger keeps task retry policies, queue ownership, schedules, and batch
-  checkpoints. A failed Effect task still fails the Trigger task so its
-  existing retry behavior applies.
+- Workflows keep step retry policies, schedules, and checkpoints. A failed
+  Effect program still fails its step so the step's retry policy applies.
 - Guest chat timeout and AI/tool timeout behavior remains at the existing
-  request/SDK boundaries. Browser sessions retain their existing `finally`
-  cleanup and Browserbase resource lifecycle.
+  request/SDK boundaries. Browser Rendering sessions close in `finally`
+  through the acquisition run that owns them.
 - Concierge SDK callbacks use `agent/bounded-read.ts` as a native Promise leaf:
   the per-tool timer aborts the actual read, and producer/SDK cancellation rejects
   even a read that ignores its signal. Timers/listeners are removed on settlement.

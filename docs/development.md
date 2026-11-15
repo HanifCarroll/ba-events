@@ -41,7 +41,7 @@ The main specs under [openspec/specs](../openspec/specs/) are the canonical requ
 
 ## Deployment
 
-Production deploys only from the `deploy` job in `.github/workflows/ci.yml`, after the checks pass on a push to `main`. It deploys the four Cloudflare Workers, then the Trigger.dev jobs. Cloudflare Workers Builds and the Trigger.dev GitHub app are disconnected. See [deployment](deployment.md).
+Production deploys only from the `deploy` job in `.github/workflows/ci.yml`, after the checks pass on a push to `main`. It deploys the five Cloudflare Workers, including the `baeventos-jobs` Worker that runs the scheduled imports. Cloudflare Workers Builds is disconnected. See [deployment](deployment.md).
 
 ## Generative tests
 

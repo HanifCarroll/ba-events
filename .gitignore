@@ -11,7 +11,6 @@ node_modules
 /storybook-static
 /tmp
 /.tanstack
-/.trigger
 
 # Server logs and agent scratch
 logs/

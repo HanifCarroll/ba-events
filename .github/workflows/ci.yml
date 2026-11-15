@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      # Wrangler and the Trigger.dev CLI run on Node; keep in step with mise.toml.
+      # Wrangler runs on Node; keep in step with mise.toml.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.18.0
@@ -84,15 +84,9 @@ jobs:
           PUBLIC_SUPABASE_ANON_KEY: ${{ vars.PUBLIC_SUPABASE_ANON_KEY }}
           PUBLIC_POSTHOG_KEY: ${{ vars.PUBLIC_POSTHOG_KEY }}
           PUBLIC_POSTHOG_HOST: ${{ vars.PUBLIC_POSTHOG_HOST }}
-      # Telegram, MCP, web, then chat delivery; stops at the first failure.
+      # Telegram, MCP, web, chat delivery, then jobs; stops at the first failure.
       - name: Deploy Cloudflare Workers
         run: bun run cloudflare:deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # Deploys to prod (the CLI default) and builds the image on Trigger.dev's
-      # servers, so the runner needs no Docker.
-      - name: Deploy Trigger.dev jobs
-        run: bun run trigger:deploy --external-id "$GITHUB_SHA"
-        env:
-          TRIGGER_ACCESS_TOKEN: ${{ secrets.TRIGGER_ACCESS_TOKEN }}

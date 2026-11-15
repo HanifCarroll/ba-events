@@ -1,14 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-
-vi.mock('@trigger.dev/sdk/v3', () => ({
-  metadata: { set: vi.fn() },
-  queue: (definition: unknown) => definition,
-  schedules: { task: (definition: unknown) => definition },
-  task: (definition: unknown) => definition,
-  tasks: { trigger: vi.fn() },
-}))
-
-import { catchupStatusesForBatch, shouldChainCatchupBatch } from './enrichment-catchup.ts'
+import { describe, expect, it } from 'vitest'
+import { catchupMaxBatches, catchupStatusesForBatch, dailyMaxBatches, shouldChainCatchupBatch } from './enrichment.ts'
 
 describe('catch-up batch selection', () => {
   it('retries failed events only in the first batch of a chain', () => {
@@ -21,5 +12,12 @@ describe('catch-up batch selection', () => {
     expect(shouldChainCatchupBatch(0, 1, 20)).toBe(false)
     expect(shouldChainCatchupBatch(1, 1, 20)).toBe(true)
     expect(shouldChainCatchupBatch(1, 20, 20)).toBe(false)
+  })
+
+  it('sizes both chains to the observed backlog with the old floors', () => {
+    expect(catchupMaxBatches(10)).toBe(20)
+    expect(catchupMaxBatches(2000)).toBe(41)
+    expect(dailyMaxBatches(5)).toBe(10)
+    expect(dailyMaxBatches(1500)).toBe(16)
   })
 })

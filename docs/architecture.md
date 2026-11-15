@@ -4,7 +4,7 @@ BA Eventos keeps catalog ingestion, recommendation reasoning, and user-facing de
 
 ```mermaid
 flowchart LR
-  Sources[Event sources] --> Jobs[Trigger.dev import and enrichment]
+  Sources[Event sources] --> Jobs[Jobs Worker: import and enrichment Workflows]
   Jobs --> DB[(Supabase Postgres and pgvector)]
   Web[SvelteKit web app] --> Agent[Shared concierge and read tools]
   Telegram[Telegram Worker] --> Agent
@@ -24,7 +24,7 @@ flowchart LR
 | `src/features/events/` | Catalog reads, cards, artwork delivery, and saved-event presentation |
 | `src/features/auth/` | Sessions, admission controls, and account operations |
 | `src/features/import/` | Source acquisition, parsing, normalization, enrichment, and provenance |
-| `src/trigger/jobs/` | Background import and maintenance jobs |
+| `src/jobs-worker/` | Scheduled import, enrichment, and retention Workflows |
 | `src/chat-delivery-worker/` | Durable web delivery and recovery |
 | `src/telegram-worker/` | Telegram webhook and inbox handling |
 | `src/mcp-worker/` | Public event-discovery MCP interface |
@@ -40,6 +40,6 @@ The concierge consumes untrusted user text and catalog content. It can call read
 
 User saves and account operations have separate authenticated boundaries. Supabase service-role access is server-only. The public MCP surface must expose catalog data without leaking user conversations or internal records.
 
-Cloudflare runs the web, Telegram, MCP, and durable-delivery Workers. Trigger.dev owns background import jobs. Their credentials and release processes are separate; see [deployment](deployment.md).
+Cloudflare runs the web, Telegram, MCP, durable-delivery, and jobs Workers. Each keeps its own secrets; see [deployment](deployment.md).
 
 Historical decisions and migration records describe earlier implementations as well as the current system. Prefer current source, specifications, and [development instructions](development.md) when a historical note disagrees.

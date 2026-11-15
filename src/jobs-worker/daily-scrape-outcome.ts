@@ -1,13 +1,13 @@
 /**
  * Daily Scrape Outcome Mapping + Finalization
  *
- * Pure helpers for mapping batch trigger-and-wait results to per-source
- * outcomes, aggregating stats, and reliably finalizing the `scrape_runs` row.
- * Kept free of Trigger.dev SDK imports so they can be unit-tested in isolation.
+ * Pure helpers for mapping per-source Workflow step outcomes to source
+ * results, aggregating stats, and reliably finalizing the `scrape_runs` row.
+ * Kept free of Workers runtime imports so they can be unit-tested in isolation.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CatalogImportProvenance } from '#features/import/core/enrichment-provenance.ts'
-import { buildSourceHealthReport, measuredCount } from '../utils/source-health.ts'
+import { buildSourceHealthReport, measuredCount } from './source-health.ts'
 
 export interface DailyScrapeResult {
   scrapeRunId: string
@@ -80,9 +80,9 @@ export type ScrapeRunStatus = 'completed' | 'partial' | 'failed'
 export const STALE_SCRAPE_RUN_AGE_MS = 2 * 60 * 60 * 1000
 
 /**
- * Close audit rows that a hard Trigger.dev timeout prevented from finalizing.
- * The next daily run performs this best-effort reconciliation before creating
- * its own row. Source-level results remain available in Trigger.dev.
+ * Close audit rows that an interrupted run never finalized. The next daily run
+ * performs this best-effort reconciliation before creating its own row.
+ * Source-level step results remain in the Workflow instance history.
  */
 export async function reconcileStaleScrapeRuns(
   client: SupabaseClient,
@@ -154,9 +154,10 @@ interface ScrapeStatsOutput {
 }
 
 /**
- * Map batch trigger-and-wait runs to per-source results, keyed by
- * `taskIdentifier`. A missing run or an `ok: false` run becomes a failed
- * source entry (so all-failed detection and error reporting stay intact).
+ * Map per-source step outcomes to source results, keyed by
+ * `taskIdentifier` (the source id). A missing outcome or an `ok: false` one
+ * becomes a failed source entry (so all-failed detection and error reporting
+ * stay intact).
  */
 export function mapBatchRunsToResults(
   runs: BatchRunLike[],

@@ -14,22 +14,18 @@
 import type { ImportSource } from '../types.ts'
 import type { EnrichmentAdapter } from '../enrichment-types.ts'
 
-import { passlineEnrichmentAdapter } from './passline-enrichment.ts'
 import { meetupEnrichmentAdapter } from './meetup-enrichment.ts'
 import { lumaEnrichmentAdapter } from './luma-enrichment.ts'
 import { baTourismEnrichmentAdapter } from './ba-tourism-enrichment.ts'
-import { eventbriteEnrichmentAdapter } from './eventbrite-enrichment.ts'
 
 /**
  * Registry of all enrichment adapters by source
  * Note: CSV doesn't have enrichment (manual import)
  */
 const enrichmentAdapters: Partial<Record<ImportSource, EnrichmentAdapter>> = {
-  passline: passlineEnrichmentAdapter,
   meetup: meetupEnrichmentAdapter,
   luma: lumaEnrichmentAdapter,
   'ba-tourism': baTourismEnrichmentAdapter,
-  eventbrite: eventbriteEnrichmentAdapter,
   // csv: no enrichment adapter (manual import)
 }
 

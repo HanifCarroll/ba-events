@@ -13,14 +13,7 @@ import {
   type DailyScrapeResult,
 } from './daily-scrape-outcome.ts'
 
-const SOURCE_JOBS = [
-  { id: 'scrape-passline', name: 'Passline' },
-  { id: 'scrape-meetup', name: 'Meetup' },
-  { id: 'scrape-eventbrite', name: 'Eventbrite' },
-  { id: 'scrape-ba-tourism', name: 'BA Tourism' },
-  { id: 'scrape-luma', name: 'Luma' },
-  { id: 'scrape-venti', name: 'Venti' },
-] as const
+import { SOURCES as SOURCE_JOBS } from './source-health.ts'
 
 const okRun = (taskIdentifier: string, stats: Record<string, number> = {}) => ({
   taskIdentifier,
@@ -65,44 +58,41 @@ describe('mapBatchRunsToResults', () => {
     expect(results[0].catalogProvenance?.scope).toBe('catalog')
     expect(results[1]).not.toHaveProperty('catalogProvenance')
   })
-  it('maps runs to source results by taskIdentifier', () => {
+  it('maps source step outcomes to source results by id', () => {
     const results = mapBatchRunsToResults(
       [
-        okRun('scrape-passline', { eventsInserted: 3, eventsUpdated: 1, eventsFetched: 100, eventsFiltered: 80, eventsUnchanged: 76, categorizationSuccessful: 3, categorizationFallback: 0 }),
-        okRun('scrape-meetup', { eventsInserted: 2 }),
-        failRun('scrape-eventbrite', 'eventbrite down'),
-        okRun('scrape-ba-tourism'),
-        okRun('scrape-luma'),
-        okRun('scrape-venti'),
+        okRun('meetup', { eventsInserted: 3, eventsUpdated: 1, eventsFetched: 100, eventsFiltered: 80, eventsUnchanged: 76, categorizationSuccessful: 3, categorizationFallback: 0 }),
+        failRun('ba-tourism', 'ba tourism down'),
+        okRun('luma', { eventsInserted: 2 }),
       ],
       SOURCE_JOBS
     )
 
-    expect(results).toHaveLength(6)
+    expect(results).toHaveLength(3)
     expect(results[0]).toMatchObject({
-      source: 'Passline',
+      source: 'Meetup',
       success: true,
       eventsInserted: 3,
       eventsUpdated: 1,
       eventsFetched: 100, eventsFiltered: 80, eventsUnchanged: 76,
       categorizationSuccessful: 3, categorizationFallback: 0,
     })
-    expect(results[2]).toMatchObject({
-      source: 'Eventbrite',
+    expect(results[1]).toMatchObject({
+      source: 'BA Tourism',
       success: false,
-      error: 'eventbrite down',
+      error: 'ba tourism down',
     })
-    expect(results[1].eventsFetched).toBeNull()
+    expect(results[2].eventsFetched).toBeNull()
   })
 
-  it('marks a missing run as failed', () => {
-    const results = mapBatchRunsToResults([okRun('scrape-passline')], SOURCE_JOBS)
-    expect(results[1]).toMatchObject({ source: 'Meetup', success: false, error: 'No run produced' })
+  it('marks a missing outcome as failed', () => {
+    const results = mapBatchRunsToResults([okRun('meetup')], SOURCE_JOBS)
+    expect(results[1]).toMatchObject({ source: 'BA Tourism', success: false, error: 'No run produced' })
   })
 
   it('extracts a nested error object message', () => {
     const results = mapBatchRunsToResults(
-      [failRun('scrape-passline', { message: 'nested failure' })],
+      [failRun('meetup', { message: 'nested failure' })],
       SOURCE_JOBS
     )
     expect(results[0].error).toBe('nested failure')

@@ -1,6 +1,13 @@
 import { Schema } from 'effect'
 
-export const SOURCE_NAMES = ['Passline', 'Meetup', 'Eventbrite', 'BA Tourism', 'Luma', 'Venti'] as const
+/** Daily sources, in run order. `name` is the persisted source-health label. */
+export const SOURCES = [
+  { id: 'meetup', name: 'Meetup' },
+  { id: 'ba-tourism', name: 'BA Tourism' },
+  { id: 'luma', name: 'Luma' },
+] as const
+export type SourceId = (typeof SOURCES)[number]['id']
+export const SOURCE_NAMES = SOURCES.map(source => source.name)
 export const SOURCE_FRESHNESS_MS = 36 * 60 * 60 * 1000
 export const SOURCE_COUNT_FIELDS = ['eventsFetched', 'eventsFiltered', 'eventsExpanded', 'eventsUnchanged', 'eventsInserted', 'eventsUpdated', 'eventsSkipped', 'categorizationSuccessful', 'categorizationFallback'] as const
 

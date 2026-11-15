@@ -25,8 +25,8 @@ describe('source health measurements', () => {
 
   it('reports a failed latest source separately from its last successful observation', () => {
     const report = buildSourceHealthReport([
-      row([result('Passline', { success: false, error: 'private provider diagnostic', eventsFetched: 0 })], {}, 'partial'),
-      row([result('Passline')]),
+      row([result('Meetup', { success: false, error: 'private provider diagnostic', eventsFetched: 0 })], {}, 'partial'),
+      row([result('Meetup')]),
     ], now)
     expect(report.sources[0]).toMatchObject({ state: 'attention', latestRunSucceeded: false, observedAt, sourceAgeHours: 2 })
     expect(report.sources[0].counts.eventsFetched).toBeNull()
@@ -37,24 +37,23 @@ describe('source health measurements', () => {
 
   it('flags stale and empty catalogs and observed categorization/enrichment failures', () => {
     const report = buildSourceHealthReport([row([
-      result('Passline', { catalogProvenance: { observedAt: '2026-10-11T00:00:00.000Z' } }),
-      result('Meetup', { eventsFetched: 0, eventsFiltered: 0 }),
+      result('Meetup', { catalogProvenance: { observedAt: '2026-10-11T00:00:00.000Z' }, eventsSkipped: 1 }),
+      result('BA Tourism', { eventsFetched: 0, eventsFiltered: 0 }),
       result('Luma', { categorizationFallback: 2 }),
-      result('Venti', { eventsSkipped: 1 }),
     ], { eligible: 10, enriched: 7, failed: 2, remaining: 1 })], now)
     expect(report.sources[0].issues).toContain('source_stale')
+    expect(report.sources[0].issues).toContain('import_processing_skipped')
     expect(report.sources[1].issues).toContain('empty_catalog')
-    expect(report.sources[4].issues).toContain('categorization_fallback')
-    expect(report.sources[5].issues).toContain('import_processing_skipped')
+    expect(report.sources[2].issues).toContain('categorization_fallback')
     expect(report.enrichment).toEqual({ eligible: 10, enriched: 7, failed: 2, remaining: 1 })
     expect(report.needsAttention).toBe(true)
   })
 
   it('keeps legacy, future and malformed observations/counts unknown', () => {
     const report = buildSourceHealthReport([row([
-      { source: 'Passline', success: true, eventsFetched: -1 },
-      result('Meetup', { catalogProvenance: { observedAt: '2026-10-14T10:00:00.000Z' }, eventsFiltered: 0.5 }),
-      result('Eventbrite', { catalogProvenance: { observedAt: 'invalid' } }),
+      { source: 'Meetup', success: true, eventsFetched: -1 },
+      result('BA Tourism', { catalogProvenance: { observedAt: '2026-10-14T10:00:00.000Z' }, eventsFiltered: 0.5 }),
+      result('Luma', { catalogProvenance: { observedAt: 'invalid' } }),
     ], { eligible: 10, failed: -1 })], now)
     expect(report.sources[0]).toMatchObject({ state: 'unknown', observedAt: null, sourceAgeHours: null })
     expect(report.sources[0].counts.eventsFetched).toBeNull()
