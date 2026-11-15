@@ -61,8 +61,10 @@ vps_alert() { # vps_alert raise|resolve [text]
 }
 
 fix_alert() { # raise pro/ba-events-intake/fixes with the fix list, or resolve it quietly; never fails the run.
-  # A raise on a key that is still open only replies in its thread, so a changed list ("updated") queues triage again.
-  local key="$alert_key/fixes" text
+  # A raise on a key that is still open only replies in its thread, so a changed list ("updated") queues triage again
+  # with --auto, which respects triage's rate limits. The fingerprint hashes the sorted, trimmed items, so the same list
+  # stays quiet across days and a change in any digit (a street number, an error code) still counts as a change.
+  local key="$alert_key/fixes" text fp
   if [ -z "$(tr -d '[:space:]' <"$fixes" 2>/dev/null)" ]; then
     if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert resolve $key" >>"$log"; return 0; fi
     ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner "~/.local/bin/alert resolve $key --quiet" >>"$log" 2>&1 || true
@@ -71,9 +73,13 @@ fix_alert() { # raise pro/ba-events-intake/fixes with the fix list, or resolve i
   text="BA Eventos intake on the Pro hit problems it could not fix itself: tool bugs, or catalog facts it verified that its CLI can not change. The events they block stay held until they are fixed.
 $(sed -e '/^[[:space:]]*$/d' -e 's/^[[:space:]]*[-*][[:space:]]*//' -e 's/^/• /' "$fixes")
 Fixes file: $fixes on the Pro. {triage}"
-  if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert raise $key $text" >>"$log"; return 0; fi
+  fp=$(python3 -I -c '
+import hashlib, sys
+items = sorted({l.strip() for l in open(sys.argv[1]) if l.strip()})
+print(hashlib.sha256("\n".join(items).encode()).hexdigest()[:16])' "$fixes") || fp=""
+  if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert raise $key fingerprint=$fp $text" >>"$log"; return 0; fi
   printf '%s\n' "$text" | ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner \
-    "out=\$(~/.local/bin/alert raise $key --title 'BA Eventos intake fixes' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events) && echo \"\$out\" && case \"\$out\" in *'\"action\": \"updated\"'*) ~/.local/bin/alert triage $key ;; esac" >>"$log" 2>&1 ||
+    "out=\$(~/.local/bin/alert raise $key --title 'BA Eventos intake fixes' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events${fp:+ --fingerprint $fp}) && echo \"\$out\" && case \"\$out\" in *'\"action\": \"updated\"'*) ~/.local/bin/alert triage $key --auto ;; esac" >>"$log" 2>&1 ||
     echo "fix alert failed" >>"$log"
   return 0
 }

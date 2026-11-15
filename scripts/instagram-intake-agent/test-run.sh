@@ -47,6 +47,12 @@ case "$INTAKE_PHASE" in
     case "$scenario" in
       empty) : >"$INTAKE_REPORT" ;;
       sentinel) echo "NOTHING TO REPORT" >"$INTAKE_REPORT" ;;
+      fixes-reordered)
+        printf '  FIX: barrio of venue f98ce6e3 is Balvanera, Almagro per Nominatim\nFIX: venue rejects Gallo 238 with "geocodes outside the city ()"; blocks 3 events  \n' >"$INTAKE_FIXES"
+        printf 'Run went fine.\n' >"$INTAKE_REPORT" ;;
+      fixes-digit)
+        printf 'FIX: venue rejects Gallo 239 with "geocodes outside the city ()"; blocks 3 events\nFIX: barrio of venue f98ce6e3 is Balvanera, Almagro per Nominatim\n' >"$INTAKE_FIXES"
+        printf 'Run went fine.\n' >"$INTAKE_REPORT" ;;
       fixes*)
         printf 'FIX: venue rejects Gallo 238 with "geocodes outside the city ()"; blocks 3 events\n\nFIX: barrio of venue f98ce6e3 is Balvanera, Almagro per Nominatim\n' >"$INTAKE_FIXES"
         printf 'Run went fine.\n' >"$INTAKE_REPORT" ;;
@@ -202,6 +208,16 @@ check "alert names the fixes file and asks for triage" grep -q 'fixes.md on the 
 check "every phase gets INTAKE_FIXES" [ "$(grep -c ' /.*/runs/.*\.fixes\.md$' "$t/pi-env")" -eq 4 ]
 check "failure key not raised, and resolved" eval '! alerted . && resolved'
 check "fixes key not resolved" eval '! fixes_resolved_quietly'
+check "fingerprint passed, and re-triage uses --auto" eval 'grep -q -- "--fingerprint [0-9a-f]\{16\})" "$t/ssh-calls" && grep -q "alert triage pro/ba-events-intake/fixes --auto" "$t/ssh-calls"'
+fp1=$(grep -o -- '--fingerprint [0-9a-f]*' "$t/ssh-calls")
+rm -rf "$t"
+
+echo "# the fingerprint follows the items: same list in another order matches, a changed digit doesn't"
+setup 10 fixes-reordered; go
+check "same items reordered, with stray spaces: same fingerprint" [ "$(grep -o -- '--fingerprint [0-9a-f]*' "$t/ssh-calls")" = "$fp1" ]
+rm -rf "$t"
+setup 10 fixes-digit; go
+check "one digit changed: new fingerprint" eval '[ -n "$(grep -o -- "--fingerprint [0-9a-f]*" "$t/ssh-calls")" ] && [ "$(grep -o -- "--fingerprint [0-9a-f]*" "$t/ssh-calls")" != "$fp1" ]'
 rm -rf "$t"
 
 echo "# an earlier run's fixes file is cleared, so a run with none resolves the key"
