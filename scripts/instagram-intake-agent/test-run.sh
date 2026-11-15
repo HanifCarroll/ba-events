@@ -24,12 +24,13 @@ setup() { # setup <pending> <scenario> [stuck]: fresh temp HOME with stubs. $HOM
   cat >"$t/.local/bin/pi" <<'EOF'
 #!/bin/bash
 echo "$*" >>"$HOME/pi-calls"
+echo "$INTAKE_PHASE ${INTAKE_FIXES:-}" >>"$HOME/pi-env"
 case "$*" in *"--exclude-tools "*'*schedule*'*) ;; *) echo "scheduler tools not excluded" >&2; exit 3 ;; esac
 scenario=$(cat "$HOME/scenario")
 echo "NOTHING TO REPORT" # stdout must never become the report
 case "$INTAKE_PHASE" in
   review)
-    [ "$scenario" = review-fails ] && { echo "[review] crashed" >>"$INTAKE_NOTES"; exit 1; }
+    case "$scenario" in *review-fails) echo "[review] crashed" >>"$INTAKE_NOTES"; exit 1 ;; esac
     if [ "$scenario" != stall ]; then
       taken=0; : >"$HOME/left"
       while read -r id; do
@@ -46,6 +47,9 @@ case "$INTAKE_PHASE" in
     case "$scenario" in
       empty) : >"$INTAKE_REPORT" ;;
       sentinel) echo "NOTHING TO REPORT" >"$INTAKE_REPORT" ;;
+      fixes*)
+        printf 'FIX: venue rejects Gallo 238 with "geocodes outside the city ()"; blocks 3 events\n\nFIX: barrio of venue f98ce6e3 is Balvanera, Almagro per Nominatim\n' >"$INTAKE_FIXES"
+        printf 'Run went fine.\n' >"$INTAKE_REPORT" ;;
       *) printf 'Run went fine.\n- notes: %s\n' "$(grep -c . "$INTAKE_NOTES")" >"$INTAKE_REPORT" ;;
     esac ;;
 esac
@@ -66,6 +70,7 @@ EOF
 input=$(cat)
 echo "${@: -1} <<< $input" >>"$HOME/ssh-calls"
 case "$*" in *slack_api.py*) echo '{"ok": true, "ts": "1.2"}' ;; esac
+case "$*" in *"alert raise"*) echo '{"action": "opened"}' ;; esac
 exit 0
 EOF
   cat >"$t/.local/bin/caffeinate" <<'EOF'
@@ -87,9 +92,12 @@ go() { # runs run.sh in the current temp HOME; sets $rc
 }
 
 phases() { grep -o 'Automation run, [a-z]* phase' "$t/pi-calls" | awk '{print $3}' | tr '\n' ' '; }
-alerted() { grep -q 'alert raise' "$t/ssh-calls" && grep -q "$1" "$t/ssh-calls"; }
+# The failure key is pro/ba-events-intake; the fix list's key is pro/ba-events-intake/fixes.
+alerted() { grep -q 'alert raise pro/ba-events-intake ' "$t/ssh-calls" && grep -q "$1" "$t/ssh-calls"; }
 posted() { grep -q 'slack_api.py' "$t/ssh-calls"; }
-resolved() { grep -q 'alert resolve' "$t/ssh-calls"; }
+resolved() { grep -q 'alert resolve pro/ba-events-intake <<<' "$t/ssh-calls"; }
+fixes_raised() { grep -q "alert raise pro/ba-events-intake/fixes --title 'BA Eventos intake fixes'" "$t/ssh-calls"; }
+fixes_resolved_quietly() { grep -q 'alert resolve pro/ba-events-intake/fixes --quiet' "$t/ssh-calls"; }
 
 echo "# backlog cleared over several batches"
 setup 75 report; go
@@ -100,6 +108,7 @@ check "report posted, not stdout" posted
 check "posted text is the report file" grep -q 'Run went fine' "$t/ssh-calls"
 check "alert resolved" resolved
 check "no alert raised" eval '! grep -q "alert raise" "$t/ssh-calls"'
+check "no fixes: fixes key resolved quietly" fixes_resolved_quietly
 check "log has pending counts" grep -q '^pending 0 deferred 0$' "$t"/state/runs/*.log
 check "every pi call excludes the scheduler tools" [ "$(grep -c -- "--exclude-tools .*\*schedule\*" "$t/pi-calls")" -eq "$(wc -l <"$t/pi-calls")" ]
 check "memory appended once" [ "$(grep -c '^## Intake on' "$t/state/memory.md")" -eq 1 ]
@@ -181,5 +190,46 @@ for p in collect review venues; do
   check "exit 1" [ "$rc" -eq 1 ]
   rm -rf "$t"
 done
+
+echo "# fixes for Hermes raise their own key and leave the failure key alone"
+setup 10 fixes; go
+check "exit 0" [ "$rc" -eq 0 ]
+check "report posted" posted
+check "fixes key raised" fixes_raised
+check "alert lists both items as bullets" eval 'grep -q "^• FIX: venue rejects Gallo 238" "$t/ssh-calls" && grep -q "^• FIX: barrio of venue f98ce6e3" "$t/ssh-calls"'
+check "blank lines dropped" eval '! grep -q "^• *$" "$t/ssh-calls"'
+check "alert names the fixes file and asks for triage" grep -q 'fixes.md on the Pro. {triage}' "$t/ssh-calls"
+check "every phase gets INTAKE_FIXES" [ "$(grep -c ' /.*/runs/.*\.fixes\.md$' "$t/pi-env")" -eq 4 ]
+check "failure key not raised, and resolved" eval '! alerted . && resolved'
+check "fixes key not resolved" eval '! fixes_resolved_quietly'
+rm -rf "$t"
+
+echo "# an earlier run's fixes file is cleared, so a run with none resolves the key"
+setup 0 report
+mkdir -p "$t/state/runs"; echo "FIX: stale" >"$t/state/runs/$(TZ=America/Argentina/Buenos_Aires date +%F).fixes.md"
+go
+check "fixes key resolved quietly" fixes_resolved_quietly
+check "fixes key not raised" eval '! fixes_raised'
+rm -rf "$t"
+
+echo "# fixes plus a failed phase: both keys, exit 1"
+setup 10 fixes-review-fails; go
+check "fixes key raised" fixes_raised
+check "failure key names the phase" alerted 'review 1 (exited with code 1)'
+check "failure key not resolved" eval '! resolved'
+check "exit 1" [ "$rc" -eq 1 ]
+rm -rf "$t"
+
+echo "# no report: the fixes key is left alone"
+setup 0 empty; go
+check "failure key raised" alerted 'without a report'
+check "fixes key untouched" eval '! grep -q "pro/ba-events-intake/fixes" "$t/ssh-calls"'
+rm -rf "$t"
+
+echo "# INTAKE_NO_POST logs the fixes alert instead of sending it"
+setup 0 fixes; HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_NO_POST=1 /bin/bash "$run" </dev/null >/dev/null 2>&1
+check "no ssh at all" [ ! -s "$t/ssh-calls" ]
+check "log has the fixes alert" grep -q 'no-post: alert raise pro/ba-events-intake/fixes' "$t"/state/runs/*.log
+rm -rf "$t"
 
 [ "$failures" -eq 0 ] && echo "all passed" || { echo "$failures failed"; exit 1; }
