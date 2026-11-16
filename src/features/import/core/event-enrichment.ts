@@ -183,6 +183,7 @@ export type ExtractFacetsFn = (
 export interface EnrichSingleEventOptions {
   extractFacets?: ExtractFacetsFn
   buildPresentationFields?: typeof buildDescriptionPresentationFields
+  translate?: typeof translateText
 }
 
 interface EnrichmentPayload {
@@ -220,6 +221,7 @@ export function enrichSingleEventEffect(
   const { id, name, link, source, categories, venue_id, price, is_free } = input
   const extractFacets = options.extractFacets ?? extractEventFacets
   const buildPresentationFields = options.buildPresentationFields ?? buildDescriptionPresentationFields
+  const translate = options.translate ?? translateText
 
   const program = Effect.gen(function* () {
     if (!link) {
@@ -322,7 +324,7 @@ export function enrichSingleEventEffect(
         description_en: input.description_en
           ? input.description_en
           : yield* enrichmentTry('event-enrichment.translate-spanish', () =>
-              translateText(input.description_es!, 'es-to-en')
+              translate(input.description_es!, 'es-to-en')
             ),
         venue_name: null,
       }
@@ -341,11 +343,11 @@ export function enrichSingleEventEffect(
         if (detectedLang === 'spanish') {
           enrichmentResult.description_es = enrichmentResult.description_en
           enrichmentResult.description_en = yield* enrichmentTry('event-enrichment.translate-spanish', () =>
-            translateText(enrichmentResult!.description_es!, 'es-to-en')
+            translate(enrichmentResult!.description_es!, 'es-to-en')
           )
         } else {
           enrichmentResult.description_es = yield* enrichmentTry('event-enrichment.translate-english', () =>
-            translateText(enrichmentResult!.description_en!, 'en-to-es')
+            translate(enrichmentResult!.description_en!, 'en-to-es')
           )
         }
       }
@@ -369,6 +371,18 @@ export function enrichSingleEventEffect(
         enriched: false,
         error: 'Failed to extract description',
       } satisfies EventEnrichmentResult
+    }
+
+    if (!enrichmentResult.description_en) {
+      // translateText returns null on provider errors. Keep the Spanish text and
+      // leave the row retryable (`failed`) instead of completing it untranslated.
+      const error = 'Failed to translate description to English'
+      yield* updateEventEnrichmentEffect(client, id, {
+        description_es: enrichmentResult.description_es,
+        enrichment_status: 'failed',
+        enrichment_error: error,
+      })
+      return { eventId: id, success: false, enriched: false, error } satisfies EventEnrichmentResult
     }
 
     let venueSettlement: VenueSettlementResult | undefined
@@ -551,8 +565,8 @@ function processBatchEffect(
 ): Effect.Effect<EnrichmentStats, EventEnrichmentError> {
   const delayMs = options?.delayMs ?? 0
   const concurrency = Math.max(1, options?.concurrency ?? DEFAULT_ENRICHMENT_CONCURRENCY)
-  const enrichOptions = options?.extractFacets || options?.buildPresentationFields
-    ? { extractFacets: options.extractFacets, buildPresentationFields: options.buildPresentationFields }
+  const enrichOptions = options?.extractFacets || options?.buildPresentationFields || options?.translate
+    ? { extractFacets: options.extractFacets, buildPresentationFields: options.buildPresentationFields, translate: options.translate }
     : undefined
 
   return Effect.gen(function* () {

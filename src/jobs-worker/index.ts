@@ -16,7 +16,7 @@ import { closeScrapeRun, openScrapeRun, timed } from './daily-scrape.ts'
 import { catchupMaxBatches, countCatchupBacklog, dailyMaxBatches, runCatchupBatch, runDailyEnrichmentBatch } from './enrichment.ts'
 import { purgeGuestLifecycleRetention } from './guest-lifecycle-retention.ts'
 import { SOURCES } from './source-health.ts'
-import { cronInstance } from './schedule.ts'
+import { startScheduledWorkflow } from './schedule.ts'
 import { importSource, readSourceCatalog } from './sources.ts'
 
 interface WorkflowBinding { create(options: { id: string; params?: unknown }): Promise<unknown> }
@@ -126,12 +126,5 @@ export class SourceCheckWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
 
 export default {
   fetch: () => new Response(null, { status: 404 }),
-  async scheduled(controller: { cron: string; scheduledTime: number }, env: JobsEnv) {
-    const { binding, id, scheduledTime } = cronInstance(controller.cron, controller.scheduledTime)
-    try {
-      await env[binding].create({ id, params: { scheduledTime } })
-    } catch (error) {
-      if (!/already exists/i.test(String(error))) throw error
-    }
-  },
+  scheduled: (controller: { cron: string; scheduledTime: number }, env: JobsEnv) => startScheduledWorkflow(controller, env),
 }

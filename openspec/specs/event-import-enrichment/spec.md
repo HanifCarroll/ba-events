@@ -63,6 +63,10 @@ Enrichment SHALL move an imported `pending` event to a terminal status in the pa
 - **WHEN** a batch enriches it and a later batch or a retried step reselects pending events
 - **THEN** it is written `completed` once and is not selected again
 
+#### Scenario: The English translation of a Spanish-only event fails
+- **WHEN** translation returns no text for an event that needs it
+- **THEN** the event keeps its Spanish description, is marked `failed` with a translation error rather than `completed`, and the next scheduled catch-up retries it
+
 #### Scenario: A retired source still has pending or failed events
 - **WHEN** the daily chain or catch-up selects or counts events needing enrichment
 - **THEN** those events are excluded and keep their stored values

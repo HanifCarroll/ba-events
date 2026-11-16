@@ -12,3 +12,15 @@ export function cronInstance(cron: string, scheduledTimeMs: number) {
   const scheduledTime = new Date(scheduledTimeMs).toISOString()
   return { binding: job.binding, id: `${job.prefix}-${scheduledTime.replace(/[^0-9]/g, '').slice(0, 12)}`, scheduledTime }
 }
+
+type Bindings = Record<(typeof CRON_WORKFLOWS)[keyof typeof CRON_WORKFLOWS]['binding'], { create(options: { id: string; params?: unknown }): Promise<unknown> }>
+
+/** Start the firing's instance. Only "already exists" (a repeated delivery) is ignored; other errors propagate. */
+export async function startScheduledWorkflow(controller: { cron: string; scheduledTime: number }, env: Bindings): Promise<void> {
+  const { binding, id, scheduledTime } = cronInstance(controller.cron, controller.scheduledTime)
+  try {
+    await env[binding].create({ id, params: { scheduledTime } })
+  } catch (error) {
+    if (!/already exists/i.test(String(error))) throw error
+  }
+}

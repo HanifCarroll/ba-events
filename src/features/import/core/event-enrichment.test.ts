@@ -224,6 +224,36 @@ describe('imported pending rows leave the enrichment queue', () => {
     expect(embedEventWithDocumentMock).toHaveBeenCalledTimes(1)
     expect(buildPresentationFields).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps a Spanish-only row retryable when translation fails, then completes it on the catch-up retry', async () => {
+    embedEventWithDocumentMock.mockReset()
+    embedEventWithDocumentMock.mockResolvedValue({ embedding: [0.4], searchDocument: 'Tango' })
+    getEnrichmentAdapterMock.mockReset()
+    const extractFacets = vi.fn(async () => ({ genres: ['tango'] }))
+    const buildPresentationFields = vi.fn(async () => ({ description_display_es: 'Tango.', description_display_en: 'Tango.', description_summary_es: null, description_summary_en: null }))
+    const rows: Array<Record<string, unknown>> = [{
+      id: 'ba-tourism-1', name: 'Tango', link: 'https://example.com/tango', source: 'ba-tourism',
+      description_es: 'Tango en la plaza.', description_en: null, embedding: [0.1], enrichment_status: 'pending',
+    }]
+    const client = eventsTable(rows)
+    const batch = (statuses: Array<'pending' | 'failed'>, translate: (text: string) => Promise<string | null>) =>
+      Effect.runPromise(Effect.gen(function* () {
+        const events = yield* getEventsNeedingEnrichmentEffect(client, { statuses })
+        return yield* enrichEventsEffect(client, events, { extractFacets: extractFacets as never, buildPresentationFields, translate: translate as never })
+      }))
+
+    // Provider error: translateText resolves null.
+    expect((await batch(['pending'], async () => null)).failed).toBe(1)
+    expect(rows[0]).toMatchObject({ enrichment_status: 'failed', enrichment_error: 'Failed to translate description to English', description_es: 'Tango en la plaza.', description_en: null })
+    expect(embedEventWithDocumentMock).not.toHaveBeenCalled()
+    // The daily chain only reselects pending rows; the failed row waits for the catch-up.
+    expect((await batch(['pending'], async () => 'unused')).total).toBe(0)
+
+    // Catch-up batch 1 retries failed rows.
+    expect((await batch(['pending', 'failed'], async () => 'Tango in the square.')).enriched).toBe(1)
+    expect(rows[0]).toMatchObject({ enrichment_status: 'completed', enrichment_error: null, description_es: 'Tango en la plaza.', description_en: 'Tango in the square.' })
+    expect(embedEventWithDocumentMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('enrichSingleEvent source provenance', () => {
