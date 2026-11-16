@@ -46,8 +46,9 @@ function fakeDb(venues: Row[], options: { similar?: Record<string, number>; fail
       .filter(row => row.similarity >= 0.6).sort((a, b) => b.similarity - a.similarity), error: null })
   return { db: { from, rpc } as unknown as SupabaseClient, inserts, venues }
 }
-const geocoded = (state: string, suburb?: string) => () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic',
-  address: { state, suburb, country_code: 'ar' } } as NominatimResult)
+// By default the synthetic geocoder finds the request's own street and number (Av. Ficticia 1234).
+const geocoded = (state: string, suburb?: string, road = 'Avenida Ficticia', house_number = '1234') => () => Effect.succeed({
+  lat: '0', lon: '0', display_name: 'synthetic', address: { road, house_number: house_number || undefined, state, suburb, country_code: 'ar' } } as NominatimResult)
 const request = (overrides: Partial<VenueRequest> = {}): VenueRequest => decodeVenueRequest({
   name: 'Sala Sintética', address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro',
   evidence: [{ url: 'https://example.org/sala', confirms: 'name, address and barrio on the official site' }], ...overrides })
@@ -212,18 +213,44 @@ describe('intake venue resolution', () => {
     expect(inserts).toHaveLength(0)
     expect(await run(db, request({ neighborhood: null }))).toMatchObject({ outcome: 'created', venue: { neighborhood: 'Almagro' } })
   })
-  it('still rejects an address that the city-biased geocoder places outside the city', async () => {
-    // Shaped like Nominatim's answer for "Av. Maipú 2500" with the city viewbox: the only match is in Olivos.
-    const olivos = [{ lat: '-34.51', lon: '-58.49', display_name: '2500, Avenida Maipú, Olivos, Partido de Vicente López, Buenos Aires, Argentina',
-      address: { house_number: '2500', road: 'Avenida Maipú', suburb: 'Olivos', state: 'Buenos Aires', country_code: 'ar' }, extratags: null }]
-    const fetch = vi.fn(async (_url: string) => new Response(JSON.stringify(olivos), { status: 200 }))
+  it('recovers a city address whose house number the plain search read as a province postcode', async () => {
+    // Shaped like Nominatim's answers for "Godoy Cruz 1631": plain → the street in Pilar (postcode 1631), biased → Palermo.
+    const pilar = { lat: '-34.45', lon: '-58.91', display_name: 'Godoy Cruz, Pilar, Buenos Aires, B1631, Argentina',
+      address: { road: 'Godoy Cruz', town: 'Pilar', state: 'Buenos Aires', postcode: 'B1631', country_code: 'ar' }, extratags: null }
+    const palermo = { lat: '-34.58', lon: '-58.43', display_name: '1631, Godoy Cruz, Palermo, Buenos Aires, Ciudad Autónoma de Buenos Aires, Argentina',
+      address: { house_number: '1631', road: 'Godoy Cruz', suburb: 'Palermo', state: 'Ciudad Autónoma de Buenos Aires', country_code: 'ar' }, extratags: null }
+    const fetch = vi.fn(async (url: string) => new Response(JSON.stringify([new URL(url).searchParams.has('viewbox') ? palermo : pilar]), { status: 200 }))
     vi.stubGlobal('fetch', fetch)
+    const { db } = fakeDb([])
+    // No geocode override: the command's default searchNominatimEffect makes both requests.
+    expect(await Effect.runPromise(resolveIntakeVenueEffect(db, request({ name: 'Strummer Sintético', address: 'Godoy Cruz 1631', neighborhood: null }))))
+      .toMatchObject({ outcome: 'created', venue: { neighborhood: 'Palermo' }, warnings: [] })
+    expect(fetch.mock.calls.map(call => new URL(call[0]).searchParams.get('viewbox'))).toEqual([null, '-58.5315,-34.5265,-58.3350,-34.7056'])
+  })
+  it('rejects an exact suburban street and number even when a city street of the same name exists', async () => {
+    const geocode = vi.fn((_query: string, options?: { cityBias?: boolean }) => (options?.cityBias
+      ? geocoded('Ciudad Autónoma de Buenos Aires', 'Recoleta', 'Avenida Santa Fe', '1234')
+      : geocoded('Buenos Aires', 'Martínez', 'Avenida Santa Fe', '1234'))())
     const { db, inserts } = fakeDb([])
-    // No geocode override: the command's default searchNominatimEffect makes the request.
-    expect(await Effect.runPromise(resolveIntakeVenueEffect(db, request({ address: 'Av. Maipú 2500', neighborhood: null }))))
-      .toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city of Buenos Aires (Buenos Aires, ar)')] })
-    expect(new URL(fetch.mock.calls[0][0] as string).searchParams.get('viewbox')).toBe('-58.5315,-34.5265,-58.3350,-34.7056')
+    expect(await run(db, request({ address: 'Av. Santa Fe 1234', neighborhood: null }), geocode))
+      .toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city of Buenos Aires')] })
+    expect(geocode).toHaveBeenCalledTimes(1)
     expect(inserts).toHaveLength(0)
+  })
+  it('rejects an address the city-biased search still places outside the city, as with a supplied locality', async () => {
+    const geocode = vi.fn(() => geocoded('Buenos Aires', 'Martínez', 'Avenida Santa Fe', '')())
+    expect(await run(fakeDb([]).db, request({ address: 'Av. Santa Fe 1234, Martínez' }), geocode))
+      .toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city')] })
+    expect(geocode).toHaveBeenCalledTimes(2)
+    expect(geocode).toHaveBeenLastCalledWith('Av. Santa Fe 1234, Martínez', { cityBias: true })
+  })
+  it('does not treat a city street without the requested house number as confirmation', async () => {
+    const geocode = vi.fn((_query: string, options?: { cityBias?: boolean }) => (options?.cityBias
+      ? geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro', 'Avenida Ficticia', '') : () => Effect.succeed(null))())
+    expect(await run(fakeDb([]).db, request({ neighborhood: null }), geocode)).toMatchObject({ outcome: 'rejected', reasons: ['Neighborhood not found; supply it from an authoritative source'] })
+    expect(await run(fakeDb([]).db, request(), geocode)).toMatchObject({ outcome: 'created', venue: { neighborhood: 'Almagro' },
+      warnings: ['Geocoder did not find the address; city not confirmed'] })
+    expect(geocode).toHaveBeenCalledTimes(4)
   })
   it('keeps the stated barrio with a warning when the geocoder is down or disagrees', async () => {
     const down = await run(fakeDb([]).db, request(), () => Effect.fail(new Error('timeout')))

@@ -5,7 +5,7 @@ import { createVenue } from '#shared/lib/db/client.server.ts'
 import { createVenueSchema } from '#shared/lib/schemas.ts'
 import { NEIGHBORHOODS, type Neighborhood, type Venue } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult } from '../core/nominatim.ts'
+import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult, type NominatimSearchOptions } from '../core/nominatim.ts'
 import { REVIEW_QUEUE_THRESHOLD, addressKey, areaOnlyVenueName, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
 import { validPublicUrl, type Candidate } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
@@ -33,7 +33,7 @@ export type VenueOutcome =
   | { outcome: 'created'; venue: VenueRow; warnings: string[]; distinct_from?: VenueRequest['distinct_from'] }
   | { outcome: 'ambiguous'; candidates: Array<VenueRow & { why: string }> }
   | { outcome: 'rejected'; reasons: string[] }
-export type Geocode = (query: string) => Effect.Effect<NominatimResult | null, unknown>
+export type Geocode = (query: string, options?: NominatimSearchOptions) => Effect.Effect<NominatimResult | null, unknown>
 
 export const INTAKE_VENUE_SOURCE = 'instagram-intake'
 const CITY_STATE = 'ciudad autonoma de buenos aires'
@@ -64,7 +64,9 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
  * `distinct_from` with a reason. A repeated request finds the venue it created (same name), so `venue` is idempotent.
  */
 export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(client: SupabaseClient, request: VenueRequest,
-  geocode: Geocode = query => searchNominatimEffect(query)) {
+  // Nominatim allows one request a second; only the second, city-biased lookup of a `venue` call waits.
+  geocode: Geocode = (query, options) => options?.cityBias
+    ? Effect.sleep(1000).pipe(Effect.andThen(searchNominatimEffect(query, 1, options))) : searchNominatimEffect(query)) {
   const name = request.name.trim(), address = request.address.trim()
   // A barrio-named place passes: the address below must carry a house number. A city or postal code never does.
   if (isGarbageVenueName(name) || areaOnlyVenueName(name) === 'city' || isPlaceholderVenue(name) || isPlaceholderVenue(address)) {
@@ -145,20 +147,38 @@ const pick = (venue: VenueRow): VenueRow => ({ id: venue.id, name: venue.name, a
 // Exact barrio names only: the importers' partial matching would turn "Villa" into Villa Crespo.
 const barrio = (given: string) => NEIGHBORHOODS.find(item => fold(item) === fold(given.trim())) ?? null
 type Located = { neighborhood: Neighborhood; method: 'stated' | 'geocoded'; warnings: string[] } | { reasons: string[] }
+const inCity = (result: NominatimResult) => result.address.country_code === 'ar' && !!result.address.state && fold(result.address.state) === CITY_STATE
+const houseNumber = (result: NominatimResult) => result.address.house_number?.match(/^\d+/)?.[0] ?? null
+/**
+ * Two lookups at most. The plain search decides when it returns the requested street and house number: outside the city
+ * it rejects, so a real suburban address (Av. Santa Fe 1234 in Martínez) is never swapped for its city namesake. Anything
+ * else (no result, no house number, another road, a number that was only a postcode, as "Godoy Cruz 1631" in Pilar) goes
+ * to a city-biased search: a result still outside the city rejects, and only the requested street and house number confirm
+ * the city. The operator's locality stays in the query.
+ */
 const locateEffect = Effect.fn('intake.venue-locate')(function*(geocode: Geocode, address: string, given: string | null) {
   const stated = given ? barrio(given) : null
   if (given && !stated) return { reasons: [`"${given}" is not a Buenos Aires city neighborhood`] } as Located
-  const found = yield* geocode(address).pipe(Effect.map(result => ({ result, error: false })),
-    Effect.catchCause(() => Effect.succeed({ result: null, error: true })))
-  const warnings: string[] = []
-  if (found.result) {
-    const { state, country_code } = found.result.address
-    if (country_code !== 'ar' || !state || fold(state) !== CITY_STATE) {
-      return { reasons: [`The address geocodes outside the city of Buenos Aires (${[state, country_code].filter(Boolean).join(', ')})`] } as Located
-    }
+  const lookup = (options?: NominatimSearchOptions) => geocode(address, options).pipe(Effect.map(result => ({ result, error: false })),
+    Effect.catchCause(() => Effect.succeed({ result: null as NominatimResult | null, error: true })))
+  const requested = addressKey(address)
+  const exact = (result: NominatimResult | null): result is NominatimResult => !!result && !!result.address.road &&
+    !!houseNumber(result) && addressKey(`${result.address.road} ${houseNumber(result)}`) === requested
+  const outside = (result: NominatimResult) => ({ reasons: [`The address geocodes outside the city of Buenos Aires (${[result.address.state, result.address.country_code].filter(Boolean).join(', ')})`] }) as Located
+  const plain = yield* lookup()
+  let confirmed: NominatimResult | null = null
+  if (exact(plain.result)) {
+    if (!inCity(plain.result)) return outside(plain.result)
+    confirmed = plain.result
+  } else if (!plain.error) {
+    const biased = yield* lookup({ cityBias: true })
+    // Ranked toward the city and still outside it: the city has no such street, as main always concluded.
+    if (biased.result && !inCity(biased.result)) return outside(biased.result)
+    if (exact(biased.result)) confirmed = biased.result
   }
-  const derived = found.result ? mapNominatimNeighborhood(found.result.address.neighbourhood, found.result.address.suburb) : null
-  if (!found.result) warnings.push(found.error ? 'Geocoder unavailable; city not confirmed' : 'Geocoder did not find the address; city not confirmed')
+  const warnings: string[] = []
+  const derived = confirmed ? mapNominatimNeighborhood(confirmed.address.neighbourhood, confirmed.address.suburb) : null
+  if (!confirmed) warnings.push(plain.error ? 'Geocoder unavailable; city not confirmed' : 'Geocoder did not find the address; city not confirmed')
   if (stated) {
     if (derived && derived !== stated) warnings.push(`Geocoder places the address in ${derived}; kept the stated ${stated}`)
     return { neighborhood: stated, method: 'stated', warnings } as Located
