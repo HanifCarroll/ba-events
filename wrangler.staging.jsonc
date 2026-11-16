@@ -1,0 +1,31 @@
+// Staging only: the `baeventos-staging` Worker on workers.dev and its `-staging` resources (DECISIONS.md). CI never
+// deploys this file; production configs get a D1 binding only at the cutover (delivery PR 08).
+// PR 01 adds the staging D1 so `wrangler d1 migrations apply baeventos-staging --remote --config wrangler.staging.jsonc`
+// works. Later PRs add the Vectorize, R2, and other bindings the staging Worker needs before it is first deployed;
+// it must never bind a production Worker, Durable Object, or database.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-staging",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env",
+    "enable_request_signal"
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".svelte-kit/cloudflare"
+  },
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "baeventos-staging",
+      "database_id": "136c27ff-1093-4519-825a-7ec4e17b1ff7",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

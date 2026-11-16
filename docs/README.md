@@ -28,6 +28,7 @@ Broader architecture and planning:
 - [`concierge-evals.md`](./concierge-evals.md)
 - [`event-import-enrichment.md`](./event-import-enrichment.md)
 - [`deployment.md`](./deployment.md)
+- [`d1.md`](./d1.md) — the D1 baseline schema, triggers, test harness, and staging database for the move off Supabase
 - [`seo.md`](./seo.md)
 
 ## Archived
