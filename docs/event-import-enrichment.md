@@ -57,7 +57,7 @@ The following table documents the enrichment strategy for each source, along wit
 | Source | Strategy | Reason | Description Method | Venue Method | Known Language |
 |--------|----------|--------|-------------------|--------------|----------------|
 | **Meetup** | Server direct fetch | Jina Reader returns HTTP 451 | `__NEXT_DATA__` props | JSON-LD `@type: Place` | Variable (detect) |
-| **Luma** | Luma JSON API | luma.com HTML is rate-limited for Cloudflare Workers | `/event/get` `description_mirror` | `/event/get` `geo_address_info` (public only) | Variable (detect) |
+| **Luma** | Luma JSON API | luma.com HTML is rate-limited for Cloudflare Workers | `/event/get` `description_mirror` | `/event/get` `geo_address_info` (public only; `obfuscated` sets `location_hidden` and no venue) | Variable (detect) |
 | **BA Tourism** | Server-side (Jina + AI) | Works normally | Jina markdown → Haiku extraction | Regex after "¿Dónde?" heading | Spanish (es) |
 
 ### Decision Factors

@@ -25,7 +25,7 @@ import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../a
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
-import { settleVenuesEffect, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
+import { settleVenuesEffect, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement.ts'
 import { delayEffect } from './nominatim.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
@@ -143,6 +143,7 @@ export function processLumaImportEffect(
     if (filteredEvents.length === 0) return result
 
     console.log('[luma] Settling venues...')
+    // Hidden events have no venue (`lumaLocation`), so they never reach settlement.
     const venueInfoMap = getAllVenueInfo(filteredEvents)
     const venueInputs: VenueSettlementInput[] = Array.from(venueInfoMap.entries())
       .filter(([name]) => name)
@@ -182,9 +183,6 @@ export function processLumaImportEffect(
       const venueName = event.venue?.name || null
       const venueId = getVenueIdFromResults(venueResults, venueName)
       const transformed = transformLumaEvent(event, venueId)
-      if (isPlaceholderResult(venueResults, venueName)) {
-        ;(transformed as EventInsert & { location_hidden?: boolean }).location_hidden = true
-      }
       const existing = existingEventsMap.get(event.api_id)
       if (existing) {
         transformed.description_es = existing.description_es

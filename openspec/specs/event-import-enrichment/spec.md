@@ -23,6 +23,16 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 - **WHEN** its adapter cannot establish a time
 - **THEN** the event retains its date with time TBA rather than invented midnight certainty
 
+#### Scenario: Address is shared only after registration
+- **WHEN** Luma's listing or detail API returns `geo_address_info.mode = 'obfuscated'` (a guests-only event)
+- **THEN** the event is stored with `location_hidden = true` and no venue, and import, enrichment, and venue settlement never attach one, even when a name would match an existing venue
+- **AND** when a later read shows a public address, `location_hidden` is cleared and the venue is settled normally
+- **AND** the database trigger `zz_hidden_location_has_no_venue` clears `venue_id` on any write that leaves `location_hidden = true`
+
+#### Scenario: Venue name is only a place
+- **WHEN** a venue name is only a city, region, barrio, or postal code (such as "Buenos Aires, Argentina" or "C1437EFA, Argentina")
+- **THEN** venue settlement and the intake `venue` operation neither match nor create a venue from it
+
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.
 
@@ -237,6 +247,8 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `supabase/migrations/20261025205334_instagram_intake.sql`
 - `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
 - `supabase/migrations/20261115120000_intake_similar_venues.sql`
+- `supabase/migrations/20261116120000_hidden_location_has_no_venue.sql`
+- `src/features/import/scrapers/luma/location.ts`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
@@ -250,6 +262,10 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/venues.test.ts`
 - `supabase/tests/instagram-intake.sql`
 - `supabase/tests/instagram-intake-venues.sql`
+- `supabase/tests/hidden-location.sql`
+- `src/features/import/scrapers/luma/http.test.ts`
+- `src/features/import/adapters/enrichment/luma-enrichment.test.ts`
+- `src/features/import/core/venue-settlement.test.ts`
 
 ### Verification command
 ```sh

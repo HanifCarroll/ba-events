@@ -57,6 +57,7 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
         description_es: null, // Language unknown, needs detection
         description_en: description, // Store in en temporarily, caller will detect and move if needed
         venue_name: venueName,
+        ...(detail ? { location_hidden: detail.location_hidden } : {}),
       }
     } catch (error) {
       console.error('[Luma Enrichment] Error:', error)

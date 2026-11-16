@@ -15,7 +15,7 @@ create table public.events(
   categories text[] not null default '{}', price integer, is_free boolean not null default false,
   image_url text, image_width integer, image_height integer, link text, ticket_url text, source text not null, external_id text,
   status public.event_status not null default 'scheduled', embedding vector(1536), search_document text, embedding_version integer,
-  enrichment_status text, description_unavailable boolean not null default false, facets jsonb not null default '{}',
+  enrichment_status text, description_unavailable boolean not null default false, location_hidden boolean default false, facets jsonb not null default '{}',
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 grant usage on schema public to service_role;

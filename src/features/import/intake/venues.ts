@@ -6,7 +6,7 @@ import { createVenueSchema } from '#shared/lib/schemas.ts'
 import { NEIGHBORHOODS, type Neighborhood, type Venue } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult } from '../core/nominatim.ts'
-import { REVIEW_QUEUE_THRESHOLD, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
+import { REVIEW_QUEUE_THRESHOLD, isAreaOnlyVenueName, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
 import { validPublicUrl, type Candidate } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
 import { allRowsEffect, dbEffect } from './repository.ts'
@@ -86,7 +86,7 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
 export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(client: SupabaseClient, request: VenueRequest,
   geocode: Geocode = query => searchNominatimEffect(query)) {
   const name = request.name.trim(), address = request.address.trim()
-  if (isGarbageVenueName(name) || isPlaceholderVenue(name) || isPlaceholderVenue(address)) {
+  if (isGarbageVenueName(name) || isAreaOnlyVenueName(name) || isPlaceholderVenue(name) || isPlaceholderVenue(address)) {
     return { outcome: 'rejected', reasons: ['Name or address is a placeholder, not a physical venue'] } satisfies VenueOutcome
   }
   const key = addressKey(address)

@@ -18,5 +18,9 @@ docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < su
 # Applied twice: production migrations are run by hand and a retry must succeed.
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261115120000_intake_similar_venues.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261115120000_intake_similar_venues.sql
+# Applied twice: production migrations are run by hand and a retry must succeed.
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261116120000_hidden_location_has_no_venue.sql
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261116120000_hidden_location_has_no_venue.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/instagram-intake.sql
 docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/instagram-intake-venues.sql
+docker exec -i "$intake_test_container" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/hidden-location.sql

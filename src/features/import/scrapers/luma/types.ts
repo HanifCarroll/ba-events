@@ -36,8 +36,10 @@ export interface LumaEvent {
   end_at: string | null
   timezone: string
 
-  // Venue
+  // Venue (null when hidden)
   venue: LumaVenue | null
+  /** Guests-only event: the address is shared after registration. */
+  location_hidden: boolean
 
   // Media
   cover_url: string | null

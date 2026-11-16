@@ -8,8 +8,9 @@
  * No API key required - uses publicly available data.
  */
 
-import type { LumaEvent, LumaVenue, LumaHost } from './types.ts'
+import type { LumaEvent, LumaHost } from './types.ts'
 import { fetchLumaJson } from './http.ts'
+import { lumaLocation } from './location.ts'
 
 /** luma.com/buenos-aires */
 const BUENOS_AIRES_PLACE = 'discplace-wX2J5xGwAJpznew'
@@ -101,20 +102,7 @@ function parseRawEvent(raw: Record<string, unknown>): LumaEvent | null {
     const start_at = (raw.start_at || raw.startDate || raw.start) as string | undefined
     if (!start_at) return null
 
-    // Extract venue info
-    let venue: LumaVenue | null = null
-    const rawVenue = raw.geo_address_json || raw.venue || raw.location
-    if (rawVenue && typeof rawVenue === 'object') {
-      const v = rawVenue as Record<string, unknown>
-      venue = {
-        name: (v.name || v.place_name || null) as string | null,
-        address: (v.address || v.street_address || null) as string | null,
-        city: (v.city || v.locality || null) as string | null,
-        latitude: typeof v.latitude === 'number' ? v.latitude : null,
-        longitude: typeof v.longitude === 'number' ? v.longitude : null,
-        full_address: (v.full_address || v.formatted_address || null) as string | null,
-      }
-    }
+    const location = lumaLocation(raw.geo_address_info, raw.coordinate)
 
     // Extract host info
     let host: LumaHost | null = null
@@ -152,7 +140,8 @@ function parseRawEvent(raw: Record<string, unknown>): LumaEvent | null {
       start_at,
       end_at: (raw.end_at || raw.endDate || raw.end || null) as string | null,
       timezone: (raw.timezone || 'America/Buenos_Aires') as string,
-      venue,
+      venue: location.venue,
+      location_hidden: location.hidden,
       cover_url: (raw.cover_url || raw.cover_image_url || raw.image || null) as string | null,
       is_free: Boolean(raw.is_free ?? raw.isFree ?? true),
       price: typeof raw.price === 'number' ? raw.price : null,

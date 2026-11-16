@@ -119,6 +119,8 @@ export interface ServerEnrichmentResult {
   description_es: string | null
   description_en: string | null
   venue_name: string | null
+  /** Set when the source says whether the address is hidden until registration; omitted when it can't tell. */
+  location_hidden?: boolean
 }
 
 /**

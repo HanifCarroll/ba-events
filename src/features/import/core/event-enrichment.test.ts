@@ -481,3 +481,67 @@ describe('getEventsNeedingEnrichment failure-loop guard', () => {
     await expect(getEventsNeedingEnrichment(client)).resolves.toEqual(rows)
   })
 })
+
+describe('enrichSingleEvent hidden locations', () => {
+  const facets = async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] })
+  const presentation = async () => ({ description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null })
+  /** Records event updates; any venue lookup finds the same existing venue, so settlement would match it. */
+  function venueClient() {
+    const updates: Array<Record<string, unknown>> = []
+    const venueLookups: string[] = []
+    const venue = { id: 'venue-existing', name: 'Sala Sintética', neighborhood: 'Retiro' }
+    const builder: Record<string, unknown> = {}
+    for (const method of ['select', 'ilike', 'eq', 'limit']) builder[method] = () => builder
+    builder.single = async () => ({ data: venue, error: null })
+    builder.maybeSingle = async () => ({ data: venue, error: null })
+    const client = {
+      from: (table: string) => table === 'venues'
+        ? (venueLookups.push(table), builder)
+        : { update: (data: Record<string, unknown>) => { updates.push(data); return { eq: async () => ({ error: null }) } } },
+      rpc: async () => ({ data: [], error: null }),
+    }
+    return { client: client as unknown as SupabaseClient, updates, venueLookups }
+  }
+  const adapter = (location_hidden: boolean | undefined) => getEnrichmentAdapterMock.mockReturnValue({
+    config: { requiresClientSide: false },
+    serverEnrich: async () => ({ description_es: 'Jazz en vivo.', description_en: 'Live jazz.', venue_name: 'Sala Sintética', ...(location_hidden === undefined ? {} : { location_hidden }) }),
+  })
+  const input = (venue_id: string | null) => ({ id: 'luma-1', name: 'Jazz', link: 'https://luma.com/synthetic', source: 'luma', venue_id })
+
+  beforeEach(() => {
+    embedEventWithDocumentMock.mockReset()
+    embedEventWithDocumentMock.mockResolvedValue({ embedding: [0.1], searchDocument: 'Jazz' })
+  })
+
+  it('flags a hidden event and settles no venue, even when the name matches an existing venue', async () => {
+    adapter(true)
+    const { client, updates, venueLookups } = venueClient()
+    expect(await enrichSingleEvent(client, input(null), { extractFacets: facets, buildPresentationFields: presentation })).toMatchObject({ success: true, venueSettlement: undefined })
+    expect(venueLookups).toHaveLength(0)
+    expect(updates).toHaveLength(1)
+    expect(updates[0]).toMatchObject({ location_hidden: true, venue_id: null, enrichment_status: 'completed' })
+    expect(embedEventWithDocumentMock.mock.calls[0]![0]).toMatchObject({ venue_name: null, venue_neighborhood: null })
+  })
+
+  it('drops a venue an event already had once the source hides the address', async () => {
+    adapter(true)
+    const { client, updates } = venueClient()
+    await enrichSingleEvent(client, input('venue-existing'), { extractFacets: facets, buildPresentationFields: presentation })
+    expect(updates[0]).toMatchObject({ location_hidden: true, venue_id: null })
+  })
+
+  it('unhides an event that turns public and settles its venue normally', async () => {
+    adapter(false)
+    const { client, updates } = venueClient()
+    await enrichSingleEvent(client, input(null), { extractFacets: facets, buildPresentationFields: presentation })
+    expect(updates[0]).toMatchObject({ location_hidden: false, venue_id: 'venue-existing' })
+  })
+
+  it('leaves location_hidden alone when the source cannot tell', async () => {
+    adapter(undefined)
+    const { client, updates } = venueClient()
+    await enrichSingleEvent(client, input(null), { extractFacets: facets, buildPresentationFields: presentation })
+    expect(updates[0]).not.toHaveProperty('location_hidden')
+    expect(updates[0]).toMatchObject({ venue_id: 'venue-existing' })
+  })
+})

@@ -16,7 +16,7 @@ import {
   isAddressLikeVenueName,
   lookupBusinessAtAddressEffect,
 } from './nominatim.ts'
-import type { Venue, Neighborhood, VenueInsert } from '#shared/lib/types.ts'
+import { NEIGHBORHOODS, type Venue, type Neighborhood, type VenueInsert } from '#shared/lib/types.ts'
 import { importTry } from './effect-utils.ts'
 
 // ============================================================================
@@ -74,6 +74,25 @@ export function isPlaceholderVenue(text: string | null | undefined): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
   return PLACEHOLDER_PATTERNS.some(pattern => pattern.test(trimmed))
+}
+
+const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+const AREA_WORDS = [
+  'ciudad autonoma de buenos aires', 'cdad autonoma de buenos aires', 'provincia de buenos aires',
+  'capital federal', 'buenos aires', 'caba', 'argentina', 'microcentro', 'comuna \\d+',
+  ...NEIGHBORHOODS.map(fold),
+].sort((a, b) => b.length - a.length)
+const AREA_PATTERN = new RegExp(`\\b(?:${AREA_WORDS.join('|')})\\b|\\b[a-z]\\d{4}[a-z]{0,3}\\b`, 'g')
+
+/**
+ * True when a "venue" is only a city, region, barrio, or postal code, such as
+ * "Buenos Aires, Argentina", "C1437EFA C1437EFA, Argentina", or "Caballito".
+ * Sources fill these in when the real address is hidden or unknown.
+ */
+export function isAreaOnlyVenueName(text: string | null | undefined): boolean {
+  if (!text) return false
+  const folded = fold(text).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  return folded !== '' && folded.replace(AREA_PATTERN, ' ').trim() === ''
 }
 
 /**
@@ -278,8 +297,8 @@ export function settleVenueEffect(
     }
 
   // Check for garbage/invalid venue names (AI-generated explanations, etc.)
-  // These should not create venues
-    if (isGarbageVenueName(venueName)) {
+  // and names that are only a city, barrio, or postal code. These should not create or match venues.
+    if (isGarbageVenueName(venueName) || isAreaOnlyVenueName(venueName)) {
       console.log(`[venue-settlement] Detected garbage venue name: "${venueName}"`)
       return {
       venueId: null,
