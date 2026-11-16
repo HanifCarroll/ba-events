@@ -167,7 +167,7 @@ export function processBATourismImportEffect(
     if (filteredEvents.length === 0) return result
 
     console.log('[ba-tourism] Settling venues...')
-    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    // One input per event; settlement dedupes by `venueSettlementKey` (name plus street and number).
     const venueInputs: VenueSettlementInput[] = filteredEvents
       .filter((event) => event.venueName && event.venueName !== 'Ubicación no especificada')
       .map((event) => ({

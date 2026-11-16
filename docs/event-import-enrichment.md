@@ -107,7 +107,12 @@ The `baeventos-daily-scrape` Workflow (6 AM Buenos Aires) runs one retried step 
 
 1. Fetch raw events from the source (Cloudflare Browser Rendering for Meetup and BA Tourism)
 2. Filter to CABA + blocklist
-3. Settle venues (exact/fuzzy match, auto-create, or queue for review)
+3. Settle venues (exact/fuzzy match, auto-create, or queue for review). Exact means the same `venueNameKey`
+   (case, accents, whitespace, punctuation, and a trailing "- CABA"-style suffix folded); among same-name copies the one
+   at the event's street and number wins, a copy at another street and number is never used, and otherwise the copy
+   the duplicate merge would keep wins (`core/venue-identity.ts`). Batches key each input by name plus street and number.
+   A similar name scoring 0.85 or more is reused; 0.6–0.85 creates the venue and queues the lookalike for review.
+   A failed lookup leaves the event without a venue.
 4. Check duplicates against existing `external_id`s (update vs. insert)
 5. Transform to `EventInsert`; map native categories (AI fallback for unknown categories)
 6. Generate embeddings + bilingual presentation fields
@@ -182,6 +187,8 @@ src/features/import/
 │   ├── luma.ts                 # Luma import pipeline (template for new sources)
 │   ├── event-enrichment.ts     # Batch enrichment orchestration (translate-only fast path)
 │   ├── venue-review.ts         # Venue review approve/reject/merge (agent-callable)
+│   ├── venue-identity.ts       # Same-name key, street-and-number key, keeper rule
+│   ├── venue-duplicates.ts     # Duplicate-venue merge plan and SQL (scripts/venue-duplicates.ts)
 │   └── venue-settlement.ts     # Venue matching/creation
 └── api/
     └── duplicate-detection.ts  # External-ID dedupe shared by all sources
@@ -222,3 +229,32 @@ Worker's `BROWSER` binding and `@cloudflare/playwright`. See
 See the "Key Files" section under "Automated Enrichment Job" above — the admin import
 wizard, SourceAdapters, and admin enrichment hooks were removed (2026-08-10, see
 `docs/decisions.md`).
+
+## Duplicate venues
+
+`bun scripts/venue-duplicates.ts plan` reads production with GET requests only and writes `tmp/venue-duplicates/`
+`snapshot.json`, `plan.json`, and `plan.md`. It groups venues by `venueNameKey` and merges a group only when the copies
+are one place: a single street and number (or no address) and no conflicting barrio. Groups with different addresses or
+barrios are kept apart with the reason, and names that differ beyond the key are listed as possible aliases, never merged.
+The keeper is the copy with the most complete address and barrio, then the most events, then the oldest, the same rule
+the importers use to choose among same-name copies.
+
+`bun scripts/venue-duplicates.ts sql` turns the plan into `merge.sql`, `undo.sql`, and `backup.json`. The merge is one
+transaction:
+
+- It sets `ba_events.intake_commit` locally, because otherwise `protect_intake_event_facts` silently reverts `venue_id`
+  on intake-protected events.
+- It aborts, asking for a new plan, if any planned venue was deleted or its name, address or barrio changed since the
+  plan.
+- It saves execution-time before-images of every row it will change into `public.venue_merge_backup`: full venue,
+  review-queue, intake and dismissed-pair rows, and each event's `id`, `venue_id` and `updated_at`. That covers
+  references added after the plan.
+- It fills the keeper's empty fields from its sources and repoints `events.venue_id`, `venue_review_queue.best_match_venue_id`
+  and `final_venue_id`, `venues.parent_id`, and the `venue_id` in intake candidate, revision, and plan payloads.
+- It checks that nothing still points at a source, deletes the sources and their `dismissed_venue_duplicates` rows, and
+  checks again. Committed intake receipts keep the venue they recorded.
+
+`undo.sql` restores the latest merge from `public.venue_merge_backup`. Deleted venues come back with every column, and
+every changed field gets its old value. `backup.json` is the plan-time copy of the same rows, for review. Both need
+migration `20261116180000_venue_name_matching.sql`. A person reviews the plan and runs the SQL; no script writes to
+production.

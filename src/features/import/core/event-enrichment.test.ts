@@ -499,7 +499,9 @@ describe('enrichSingleEvent hidden locations', () => {
       from: (table: string) => table === 'venues'
         ? (venueLookups.push(table), builder)
         : { update: (data: Record<string, unknown>) => { updates.push(data); Object.assign(row, data); return { eq: async () => ({ error: null }) } } },
-      rpc: async () => ({ data: [], error: null }),
+      rpc: async (name: string) => name === 'venues_named'
+        ? (venueLookups.push(name), { data: [{ venue, event_count: 0 }], error: null })
+        : { data: [], error: null },
     }
     return { client: client as unknown as SupabaseClient, row, updates, venueLookups }
   }

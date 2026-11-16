@@ -369,7 +369,7 @@ export function processMeetupImportEffect(
     }
 
     logger.info('[meetup] Settling venues')
-    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    // One input per event; settlement dedupes by `venueSettlementKey` (name plus street and number).
     const venueInputs: VenueSettlementInput[] = filteredEvents
       .filter((event) => event.venue?.name)
       .map((event) => ({
