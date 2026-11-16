@@ -13,7 +13,8 @@
   "browser": { "binding": "BROWSER", "remote": true },
   // UTC (Buenos Aires is UTC-3 all year): 06:00 daily scrape, 07:00 guest retention,
   // 10:00 enrichment catch-up. scheduled() maps each to a Workflow (CRON_WORKFLOWS).
-  "triggers": { "crons": ["0 9 * * *", "0 10 * * *", "0 13 * * *"] },
+  // Hourly mark-past-events and the 03:00 Vectorize reconcile (CRON_TASKS) do nothing until this config binds D1.
+  "triggers": { "crons": ["0 9 * * *", "0 10 * * *", "0 13 * * *", "0 * * * *", "0 6 * * *"] },
   "workflows": [
     { "binding": "DAILY_SCRAPE", "name": "baeventos-daily-scrape", "class_name": "DailyScrapeWorkflow" },
     { "binding": "GUEST_RETENTION", "name": "baeventos-guest-retention", "class_name": "GuestRetentionWorkflow" },

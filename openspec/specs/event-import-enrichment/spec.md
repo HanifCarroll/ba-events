@@ -99,6 +99,25 @@ Enrichment SHALL move an imported `pending` event to a terminal status in the pa
 - **WHEN** the daily chain or catch-up selects or counts events needing enrichment
 - **THEN** those events are excluded and keep their stored values
 
+### Requirement: The catalog runs on D1 and Vectorize behind the backend seam
+Imports, venue settlement, the venue review queue, enrichment, the blocklist, and the daily-scrape audit SHALL read and write the catalog through one repository that uses D1 and Vectorize when the jobs Worker binds `DB` and `VECTORIZE`, and the Supabase service client otherwise. On D1, every event write that carries a new embedding SHALL upsert the vector with the event id and `{ status, starts_at }` metadata (epoch ms), and a write that changes `status` or `starts_at` SHALL rewrite that metadata. A vector MUST NOT change when intake protection reverts the event's search document. Hourly, scheduled and pending-review events SHALL become `past` by the 4-hour and 28-hour rule, and nightly the vectors of live and recently changed events SHALL be reconciled with D1; both run only when `DB` is bound.
+
+#### Scenario: Production has no D1 binding
+- **WHEN** the jobs Worker runs without `DB`
+- **THEN** every job uses Supabase as before and the D1-only crons report that they skipped
+
+#### Scenario: An event is imported on D1
+- **WHEN** an importer inserts or re-embeds an event
+- **THEN** the event row and its vector are written, and the vector's metadata matches the row's status and start
+
+#### Scenario: An event passes its end
+- **WHEN** the hourly task finds a scheduled event that ended, a timed event that started more than 4 hours ago, or a date-only event that started more than 28 hours ago
+- **THEN** the event becomes `past` and its vector's status follows
+
+#### Scenario: Vectorize drifts from D1
+- **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row
+- **THEN** it re-embeds the document, restores the vector, or rewrites the metadata, within a bounded number of embedding calls per night
+
 ### Requirement: Catch-up retries are bounded per scheduled chain
 The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
 
@@ -270,6 +289,8 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/core/venue-identity.ts`
 - `src/features/import/scrapers/venue-matcher.ts`
 - `src/features/import/scrapers/luma/location.ts`
+- `src/features/import/core/catalog-store.ts`, `catalog-store-d1.ts`, and `catalog-store-for.ts`
+- `src/jobs-worker/catalog-maintenance.ts`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
@@ -278,6 +299,8 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/core/venue-duplicates.test.ts`
 - `supabase/tests/venue-matching.sql` and `supabase/tests/venue-merge.sql` (run by `scripts/test-instagram-intake-db.sh`)
 - `src/features/import/api/duplicate-detection.test.ts`
+- `src/features/import/core/catalog-store-d1.test.ts` and `importers-d1.test.ts` (Miniflare D1)
+- `src/jobs-worker/catalog-maintenance.test.ts` (Miniflare D1)
 - `src/jobs-worker/daily-scrape-outcome.test.ts`
 - `src/jobs-worker/enrichment.test.ts`
 - `src/features/import/acquisition/run.test.ts`

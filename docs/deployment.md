@@ -39,6 +39,8 @@ Each Worker keeps its runtime variables and secrets in its own Cloudflare Settin
 | `baeventos-enrichment-catchup` | `0 13 * * *` | 10:00 | Retry failed enrichment once and drain the pending backlog |
 | `baeventos-source-check` | none | | Manual no-write catalog read of each source |
 
+Two more crons run in `scheduled()` itself (`CRON_TASKS`): `mark-past-events` hourly (`0 * * * *`) and the Vectorize reconcile at 03:00 Buenos Aires (`0 6 * * *`). They work only when the Worker binds D1, so until the cutover they skip and production keeps Supabase's pg_cron job. That makes five crons, the most a Worker may have. See [D1](d1.md#catalog).
+
 Every step retries twice more with exponential backoff from one second (Trigger.dev's old three attempts) and keeps the old per-task time budget as its timeout. Secrets: `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (database and the private acquisition cache), `DEEPSEEK_API_KEY` (categorization, description extraction, translation, and facets), and `OPENAI_API_KEY` (embeddings). They reach shared code through `process.env` (`nodejs_compat_populate_process_env`). Run a job by hand with `bunx wrangler workflows trigger <workflow> --config wrangler.jobs.jsonc`, and read it with `bunx wrangler workflows instances describe <workflow> latest --config wrangler.jobs.jsonc`.
 
 ## Local checks
