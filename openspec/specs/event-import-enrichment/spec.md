@@ -34,7 +34,7 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 - **WHEN** a venue name is only a city, region, or postal code (such as "Buenos Aires, Argentina", "C1437EFA, Argentina", or "CABA")
 - **THEN** venue settlement and the intake `venue` operation neither match nor create a venue from it
 - **AND** a venue named only after a barrio is identified by its street address: the event must carry its own numbered address, a same-name venue is reused only at the same street and number, and otherwise a new venue is created; an event without its own numbered address gets no venue, and a catalog venue's address is never evidence for another event. Barrios named after a park ("Parque Chacabuco") are not area names
-- **AND** batch settlement keys barrio-named inputs by name plus normalized address, and importers send one input per event, so events in one import never share a barrio-named venue by name alone
+- **AND** batch settlement keys every input by name plus normalized street and number, and importers send one input per event, so events in one import never share a venue by name alone
 
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.
@@ -42,6 +42,21 @@ Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous 
 #### Scenario: Venue match is ambiguous
 - **WHEN** no candidate satisfies the settlement rules
 - **THEN** import does not claim an unsupported venue match
+
+#### Scenario: A catalog venue's name differs only in spacing, case, accents, punctuation, or a city suffix
+- **WHEN** an importer settles a venue name whose `venue_name_key` (case, accents, every kind of whitespace including non-breaking spaces, and punctuation folded; trailing "- Buenos Aires", "- CABA", "- Argentina" dropped) equals an existing venue's
+- **THEN** it reuses that venue as an exact match, and `%` or `_` in a name are plain characters, never wildcards
+- **AND** when several venues share that name it reuses the one at the event's own street and number; a same-name venue at another street and number is never reused, and the event gets a new venue instead
+- **AND** without a numbered address on the event, or among copies with no numbered address, it reuses the copy the duplicate merge keeps (numbered address and barrio, then most events, then oldest)
+
+#### Scenario: A venue lookup fails
+- **WHEN** the same-name or similar-name lookup returns an error
+- **THEN** settlement leaves the event without a venue rather than creating a possible duplicate
+
+#### Scenario: Only a similar name exists
+- **WHEN** the closest catalog name scores at least 0.85 and no numbered address on either side conflicts
+- **THEN** settlement reuses that venue
+- **AND** a score from 0.6 up to 0.85, or a similar name at another street and number, never attaches the event to that venue: settlement creates the venue and, for the 0.6–0.85 band, queues the lookalike in `venue_review_queue`
 
 ### Requirement: Enrichment is bounded and source-backed
 Enrichment SHALL use the registered source strategy, retain available source data on partial failure, and mark unavailable descriptions or terminal failures explicitly. It MUST NOT invent event facts to make a record appear complete.
@@ -251,10 +266,17 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
 - `supabase/migrations/20261115120000_intake_similar_venues.sql`
 - `supabase/migrations/20261116120000_hidden_location_has_no_venue.sql`
+- `supabase/migrations/20261116180000_venue_name_matching.sql`
+- `src/features/import/core/venue-identity.ts`
+- `src/features/import/scrapers/venue-matcher.ts`
 - `src/features/import/scrapers/luma/location.ts`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
+- `src/features/import/core/venue-identity.test.ts`
+- `src/features/import/core/venue-settlement.test.ts`
+- `src/features/import/core/venue-duplicates.test.ts`
+- `supabase/tests/venue-matching.sql` and `supabase/tests/venue-merge.sql` (run by `scripts/test-instagram-intake-db.sh`)
 - `src/features/import/api/duplicate-detection.test.ts`
 - `src/jobs-worker/daily-scrape-outcome.test.ts`
 - `src/jobs-worker/enrichment.test.ts`

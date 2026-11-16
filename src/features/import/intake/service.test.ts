@@ -87,6 +87,38 @@ describe('intake failure and retry orchestration', () => {
     expect(tables).not.toContain('intake_plans')
   })
 
+  it('previews a candidate whose venue lookup fails as held, with no venue and no venue hint', async () => {
+    const post = { id: '30000000-0000-4000-8000-000000000001', post_id: 'post-1', source_username: 'synthetic', caption: 'Synthetic', media_urls: [] }
+    const candidate = decodeCandidate({ id: '10000000-0000-4000-8000-000000000002', expected_revision: 0, intent: 'create', target_event_id: null,
+      name: 'Synthetic', date: '2026-11-20', time: null, venue_name: 'Sala Sintética', venue_id: null,
+      description_es: null, description_en: null, categories: ['music'], status: 'scheduled', price_kind: 'unknown',
+      price_ars: null, price_note: null, ticket_url: null, artwork_media_id: null, issues: [], notes: '',
+      evidence: [{ observation_id: post.id, fields: ['name', 'date', 'venue'], excerpt: 'Synthetic', media_id: null }],
+    })
+    const inserted: Array<Record<string, unknown>> = []
+    const rpcs: string[] = []
+    const query = (table: string, columns = '*'): unknown => new Proxy({}, { get: (_target, method) => {
+      if (method === 'then') return (resolve: (value: unknown) => void, reject: (error: unknown) => void) => (async () => {
+        if (table === 'intake_candidates') return ok({ revision: 0, payload: candidate })
+        if (table === 'instagram_sources') return ok([{ username: 'synthetic', authority: 'venue' }])
+        if (table === 'intake_observations') return ok(columns === '*' ? [post] : [{ id: post.id }])
+        if (table === 'intake_plans') return ok({ id: 'plan', ...inserted.at(-1) })
+        return ok([])
+      })().then(resolve, reject)
+      if (method === 'insert') return (row: Record<string, unknown>) => { inserted.push(row); return query(table, columns) }
+      return (value: string) => query(table, method === 'select' ? value : columns)
+    } })
+    const db = { from: (table: string) => query(table),
+      rpc: async (name: string) => { rpcs.push(name); return error('function venues_named does not exist') } } as unknown as SupabaseClient
+    const preview = await Effect.runPromise(previewCandidateEffect(db, candidate.id, 'https://example.supabase.co', new Date('2026-10-25')))
+    expect(rpcs).toEqual(['venues_named'])
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({ action: 'held', payload: { venue_id: null } })
+    expect(inserted[0].reasons).toContain('Venue must be resolved before publishing')
+    expect((inserted[0].reasons as string[]).some(reason => reason.startsWith('Possible venue'))).toBe(false)
+    expect(preview).toMatchObject({ action: 'held', venue_name: 'Sala Sintética' })
+  })
+
   it('overlaps publication preparation but waits for both results before writing', async () => {
     const unprepared = { ...plan, artwork_media_id: null, payload: { name: 'Synthetic Jazz', venue_id: 'venue' } }
     const { db, calls } = fakeDb([ok(unprepared), ok({ publishing_enabled: true }), ok(true),

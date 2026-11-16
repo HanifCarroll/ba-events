@@ -67,7 +67,8 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(clie
       if (candidate.venue_name && normalizeTitle(candidate.venue_name) !== normalizeTitle(venue.name)) reasons.push('Venue name differs from selected venue; resolve its identity')
     }
   } else if (candidate.venue_name) {
-    const match = yield* matchVenueEffect(candidate.venue_name, 0.6, client).pipe(Effect.mapError(error => failure(error.message)))
+    // Advisory only: without a venue_id the plan is held anyway, so a failed lookup just omits the hint.
+    const match = yield* matchVenueEffect(candidate.venue_name, 0.6, client).pipe(Effect.orElseSucceed(() => ({ venue: null })))
     if (match.venue) reasons.push(`Possible venue: ${match.venue.name} (${match.venue.id}); confirm and submit a new revision`)
   }
   const linked = yield* dbEffect('intake.links', () => client.from('event_source_evidence').select('event_id').eq('candidate_id', candidate.id))

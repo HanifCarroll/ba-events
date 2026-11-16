@@ -6,7 +6,7 @@ create role service_role bypassrls;
 create schema storage;
 create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
 create type public.event_status as enum('scheduled','canceled','postponed','past','pending_review');
-create table public.venues(id uuid primary key default gen_random_uuid(), name text, neighborhood text, address text);
+create table public.venues(id uuid primary key default gen_random_uuid(), name text, neighborhood text, address text, created_at timestamptz not null default now());
 create table public.events(
   id uuid primary key default gen_random_uuid(), name text not null,
   starts_at timestamptz not null, ends_at timestamptz, time_tba boolean not null default false,

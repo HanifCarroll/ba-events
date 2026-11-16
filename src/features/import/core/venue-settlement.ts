@@ -4,12 +4,13 @@
  * Handles venue matching and auto-creation for automated scraping jobs.
  * Uses a confidence-based approach:
  * - >= 0.85: Auto-use matched venue
- * - 0.60-0.84: Queue for admin review
+ * - 0.60-0.84: Auto-create, and queue the lookalike for admin review
  * - < 0.60 or no match: Auto-create with neighborhood lookup
  */
 import { Data, Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { matchVenueEffect, type VenueMatchResult } from '../scrapers/venue-matcher.ts'
+import { findSameNameVenuesEffect, matchVenueEffect, type VenueMatchResult } from '../scrapers/venue-matcher.ts'
+import { addressKey, pickVenue } from './venue-identity.ts'
 import {
   lookupNeighborhoodTieredEffect,
   delayEffect,
@@ -18,6 +19,8 @@ import {
 } from './nominatim.ts'
 import { NEIGHBORHOODS, type Venue, type Neighborhood, type VenueInsert } from '#shared/lib/types.ts'
 import { importTry } from './effect-utils.ts'
+
+export { addressKey }
 
 // ============================================================================
 // CONSTANTS
@@ -101,28 +104,6 @@ export function areaOnlyVenueName(text: string | null | undefined): 'city' | 'ba
   const withoutCity = folded.replace(CITY_PATTERN, ' ').trim()
   if (!withoutCity) return 'city'
   return withoutCity.replace(BARRIO_PATTERN, ' ').trim() ? null : 'barrio'
-}
-
-/**
- * Street name plus house number, so the catalog's messy formats compare equal: "Av. Corrientes N° 1530 - C.A.B.A.",
- * "Avenida Corrientes 1530, C1043AAB" and "Corrientes 1530" all give "corrientes 1530". The house number must follow
- * the street name, so "3 de Febrero" or "Av. 9 de Julio" alone has no key while "3 de Febrero 1378" does.
- */
-export function addressKey(address: string | null | undefined): string | null {
-  if (!address) return null
-  const normalize = (value: string) => fold(value) // "N°" folds to "n°", so markers are matched after folding
-    .replace(/\b(cp\s*)?[a-z]\d{4}[a-z]{0,3}\b|\bcp\s*\d{4}\b/g, ' ') // postal codes: C1043AAB, C1043, CP 1043
-    .replace(/\b(numero|nro|num|n)\s*[.°º]*\s*(?=\d)/g, ' ') // number markers: N° 1530, nro. 1530
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .replace(/\b(ciudad autonoma de buenos aires|cdad autonoma de buenos aires|ciudad de buenos aires|capital federal|c a b a|caba|buenos aires|argentina)\b/g, ' ')
-    .replace(/\s+/g, ' ').trim()
-  const plain = normalize(address)
-  const street = (value: string) => value.replace(/^(avenida|avda|av|calle|pasaje|pje)\s+/, '')
-  const parts = street(plain).match(/^(.*?\p{L}.*?)\s(\d{1,5})\b/u)
-  if (parts) return `${parts[1]} ${parts[2]}`
-  // Number first, as some ticket sites write it: "1660 Avenida Corrientes". "25 de Mayo" is a street name, not this.
-  const first = normalize(address.split(',')[0]).match(/^(\d{1,5})\s(?!de\b)(\p{L}[\p{L} ]*)$/u)
-  return first ? `${street(first[2])} ${first[1]}` : null
 }
 
 /**
@@ -284,10 +265,11 @@ function queueVenueForReviewEffect(
  * Settle a venue: match to existing, auto-create, or queue for review.
  *
  * Decision logic:
- * 1. Try exact match (confidence = 1.0) → use it
+ * 1. Try exact match (confidence = 1.0) → use it; several same-name venues → `pickVenue`
  * 2. Try fuzzy match:
  *    - confidence >= 0.85 → auto-use
- *    - confidence 0.6-0.84 → queue for review
+ *    - confidence 0.6-0.84 → auto-create, and queue the lookalike for review (never attach it)
+ *    - a fuzzy match at another street and number than the event's → no match
  *    - confidence < 0.6 or no match → auto-create
  * 3. For auto-create: lookup neighborhood using tiered approach
  */
@@ -380,26 +362,31 @@ export function settleVenueEffect(
     }
 
     // Step 1: Try matching against existing venues (using resolved name if address was looked up)
+    // A failed lookup can't tell whether the venue exists; leave the event unlinked rather than create a duplicate.
+    const lookupFailed = { venueId: null, action: 'skipped', confidence: 0, venueName } satisfies VenueSettlementResult
     let match: VenueMatchResult
     if (barrioAddress) {
-      const sameName = yield* Effect.result(importTry('venue-settlement.barrio-venues', () => client
-        .from('venues').select('*').ilike('name', venueName)))
-      if (sameName._tag === 'Failure' || sameName.success.error) {
-        // Can't tell whether this address already has a venue; leave the event unlinked rather than duplicate it.
-        return { venueId: null, action: 'skipped', confidence: 0, venueName } satisfies VenueSettlementResult
-      }
-      const atAddress = ((sameName.success.data ?? []) as Venue[]).find(venue => addressKey(venue.address) === barrioAddress)
-      match = atAddress
-        ? { venue: atAddress, matchType: 'exact', confidence: 1, searchName: venueName }
+      const sameName = yield* Effect.result(findSameNameVenuesEffect(venueName, client))
+      if (sameName._tag === 'Failure') return lookupFailed
+      const atAddress = sameName.success.filter(venue => addressKey(venue.address) === barrioAddress)
+      match = atAddress.length
+        ? { venue: pickVenue(atAddress)!, matchType: 'exact', confidence: 1, searchName: venueName }
         : noVenueMatch(venueName)
     } else {
-      match = yield* Effect.catchEager(
-        matchVenueEffect(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client),
-        () => Effect.succeed(noVenueMatch(resolvedVenueName))
-      )
+      const found = yield* Effect.result(matchVenueEffect(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client, input.address))
+      if (found._tag === 'Failure') {
+        console.error(`[venue-settlement] Venue lookup failed for "${resolvedVenueName}":`, found.failure.message)
+        return lookupFailed
+      }
+      match = found.success
       // An existing venue named only after an area counts only at this event's own street and number.
       const inputAddress = addressKey(input.address)
       if (match.venue && areaOnlyVenueName(match.venue.name) && (!inputAddress || addressKey(match.venue.address) !== inputAddress)) {
+        match = noVenueMatch(resolvedVenueName)
+      }
+      // A similar name at another street and number is another place.
+      const matchAddress = addressKey(match.venue?.address)
+      if (match.matchType === 'fuzzy' && inputAddress && matchAddress && matchAddress !== inputAddress) {
         match = noVenueMatch(resolvedVenueName)
       }
     }
@@ -434,28 +421,10 @@ export function settleVenueEffect(
       } satisfies VenueSettlementResult
     }
 
-  // Low-confidence fuzzy match - queue for review
-    if (match.matchType === 'fuzzy') {
-      yield* queueVenueForReviewEffect(client, options.scrapeRunId || null, {
-      source: options.source,
-      source_venue_name: venueName, // Original name for review context
-      source_address: input.address,
-      source_coordinates: input.coordinates,
-      best_match_venue_id: match.venue?.id,
-      match_confidence: match.confidence,
-      source_event_ids: options.eventIds,
-      })
-
-    // Still use the fuzzy match for now, but flag for review
-      return {
-      venueId: match.venue!.id,
-      action: 'queued-review',
-      confidence: match.confidence,
-      method: 'fuzzy',
-      venueName: match.venue!.name,
-      neighborhood: match.venue!.neighborhood,
-      } satisfies VenueSettlementResult
-    }
+  // Low-confidence fuzzy match: a different name that may or may not be the same place ("Centro Cultural Raíces" and
+  // "Centro Cultural" score 0.68). Never attach it; create this venue as with no match and queue the lookalike for review.
+  // The next import finds the new venue by its exact name, so each name is queued once.
+    const lookalike = match.matchType === 'fuzzy' ? match : null
 
   // No match - auto-create with neighborhood lookup
   console.log(`[venue-settlement] No match for "${resolvedVenueName}", looking up neighborhood...`)
@@ -502,9 +471,21 @@ export function settleVenueEffect(
     console.log(`[venue-settlement] Created venue "${resolvedVenueName}" with neighborhood: ${neighborhood || 'unknown'}`)
   }
 
+    if (lookalike) {
+      yield* queueVenueForReviewEffect(client, options.scrapeRunId || null, {
+      source: options.source,
+      source_venue_name: venueName, // Original name for review context
+      source_address: input.address,
+      source_coordinates: input.coordinates,
+      best_match_venue_id: lookalike.venue?.id,
+      match_confidence: lookalike.confidence,
+      source_event_ids: options.eventIds,
+      })
+    }
+
     return {
     venueId: newVenue.id,
-    action: 'auto-created',
+    action: lookalike ? 'queued-review' : 'auto-created',
     confidence: neighborhood ? 0.8 : 0.5, // Higher confidence if we found neighborhood
     method: method as VenueSettlementResult['method'],
     venueName: resolvedVenueName,
@@ -531,13 +512,12 @@ export async function settleVenue(
 }
 
 /**
- * Key for batch settlement results. Ordinary venues key by name. A barrio-named venue keys by name
- * plus its normalized street address, so events in one import never share it by name alone.
+ * Key for batch settlement results: the name plus its normalized street and number, so two events in one import that
+ * share a venue name but not an address are settled separately and never share a venue by name alone.
  * Importers pass one input per event and look each event up with its own name and address.
  */
 export function venueSettlementKey(name: string, address: string | null | undefined): string {
-  const key = name.trim().toLowerCase()
-  return areaOnlyVenueName(name) === 'barrio' ? `${key}\u0000${addressKey(address) ?? ''}` : key
+  return `${name.trim().toLowerCase()}\u0000${addressKey(address) ?? ''}`
 }
 
 /**
@@ -565,7 +545,7 @@ export function settleVenuesEffect(
     placeholder: 0,
     }
 
-  // Dedupe venues by settlement key (name, plus the street address for barrio names)
+  // Dedupe venues by settlement key (name plus street and number)
     const uniqueVenues = new Map<string, VenueSettlementInput>()
     for (const venue of venues) {
       if (venue.name && venue.name.trim()) {
@@ -603,7 +583,7 @@ export function settleVenuesEffect(
       }
 
       // Rate limiting for API calls (only needed if we hit Nominatim)
-      if (result.action === 'auto-created' && i < uniqueVenues.size - 1) {
+      if ((result.action === 'auto-created' || result.action === 'queued-review') && i < uniqueVenues.size - 1) {
         yield* settlementDelay(1000) // 1 second between Nominatim calls
       }
 

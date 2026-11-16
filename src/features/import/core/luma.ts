@@ -144,7 +144,7 @@ export function processLumaImportEffect(
 
     console.log('[luma] Settling venues...')
     // Hidden events have no venue (`lumaLocation`), so they never reach settlement.
-    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    // One input per event; settlement dedupes by `venueSettlementKey` (name plus street and number).
     const venueInputs: VenueSettlementInput[] = filteredEvents
       .map(extractVenueInfo)
       .filter((info): info is NonNullable<typeof info> => info !== null)
