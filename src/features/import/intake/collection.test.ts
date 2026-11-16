@@ -97,7 +97,7 @@ function mediaDb(observations: Array<{ id: string; media_urls: string[]; reviewe
   const from = (name: string) => {
     let row: Record<string, unknown> | null = null; let ids: string[] | null = null; let unreviewed = false
     const chain: Record<string, unknown> = {
-      select: () => chain, order: () => chain, range: () => chain, single: () => chain,
+      select: () => chain, order: () => chain, range: () => chain, single: () => chain, abortSignal: () => chain,
       is: () => { unreviewed = true; return chain },
       in: (_key: string, values: string[]) => { ids = values; return chain },
       upsert: (value: Record<string, unknown>) => { row = value; return chain },
@@ -152,6 +152,14 @@ describe('retrying missing images of unreviewed observations', () => {
     expect(result).toMatchObject({ attempted: 2, retained: 1, deferred: 2, failures: [
       'Media 0 could not be retained for observation flaky (retried from its stored URL)',
       '2 missing images were not retried this run (cap 2); the next collect retries them'] })
+  })
+
+  it('stops at its deadline, keeps what it saved, and says so', async () => {
+    const { db, media } = mediaDb([{ id: 'slow', media_urls: [signed('fast', later), signed('stuck', later)] }], [])
+    const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, deadlineMs: 50,
+      fetcher: url => url.includes('stuck') ? new Promise(() => {}) : image(url) }))
+    expect(media).toEqual([expect.objectContaining({ observation_id: 'slow', position: 0 })])
+    expect(result).toMatchObject({ attempted: 2, retained: 1, error: expect.stringContaining('deadline') })
   })
 
   it('reads the hex expiry from a signed Instagram URL', () => {

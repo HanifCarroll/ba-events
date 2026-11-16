@@ -206,6 +206,7 @@ Each run SHALL request only posts newer than 2 hours before the latest successfu
 - **WHEN** an unreviewed observation is missing an image position and its post is not in today's dataset
 - **THEN** each collect, including a resumed or repeated one, retries that position from the observation's stored URL, at most a bounded number of downloads per run, without refetching saved positions
 - **AND** a stored URL whose signed expiry has passed is skipped, and every position still missing is named in the run summary's failures
+- **AND** a failed read or write in the retry, or its overall deadline, ends only the retry: collection still returns its summary with the retry's error named
 
 #### Scenario: The collection process stops after starting Apify
 - **WHEN** the collector resumes with a retained Apify run identity

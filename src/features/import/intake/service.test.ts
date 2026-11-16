@@ -185,6 +185,17 @@ describe('intake failure and retry orchestration', () => {
     }
     await expect(Effect.runPromise(collectInstagramEffect(db, api))).rejects.toThrow('Could not verify the Apify monthly usage limit')
   })
+  it('returns the collection summary when the image retry fails after the run is marked succeeded', async () => {
+    const { db, calls } = fakeDb([ok({ collection_enabled: true }), ok({ fresh: false, id: 'run', apify_run_id: 'done-run', input: { username: ['a'], resultsLimit: 20 } }),
+      ok({ id: 'run' }), error('database unavailable')])
+    const api: ApifyRequest = async (_method, path) => path.startsWith('datasets/') ? []
+      : { data: { id: 'done-run', status: 'SUCCEEDED', defaultDatasetId: 'dataset', usageTotalUsd: 0.5 } }
+    const result = await Effect.runPromise(collectInstagramEffect(db, api))
+    expect(calls.indexOf('table:intake_runs')).toBeLessThan(calls.indexOf('table:intake_observations'))
+    expect(result).toMatchObject({ state: 'succeeded', run_id: 'done-run', posts: 0,
+      media_retry: { attempted: 0, error: expect.stringContaining('database unavailable') },
+      failures: expect.arrayContaining([expect.stringContaining('Media retry stopped early: database unavailable')]) })
+  })
   it('resumes an existing paid run without needing new credit', async () => {
     const { db } = fakeDb([ok({ collection_enabled: true }), ok({ fresh: false, apify_run_id: 'existing-run' })])
     const api: ApifyRequest = async (method, path) => {

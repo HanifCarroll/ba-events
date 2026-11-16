@@ -1,4 +1,4 @@
-import { Effect, Schema } from 'effect'
+import { Cause, Effect, Schema } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { allRowsEffect, dbEffect } from './repository.ts'
@@ -86,12 +86,13 @@ export async function fetchInstagramImage(url: string, fetcher: typeof fetch = f
 }
 
 /** Saves one image of an observation. Idempotent: storage is keyed by content hash and `intake_media` by (observation_id, position). */
-const retainImageEffect = (client: SupabaseClient, observationId: string, position: number, url: string, fetcher: typeof fetchInstagramImage) =>
+const retainImageEffect = (client: SupabaseClient, observationId: string, position: number, url: string, fetcher: typeof fetchInstagramImage, signal?: AbortSignal) =>
   Effect.gen(function*() {
     const image = yield* importTry('intake.image', () => fetcher(url))
     yield* dbEffect('intake.store-image', () => client.storage.from('instagram-evidence').upload(image.object_key, image.bytes, { contentType: image.content_type, upsert: true }))
-    yield* dbEffect('intake.record-image', () => client.from('intake_media').upsert({ observation_id: observationId, position,
-      object_key: image.object_key, content_type: image.content_type, sha256: image.sha256 }, { onConflict: 'observation_id,position' }).select('id').single())
+    const record = client.from('intake_media').upsert({ observation_id: observationId, position,
+      object_key: image.object_key, content_type: image.content_type, sha256: image.sha256 }, { onConflict: 'observation_id,position' }).select('id')
+    yield* dbEffect('intake.record-image', () => (signal ? record.abortSignal(signal) : record).single())
   })
 
 export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(client: SupabaseClient, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
@@ -142,28 +143,55 @@ export function signedUrlExpiry(url: string): Date | null {
   } catch { return null }
 }
 
-// 20 downloads at the 15 s timeout bound a fully failing retry to 5 minutes of the 45-minute collect session.
 export const MEDIA_RETRY_CAP = 20
+// The whole retry pass, reads and uploads included, stops here; 20 failing downloads at 15 s alone would take 5 minutes.
+export const MEDIA_RETRY_DEADLINE_MS = 4 * 60_000
+
+type MediaRetry = { attempted: number; retained: number; expired: number; deferred: number; failures: string[]; error?: string }
 
 /**
  * Collection only fetches posts newer than the last run, so an image that failed to save would never come back in a
  * dataset. This retries missing positions of unreviewed observations from their stored URLs, oldest first, at most
  * `cap` downloads a run. Expired URLs are skipped and reported, since Instagram rejects them.
+ *
+ * It never fails: a failed read, upload or upsert, or the deadline, ends the pass with `error` set and keeps what was
+ * saved so far. A failed read is never reported as "nothing missing".
  */
-export const retryMissingMediaEffect = Effect.fn('intake.retryMissingMedia')(function*(client: SupabaseClient,
-  options: { skip?: ReadonlySet<string>; fetcher?: typeof fetchInstagramImage; now?: Date; cap?: number } = {}) {
-  const { skip = new Set<string>(), fetcher = fetchInstagramImage, now = new Date(), cap = MEDIA_RETRY_CAP } = options
-  const observations = (yield* allRowsEffect(client, 'intake_observations', 'id,media_urls',
-    query => query.is('reviewed_at', null).order('observed_at'))) as unknown as Array<{ id: string; media_urls: unknown }>
-  const pending = observations.filter(row => !skip.has(row.id) && Array.isArray(row.media_urls) && row.media_urls.length)
-  const saved = new Set<string>()
-  for (let index = 0; index < pending.length; index += 100) {
-    const ids = pending.slice(index, index + 100).map(row => row.id)
-    const rows = (yield* allRowsEffect(client, 'intake_media', 'observation_id,position',
-      query => query.in('observation_id', ids).order('observation_id'))) as unknown as Array<{ observation_id: string; position: number }>
-    for (const row of rows) saved.add(`${row.observation_id}:${row.position}`)
-  }
-  const failures: string[] = []; let attempted = 0; let retained = 0; let expired = 0; let deferred = 0
+export const retryMissingMediaEffect = (client: SupabaseClient,
+  options: { skip?: ReadonlySet<string>; fetcher?: typeof fetchInstagramImage; now?: Date; cap?: number; deadlineMs?: number } = {}) => {
+  const { skip = new Set<string>(), fetcher = fetchInstagramImage, now = new Date(), cap = MEDIA_RETRY_CAP, deadlineMs = MEDIA_RETRY_DEADLINE_MS } = options
+  const result: MediaRetry = { attempted: 0, retained: 0, expired: 0, deferred: 0, failures: [] }
+  const controller = new AbortController()
+  const pass = Effect.gen(function*() {
+    const observations = (yield* allRowsEffect(client, 'intake_observations', 'id,media_urls',
+      query => query.is('reviewed_at', null).order('observed_at').abortSignal(controller.signal))) as unknown as Array<{ id: string; media_urls: unknown }>
+    const pending = observations.filter(row => !skip.has(row.id) && Array.isArray(row.media_urls) && row.media_urls.length)
+    const saved = new Set<string>()
+    for (let index = 0; index < pending.length; index += 100) {
+      const ids = pending.slice(index, index + 100).map(row => row.id)
+      const rows = (yield* allRowsEffect(client, 'intake_media', 'observation_id,position',
+        query => query.in('observation_id', ids).order('observation_id').abortSignal(controller.signal))) as unknown as Array<{ observation_id: string; position: number }>
+      for (const row of rows) saved.add(`${row.observation_id}:${row.position}`)
+    }
+    yield* retryPositionsEffect(client, pending, saved, result, { fetcher, now, cap, signal: controller.signal })
+  })
+  return pass.pipe(
+    Effect.timeoutOrElse({ duration: deadlineMs, orElse: () => Effect.sync(() => {
+      result.error = `Media retry stopped at its ${Math.round(deadlineMs / 1000)} s deadline; the next collect continues it`
+    }) }),
+    Effect.catchCause(cause => Effect.sync(() => {
+      const error = Cause.squash(cause)
+      result.error = `Media retry stopped early: ${error instanceof Error ? error.message : String(error)}; the next collect retries`
+    })),
+    Effect.ensuring(Effect.sync(() => controller.abort())),
+    Effect.as(result),
+  )
+}
+
+const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(client: SupabaseClient,
+  pending: Array<{ id: string; media_urls: unknown }>, saved: Set<string>, result: MediaRetry,
+  { fetcher, now, cap, signal }: { fetcher: typeof fetchInstagramImage; now: Date; cap: number; signal: AbortSignal }) {
+  const { failures } = result
   for (const observation of pending) {
     const urls = observation.media_urls as unknown[]
     for (let position = 0; position < urls.length; position++) {
@@ -171,19 +199,18 @@ export const retryMissingMediaEffect = Effect.fn('intake.retryMissingMedia')(fun
       const url = urls[position]
       const expiry = typeof url === 'string' ? signedUrlExpiry(url) : null
       if (typeof url !== 'string' || expiry && expiry <= now) {
-        expired++
+        result.expired++
         failures.push(`Media ${position} of observation ${observation.id} can't be retried: its stored URL ${typeof url === 'string' ? `expired ${expiry!.toISOString()}` : 'is invalid'}`)
         continue
       }
-      if (attempted >= cap) { deferred++; continue }
-      attempted++
-      const result = yield* Effect.result(retainImageEffect(client, observation.id, position, url, fetcher))
-      if (result._tag === 'Success') retained++
+      if (result.attempted >= cap) { result.deferred++; continue }
+      result.attempted++
+      const retained = yield* Effect.result(retainImageEffect(client, observation.id, position, url, fetcher, signal))
+      if (retained._tag === 'Success') result.retained++
       else failures.push(`Media ${position} could not be retained for observation ${observation.id} (retried from its stored URL)`)
     }
   }
-  if (deferred) failures.push(`${deferred} missing images were not retried this run (cap ${cap}); the next collect retries them`)
-  return { attempted, retained, expired, deferred, failures }
+  if (result.deferred) failures.push(`${result.deferred} missing images were not retried this run (cap ${cap}); the next collect retries them`)
 })
 
 /**
@@ -237,6 +264,6 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
   // After the run is recorded, so a failed retry can't leave it unfinished. Posts in today's dataset were just tried with
   // fresh URLs; every other unreviewed observation gets one retry per collect, including a resumed or repeated one.
   const { failures: mediaFailures, ...mediaRetry } = yield* retryMissingMediaEffect(client, { skip: observationIds })
-  result.failures.push(...mediaFailures)
+  result.failures.push(...mediaFailures, ...(mediaRetry.error ? [mediaRetry.error] : []))
   return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result, media_retry: mediaRetry }
 })
