@@ -88,6 +88,11 @@ Daily imports SHALL acquire the full configured discovery window without deferri
 - **AND** Daily enrichment chains SHALL be sized to their observed eligible set.
 - **AND** Meetup date filtering SHALL include the complete last calendar day in Buenos Aires time.
 
+#### Scenario: A source rate-limits the jobs Worker
+- **WHEN** a source answers 429
+- **THEN** its step waits for `Retry-After`, or minutes when absent, before retrying within its time budget, rather than spending its attempts within seconds
+- **AND** other errors keep the short exponential backoff
+
 #### Scenario: A discovery day or page fails
 - **WHEN** bounded acquisition retries cannot complete a required page or day
 - **THEN** the source reports failure rather than success with an incomplete observation

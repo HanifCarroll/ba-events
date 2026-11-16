@@ -57,7 +57,7 @@ The following table documents the enrichment strategy for each source, along wit
 | Source | Strategy | Reason | Description Method | Venue Method | Known Language |
 |--------|----------|--------|-------------------|--------------|----------------|
 | **Meetup** | Server direct fetch | Jina Reader returns HTTP 451 | `__NEXT_DATA__` props | JSON-LD `@type: Place` | Variable (detect) |
-| **Luma** | Server-side Playwright | Requires browser for JS content | `__NEXT_DATA__` or JSON-LD | `geo_address_json` or venue object | Variable (detect) |
+| **Luma** | Luma JSON API | luma.com HTML is rate-limited for Cloudflare Workers | `/event/get` `description_mirror` | `/event/get` `geo_address_info` (public only) | Variable (detect) |
 | **BA Tourism** | Server-side (Jina + AI) | Works normally | Jina markdown → Haiku extraction | Regex after "¿Dónde?" heading | Spanish (es) |
 
 ### Decision Factors
@@ -147,7 +147,7 @@ The daily enrichment job routes each source through its enrichment adapter
 
 | Source | Strategy | Reason |
 |--------|----------|--------|
-| `luma` | Server direct fetch | Requires browser for JS content |
+| `luma` | Luma JSON API (`/event/get`) | luma.com HTML is rate-limited (429) for Cloudflare Workers |
 | `meetup` | Server direct fetch | Jina Reader returns HTTP 451 |
 | `ba-tourism` | Server-side Jina + AI | Works normally |
 | `instagram` | Generic Jina + AI | No adapter; stored descriptions use the translate-only path |

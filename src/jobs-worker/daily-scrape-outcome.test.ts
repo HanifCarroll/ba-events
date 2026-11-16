@@ -11,10 +11,13 @@ import {
   shouldChainNextBatch,
   recordEnrichmentAudit,
   importAllSources,
+  sourceRetryDelay,
+  RATE_LIMIT_DEFAULT_SECONDS,
   type DailyScrapeResult,
 } from './daily-scrape-outcome.ts'
 
 import { SOURCES as SOURCE_JOBS } from './source-health.ts'
+import { LumaRateLimitError } from '#features/import/scrapers/luma/http.ts'
 
 const okRun = (taskIdentifier: string, stats: Record<string, number> = {}) => ({
   taskIdentifier,
@@ -354,8 +357,9 @@ describe('importAllSources', () => {
   /** Fake Workflow step: real per-attempt timeout, `limit` retries, no backoff wait. */
   function fakeStep(timeoutMs: number) {
     const attempts: Record<string, number> = {}
+    const waits: Record<string, string[]> = {}
     const step = {
-      async do<T>(name: string, config: { retries: { limit: number } }, callback: () => Promise<T>): Promise<T> {
+      async do<T>(name: string, config: { retries: { limit: number; delay: (input: { ctx: { attempt: number }; error: Error }) => string } }, callback: () => Promise<T>): Promise<T> {
         for (let attempt = 0; ; attempt++) {
           attempts[name] = attempt + 1
           let timer: ReturnType<typeof setTimeout> | undefined
@@ -363,13 +367,15 @@ describe('importAllSources', () => {
             return await Promise.race([callback(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeoutMs) })])
           } catch (error) {
             if (attempt >= config.retries.limit) throw error
+            // Record the wait Workflows would apply; don't sleep it.
+            ;(waits[name] ??= []).push(config.retries.delay({ ctx: { attempt: attempt + 1 }, error: error as Error }))
           } finally {
             clearTimeout(timer)
           }
         }
       },
     }
-    return { step, attempts }
+    return { step, attempts, waits }
   }
 
   it('lets the other sources and finalization run when one source times out on every attempt', async () => {
@@ -399,5 +405,41 @@ describe('importAllSources', () => {
     expect(started).toEqual(['meetup', 'ba-tourism', 'luma'])
     release()
     expect((await running).every(outcome => outcome.ok)).toBe(true)
+  })
+
+  it('waits minutes on a Luma 429, honoring Retry-After, while other errors keep the 1 s backoff', async () => {
+    const { step, attempts, waits } = fakeStep(1000)
+    const tries: Record<string, number> = {}
+    const outcomes = await importAllSources(step, SOURCE_JOBS, () => '1 hour', async (id) => {
+      tries[id] = (tries[id] ?? 0) + 1
+      if (id === 'luma') {
+        if (tries[id] === 1) throw new LumaRateLimitError(null)
+        if (tries[id] === 2) throw new LumaRateLimitError(120)
+        return { eventsFetched: 14 }
+      }
+      if (id === 'meetup' && tries[id] === 1) throw new Error('page crashed')
+      return {}
+    })
+    expect(outcomes.every(outcome => outcome.ok)).toBe(true)
+    expect(attempts['import luma']).toBe(3)
+    expect(waits['import luma']).toEqual([`${RATE_LIMIT_DEFAULT_SECONDS} seconds`, '120 seconds'])
+    expect(waits['import meetup']).toEqual(['1 seconds'])
+  })
+})
+
+describe('sourceRetryDelay', () => {
+  const delay = (attempt: number, message: string) => sourceRetryDelay({ ctx: { attempt }, error: new Error(message) })
+  it('backs off in minutes for a rate limit without Retry-After', () => {
+    expect(delay(1, 'Luma rate limited (429)')).toBe('300 seconds')
+    expect(delay(2, 'Luma rate limited (429)')).toBe('600 seconds')
+  })
+  it('honors Retry-After, clamped to 30 s .. 30 min', () => {
+    expect(delay(1, 'Luma rate limited (429); retry after 90s')).toBe('90 seconds')
+    expect(delay(1, 'Luma rate limited (429); retry after 0s')).toBe('30 seconds')
+    expect(delay(2, 'Luma rate limited (429); retry after 7200s')).toBe('1800 seconds')
+  })
+  it('keeps the 1 s exponential backoff for other errors', () => {
+    expect(delay(1, 'boom')).toBe('1 seconds')
+    expect(delay(2, 'boom')).toBe('2 seconds')
   })
 })

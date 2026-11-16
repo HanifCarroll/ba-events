@@ -1,98 +1,35 @@
 /**
  * Luma Events Scraper
  *
- * Fetches events from Luma's Buenos Aires listing by extracting
- * embedded JSON data from the page.
+ * Reads the Buenos Aires discover page's events from Luma's JSON API, the same
+ * call luma.com makes for the page. luma.com's HTML answers Cloudflare Worker
+ * subrequests with 429; the API does not.
  *
  * No API key required - uses publicly available data.
  */
 
 import type { LumaEvent, LumaVenue, LumaHost } from './types.ts'
-import { Effect } from 'effect'
+import { fetchLumaJson } from './http.ts'
 
-const LUMA_BUENOS_AIRES_URL = 'https://luma.com/buenos-aires'
+/** luma.com/buenos-aires */
+const BUENOS_AIRES_PLACE = 'discplace-wX2J5xGwAJpznew'
+const PAGE_LIMIT = 50
+const MAX_PAGES = 20
 
-/**
- * Fetch Luma listing page HTML
- */
-async function fetchLumaPage(url: string = LUMA_BUENOS_AIRES_URL): Promise<string> {
-  const program = Effect.gen(function* () {
-    const response = yield* Effect.tryPromise({
-      try: () => fetch(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
-        },
-      }),
-      catch: (error) => new LumaFetchError(error instanceof Error ? error.message : String(error)),
-    })
-    if (!response.ok) {
-      return yield* Effect.fail(new LumaFetchError(`Luma fetch failed: ${response.status} ${response.statusText}`))
-    }
-    return yield* Effect.tryPromise({
-      try: () => response.text(),
-      catch: (error) => new LumaFetchError(error instanceof Error ? error.message : String(error)),
-    })
-  })
-  return Effect.runPromise(program)
-}
-
-class LumaFetchError extends Error {
-  readonly _tag = 'LumaFetchError'
-}
-
-/**
- * Extract initial data JSON from HTML
- * Luma embeds event data in a script tag
- */
-function extractInitialData(html: string): unknown {
-  // Look for Next.js hydration data or similar patterns
-  // Luma uses a pattern like: <script id="__NEXT_DATA__" type="application/json">
-  const nextDataMatch = html.match(
-    /<script\s+id="__NEXT_DATA__"\s+type="application\/json"[^>]*>([\s\S]*?)<\/script>/i
-  )
-
-  if (nextDataMatch) {
-    try {
-      return JSON.parse(nextDataMatch[1])
-    } catch {
-      // Continue to try other patterns
-    }
+/** Every entry the discover page lists, following the cursor. */
+async function fetchDiscoverEntries(fetchImpl?: typeof fetch): Promise<unknown[]> {
+  const entries: unknown[] = []
+  let cursor: string | null = null
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const query = new URLSearchParams({ discover_place_api_id: BUENOS_AIRES_PLACE, pagination_limit: String(PAGE_LIMIT) })
+    if (cursor) query.set('pagination_cursor', cursor)
+    const body = await fetchLumaJson(`/discover/get-paginated-events?${query}`, fetchImpl) as { entries?: unknown; has_more?: unknown; next_cursor?: unknown }
+    if (!Array.isArray(body.entries)) throw new Error('Luma discover response has no entries')
+    entries.push(...body.entries)
+    if (body.has_more !== true || typeof body.next_cursor !== 'string') return entries
+    cursor = body.next_cursor
   }
-
-  // Alternative: Look for inline script with initialData
-  const initialDataMatch = html.match(/window\.__INITIAL_DATA__\s*=\s*({[\s\S]*?});?\s*<\/script>/i)
-
-  if (initialDataMatch) {
-    try {
-      return JSON.parse(initialDataMatch[1])
-    } catch {
-      // Continue
-    }
-  }
-
-  // Look for any large JSON object in scripts that contains event data
-  const scriptMatches = html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)
-
-  for (const match of scriptMatches) {
-    const scriptContent = match[1]
-    // Look for patterns that suggest event data
-    if (scriptContent.includes('evt-') && scriptContent.includes('start_at')) {
-      // Try to find JSON objects
-      const jsonMatch = scriptContent.match(/(\{[\s\S]*"events?"[\s\S]*\})/)
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[1])
-        } catch {
-          // Continue
-        }
-      }
-    }
-  }
-
-  return null
+  throw new Error(`Luma discover pagination exceeded ${MAX_PAGES} pages`)
 }
 
 /**
@@ -228,26 +165,13 @@ function parseRawEvent(raw: Record<string, unknown>): LumaEvent | null {
 }
 
 /**
- * Fetch all events from Luma Buenos Aires listing
+ * Fetch all events from the Luma Buenos Aires listing
  *
  * Returns raw Luma events (not transformed to EventInsert yet)
  */
-export async function fetchLumaEvents(
-  url: string = LUMA_BUENOS_AIRES_URL
-): Promise<LumaEvent[]> {
-  const html = await fetchLumaPage(url)
-  const data = extractInitialData(html)
-
-  if (!data) {
-    throw new Error('No event data found on Luma page')
-  }
-
-  const events = parseEventsFromData(data)
-
-  if (events.length === 0) {
-    console.warn('[Luma] No events parsed from page data')
-  }
-
+export async function fetchLumaEvents(fetchImpl?: typeof fetch): Promise<LumaEvent[]> {
+  const events = parseEventsFromData(await fetchDiscoverEntries(fetchImpl))
+  if (events.length === 0) console.warn('[Luma] No events parsed from the discover API')
   return events
 }
 

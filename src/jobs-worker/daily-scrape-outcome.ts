@@ -346,9 +346,30 @@ export async function recordEnrichmentAudit(
   }
 }
 
+export type RetryDelay = (input: { ctx: { attempt: number }; error: Error }) => string
+
 /** The part of a Workflow step this module needs; tests pass a fake with real timeouts. */
 export interface StepRunner {
-  do<T>(name: string, config: { retries: { limit: number; delay: string; backoff: 'exponential' }; timeout: string }, callback: () => Promise<T>): Promise<T>
+  do<T>(name: string, config: { retries: { limit: number; delay: RetryDelay; backoff: 'constant' }; timeout: string }, callback: () => Promise<T>): Promise<T>
+}
+
+const RATE_LIMIT = /rate limited \(429\)(?:; retry after (\d+)s)?/
+export const RATE_LIMIT_DEFAULT_SECONDS = 5 * 60
+export const RATE_LIMIT_MAX_SECONDS = 30 * 60
+
+/**
+ * Wait before retrying a source step. A rate limit (the message
+ * `LumaRateLimitError` writes; only the message crosses the step boundary)
+ * waits for `Retry-After`, or 5 then 10 minutes without one, between 30 s and
+ * 30 min. Anything else keeps Trigger.dev's 1 s exponential backoff. Used with
+ * `backoff: 'constant'`, so Workflows applies the returned delay as is.
+ */
+export const sourceRetryDelay: RetryDelay = ({ ctx, error }) => {
+  const doubling = 2 ** Math.max(0, ctx.attempt - 1)
+  const limited = RATE_LIMIT.exec(error?.message ?? '')
+  if (!limited) return `${doubling} seconds`
+  const wanted = limited[1] === undefined ? RATE_LIMIT_DEFAULT_SECONDS * doubling : Number(limited[1])
+  return `${Math.min(RATE_LIMIT_MAX_SECONDS, Math.max(30, wanted))} seconds`
 }
 
 /**
@@ -364,7 +385,7 @@ export async function importAllSources<Id extends string>(
 ): Promise<BatchRunLike[]> {
   return Promise.all(sources.map(async ({ id }) => {
     try {
-      const output = await step.do(`import ${id}`, { retries: { limit: 2, delay: '1 second', backoff: 'exponential' }, timeout: budget(id) }, () => importOne(id))
+      const output = await step.do(`import ${id}`, { retries: { limit: 2, delay: sourceRetryDelay, backoff: 'constant' }, timeout: budget(id) }, () => importOne(id))
       return { taskIdentifier: id, ok: true, output }
     } catch (error) {
       return { taskIdentifier: id, ok: false, error: error instanceof Error ? error.message : String(error) }
