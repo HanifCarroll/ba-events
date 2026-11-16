@@ -17,6 +17,8 @@ bunx tsc --noEmit
 
 Unit tests do not require real Supabase credentials. Supabase clients are initialized lazily, and orchestration uses dependency-injected pure helpers.
 
+Tests of D1 SQL run against a fresh in-memory Miniflare D1 with `migrations/` applied (`freshD1()` in `tests/support/d1.ts`). See [D1 baseline](d1.md).
+
 ## Chat diagnosis
 
 For a chat URL, extract the conversation ID from `/chat/<conversationId>` and inspect the stored transcript and execution trace:
