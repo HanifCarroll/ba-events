@@ -41,6 +41,13 @@ describe('incremental Instagram collection', () => {
     expect(observations.map(item => item.post_id)).toEqual(['1', '2', '3'])
   })
 
+  it('lists first-attempt image failures separately from other failures', async () => {
+    const { db } = memoryDb()
+    const result = await Effect.runPromise(retainPostsEffect(db, 'run', [{ ...post('8'), displayUrl: 'https://scontent.cdninstagram.com/v/a.jpg?oe=1' }],
+      ['synthetic_venue'], 20, async () => { throw new Error('offline') }))
+    expect(result).toMatchObject({ failures: [], mediaFailed: [{ observation_id: 'obs-0', position: 0 }] })
+  })
+
   it('marks a re-fetched carousel seen even when its signed image URLs changed', async () => {
     const { db, observations, seen } = memoryDb()
     const carousel = (sig: string) => ({ ...post('7'), childPosts: [
@@ -130,13 +137,13 @@ describe('retrying missing images of unreviewed observations', () => {
     const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
     expect(fetched).toEqual([signed('slide0', later), signed('slide2', later)])
     expect(media).toEqual(expect.arrayContaining([expect.objectContaining({ observation_id: 'colon', position: 0 }), expect.objectContaining({ observation_id: 'colon', position: 2 })]))
-    expect(result).toMatchObject({ attempted: 2, retained: 2, expired: 1, deferred: 0,
-      failures: [expect.stringMatching(/^Media 0 of observation old can't be retried: its stored URL expired 2026-11-15/)] })
+    expect(result).toEqual({ attempted: 2, retained: 2, failed: [], deferred: [],
+      expired: [{ observation_id: 'old', position: 0, expired_at: '2026-11-15T12:00:00.000Z' }] })
 
     fetched.length = 0
     const again = await Effect.runPromise(retryMissingMediaEffect(db, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
     expect(fetched).toEqual([])
-    expect(again).toMatchObject({ attempted: 0, retained: 0, expired: 1 })
+    expect(again).toMatchObject({ attempted: 0, retained: 0, expired: [{ observation_id: 'old' }] })
   })
 
   it('reports a retry that fails again, skips observations collected this run, and caps downloads per run', async () => {
@@ -149,9 +156,8 @@ describe('retrying missing images of unreviewed observations', () => {
     const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, cap: 2, skip: new Set(['today']),
       fetcher: async url => { fetched.push(url); if (url.includes('/a.jpg')) throw new Error('offline'); return image(url) } }))
     expect(fetched).toEqual([signed('a', later), signed('c', later)])
-    expect(result).toMatchObject({ attempted: 2, retained: 1, deferred: 2, failures: [
-      'Media 0 could not be retained for observation flaky (retried from its stored URL)',
-      '2 missing images were not retried this run (cap 2); the next collect retries them'] })
+    expect(result).toEqual({ attempted: 2, retained: 1, expired: [], failed: [{ observation_id: 'flaky', position: 0 }],
+      deferred: [{ observation_id: 'big', position: 1 }, { observation_id: 'big', position: 2 }] })
   })
 
   it('stops at its deadline, keeps what it saved, and says so', async () => {

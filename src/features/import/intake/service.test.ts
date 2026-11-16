@@ -193,7 +193,7 @@ describe('intake failure and retry orchestration', () => {
     const result = await Effect.runPromise(collectInstagramEffect(db, api))
     expect(calls.indexOf('table:intake_runs')).toBeLessThan(calls.indexOf('table:intake_observations'))
     expect(result).toMatchObject({ state: 'succeeded', run_id: 'done-run', posts: 0,
-      media_retry: { attempted: 0, error: expect.stringContaining('database unavailable') },
+      media: { retry: { attempted: 0, error: expect.stringContaining('database unavailable') }, retried_failed: [], expired: [], deferred: [] },
       failures: expect.arrayContaining([expect.stringContaining('Media retry stopped early: database unavailable')]) })
   })
   it('resumes an existing paid run without needing new credit', async () => {
