@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Browser } from 'playwright'
+import type { Browser } from '@cloudflare/playwright'
 import { readAcquisitionCache, writeAcquisitionCache } from './cache.ts'
 
 export interface OwnedBrowser { browser: Browser; close: () => Promise<void>; openedAt: number; pagesUsed: number }
+export type OpenBrowser = () => Promise<OwnedBrowser>
 interface AcquisitionRun {
   id: string
   browsers: Map<string, Promise<OwnedBrowser>>
@@ -12,7 +13,7 @@ interface AcquisitionRun {
 const runs = new AsyncLocalStorage<AcquisitionRun>()
 const RETRY_CACHE_MS = 48 * 60 * 60 * 1000
 
-/** Trigger run identity stays stable across attempts; a new daily run gets fresh reads. */
+/** Workflow step identity stays stable across attempts; a new daily run gets fresh reads. */
 export async function withAcquisitionRun<T>(id: string, work: () => Promise<T>): Promise<T> {
   const run: AcquisitionRun = { id, browsers: new Map(), pending: new Map(), lanes: new Map() }
   return runs.run(run, async () => {

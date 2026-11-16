@@ -2,7 +2,7 @@
  * Core Meetup Import Logic
  *
  * HTTP-independent logic for importing Meetup events.
- * Can be called from both manual import wizard and Trigger.dev jobs.
+ * Called by the jobs Worker's daily scrape Workflow.
  *
  * Note: Meetup requires browser scraping and scrapes day-by-day for accurate results.
  */
@@ -17,6 +17,7 @@ import {
 import type { MeetupEvent } from '../scrapers/meetup/types.ts'
 import { enrichMeetupEventsWithDetails } from '../scrapers/meetup/detail.ts'
 import { logger } from '#shared/lib/logger.ts'
+import type { OpenBrowser } from '../acquisition/run.ts'
 import {
   transformMeetupEventWithExpansion,
   getUniqueVenueNames,
@@ -43,6 +44,8 @@ import { catalogImportProvenance, type CatalogImportProvenance } from './enrichm
 // ============================================================================
 
 export interface MeetupImportOptions {
+  /** Opens the Browser Rendering session used for discovery */
+  openBrowser: OpenBrowser
   /** Number of days ahead to import (default: 14) */
   daysAhead?: number
   /** Start date override (YYYY-MM-DD) */
@@ -313,7 +316,7 @@ function processMeetupBatchEffect(
  * represented in the Effect program. */
 export function processMeetupImportEffect(
   client: SupabaseClient,
-  options: MeetupImportOptions = {}
+  options: MeetupImportOptions
 ): Effect.Effect<MeetupImportResult, ImportOperationError> {
   return Effect.gen(function* () {
     const daysAhead = options.daysAhead ?? 14
@@ -337,7 +340,7 @@ export function processMeetupImportEffect(
     }
 
     logger.info('[meetup] Scraping events from Meetup (browser mode)')
-    const catalog = yield* meetupTry('meetup.scrape-events', () => scrapeMeetupCatalog({ startDate, endDate }))
+    const catalog = yield* meetupTry('meetup.scrape-events', () => scrapeMeetupCatalog({ startDate, endDate }, options.openBrowser))
     const allEvents = catalog.events
     result.catalogProvenance = catalogImportProvenance(catalog.observedAt)
     result.eventsFetched = allEvents.length
@@ -433,7 +436,7 @@ export function processMeetupImportEffect(
 
 export async function processMeetupImport(
   client: SupabaseClient,
-  options: MeetupImportOptions = {}
+  options: MeetupImportOptions
 ): Promise<MeetupImportResult> {
   try {
     return await Effect.runPromise(processMeetupImportEffect(client, options))

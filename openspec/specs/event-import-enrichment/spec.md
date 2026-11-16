@@ -56,6 +56,21 @@ Enrichment SHALL use the registered source strategy, retain available source dat
 - **THEN** the model boundary normalizes those scalars to omitted canonical values while retaining supported array facets
 - **AND** invalid non-null enum values still fail validation
 
+### Requirement: Enrichment selects each event once and skips retired sources
+Enrichment SHALL move an imported `pending` event to a terminal status in the pass that processes it, so reselection and step retries do not repeat model or embedding calls. Events from the retired `passline`, `eventbrite`, and `venti` sources SHALL be excluded from enrichment selection and counts without changing or deleting them.
+
+#### Scenario: An imported event with an embedding and a Spanish description is enriched
+- **WHEN** a batch enriches it and a later batch or a retried step reselects pending events
+- **THEN** it is written `completed` once and is not selected again
+
+#### Scenario: The English translation of a Spanish-only event fails
+- **WHEN** translation returns no text for an event that needs it
+- **THEN** the event keeps its Spanish description, is marked `failed` with a translation error rather than `completed`, and the next scheduled catch-up retries it
+
+#### Scenario: A retired source still has pending or failed events
+- **WHEN** the daily chain or catch-up selects or counts events needing enrichment
+- **THEN** those events are excluded and keep their stored values
+
 ### Requirement: Catch-up retries are bounded per scheduled chain
 The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
 
@@ -69,13 +84,9 @@ Daily imports SHALL acquire the full configured discovery window without deferri
 
 #### Scenario: Daily discovery acquires its complete configured source window
 - **WHEN** daily discovery acquires its complete configured source window
-- **THEN** Passline SHALL use its published country pagination until an empty terminal page, validate every page, deduplicate identical source identities, and fail incomplete observations rather than treating a capped home feed as a complete country catalog.
+- **THEN** the daily run SHALL import Meetup, BA Tourism, and Luma, each as its own retried Workflow step, concurrently and without an overall instance deadline, so a source that fails or times out on every attempt does not prevent the others or finalization from running.
 - **AND** Daily enrichment chains SHALL be sized to their observed eligible set.
 - **AND** Meetup date filtering SHALL include the complete last calendar day in Buenos Aires time.
-
-#### Scenario: Passline home feed is capped
-- **WHEN** more events exist than the home feed exposes
-- **THEN** country pagination retains the additional eligible identities before existing CABA, date, blocklist, and unchanged-event rules apply
 
 #### Scenario: A discovery day or page fails
 - **WHEN** bounded acquisition retries cannot complete a required page or day
@@ -83,19 +94,17 @@ Daily imports SHALL acquire the full configured discovery window without deferri
 
 ### Requirement: Browser acquisition has explicit ownership and retry reuse
 
-Production Meetup discovery SHALL use configured Cloudflare Browser Rendering, retain direct HTTP detail reads, and SHALL NOT silently fall back to a paid provider after a Cloudflare failure.
+Production Meetup and BA Tourism discovery SHALL use Cloudflare Browser Rendering through the jobs Worker's browser binding, Meetup SHALL retain direct HTTP detail reads, and a Browser Rendering failure SHALL fail the source step rather than fall back to another provider.
 
 #### Scenario: A production source acquisition opens, retries, closes, or reuses a browser
 - **WHEN** a production source acquisition opens, retries, closes, or reuses a browser
-- **THEN** Passline SHALL retain Browserbase for challenged pages, proxy only Passline domains, block nonessential resources, and retry a failed thin detail profile once with its standard resource profile.
-- **AND** Every owned browser SHALL be released and its provider closure checked.
-- **AND** Successful anonymous source acquisitions SHALL be reused within the same Trigger run and across its retries, while a new daily run SHALL make fresh source observations.
+- **THEN** Every owned browser SHALL be released when its acquisition run ends.
+- **AND** Successful anonymous source acquisitions SHALL be reused within the same Workflow run and across its step retries, while a new daily run SHALL make fresh source observations.
 - **AND** Failed acquisitions SHALL NOT be cached as success.
 - **AND** A successful protected detail MAY also be reused by another same-day catch-up run after a downstream failure; its day partition SHALL reset at Buenos Aires midnight.
-- **AND** Browser-consuming enrichment batches SHALL share the acquisition queue.
 
 #### Scenario: Database or AI processing fails after a complete acquisition
-- **WHEN** the same Trigger run retries with a valid retained acquisition
+- **WHEN** the same Workflow step retries with a valid retained acquisition
 - **THEN** downstream processing reuses that source observation without repeating paid browser reads
 
 #### Scenario: Browser release cannot be confirmed
@@ -126,7 +135,7 @@ Successful automated full enrichment and facets backfills SHALL record the enric
 Automated detail passes SHALL distinguish body observation, HTTP revalidation and processing times. Observation SHALL mean receipt of source content, not provider publication time. Stored input without a matching receipt or legacy caches without a timestamp SHALL retain unknown age. Processing or daily catalog discovery MUST NOT imply a fresh detail read.
 
 #### Scenario: Detail HTML is revalidated or a protected detail is reused
-- **WHEN** Meetup returns 304 for retained HTML or a run retry/same-day Passline catch-up reuses a successful detail
+- **WHEN** Meetup returns 304 for retained HTML or a run retry/same-day catch-up reuses a successful detail
 - **THEN** the original known body observation time is retained rather than replaced with enrichment time
 - **AND** HTTP revalidation time is separate from body observation time
 - **AND** run retries reuse the original acquisition/revalidation receipt
@@ -137,10 +146,10 @@ Automated detail passes SHALL distinguish body observation, HTTP revalidation an
 - **AND** no fresh source observation or embedding generation is claimed for a stored-input/no-embedding pass
 
 ### Requirement: Catalog imports retain acquisition and configuration receipts
-The six automated catalog imports SHALL return catalog observation time, import revision and configured model/embedding identifiers in existing scrape-run metadata. Catalog receipts MUST NOT imply a refreshed detail description or a model call for every event. Import revisions SHALL advance when catalog transforms or categorization/presentation behavior changes. Unchanged events SHALL retain their no-write behavior.
+The three automated catalog imports SHALL return catalog observation time, import revision and configured model/embedding identifiers in existing scrape-run metadata. Catalog receipts MUST NOT imply a refreshed detail description or a model call for every event. Import revisions SHALL advance when catalog transforms or categorization/presentation behavior changes. Unchanged events SHALL retain their no-write behavior.
 
 #### Scenario: A catalog retry reuses a completed observation
-- **WHEN** a Meetup or Passline run retry reuses a retained catalog, including an empty catalog
+- **WHEN** a Meetup run retry reuses a retained catalog, including an empty catalog
 - **THEN** it returns the original observation time with that catalog
 - **AND** a successful legacy raw-array cache may be reused with unknown observation age
 - **AND** the legacy cache format remains readable by older workers
@@ -214,8 +223,9 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/core/event-enrichment.ts`
 - `src/features/import/api/duplicate-detection.ts`
 - `src/features/import/core/venue-settlement.ts`
-- `src/trigger/jobs/daily-scrape.ts`
-- `src/trigger/jobs/enrichment-catchup.ts`
+- `src/jobs-worker/index.ts`
+- `src/jobs-worker/daily-scrape.ts`
+- `src/jobs-worker/enrichment.ts`
 - `src/features/import/intake/`
 - `scripts/instagram-intake.ts`
 - `src/features/import/intake/venues.ts`
@@ -226,9 +236,9 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
 - `src/features/import/api/duplicate-detection.test.ts`
-- `src/features/import/core/passline-existing.test.ts`
-- `src/trigger/jobs/daily-scrape-outcome.test.ts`
-- `src/trigger/jobs/enrichment-catchup.test.ts`
+- `src/jobs-worker/daily-scrape-outcome.test.ts`
+- `src/jobs-worker/enrichment.test.ts`
+- `src/features/import/acquisition/run.test.ts`
 - `src/features/import/intake/planning.test.ts`
 - `src/features/import/intake/service.test.ts`
 - `src/features/import/intake/collection.test.ts`
@@ -238,7 +248,7 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 
 ### Verification command
 ```sh
-bunx vitest run src/features/import/core/event-enrichment.test.ts src/features/import/api/duplicate-detection.test.ts src/features/import/core/passline-existing.test.ts src/trigger/jobs/daily-scrape-outcome.test.ts src/trigger/jobs/enrichment-catchup.test.ts
+bunx vitest run src/features/import/core/event-enrichment.test.ts src/features/import/api/duplicate-detection.test.ts src/jobs-worker/daily-scrape-outcome.test.ts src/jobs-worker/enrichment.test.ts src/features/import/acquisition/run.test.ts
 ```
 
 ### Advisory conformance review

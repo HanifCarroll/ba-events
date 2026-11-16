@@ -29,7 +29,8 @@ vi.mock('#features/import/adapters/enrichment/registry.ts', () => ({
   getEnrichmentAdapter: vi.fn(),
 }))
 
-import { enrichSingleEvent, countEventsNeedingEnrichment, getEventsNeedingEnrichment } from './event-enrichment.ts'
+import { Effect } from 'effect'
+import { enrichSingleEvent, countEventsNeedingEnrichment, getEventsNeedingEnrichment, enrichEventsEffect, getEventsNeedingEnrichmentEffect } from './event-enrichment.ts'
 import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
 import { HttpError } from '#shared/lib/errors.ts'
@@ -144,31 +145,6 @@ describe('enrichSingleEvent facets-only path', () => {
     expect(written).not.toHaveProperty('description_es')
   })
 
-  it('treats a present embedding as already-enriched even without status=completed', async () => {
-    const extractEventFacets = makeExtractFacetsMock()
-    extractEventFacets.mockResolvedValue({ vibes: ['intimate'] })
-    const client: ReturnType<typeof makeClient> = makeClient()
-
-    await enrichSingleEvent(
-      client as never,
-      {
-        id: 'evt-2',
-        name: 'Milonga',
-        link: 'https://example.com/milonga',
-        source: 'eventbrite',
-        description_es: 'Milonga tradicional.',
-        description_en: 'Traditional milonga.',
-        // status missing but embedding present -> still facets-only
-        embedding: Array.from({ length: 384 }, (_, i) => i * 0.001),
-      },
-      { extractFacets: extractEventFacets as never }
-    )
-
-    expect(embedEventWithDocumentMock).toHaveBeenCalledTimes(1)
-    expect(client.updates[0].data).toHaveProperty('facets')
-    expect(client.updates[0].data).toHaveProperty('embedding')
-  })
-
   it('does NOT embed when facets-only backfill extracts empty facets', async () => {
     const extractEventFacets = makeExtractFacetsMock()
     extractEventFacets.mockResolvedValue({})
@@ -202,6 +178,81 @@ describe('enrichSingleEvent facets-only path', () => {
     expect(written).not.toHaveProperty('embedding')
     expect(written).not.toHaveProperty('enrichment_status')
     expect(written).not.toHaveProperty('description_es')
+  })
+})
+
+describe('imported pending rows leave the enrichment queue', () => {
+  /** In-memory `events` table: selection honours the status filter, updates apply by id. */
+  function eventsTable(rows: Array<Record<string, unknown>>) {
+    const client = {
+      from: () => {
+        let statuses: unknown[] = []
+        const builder: Record<string, unknown> = {
+          then: (resolve: (value: unknown) => void) => resolve({ data: rows.filter(row => statuses.includes(row.enrichment_status)).map(row => ({ ...row })), error: null }),
+          update: (data: Record<string, unknown>) => ({ eq: async (_: string, id: string) => { Object.assign(rows.find(row => row.id === id)!, data); return { error: null } } }),
+          in: (column: string, values: unknown[]) => { if (column === 'enrichment_status') statuses = values; return builder },
+        }
+        for (const method of ['select', 'neq', 'gte', 'not', 'eq', 'limit', 'order']) builder[method] = () => builder
+        return builder
+      },
+    }
+    return client as unknown as SupabaseClient
+  }
+
+  it('completes an imported row (embedding + Spanish description) once, then reselection and a retried batch spend nothing', async () => {
+    embedEventWithDocumentMock.mockReset()
+    embedEventWithDocumentMock.mockResolvedValue({ embedding: [0.4], searchDocument: 'Jazz' })
+    getEnrichmentAdapterMock.mockReset()
+    const extractFacets = vi.fn(async () => ({ genres: ['jazz'] }))
+    const buildPresentationFields = vi.fn(async () => ({ description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null }))
+    const rows: Array<Record<string, unknown>> = [{
+      id: 'imported', name: 'Jazz', link: 'https://example.com/jazz', source: 'meetup',
+      description_es: 'Jazz en vivo.', description_en: 'Live jazz.', embedding: [0.1], enrichment_status: 'pending',
+    }]
+    const client = eventsTable(rows)
+    const batch = () => Effect.runPromise(Effect.gen(function* () {
+      const events = yield* getEventsNeedingEnrichmentEffect(client, { statuses: ['pending'] })
+      return yield* enrichEventsEffect(client, events, { extractFacets: extractFacets as never, buildPresentationFields })
+    }))
+
+    expect((await batch()).enriched).toBe(1)
+    expect(rows[0].enrichment_status).toBe('completed')
+    // The next batch reselects, and a Workflow retry reruns the same batch.
+    expect((await batch()).total).toBe(0)
+    expect((await batch()).total).toBe(0)
+    expect(extractFacets).toHaveBeenCalledTimes(1)
+    expect(embedEventWithDocumentMock).toHaveBeenCalledTimes(1)
+    expect(buildPresentationFields).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a Spanish-only row retryable when translation fails, then completes it on the catch-up retry', async () => {
+    embedEventWithDocumentMock.mockReset()
+    embedEventWithDocumentMock.mockResolvedValue({ embedding: [0.4], searchDocument: 'Tango' })
+    getEnrichmentAdapterMock.mockReset()
+    const extractFacets = vi.fn(async () => ({ genres: ['tango'] }))
+    const buildPresentationFields = vi.fn(async () => ({ description_display_es: 'Tango.', description_display_en: 'Tango.', description_summary_es: null, description_summary_en: null }))
+    const rows: Array<Record<string, unknown>> = [{
+      id: 'ba-tourism-1', name: 'Tango', link: 'https://example.com/tango', source: 'ba-tourism',
+      description_es: 'Tango en la plaza.', description_en: null, embedding: [0.1], enrichment_status: 'pending',
+    }]
+    const client = eventsTable(rows)
+    const batch = (statuses: Array<'pending' | 'failed'>, translate: (text: string) => Promise<string | null>) =>
+      Effect.runPromise(Effect.gen(function* () {
+        const events = yield* getEventsNeedingEnrichmentEffect(client, { statuses })
+        return yield* enrichEventsEffect(client, events, { extractFacets: extractFacets as never, buildPresentationFields, translate: translate as never })
+      }))
+
+    // Provider error: translateText resolves null.
+    expect((await batch(['pending'], async () => null)).failed).toBe(1)
+    expect(rows[0]).toMatchObject({ enrichment_status: 'failed', enrichment_error: 'Failed to translate description to English', description_es: 'Tango en la plaza.', description_en: null })
+    expect(embedEventWithDocumentMock).not.toHaveBeenCalled()
+    // The daily chain only reselects pending rows; the failed row waits for the catch-up.
+    expect((await batch(['pending'], async () => 'unused')).total).toBe(0)
+
+    // Catch-up batch 1 retries failed rows.
+    expect((await batch(['pending', 'failed'], async () => 'Tango in the square.')).enriched).toBe(1)
+    expect(rows[0]).toMatchObject({ enrichment_status: 'completed', enrichment_error: null, description_es: 'Tango en la plaza.', description_en: 'Tango in the square.' })
+    expect(embedEventWithDocumentMock).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -365,6 +416,14 @@ describe('countEventsNeedingEnrichment', () => {
     await countEventsNeedingEnrichment(client, { source: 'eventbrite' })
 
     expect(queryArgsFor(calls, 'eq')).toContainEqual(['source', 'eventbrite'])
+  })
+
+  it('excludes the retired sources from selection and counts', async () => {
+    for (const read of [countEventsNeedingEnrichment, getEventsNeedingEnrichment]) {
+      const { client, calls } = makeQueryClient({ data: [], count: 0, error: null })
+      await read(client)
+      expect(queryArgsFor(calls, 'not')).toContainEqual(['source', 'in', '(passline,eventbrite,venti)'])
+    }
   })
 
   it('applies the shared eligibility filters', async () => {

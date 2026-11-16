@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect } from 'vitest'
-import type { Browser } from 'playwright'
+import type { Browser } from '@cloudflare/playwright'
 import { reuseAcquisition, reuseCatalogAcquisition, reuseDailyAcquisition, serializeAcquisition, withAcquisitionRun, withOwnedBrowser } from './run.ts'
 
 const previousMode = process.env.NODE_ENV

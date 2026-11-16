@@ -2,12 +2,12 @@
  * Import Source Types
  *
  * Shared types for the import feature. The manual import wizard was removed
- * (agents drive imports via the automated Trigger.dev pipeline), so only the
+ * (agents drive imports via the scheduled jobs Worker), so only the
  * types still consumed by the pipeline remain here.
  */
 
 // All supported import sources
-export type ImportSource = 'passline' | 'eventbrite' | 'ba-tourism' | 'meetup' | 'luma' | 'venti' | 'instagram' | 'csv'
+export type ImportSource = 'ba-tourism' | 'meetup' | 'luma' | 'instagram' | 'csv'
 
 // Re-export DuplicateInfo for convenience
 export type { DuplicateInfo } from '../api/duplicate-detection.ts'

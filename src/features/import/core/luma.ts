@@ -2,7 +2,7 @@
  * Core Luma Import Logic
  *
  * HTTP-independent logic for importing Luma events.
- * Can be called from both manual import wizard and Trigger.dev jobs.
+ * Called by the jobs Worker's daily scrape Workflow.
  *
  * Note: Luma shows all upcoming events on their Buenos Aires page.
  * We import all visible events (no date range filter per user request).

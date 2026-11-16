@@ -41,7 +41,7 @@ Storybook runs on port 6006 with fixture data. See [exploring the code](docs/get
 | Concierge | Vercel AI SDK, DeepSeek generation, OpenAI embeddings, optional Voyage reranking |
 | Data and identity | Supabase Postgres, pgvector, Auth, row-level security |
 | Delivery | Cloudflare Workers, Durable Objects, Workflows |
-| Imports | Trigger.dev jobs, source adapters, Playwright/browser providers |
+| Imports | Cloudflare Workflows, source adapters, Cloudflare Browser Rendering |
 | Quality | Vitest, Bun tests, Storybook, frozen search and concierge evaluations |
 
 See the [architecture overview](docs/architecture.md), [chat trust boundary](docs/chat-trust-boundary.md), and [documentation index](docs/README.md). The [OpenSpec specifications](openspec/specs/) describe expected product behavior.

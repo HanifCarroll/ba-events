@@ -1,0 +1,26 @@
+/** Cron (UTC) → Workflow binding. Keep in step with `triggers.crons` in wrangler.jobs.jsonc. */
+export const CRON_WORKFLOWS = {
+  '0 9 * * *': { binding: 'DAILY_SCRAPE', prefix: 'daily-scrape' }, // 06:00 Buenos Aires
+  '0 10 * * *': { binding: 'GUEST_RETENTION', prefix: 'guest-retention' }, // 07:00
+  '0 13 * * *': { binding: 'ENRICHMENT_CATCHUP', prefix: 'enrichment-catchup' }, // 10:00
+} as const
+
+/** One instance ID per firing, so a repeated delivery of the same firing cannot start a second run. */
+export function cronInstance(cron: string, scheduledTimeMs: number) {
+  const job = CRON_WORKFLOWS[cron as keyof typeof CRON_WORKFLOWS]
+  if (!job) throw new Error(`No Workflow for cron ${cron}`)
+  const scheduledTime = new Date(scheduledTimeMs).toISOString()
+  return { binding: job.binding, id: `${job.prefix}-${scheduledTime.replace(/[^0-9]/g, '').slice(0, 12)}`, scheduledTime }
+}
+
+type Bindings = Record<(typeof CRON_WORKFLOWS)[keyof typeof CRON_WORKFLOWS]['binding'], { create(options: { id: string; params?: unknown }): Promise<unknown> }>
+
+/** Start the firing's instance. Only "already exists" (a repeated delivery) is ignored; other errors propagate. */
+export async function startScheduledWorkflow(controller: { cron: string; scheduledTime: number }, env: Bindings): Promise<void> {
+  const { binding, id, scheduledTime } = cronInstance(controller.cron, controller.scheduledTime)
+  try {
+    await env[binding].create({ id, params: { scheduledTime } })
+  } catch (error) {
+    if (!/already exists/i.test(String(error))) throw error
+  }
+}

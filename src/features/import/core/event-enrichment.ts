@@ -183,6 +183,7 @@ export type ExtractFacetsFn = (
 export interface EnrichSingleEventOptions {
   extractFacets?: ExtractFacetsFn
   buildPresentationFields?: typeof buildDescriptionPresentationFields
+  translate?: typeof translateText
 }
 
 interface EnrichmentPayload {
@@ -220,6 +221,7 @@ export function enrichSingleEventEffect(
   const { id, name, link, source, categories, venue_id, price, is_free } = input
   const extractFacets = options.extractFacets ?? extractEventFacets
   const buildPresentationFields = options.buildPresentationFields ?? buildDescriptionPresentationFields
+  const translate = options.translate ?? translateText
 
   const program = Effect.gen(function* () {
     if (!link) {
@@ -231,11 +233,10 @@ export function enrichSingleEventEffect(
       } satisfies EventEnrichmentResult
     }
 
-    const alreadyEnriched =
-      input.enrichment_status === 'completed' ||
-      (Array.isArray(input.embedding) && input.embedding.length > 0)
-
-    if (input.description_es && alreadyEnriched) {
+    // Only a completed row gets the facets-only backfill. Imports arrive with an
+    // embedding but still `pending`; they take the full path below, which reuses the
+    // stored description and writes `completed`, so they leave the queue.
+    if (input.description_es && input.enrichment_status === 'completed') {
       console.log(`[event-enrichment] Backfilling facets only for: ${name}`)
       const facets = yield* enrichmentTry('event-enrichment.extract-facets', () => extractFacets({
         name,
@@ -323,7 +324,7 @@ export function enrichSingleEventEffect(
         description_en: input.description_en
           ? input.description_en
           : yield* enrichmentTry('event-enrichment.translate-spanish', () =>
-              translateText(input.description_es!, 'es-to-en')
+              translate(input.description_es!, 'es-to-en')
             ),
         venue_name: null,
       }
@@ -342,11 +343,11 @@ export function enrichSingleEventEffect(
         if (detectedLang === 'spanish') {
           enrichmentResult.description_es = enrichmentResult.description_en
           enrichmentResult.description_en = yield* enrichmentTry('event-enrichment.translate-spanish', () =>
-            translateText(enrichmentResult!.description_es!, 'es-to-en')
+            translate(enrichmentResult!.description_es!, 'es-to-en')
           )
         } else {
           enrichmentResult.description_es = yield* enrichmentTry('event-enrichment.translate-english', () =>
-            translateText(enrichmentResult!.description_en!, 'en-to-es')
+            translate(enrichmentResult!.description_en!, 'en-to-es')
           )
         }
       }
@@ -370,6 +371,18 @@ export function enrichSingleEventEffect(
         enriched: false,
         error: 'Failed to extract description',
       } satisfies EventEnrichmentResult
+    }
+
+    if (!enrichmentResult.description_en) {
+      // translateText returns null on provider errors. Keep the Spanish text and
+      // leave the row retryable (`failed`) instead of completing it untranslated.
+      const error = 'Failed to translate description to English'
+      yield* updateEventEnrichmentEffect(client, id, {
+        description_es: enrichmentResult.description_es,
+        enrichment_status: 'failed',
+        enrichment_error: error,
+      })
+      return { eventId: id, success: false, enriched: false, error } satisfies EventEnrichmentResult
     }
 
     let venueSettlement: VenueSettlementResult | undefined
@@ -519,11 +532,10 @@ export async function enrichSingleEvent(
 // BATCH ENRICHMENT
 // ============================================================================
 
-interface BatchEnrichmentOptions {
+interface BatchEnrichmentOptions extends EnrichSingleEventOptions {
   delayMs?: number
   concurrency?: number
   onProgress?: (current: number, total: number, result: EventEnrichmentResult) => void
-  extractFacets?: ExtractFacetsFn
 }
 
 type EnrichmentHandler = (
@@ -553,8 +565,8 @@ function processBatchEffect(
 ): Effect.Effect<EnrichmentStats, EventEnrichmentError> {
   const delayMs = options?.delayMs ?? 0
   const concurrency = Math.max(1, options?.concurrency ?? DEFAULT_ENRICHMENT_CONCURRENCY)
-  const enrichOptions = options?.extractFacets
-    ? { extractFacets: options.extractFacets }
+  const enrichOptions = options?.extractFacets || options?.buildPresentationFields || options?.translate
+    ? { extractFacets: options.extractFacets, buildPresentationFields: options.buildPresentationFields, translate: options.translate }
     : undefined
 
   return Effect.gen(function* () {
@@ -632,6 +644,10 @@ export function enrichEventsEffect(
  * not canceled, and not already started (`starts_at >= now`).
  * `failed` stays retryable; `skipped`/`completed` are terminal for this job.
  */
+/** Sources removed from the daily import. Their events stay and age out without paid enrichment. */
+export const RETIRED_SOURCES = ['passline', 'eventbrite', 'venti'] as const
+const RETIRED_SOURCE_FILTER = `(${RETIRED_SOURCES.join(',')})`
+
 interface EnrichmentQueryOptions {
   source?: string
   limit?: number
@@ -653,6 +669,7 @@ export function getEventsNeedingEnrichmentEffect(
     .neq('status', 'past')
     .gte('starts_at', enrichmentStartsAtFloor())
     .not('link', 'is', null)
+    .not('source', 'in', RETIRED_SOURCE_FILTER)
     .order('starts_at', { ascending: true })
 
   if (options?.source) query = query.eq('source', options.source)
@@ -692,6 +709,7 @@ export function countEventsNeedingEnrichmentEffect(
     .neq('status', 'past')
     .gte('starts_at', enrichmentStartsAtFloor())
     .not('link', 'is', null)
+    .not('source', 'in', RETIRED_SOURCE_FILTER)
 
   if (options?.source) query = query.eq('source', options.source)
   if (options?.createdAfter) query = query.gte('created_at', options.createdAfter)

@@ -54,15 +54,10 @@ mock.module('#features/import/core/venue-settlement.ts', () => ({
 mock.module('#features/import/core/nominatim.ts', () => ({ delayEffect: () => Effect.void }))
 const identity = <T>(events: T) => events
 const transformer = { getAllVenueInfo: () => new Map(), getUniqueVenueNames: () => [], getVenueName: () => null }
-for (const [name, transform] of [['luma', 'transformLumaEvent'], ['eventbrite', 'transformEventbriteEvent'], ['venti', 'transformVentiEvent']]) {
-  mock.module(`#features/import/scrapers/${name}/transformer.ts`, () => ({ ...transformer, [transform]: () => ({ ...transformed }) }))
-}
+mock.module('#features/import/scrapers/luma/transformer.ts', () => ({ ...transformer, transformLumaEvent: () => ({ ...transformed }) }))
 mock.module('#features/import/scrapers/meetup/transformer.ts', () => ({ ...transformer, transformMeetupEventWithExpansion: () => [{ ...transformed }] }))
 mock.module('#features/import/scrapers/ba-tourism/transformer.ts', () => ({ ...transformer, transformBATourismEvent: () => [{ ...transformed }] }))
 mock.module('#features/import/scrapers/luma/api.ts', () => ({ fetchLumaEvents: async () => [event] }))
-mock.module('#features/import/scrapers/eventbrite/api.ts', () => ({ fetchEventbriteEvents: async () => [event], filterInPersonEvents: identity, filterByDateRange: identity, extractEventId: () => 'synthetic' }))
-mock.module('#features/import/scrapers/eventbrite/detail.ts', () => ({ fetchEventbriteDetailsBatch: async () => new Map() }))
-mock.module('#features/import/scrapers/venti/api.ts', () => ({ fetchVentiEvents: async () => [event], filterCABAEvents: identity, fetchVentiAvailabilityBatch: async () => new Map() }))
 mock.module('#features/import/scrapers/meetup/browser-scraper.ts', () => ({ scrapeMeetupCatalog: async () => ({ events: [event], observedAt: null }), filterInPersonEvents: identity, filterByDateRange: identity }))
 mock.module('#features/import/scrapers/meetup/detail.ts', () => ({ enrichMeetupEventsWithDetails: async () => {} }))
 mock.module('#features/import/core/geo-validation.ts', () => ({ filterEventsByLocation: identity }))
@@ -74,9 +69,7 @@ const client = { from: () => ({
 }) }
 const coordinators = {
   luma: (await import('./luma.ts')).processLumaImportEffect,
-  eventbrite: (await import('./eventbrite.ts')).processEventbriteImportEffect,
   meetup: (await import('./meetup.ts')).processMeetupImportEffect,
-  venti: (await import('./venti.ts')).processVentiImportEffect,
   'ba-tourism': (await import('./ba-tourism.ts')).processBATourismImportEffect,
 }
 const coordinator = coordinators[source as keyof typeof coordinators]
@@ -85,7 +78,7 @@ for (mode of ['new', 'changed', 'stale', 'unchanged', 'mutable', 'embedding-fail
   started = []; writes = []
   gate = new Promise<void>(resolve => { release = resolve })
   let settled = false
-  const running = Effect.runPromise(coordinator(client as never)).then(result => { settled = true; return result })
+  const running = Effect.runPromise(coordinator(client as never, { openBrowser: () => Promise.reject(new Error('mocked scraper')) })).then(result => { settled = true; return result })
   try {
     await new Promise(resolve => setTimeout(resolve, 0))
     assert.deepEqual(started.sort(), ['unchanged', 'mutable'].includes(mode) ? [] : mode === 'stale' ? ['embedding'] : ['embedding', 'presentation'])

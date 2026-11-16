@@ -1,9 +1,9 @@
 /** Read-only check of the latest 30 daily runs. No provider/model calls or database writes. */
-import { createServiceRoleClient } from '../src/trigger/utils/db-client.ts'
-import { buildSourceHealthReport, measuredCount } from '../src/trigger/utils/source-health.ts'
+import { getSupabaseServiceRoleClient } from '../src/shared/lib/db/service.server.ts'
+import { buildSourceHealthReport, measuredCount } from '../src/jobs-worker/source-health.ts'
 
 async function main() {
-  const client = createServiceRoleClient()
+  const client = getSupabaseServiceRoleClient()
   const { data, error } = await client.from('scrape_runs')
     .select('status, completed_at, metadata')
     .eq('source', 'all')

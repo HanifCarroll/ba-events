@@ -76,7 +76,7 @@ export interface ExistingEventData {
  *
  * @param externalIds - Array of external IDs to check
  * @param source - The import source (passline, eventbrite, etc.)
- * @param client - Optional Supabase client (use service role client in Trigger.dev jobs)
+ * @param client - Optional Supabase client (use the service role client in scheduled jobs)
  * @returns Set of external IDs that already exist
  */
 export function checkDuplicateEventsEffect(
@@ -155,7 +155,7 @@ export function extractExternalIds<T>(
  *
  * @param externalIds - Array of external IDs to check
  * @param source - The import source (passline, eventbrite, etc.)
- * @param client - Optional Supabase client (use service role client in Trigger.dev jobs)
+ * @param client - Optional Supabase client (use the service role client in scheduled jobs)
  * @returns Map of external_id -> existing event data
  */
 export function checkDuplicateEventsWithDataEffect(

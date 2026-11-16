@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-jobs",
+  "main": "src/jobs-worker/index.ts",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Workflows run steps as separate invocations; scraping and enrichment parse
+  // large pages and make many provider calls per step.
+  "limits": { "cpu_ms": 300000, "subrequests": 50000 },
+  "browser": { "binding": "BROWSER", "remote": true },
+  // UTC (Buenos Aires is UTC-3 all year): 06:00 daily scrape, 07:00 guest retention,
+  // 10:00 enrichment catch-up. scheduled() maps each to a Workflow (CRON_WORKFLOWS).
+  "triggers": { "crons": ["0 9 * * *", "0 10 * * *", "0 13 * * *"] },
+  "workflows": [
+    { "binding": "DAILY_SCRAPE", "name": "baeventos-daily-scrape", "class_name": "DailyScrapeWorkflow" },
+    { "binding": "GUEST_RETENTION", "name": "baeventos-guest-retention", "class_name": "GuestRetentionWorkflow" },
+    { "binding": "ENRICHMENT_CATCHUP", "name": "baeventos-enrichment-catchup", "class_name": "EnrichmentCatchupWorkflow" },
+    { "binding": "SOURCE_CHECK", "name": "baeventos-source-check", "class_name": "SourceCheckWorkflow" }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": true }
+  }
+}
