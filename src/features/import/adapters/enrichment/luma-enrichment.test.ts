@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { lumaEnrichmentAdapter } from './luma-enrichment.ts'
 
 const detail = { api_id: 'evt-synthetic', ...{
-  event: { geo_address_info: { address: 'Synthetic Venue', full_address: 'Synthetic Venue, Calle 1' }, coordinate: { latitude: -34.6, longitude: -58.4 } },
+  event: { geo_address_info: { mode: 'shown', address: 'Synthetic Venue', full_address: 'Synthetic Venue, Calle 1' }, coordinate: { latitude: -34.6, longitude: -58.4 } },
   description_mirror: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Synthetic live jazz.' }] }] },
 } }
 
@@ -30,6 +30,19 @@ describe('Luma enrichment through the JSON API', () => {
     try {
       expect(await lumaEnrichmentAdapter.serverEnrich!('https://luma.com/synthetic', { extractVenue: true }))
         .toMatchObject({ venue_name: null, location_hidden: true })
+    } finally { fetchSpy.mockRestore() }
+  })
+
+  it('keeps the hidden reading when the description is empty, and reports nothing it cannot tell', async () => {
+    const respond = (event: unknown) => vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ event })))
+    let fetchSpy = respond({ geo_address_info: { mode: 'obfuscated', city: 'Buenos Aires' } })
+    try {
+      expect(await lumaEnrichmentAdapter.serverEnrich!('https://luma.com/synthetic', { extractVenue: true }))
+        .toMatchObject({ description_es: null, description_en: null, venue_name: null, location_hidden: true })
+    } finally { fetchSpy.mockRestore() }
+    fetchSpy = respond({ geo_address_info: { city: 'Buenos Aires' } })
+    try {
+      expect(await lumaEnrichmentAdapter.serverEnrich!('https://luma.com/synthetic', { extractVenue: true })).toBeNull()
     } finally { fetchSpy.mockRestore() }
   })
 })

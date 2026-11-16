@@ -10,20 +10,23 @@
 import type { LumaVenue } from './types.ts'
 
 export interface LumaLocation {
-  /** The host shares the address only after registration. */
-  hidden: boolean
+  /**
+   * true: the host shares the address only after registration. false: the payload carries a
+   * public address. null: the payload can't tell (missing fields), so the stored flag stays.
+   */
+  hidden: boolean | null
   venue: (LumaVenue & { name: string }) | null
 }
 
 const text = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value.trim() : null
 
 export function lumaLocation(geoInput: unknown, coordinateInput: unknown): LumaLocation {
-  if (!geoInput || typeof geoInput !== 'object') return { hidden: false, venue: null }
+  if (!geoInput || typeof geoInput !== 'object') return { hidden: null, venue: null }
   const geo = geoInput as Record<string, unknown>
   if (geo.mode === 'obfuscated') return { hidden: true, venue: null }
   const name = text(geo.address)
   // A city or barrio alone is rejected later by `isAreaOnlyVenueName` in venue settlement.
-  if (!name) return { hidden: false, venue: null }
+  if (typeof geo.mode !== 'string' || !name) return { hidden: null, venue: null }
   const coordinate = (coordinateInput ?? {}) as { latitude?: unknown; longitude?: unknown }
   const fullAddress = text(geo.full_address)
   return {

@@ -77,22 +77,52 @@ export function isPlaceholderVenue(text: string | null | undefined): boolean {
 }
 
 const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
-const AREA_WORDS = [
+// Barrios named after a real park: "Parque Chacabuco" is also a place you can hold an event in.
+const PLACE_BARRIOS = new Set(['parque avellaneda', 'parque chacabuco', 'parque patricios'])
+const BARRIO_WORDS = [...NEIGHBORHOODS.map(fold).filter(name => !PLACE_BARRIOS.has(name)), 'microcentro']
+const CITY_WORDS = [
   'ciudad autonoma de buenos aires', 'cdad autonoma de buenos aires', 'provincia de buenos aires',
-  'capital federal', 'buenos aires', 'caba', 'argentina', 'microcentro', 'comuna \\d+',
-  ...NEIGHBORHOODS.map(fold),
-].sort((a, b) => b.length - a.length)
-const AREA_PATTERN = new RegExp(`\\b(?:${AREA_WORDS.join('|')})\\b|\\b[a-z]\\d{4}[a-z]{0,3}\\b`, 'g')
+  'capital federal', 'buenos aires', 'caba', 'argentina', 'comuna \\d+',
+]
+const words = (list: string[]) => new RegExp(`\\b(?:${[...list].sort((a, b) => b.length - a.length).join('|')})\\b`, 'g')
+const BARRIO_PATTERN = words(BARRIO_WORDS)
+const CITY_PATTERN = new RegExp(`${words(CITY_WORDS).source}|\\b[a-z]\\d{4}[a-z]{0,3}\\b`, 'g')
 
 /**
- * True when a "venue" is only a city, region, barrio, or postal code, such as
- * "Buenos Aires, Argentina", "C1437EFA C1437EFA, Argentina", or "Caballito".
- * Sources fill these in when the real address is hidden or unknown.
+ * What a "venue" name is when it names only an area: `'city'` for a city, region,
+ * or postal code ("Buenos Aires, Argentina", "C1437EFA C1437EFA, Argentina", "CABA"),
+ * `'barrio'` when a barrio is in it ("Caballito", "Palermo, Buenos Aires"), and null
+ * for anything else. Sources fill these in when the real address is hidden or unknown.
  */
-export function isAreaOnlyVenueName(text: string | null | undefined): boolean {
-  if (!text) return false
+export function areaOnlyVenueName(text: string | null | undefined): 'city' | 'barrio' | null {
+  if (!text) return null
   const folded = fold(text).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
-  return folded !== '' && folded.replace(AREA_PATTERN, ' ').trim() === ''
+  if (!folded) return null
+  const withoutCity = folded.replace(CITY_PATTERN, ' ').trim()
+  if (!withoutCity) return 'city'
+  return withoutCity.replace(BARRIO_PATTERN, ' ').trim() ? null : 'barrio'
+}
+
+/**
+ * Street name plus house number, so the catalog's messy formats compare equal: "Av. Corrientes N° 1530 - C.A.B.A.",
+ * "Avenida Corrientes 1530, C1043AAB" and "Corrientes 1530" all give "corrientes 1530". The house number must follow
+ * the street name, so "3 de Febrero" or "Av. 9 de Julio" alone has no key while "3 de Febrero 1378" does.
+ */
+export function addressKey(address: string | null | undefined): string | null {
+  if (!address) return null
+  const normalize = (value: string) => fold(value) // "N°" folds to "n°", so markers are matched after folding
+    .replace(/\b(cp\s*)?[a-z]\d{4}[a-z]{0,3}\b|\bcp\s*\d{4}\b/g, ' ') // postal codes: C1043AAB, C1043, CP 1043
+    .replace(/\b(numero|nro|num|n)\s*[.°º]*\s*(?=\d)/g, ' ') // number markers: N° 1530, nro. 1530
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\b(ciudad autonoma de buenos aires|cdad autonoma de buenos aires|ciudad de buenos aires|capital federal|c a b a|caba|buenos aires|argentina)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim()
+  const plain = normalize(address)
+  const street = (value: string) => value.replace(/^(avenida|avda|av|calle|pasaje|pje)\s+/, '')
+  const parts = street(plain).match(/^(.*?\p{L}.*?)\s(\d{1,5})\b/u)
+  if (parts) return `${parts[1]} ${parts[2]}`
+  // Number first, as some ticket sites write it: "1660 Avenida Corrientes". "25 de Mayo" is a street name, not this.
+  const first = normalize(address.split(',')[0]).match(/^(\d{1,5})\s(?!de\b)(\p{L}[\p{L} ]*)$/u)
+  return first ? `${street(first[2])} ${first[1]}` : null
 }
 
 /**
@@ -297,9 +327,36 @@ export function settleVenueEffect(
     }
 
   // Check for garbage/invalid venue names (AI-generated explanations, etc.)
-  // and names that are only a city, barrio, or postal code. These should not create or match venues.
-    if (isGarbageVenueName(venueName) || isAreaOnlyVenueName(venueName)) {
+  // and names that are only a city, region, or postal code. These should not create or match venues.
+    const area = areaOnlyVenueName(venueName)
+    if (isGarbageVenueName(venueName) || area === 'city') {
       console.log(`[venue-settlement] Detected garbage venue name: "${venueName}"`)
+      return {
+      venueId: null,
+      action: 'skipped',
+      confidence: 0,
+      venueName,
+      } satisfies VenueSettlementResult
+    }
+
+  // A lone barrio is a venue only with evidence of a specific place: a street address with a house
+  // number, coordinates, or an existing venue of exactly that name that has such an address.
+    if (area === 'barrio' && !addressKey(input.address) && !input.coordinates) {
+      const existing = yield* Effect.catchEager(
+        matchVenueEffect(venueName, REVIEW_QUEUE_THRESHOLD, client),
+        () => Effect.succeed(noVenueMatch(venueName))
+      )
+      if (existing.matchType === 'exact' && addressKey(existing.venue!.address)) {
+        return {
+        venueId: existing.venue!.id,
+        action: 'matched',
+        confidence: 1,
+        method: 'exact',
+        venueName: existing.venue!.name,
+        neighborhood: existing.venue!.neighborhood,
+        } satisfies VenueSettlementResult
+      }
+      console.log(`[venue-settlement] Barrio name without a specific place: "${venueName}"`)
       return {
       venueId: null,
       action: 'skipped',

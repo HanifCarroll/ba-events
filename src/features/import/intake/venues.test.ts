@@ -69,10 +69,16 @@ describe('intake venue resolution', () => {
     expect(addressKey('Pje. 3 de Febrero Nº 1378 - CABA')).toBe('3 de febrero 1378')
     expect(addressKey('Av. Corrientes 1530 piso 2')).toBe('corrientes 1530')
   })
-  it('rejects a name that is only a city or barrio', async () => {
+  it('rejects a name that is only a city or postal code', async () => {
     const { db, inserts } = fakeDb([])
-    for (const name of ['Buenos Aires, Argentina', 'Palermo']) expect(await run(db, request({ name }))).toMatchObject({ outcome: 'rejected' })
+    for (const name of ['Buenos Aires, Argentina', 'C1437EFA, Argentina', 'CABA']) expect(await run(db, request({ name }))).toMatchObject({ outcome: 'rejected' })
     expect(inserts).toHaveLength(0)
+  })
+  it('accepts a park or business named like a barrio, since its address has a house number', async () => {
+    for (const name of ['Parque Chacabuco', 'La Boca']) {
+      const { db } = fakeDb([])
+      expect(await run(db, request({ name })), name).toMatchObject({ outcome: 'created' })
+    }
   })
   it('rejects a street whose only number is part of its name', async () => {
     const { db, inserts } = fakeDb([])

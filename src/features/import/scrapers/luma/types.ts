@@ -38,8 +38,8 @@ export interface LumaEvent {
 
   // Venue (null when hidden)
   venue: LumaVenue | null
-  /** Guests-only event: the address is shared after registration. */
-  location_hidden: boolean
+  /** Guests-only event: the address is shared after registration. null when the listing can't tell. */
+  location_hidden: boolean | null
 
   // Media
   cover_url: string | null

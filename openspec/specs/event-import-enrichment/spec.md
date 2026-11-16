@@ -26,12 +26,14 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 #### Scenario: Address is shared only after registration
 - **WHEN** Luma's listing or detail API returns `geo_address_info.mode = 'obfuscated'` (a guests-only event)
 - **THEN** the event is stored with `location_hidden = true` and no venue, and import, enrichment, and venue settlement never attach one, even when a name would match an existing venue
-- **AND** when a later read shows a public address, `location_hidden` is cleared and the venue is settled normally
+- **AND** when a later read shows a public address (a non-obfuscated mode with an address), `location_hidden` is cleared and the venue is settled normally; a payload missing those fields leaves the stored flag unchanged
+- **AND** enrichment persists the hidden or public reading before description, translation, or embedding work, so their failure cannot leave a newly hidden event with a venue
 - **AND** the database trigger `zz_hidden_location_has_no_venue` clears `venue_id` on any write that leaves `location_hidden = true`
 
 #### Scenario: Venue name is only a place
-- **WHEN** a venue name is only a city, region, barrio, or postal code (such as "Buenos Aires, Argentina" or "C1437EFA, Argentina")
+- **WHEN** a venue name is only a city, region, or postal code (such as "Buenos Aires, Argentina", "C1437EFA, Argentina", or "CABA")
 - **THEN** venue settlement and the intake `venue` operation neither match nor create a venue from it
+- **AND** a name that is only a barrio becomes a venue only with a street address that has a house number, coordinates, or an existing venue of exactly that name with such an address; barrios named after a park ("Parque Chacabuco") are not area names
 
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.

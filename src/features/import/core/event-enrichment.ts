@@ -336,6 +336,14 @@ export function enrichSingleEventEffect(
         adapter.serverEnrich(link, { extractVenue: needsVenue })
       )
 
+      // Persist the source's privacy reading first, so a missing description or a later
+      // translation or embedding failure can't leave a newly hidden event public with a venue.
+      if (enrichmentResult?.location_hidden !== undefined) {
+        yield* updateEventEnrichmentEffect(client, id, enrichmentResult.location_hidden
+          ? { location_hidden: true, venue_id: null }
+          : { location_hidden: false })
+      }
+
       if (enrichmentResult?.description_en && !enrichmentResult.description_es) {
         const detectedLang = yield* enrichmentTry('event-enrichment.detect-language', () =>
           detectLanguage(enrichmentResult!.description_en!)
@@ -463,8 +471,6 @@ export function enrichSingleEventEffect(
       enrichment_provenance: { full: provenance },
     }
     if (settledVenueId) updateData.venue_id = settledVenueId
-    if (enrichmentResult.location_hidden !== undefined) updateData.location_hidden = hidden
-    if (hidden) updateData.venue_id = null
 
     yield* updateEventEnrichmentEffect(client, id, updateData)
     console.log(`[event-enrichment] Enriched: ${name}${settledVenueId ? ` (venue: ${enrichmentResult.venue_name})` : ''}`)

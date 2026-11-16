@@ -79,9 +79,10 @@ export function transformLumaEvent(
     starts_at: startsAt,
     ends_at: endsAt,
     is_all_day: isAllDay,
-    // Always explicit, so an event that turns public again is unhidden on its next import.
     venue_id: event.location_hidden ? null : venueId,
-    location_hidden: event.location_hidden,
+    // Explicit when Luma says so, so an event that turns public again is unhidden on its next import.
+    // Unknown leaves the stored flag alone (an undefined field is not written).
+    ...(event.location_hidden === null ? {} : { location_hidden: event.location_hidden }),
     categories: [], // Enriched later via AI
     price: event.is_free ? null : price,
     is_free: event.is_free,

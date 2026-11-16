@@ -15,8 +15,8 @@ const BREAKS = new Set(['hard_break', 'hardBreak'])
 export interface LumaEventDetail {
   description: string | null
   venue: { name: string; address: string | null; latitude: number | null; longitude: number | null } | null
-  /** Guests-only: the address comes after registration, and `venue` is null. */
-  location_hidden: boolean
+  /** true: guests-only, the address comes after registration, and `venue` is null. false: public address. null: can't tell. */
+  location_hidden: boolean | null
 }
 
 /** Plain text from Luma's Prosemirror `description_mirror`: blocks become paragraphs, hard breaks newlines. */
