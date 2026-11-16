@@ -33,7 +33,8 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 #### Scenario: Venue name is only a place
 - **WHEN** a venue name is only a city, region, or postal code (such as "Buenos Aires, Argentina", "C1437EFA, Argentina", or "CABA")
 - **THEN** venue settlement and the intake `venue` operation neither match nor create a venue from it
-- **AND** a name that is only a barrio becomes a venue only with a street address that has a house number, coordinates, or an existing venue of exactly that name with such an address; barrios named after a park ("Parque Chacabuco") are not area names
+- **AND** a venue named only after a barrio is identified by its street address: the event must carry its own numbered address, a same-name venue is reused only at the same street and number, and otherwise a new venue is created; an event without its own numbered address gets no venue, and a catalog venue's address is never evidence for another event. Barrios named after a park ("Parque Chacabuco") are not area names
+- **AND** batch settlement keys barrio-named inputs by name plus normalized address, and importers send one input per event, so events in one import never share a barrio-named venue by name alone
 
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.

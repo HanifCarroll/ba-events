@@ -14,7 +14,6 @@ import {
 } from '../scrapers/ba-tourism/browser-scraper.ts'
 import {
   transformBATourismEvent,
-  getUniqueVenueNames,
 } from '../scrapers/ba-tourism/transformer.ts'
 import type { BATourismEvent } from '../scrapers/ba-tourism/types.ts'
 import type { OpenBrowser } from '../acquisition/run.ts'
@@ -168,18 +167,15 @@ export function processBATourismImportEffect(
     if (filteredEvents.length === 0) return result
 
     console.log('[ba-tourism] Settling venues...')
-    const uniqueVenueNames = getUniqueVenueNames(filteredEvents)
-    const venueInputs: VenueSettlementInput[] = uniqueVenueNames
-      .filter((name) => name && name !== 'Ubicación no especificada')
-      .map((name) => {
-        const eventWithVenue = filteredEvents.find((event) => event.venueName === name)
-        return {
-          name,
-          address: eventWithVenue?.address || null,
-          neighborhood: eventWithVenue?.neighborhood || null,
-          coordinates: eventWithVenue?.coordinates || null,
-        }
-      })
+    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    const venueInputs: VenueSettlementInput[] = filteredEvents
+      .filter((event) => event.venueName && event.venueName !== 'Ubicación no especificada')
+      .map((event) => ({
+        name: event.venueName,
+        address: event.address || null,
+        neighborhood: event.neighborhood || null,
+        coordinates: event.coordinates || null,
+      }))
     const { results: venueResults, stats: venueStats } = yield* settleVenuesEffect(
       client,
       venueInputs,
@@ -193,9 +189,9 @@ export function processBATourismImportEffect(
     const transformedEvents: EventInsert[] = []
     const eventSourceMap: Map<EventInsert, BATourismEvent> = new Map()
     for (const event of filteredEvents) {
-      const venueId = getVenueIdFromResults(venueResults, event.venueName)
+      const venueId = getVenueIdFromResults(venueResults, event.venueName, event.address)
       const expanded = transformBATourismEvent(event, weekContext, venueId, referenceDate)
-      const isPlaceholder = isPlaceholderResult(venueResults, event.venueName)
+      const isPlaceholder = isPlaceholderResult(venueResults, event.venueName, event.address)
       for (const transformed of expanded) {
         if (isPlaceholder) transformed.location_tba = true
         transformedEvents.push(transformed)

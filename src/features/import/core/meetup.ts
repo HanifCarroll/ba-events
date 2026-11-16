@@ -20,7 +20,6 @@ import { logger } from '#shared/lib/logger.ts'
 import type { OpenBrowser } from '../acquisition/run.ts'
 import {
   transformMeetupEventWithExpansion,
-  getUniqueVenueNames,
 } from '../scrapers/meetup/transformer.ts'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
@@ -164,9 +163,10 @@ function processMeetupBatchEffect(
     const eventSourceMap: Map<EventInsert, MeetupEvent> = new Map()
     for (const event of batchEvents) {
       const venueName = event.venue?.name || null
-      const venueId = getVenueIdFromResults(venueResults, venueName)
+      const venueAddress = event.venue?.address || null
+      const venueId = getVenueIdFromResults(venueResults, venueName, venueAddress)
       const expanded = transformMeetupEventWithExpansion(event, venueId, expandRecurringWeeks)
-      const placeholder = isPlaceholderResult(venueResults, venueName)
+      const placeholder = isPlaceholderResult(venueResults, venueName, venueAddress)
       for (const transformed of expanded) {
         if (placeholder) transformed.location_tba = true
         transformedEvents.push(transformed)
@@ -369,19 +369,16 @@ export function processMeetupImportEffect(
     }
 
     logger.info('[meetup] Settling venues')
-    const uniqueVenueNames = getUniqueVenueNames(filteredEvents)
-    const venueInputs: VenueSettlementInput[] = uniqueVenueNames
-      .filter((name) => name)
-      .map((name) => {
-        const eventWithVenue = filteredEvents.find((event) => event.venue?.name === name)
-        return {
-          name,
-          address: eventWithVenue?.venue?.address || null,
-          coordinates: eventWithVenue?.venue?.lat && eventWithVenue?.venue?.lng
-            ? { lat: eventWithVenue.venue.lat, lng: eventWithVenue.venue.lng }
-            : null,
-        }
-      })
+    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    const venueInputs: VenueSettlementInput[] = filteredEvents
+      .filter((event) => event.venue?.name)
+      .map((event) => ({
+        name: event.venue!.name,
+        address: event.venue!.address || null,
+        coordinates: event.venue!.lat && event.venue!.lng
+          ? { lat: event.venue!.lat, lng: event.venue!.lng }
+          : null,
+      }))
     const { results: venueResults, stats: venueStats } = yield* settleVenuesEffect(
       client,
       venueInputs,

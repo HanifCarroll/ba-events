@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { fetchLumaJson, LumaRateLimitError, parseRetryAfter } from './http.ts'
 import { fetchLumaEvents } from './api.ts'
 import { fetchLumaEventDetail, prosemirrorText } from './detail.ts'
-import { getAllVenueInfo, transformLumaEvent } from './transformer.ts'
+import { extractVenueInfo, transformLumaEvent } from './transformer.ts'
 import { getChangedMutableFields } from '../../core/scraper-update.ts'
 
 const respond = (status: number, body: unknown = {}, headers: Record<string, string> = {}) =>
@@ -57,7 +57,7 @@ describe('Luma guests-only events in the listing', () => {
   it('marks an obfuscated event hidden with no venue, and the transform keeps it that way', async () => {
     const [event] = await fetchLumaEvents(listing({ mode: 'obfuscated', city: 'Buenos Aires', city_state: 'Buenos Aires, Argentina', sublocality: 'Belgrano', country: 'Argentina' }))
     expect(event).toMatchObject({ location_hidden: true, venue: null })
-    expect(getAllVenueInfo([event!]).size).toBe(0)
+    expect(extractVenueInfo(event!)).toBeNull()
     // Even a venue id from elsewhere never reaches the row.
     expect(transformLumaEvent(event!, 'venue-synthetic')).toMatchObject({ location_hidden: true, venue_id: null })
   })

@@ -161,20 +161,6 @@ export function transformMeetupEvents(
 }
 
 /**
- * Get unique venue names from Meetup events
- * Used for venue matching
- */
-export function getUniqueVenueNames(events: MeetupEvent[]): string[] {
-  const names = new Set<string>()
-  for (const event of events) {
-    if (event.venue?.name) {
-      names.add(event.venue.name)
-    }
-  }
-  return Array.from(names)
-}
-
-/**
  * Get unique group names from Meetup events
  */
 export function getUniqueGroupNames(events: MeetupEvent[]): string[] {

@@ -13,7 +13,7 @@ import { fetchLumaEvents } from '../scrapers/luma/api.ts'
 import type { LumaEvent } from '../scrapers/luma/types.ts'
 import {
   transformLumaEvent,
-  getAllVenueInfo,
+  extractVenueInfo,
 } from '../scrapers/luma/transformer.ts'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
@@ -144,11 +144,12 @@ export function processLumaImportEffect(
 
     console.log('[luma] Settling venues...')
     // Hidden events have no venue (`lumaLocation`), so they never reach settlement.
-    const venueInfoMap = getAllVenueInfo(filteredEvents)
-    const venueInputs: VenueSettlementInput[] = Array.from(venueInfoMap.entries())
-      .filter(([name]) => name)
-      .map(([name, info]) => ({
-        name,
+    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    const venueInputs: VenueSettlementInput[] = filteredEvents
+      .map(extractVenueInfo)
+      .filter((info): info is NonNullable<typeof info> => info !== null)
+      .map((info) => ({
+        name: info.name,
         address: info.address,
         coordinates: info.latitude && info.longitude
           ? { lat: info.latitude, lng: info.longitude }
@@ -181,7 +182,7 @@ export function processLumaImportEffect(
     }> = []
     for (const event of filteredEvents) {
       const venueName = event.venue?.name || null
-      const venueId = getVenueIdFromResults(venueResults, venueName)
+      const venueId = getVenueIdFromResults(venueResults, venueName, extractVenueInfo(event)?.address)
       const transformed = transformLumaEvent(event, venueId)
       const existing = existingEventsMap.get(event.api_id)
       if (existing) {

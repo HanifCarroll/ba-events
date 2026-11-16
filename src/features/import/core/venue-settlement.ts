@@ -339,24 +339,12 @@ export function settleVenueEffect(
       } satisfies VenueSettlementResult
     }
 
-  // A lone barrio is a venue only with evidence of a specific place: a street address with a house
-  // number, coordinates, or an existing venue of exactly that name that has such an address.
-    if (area === 'barrio' && !addressKey(input.address) && !input.coordinates) {
-      const existing = yield* Effect.catchEager(
-        matchVenueEffect(venueName, REVIEW_QUEUE_THRESHOLD, client),
-        () => Effect.succeed(noVenueMatch(venueName))
-      )
-      if (existing.matchType === 'exact' && addressKey(existing.venue!.address)) {
-        return {
-        venueId: existing.venue!.id,
-        action: 'matched',
-        confidence: 1,
-        method: 'exact',
-        venueName: existing.venue!.name,
-        neighborhood: existing.venue!.neighborhood,
-        } satisfies VenueSettlementResult
-      }
-      console.log(`[venue-settlement] Barrio name without a specific place: "${venueName}"`)
+  // A barrio-named venue ("San Telmo") is identified by its street address, never by its name:
+  // the event must carry its own numbered address, and only a same-name venue at that street and
+  // number is reused. Name-only matching once pooled unrelated events under one barrio venue.
+    const barrioAddress = area === 'barrio' ? addressKey(input.address) : null
+    if (area === 'barrio' && !barrioAddress) {
+      console.log(`[venue-settlement] Barrio name without its own street address: "${venueName}"`)
       return {
       venueId: null,
       action: 'skipped',
@@ -392,10 +380,29 @@ export function settleVenueEffect(
     }
 
     // Step 1: Try matching against existing venues (using resolved name if address was looked up)
-    const match = yield* Effect.catchEager(
-      matchVenueEffect(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client),
-      () => Effect.succeed(noVenueMatch(resolvedVenueName))
-    )
+    let match: VenueMatchResult
+    if (barrioAddress) {
+      const sameName = yield* Effect.result(importTry('venue-settlement.barrio-venues', () => client
+        .from('venues').select('*').ilike('name', venueName)))
+      if (sameName._tag === 'Failure' || sameName.success.error) {
+        // Can't tell whether this address already has a venue; leave the event unlinked rather than duplicate it.
+        return { venueId: null, action: 'skipped', confidence: 0, venueName } satisfies VenueSettlementResult
+      }
+      const atAddress = ((sameName.success.data ?? []) as Venue[]).find(venue => addressKey(venue.address) === barrioAddress)
+      match = atAddress
+        ? { venue: atAddress, matchType: 'exact', confidence: 1, searchName: venueName }
+        : noVenueMatch(venueName)
+    } else {
+      match = yield* Effect.catchEager(
+        matchVenueEffect(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client),
+        () => Effect.succeed(noVenueMatch(resolvedVenueName))
+      )
+      // An existing venue named only after an area counts only at this event's own street and number.
+      const inputAddress = addressKey(input.address)
+      if (match.venue && areaOnlyVenueName(match.venue.name) && (!inputAddress || addressKey(match.venue.address) !== inputAddress)) {
+        match = noVenueMatch(resolvedVenueName)
+      }
+    }
 
   // Exact match - use it immediately
     if (match.matchType === 'exact') {
@@ -524,8 +531,18 @@ export async function settleVenue(
 }
 
 /**
+ * Key for batch settlement results. Ordinary venues key by name. A barrio-named venue keys by name
+ * plus its normalized street address, so events in one import never share it by name alone.
+ * Importers pass one input per event and look each event up with its own name and address.
+ */
+export function venueSettlementKey(name: string, address: string | null | undefined): string {
+  const key = name.trim().toLowerCase()
+  return areaOnlyVenueName(name) === 'barrio' ? `${key}\u0000${addressKey(address) ?? ''}` : key
+}
+
+/**
  * Settle multiple venues with rate limiting.
- * Returns a map from venue name to settlement result.
+ * Returns a map from `venueSettlementKey` to settlement result.
  */
 export function settleVenuesEffect(
   client: SupabaseClient,
@@ -548,11 +565,11 @@ export function settleVenuesEffect(
     placeholder: 0,
     }
 
-  // Dedupe venues by name
+  // Dedupe venues by settlement key (name, plus the street address for barrio names)
     const uniqueVenues = new Map<string, VenueSettlementInput>()
     for (const venue of venues) {
       if (venue.name && venue.name.trim()) {
-        const key = venue.name.trim().toLowerCase()
+        const key = venueSettlementKey(venue.name, venue.address)
         if (!uniqueVenues.has(key)) {
           uniqueVenues.set(key, venue)
         }
@@ -564,7 +581,7 @@ export function settleVenuesEffect(
     let i = 0
     for (const [, venue] of uniqueVenues) {
       const result = yield* settleVenueEffect(client, venue, options)
-      results.set(venue.name.trim().toLowerCase(), result)
+      results.set(venueSettlementKey(venue.name, venue.address), result)
 
     // Update stats
       switch (result.action) {
@@ -625,10 +642,11 @@ export async function settleVenues(
  */
 export function getVenueIdFromResults(
   results: Map<string, VenueSettlementResult>,
-  venueName: string | null | undefined
+  venueName: string | null | undefined,
+  address?: string | null
 ): string | null {
   if (!venueName) return null
-  const key = venueName.trim().toLowerCase()
+  const key = venueSettlementKey(venueName, address)
   return results.get(key)?.venueId || null
 }
 
@@ -642,10 +660,11 @@ export function getVenueIdFromResults(
  */
 export function getVenueNeighborhoodFromResults(
   results: Map<string, VenueSettlementResult>,
-  venueName: string | null | undefined
+  venueName: string | null | undefined,
+  address?: string | null
 ): Neighborhood | null {
   if (!venueName) return null
-  const key = venueName.trim().toLowerCase()
+  const key = venueSettlementKey(venueName, address)
   return results.get(key)?.neighborhood ?? null
 }
 
@@ -655,10 +674,11 @@ export function getVenueNeighborhoodFromResults(
  */
 export function isPlaceholderResult(
   results: Map<string, VenueSettlementResult>,
-  venueName: string | null | undefined
+  venueName: string | null | undefined,
+  address?: string | null
 ): boolean {
   if (!venueName) return false
-  const key = venueName.trim().toLowerCase()
+  const key = venueSettlementKey(venueName, address)
   const result = results.get(key)
   return result?.action === 'placeholder'
 }
