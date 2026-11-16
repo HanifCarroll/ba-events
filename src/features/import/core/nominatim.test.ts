@@ -20,6 +20,14 @@ describe('searchNominatimEffect', () => {
     expect(result?.address.state).toBe('Ciudad Autónoma de Buenos Aires')
     expect(result?.address.country_code).toBe('ar')
   })
+  it('biases the search toward the city without excluding places outside it', async () => {
+    respond(empire)
+    await Effect.runPromise(searchNominatimEffect('Godoy Cruz 1631'))
+    const url = new URL(vi.mocked(fetch).mock.calls[0][0] as string)
+    expect(url.searchParams.get('viewbox')).toBe('-58.5315,-34.5265,-58.3350,-34.7056')
+    expect(url.searchParams.has('bounded')).toBe(false)
+    expect(url.searchParams.get('q')).toBe('Godoy Cruz 1631 Buenos Aires Argentina')
+  })
   it('keeps the state and country when only a partial result can be read', async () => {
     respond([{ ...empire[0], place_id: 'not-a-number' }])
     const result = await Effect.runPromise(searchNominatimEffect('Hipólito Yrigoyen 1934'))

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NominatimResult } from '../core/nominatim.ts'
@@ -55,6 +55,7 @@ const run = (db: SupabaseClient, input: VenueRequest, geocode: Geocode = geocode
   Effect.runPromise(resolveIntakeVenueEffect(db, input, geocode))
 
 describe('intake venue resolution', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
   it('normalizes street prefixes and suffixes into one address key', () => {
     expect(addressKey('Av. Ficticia 1234, CABA')).toBe('ficticia 1234')
     expect(addressKey('Avenida Ficticia 1234')).toBe('ficticia 1234')
@@ -210,6 +211,19 @@ describe('intake venue resolution', () => {
     expect(await run(db, request({ neighborhood: null }), () => Effect.succeed(null))).toMatchObject({ outcome: 'rejected' })
     expect(inserts).toHaveLength(0)
     expect(await run(db, request({ neighborhood: null }))).toMatchObject({ outcome: 'created', venue: { neighborhood: 'Almagro' } })
+  })
+  it('still rejects an address that the city-biased geocoder places outside the city', async () => {
+    // Shaped like Nominatim's answer for "Av. Maipú 2500" with the city viewbox: the only match is in Olivos.
+    const olivos = [{ lat: '-34.51', lon: '-58.49', display_name: '2500, Avenida Maipú, Olivos, Partido de Vicente López, Buenos Aires, Argentina',
+      address: { house_number: '2500', road: 'Avenida Maipú', suburb: 'Olivos', state: 'Buenos Aires', country_code: 'ar' }, extratags: null }]
+    const fetch = vi.fn(async (_url: string) => new Response(JSON.stringify(olivos), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    const { db, inserts } = fakeDb([])
+    // No geocode override: the command's default searchNominatimEffect makes the request.
+    expect(await Effect.runPromise(resolveIntakeVenueEffect(db, request({ address: 'Av. Maipú 2500', neighborhood: null }))))
+      .toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city of Buenos Aires (Buenos Aires, ar)')] })
+    expect(new URL(fetch.mock.calls[0][0] as string).searchParams.get('viewbox')).toBe('-58.5315,-34.5265,-58.3350,-34.7056')
+    expect(inserts).toHaveLength(0)
   })
   it('keeps the stated barrio with a warning when the geocoder is down or disagrees', async () => {
     const down = await run(fakeDb([]).db, request(), () => Effect.fail(new Error('timeout')))

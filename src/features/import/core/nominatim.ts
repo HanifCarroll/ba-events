@@ -169,12 +169,19 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
 // ============================================================================
 
 /**
- * Search for a venue using Nominatim API.
+ * The city of Buenos Aires' bounding box (west,north,east,south). Sent without `bounded=1`, it ranks city matches first
+ * but still returns a place that only exists outside: "Godoy Cruz 1631" resolves to Palermo instead of the Pilar postcode
+ * 1631, while "Av. Maipú 2500" still resolves to Olivos, so the intake city check keeps rejecting it.
+ */
+export const CABA_VIEWBOX = '-58.5315,-34.5265,-58.3350,-34.7056'
+
+/**
+ * Search for a venue using Nominatim API, biased toward the city of Buenos Aires.
  * Includes required User-Agent header per Nominatim usage policy.
  */
 export function searchNominatimEffect(query: string, retries: number = 1): Effect.Effect<NominatimResult | null, NominatimApiError | NominatimRequestError> {
   const encodedQuery = encodeURIComponent(`${query} Buenos Aires Argentina`)
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodedQuery}&format=json&addressdetails=1&extratags=1&limit=1`
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodedQuery}&format=json&addressdetails=1&extratags=1&limit=1&viewbox=${CABA_VIEWBOX}`
   const attempt = Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: () => fetch(url, {
