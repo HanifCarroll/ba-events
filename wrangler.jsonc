@@ -28,6 +28,8 @@
   },
   "workers_dev": true,
   "images": { "binding": "IMAGES" },
+  // Cloudflare Email Sending for feedback alerts (src/shared/lib/feedback/alert.server.ts).
+  "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["alerts@baeventos.com"] }],
   "durable_objects": {
     "bindings": [{ "name": "CHAT_DELIVERY", "class_name": "ChatDelivery", "script_name": "baeventos-chat-delivery" }]
   },
