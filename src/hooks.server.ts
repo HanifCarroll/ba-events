@@ -5,6 +5,7 @@ import { getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
+import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts';
 
 const CANONICAL_HOST = 'baeventos.com';
 
@@ -79,4 +80,10 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		)
 	);
 
-export const handle = sequence(handleCanonicalOrigin, handleSupabase, handleLocaleSync, handleParaglide);
+// (d) Search backend — D1 and Vectorize when the Worker binds them (the staging Worker), Supabase otherwise.
+const handleSearchBackend: Handle = ({ event, resolve }) => {
+	useCloudflareBindings((event.platform as { env?: unknown } | undefined)?.env);
+	return resolve(event);
+};
+
+export const handle = sequence(handleCanonicalOrigin, handleSearchBackend, handleSupabase, handleLocaleSync, handleParaglide);

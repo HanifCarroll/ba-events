@@ -6,6 +6,7 @@ import { createMcpHandler } from 'agents/mcp/server'
 import { searchEventsTool } from '#features/chat/api/tools/search-events.ts'
 import { isDisplayableStatus } from '#features/chat/api/agent/follow-up.ts'
 import { getDisplayableEventById } from '#shared/lib/db/client.server.ts'
+import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts'
 import { boundedRead, ReadTimeoutError } from '#features/chat/api/agent/bounded-read.ts'
 import { publicOutput, publicOutputSchema, publicSearchInputSchema, type PublicSearchInput } from './public.ts'
 import type { PublicEventRecord } from '#shared/lib/types.ts'
@@ -127,6 +128,8 @@ export function createWorkerHandler(deps?: Pick<McpDeps, 'search' | 'get' | 'too
     const url = new URL(request.url)
     if (url.pathname === '/health') return Response.json({ status: 'ok' }, { headers: { 'Cache-Control': 'no-store' } })
     if (url.pathname !== '/mcp') return new Response('Not Found', { status: 404 })
+    // D1 and Vectorize when this Worker binds them (staging), Supabase otherwise.
+    useCloudflareBindings(env)
     const length = Number(request.headers.get('Content-Length') ?? 0)
     if (length > MAX_REQUEST_BYTES) return new Response('Request too large', { status: 413 })
     if (await isToolCall(request)) {

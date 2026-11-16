@@ -18,6 +18,16 @@ import type {
 import { generateEmbedding } from '../ai/embeddings.ts'
 import { rrfFuse } from '../search/rrf.ts'
 import { withReadSignal } from './read-signal.ts'
+import { cloudflareSearchBackend } from './search-bindings.server.ts'
+import {
+  countEventsWithFiltersD1,
+  getEventsHappeningNowD1,
+  getFurthestEventDateD1,
+  lexicalEventSearchD1,
+  searchEventsWithFiltersD1,
+  searchVenuesByNameD1,
+  semanticEventSearchD1,
+} from './search-d1.server.ts'
 import type { HomeEventCard } from '#features/events/lib/home-feed.ts'
 // Lazy-initialize Supabase client (only when needed, server-side only)
 let supabaseInstance: SupabaseClient | null = null
@@ -52,6 +62,8 @@ export async function getVenueById(id: string, abortSignal?: AbortSignal) {
 }
 
 export async function searchVenuesByName(query: string, abortSignal?: AbortSignal) {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return searchVenuesByNameD1(cloudflare.db, query)
   const { data, error } = await withReadSignal(getSupabase()
     .from('venues')
     .select('*')
@@ -282,6 +294,8 @@ export function applyAvoidGenres<T extends { facets?: { genres?: string[] } | nu
 
 // Filter-based search (for structured queries)
 export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50, abortSignal?: AbortSignal): Promise<ChatEventPayload[]> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return applyAvoidGenres(await searchEventsWithFiltersD1(cloudflare.db, filters, limit), filters.avoidGenres)
   let query = getSupabase().from('events_with_venues').select(CHAT_EVENT_COLUMNS)
 
   // Default to scheduled events
@@ -325,6 +339,8 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
 // report search coverage so the model knows how much it searched vs. returned.
 // Mirrors the predicate in searchEventsWithFilters.
 export async function countEventsWithFilters(filters: EventFilters, abortSignal?: AbortSignal): Promise<number> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return countEventsWithFiltersD1(cloudflare.db, filters)
   // Avoid genres can't be expressed as a PostgREST filter (the `ov` operator on
   // a `facets->genres` jsonb path errors, and `cs`/overlap mishandles events
   // with no genres key). So when avoid is present we fetch matched `facets` and
@@ -413,6 +429,8 @@ export async function countEventsWithFilters(filters: EventFilters, abortSignal?
 // Furthest future start date of any scheduled event. The source of truth for
 // "what's the event furthest into the future" and for the coverage guard.
 export async function getFurthestEventDate(abortSignal?: AbortSignal): Promise<string | null> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return getFurthestEventDateD1(cloudflare.db)
   const { data, error } = await withReadSignal(getSupabase()
     .from('events')
     .select('starts_at')
@@ -426,6 +444,8 @@ export async function getFurthestEventDate(abortSignal?: AbortSignal): Promise<s
 
 // Get events happening now or starting soon
 export async function getEventsHappeningNow(abortSignal?: AbortSignal): Promise<ChatEventPayload[]> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return getEventsHappeningNowD1(cloudflare.db)
   const now = new Date().toISOString()
 
   const { data, error } = await withReadSignal(getSupabase()
@@ -440,7 +460,8 @@ export async function getEventsHappeningNow(abortSignal?: AbortSignal): Promise<
   return data as ChatEventPayload[]
 }
 
-// Dense (vector) semantic search with filter application done in PostgreSQL.
+// Dense (vector) semantic search with filter application done in PostgreSQL, or in Vectorize and D1 when the
+// Worker binds them (search-bindings.server.ts).
 interface SearchReadDependencies {
   client?: SupabaseClient
   embedQuery?: typeof generateEmbedding
@@ -458,8 +479,12 @@ export async function semanticEventSearch(
   abortSignal?.throwIfAborted()
   if (!query.trim()) return []
 
+  const cloudflare = dependencies.client ? null : cloudflareSearchBackend()
+  if (cloudflare && !cloudflare.vectorize) throw new Error('Semantic search on D1 needs the VECTORIZE binding')
+
   // Generate embedding for the search query
   const queryEmbedding = await (dependencies.embedQuery ?? generateEmbedding)(query, abortSignal)
+  if (cloudflare) return semanticEventSearchD1(cloudflare.db, cloudflare.vectorize!, queryEmbedding, filters, matchCount)
 
   // Call the PostgreSQL function with all filters applied server-side
   const { data, error } = await withReadSignal((dependencies.client ?? getSupabase()).rpc(
@@ -485,7 +510,7 @@ export async function semanticEventSearch(
 }
 
 // Lexical (full-text) search over the events search document, with the same
-// filter surface applied server-side. Orders by ts_rank_cd.
+// filter surface applied server-side. Orders by ts_rank_cd (bm25 on D1).
 export async function lexicalEventSearch(
   query: string,
   filters: EventFilters,
@@ -495,6 +520,9 @@ export async function lexicalEventSearch(
 ): Promise<ChatEventPayload[]> {
   abortSignal?.throwIfAborted()
   if (!query.trim()) return []
+
+  const cloudflare = dependencies.client ? null : cloudflareSearchBackend()
+  if (cloudflare) return lexicalEventSearchD1(cloudflare.db, query, filters, matchCount)
 
   const { data, error } = await withReadSignal((dependencies.client ?? getSupabase()).rpc(
     'lexical_match_events_with_venues',
