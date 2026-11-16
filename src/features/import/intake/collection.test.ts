@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { retainPostsEffect, sourceCoverage } from './collection.ts'
+import { retainPostsEffect, retryMissingMediaEffect, signedUrlExpiry, sourceCoverage } from './collection.ts'
 
 /** In-memory intake_observations/intake_media with only the query shapes retainPostsEffect uses. */
 function memoryDb() {
@@ -88,5 +88,75 @@ describe('incremental Instagram collection', () => {
 
   it('flags accounts that reached the per-run ceiling', () => {
     expect(sourceCoverage([post('1'), post('2'), post('3', 'other')], ['synthetic_venue', 'other'], 2).at_ceiling_sources).toEqual(['synthetic_venue'])
+  })
+})
+
+/** Unreviewed observations with stored URLs and their saved media, behind the query shapes the media retry uses. */
+function mediaDb(observations: Array<{ id: string; media_urls: string[]; reviewed_at?: string }>, media: Array<{ observation_id: string; position: number }>) {
+  const uploads: string[] = []
+  const from = (name: string) => {
+    let row: Record<string, unknown> | null = null; let ids: string[] | null = null; let unreviewed = false
+    const chain: Record<string, unknown> = {
+      select: () => chain, order: () => chain, range: () => chain, single: () => chain,
+      is: () => { unreviewed = true; return chain },
+      in: (_key: string, values: string[]) => { ids = values; return chain },
+      upsert: (value: Record<string, unknown>) => { row = value; return chain },
+      then: (resolve: (value: unknown) => void) => {
+        if (row) { media.push(row as { observation_id: string; position: number }); return resolve({ data: { id: 'media' }, error: null }) }
+        if (name === 'intake_observations') return resolve({ data: observations.filter(item => !unreviewed || !item.reviewed_at), error: null })
+        return resolve({ data: media.filter(item => !ids || ids.includes(item.observation_id)), error: null })
+      },
+    }
+    return chain
+  }
+  const storage = { from: () => ({ upload: async (key: string) => { uploads.push(key); return { data: { path: key }, error: null } } }) }
+  return { db: { from, storage } as unknown as SupabaseClient, media, uploads }
+}
+const now = new Date('2026-11-16T12:00:00Z')
+const signed = (name: string, expiry: Date) => `https://scontent.cdninstagram.com/v/${name}.jpg?oh=sig&oe=${Math.floor(expiry.getTime() / 1000).toString(16)}`
+const image = async (url: string) => ({ bytes: new Uint8Array([1]), content_type: 'image/jpeg', sha256: 'a'.repeat(64), object_key: `${url.length}.jpg` })
+
+describe('retrying missing images of unreviewed observations', () => {
+  const later = new Date('2026-11-19T12:00:00Z'), earlier = new Date('2026-11-15T12:00:00Z')
+
+  it('saves a previously failed position, never refetches a saved one, and skips and reports an expired URL', async () => {
+    const observations = [
+      { id: 'colon', media_urls: [signed('slide0', later), signed('slide1', later), signed('slide2', later)] },
+      { id: 'old', media_urls: [signed('gone', earlier)] },
+      { id: 'done', media_urls: [signed('reviewed', later)], reviewed_at: '2026-11-15T13:00:00Z' },
+    ]
+    const { db, media } = mediaDb(observations, [{ observation_id: 'colon', position: 1 }])
+    const fetched: string[] = []
+    const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
+    expect(fetched).toEqual([signed('slide0', later), signed('slide2', later)])
+    expect(media).toEqual(expect.arrayContaining([expect.objectContaining({ observation_id: 'colon', position: 0 }), expect.objectContaining({ observation_id: 'colon', position: 2 })]))
+    expect(result).toMatchObject({ attempted: 2, retained: 2, expired: 1, deferred: 0,
+      failures: [expect.stringMatching(/^Media 0 of observation old can't be retried: its stored URL expired 2026-11-15/)] })
+
+    fetched.length = 0
+    const again = await Effect.runPromise(retryMissingMediaEffect(db, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
+    expect(fetched).toEqual([])
+    expect(again).toMatchObject({ attempted: 0, retained: 0, expired: 1 })
+  })
+
+  it('reports a retry that fails again, skips observations collected this run, and caps downloads per run', async () => {
+    const { db } = mediaDb([
+      { id: 'flaky', media_urls: [signed('a', later)] },
+      { id: 'today', media_urls: [signed('b', later)] },
+      { id: 'big', media_urls: [signed('c', later), signed('d', later), signed('e', later)] },
+    ], [])
+    const fetched: string[] = []
+    const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, cap: 2, skip: new Set(['today']),
+      fetcher: async url => { fetched.push(url); if (url.includes('/a.jpg')) throw new Error('offline'); return image(url) } }))
+    expect(fetched).toEqual([signed('a', later), signed('c', later)])
+    expect(result).toMatchObject({ attempted: 2, retained: 1, deferred: 2, failures: [
+      'Media 0 could not be retained for observation flaky (retried from its stored URL)',
+      '2 missing images were not retried this run (cap 2); the next collect retries them'] })
+  })
+
+  it('reads the hex expiry from a signed Instagram URL', () => {
+    expect(signedUrlExpiry('https://scontent.cdninstagram.com/v/x.jpg?oe=691E1234')?.toISOString()).toBe('2025-11-19T18:53:40.000Z')
+    expect(signedUrlExpiry('https://scontent.cdninstagram.com/v/x.jpg')).toBeNull()
+    expect(signedUrlExpiry('not a url')).toBeNull()
   })
 })

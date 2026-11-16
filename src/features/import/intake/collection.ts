@@ -1,7 +1,7 @@
 import { Effect, Schema } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import { dbEffect } from './repository.ts'
+import { allRowsEffect, dbEffect } from './repository.ts'
 
 export type ApifyRequest = (method: 'GET' | 'POST', path: string, params?: Record<string, unknown>, body?: unknown) => Promise<unknown>
 const Child = Schema.Struct({ displayUrl: Schema.optional(Schema.String), images: Schema.optional(Schema.Array(Schema.String)) })
@@ -85,9 +85,18 @@ export async function fetchInstagramImage(url: string, fetcher: typeof fetch = f
   return { bytes, content_type: `image/${type}`, sha256: hash, object_key: `${hash}.${type === 'jpeg' ? 'jpg' : type}` }
 }
 
+/** Saves one image of an observation. Idempotent: storage is keyed by content hash and `intake_media` by (observation_id, position). */
+const retainImageEffect = (client: SupabaseClient, observationId: string, position: number, url: string, fetcher: typeof fetchInstagramImage) =>
+  Effect.gen(function*() {
+    const image = yield* importTry('intake.image', () => fetcher(url))
+    yield* dbEffect('intake.store-image', () => client.storage.from('instagram-evidence').upload(image.object_key, image.bytes, { contentType: image.content_type, upsert: true }))
+    yield* dbEffect('intake.record-image', () => client.from('intake_media').upsert({ observation_id: observationId, position,
+      object_key: image.object_key, content_type: image.content_type, sha256: image.sha256 }, { onConflict: 'observation_id,position' }).select('id').single())
+  })
+
 export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(client: SupabaseClient, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
   const posts = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Schema.Array(PostSchema))(raw), catch: () => fail('Apify dataset has an invalid shape') })
-  let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>()
+  let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>(); const observationIds = new Set<string>()
   const coverage = sourceCoverage(posts, usernames, ceiling)
   if (coverage.dead_sources.length) failures.push(`Sources not found or restricted (consider disabling): ${coverage.dead_sources.map(s => s.username).join(', ')}`)
   if (coverage.errored_sources.length) failures.push(`Sources returned errors: ${coverage.errored_sources.map(s => `${s.username} (${s.reason})`).join(', ')}`)
@@ -114,19 +123,67 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(clien
       }, { onConflict: 'run_id,post_id,content_hash' }).select('id').single())
       observationId = observation.id; changed++
     }
+    observationIds.add(observationId)
     const saved = yield* dbEffect('intake.saved-media', () => client.from('intake_media').select('position').eq('observation_id', observationId))
     for (let position = 0; position < urls.length; position++) {
       if (saved.some(item => item.position === position)) continue
-      const retained = yield* Effect.result(Effect.gen(function*() {
-        const image = yield* importTry('intake.image', () => fetcher(urls[position]))
-        yield* dbEffect('intake.store-image', () => client.storage.from('instagram-evidence').upload(image.object_key, image.bytes, { contentType: image.content_type, upsert: true }))
-        yield* dbEffect('intake.record-image', () => client.from('intake_media').upsert({ observation_id: observationId, position,
-          object_key: image.object_key, content_type: image.content_type, sha256: image.sha256 }, { onConflict: 'observation_id,position' }).select('id').single())
-      }))
+      const retained = yield* Effect.result(retainImageEffect(client, observationId, position, urls[position], fetcher))
       if (retained._tag === 'Failure') failures.push(`Media ${position} could not be retained for observation ${observationId}`)
     }
   }
-  return { posts: seen.size, changed, unchanged, failures, coverage }
+  return { posts: seen.size, changed, unchanged, failures, coverage, observationIds }
+})
+
+/** Instagram's signed CDN URLs carry their expiry as `oe`, hex Unix seconds. Null when absent or unreadable. */
+export function signedUrlExpiry(url: string): Date | null {
+  try {
+    const oe = new URL(url).searchParams.get('oe')
+    return oe && /^[0-9a-f]{1,12}$/i.test(oe) ? new Date(parseInt(oe, 16) * 1000) : null
+  } catch { return null }
+}
+
+// 20 downloads at the 15 s timeout bound a fully failing retry to 5 minutes of the 45-minute collect session.
+export const MEDIA_RETRY_CAP = 20
+
+/**
+ * Collection only fetches posts newer than the last run, so an image that failed to save would never come back in a
+ * dataset. This retries missing positions of unreviewed observations from their stored URLs, oldest first, at most
+ * `cap` downloads a run. Expired URLs are skipped and reported, since Instagram rejects them.
+ */
+export const retryMissingMediaEffect = Effect.fn('intake.retryMissingMedia')(function*(client: SupabaseClient,
+  options: { skip?: ReadonlySet<string>; fetcher?: typeof fetchInstagramImage; now?: Date; cap?: number } = {}) {
+  const { skip = new Set<string>(), fetcher = fetchInstagramImage, now = new Date(), cap = MEDIA_RETRY_CAP } = options
+  const observations = (yield* allRowsEffect(client, 'intake_observations', 'id,media_urls',
+    query => query.is('reviewed_at', null).order('observed_at'))) as unknown as Array<{ id: string; media_urls: unknown }>
+  const pending = observations.filter(row => !skip.has(row.id) && Array.isArray(row.media_urls) && row.media_urls.length)
+  const saved = new Set<string>()
+  for (let index = 0; index < pending.length; index += 100) {
+    const ids = pending.slice(index, index + 100).map(row => row.id)
+    const rows = (yield* allRowsEffect(client, 'intake_media', 'observation_id,position',
+      query => query.in('observation_id', ids).order('observation_id'))) as unknown as Array<{ observation_id: string; position: number }>
+    for (const row of rows) saved.add(`${row.observation_id}:${row.position}`)
+  }
+  const failures: string[] = []; let attempted = 0; let retained = 0; let expired = 0; let deferred = 0
+  for (const observation of pending) {
+    const urls = observation.media_urls as unknown[]
+    for (let position = 0; position < urls.length; position++) {
+      if (saved.has(`${observation.id}:${position}`)) continue
+      const url = urls[position]
+      const expiry = typeof url === 'string' ? signedUrlExpiry(url) : null
+      if (typeof url !== 'string' || expiry && expiry <= now) {
+        expired++
+        failures.push(`Media ${position} of observation ${observation.id} can't be retried: its stored URL ${typeof url === 'string' ? `expired ${expiry!.toISOString()}` : 'is invalid'}`)
+        continue
+      }
+      if (attempted >= cap) { deferred++; continue }
+      attempted++
+      const result = yield* Effect.result(retainImageEffect(client, observation.id, position, url, fetcher))
+      if (result._tag === 'Success') retained++
+      else failures.push(`Media ${position} could not be retained for observation ${observation.id} (retried from its stored URL)`)
+    }
+  }
+  if (deferred) failures.push(`${deferred} missing images were not retried this run (cap ${cap}); the next collect retries them`)
+  return { attempted, retained, expired, deferred, failures }
 })
 
 /**
@@ -175,7 +232,11 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
     if (!Array.isArray(page) || offset >= 10000) return yield* fail('Dataset incomplete or larger than the supported bound')
     items.push(...page); if (page.length < 500) break
   }
-  const result = yield* retainPostsEffect(client, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit))
+  const { observationIds, ...result } = yield* retainPostsEffect(client, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit))
   yield* dbEffect('intake.finished', () => client.from('intake_runs').update({ state: 'succeeded', charged_usd: run.usageTotalUsd ?? null, completed_at: new Date().toISOString() }).eq('id', reservation.id).select('id').single())
-  return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result }
+  // After the run is recorded, so a failed retry can't leave it unfinished. Posts in today's dataset were just tried with
+  // fresh URLs; every other unreviewed observation gets one retry per collect, including a resumed or repeated one.
+  const { failures: mediaFailures, ...mediaRetry } = yield* retryMissingMediaEffect(client, { skip: observationIds })
+  result.failures.push(...mediaFailures)
+  return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result, media_retry: mediaRetry }
 })

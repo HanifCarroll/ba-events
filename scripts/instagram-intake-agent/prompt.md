@@ -29,14 +29,14 @@ Something that stops you is one of two kinds. Follow the runbook's "Blockers" se
 
 1. Run `preflight`. If setup is missing or disabled, don't collect; append a note saying what setup is required, and stop.
 2. Run `collect` to collect, or resume today's budgeted Apify run. While it answers `running`, wait in this session with `sleep` (a few minutes at a time) and run it again. Follow the runbook for a reservation without an Apify run ID.
-3. Append a note: the outcome, the run's charge, the month's spend against the cap, and the coverage lines (dead, errored, uncovered, and at-ceiling accounts). Don't export or review anything.
+3. Append a note: the outcome, the run's charge, the month's spend against the cap, the coverage lines (dead, errored, uncovered, and at-ceiling accounts), and the `media_retry` counts with each image `failures` still names. Don't export or review anything.
 
 ## Phase: review
 
 1. Run `preflight`. Commit only when `publishing_ready` is true; otherwise review and hold, and say so in the note.
 2. Run `export`, then take at most `$INTAKE_BATCH` pending observations, the oldest first (the order of `pending.json`), skipping every observation ID listed in `$INTAKE_DEFERRED`. Earlier batches today already tried those and left them pending.
 3. Review each of them fully under the runbook's steps 3–8: read the caption, and open every image and carousel slide that could hold event information with the read tool, which shows you the image. Keep evidence-backed candidate revisions, resolve venues and catalog duplicates, preview, and commit only supported plans. Preserve stable event identities for cancellations and reschedules, and hold incomplete or conflicting facts.
-4. Record a review disposition for every observation you finish. An observation you take but can't finish, for example because its images failed to save, stays pending: append its ID to `$INTAKE_DEFERRED` (one ID per line, never rewrite the file) and name it in the note with the reason. Every observation you take must end up either reviewed or listed there. If `$INTAKE_MEMORY` says the same post's images also failed on an earlier run, add a `FIX:` line for it (see "Blockers").
+4. Record a review disposition for every observation you finish. An observation you take but can't finish, for example because its images failed to save, stays pending: append its ID to `$INTAKE_DEFERRED` (one ID per line, never rewrite the file) and name it in the note with the reason. Every observation you take must end up either reviewed or listed there. `collect` already retried its missing images today, so if today's collect note still names one of them as failed or expired, add a `FIX:` line for it (see "Blockers").
 5. Append a note for this batch: what it published (name and date), corrected, linked, and held and why, how many it skipped as out of scope, and anything it deliberately left pending.
 
 ## Phase: venues
