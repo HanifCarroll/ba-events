@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { fetchLumaJson, LumaRateLimitError, parseRetryAfter } from './http.ts'
 import { fetchLumaEvents } from './api.ts'
 import { fetchLumaEventDetail, prosemirrorText } from './detail.ts'
+import { extractVenueInfo, transformLumaEvent } from './transformer.ts'
+import { getChangedMutableFields } from '../../core/scraper-update.ts'
 
 const respond = (status: number, body: unknown = {}, headers: Record<string, string> = {}) =>
   (async () => new Response(JSON.stringify(body), { status, headers })) as unknown as typeof fetch
@@ -45,6 +47,39 @@ describe('Luma discover API', () => {
   })
 })
 
+describe('Luma guests-only events in the listing', () => {
+  // Shapes from the live discover API (2026-11-16), with synthetic names and places.
+  const listing = (geo: unknown) => (async () => new Response(JSON.stringify({ entries: [{ api_id: 'evt-h', event: {
+    api_id: 'evt-h', name: 'Encuentro sintético', url: 'sintetico', start_at: '2026-12-01T22:00:00.000Z', timezone: 'America/Argentina/Buenos_Aires',
+    geo_address_info: geo, coordinate: { latitude: -34.55, longitude: -58.45 },
+  } }], has_more: false }))) as unknown as typeof fetch
+
+  it('marks an obfuscated event hidden with no venue, and the transform keeps it that way', async () => {
+    const [event] = await fetchLumaEvents(listing({ mode: 'obfuscated', city: 'Buenos Aires', city_state: 'Buenos Aires, Argentina', sublocality: 'Belgrano', country: 'Argentina' }))
+    expect(event).toMatchObject({ location_hidden: true, venue: null })
+    expect(extractVenueInfo(event!)).toBeNull()
+    // Even a venue id from elsewhere never reaches the row.
+    expect(transformLumaEvent(event!, 'venue-synthetic')).toMatchObject({ location_hidden: true, venue_id: null })
+  })
+
+  it('leaves the stored flag alone when the payload cannot tell', async () => {
+    for (const geo of [undefined, null, {}, { city: 'Buenos Aires', address: 'Sala Sintética' }, { mode: 'shown', city: 'Buenos Aires' }, { mode: 'shown', address: '  ' }]) {
+      const [event] = await fetchLumaEvents(listing(geo))
+      expect(event, JSON.stringify(geo)).toMatchObject({ location_hidden: null, venue: null })
+      // No location_hidden in the row, so an update of an already hidden event keeps it hidden.
+      const row = transformLumaEvent(event!, null)
+      expect(row, JSON.stringify(geo)).not.toHaveProperty('location_hidden')
+      expect(getChangedMutableFields(row, { location_hidden: true } as never)).not.toHaveProperty('location_hidden')
+    }
+  })
+
+  it('reads a public event venue from geo_address_info and unhides it explicitly', async () => {
+    const [event] = await fetchLumaEvents(listing({ mode: 'shown', address: 'Sala Sintética', full_address: 'Sala Sintética, Av. Ficticia 1234, CABA', sublocality: 'Retiro', city: 'ACY' }))
+    expect(event).toMatchObject({ location_hidden: false, venue: { name: 'Sala Sintética', full_address: 'Sala Sintética, Av. Ficticia 1234, CABA', city: 'Retiro', latitude: -34.55, longitude: -58.45 } })
+    expect(transformLumaEvent(event!, 'venue-synthetic')).toMatchObject({ location_hidden: false, venue_id: 'venue-synthetic' })
+  })
+})
+
 describe('Luma event detail API', () => {
   it('reads the description and public venue, and omits obfuscated venues', async () => {
     const detail = (geo: unknown) => respond(200, {
@@ -58,12 +93,16 @@ describe('Luma event detail API', () => {
         ] },
       },
     })
-    const open = await fetchLumaEventDetail('https://luma.com/abc123', detail({ address: 'Paseo La Plaza', full_address: 'Paseo La Plaza, Av. Corrientes 1660' }))
+    const open = await fetchLumaEventDetail('https://luma.com/abc123', detail({ mode: 'shown', address: 'Paseo La Plaza', full_address: 'Paseo La Plaza, Av. Corrientes 1660' }))
     expect(open).toEqual({
       description: 'Título\n\nUno\ndos\n\nÍtem',
       venue: { name: 'Paseo La Plaza', address: 'Paseo La Plaza, Av. Corrientes 1660', latitude: -34.6, longitude: -58.4 },
+      location_hidden: false,
     })
-    expect((await fetchLumaEventDetail('https://luma.com/abc123', detail({ mode: 'obfuscated', city: 'Buenos Aires' })))?.venue).toBeNull()
+    expect(await fetchLumaEventDetail('https://luma.com/abc123', detail({ mode: 'obfuscated', city: 'Buenos Aires', city_state: 'Buenos Aires, Argentina', address: 'Paseo La Plaza' })))
+      .toMatchObject({ venue: null, location_hidden: true })
+    for (const geo of [undefined, {}, { city: 'Buenos Aires' }, { mode: 'shown' }])
+      expect(await fetchLumaEventDetail('https://luma.com/abc123', detail(geo)), JSON.stringify(geo)).toMatchObject({ venue: null, location_hidden: null })
     expect(prosemirrorText([])).toBe('')
   })
 

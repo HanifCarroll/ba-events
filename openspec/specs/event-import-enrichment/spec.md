@@ -23,6 +23,19 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 - **WHEN** its adapter cannot establish a time
 - **THEN** the event retains its date with time TBA rather than invented midnight certainty
 
+#### Scenario: Address is shared only after registration
+- **WHEN** Luma's listing or detail API returns `geo_address_info.mode = 'obfuscated'` (a guests-only event)
+- **THEN** the event is stored with `location_hidden = true` and no venue, and import, enrichment, and venue settlement never attach one, even when a name would match an existing venue
+- **AND** when a later read shows a public address (a non-obfuscated mode with an address), `location_hidden` is cleared and the venue is settled normally; a payload missing those fields leaves the stored flag unchanged
+- **AND** enrichment persists the hidden or public reading before description, translation, or embedding work, so their failure cannot leave a newly hidden event with a venue
+- **AND** the database trigger `zz_hidden_location_has_no_venue` clears `venue_id` on any write that leaves `location_hidden = true`
+
+#### Scenario: Venue name is only a place
+- **WHEN** a venue name is only a city, region, or postal code (such as "Buenos Aires, Argentina", "C1437EFA, Argentina", or "CABA")
+- **THEN** venue settlement and the intake `venue` operation neither match nor create a venue from it
+- **AND** a venue named only after a barrio is identified by its street address: the event must carry its own numbered address, a same-name venue is reused only at the same street and number, and otherwise a new venue is created; an event without its own numbered address gets no venue, and a catalog venue's address is never evidence for another event. Barrios named after a park ("Parque Chacabuco") are not area names
+- **AND** batch settlement keys barrio-named inputs by name plus normalized address, and importers send one input per event, so events in one import never share a barrio-named venue by name alone
+
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.
 
@@ -237,6 +250,8 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `supabase/migrations/20261025205334_instagram_intake.sql`
 - `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
 - `supabase/migrations/20261115120000_intake_similar_venues.sql`
+- `supabase/migrations/20261116120000_hidden_location_has_no_venue.sql`
+- `src/features/import/scrapers/luma/location.ts`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
@@ -250,6 +265,10 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/venues.test.ts`
 - `supabase/tests/instagram-intake.sql`
 - `supabase/tests/instagram-intake-venues.sql`
+- `supabase/tests/hidden-location.sql`
+- `src/features/import/scrapers/luma/http.test.ts`
+- `src/features/import/adapters/enrichment/luma-enrichment.test.ts`
+- `src/features/import/core/venue-settlement.test.ts`
 
 ### Verification command
 ```sh

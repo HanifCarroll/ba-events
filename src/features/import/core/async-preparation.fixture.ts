@@ -53,7 +53,7 @@ mock.module('#features/import/core/venue-settlement.ts', () => ({
 }))
 mock.module('#features/import/core/nominatim.ts', () => ({ delayEffect: () => Effect.void }))
 const identity = <T>(events: T) => events
-const transformer = { getAllVenueInfo: () => new Map(), getUniqueVenueNames: () => [], getVenueName: () => null }
+const transformer = { extractVenueInfo: () => null, getVenueName: () => null }
 mock.module('#features/import/scrapers/luma/transformer.ts', () => ({ ...transformer, transformLumaEvent: () => ({ ...transformed }) }))
 mock.module('#features/import/scrapers/meetup/transformer.ts', () => ({ ...transformer, transformMeetupEventWithExpansion: () => [{ ...transformed }] }))
 mock.module('#features/import/scrapers/ba-tourism/transformer.ts', () => ({ ...transformer, transformBATourismEvent: () => [{ ...transformed }] }))

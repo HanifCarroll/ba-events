@@ -6,10 +6,12 @@ import { createVenueSchema } from '#shared/lib/schemas.ts'
 import { NEIGHBORHOODS, type Neighborhood, type Venue } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult } from '../core/nominatim.ts'
-import { REVIEW_QUEUE_THRESHOLD, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
+import { REVIEW_QUEUE_THRESHOLD, addressKey, areaOnlyVenueName, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
 import { validPublicUrl, type Candidate } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
 import { allRowsEffect, dbEffect } from './repository.ts'
+
+export { addressKey }
 
 const text = (min: number, max: number) => Schema.String.pipe(Schema.check(Schema.isMinLength(min), Schema.isMaxLength(max)))
 export const VenueRequestSchema = Schema.Struct({
@@ -38,28 +40,6 @@ const CITY_STATE = 'ciudad autonoma de buenos aires'
 const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 const failure = (message: string) => new ImportOperationError({ operation: 'intake.venue', message })
 
-/**
- * Street name plus house number, so the catalog's messy formats compare equal: "Av. Corrientes N° 1530 - C.A.B.A.",
- * "Avenida Corrientes 1530, C1043AAB" and "Corrientes 1530" all give "corrientes 1530". The house number must follow
- * the street name, so "3 de Febrero" or "Av. 9 de Julio" alone has no key while "3 de Febrero 1378" does.
- */
-export function addressKey(address: string | null | undefined): string | null {
-  if (!address) return null
-  const normalize = (value: string) => fold(value) // "N°" folds to "n°", so markers are matched after folding
-    .replace(/\b(cp\s*)?[a-z]\d{4}[a-z]{0,3}\b|\bcp\s*\d{4}\b/g, ' ') // postal codes: C1043AAB, C1043, CP 1043
-    .replace(/\b(numero|nro|num|n)\s*[.°º]*\s*(?=\d)/g, ' ') // number markers: N° 1530, nro. 1530
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .replace(/\b(ciudad autonoma de buenos aires|cdad autonoma de buenos aires|ciudad de buenos aires|capital federal|c a b a|caba|buenos aires|argentina)\b/g, ' ')
-    .replace(/\s+/g, ' ').trim()
-  const plain = normalize(address)
-  const street = (value: string) => value.replace(/^(avenida|avda|av|calle|pasaje|pje)\s+/, '')
-  const parts = street(plain).match(/^(.*?\p{L}.*?)\s(\d{1,5})\b/u)
-  if (parts) return `${parts[1]} ${parts[2]}`
-  // Number first, as some ticket sites write it: "1660 Avenida Corrientes". "25 de Mayo" is a street name, not this.
-  const first = normalize(address.split(',')[0]).match(/^(\d{1,5})\s(?!de\b)(\p{L}[\p{L} ]*)$/u)
-  return first ? `${street(first[2])} ${first[1]}` : null
-}
-
 /** Accents, case, spacing and punctuation removed: "BIRIBIRI  Club-Social" and "Biribiri club social" are the same name. */
 export const nameKey = (name: string) => fold(name).replace(/[^\p{L}\p{N}]+/gu, '')
 // Generic words around a venue's own name; dropped only to find possible aliases, never to reuse automatically.
@@ -86,7 +66,8 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
 export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(client: SupabaseClient, request: VenueRequest,
   geocode: Geocode = query => searchNominatimEffect(query)) {
   const name = request.name.trim(), address = request.address.trim()
-  if (isGarbageVenueName(name) || isPlaceholderVenue(name) || isPlaceholderVenue(address)) {
+  // A barrio-named place passes: the address below must carry a house number. A city or postal code never does.
+  if (isGarbageVenueName(name) || areaOnlyVenueName(name) === 'city' || isPlaceholderVenue(name) || isPlaceholderVenue(address)) {
     return { outcome: 'rejected', reasons: ['Name or address is a placeholder, not a physical venue'] } satisfies VenueOutcome
   }
   const key = addressKey(address)

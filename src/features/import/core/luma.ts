@@ -13,7 +13,7 @@ import { fetchLumaEvents } from '../scrapers/luma/api.ts'
 import type { LumaEvent } from '../scrapers/luma/types.ts'
 import {
   transformLumaEvent,
-  getAllVenueInfo,
+  extractVenueInfo,
 } from '../scrapers/luma/transformer.ts'
 import { categorizeEventsBatchWithStats } from '../scrapers/ai-categorizer.ts'
 import {
@@ -25,7 +25,7 @@ import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../a
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
 import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
-import { settleVenuesEffect, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
+import { settleVenuesEffect, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement.ts'
 import { delayEffect } from './nominatim.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
@@ -143,11 +143,13 @@ export function processLumaImportEffect(
     if (filteredEvents.length === 0) return result
 
     console.log('[luma] Settling venues...')
-    const venueInfoMap = getAllVenueInfo(filteredEvents)
-    const venueInputs: VenueSettlementInput[] = Array.from(venueInfoMap.entries())
-      .filter(([name]) => name)
-      .map(([name, info]) => ({
-        name,
+    // Hidden events have no venue (`lumaLocation`), so they never reach settlement.
+    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    const venueInputs: VenueSettlementInput[] = filteredEvents
+      .map(extractVenueInfo)
+      .filter((info): info is NonNullable<typeof info> => info !== null)
+      .map((info) => ({
+        name: info.name,
         address: info.address,
         coordinates: info.latitude && info.longitude
           ? { lat: info.latitude, lng: info.longitude }
@@ -180,11 +182,8 @@ export function processLumaImportEffect(
     }> = []
     for (const event of filteredEvents) {
       const venueName = event.venue?.name || null
-      const venueId = getVenueIdFromResults(venueResults, venueName)
+      const venueId = getVenueIdFromResults(venueResults, venueName, extractVenueInfo(event)?.address)
       const transformed = transformLumaEvent(event, venueId)
-      if (isPlaceholderResult(venueResults, venueName)) {
-        ;(transformed as EventInsert & { location_hidden?: boolean }).location_hidden = true
-      }
       const existing = existingEventsMap.get(event.api_id)
       if (existing) {
         transformed.description_es = existing.description_es

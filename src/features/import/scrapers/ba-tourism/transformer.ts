@@ -79,16 +79,3 @@ export function transformBATourismEvents(
 
   return results
 }
-
-/**
- * Get unique venue names from events for batch matching
- */
-export function getUniqueVenueNames(events: BATourismEvent[]): string[] {
-  const names = new Set<string>()
-  for (const event of events) {
-    if (event.venueName) {
-      names.add(event.venueName)
-    }
-  }
-  return Array.from(names)
-}

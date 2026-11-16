@@ -79,7 +79,10 @@ export function transformLumaEvent(
     starts_at: startsAt,
     ends_at: endsAt,
     is_all_day: isAllDay,
-    venue_id: venueId,
+    venue_id: event.location_hidden ? null : venueId,
+    // Explicit when Luma says so, so an event that turns public again is unhidden on its next import.
+    // Unknown leaves the stored flag alone (an undefined field is not written).
+    ...(event.location_hidden === null ? {} : { location_hidden: event.location_hidden }),
     categories: [], // Enriched later via AI
     price: event.is_free ? null : price,
     is_free: event.is_free,
@@ -105,64 +108,4 @@ export function extractVenueInfo(event: LumaEvent): LumaVenueInfo | null {
     latitude: event.venue?.latitude || null,
     longitude: event.venue?.longitude || null,
   }
-}
-
-/**
- * Create a unique key for venue matching
- * Uses venue name as key (same as other scrapers)
- */
-export function getVenueKey(event: LumaEvent): string | null {
-  return extractVenueName(event)
-}
-
-/**
- * Batch transform multiple events
- *
- * @param events - Array of Luma events
- * @param venueIdMap - Map of venue name → venue ID (from matchVenue)
- */
-export function transformLumaEvents(
-  events: LumaEvent[],
-  venueIdMap: Map<string, string | null>
-): EventInsert[] {
-  return events.map((event) => {
-    const venueName = getVenueKey(event)
-    const venueId = venueName ? venueIdMap.get(venueName) || null : null
-    return transformLumaEvent(event, venueId)
-  })
-}
-
-/**
- * Get all unique venue names from events for batch matching
- */
-export function getUniqueVenueNames(events: LumaEvent[]): string[] {
-  const venueNames = new Set<string>()
-
-  for (const event of events) {
-    const name = extractVenueName(event)
-    if (name) {
-      venueNames.add(name)
-    }
-  }
-
-  return Array.from(venueNames)
-}
-
-/**
- * Get venue info for all events (for creating new venues)
- */
-export function getAllVenueInfo(events: LumaEvent[]): Map<string, LumaVenueInfo> {
-  const venueMap = new Map<string, LumaVenueInfo>()
-
-  for (const event of events) {
-    const info = extractVenueInfo(event)
-    if (info) {
-      // Only keep first occurrence (venues may have slightly different addresses)
-      if (!venueMap.has(info.name)) {
-        venueMap.set(info.name, info)
-      }
-    }
-  }
-
-  return venueMap
 }

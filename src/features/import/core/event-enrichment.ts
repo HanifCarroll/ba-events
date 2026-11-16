@@ -138,6 +138,7 @@ function updateEventEnrichmentEffect(
     search_document?: string | null
     embedding_version?: number
     venue_id?: string | null
+    location_hidden?: boolean
     facets?: EventFacets
     enrichment_status?: 'pending' | 'completed' | 'failed' | 'skipped'
     enrichment_error?: string | null
@@ -192,6 +193,7 @@ interface EnrichmentPayload {
   description_es: string | null
   description_en: string | null
   venue_name: string | null
+  location_hidden?: boolean
 }
 
 /**
@@ -334,6 +336,14 @@ export function enrichSingleEventEffect(
         adapter.serverEnrich(link, { extractVenue: needsVenue })
       )
 
+      // Persist the source's privacy reading first, so a missing description or a later
+      // translation or embedding failure can't leave a newly hidden event public with a venue.
+      if (enrichmentResult?.location_hidden !== undefined) {
+        yield* updateEventEnrichmentEffect(client, id, enrichmentResult.location_hidden
+          ? { location_hidden: true, venue_id: null }
+          : { location_hidden: false })
+      }
+
       if (enrichmentResult?.description_en && !enrichmentResult.description_es) {
         const detectedLang = yield* enrichmentTry('event-enrichment.detect-language', () =>
           detectLanguage(enrichmentResult!.description_en!)
@@ -388,7 +398,9 @@ export function enrichSingleEventEffect(
     let venueSettlement: VenueSettlementResult | undefined
     let settledVenueId: string | null = null
 
-    if (needsVenue && enrichmentResult.venue_name) {
+    // The source says the address comes after registration: no venue, whatever a name would match.
+    const hidden = enrichmentResult.location_hidden === true
+    if (needsVenue && enrichmentResult.venue_name && !hidden) {
       console.log(`[event-enrichment] Settling venue: ${enrichmentResult.venue_name}`)
       venueSettlement = yield* settleVenueEffect(client, {
         name: enrichmentResult.venue_name,
@@ -411,7 +423,9 @@ export function enrichSingleEventEffect(
 
     let venueName: string | null = null
     let venueNeighborhood: Neighborhood | null = null
-    if (settledVenueId) {
+    if (hidden) {
+      // No venue in the search document either.
+    } else if (settledVenueId) {
       venueName = venueSettlement!.venueName
     } else if (venue_id) {
       const existingVenue = yield* getVenueNameAndNeighborhoodEffect(client, venue_id)
