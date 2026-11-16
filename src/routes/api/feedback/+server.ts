@@ -3,7 +3,7 @@ import { Schema } from 'effect'
 import { checkApiRateLimit, RATE_LIMIT_RETRY_SECONDS } from '#features/auth/api/rate-limit.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
-import { sendFeedbackAlert } from '#shared/lib/feedback/alert.server.ts'
+import { feedbackAlertConfig, sendFeedbackAlert, type FeedbackMailer } from '#shared/lib/feedback/alert.server.ts'
 
 const MAX_FEEDBACK_LENGTH = 2000
 
@@ -56,7 +56,7 @@ export const POST: RequestHandler = async (event) => {
   }
 
   // Saving feedback is the source of truth. An email outage must not make someone submit twice.
-  await sendFeedbackAlert(message)
+  await sendFeedbackAlert(message, feedbackAlertConfig((event.platform as { env?: { EMAIL?: FeedbackMailer } } | undefined)?.env))
 
   return json({ success: true })
 }

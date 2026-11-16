@@ -76,13 +76,13 @@ are established until this change is released and real users provide ratings.
 
 ## Feedback alerts
 
-Every successfully saved feedback submission can send an immediate email through Resend. Configure these server-side deployment variables:
+Every successfully saved feedback submission can send an immediate email through Cloudflare Email Sending. The `baeventos` Worker's `send_email` binding `EMAIL` (in `wrangler.jsonc`) sends from `BA Eventos <alerts@baeventos.com>`, so `baeventos.com` must be onboarded to Email Sending. Set the recipient as a Worker secret:
 
 | Variable | Purpose |
 | --- | --- |
-| `RESEND_API_KEY` | Resend API key |
-| `FEEDBACK_ALERT_FROM` | Verified Resend sender, for example `BA Eventos <feedback@baeventos.com>` |
 | `FEEDBACK_ALERT_TO` | Alert recipient, for example `hanif@hanifcarroll.com` |
+
+Without `FEEDBACK_ALERT_TO` or the binding, no alert is sent.
 
 If delivery fails, the feedback remains saved and the person sees a successful submission. The alert includes the submitted feedback and is sent only to the configured recipient; it is never sent to PostHog.
 
