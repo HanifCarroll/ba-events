@@ -10,7 +10,7 @@
  * The Spanish description is used for embeddings (cross-lingual model handles it)
  */
 
-import { generateObject, generateText } from 'ai'
+import { generateObject, generateText, NoObjectGeneratedError } from 'ai'
 import { z } from 'zod'
 import { Effect } from 'effect'
 import { textModel, NO_THINKING } from './providers.ts'
@@ -286,12 +286,16 @@ export async function generateDescriptionSummary(
   try {
     const prompt = language === 'spanish' ? SUMMARY_PROMPT_ES : SUMMARY_PROMPT_EN
     const text = description.slice(0, 2500)
-
-    const { object } = await generateObject({
+    const request = () => generateObject({
       model: textModel,
       schema: SUMMARY_SCHEMA,
       prompt: `${prompt}\n\n---\n${text}\n---`,
       ...NO_THINKING,
+    })
+    // The model occasionally returns no parsable object once; one more call usually succeeds.
+    const { object } = await request().catch(error => {
+      if (!NoObjectGeneratedError.isInstance(error)) throw error
+      return request()
     })
 
     const summary = object.summary.trim()
