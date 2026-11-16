@@ -1,13 +1,9 @@
 /**
  * Luma Enrichment Adapter
  *
- * Luma enrichment uses server-side direct fetch:
- * - Works well with direct HTTP requests
- * - No Cloudflare blocking issues
- *
- * Extraction methods:
- * - Description: `__NEXT_DATA__` → JSON-LD → meta tags (fallback chain)
- * - Venue: `__NEXT_DATA__` geo_address_json/venue/location → JSON-LD
+ * One read of Luma's JSON API (`api2.luma.com/event/get?event_api_id=<slug>`)
+ * gives both the description (Prosemirror `description_mirror`) and the public
+ * venue (`geo_address_info`). luma.com HTML answers Cloudflare Workers with 429.
  *
  * Language: Variable (needs detection - could be English or Spanish)
  */
@@ -17,8 +13,7 @@ import type {
   ServerEnrichmentResult,
   ServerEnrichmentOptions,
 } from '../enrichment-types.ts'
-import { fetchLumaDescriptionFromDetailPage } from '../../scrapers/luma/description-enrichment.ts'
-import { fetchLumaVenueFromUrl } from '../../scrapers/luma/venue-enrichment.ts'
+import { fetchLumaEventDetail } from '../../scrapers/luma/detail.ts'
 
 export const lumaEnrichmentAdapter: EnrichmentAdapter = {
   source: 'luma',
@@ -30,7 +25,7 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
 
   config: {
     requiresClientSide: false,
-    strategyReason: 'Direct fetch works; extracts from __NEXT_DATA__ and JSON-LD',
+    strategyReason: 'Luma JSON API; luma.com HTML is rate-limited for Cloudflare Workers',
     // Language is variable for Luma - needs detection
     knownLanguage: undefined,
     concurrency: 3,
@@ -39,18 +34,17 @@ export const lumaEnrichmentAdapter: EnrichmentAdapter = {
 
   /**
    * SERVER-SIDE: Perform full enrichment for a single Luma event
-   * Extracts description from __NEXT_DATA__/JSON-LD and venue from structured data
+   * One API read gives the description and the public venue
    */
   serverEnrich: async (
     link: string,
     options?: ServerEnrichmentOptions
   ): Promise<ServerEnrichmentResult | null> => {
     try {
-      const [{ description, sourceObservedAt }, venue] = await Promise.all([
-        fetchLumaDescriptionFromDetailPage(link).then(description => ({ description, sourceObservedAt: new Date().toISOString() })),
-        options?.extractVenue ? fetchLumaVenueFromUrl(link) : Promise.resolve(null),
-      ])
-      const venueName = venue?.name ?? null
+      const sourceObservedAt = new Date().toISOString()
+      const detail = await fetchLumaEventDetail(link)
+      const description = detail?.description ?? null
+      const venueName = options?.extractVenue ? detail?.venue?.name ?? null : null
 
       // Return null if no description found (primary enrichment target)
       if (!description) {
