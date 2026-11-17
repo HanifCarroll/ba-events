@@ -74,7 +74,7 @@ export function supabaseIntake(client: SupabaseClient, storageOrigin = ''): Inta
     observationsByIds: ids => dbEffect('intake.observations', () => client.from('intake_observations').select('*').in('id', ids)),
     sourceAuthorities: usernames => dbEffect('intake.sources', () => client.from('instagram_sources').select('username,authority').in('username', usernames)),
     mediaForObservations: ids => dbEffect('intake.media', () => client.from('intake_media').select('*').in('observation_id', ids)).pipe(Effect.map(media => media as Media[])),
-    venue: id => dbEffect('intake.venue', () => client.from('venues').select('id,name,neighborhood').eq('id', id).limit(1)).pipe(Effect.map(rows => rows[0] ?? null)),
+    venue: id => dbEffect('intake.venue', () => client.from('venues').select('id,name,neighborhood,website').eq('id', id).limit(1)).pipe(Effect.map(rows => rows[0] ?? null)),
     eventVenue: id => dbEffect('intake.venue', () => client.from('venues').select('name,neighborhood').eq('id', id).single()),
     venueHint: name => matchVenueEffect(name, 0.6, supabaseCatalog(client)).pipe(
       Effect.map(match => match.venue), Effect.mapError(error => new ImportOperationError({ operation: 'intake.venue-hint', message: error.message }))),

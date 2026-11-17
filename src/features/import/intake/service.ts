@@ -5,7 +5,7 @@ import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument } from '#shared/lib/a
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
-import { verifyOfficialPagesEffect, type ReadPage } from './official-page.ts'
+import { officialSites, verifyOfficialPagesEffect, type ReadPage } from './official-page.ts'
 import { baDate, candidateStart, decideMatch, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
@@ -37,7 +37,10 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   const candidate = yield* Effect.try({ try: () => decodeCandidate({ ...row.payload, expected_revision: row.revision }), catch: () => failure('Stored candidate is invalid') })
   const { observations, media } = yield* readEvidenceEffect(store, candidate)
   const reasons = validateEvidence(candidate, observations, media, now)
-  reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time }, readPage))
+  if (candidate.evidence.some(isOfficialPage)) {
+    const sites = yield* officialSitesEffect(store, candidate.venue_id, candidate.ticket_url, candidate.evidence, observations)
+    reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time, sites }, readPage))
+  }
   // Changed source observations invalidate earlier evidence even if the candidate was not edited yet.
   const currentObservations = yield* Effect.forEach(observations, post => Effect.gen(function* () {
     const latest = yield* store.latestObservation(post.post_id)
@@ -114,6 +117,15 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   return { ...plan, venue_name: venueName } as IntakePlan & { venue_name: string | null }
 })
 
+/** The sites an official page may be on for this candidate (official-page.ts `officialSites`). */
+const officialSitesEffect = (store: IntakeStore, venueId: string | null, ticketUrl: string | null, evidence: Candidate['evidence'],
+  observations: ReadonlyArray<Record<string, unknown>>) => Effect.gen(function*() {
+  const venue = venueId ? yield* store.venue(venueId) : null
+  const ticketBacked = evidence.some(item => !isOfficialPage(item) && item.fields.includes('ticket'))
+  return officialSites({ website: venue?.website, ticketUrl: ticketBacked ? ticketUrl : null,
+    captions: observations.map(post => String(post.caption ?? '')) })
+})
+
 /** The plan's name and Buenos Aires date and time, the facts its page excerpts must state. */
 const planFacts = (plan: IntakePlanRow) => {
   const start = new Date(plan.payload.starts_at)
@@ -137,7 +149,9 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: Inta
   yield* store.checkPlan(id)
   // A page can change after preview, so commit fetches it again.
   if (plan.evidence.some(isOfficialPage)) {
-    const pages = yield* verifyOfficialPagesEffect(plan.evidence, planFacts(plan), publishers.readPage)
+    const observations = yield* store.observationsByIds([...new Set(plan.evidence.flatMap(item => isOfficialPage(item) ? [] : [item.observation_id]))])
+    const sites = yield* officialSitesEffect(store, plan.payload.venue_id ?? null, plan.payload.ticket_url ?? null, plan.evidence, observations)
+    const pages = yield* verifyOfficialPagesEffect(plan.evidence, { ...planFacts(plan), sites }, publishers.readPage)
     if (pages.length) return yield* failure(pages.join('; '))
   }
   if (plan.action !== 'link' && !plan.payload.embedding) {

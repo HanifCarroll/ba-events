@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
-import { normalizePageText, publicPageUrl, readOfficialPage, verifyOfficialPagesEffect, visibleText } from './official-page.ts'
+import { normalizePageText, officialSites, publicPageUrl, readOfficialPage, siteOf, verifyOfficialPagesEffect, visibleText } from './official-page.ts'
 
 const page = (body: string, init: ResponseInit = {}) => new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' }, ...init })
-const facts = { name: 'Forever Sintético', date: '2026-11-23', time: '21:00' }
+const sites = officialSites({ website: 'https://www.teatro.example.org', captions: ['Entradas: https://down.example.org/obra'] })
+const facts = { name: 'Forever Sintético', date: '2026-11-23', time: '21:00', sites }
 const SHOWTIMES = `<html><head><title>Sala Sintética</title><script>var s = "LUNES 1 ENERO 09:00"</script></head><body><h1>Forever&nbsp;Sint&eacute;tico</h1>
   <div class="sp-funcion-fecha">
       LUNES 23 NOVIEMBRE
@@ -92,18 +93,40 @@ describe('official-page evidence', () => {
       if (url.endsWith('/sneaky')) return new Response(null, { status: 302, headers: { location: 'https://169.254.169.254/latest' } })
       return page(SHOWTIMES)
     }) as typeof fetch
-    expect(await readOfficialPage('https://teatro.example.org/old', fetcher)).toContain('LUNES 23 NOVIEMBRE')
+    expect(await readOfficialPage('https://teatro.example.org/old', sites, fetcher)).toContain('LUNES 23 NOVIEMBRE')
     expect(requests.map(request => request.url)).toEqual(['https://teatro.example.org/old', 'https://teatro.example.org/obra'])
     expect(requests[0].init).toMatchObject({ redirect: 'manual' })
     expect(Object.keys(requests[0].init!.headers as object).map(key => key.toLowerCase())).not.toContain('cookie')
     expect(requests[0].init!.credentials).toBeUndefined()
-    await expect(readOfficialPage('https://teatro.example.org/sneaky', fetcher)).rejects.toThrow('not a public HTTPS page')
+    await expect(readOfficialPage('https://teatro.example.org/sneaky', sites, fetcher)).rejects.toThrow('not a public HTTPS page')
+  })
+
+  it('counts only the venue\'s site, sites cited posts link to, the post-backed ticket site, and known ticket sellers', () => {
+    const allowed = officialSites({ website: 'teatropicadero.com.ar', ticketUrl: 'https://entradas.sala.com.ar/x',
+      captions: ['Info en www.organizador.org.ar/obra y https://linktr.ee/sala, también https://www.instagram.com/sala'] })
+    expect(siteOf('www.teatropicadero.com.ar')).toBe('teatropicadero.com.ar')
+    for (const site of ['teatropicadero.com.ar', 'sala.com.ar', 'organizador.org.ar', 'plateanet.com', 'alternativateatral.com']) expect(allowed.has(site), site).toBe(true)
+    for (const site of ['linktr.ee', 'instagram.com', 'example.org']) expect(allowed.has(site), site).toBe(false)
+    expect(officialSites({ website: 'https://www.facebook.com/sala' }).has('facebook.com')).toBe(false)
+  })
+
+  it('refuses a page or a redirect off the allowed sites, and social or wrapper hosts even when a venue links them', async () => {
+    const reasons = await Effect.runPromise(verifyOfficialPagesEffect([
+      evidence('https://agenda.example.net/forever', 'LUNES 23 NOVIEMBRE 21:00'),
+      evidence('https://teatro-example-org.translate.goog/obra', 'LUNES 23 NOVIEMBRE 21:00'),
+    ], { ...facts, sites: new Set([...sites, 'translate.goog']) }, async () => visibleText(SHOWTIMES)))
+    expect(reasons).toEqual([
+      "Official page must be on the venue's website, a site a cited post links to, the post-backed ticket site, or a known ticket seller: https://agenda.example.net/forever",
+      "Official page must be on the venue's website, a site a cited post links to, the post-backed ticket site, or a known ticket seller: https://teatro-example-org.translate.goog/obra",
+    ])
+    const fetcher = (async () => new Response(null, { status: 302, headers: { location: 'https://agenda.example.net/forever' } })) as unknown as typeof fetch
+    await expect(readOfficialPage('https://www.teatro.example.org/obra', sites, fetcher)).rejects.toThrow('redirected to agenda.example.net')
   })
 
   it('refuses non-HTML bodies, error statuses, and oversized pages', async () => {
     const answer = (response: Response) => (async () => response) as unknown as typeof fetch
-    await expect(readOfficialPage('https://a.example.org/', answer(page('x', { headers: { 'content-type': 'application/pdf' } })))).rejects.toThrow('not an HTML page')
-    await expect(readOfficialPage('https://a.example.org/', answer(page('x', { status: 404 })))).rejects.toThrow('answered 404')
-    await expect(readOfficialPage('https://a.example.org/', answer(page('x'.repeat(2_097_153))))).rejects.toThrow('page exceeds 2 MB')
+    await expect(readOfficialPage('https://a.example.org/', new Set(['example.org']), answer(page('x', { headers: { 'content-type': 'application/pdf' } })))).rejects.toThrow('not an HTML page')
+    await expect(readOfficialPage('https://a.example.org/', new Set(['example.org']), answer(page('x', { status: 404 })))).rejects.toThrow('answered 404')
+    await expect(readOfficialPage('https://a.example.org/', new Set(['example.org']), answer(page('x'.repeat(2_097_153))))).rejects.toThrow('page exceeds 2 MB')
   })
 })

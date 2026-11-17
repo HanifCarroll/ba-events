@@ -79,7 +79,7 @@ export interface IntakeStore extends CollectionStore {
   observationsByIds(ids: string[]): Op<Row[]>
   sourceAuthorities(usernames: string[]): Op<Array<{ username: string; authority: string }>>
   mediaForObservations(ids: string[]): Op<Media[]>
-  venue(id: string): Op<{ id: string; name: string; neighborhood: string | null } | null>
+  venue(id: string): Op<{ id: string; name: string; neighborhood: string | null; website?: string | null } | null>
   /** The plan venue's name and barrio for the search document; fails when it doesn't exist. */
   eventVenue(id: string | null | undefined): Op<{ name: string; neighborhood: string | null }>
   /** The importers' venue match, advisory only. */

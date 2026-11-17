@@ -19,6 +19,39 @@ export function publicPageUrl(value: string): boolean {
   return !host.startsWith('[') && !/^[\d.]+$/.test(host) && !/(^|\.)(local|localhost|internal|lan|home|arpa)$/.test(host)
 }
 
+// Argentine ticket sellers whose event pages count as official, by registrable domain (checked live on 2026-11-17).
+// Ticketportal is left out: no Argentine domain of theirs resolves.
+export const TICKET_SELLERS = ['alternativateatral.com', 'plateanet.com', 'ticketek.com.ar', 'passline.com', 'entradaweb.com.ar',
+  'eventbrite.com', 'eventbrite.com.ar', 'tuentrada.com', 'livepass.com.ar', 'allaccess.com.ar', 'venti.com.ar', 'venti.live', 'entradauno.com']
+// Social sites, link pages, translators, caches and archives never count, even when a venue or caption points at them.
+const NEVER = new Set(['instagram.com', 'facebook.com', 'fb.com', 'fb.me', 'x.com', 'twitter.com', 't.co', 'tiktok.com', 'youtube.com',
+  'youtu.be', 'linktr.ee', 'translate.goog', 'googleusercontent.com', 'archive.org'])
+// shortcut: a small second-level list instead of the Public Suffix List; add a suffix when a venue's site uses another one.
+const SECOND_LEVEL = new Set(['com.ar', 'org.ar', 'net.ar', 'gob.ar', 'gov.ar', 'edu.ar', 'tur.ar', 'int.ar', 'com.br', 'com.uy', 'com.mx', 'com.es', 'co.uk'])
+/** The registrable domain of a host: `www.teatropicadero.com.ar` → `teatropicadero.com.ar`. */
+export function siteOf(host: string): string {
+  const labels = host.toLowerCase().replace(/\.$/, '').split('.')
+  return labels.slice(SECOND_LEVEL.has(labels.slice(-2).join('.')) ? -3 : -2).join('.')
+}
+const hostOf = (value: string) => { try { return new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`).hostname } catch { return null } }
+
+/**
+ * The sites whose pages count as official for a candidate: the venue's stored website, the ticket link when a post backs
+ * it, any site a cited post's caption links to, and the known ticket sellers. Social and wrapper sites never count.
+ */
+export function officialSites(sources: { website?: string | null; ticketUrl?: string | null; captions?: readonly string[] }): Set<string> {
+  const urls = [sources.website, sources.ticketUrl,
+    ...(sources.captions ?? []).flatMap(caption => caption.match(/\b(?:https?:\/\/|www\.)[^\s<>()"']+/gi) ?? [])]
+  const sites = new Set(TICKET_SELLERS)
+  for (const url of urls) { const host = url && hostOf(url); if (host && host.includes('.')) sites.add(siteOf(host)) }
+  for (const site of NEVER) sites.delete(site)
+  return sites
+}
+export const officialPageAllowed = (url: string, sites: ReadonlySet<string>) => {
+  const site = siteOf(new URL(url).hostname)
+  return !NEVER.has(site) && sites.has(site)
+}
+
 /** Accent- and case-insensitive, with every whitespace run as one space: words and numbers keep their boundaries. */
 export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
 /** For the name check only: punctuation is a space too, so "¡Forever Young!" is found as "forever young". */
@@ -34,11 +67,12 @@ export function visibleText(html: string): string {
 }
 
 /** GET with no cookies or credentials, manual redirects re-checked hop by hop, a time limit and a size limit. */
-export async function readOfficialPage(url: string, fetcher: typeof fetch = fetch): Promise<string> {
+export async function readOfficialPage(url: string, sites: ReadonlySet<string>, fetcher: typeof fetch = fetch): Promise<string> {
   const signal = AbortSignal.timeout(TIMEOUT_MS)
   let current = url
   for (let hop = 0; ; hop++) {
     if (!publicPageUrl(current)) throw new Error('not a public HTTPS page')
+    if (!officialPageAllowed(current, sites)) throw new Error(`${hop ? 'redirected to' : 'is on'} ${new URL(current).hostname}, which is not the venue's, organizer's or a ticket seller's site`)
     const response = await fetcher(current, { redirect: 'manual', signal,
       headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,text/plain;q=0.5', 'User-Agent': 'BA Eventos intake (+https://baeventos.com)' } })
     const location = response.headers.get('location')
@@ -69,10 +103,10 @@ export async function readOfficialPage(url: string, fetcher: typeof fetch = fetc
     return /^text\/plain/i.test(type) ? text : visibleText(text)
   }
 }
-export type ReadPage = (url: string) => Promise<string>
+export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<string>
 
 /** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
-export type PageFacts = { name: string; date: string; time: string | null }
+export type PageFacts = { name: string; date: string; time: string | null; sites: ReadonlySet<string> }
 
 /** Why an excerpt doesn't state the date or time it is cited for; null when it does. Digit runs are compared as numbers. */
 export function excerptFactsReason(excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
@@ -89,17 +123,21 @@ export function excerptFactsReason(excerpt: string, fields: readonly string[], f
 }
 
 /** The reasons official-page evidence doesn't verify now; empty when every page was fetched and backs its facts. */
-export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: PageFacts, readPage: ReadPage = url => readOfficialPage(url)) => Effect.gen(function*() {
+export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: PageFacts, readPage: ReadPage = readOfficialPage) => Effect.gen(function*() {
   const pages = evidence.filter(isOfficialPage)
   const texts = new Map<string, Promise<string>>()
   const reasons: string[] = []
   for (const page of pages) {
     if (!publicPageUrl(page.url)) { reasons.push(`Official page must be a public HTTPS address: ${page.url}`); continue }
+    if (!officialPageAllowed(page.url, facts.sites)) {
+      reasons.push(`Official page must be on the venue's website, a site a cited post links to, the post-backed ticket site, or a known ticket seller: ${page.url}`)
+      continue
+    }
     const excerpt = normalizePageText(page.excerpt)
     if (excerpt.length < MIN_EXCERPT) { reasons.push(`Official page excerpt is too short to verify: ${page.url}`); continue }
     const missing = excerptFactsReason(excerpt, page.fields, facts)
     if (missing) { reasons.push(`Official page excerpt ${missing}: ${page.url}`); continue }
-    if (!texts.has(page.url)) texts.set(page.url, readPage(page.url))
+    if (!texts.has(page.url)) texts.set(page.url, readPage(page.url, facts.sites))
     const text = yield* Effect.promise(() => texts.get(page.url)!.then(value => ({ value }), (error: unknown) => ({ error })))
     if ('error' in text) {
       reasons.push(`Official page could not be read: ${page.url} (${text.error instanceof Error ? text.error.message : String(text.error)})`)

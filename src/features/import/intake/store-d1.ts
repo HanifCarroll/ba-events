@@ -264,7 +264,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       'SELECT username, authority FROM instagram_sources WHERE username IN (SELECT value FROM json_each(?))').bind(JSON.stringify(usernames)))),
     mediaForObservations: ids => d1('intake.media', () => all<Media>(db.prepare(
       'SELECT * FROM intake_media WHERE observation_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)))),
-    venue: id => d1('intake.venue', () => first(db.prepare('SELECT id, name, neighborhood FROM venues WHERE id = ?').bind(id))),
+    venue: id => d1('intake.venue', () => first(db.prepare('SELECT id, name, neighborhood, website FROM venues WHERE id = ?').bind(id))),
     eventVenue: id => d1('intake.venue', async () => {
       const row = id ? await first<{ name: string; neighborhood: string | null }>(db.prepare('SELECT name, neighborhood FROM venues WHERE id = ?').bind(id)) : null
       if (!row) throw new Error('Venue not found')

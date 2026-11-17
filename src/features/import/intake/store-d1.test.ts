@@ -312,11 +312,12 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     await source()
     const runId = (await run(store.reserveCollection())).id
     const venueId = await venue()
+    await db.prepare("UPDATE venues SET website = 'https://www.teatro.example.org' WHERE id = ?").bind(venueId).run()
     const post = await observation(runId, 'Synthetic Jazz en Synthetic Venue, entradas en la web')
     const day = shiftDay(baToday(), 5)
     const url = 'https://teatro.example.org/obra/synthetic-jazz/'
     let html = `<html><body><h1>Synthetic Jazz</h1><div>PRÓXIMAS FUNCIONES</div><div>${day}</div><div>21:00</div></body></html>`
-    const readPage = async (requested: string) => { expect(requested).toBe(url); return visibleTextFor(html) }
+    const readPage = async (requested: string, sites: ReadonlySet<string>) => { expect(requested).toBe(url); expect(sites.has('example.org')).toBe(true); return visibleTextFor(html) }
     const candidate = id()
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { evidence: [
       { observation_id: post, fields: ['name', 'venue'], excerpt: 'Synthetic Jazz en Synthetic Venue', media_id: null },
