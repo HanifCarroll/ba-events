@@ -5,6 +5,7 @@ import { createVenue } from '#shared/lib/db/client.server.ts'
 import type { VenueInsert } from '#shared/lib/types.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { matchVenueEffect } from '../scrapers/venue-matcher.ts'
+import { supabaseCatalog } from '../core/catalog-store.ts'
 import type { Media } from './planning.ts'
 import { allRowsEffect, dbEffect } from './repository.ts'
 import type { IntakePlanRow, IntakePolicy, IntakeStore, Reservation, VenueRow } from './store.ts'
@@ -61,7 +62,7 @@ export function supabaseIntake(client: SupabaseClient, storageOrigin = ''): Inta
     mediaForObservations: ids => dbEffect('intake.media', () => client.from('intake_media').select('*').in('observation_id', ids)).pipe(Effect.map(media => media as Media[])),
     venue: id => dbEffect('intake.venue', () => client.from('venues').select('id,name,neighborhood').eq('id', id).limit(1)).pipe(Effect.map(rows => rows[0] ?? null)),
     eventVenue: id => dbEffect('intake.venue', () => client.from('venues').select('name,neighborhood').eq('id', id).single()),
-    venueHint: name => matchVenueEffect(name, 0.6, client).pipe(
+    venueHint: name => matchVenueEffect(name, 0.6, supabaseCatalog(client)).pipe(
       Effect.map(match => match.venue), Effect.mapError(error => new ImportOperationError({ operation: 'intake.venue-hint', message: error.message }))),
     linkedEventIds: id => dbEffect('intake.links', () => client.from('event_source_evidence').select('event_id').eq('candidate_id', id))
       .pipe(Effect.map(rows => rows.map(row => row.event_id as string))),

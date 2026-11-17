@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { CRON_WORKFLOWS, cronInstance, startScheduledWorkflow } from './schedule.ts'
+import { CRON_TASKS, CRON_WORKFLOWS, cronInstance, startScheduledWorkflow } from './schedule.ts'
 
 describe('jobs schedule', () => {
   it('maps exactly the configured crons, at the old Buenos Aires times', () => {
     const config = readFileSync(new URL('../../wrangler.jobs.jsonc', import.meta.url), 'utf8')
     const crons = JSON.parse(config.match(/"crons":\s*(\[[^\]]*\])/)![1]) as string[]
-    expect(crons.sort()).toEqual(Object.keys(CRON_WORKFLOWS).sort())
+    expect(crons.sort()).toEqual([...Object.keys(CRON_WORKFLOWS), ...Object.keys(CRON_TASKS)].sort())
     expect(config).not.toContain('"schedules"')
   })
 

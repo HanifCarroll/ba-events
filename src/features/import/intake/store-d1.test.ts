@@ -24,7 +24,7 @@ let vectors: ReturnType<typeof fakeVectorize>
 beforeAll(async () => { ({ db, dispose } = await freshD1()) }, 60_000)
 afterAll(async () => { await dispose() })
 
-const TABLES = ['event_intake_protection', 'event_source_evidence', 'intake_plans', 'intake_candidate_revisions', 'intake_candidates',
+const TABLES = ['vector_sync', 'event_intake_protection', 'event_source_evidence', 'intake_plans', 'intake_candidate_revisions', 'intake_candidates',
   'intake_media', 'intake_observations', 'intake_runs', 'instagram_sources', 'venue_review_queue', 'events', 'venues']
 beforeEach(async () => {
   await db.batch([...TABLES.map(table => db.prepare(`DELETE FROM ${table}`)),
@@ -213,8 +213,11 @@ describe('commit_intake_plan on D1', () => {
     expect(await fails(store.commitPlan(created))).toContain('Vectorize unavailable')
     expect((await run(store.plan(created))).receipt).not.toBeNull()
     expect(vectors.vectors.has(event)).toBe(false)
+    // Left queued for the nightly reconcile until the vector lands.
+    expect(await db.prepare('SELECT count(*) AS n FROM vector_sync WHERE event_id = ?').bind(event).first()).toEqual({ n: 1 })
     expect(await run(commitPlanEffect(store, created))).toMatchObject({ event_id: event })
     expect(vectors.vectors.has(event)).toBe(true)
+    expect(await db.prepare('SELECT count(*) AS n FROM vector_sync').first()).toEqual({ n: 0 })
   })
 
   it('never replaces a later correction\'s vector when an older plan is committed again', async () => {

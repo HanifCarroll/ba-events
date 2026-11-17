@@ -1,0 +1,3006 @@
+{
+ "captured": "2026-11-16",
+ "source": "production Postgres pg_trgm similarity(a, b), read through PostgREST",
+ "pairs": [
+  {
+   "a": "a confirmar",
+   "b": "C.A.T.",
+   "similarity": 0.200000002980232,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "a confirmar",
+   "b": "Cobra Bar",
+   "similarity": 0.157894730567932,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "a confirmar",
+   "b": "Gier club",
+   "similarity": 0.0476190485060215,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "AV. regimiento",
+   "b": "AV. regimiento Patricios y Olavarria",
+   "similarity": 0.388888895511627,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "AV. regimiento",
+   "b": "Regimiento de Granaderos a caballo Gral. San Martín",
+   "similarity": 0.239999994635582,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "AV. regimiento",
+   "b": "Parque Sarmiento",
+   "similarity": 0.192307695746422,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "AV. regimiento",
+   "b": "Anfiteatro del Parque Centenario —",
+   "similarity": 0.0444444455206394,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Adolfo Alsina 1651 - Buenos Aires",
+   "b": "Adolfo Alsina 1651",
+   "similarity": 0.600000023841858,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Adolfo Alsina 1651 - Buenos Aires",
+   "b": "Adolfo Alsina 1835",
+   "similarity": 0.411764711141586,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Adolfo Alsina 1651 - Buenos Aires",
+   "b": "VOX Buenos Aires",
+   "similarity": 0.382352948188782,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Adolfo Alsina 1651 - Buenos Aires",
+   "b": "Av. Figueroa Alcorta y Av. Monroe",
+   "similarity": 0.0357142873108387,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Al Rayn",
+   "b": "Al Rayan",
+   "similarity": 0.545454561710358,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Al Rayn",
+   "b": "Ribs al Río",
+   "similarity": 0.266666680574417,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Al Rayn",
+   "b": "Alchemy",
+   "similarity": 0.142857149243355,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Al Rayn",
+   "b": "Parque Rivadavia",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Ambra",
+   "b": "Umbral",
+   "similarity": 0.181818187236786,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Ambra",
+   "b": "AMK Club",
+   "similarity": 0.15384615957737,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Ambra",
+   "b": "Av. Gral. Las Heras 1945",
+   "similarity": 0.0370370373129845,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "aquilea 57",
+   "b": "Aquilea57",
+   "similarity": 0.615384638309479,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "aquilea 57",
+   "b": "5 a La Cara",
+   "similarity": 0.095238097012043,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "aquilea 57",
+   "b": "Prez Jazz and Music Club",
+   "similarity": 0.0285714287310839,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Armando",
+   "b": "Estadio Diego Armando Maradona",
+   "similarity": 0.25806450843811,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Armando",
+   "b": "Aroha",
+   "similarity": 0.16666667163372,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Armando",
+   "b": "Planta Alta Rock Bar",
+   "similarity": 0.0370370373129845,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Asociación Civil Tierra - Buenos Aires",
+   "b": "Asociación Civil Tierra",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Asociación Civil Tierra - Buenos Aires",
+   "b": "Asociación Civil Tierra Techo y Trabajo",
+   "similarity": 0.479999989271164,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Asociación Civil Tierra - Buenos Aires",
+   "b": "La Cruz Buenos Aires",
+   "similarity": 0.325581401586533,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Asociación Civil Tierra - Buenos Aires",
+   "b": "GOLDENCENTER EVENTOS SALON TILO",
+   "similarity": 0.046875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Auditorio Beethovn",
+   "b": "Auditorio Beethoven",
+   "similarity": 0.772727251052856,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Auditorio Beethovn",
+   "b": "Auditorio Bao",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Auditorio Beethovn",
+   "b": "Auditorio Sur",
+   "similarity": 0.434782594442368,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Auditorio Beethovn",
+   "b": "Avenida Leandro N. Alem & Bartolomé Mitre",
+   "similarity": 0.036363635212183,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Auditorio J.  E. Green",
+   "b": "Av. Alicia Moreau de Justo 1680",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "auditorio de la asociacion amigos del museo nacional de bellas artes",
+   "b": "Auditorio de la Asociación Amigos del Museo Nacional de Bellas Artes",
+   "similarity": 0.934426248073578,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "auditorio de la asociacion amigos del museo nacional de bellas artes",
+   "b": "MUSEO NACIONAL DE BELLAS ARTES",
+   "similarity": 0.534482777118683,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "auditorio de la asociacion amigos del museo nacional de bellas artes",
+   "b": "Museo Nacional del Hombre",
+   "similarity": 0.292307704687119,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "auditorio de la asociacion amigos del museo nacional de bellas artes",
+   "b": "Multiespacio Alimme",
+   "similarity": 0.0833333358168602,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Antártida",
+   "b": "Av. Antártida Argentina 425",
+   "similarity": 0.479999989271164,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Antártida",
+   "b": "Avenida Boedo",
+   "similarity": 0.181818187236786,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Antártida",
+   "b": "Avenida Córdoba",
+   "similarity": 0.16666667163372,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Antártida",
+   "b": "Cantina Don Carlos",
+   "similarity": 0.0357142873108387,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Corrientes y Av. 9 de Julio - Buenos Aires",
+   "b": "Av. Corrientes y Av. 9 de Julio",
+   "similarity": 0.710526287555695,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Corrientes y Av. 9 de Julio - Buenos Aires",
+   "b": "Bolsa de Comercio de Buenos Aires",
+   "similarity": 0.38775509595871,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Corrientes y Av. 9 de Julio - Buenos Aires",
+   "b": "Abasto de Buenos Aires",
+   "similarity": 0.363636374473572,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Corrientes y Av. 9 de Julio - Buenos Aires",
+   "b": "El Patio de San Telmo",
+   "similarity": 0.0714285746216774,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Córdoba 67",
+   "b": "Av. Córdoba 637",
+   "similarity": 0.705882370471954,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Córdoba 67",
+   "b": "Av. Córdoba 364",
+   "similarity": 0.611111104488373,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Córdoba 67",
+   "b": "Av. Córdoba 5217",
+   "similarity": 0.578947365283966,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Córdoba 67",
+   "b": "Chile 1408",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Elcano 3239",
+   "b": "Av. Elcano 3640",
+   "similarity": 0.578947365283966,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Elcano 3239",
+   "b": "Av. Belgrano 1144",
+   "similarity": 0.185185179114342,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Elcano 3239",
+   "b": "Estudio del Mirador, Vedia 3366",
+   "similarity": 0.0454545468091965,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "av. gral. las heras 1945",
+   "b": "Parque Las Heras",
+   "similarity": 0.310344815254211,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "av. gral. las heras 1945",
+   "b": "Av. Lastra 4290",
+   "similarity": 0.193548381328583,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "av. gral. las heras 1945",
+   "b": "Paseo La Plaza",
+   "similarity": 0.0588235296308994,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Martín",
+   "b": "Av. S. Martín 4501",
+   "similarity": 0.588235318660736,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Martín",
+   "b": "Av. Martín García 364",
+   "similarity": 0.476190477609634,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Martín",
+   "b": "Café Martínez",
+   "similarity": 0.333333343267441,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Martín",
+   "b": "Medusa",
+   "similarity": 0.0625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Pres. Roque Sáenz Peña 1119 811 - Buenos Aires",
+   "b": "Av. Pres. Roque Sáenz Peña 1119 811",
+   "similarity": 0.767441868782043,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Pres. Roque Sáenz Peña 1119 811 - Buenos Aires",
+   "b": "Av. Pres. Roque Sáenz Peña 1119 piso 8 811",
+   "similarity": 0.6875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Pres. Roque Sáenz Peña 1119 811 - Buenos Aires",
+   "b": "Santex Buenos Aires",
+   "similarity": 0.28571429848671,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Pres. Roque Sáenz Peña 1119 811 - Buenos Aires",
+   "b": "Salguero Plaza Eventos",
+   "similarity": 0.0476190485060215,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Santa Fe 70",
+   "b": "Av. Santa Fe 750",
+   "similarity": 0.722222208976746,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Santa Fe 70",
+   "b": "Thames y Av. Santa Fe",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Santa Fe 70",
+   "b": "Av. Sta. Fe 1452",
+   "similarity": 0.363636374473572,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. Santa Fe 70",
+   "b": "Universidad Católica Argentina - Microcine , Edificio San José",
+   "similarity": 0.0571428574621677,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. de Mayo 1333",
+   "b": "Av. de Mayo 1222",
+   "similarity": 0.600000023841858,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. de Mayo 1333",
+   "b": "Av. de Mayo 853",
+   "similarity": 0.550000011920929,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Av. de Mayo 1333",
+   "b": "Paseo La Plaza - El show más  premiado de Paseo la Plaza",
+   "similarity": 0.0816326513886452,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "av. del libertador 3200",
+   "b": "Av. del Libertador 7208",
+   "similarity": 0.642857134342194,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "av. del libertador 3200",
+   "b": "Av. del Libertador 6350 piso 9",
+   "similarity": 0.514285743236542,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "av. del libertador 3200",
+   "b": "Monumento a Juan de Garay",
+   "similarity": 0.0652173906564713,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Brasil",
+   "b": "Avenida Brasil & Defensa",
+   "similarity": 0.652173936367035,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Brasil",
+   "b": "Avenida Boedo",
+   "similarity": 0.449999988079071,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Brasil",
+   "b": "Avenida Rivadavia",
+   "similarity": 0.319999992847443,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Brasil",
+   "b": "King Bar",
+   "similarity": 0.0434782616794109,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Pueyrredón - Buenos Aires",
+   "b": "Avenida Pueyrredón",
+   "similarity": 0.612903237342834,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Pueyrredón - Buenos Aires",
+   "b": "TBC Buenos Aires",
+   "similarity": 0.371428579092026,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Pueyrredón - Buenos Aires",
+   "b": "Monks Buenos Aires",
+   "similarity": 0.351351350545883,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida Pueyrredón - Buenos Aires",
+   "b": "Av. Córdoba 2988",
+   "similarity": 0.0444444455206394,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida de Mayo 769 CABA,  en Palacio Vea",
+   "b": "Avenida de Mayo 769 CABA,  en Palacio Vera",
+   "similarity": 0.883720934391022,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida de Mayo 769 CABA,  en Palacio Vea",
+   "b": "Espacio Cultural BCN",
+   "similarity": 0.0892857164144516,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Avenida de Mayo 769 CABA,  en Palacio Vera",
+   "b": "Estudio de Producción Audiovisual – Buenos Aires",
+   "similarity": 0.0897435918450356,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "ba ferial",
+   "b": "Ferneteria",
+   "similarity": 0.3125,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "ba ferial",
+   "b": "FERONA",
+   "similarity": 0.214285716414452,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "ba ferial",
+   "b": "Diaz de Birra",
+   "similarity": 0.0454545468091965,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BB bar,",
+   "b": "Bar BB",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BB bar,",
+   "b": "BB Bar",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BB bar,",
+   "b": "Buda Bar",
+   "similarity": 0.400000005960464,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BB bar,",
+   "b": "MU Trinchera Boutique",
+   "similarity": 0.0370370373129845,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BOX KARAOKE BAR - Buenos Aires",
+   "b": "BOX KARAOKE BAR",
+   "similarity": 0.555555582046509,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BOX KARAOKE BAR - Buenos Aires",
+   "b": "VOX Buenos Aires",
+   "similarity": 0.466666668653488,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BOX KARAOKE BAR - Buenos Aires",
+   "b": "Casa Balear Buenos Aires",
+   "similarity": 0.416666656732559,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "BOX KARAOKE BAR - Buenos Aires",
+   "b": "Malcriada Bakery",
+   "similarity": 0.0476190485060215,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Banco Nacin",
+   "b": "Banco Nación",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Banco Nacin",
+   "b": "NAN BAR",
+   "similarity": 0.25,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Banco Nacin",
+   "b": "Acido Bar",
+   "similarity": 0.157894730567932,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Banco Nacin",
+   "b": "LA BIBLIOTECA",
+   "similarity": 0.0399999991059303,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Barrio Chino",
+   "b": "Temple Bar - Barrio Chino",
+   "similarity": 0.61904764175415,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Barrio Chino",
+   "b": "Chill in 1390 Bar",
+   "similarity": 0.239999994635582,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Barrio Chino",
+   "b": "Caix",
+   "similarity": 0.0588235296308994,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "bayside buenos aires",
+   "b": "TBC Buenos Aires",
+   "similarity": 0.541666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "bayside buenos aires",
+   "b": "Buenos Aires Museo",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "bayside buenos aires",
+   "b": "Jorge Luis Borges 1975",
+   "similarity": 0.0512820519506931,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Biblioteca del",
+   "b": "LA BIBLIOTECA",
+   "similarity": 0.611111104488373,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Biblioteca del",
+   "b": "Biblioteca del Congreso de la Nación",
+   "similarity": 0.428571432828903,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Biblioteca del",
+   "b": "SALTA 514 (A una cuadra de av 9 de julio y a dos cuadras de UADE)",
+   "similarity": 0.0526315793395042,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Bolsa de Comercio de Buenos Aires - Buenos Aires",
+   "b": "Bolsa de Comercio de Buenos Aires",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Bolsa de Comercio de Buenos Aires - Buenos Aires",
+   "b": "Salón de Actos de la Bolsa de Comercio de Buenos Aires",
+   "similarity": 0.69767439365387,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Bolsa de Comercio de Buenos Aires - Buenos Aires",
+   "b": "Club Ciudad de Buenos Aires",
+   "similarity": 0.425000011920929,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Bolsa de Comercio de Buenos Aires - Buenos Aires",
+   "b": "Conde Florería",
+   "similarity": 0.0714285746216774,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Bosques de Palero",
+   "b": "Bosques de Palermo",
+   "similarity": 0.761904776096344,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Bosques de Palero",
+   "b": "HIPODROMO DE PALERMO",
+   "similarity": 0.266666680574417,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Bosques de Palero",
+   "b": "Palacio San Miguel",
+   "similarity": 0.0882352963089943,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Buenos Aires Lawn Tennis Club",
+   "b": "Lawn Tennis Club",
+   "similarity": 0.566666662693024,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Buenos Aires Lawn Tennis Club",
+   "b": "Club de Pescadores Buenos Aires",
+   "similarity": 0.428571432828903,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Buenos Aires Lawn Tennis Club",
+   "b": "TER Espacio Cultural - Floresta",
+   "similarity": 0.0714285746216774,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "cabax",
+   "b": "Vox CABA",
+   "similarity": 0.363636374473572,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "cabax",
+   "b": "Caix",
+   "similarity": 0.222222223877907,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "cabax",
+   "b": "Bali - Costanera",
+   "similarity": 0.0500000007450581,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CASA GÓMEZ",
+   "b": "CASA GIN",
+   "similarity": 0.428571432828903,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CASA GÓMEZ",
+   "b": "Casa Jache",
+   "similarity": 0.294117659330368,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CASA GÓMEZ",
+   "b": "Olivias Club",
+   "similarity": 0.0434782616794109,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CEMENTERIO BRITANICO de BUENOS AIRES - Buenos Aires",
+   "b": "CEMENTERIO BRITANICO de BUENOS AIRES",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CEMENTERIO BRITANICO de BUENOS AIRES - Buenos Aires",
+   "b": "Cementerio Británico",
+   "similarity": 0.461538463830948,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CEMENTERIO BRITANICO de BUENOS AIRES - Buenos Aires",
+   "b": "Abasto de Buenos Aires",
+   "similarity": 0.380952388048172,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CEMENTERIO BRITANICO de BUENOS AIRES - Buenos Aires",
+   "b": "Club de Tiro Independencia",
+   "similarity": 0.0689655169844627,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CIEN  pto madeo",
+   "b": "CIEN  pto madero",
+   "similarity": 0.722222208976746,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CIEN  pto madeo",
+   "b": "Paseo La Plaza - El show más  premiado de Paseo la Plaza",
+   "similarity": 0.061224490404129,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CIRCULO ITALO ARGENTINO LIBER PIEMONT",
+   "b": "Campo Argentino de Polo",
+   "similarity": 0.270833343267441,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CIRCULO ITALO ARGENTINO LIBER PIEMONT",
+   "b": "Mitos Argentinos",
+   "similarity": 0.204545453190804,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "CIRCULO ITALO ARGENTINO LIBER PIEMONT",
+   "b": "La fábrica- espacio de arte",
+   "similarity": 0.0491803288459778,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "club social cambalache",
+   "b": "BIRIBIRI CLUB SOCIAL",
+   "similarity": 0.413793116807938,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "club social cambalache",
+   "b": "CAI ( Centro Audiovisual Inmersivo)",
+   "similarity": 0.0588235296308994,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cabildo 1600",
+   "b": "El Cabildo",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cabildo 1600",
+   "b": "Cabildo de Buenos Aires",
+   "similarity": 0.275862067937851,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cabildo 1600",
+   "b": "Borges 1975",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Café Nómada Cerrito - Buenos Aires",
+   "b": "Café Nómada Cerrito",
+   "similarity": 0.59375,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Café Nómada Cerrito - Buenos Aires",
+   "b": "Hotel NH — Cerrito 154, Buenos Aires",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Café Nómada Cerrito - Buenos Aires",
+   "b": "Cabildo de Buenos Aires",
+   "similarity": 0.365853667259216,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Café Nómada Cerrito - Buenos Aires",
+   "b": "Serrano 698, Villa Crespo",
+   "similarity": 0.0555555559694767,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cantina Recolea",
+   "b": "Cantina Recoleta",
+   "similarity": 0.736842095851898,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cantina Recolea",
+   "b": "MAKENA CANTINA",
+   "similarity": 0.363636374473572,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cantina Recolea",
+   "b": "MAKENA CANTINA CLUB",
+   "similarity": 0.307692319154739,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cantina Recolea",
+   "b": "Centro Cultural Richards",
+   "similarity": 0.0526315793395042,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Casa Cultural Víctor Jara",
+   "b": "Catulo Casa Cultural",
+   "similarity": 0.433333337306976,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Casa Cultural Víctor Jara",
+   "b": "Cultural CAVA",
+   "similarity": 0.357142865657806,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Casa Cultural Víctor Jara",
+   "b": "El Cubo teatro",
+   "similarity": 0.0526315793395042,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "casa prefumo",
+   "b": "CASA GIN",
+   "similarity": 0.294117659330368,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "casa prefumo",
+   "b": "Casa Jache",
+   "similarity": 0.263157904148102,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "casa prefumo",
+   "b": "📍Palermo, secret location",
+   "similarity": 0.0571428574621677,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Casa del",
+   "b": "Casa Deriva",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Casa del",
+   "b": "LA CASA DEL ARBOL",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Casa del",
+   "b": "CASA GIN",
+   "similarity": 0.384615391492844,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Casa del",
+   "b": "El Muelle Costanera",
+   "similarity": 0.0740740746259689,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Argentino de Ingenieros - Buenos Aires",
+   "b": "Centro Argentino de Ingenieros",
+   "similarity": 0.725000023841858,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Argentino de Ingenieros - Buenos Aires",
+   "b": "Centro de Convenciones Buenos Aires",
+   "similarity": 0.450980395078659,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Argentino de Ingenieros - Buenos Aires",
+   "b": "CEC: Centro de Convenciones Buenos Aires",
+   "similarity": 0.433962255716324,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Argentino de Ingenieros - Buenos Aires",
+   "b": "pasaje 5 de julio y belgrano",
+   "similarity": 0.078125,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Cultural Güngur y Thai",
+   "b": "Centro Cultural Güngur y Thali",
+   "similarity": 0.84375,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Cultural Güngur y Thai",
+   "b": "Centro Cultural",
+   "similarity": 0.517241358757019,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Cultural Güngur y Thai",
+   "b": "Centro Cultural Lezica",
+   "similarity": 0.416666656732559,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Cultural Güngur y Thai",
+   "b": "SALTA 514 (A una cuadra de av 9 de julio y a dos cuadras de UADE)",
+   "similarity": 0.0571428574621677,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Cultural Recoleta —",
+   "b": "Centro Cultural Recoleta",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Cultural Recoleta —",
+   "b": "Micro Centro Cultural",
+   "similarity": 0.517241358757019,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Centro Cultural Recoleta —",
+   "b": "BAROKA RESTO BAR",
+   "similarity": 0.0555555559694767,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "centro salamanca",
+   "b": "Centro Salamanca Recreativo Cultural y S",
+   "similarity": 0.435897439718246,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "centro salamanca",
+   "b": "La Llama centro cultural",
+   "similarity": 0.290322571992874,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "centro salamanca",
+   "b": "Universidad Católica Argentina - Auditorio  San Agustín, Edificio Santa María",
+   "similarity": 0.0625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cerrito 1250",
+   "b": "Cerrito 154",
+   "similarity": 0.5625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cerrito 1250",
+   "b": "Av. Corrientes, entre Av. Callao y Cerrito",
+   "similarity": 0.210526317358017,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cerrito 1250",
+   "b": "Racket Club —",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Che o Te Avisé - Buenos Aires",
+   "b": "Che o Te Avisé",
+   "similarity": 0.555555582046509,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Che o Te Avisé - Buenos Aires",
+   "b": "TEATRO BUENOS AIRES",
+   "similarity": 0.46875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Che o Te Avisé - Buenos Aires",
+   "b": "VOX Buenos Aires",
+   "similarity": 0.419354826211929,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Che o Te Avisé - Buenos Aires",
+   "b": "Bebop Club",
+   "similarity": 0.0555555559694767,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cine Gaumot",
+   "b": "Cine Gaumont",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cine Gaumot",
+   "b": "Persona Cine Cafe",
+   "similarity": 0.20833332836628,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cine Gaumot",
+   "b": "Cinema Paradiso Cultural",
+   "similarity": 0.125,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cine Gaumot",
+   "b": "Nicaragua Club",
+   "similarity": 0.0384615398943424,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club Atlético Fernández Fierro —",
+   "b": "Club Atlético Vélez Sarsfield",
+   "similarity": 0.363636374473572,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club Atlético Fernández Fierro —",
+   "b": "Maza club (ex fantástico)",
+   "similarity": 0.200000002980232,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club Atlético Fernández Fierro —",
+   "b": "Working&Co Soler",
+   "similarity": 0.0444444455206394,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "club dorado buenos aires",
+   "b": "Club de Pescadores Buenos Aires",
+   "similarity": 0.617647051811218,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "club dorado buenos aires",
+   "b": "Cabildo de Buenos Aires",
+   "similarity": 0.484848499298096,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "club dorado buenos aires",
+   "b": "Campo Argentino de Polo",
+   "similarity": 0.0652173906564713,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club Peregrino",
+   "b": "Club Peregrino Indoor",
+   "similarity": 0.681818187236786,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club Peregrino",
+   "b": "Persiana Club",
+   "similarity": 0.380952388048172,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club Peregrino",
+   "b": "Gregón Club",
+   "similarity": 0.28571429848671,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club Peregrino",
+   "b": "Panarock",
+   "similarity": 0.0434782616794109,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club de Pescadores Buenos Aires - Buenos Aires",
+   "b": "Club de Pescadores Buenos Aires",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club de Pescadores Buenos Aires - Buenos Aires",
+   "b": "Club Dorado Buenos Aires",
+   "similarity": 0.617647051811218,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club de Pescadores Buenos Aires - Buenos Aires",
+   "b": "Buenos Aires Lawn Tennis Club",
+   "similarity": 0.428571432828903,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Club de Pescadores Buenos Aires - Buenos Aires",
+   "b": "Confitería Delgado",
+   "similarity": 0.0888888910412788,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cocu Boulangere",
+   "b": "Cocu Boulangerie",
+   "similarity": 0.736842095851898,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cocu Boulangere",
+   "b": "Cc.Bula",
+   "similarity": 0.142857149243355,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cocu Boulangere",
+   "b": "Cobra Bar",
+   "similarity": 0.130434781312943,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cocu Boulangere",
+   "b": "Santex, Costa Rica 6019, Piso 3, CABA",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Compañia Cervecera Perro Negro",
+   "b": "Glück Cervecería",
+   "similarity": 0.189189195632935,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Compañia Cervecera Perro Negro",
+   "b": "Hormiga Negra",
+   "similarity": 0.135135129094124,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Compañia Cervecera Perro Negro",
+   "b": "Centro Salamanca Recreativo Cultural y S",
+   "similarity": 0.046875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "constitucion 4253",
+   "b": "Constitución 4253",
+   "similarity": 0.714285731315613,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "constitucion 4253",
+   "b": "Constitución 3257",
+   "similarity": 0.384615391492844,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "constitucion 4253",
+   "b": "Instituto AdorArt",
+   "similarity": 0.125,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "constitucion 4253",
+   "b": "Avenida de Mayo 769 CABA,  en Palacio Vera",
+   "similarity": 0.0350877195596695,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Costa Rica",
+   "b": "Costa Rica 4677",
+   "similarity": 0.6875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Costa Rica",
+   "b": "Costa Rica 5546",
+   "similarity": 0.6875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Costa Rica",
+   "b": "Costa Salguero",
+   "similarity": 0.300000011920929,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Costa Rica",
+   "b": "Chaijaná",
+   "similarity": 0.0526315793395042,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cruza Recoleta - Buenos Aires",
+   "b": "Cruza Recoleta",
+   "similarity": 0.535714268684387,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cruza Recoleta - Buenos Aires",
+   "b": "VOX Buenos Aires",
+   "similarity": 0.40625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cruza Recoleta - Buenos Aires",
+   "b": "TEATRO FLORES",
+   "similarity": 0.0500000007450581,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cultural Morn",
+   "b": "Cultural Morán",
+   "similarity": 0.705882370471954,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cultural Morn",
+   "b": "Santa Cultural",
+   "similarity": 0.449999988079071,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Cultural Morn",
+   "b": "Teatro Colonial de San Telmo",
+   "similarity": 0.0512820519506931,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "DUNE PARK",
+   "b": "Mandarine Park",
+   "similarity": 0.315789461135864,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "DUNE PARK",
+   "b": "Old Skull Wakeboard Park",
+   "similarity": 0.16666667163372,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "DUNE PARK",
+   "b": "Museo Monte de Piedad del Banco Ciudad",
+   "similarity": 0.0476190485060215,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "delegacion de la union europea",
+   "b": "Delegación de la Unión Europea",
+   "similarity": 0.74193549156189,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "delegacion de la union europea",
+   "b": "Plaza de las Naciones Unidas",
+   "similarity": 0.25,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "delegacion de la union europea",
+   "b": "La fábrica- espacio de arte",
+   "similarity": 0.200000002980232,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "delegacion de la union europea",
+   "b": "El Galpón de Tacuara Palermo",
+   "similarity": 0.0769230797886848,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Distintos puntos",
+   "b": "Distintos puntos —",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Distintos puntos",
+   "b": "Punto de Encuentro Abasto",
+   "similarity": 0.181818187236786,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Distintos puntos",
+   "b": "Paseo La Plaza - El show más  premiado de Paseo la Plaza",
+   "similarity": 0.0408163256943226,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Dorrego 1735 - Buenos Aires",
+   "b": "Doux Buenos Aires",
+   "similarity": 0.517241358757019,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Dorrego 1735 - Buenos Aires",
+   "b": "Dorrego 1735",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Dorrego 1735 - Buenos Aires",
+   "b": "Abasto de Buenos Aires",
+   "similarity": 0.411764711141586,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Dorrego 1735 - Buenos Aires",
+   "b": "Adolfo Alsina & Defensa",
+   "similarity": 0.0444444455206394,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Draper Startup Houe",
+   "b": "Draper Startup House",
+   "similarity": 0.782608687877655,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Draper Startup Houe",
+   "b": "Draper Nation Americas",
+   "similarity": 0.194444447755814,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Draper Startup Houe",
+   "b": "House Santa Cruz",
+   "similarity": 0.121212124824524,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Draper Startup Houe",
+   "b": "Deseo Club",
+   "similarity": 0.0333333350718021,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "EL SURCO",
+   "b": "Centro Cultural El Surco",
+   "similarity": 0.375,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "EL SURCO",
+   "b": "El Beso",
+   "similarity": 0.214285716414452,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "EL SURCO",
+   "b": "Jardin Botanico",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "edificio ubp buenos aires",
+   "b": "TBC Buenos Aires",
+   "similarity": 0.433333337306976,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "edificio ubp buenos aires",
+   "b": "Monks Buenos Aires",
+   "similarity": 0.40625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "edificio ubp buenos aires",
+   "b": "Plaza Arenales",
+   "similarity": 0.0512820519506931,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Club",
+   "b": "Club V",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Club",
+   "b": "CLUB 947",
+   "similarity": 0.416666656732559,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Club",
+   "b": "Medio Crudo en Blue Velvet",
+   "similarity": 0.060606062412262,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Kiki Villa Crespo - Buenos Aires",
+   "b": "El Kiki Villa Crespo",
+   "similarity": 0.636363625526428,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Kiki Villa Crespo - Buenos Aires",
+   "b": "La Cruz Buenos Aires",
+   "similarity": 0.421052634716034,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Kiki Villa Crespo - Buenos Aires",
+   "b": "TBC Buenos Aires",
+   "similarity": 0.351351350545883,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Kiki Villa Crespo - Buenos Aires",
+   "b": "Centro Cultural Borges",
+   "similarity": 0.0576923079788685,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Rincón Suco",
+   "b": "El Rincón Sucio",
+   "similarity": 0.722222208976746,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Rincón Suco",
+   "b": "Rincón 476",
+   "similarity": 0.368421047925949,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Rincón Suco",
+   "b": "Espacio Rincon",
+   "similarity": 0.200000002980232,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Rincón Suco",
+   "b": "Museo Marco",
+   "similarity": 0.0399999991059303,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Terzo Posto",
+   "b": "Terzo Posto",
+   "similarity": 0.800000011920929,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Terzo Posto",
+   "b": "Teatro El Popular",
+   "similarity": 0.269230782985687,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "El Terzo Posto",
+   "b": "Lalalá Grupos de Canto",
+   "similarity": 0.0571428574621677,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "electrica pizza",
+   "b": "Eléctrica pizza",
+   "similarity": 0.684210538864136,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "electrica pizza",
+   "b": "ELECTRICA",
+   "similarity": 0.625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "electrica pizza",
+   "b": "AVG Electric Café",
+   "similarity": 0.307692319154739,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "electrica pizza",
+   "b": "Rush party",
+   "similarity": 0.0384615398943424,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Escuela Normal",
+   "b": "Escuela de Huerta",
+   "similarity": 0.319999992847443,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Escuela Normal",
+   "b": "Escuela Primaria 1",
+   "similarity": 0.307692319154739,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Escuela Normal",
+   "b": "Escuela Valores Divinos Argentina",
+   "similarity": 0.195121943950653,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Escuela Normal",
+   "b": "Museo Malvinas e Islas del Atlántico Sur",
+   "similarity": 0.0384615398943424,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Creativo Luna Roja - Buenos Aires",
+   "b": "Espacio Creativo Luna Roja",
+   "similarity": 0.675000011920929,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Creativo Luna Roja - Buenos Aires",
+   "b": "La Cruz Buenos Aires",
+   "similarity": 0.355555564165115,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Creativo Luna Roja - Buenos Aires",
+   "b": "TEATRO BUENOS AIRES",
+   "similarity": 0.304347813129425,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Creativo Luna Roja - Buenos Aires",
+   "b": "Universidad Católica Argentina - Auditorio  Juan Pablo II, Edificio San José",
+   "similarity": 0.058252427726984,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Hace",
+   "b": "Espacio Hache",
+   "similarity": 0.6875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Hace",
+   "b": "Espacio",
+   "similarity": 0.615384638309479,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Hace",
+   "b": "Espacio Ter",
+   "similarity": 0.470588237047195,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Hace",
+   "b": "Universidad Católica Argentina - Auditorio  Juan Pablo II, Edificio San José",
+   "similarity": 0.0379746817052364,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Rincón",
+   "b": "Espacio Rincon",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Rincón",
+   "b": "Estudio Rincón",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Espacio Rincón",
+   "b": "Portal Rojo",
+   "similarity": 0.0384615398943424,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "estacion guerrero",
+   "b": "Estación Guerrero",
+   "similarity": 0.714285731315613,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "estacion guerrero",
+   "b": "Espacio Holistico Terrero",
+   "similarity": 0.257142871618271,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "estacion guerrero",
+   "b": "Espacio GOTAN",
+   "similarity": 0.185185179114342,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "estacion guerrero",
+   "b": "Microestadio Malvinas Argentinas",
+   "similarity": 0.0444444455206394,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Estadio Monumental",
+   "b": "Estadio Monumental —",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Estadio Monumental",
+   "b": "Estadio Nacional",
+   "similarity": 0.333333343267441,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Estadio Monumental",
+   "b": "Centro Cultural Borges",
+   "similarity": 0.0512820519506931,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Estudio de Producción Audiovisual – Buenos Aires - Buenos Aires",
+   "b": "Estudio de Producción Audiovisual – Buenos Aires",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Estudio de Producción Audiovisual – Buenos Aires - Buenos Aires",
+   "b": "Abasto de Buenos Aires",
+   "similarity": 0.319999992847443,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Estudio de Producción Audiovisual – Buenos Aires - Buenos Aires",
+   "b": "Obelisco de Buenos Aires —",
+   "similarity": 0.301886796951294,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Estudio de Producción Audiovisual – Buenos Aires - Buenos Aires",
+   "b": "🍻 BARRA LIBRE 🔥 LOS DEL FUEGO EN VIVO",
+   "similarity": 0.0694444477558136,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "FELIZA GAY & LESBIAN BR",
+   "b": "FELIZA GAY & LESBIAN BAR",
+   "similarity": 0.800000011920929,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "FELIZA GAY & LESBIAN BR",
+   "b": "Feliza Arcoiris",
+   "similarity": 0.225806444883347,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "FELIZA GAY & LESBIAN BR",
+   "b": "BA Ferial",
+   "similarity": 0.103448279201984,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "FELIZA GAY & LESBIAN BR",
+   "b": "Paseo La Plaza - El show más  premiado de Paseo la Plaza",
+   "similarity": 0.0350877195596695,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Facultad de Derecho de la UBA",
+   "b": "Facultad de Derecho (UBA)",
+   "similarity": 0.879999995231628,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Facultad de Derecho de la UBA",
+   "b": "Facultad de Medicina de la Universidad de Buenos Aires",
+   "similarity": 0.280701756477356,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Facultad de Derecho de la UBA",
+   "b": "Bosques de Palermo",
+   "similarity": 0.0731707289814949,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "ferneteria",
+   "b": "LA FERNETERIA",
+   "similarity": 0.785714268684387,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "ferneteria",
+   "b": "BA Ferial",
+   "similarity": 0.3125,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "ferneteria",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.0181818176060915,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Fraga 459",
+   "b": "Franca",
+   "similarity": 0.214285716414452,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Fraga 459",
+   "b": "Francis Café",
+   "similarity": 0.150000005960464,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Fraga 459",
+   "b": "Av. Belgrano 958",
+   "similarity": 0,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Furaibo - Buenos Aires",
+   "b": "TBC Buenos Aires",
+   "similarity": 0.519999980926514,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Furaibo - Buenos Aires",
+   "b": "VOX Buenos Aires",
+   "similarity": 0.519999980926514,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Furaibo - Buenos Aires",
+   "b": "Moscu Buenos Aires",
+   "similarity": 0.481481492519379,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Furaibo - Buenos Aires",
+   "b": "Av. Juan de Garay y Combate de los Pozos",
+   "similarity": 0.036363635212183,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "GUCHITO Taller de sanguchs",
+   "b": "GUCHITO Taller de sanguches",
+   "similarity": 0.821428596973419,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "GUCHITO Taller de sanguchs",
+   "b": "THEATRE Taller Del Angel",
+   "similarity": 0.263157904148102,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "GUCHITO Taller de sanguchs",
+   "b": "Taller Tomalino",
+   "similarity": 0.212121218442917,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "GUCHITO Taller de sanguchs",
+   "b": "Conservatorio Superior de Música Manuel de Falla — Sede Central",
+   "similarity": 0.0675675645470619,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gavilán Bar",
+   "b": "BB bar, Galpon",
+   "similarity": 0.315789461135864,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gavilán Bar",
+   "b": "Bar BB",
+   "similarity": 0.28571429848671,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gavilán Bar",
+   "b": "Teatro Calibán",
+   "similarity": 0.0384615398943424,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "gluck - villa urquiza",
+   "b": "Gluck Villa Urquiza",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "gluck - villa urquiza",
+   "b": "Gluck Villa Urquiza teatro",
+   "similarity": 0.740740716457367,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "gluck - villa urquiza",
+   "b": "Glück Bodegón & Microteatro - Villa Urquiza",
+   "similarity": 0.395348846912384,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "gluck - villa urquiza",
+   "b": "Plaza Irlanda",
+   "similarity": 0.030303031206131,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gorriti 5520",
+   "b": "Gorriti 5646",
+   "similarity": 0.529411792755127,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gorriti 5520",
+   "b": "Gorritti House",
+   "similarity": 0.333333343267441,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gorriti 5520",
+   "b": "Auditorio San José",
+   "similarity": 0,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Green Parrot Co. - Nos encontrás en el salón del primer piso - Buenos Aires",
+   "b": "Green Parrot Co. - Nos encontrás en el salón del primer piso",
+   "similarity": 0.822580635547638,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Green Parrot Co. - Nos encontrás en el salón del primer piso - Buenos Aires",
+   "b": "Salón de Actos de la Bolsa de Comercio de Buenos Aires",
+   "similarity": 0.296296298503876,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Green Parrot Co. - Nos encontrás en el salón del primer piso - Buenos Aires",
+   "b": "CEC Centro de Convenciones de Buenos Aires",
+   "similarity": 0.256410270929337,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Green Parrot Co. - Nos encontrás en el salón del primer piso - Buenos Aires",
+   "b": "Estación Policía Comunal Balcarce",
+   "similarity": 0.0666666701436043,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gurruchaga 54",
+   "b": "Gurruchaga 514",
+   "similarity": 0.705882370471954,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gurruchaga 54",
+   "b": "Gurruchaga 1060",
+   "similarity": 0.578947365283966,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gurruchaga 54",
+   "b": "Espacio Cultural Gurruchaga",
+   "similarity": 0.354838699102402,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Gurruchaga 54",
+   "b": "Av. Alicia Moreau de Justo 1680",
+   "similarity": 0,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Haras Palermo",
+   "b": "Crepas Palermo",
+   "similarity": 0.449999988079071,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Haras Palermo",
+   "b": "INK Palermo",
+   "similarity": 0.444444447755814,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Haras Palermo",
+   "b": "La Herrería",
+   "similarity": 0.0399999991059303,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "hipodromo palermo",
+   "b": "HIPODROMO DE PALERMO",
+   "similarity": 0.850000023841858,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "hipodromo palermo",
+   "b": "Hipódromo Palermo",
+   "similarity": 0.699999988079071,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "hipodromo palermo",
+   "b": "Haras Palermo",
+   "similarity": 0.409090906381607,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "hipodromo palermo",
+   "b": "Sala VIP Alfonsina Storni del Paseo La Plaza",
+   "similarity": 0.0350877195596695,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Honduras 5670,",
+   "b": "Honduras",
+   "similarity": 0.642857134342194,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Honduras 5670,",
+   "b": "Honduras 5015",
+   "similarity": 0.555555582046509,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Honduras 5670,",
+   "b": "CLUB HONDURAS",
+   "similarity": 0.473684221506119,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Honduras 5670,",
+   "b": "TER Espacio Cultural - Floresta",
+   "similarity": 0.0232558138668537,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "House Santa Cruz - Buenos Aires",
+   "b": "House Santa Cruz",
+   "similarity": 0.566666662693024,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "House Santa Cruz - Buenos Aires",
+   "b": "La Cruz Buenos Aires",
+   "similarity": 0.545454561710358,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "House Santa Cruz - Buenos Aires",
+   "b": "Hotel NH Buenos Aires City",
+   "similarity": 0.390243887901306,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "House Santa Cruz - Buenos Aires",
+   "b": "Palacio de la Reconquista — Salón de Eventos",
+   "similarity": 0.060606062412262,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Humboldt 1391, Palero",
+   "b": "Humboldt 1391, Palermo",
+   "similarity": 0.791666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Humboldt 1391, Palero",
+   "b": "Humboldt 1391",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Humboldt 1391, Palero",
+   "b": "Humboldt 2341",
+   "similarity": 0.346153855323792,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Humboldt 1391, Palero",
+   "b": "Tte. Gral. Juan Domingo Perón 1259",
+   "similarity": 0.0384615398943424,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "INK Palermo",
+   "b": "FUEL PALERMO",
+   "similarity": 0.470588237047195,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "INK Palermo",
+   "b": "Lacigale Bar",
+   "similarity": 0.0416666679084301,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "imaginario cultural",
+   "b": "IMAGINARIO CULTURAL BAR",
+   "similarity": 0.833333313465118,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "imaginario cultural",
+   "b": "Oceanario Centro Cultural",
+   "similarity": 0.40625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "imaginario cultural",
+   "b": "Club de Tiro Independencia",
+   "similarity": 0.0454545468091965,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Instituto La",
+   "b": "Instituto La Salle Florida",
+   "similarity": 0.481481492519379,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Instituto La",
+   "b": "Instituto AdorArt",
+   "similarity": 0.476190477609634,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Instituto La",
+   "b": "La Tierra Invisible",
+   "similarity": 0.178571432828903,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Instituto La",
+   "b": "Cc.Bula",
+   "similarity": 0.0500000007450581,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "JJ Circuito Cultural - Buenos Aires",
+   "b": "JJ - Circuito Cultural",
+   "similarity": 0.60606062412262,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "JJ Circuito Cultural - Buenos Aires",
+   "b": "JJ Circuito Cultural",
+   "similarity": 0.60606062412262,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "JJ Circuito Cultural - Buenos Aires",
+   "b": "TBC Buenos Aires",
+   "similarity": 0.351351350545883,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "JJ Circuito Cultural - Buenos Aires",
+   "b": "Lalalá Grupos de Canto",
+   "similarity": 0.0576923079788685,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Je Suis Lacn",
+   "b": "Je Suis Lacan",
+   "similarity": 0.6875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Je Suis Lacn",
+   "b": "Confitería San Luis",
+   "similarity": 0.137931033968925,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Je Suis Lacn",
+   "b": "Jorge Luis Borges 1975",
+   "similarity": 0.133333340287209,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Je Suis Lacn",
+   "b": "Plaza de las Naciones Unidas",
+   "similarity": 0.0512820519506931,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Joy CoWork",
+   "b": "IndaWork Coworking",
+   "similarity": 0.333333343267441,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Joy CoWork",
+   "b": "Working & Co",
+   "similarity": 0.222222223877907,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Joy CoWork",
+   "b": "Estadio José Amalfitani - Velez Sarsfield —",
+   "similarity": 0.0408163256943226,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "kika club",
+   "b": "Kika",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "kika club",
+   "b": "AMK Club",
+   "similarity": 0.357142865657806,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "kika club",
+   "b": "CIEN  pto madero",
+   "similarity": 0.0399999991059303,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Kraft Coffee",
+   "b": "Kraft Coffee Deli",
+   "similarity": 0.722222208976746,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Kraft Coffee",
+   "b": "Meme Coffee",
+   "similarity": 0.388888895511627,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Kraft Coffee",
+   "b": "Cofi Jaus",
+   "similarity": 0.150000005960464,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Kraft Coffee",
+   "b": "La Casa de Luca",
+   "similarity": 0.0370370373129845,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LACIGALEBAR - Buenos Aires",
+   "b": "La Cruz Buenos Aires",
+   "similarity": 0.483870953321457,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LACIGALEBAR - Buenos Aires",
+   "b": "La Nube Buenos Aires",
+   "similarity": 0.483870953321457,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LACIGALEBAR - Buenos Aires",
+   "b": "Casa Balear Buenos Aires",
+   "similarity": 0.441176474094391,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LACIGALEBAR - Buenos Aires",
+   "b": "Basílica de San José de Flores",
+   "similarity": 0.0599999986588955,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LUX Nightlie",
+   "b": "LUX Nightlife",
+   "similarity": 0.6875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LUX Nightlie",
+   "b": "Rey Night",
+   "similarity": 0.277777791023254,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LUX Nightlie",
+   "b": "Ninina",
+   "similarity": 0.117647059261799,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "LUX Nightlie",
+   "b": "Paseo La Plaza, Sala Konzert.",
+   "similarity": 0.0263157896697521,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Carbonera",
+   "b": "La Carpa",
+   "similarity": 0.375,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Carbonera",
+   "b": "Lagos de Regatas",
+   "similarity": 0.0714285746216774,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la cava wine store",
+   "b": "La Carpa",
+   "similarity": 0.217391297221184,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la cava wine store",
+   "b": "5 a La Cara",
+   "similarity": 0.192307695746422,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la cava wine store",
+   "b": "La Ferneteria (Bellas Artes)",
+   "similarity": 0.0697674453258514,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Dama",
+   "b": "La Dama de Bollini",
+   "similarity": 0.444444447755814,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Dama",
+   "b": "La diabla",
+   "similarity": 0.307692319154739,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Dama",
+   "b": "La City",
+   "similarity": 0.230769231915474,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Dama",
+   "b": "AUDITORIO ISLAS MALVINAS (PARQUE CHACABUCO) Debajo de la Autopista",
+   "similarity": 0.0625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Gaucho - Buenos Aires",
+   "b": "La Cruz Buenos Aires",
+   "similarity": 0.571428596973419,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Gaucho - Buenos Aires",
+   "b": "La Nube Buenos Aires",
+   "similarity": 0.571428596973419,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Gaucho - Buenos Aires",
+   "b": "Buenos Aires Museo",
+   "similarity": 0.448275864124298,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Gaucho - Buenos Aires",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.0625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Maquinia",
+   "b": "La Maquinita",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Maquinia",
+   "b": "LA MALA",
+   "similarity": 0.357142865657806,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Maquinia",
+   "b": "La bohemia",
+   "similarity": 0.210526317358017,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Maquinia",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.0754716992378235,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La PlaPla",
+   "b": "Paseo La Plaza",
+   "similarity": 0.375,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La PlaPla",
+   "b": "LA MALA",
+   "similarity": 0.25,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La PlaPla",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.0599999986588955,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la selva encantada",
+   "b": "Selva Mia",
+   "similarity": 0.260869562625885,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la selva encantada",
+   "b": "La Cava Wine Store",
+   "similarity": 0.151515156030655,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la selva encantada",
+   "b": "Plaza Lavalle",
+   "similarity": 0.0645161271095276,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Troja",
+   "b": "La Rioja 191",
+   "similarity": 0.294117659330368,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Troja",
+   "b": "La Tangente",
+   "similarity": 0.235294118523598,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Troja",
+   "b": "Av. Federico Lacroze 2502",
+   "similarity": 0.0625,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La mansión matrera - Buenos Aires",
+   "b": "La mansión matrera",
+   "similarity": 0.566666662693024,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La mansión matrera - Buenos Aires",
+   "b": "La Cruz Buenos Aires",
+   "similarity": 0.457142859697342,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La mansión matrera - Buenos Aires",
+   "b": "Monks Buenos Aires",
+   "similarity": 0.400000005960464,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La mansión matrera - Buenos Aires",
+   "b": "Las Meninas Galeria",
+   "similarity": 0.0652173906564713,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lago de las Regatas – Bosques de Palerm.",
+   "b": "Lago de las Regatas – Bosques de Palermo.",
+   "similarity": 0.911764681339264,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lago de las Regatas – Bosques de Palerm.",
+   "b": "Bosques de Palermo",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lago de las Regatas – Bosques de Palerm.",
+   "b": "Palermo, lagos de la regata.",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lago de las Regatas – Bosques de Palerm.",
+   "b": "Jorge Luis Borges 1975",
+   "similarity": 0.0816326513886452,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lavalle y Talcachuano",
+   "b": "Lavalle 648",
+   "similarity": 0.307692319154739,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lavalle y Talcachuano",
+   "b": "Avenida Córdoba & Talcahuano",
+   "similarity": 0.224999994039536,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lavalle y Talcachuano",
+   "b": "Plaza Unidad Latinoamericana",
+   "similarity": 0.0408163256943226,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la iglesia de jesucristo de los santos de los ultimos dias",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.764705896377563,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "la iglesia de jesucristo de los santos de los ultimos dias",
+   "b": "Museo de Bellas Artes",
+   "similarity": 0.0634920671582222,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia",
+   "b": "Iglesia Cristo la Solución",
+   "similarity": 0.407407402992249,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia",
+   "b": "Iglesia Centro (IERP)",
+   "similarity": 0.363636374473572,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.244444444775581,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia",
+   "b": "La Rural, Feria Internacional del Libro de Buenos Aires, Espacio Cultural Clarín Ñ, Hall Central (Pabellón 9)",
+   "similarity": 0.051020409911871,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia de Jesucristo de los Santos de los Últimos Días - Buenos Aires",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.789473712444305,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia de Jesucristo de los Santos de los Últimos Días - Buenos Aires",
+   "b": "San Isidro, Argentina",
+   "similarity": 0.0684931501746178,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia de Jesucristo de los Santos de los Últimos Dís",
+   "b": "La Iglesia de Jesucristo de los Santos de los Últimos Días",
+   "similarity": 0.893617033958435,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "La Iglesia de Jesucristo de los Santos de los Últimos Dís",
+   "b": "Av. Corrientes y Av. 9 de Julio",
+   "similarity": 0.0597014911472797,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Leiva 4070",
+   "b": "Casa Deriva",
+   "similarity": 0.095238097012043,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Leiva 4070",
+   "b": "Parque Lezama",
+   "similarity": 0.0869565233588219,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Leiva 4070",
+   "b": "Innovation Lab Buenos Aires",
+   "similarity": 0.0263157896697521,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "location provided after booking",
+   "b": "Exact location shared after approval on Luma",
+   "similarity": 0.321428567171097,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "location provided after booking",
+   "b": "San telmo, Secret location.",
+   "similarity": 0.1875,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "location provided after booking",
+   "b": "VOX Buenos Aires",
+   "similarity": 0.0425531901419163,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lucille club",
+   "b": "Club Lucille",
+   "similarity": 1,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lucille club",
+   "b": "Lucille",
+   "similarity": 0.615384638309479,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Lucille club",
+   "b": "La Warhol",
+   "similarity": 0.0454545468091965,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MALACARARESTOBAR - Buenos Aires",
+   "b": "MALACARARESTOBAR",
+   "similarity": 0.586206912994385,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MALACARARESTOBAR - Buenos Aires",
+   "b": "Mantras Buenos Aires",
+   "similarity": 0.428571432828903,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MALACARARESTOBAR - Buenos Aires",
+   "b": "Moscu Buenos Aires",
+   "similarity": 0.411764711141586,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MALACARARESTOBAR - Buenos Aires",
+   "b": "Marqueee",
+   "similarity": 0.0555555559694767,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MISIÓNs",
+   "b": "MISIÓN",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MISIÓNs",
+   "b": "Misión BA",
+   "similarity": 0.5,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MISIÓNs",
+   "b": "MISION BAR",
+   "similarity": 0.266666680574417,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MISIÓNs",
+   "b": "Mantra Club Lounge cena show",
+   "similarity": 0.0285714287310839,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MUSEO ENRIQUE LARRETA",
+   "b": "Gral. Enrique Martínez 971",
+   "similarity": 0.230769231915474,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "MUSEO ENRIQUE LARRETA",
+   "b": "Estadio Monumental —",
+   "similarity": 0.0512820519506931,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "maipu 116",
+   "b": "Maipú 116",
+   "similarity": 0.666666686534882,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "maipu 116",
+   "b": "Maipú 934",
+   "similarity": 0.25,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "maipu 116",
+   "b": "MALBA —",
+   "similarity": 0.142857149243355,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "maipu 116",
+   "b": "Av. Corrientes 1660",
+   "similarity": 0.0357142873108387,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Mandarine Park",
+   "b": "Mandarine Park & Tent",
+   "similarity": 0.75,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Mandarine Park",
+   "b": "MANHATAN",
+   "similarity": 0.142857149243355,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "Mandarine Park",
+   "b": "Marash U C Armenia de",
+   "similarity": 0.0571428574621677,
+   "via": "intake_similar_venues"
+  },
+  {
+   "a": "a confirmar",
+   "b": "A confirmar",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Ambra",
+   "b": "Ambra",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "aquilea 57",
+   "b": "Aquilea 57",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Armando",
+   "b": "Armando",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Auditorio J.  E. Green",
+   "b": "Auditorio J.  E. Green",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Av. Elcano 3239",
+   "b": "Av. Elcano 3239",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "av. gral. las heras 1945",
+   "b": "Av. Gral. Las Heras 1945",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Av. de Mayo 1333",
+   "b": "Av. de Mayo 1333",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "av. del libertador 3200",
+   "b": "Av. del Libertador 3200",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Avenida de Mayo 769 CABA,  en Palacio Vera",
+   "b": "Avenida de Mayo 769 CABA,  en Palacio Vera",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "ba ferial",
+   "b": "BA Ferial",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Barrio Chino",
+   "b": "Barrio Chino",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "bayside buenos aires",
+   "b": "Bayside Buenos Aires",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Buenos Aires Lawn Tennis Club",
+   "b": "Buenos Aires Lawn Tennis Club",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "cabax",
+   "b": "CABAX",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "CASA GÓMEZ",
+   "b": "CASA GÓMEZ",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "CIRCULO ITALO ARGENTINO LIBER PIEMONT",
+   "b": "CIRCULO ITALO ARGENTINO LIBER PIEMONT",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "club social cambalache",
+   "b": "CLUB SOCIAL CAMBALACHE",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Cabildo 1600",
+   "b": "Cabildo 1600",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Casa Cultural Víctor Jara",
+   "b": "Casa Cultural Víctor Jara",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "casa prefumo",
+   "b": "Casa Prefumo",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Casa del",
+   "b": "La Casa del Árbol",
+   "similarity": 0.5,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "centro salamanca",
+   "b": "Centro Salamanca",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Cerrito 1250",
+   "b": "Cerrito 1250",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Club Atlético Fernández Fierro —",
+   "b": "Club Atlético Fernández Fierro —",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "club dorado buenos aires",
+   "b": "Club Dorado Buenos Aires",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Compañia Cervecera Perro Negro",
+   "b": "Compañia Cervecera Perro Negro",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "DUNE PARK",
+   "b": "DUNE PARK",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Distintos puntos",
+   "b": "Distintos puntos",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "EL SURCO",
+   "b": "EL SURCO",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "edificio ubp buenos aires",
+   "b": "Edificio UBP Buenos Aires",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "El Club",
+   "b": "El Club",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "El Terzo Posto",
+   "b": "El Terzo Posto",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Espacio Rincón",
+   "b": "Espacio Rincón",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Estadio Monumental",
+   "b": "Estadio Monumental",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Facultad de Derecho de la UBA",
+   "b": "Facultad de Derecho de la UBA",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "ferneteria",
+   "b": "Ferneteria",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Fraga 459",
+   "b": "Fraga 459",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Gavilán Bar",
+   "b": "Gavilán Bar",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Gorriti 5520",
+   "b": "Gorriti 5520",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Haras Palermo",
+   "b": "Haras Palermo",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "INK Palermo",
+   "b": "INK Palermo",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "imaginario cultural",
+   "b": "Imaginario Cultural",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "Joy CoWork",
+   "b": "Joy CoWork",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "kika club",
+   "b": "KIKA CLUB",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "La Carbonera",
+   "b": "La Carbonera",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "la cava wine store",
+   "b": "La Cava Wine Store",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "La PlaPla",
+   "b": "La PlaPla",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "la selva encantada",
+   "b": "La Selva Encantada",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  },
+  {
+   "a": "La Troja",
+   "b": "La Troja",
+   "similarity": 1,
+   "via": "find_similar_venue"
+  }
+ ]
+}

@@ -4,6 +4,7 @@ import type { RequestEvent } from '@sveltejs/kit'
 import type { User } from '@supabase/supabase-js'
 import type { Profile } from '#shared/lib/types.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
 
 export interface SessionUser {
 	user: User
@@ -21,6 +22,8 @@ class SessionLookupError extends Data.TaggedError('SessionLookupError')<{
  * Returns null if not authenticated.
  */
 export function getSessionUserEffect(event: RequestEvent): Effect.Effect<SessionUser | null, never> {
+	// A D1-bound Worker (staging until the cutover) has no sign-in until Better Auth (delivery PR 07): everyone is a guest.
+	if (boundD1()) return Effect.succeed(null)
 	const program = Effect.gen(function* () {
 		const supabase = createSupabaseServerClient(event)
 		const {

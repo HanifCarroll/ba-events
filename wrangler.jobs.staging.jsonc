@@ -1,0 +1,35 @@
+// Staging only: `baeventos-jobs-staging`, the jobs Worker on the staging D1 and Vectorize index (DECISIONS.md). CI never
+// deploys it; deploy by hand with `bunx wrangler deploy --config wrangler.jobs.staging.jsonc`. It has no Supabase
+// secrets, so every job runs on D1 and the acquisition cache stays in memory (it can't reach production Storage).
+// Secrets: OPENAI_API_KEY and DEEPSEEK_API_KEY. No daily-scrape cron: trigger a run by hand with
+// `bunx wrangler workflows trigger baeventos-daily-scrape-staging --config wrangler.jobs.staging.jsonc`, and a catalog
+// task with `bunx wrangler workflows trigger baeventos-catalog-task-staging '{"task":"reconcile-vectors"}' --config ...`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-jobs-staging",
+  "main": "src/jobs-worker/index.ts",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "limits": { "cpu_ms": 300000, "subrequests": 50000 },
+  "browser": { "binding": "BROWSER", "remote": true },
+  // Hourly mark-past-events and the 03:00 Buenos Aires Vectorize reconcile (CRON_TASKS in schedule.ts).
+  "triggers": { "crons": ["0 * * * *", "0 6 * * *"] },
+  "workflows": [
+    { "binding": "DAILY_SCRAPE", "name": "baeventos-daily-scrape-staging", "class_name": "DailyScrapeWorkflow" },
+    { "binding": "ENRICHMENT_CATCHUP", "name": "baeventos-enrichment-catchup-staging", "class_name": "EnrichmentCatchupWorkflow" },
+    { "binding": "SOURCE_CHECK", "name": "baeventos-source-check-staging", "class_name": "SourceCheckWorkflow" },
+    { "binding": "CATALOG_TASK", "name": "baeventos-catalog-task-staging", "class_name": "CatalogTaskWorkflow" }
+  ],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "baeventos-staging", "database_id": "136c27ff-1093-4519-825a-7ec4e17b1ff7", "migrations_dir": "migrations" }
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events-staging" }],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": true }
+  }
+}

@@ -7,8 +7,9 @@
  * serializes with every other write, so the Postgres advisory locks and `FOR UPDATE` have nothing left to guard. Checks
  * that must hold when the batch commits are `batchAssert` statements inside it, with the Postgres error messages. A
  * commit runs inside `intakeCommitBatch`, which sets `write_context` so the protection trigger lets it change protected
- * facts. Embeddings live in Vectorize (id = event id, metadata `{ status, starts_at }` in epoch ms, delivery PR 03);
- * a committed plan whose vector upsert failed gets it on the next `commit` of the same plan.
+ * facts. Embeddings live in Vectorize (id = event id, metadata `{ status, starts_at }` in epoch ms, delivery PR 03).
+ * A commit queues the event in `vector_sync` in the same batch and clears it once Vectorize has the vector; a failed
+ * upsert is repaired by the next `commit` of the same plan or by the nightly reconcile (delivery PR 04).
  */
 import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect } from 'effect'
@@ -103,6 +104,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     const event = await db.prepare('SELECT status, starts_at FROM events WHERE id = ?').bind(plan.event_id).first<{ status: string; starts_at: string }>()
     if (!event) return
     await vectors.upsert([{ id: plan.event_id, values: embedding, metadata: { status: event.status, starts_at: Date.parse(event.starts_at) } }])
+    await db.prepare('DELETE FROM vector_sync WHERE event_id = ?').bind(plan.event_id).run()
   }
 
   const store: IntakeStore = {
@@ -382,6 +384,9 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         ON CONFLICT (event_id, candidate_id, observation_id) DO UPDATE SET revision = excluded.revision`)
         .bind(plan.event_id, plan.candidate_id, plan.revision, JSON.stringify(plan.evidence)))
       if (plan.action !== 'link') {
+        // Queued with the event write (migrations/0003_vector_sync.sql): if the Vectorize upsert below never lands, the
+        // nightly reconcile re-embeds the event from its stored search_document.
+        writes.push(db.prepare('INSERT INTO vector_sync (event_id) VALUES (?) ON CONFLICT (event_id) DO NOTHING').bind(plan.event_id))
         writes.push(db.prepare(`INSERT INTO event_intake_protection (event_id, fields, plan_id, authority, observed_at) VALUES (?, ?, ?, ?, ?)
           ON CONFLICT (event_id) DO UPDATE SET fields = excluded.fields, plan_id = excluded.plan_id, authority = excluded.authority,
             observed_at = excluded.observed_at`).bind(plan.event_id, JSON.stringify(PROTECTED_FIELDS), plan.id, level, observed))

@@ -1,0 +1,337 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { D1Database, VectorizeIndex, VectorizeQueryOptions } from '@cloudflare/workers-types'
+import { freshD1 } from '../../../../tests/support/d1.ts'
+import {
+  countEventsWithFiltersD1,
+  getEventsHappeningNowD1,
+  getFurthestEventDateD1,
+  lexicalEventSearchD1,
+  searchEventsWithFiltersD1,
+  searchVenuesByNameD1,
+  semanticEventSearchD1,
+} from './search-d1.server.ts'
+import { cloudflareSearchBackend, useCloudflareBindings } from './search-bindings.server.ts'
+import { lexicalEventSearch, semanticEventSearch } from './client.server.ts'
+import { searchEventsTool } from '#features/chat/api/tools/search-events.ts'
+import { findSimilarVenueD1, intakeSimilarVenuesD1, mostSimilarVenue } from '#features/import/core/venue-similarity-d1.ts'
+
+let db: D1Database
+let dispose: () => Promise<void>
+beforeAll(async () => ({ db, dispose } = await freshD1()), 60_000)
+afterAll(async () => {
+  useCloudflareBindings({})
+  await dispose()
+})
+
+const at = (iso: string) => new Date(iso).toISOString()
+let counter = 0
+const id = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`
+
+async function venue(name: string, fields: { neighborhood?: string; address?: string; created_at?: string } = {}) {
+  const venueId = id()
+  await db.prepare('INSERT INTO venues (id, name, neighborhood, address, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(venueId, name, fields.neighborhood ?? null, fields.address ?? null, fields.created_at ?? at('2026-01-01T00:00:00Z')).run()
+  return venueId
+}
+
+type EventFields = Partial<{ search_document: string | null; description_es: string; starts_at: string; ends_at: string;
+  status: string; venue_id: string; categories: string[]; price: number; is_free: boolean; min_age: number; facets: object }>
+async function event(name: string, fields: EventFields = {}) {
+  const eventId = id()
+  await db.prepare(`INSERT INTO events (id, name, search_document, description_es, starts_at, ends_at, status, venue_id,
+    categories, price, is_free, min_age, facets, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'luma')`).bind(
+    eventId, name, fields.search_document === undefined ? name : fields.search_document, fields.description_es ?? null,
+    at(fields.starts_at ?? '2026-12-01T22:00:00Z'), fields.ends_at ? at(fields.ends_at) : null, fields.status ?? 'scheduled',
+    fields.venue_id ?? null, JSON.stringify(fields.categories ?? []), fields.price ?? null, fields.is_free ? 1 : 0,
+    fields.min_age ?? null, JSON.stringify(fields.facets ?? {})).run()
+  return eventId
+}
+
+const ids = (rows: Array<{ id: string }>) => rows.map(row => row.id)
+
+beforeEach(async () => {
+  await db.batch([db.prepare('DELETE FROM events'), db.prepare('DELETE FROM venues')])
+})
+
+describe('events_fts', () => {
+  it('follows inserts, updates of the indexed columns, and deletes', async () => {
+    const tango = await event('Milonga del sábado', { search_document: 'Milonga del sábado. Tango social' })
+    expect(ids(await lexicalEventSearchD1(db, 'tango', {}, 10))).toEqual([tango])
+
+    await db.prepare(`UPDATE events SET search_document = 'Milonga del sábado. Salsa' WHERE id = ?`).bind(tango).run()
+    expect(await lexicalEventSearchD1(db, 'tango', {}, 10)).toEqual([])
+    expect(ids(await lexicalEventSearchD1(db, 'salsa', {}, 10))).toEqual([tango])
+
+    // An update that leaves the indexed text alone keeps the row findable.
+    await db.prepare(`UPDATE events SET price = 100 WHERE id = ?`).bind(tango).run()
+    expect(ids(await lexicalEventSearchD1(db, 'salsa', {}, 10))).toEqual([tango])
+
+    await db.prepare('DELETE FROM events WHERE id = ?').bind(tango).run()
+    expect(await lexicalEventSearchD1(db, 'salsa', {}, 10)).toEqual([])
+    expect(await db.prepare(`SELECT count(*) AS n FROM events_fts WHERE events_fts MATCH 'salsa OR tango'`).first('n')).toBe(0)
+  })
+
+  it('falls back to name and description when an event has no search document', async () => {
+    const bare = await event('Feria de diseño', { search_document: null, description_es: 'Artesanos y cerámica' })
+    expect(ids(await lexicalEventSearchD1(db, 'ceramica', {}, 10))).toEqual([bare])
+    expect(ids(await lexicalEventSearchD1(db, 'feria diseno', {}, 10))).toEqual([bare])
+  })
+
+  it('a rebuild reproduces the trigger-maintained index', async () => {
+    await event('Jazz en el patio', { search_document: 'Jazz en el patio. Venue: Bebop Club in Palermo' })
+    await db.prepare(`INSERT INTO events_fts (events_fts) VALUES ('rebuild')`).run()
+    await db.prepare(`INSERT INTO events_fts (events_fts) VALUES ('integrity-check')`).run()
+    expect(await lexicalEventSearchD1(db, 'bebop', {}, 10)).toHaveLength(1)
+  })
+})
+
+describe('lexicalEventSearchD1', () => {
+  it('folds case and accents, needs every word, and ranks the better match first', async () => {
+    // ts_rank_cd: "Jazz y música" is one tight cover (0.1/2), "música ... jazz" twice is two looser ones (0.1/3 each).
+    const weak = await event('Noche', { search_document: 'Noche de jazz y música', starts_at: '2026-12-01T22:00:00Z' })
+    const strong = await event('Música en vivo', { search_document: 'Música en vivo. Jazz, más música en vivo. Jazz', starts_at: '2026-12-09T22:00:00Z' })
+    await event('Solo jazz', { search_document: 'Solo jazz' })
+    const rows = await lexicalEventSearchD1(db, 'MUSICA jazz', {}, 10)
+    expect(ids(rows)).toEqual([strong, weak])
+    expect((rows[1] as unknown as { similarity: number }).similarity).toBe(Math.fround(0.05))
+  })
+
+  it('supports phrases, or, and negation', async () => {
+    const tango = await event('Clase de tango', { search_document: 'Clase de tango para principiantes' })
+    const salsa = await event('Clase de salsa', { search_document: 'Clase de salsa' })
+    expect(ids(await lexicalEventSearchD1(db, '"clase de tango"', {}, 10))).toEqual([tango])
+    expect(new Set(ids(await lexicalEventSearchD1(db, 'tango or salsa', {}, 10)))).toEqual(new Set([tango, salsa]))
+    expect(ids(await lexicalEventSearchD1(db, 'clase -tango', {}, 10))).toEqual([salsa])
+    expect(await lexicalEventSearchD1(db, '-tango', {}, 10)).toEqual([])
+  })
+
+  it('returns scheduled events only, with the same fields the Supabase RPC returns', async () => {
+    const venueId = await venue('Bebop Club', { neighborhood: 'Palermo', address: 'Uriarte 1658' })
+    await event('Jazz pasado', { status: 'past' })
+    const live = await event('Jazz hoy', { venue_id: venueId, categories: ['music'], price: 5000, facets: { genres: ['jazz'] } })
+    const [row] = await lexicalEventSearchD1(db, 'jazz', {}, 10)
+    expect(row).toMatchObject({
+      id: live, name: 'Jazz hoy', categories: ['music'], price: 5000, is_free: false, is_all_day: false, time_tba: false,
+      location_hidden: false, location_tba: false, status: 'scheduled', venue_name: 'Bebop Club',
+      venue_neighborhood: 'Palermo', venue_address: 'Uriarte 1658', facets: { genres: ['jazz'] },
+    })
+    expect(typeof (row as unknown as { similarity: number }).similarity).toBe('number')
+    expect(row).not.toHaveProperty('embedding')
+  })
+
+  it('applies every filter the RPC does', async () => {
+    const palermo = await venue('Sala A', { neighborhood: 'Palermo' })
+    const boedo = await venue('Sala B', { neighborhood: 'Boedo' })
+    const free = await event('Feria libre', { venue_id: palermo, is_free: true, categories: ['market'] })
+    const paid = await event('Feria paga', { venue_id: boedo, price: 8000, categories: ['music'], min_age: 18, starts_at: '2026-12-05T22:00:00Z' })
+    const unpriced = await event('Feria rock', { venue_id: boedo, categories: ['music'], facets: { genres: ['rock'] }, starts_at: '2026-12-10T22:00:00Z' })
+    const search = async (filters: Parameters<typeof lexicalEventSearchD1>[2]) => new Set(ids(await lexicalEventSearchD1(db, 'feria', filters, 10)))
+
+    expect(await search({ isFree: true })).toEqual(new Set([free]))
+    expect(await search({ isFree: false })).toEqual(new Set([paid, unpriced]))
+    expect(await search({ neighborhoods: ['Boedo'] })).toEqual(new Set([paid, unpriced]))
+    expect(await search({ venueIds: [palermo] })).toEqual(new Set([free]))
+    expect(await search({ categories: ['market', 'film'] })).toEqual(new Set([free]))
+    expect(await search({ maxPrice: 5000 })).toEqual(new Set([free, unpriced]))
+    expect(await search({ minAge: 16 })).toEqual(new Set([free, unpriced]))
+    expect(await search({ avoidGenres: ['rock'] })).toEqual(new Set([free, paid]))
+    expect(await search({ startsAfter: '2026-12-04T00:00:00Z', startsBefore: '2026-12-06T00:00:00-03:00' })).toEqual(new Set([paid]))
+  })
+
+  it('handles more listed values than D1 allows binds', async () => {
+    const venueId = await venue('Sala')
+    const wanted = await event('Ciclo de cine', { venue_id: venueId })
+    const venueIds = [...Array.from({ length: 300 }, id), venueId]
+    expect(ids(await lexicalEventSearchD1(db, 'cine', { venueIds }, 10))).toEqual([wanted])
+  })
+})
+
+/**
+ * A Vectorize stand-in: `query` returns the nearest vectors that pass the metadata filter, with `approximate` added to
+ * each score (Vectorize's scores are approximate), and `getByIds` returns stored values, at most 20 ids per call.
+ */
+function fakeVectorize(vectors: Array<{ id: string; values: number[]; status: string; starts_at: string }>,
+  approximate: (id: string) => number = () => 0) {
+  const norm = (values: number[]) => Math.hypot(...values)
+  const cosine = (a: number[], b: number[]) => a.reduce((sum, value, index) => sum + value * b[index], 0) / (norm(a) * norm(b))
+  const query = vi.fn(async (vector: number[], options?: VectorizeQueryOptions) => {
+    const filter = (options?.filter ?? {}) as { status?: string; starts_at?: { $gte?: number; $lte?: number } }
+    const matches = vectors
+      .filter(item => !filter.status || item.status === filter.status)
+      .filter(item => filter.starts_at?.$gte === undefined || Date.parse(item.starts_at) >= filter.starts_at.$gte)
+      .filter(item => filter.starts_at?.$lte === undefined || Date.parse(item.starts_at) <= filter.starts_at.$lte)
+      .map(item => ({ id: item.id, score: cosine(item.values, vector) + approximate(item.id) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, options?.topK ?? 5)
+    return { matches, count: matches.length }
+  })
+  const getByIds = vi.fn(async (ids: string[]) => {
+    if (ids.length > 20) throw new Error('too many ids in payload; max id count is 20')
+    return vectors.filter(item => ids.includes(item.id)).map(({ id, values }) => ({ id, values }))
+  })
+  return { index: { query, getByIds } as unknown as VectorizeIndex, query, getByIds }
+}
+
+describe('semanticEventSearchD1', () => {
+  it('asks Vectorize for 100 scheduled events in the window, then filters and orders in D1', async () => {
+    const boedo = await venue('Sala B', { neighborhood: 'Boedo' })
+    const near = await event('Cerca', { starts_at: '2026-12-02T22:00:00Z' })
+    const nearPaid = await event('Cerca paga', { starts_at: '2026-12-02T23:00:00Z', price: 9000, venue_id: boedo })
+    const far = await event('Lejos', { starts_at: '2026-12-03T22:00:00Z' })
+    const unrelated = await event('Nada que ver', { starts_at: '2026-12-02T22:00:00Z' })
+    const vectors = [
+      { id: near, values: [1, 0.1, 0], status: 'scheduled', starts_at: '2026-12-02T22:00:00Z' },
+      { id: nearPaid, values: [1, 0.2, 0], status: 'scheduled', starts_at: '2026-12-02T23:00:00Z' },
+      { id: far, values: [1, 0, 0], status: 'scheduled', starts_at: '2026-12-03T22:00:00Z' },
+      { id: unrelated, values: [0, 0, 1], status: 'scheduled', starts_at: '2026-12-02T22:00:00Z' },
+    ]
+    const { index, query } = fakeVectorize(vectors)
+    const filters = { startsAfter: '2026-12-02T00:00:00Z', startsBefore: '2026-12-02T23:59:59Z' }
+
+    const rows = await semanticEventSearchD1(db, index, [1, 0, 0], filters, 10)
+    expect(ids(rows)).toEqual([near, nearPaid])
+    expect(rows[0]).toMatchObject({ name: 'Cerca', categories: [], is_free: false })
+    expect((rows[0] as unknown as { similarity: number }).similarity).toBeGreaterThan(0.9)
+    expect(query).toHaveBeenCalledWith([1, 0, 0], {
+      topK: 100, returnValues: false, returnMetadata: 'none',
+      filter: { status: 'scheduled', starts_at: { $gte: Date.parse(filters.startsAfter), $lte: Date.parse(filters.startsBefore) } },
+    })
+
+    expect(ids(await semanticEventSearchD1(db, index, [1, 0, 0], { ...filters, neighborhoods: ['Boedo'] }, 10))).toEqual([nearPaid])
+    expect(ids(await semanticEventSearchD1(db, index, [1, 0, 0], filters, 1))).toEqual([near])
+  })
+
+  it('orders by exact cosine similarity, not by Vectorize\'s approximate score, across getByIds batches of 20', async () => {
+    const vectors: Array<{ id: string; values: number[]; status: string; starts_at: string }> = []
+    for (let n = 0; n < 45; n++) {
+      const eventId = await event(`Evento ${n}`)
+      vectors.push({ id: eventId, values: [1, n / 100, 0], status: 'scheduled', starts_at: '2026-12-01T22:00:00Z' })
+    }
+    // Vectorize's scores rank the vectors backwards; the exact order is by n.
+    const { index, getByIds } = fakeVectorize(vectors, id => vectors.findIndex(item => item.id === id) / 10)
+    const rows = await semanticEventSearchD1(db, index, [1, 0, 0], {}, 5)
+    expect(rows.map(row => row.name)).toEqual(['Evento 0', 'Evento 1', 'Evento 2', 'Evento 3', 'Evento 4'])
+    expect((rows[0] as unknown as { similarity: number }).similarity).toBe(1)
+    expect(getByIds).toHaveBeenCalledTimes(3)
+  })
+
+  it('drops matches at or below the 0.2 threshold and events no longer scheduled in D1', async () => {
+    const stale = await event('Ya pasó', { status: 'past' })
+    const live = await event('Sigue')
+    const { index } = fakeVectorize([
+      { id: stale, values: [1, 0], status: 'scheduled', starts_at: '2026-12-01T22:00:00Z' },
+      { id: live, values: [0.1, 1], status: 'scheduled', starts_at: '2026-12-01T22:00:00Z' },
+    ])
+    expect(await semanticEventSearchD1(db, index, [1, 0], {}, 10)).toEqual([])
+  })
+})
+
+describe('filter-only reads', () => {
+  it('match the Supabase reads: strict price cap, status, counts, and the furthest date', async () => {
+    await event('Gratis', { is_free: true, starts_at: '2026-12-01T22:00:00Z' })
+    const priced = await event('Barato', { price: 1000, starts_at: '2026-12-02T22:00:00Z' })
+    await event('Sin precio', { starts_at: '2026-12-03T22:00:00Z', facets: { genres: ['rock'] } })
+    await event('Pasado', { status: 'past', starts_at: '2027-02-01T22:00:00Z' })
+    const last = await event('Último', { starts_at: '2027-01-15T22:00:00Z', facets: { genres: ['rock'] } })
+
+    expect(ids(await searchEventsWithFiltersD1(db, { maxPrice: 5000 }, 50))).toEqual([priced])
+    expect(ids(await searchEventsWithFiltersD1(db, {}, 2))).toHaveLength(2)
+    expect(await countEventsWithFiltersD1(db, {})).toBe(4)
+    expect(await countEventsWithFiltersD1(db, { avoidGenres: ['rock'] })).toBe(2)
+    expect(await countEventsWithFiltersD1(db, { status: 'past' })).toBe(1)
+    expect(await getFurthestEventDateD1(db)).toBe(at('2027-01-15T22:00:00Z'))
+    expect(ids(await searchEventsWithFiltersD1(db, { startsAfter: '2027-01-01T00:00:00Z' }, 50))).toEqual([last])
+  })
+
+  it('finds events happening now', async () => {
+    const running = await event('En curso', { starts_at: '2026-12-01T20:00:00Z', ends_at: '2026-12-01T23:00:00Z' })
+    const open = await event('Sin fin', { starts_at: '2026-12-01T21:00:00Z' })
+    await event('Terminó', { starts_at: '2026-12-01T18:00:00Z', ends_at: '2026-12-01T19:00:00Z' })
+    await event('Más tarde', { starts_at: '2026-12-01T23:30:00Z' })
+    expect(ids(await getEventsHappeningNowD1(db, new Date('2026-12-01T22:00:00Z')))).toEqual([running, open])
+  })
+
+  it('finds venues by part of their name, with % and _ as plain characters', async () => {
+    const bebop = await venue('Bebop Club')
+    await venue('Club 100 Sur')
+    expect(ids(await searchVenuesByNameD1(db, 'BEBOP'))).toEqual([bebop])
+    expect(await searchVenuesByNameD1(db, 'Club 10_')).toEqual([])
+    expect(await searchVenuesByNameD1(db, '%')).toEqual([])
+  })
+
+  it('folds the case of accented letters, like ilike, and keeps accents distinct', async () => {
+    const gomez = await venue('CASA GÓMEZ', { neighborhood: 'Palermo' })
+    const nunez = await venue('Teatro de Núñez')
+    expect(await searchVenuesByNameD1(db, 'casa gómez')).toEqual([expect.objectContaining({ id: gomez, name: 'CASA GÓMEZ', neighborhood: 'Palermo' })])
+    expect(ids(await searchVenuesByNameD1(db, 'ÑUÑEZ'))).toEqual([])
+    expect(ids(await searchVenuesByNameD1(db, 'NÚÑEZ'))).toEqual([nunez])
+    // ilike doesn't fold accents either: production finds nothing for "casa gomez".
+    expect(await searchVenuesByNameD1(db, 'casa gomez')).toEqual([])
+  })
+
+  it('returns at most 20 venues, ordered by name', async () => {
+    for (const name of ['sala b', 'Sala a', ...Array.from({ length: 25 }, (_, n) => `Sala z${String(n).padStart(2, '0')}`)]) await venue(name)
+    const found = await searchVenuesByNameD1(db, 'SALA')
+    expect(found).toHaveLength(20)
+    expect(found.slice(0, 3).map(row => row.name)).toEqual(['Sala a', 'sala b', 'Sala z00'])
+  })
+
+  it('lets search_events keep an accented venue as a hard constraint on D1', async () => {
+    const gomez = await venue('CASA GÓMEZ')
+    const other = await venue('Otro lugar')
+    const there = await event('Noche de boleros', { venue_id: gomez, starts_at: '2099-01-10T23:00:00Z' })
+    await event('Noche de boleros en otro lado', { venue_id: other, starts_at: '2099-01-10T23:00:00Z' })
+    useCloudflareBindings({ DB: db })
+    try {
+      const result = await searchEventsTool.execute({ venueName: 'casa gómez', timeFilter: 'future' },
+        { userContext: { userId: null, isAuthenticated: false }, locale: 'es' })
+      expect(result.success).toBe(true)
+      expect(result.formatted).not.toContain('unknown venue')
+      expect(ids(result.events ?? [])).toEqual([there])
+    } finally {
+      useCloudflareBindings({})
+    }
+  })
+})
+
+describe('the backend seam', () => {
+  it('keeps search on Supabase until the env binds DB, then uses D1 and Vectorize', async () => {
+    useCloudflareBindings({})
+    expect(cloudflareSearchBackend()).toBeNull()
+
+    const live = await event('Peña folklórica', { search_document: 'Peña folklórica con empanadas' })
+    const { index } = fakeVectorize([{ id: live, values: [1, 0], status: 'scheduled', starts_at: '2026-12-01T22:00:00Z' }])
+    useCloudflareBindings({ DB: db, VECTORIZE: index })
+    expect(ids(await lexicalEventSearch('empanadas', {}))).toEqual([live])
+    expect(ids(await semanticEventSearch('folk', {}, 10, undefined, { embedQuery: async () => [1, 0] }))).toEqual([live])
+
+    useCloudflareBindings({ DB: db })
+    await expect(semanticEventSearch('folk', {}, 10, undefined, { embedQuery: async () => [1, 0] })).rejects.toThrow('VECTORIZE')
+    useCloudflareBindings({})
+  })
+})
+
+describe('venue similarity on D1', () => {
+  it('find_similar_venue: the best match at or above the threshold, oldest first on a tie', async () => {
+    await venue('Bebop Club', { created_at: at('2026-02-01T00:00:00Z') })
+    const older = await venue('BEBOP CLUB', { created_at: at('2026-01-01T00:00:00Z') })
+    await venue('Teatro Distinto')
+    expect(await findSimilarVenueD1(db, 'bebop club')).toEqual({ id: older, name: 'BEBOP CLUB', similarity: 1 })
+    // "Bebop" against "Bebop Club" is 0.545454... in production, below the importers' 0.6.
+    expect(await findSimilarVenueD1(db, 'Bebop')).toBeNull()
+    expect((await findSimilarVenueD1(db, 'Bebop', 0.5))?.similarity).toBe(Math.fround(0.545454561710358))
+    expect(mostSimilarVenue([], 'x')).toBeNull()
+  })
+
+  // The cases of supabase/tests/instagram-intake-venues.sql.
+  it('intake_similar_venues: same-name aliases, bands, no truncation, unrelated names', async () => {
+    const sala = await venue('Sala Sintética', { address: 'Av. Ficticia 1234', neighborhood: 'Almagro' })
+    await venue('SALA SINTÉTICA')
+    expect((await intakeSimilarVenuesD1(db, 'sala sintética')).filter(row => row.similarity === 1)).toHaveLength(2)
+    expect((await intakeSimilarVenuesD1(db, 'Sala Sintetica'))[0]).toMatchObject({ id: sala, address: 'Av. Ficticia 1234', neighborhood: 'Almagro' })
+    expect(Math.max(...(await intakeSimilarVenuesD1(db, 'Sala Sintética Bar Cultural', 0.3)).map(row => row.similarity))).toBeLessThan(0.85)
+    for (let n = 1; n <= 7; n++) await venue(`Sala Sintética ${n}`)
+    expect((await intakeSimilarVenuesD1(db, 'Sala Sintética')).length).toBeGreaterThanOrEqual(9)
+    expect(await intakeSimilarVenuesD1(db, 'Teatro Distinto')).toEqual([])
+  })
+})

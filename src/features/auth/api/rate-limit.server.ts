@@ -2,6 +2,8 @@ import { createHash } from 'crypto'
 import { Schema } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import { checkRateLimitD1 } from '#shared/lib/db/rate-limit-d1.server.ts'
 
 // Rate limit configuration for chat/general use
 export const RATE_LIMIT_REQUESTS = 50
@@ -52,8 +54,17 @@ async function checkScopedRateLimit(
 	reset: number
 }> {
 	try {
-		const client = providedClient ?? getSupabaseServiceRoleClient()
 		const windowSeconds = Math.max(1, Math.ceil(windowMs / 1000))
+		const db = providedClient ? null : boundD1()
+		if (db) {
+			// Same 3-second ceiling as the Supabase call: a stalled database blocks the request instead of allowing it.
+			const result = await Promise.race([
+				checkRateLimitD1(db, scope, hashIdentifier(scope, identifier), maxRequests, windowSeconds),
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), RATE_LIMIT_TIMEOUT_MS)),
+			])
+			return { success: result.success, remaining: result.remaining, reset: result.reset }
+		}
+		const client = providedClient ?? getSupabaseServiceRoleClient()
 		const { data, error } = await client
 			.rpc('check_rate_limit', {
 				p_scope: scope,
@@ -78,7 +89,7 @@ async function checkScopedRateLimit(
 			reset: result.reset
 		}
 	} catch {
-		warnRateLimitOnce(`[rate-limit] Supabase rate limit unavailable for scope "${scope}". Blocking requests.`)
+		warnRateLimitOnce(`[rate-limit] Rate limit unavailable for scope "${scope}". Blocking requests.`)
 		throw new RateLimitUnavailableError()
 	}
 }

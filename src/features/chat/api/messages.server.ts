@@ -9,6 +9,8 @@ import type { Message, MessageAttachedData, MessageExecutionStep } from '#shared
 import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import * as d1 from './chat-d1.server.ts'
 
 export type AddMessageInput = {
   conversationId: string
@@ -54,8 +56,29 @@ function getUserEffect(supabase: ReturnType<typeof createSupabaseServerClient>) 
   })
 }
 
+/** The signed-in user's id for the D1 path; D1 has no RLS, so every statement is scoped by it. */
+function d1User(event: RequestEvent) {
+  const db = boundD1()
+  return db ? { db, userId: event.locals?.user?.id ?? null } : null
+}
+
+function d1Effect<A>(work: () => Promise<A>, message: string) {
+  return Effect.tryPromise({ try: work, catch: () => persistenceFailure(message) })
+}
+
 /** Effect-native message insertion program. */
 export function addMessageEffect(event: RequestEvent, data: AddMessageInput) {
+  const cloudflare = d1User(event)
+  if (cloudflare) {
+    const { db, userId } = cloudflare
+    if (!userId) return Effect.fail(authFailure('Not authenticated'))
+    return d1Effect(() => d1.insertMessage(db, { userId }, {
+      conversationId: data.conversationId, role: data.role, content: data.content,
+      visibleContent: data.visibleContent ?? data.content, executionTrace: data.executionTrace ?? [],
+      responseContractVersion: data.responseContractVersion ?? CHAT_CONTRACT_VERSION, attachedData: data.attachedData ?? {},
+      clientMessageId: data.clientMessageId ?? null, parentId: data.parentMessageId ?? null,
+    }), 'Failed to add message')
+  }
   return Effect.gen(function* () {
     const supabase = createSupabaseServerClient(event)
     const { data: { user } } = yield* getUserEffect(supabase)
@@ -103,6 +126,12 @@ export function addMessage(event: RequestEvent, data: AddMessageInput) {
 
 /** Effect-native message list program. */
 export function getMessagesEffect(event: RequestEvent, data: { conversationId: string }) {
+  const cloudflare = d1User(event)
+  if (cloudflare) {
+    const { db, userId } = cloudflare
+    if (!userId) return Effect.succeed([] as Message[])
+    return d1Effect(async () => sortMessagesByTurnOrderAsc(await d1.getMessages(db, userId, data.conversationId)), 'Failed to get messages')
+  }
   return Effect.gen(function* () {
     const supabase = createSupabaseServerClient(event)
     const { data: { user } } = yield* getUserEffect(supabase)
@@ -136,6 +165,12 @@ export function updateMessageAttachedDataEffect(
   event: RequestEvent,
   data: { messageId: string; attachedData: MessageAttachedData },
 ) {
+  const cloudflare = d1User(event)
+  if (cloudflare) {
+    const { db, userId } = cloudflare
+    if (!userId) return Effect.fail(authFailure('Not authenticated'))
+    return d1Effect(() => d1.updateMessageAttachedData(db, userId, data.messageId, data.attachedData), 'Message not found')
+  }
   return Effect.gen(function* () {
     const supabase = createSupabaseServerClient(event)
     const { data: { user } } = yield* getUserEffect(supabase)

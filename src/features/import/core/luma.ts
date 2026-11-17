@@ -8,7 +8,6 @@
  * We import all visible events (no date range filter per user request).
  */
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchLumaEvents } from '../scrapers/luma/api.ts'
 import type { LumaEvent } from '../scrapers/luma/types.ts'
 import {
@@ -23,12 +22,12 @@ import {
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../api/duplicate-detection.ts'
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
-import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
 import { settleVenuesEffect, getVenueIdFromResults, type VenueSettlementInput } from './venue-settlement.ts'
 import { delayEffect } from './nominatim.ts'
+import type { CatalogStore } from './catalog-store.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
-import type { EventInsert } from '#shared/lib/types.ts'
+import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
 import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 
 // ============================================================================
@@ -72,7 +71,7 @@ export interface LumaImportResult {
  */
 function filterBlockedEvents(
   events: LumaEvent[],
-  blocklistEntries: Awaited<ReturnType<typeof getBlocklistEntries>>
+  blocklistEntries: ImportBlocklistEntry[]
 ): LumaEvent[] {
   return events.filter((event) => {
     const venueName = event.venue?.name || ''
@@ -111,7 +110,7 @@ function asLumaError(operation: string, error: unknown): ImportOperationError {
 
 /** Effect-native Luma import coordinator. */
 export function processLumaImportEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options: LumaImportOptions = {}
 ): Effect.Effect<LumaImportResult, ImportOperationError> {
   return Effect.gen(function* () {
@@ -136,7 +135,7 @@ export function processLumaImportEffect(
     console.log(`[luma] Fetched ${allEvents.length} events`)
 
     console.log('[luma] Filtering events...')
-    const blocklistEntries = yield* lumaTry('luma.load-blocklist', () => getBlocklistEntries('luma', client))
+    const blocklistEntries = yield* lumaTry('luma.load-blocklist', () => catalog.blocklistEntries('luma'))
     const filteredEvents = filterBlockedEvents(allEvents, blocklistEntries)
     result.eventsFiltered = filteredEvents.length
     console.log(`[luma] Filtered to ${filteredEvents.length} events after blocklist`)
@@ -156,7 +155,7 @@ export function processLumaImportEffect(
           : null,
       }))
     const { results: venueResults, stats: venueStats } = yield* settleVenuesEffect(
-      client,
+      catalog,
       venueInputs,
       { source: 'luma', scrapeRunId: options.scrapeRunId }
     ).pipe(Effect.mapError((error) => asLumaError('luma.settle-venues', error)))
@@ -169,7 +168,7 @@ export function processLumaImportEffect(
       .filter((id): id is string => id !== null)
     const existingEventsMap = options.skipDuplicateCheck
       ? new Map<string, ExistingEventData>()
-      : yield* checkDuplicateEventsWithDataEffect(externalIds, 'luma', client).pipe(
+      : yield* checkDuplicateEventsWithDataEffect(externalIds, 'luma', catalog).pipe(
           Effect.mapError((error) => asLumaError('luma.duplicate-check', error))
         )
 
@@ -220,11 +219,7 @@ export function processLumaImportEffect(
       const itemProgram = Effect.gen(function* () {
         if (existing && updateKind === 'unchanged') return
         if (existing && updateKind === 'mutable-only') {
-          const { error } = yield* lumaTry('luma.update-mutable', () => client
-            .from('events')
-            .update(getChangedMutableFields(transformed, existing))
-            .eq('id', existing.id)
-          )
+          const error = yield* lumaTry('luma.update-mutable', () => catalog.updateEvent(existing.id, getChangedMutableFields(transformed, existing)).then(() => null, (error: Error) => error))
           if (error) {
             console.error(`[luma] Failed to update event: ${error.message}`)
             result.eventsSkipped++
@@ -266,9 +261,7 @@ export function processLumaImportEffect(
         }
 
         if (existing) {
-          const { error } = yield* lumaTry('luma.update-event', () => client
-            .from('events')
-            .update({
+          const error = yield* lumaTry('luma.update-event', () => catalog.updateEvent(existing.id, {
               name: eventWithEmbedding.name,
               description_es: eventWithEmbedding.description_es,
               description_en: eventWithEmbedding.description_en,
@@ -280,8 +273,7 @@ export function processLumaImportEffect(
               search_document: eventWithEmbedding.search_document,
               embedding_version: eventWithEmbedding.embedding_version,
               ...getChangedMutableFields(eventWithEmbedding, existing),
-            })
-            .eq('id', existing.id)
+            }).then(() => null, (error: Error) => error)
           )
           if (error) {
             console.error(`[luma] Failed to update event: ${error.message}`)
@@ -290,7 +282,7 @@ export function processLumaImportEffect(
             result.eventsUpdated++
           }
         } else {
-          const { error } = yield* lumaTry('luma.insert-event', () => client.from('events').insert(eventWithEmbedding))
+          const error = yield* lumaTry('luma.insert-event', () => catalog.insertEvent(eventWithEmbedding).then(() => null, (error: Error) => error))
           if (error) {
             console.error(`[luma] Failed to insert event: ${error.message}`)
             result.eventsSkipped++
@@ -315,11 +307,11 @@ export function processLumaImportEffect(
 }
 
 export async function processLumaImport(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options: LumaImportOptions = {}
 ): Promise<LumaImportResult> {
   try {
-    return await Effect.runPromise(processLumaImportEffect(client, options))
+    return await Effect.runPromise(processLumaImportEffect(catalog, options))
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error))
   }

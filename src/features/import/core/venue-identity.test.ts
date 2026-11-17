@@ -4,6 +4,7 @@ import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { NAME_FOLD_FROM, NAME_FOLD_TO, keeperOrder, pickVenue, venueNameKey, type VenueCopy } from './venue-identity.ts'
 import { matchVenueEffect } from '../scrapers/venue-matcher.ts'
+import { supabaseCatalog } from './catalog-store.ts'
 
 describe('venueNameKey', () => {
   it('folds case, accents, doubled and non-breaking spaces, punctuation, and city suffixes', () => {
@@ -65,7 +66,7 @@ describe('keeper and pick rules', () => {
 describe('matchVenueEffect', () => {
   const sala = { id: 'sala', name: 'Sala  Sintética', address: 'Calle Norte 100', neighborhood: 'Palermo', created_at: '2026-01-01T00:00:00Z' }
   const client = (rpc: (name: string, args: Record<string, unknown>) => { data: unknown; error: unknown }) =>
-    ({ rpc: async (name: string, args: Record<string, unknown>) => rpc(name, args) }) as unknown as SupabaseClient
+    supabaseCatalog(({ rpc: async (name: string, args: Record<string, unknown>) => rpc(name, args) }) as unknown as SupabaseClient)
 
   it('returns the fuzzy match once find_similar_venue answers', async () => {
     const db = client((name, args) => name === 'find_similar_venue'

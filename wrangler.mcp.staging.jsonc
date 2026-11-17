@@ -1,0 +1,22 @@
+// Staging only: the public MCP Worker as `baeventos-mcp-staging` on workers.dev, reading the `-staging` D1 and
+// Vectorize index (DECISIONS.md), so `search_events` can be checked end to end before the cutover. CI never deploys it;
+// deploy by hand with `bunx wrangler deploy --config wrangler.mcp.staging.jsonc`. Secrets: OPENAI_API_KEY (query
+// embeddings) and, optionally, VOYAGE_API_KEY (rerank). It has no Supabase secrets, so `get_event`, which still reads
+// Supabase until delivery PR 04, fails here. It must never bind a production resource.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-mcp-staging",
+  "main": "src/mcp-worker/index.ts",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-08-26",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // Its own namespace, so staging calls never count against production's limit.
+  "ratelimits": [{ "name": "MCP_RATE_LIMIT", "namespace_id": "26111603", "simple": { "limit": 10, "period": 60 } }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "baeventos-staging", "database_id": "136c27ff-1093-4519-825a-7ec4e17b1ff7", "migrations_dir": "migrations" }
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events-staging" }]
+}
