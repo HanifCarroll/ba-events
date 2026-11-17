@@ -10,6 +10,8 @@ import { Effect } from 'effect'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 
+// The exit code is the result (tests/support/run-fixture.ts): anything short of the last assertion fails.
+process.exitCode = 3
 const day = (offset: number, hour = 20) => new Date(Date.UTC(2030, 0, 10 + offset, hour + 3)).toISOString()
 let embeds = 0
 mock.module('#shared/lib/ai/embeddings.ts', () => ({
@@ -139,7 +141,9 @@ for (const [source, run] of Object.entries(coordinators)) {
   assert.equal(await db.prepare('SELECT count(*) AS n FROM venues').first('n'), 1, 'a placeholder never becomes a venue')
   passed.push(source)
 }
+  assert.deepEqual(passed, ['luma', 'meetup', 'ba-tourism'])
   console.log(JSON.stringify({ passed }))
+  process.exitCode = 0
 } finally {
   await dispose()
 }

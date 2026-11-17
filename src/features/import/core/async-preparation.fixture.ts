@@ -5,6 +5,8 @@ import { Effect } from 'effect'
 import type { EventInsert } from '#shared/lib/types.ts'
 
 // Isolated SDK doubles keep Bun's module mocks out of other deterministic suites.
+// The exit code is the result (tests/support/run-fixture.ts): anything short of the last line fails.
+process.exitCode = 3
 const source = process.argv[2]
 const event = { id: 'synthetic', api_id: 'synthetic', name: 'Synthetic Jazz', url: 'https://example.com/event', dateTime: '2026-12-01T20:00:00-03:00' }
 const transformed: EventInsert = {
@@ -103,3 +105,4 @@ for (mode of ['new', 'changed', 'stale', 'unchanged', 'mutable', 'embedding-fail
   }
 }
 console.log(JSON.stringify({ source, passed: true }))
+process.exitCode = 0
