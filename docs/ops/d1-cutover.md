@@ -18,7 +18,7 @@ export PATH=$HOME/.local/share/mise/shims:$PATH
    bun run snapshot:search-corpus
    ```
 
-2. **A full staging rehearsal.** Run sections 3 to 5 against the `-staging` targets: run the copy tool without `--production`, then deploy the staging Workers ([D1 "Staging"](../d1.md#staging)). Note each step's time.
+2. **A full staging rehearsal.** Run sections 3 to 5 against the `-staging` targets: run the copy tool without `--production`, and run `backend-overlap.ts` without `--production`. Then deploy the staging Workers ([D1 "Staging"](../d1.md#staging)) and run the step 6 smoke tests against `https://baeventos-staging.paseaban-decorosa0m.workers.dev`, with `DB_READ_ONLY` set and cleared on `wrangler.staging.jsonc`. Note each step's time.
 3. **Cloudflare resources.** Hermes creates these. They are the only production resources that are new:
 
    ```sh
@@ -105,7 +105,13 @@ time node --env-file=.env scripts/d1-migrate/verify.ts --dir "$RUN" --production
   --vectorize baeventos-events --evidence-bucket baeventos-intake-evidence --artwork-bucket baeventos-artwork
 ```
 
-`verify` exits 1 on any mismatch: a row count in any of the 28 tables, a field in 100 events or 50 venues, the vector count or 100 sampled vectors, an R2 hash, a user, or a production count that changed since the export. If it fails, find the cause, rerun `load` with `--only` for the failing part, and verify again. If the window runs out, go to "Abort before the switch".
+Then the search gate. It is read-only on both sides, takes about 30 seconds, and must print `PASS`: each of the 10 fixed queries must keep at least 70% top-10 overlap for lexical search and 80% for semantic search between production Supabase and the copied D1 and Vectorize. It needs the real D1 id in `wrangler.jsonc` (step 1.4).
+
+```sh
+time node --env-file=.env evals/search/backend-overlap.ts --production
+```
+
+`verify` exits 1 on any mismatch: a row count in any of the 28 tables, a field in 100 events or 50 venues, the vector count or 100 sampled vectors, an R2 hash, a user, or a production count that changed since the export. If either check fails, find the cause, rerun `load` with `--only` for the failing part, and verify again. If the window runs out, go to "Abort before the switch".
 
 ## 6. Switch, in order
 
@@ -117,13 +123,13 @@ time node --env-file=.env scripts/d1-migrate/verify.ts --dir "$RUN" --production
    curl -sS https://baeventos.com/api/events/happening-soon | head -c 300                                    # 4 events
    bin/ba-d1-read.sh "SELECT id FROM events WHERE status='scheduled' ORDER BY starts_at LIMIT 1"             # an id
    curl -sS https://baeventos.com/events/<that id> -o /dev/null -w '%{http_code}\n'                          # 200
-   bun scripts/chat-smoke.ts --url https://baeventos.com --prompt "jazz this weekend"                        # guest chat with events
+   bun scripts/chat-smoke.ts --url https://baeventos.com --prompt "jazz this weekend" --require-events 1    # guest chat: search_events, events > 0
    curl -sS https://baeventos-mcp.paseaban-decorosa0m.workers.dev/mcp -H 'content-type: application/json' \
      -H 'accept: application/json, text/event-stream' -H 'X-BA-Eventos-Source: dogfood' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
      "params":{"name":"search_events","arguments":{"query":"jazz"}}}' | head -c 400                      # MCP search_events: events
    ```
 
-   - Search: check that `bun scripts/chat-smoke.ts` returned events, and that the home page and an event page with an Instagram poster show their artwork.
+   - Search: `chat-smoke.ts` exits 1 unless the guest turn returned events. It works while frozen, because guest chat keeps its history in the browser. Also check the home page and an event page with an Instagram poster show their artwork.
    - Magic link: on https://baeventos.com/login, request a link for a test address that isn't one of the 4 users (`hanifcarroll@fastmail.com` was used in PR 07). Open it and confirm `/saved` loads. Saving answers 503 until the freeze is cleared, as intended.
    - Intake preflight through the API (on the Pro, from an intake checkout): `INTAKE_API_URL=https://baeventos-jobs.paseaban-decorosa0m.workers.dev INTAKE_API_TOKEN=$(cat ~/.config/ba-events/intake-token) bun run instagram:intake preflight` should show `schema_ready`, `storage_ready`, and `publishing_ready`.
 3. **Clear the freeze.** Delete the secret on each Worker. The Workers pick up the change within seconds.
@@ -147,7 +153,7 @@ time node --env-file=.env scripts/d1-migrate/verify.ts --dir "$RUN" --production
    ```
 
 6. **Hermes' reads.** Use `bin/ba-d1-read.sh "SELECT ..."` (production, read-only, with the deploy token in `~/.config/ba-events/cloudflare-deploy-token`). Writes are reviewed `.sql` files run with `bunx wrangler d1 execute baeventos-production --remote --config wrangler.jsonc --file <file>`. A fix that changes protected event facts inserts into `write_context` first and deletes from it last, in the same file ([D1](../d1.md#writing-from-server-code)). `/intake/sources` replaces `import_sources.py`.
-7. **Baselines.** Run `bun run eval:search` and `bun run eval:relevance` again, and compare them with step 1.
+7. **Baselines.** Run `bun run eval:search` and `bun run eval:relevance` again, and compare them with step 1. These are additional checks: they run outside a Worker, so they don't prove D1 retrieval. The overlap gate in step 5 does.
 
 ## 7. Rollback
 
