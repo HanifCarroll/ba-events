@@ -44,9 +44,14 @@ const PHOTO_DARK = `<div class='photo'></div><div class='shade' style='backgroun
 function carouselFrames(format: FormatKey, c: ReturnType<typeof cover>, events: PostEvent[]): string {
   const coverHtml = `<div class='s'>${PHOTO}<div class='brand'>BA Eventos</div>
 <div class='block' style='top:380px'>${coverInner(c)}</div>${footer('baeventos.com', 'Deslizá →')}</div>`
+  // A card with a description keeps the live post's layout. Without one, title and venue sit together, centred
+  // between the header and the footer, so the card doesn't show a large empty gap.
+  const body = (event: PostEvent) => event.description
+    ? `<div class='block' style='top:300px'>${cardText(format, event)}</div>
+<div class='venue' style='position:absolute;left:80px;right:80px;bottom:200px'>${venueInner(event)}</div>`
+    : `<div class='stack'><div>${cardText(format, event)}</div><div class='venue' style='margin-top:96px'>${venueInner(event)}</div></div>`
   const cards = events.map((event, index) => `<div class='s card'><div class='brand'>BA Eventos</div><div class='counter'>${index + 1}/${events.length}</div>
-<div class='block' style='top:300px'>${cardText(format, event)}</div>
-<div class='venue' style='position:absolute;left:80px;right:80px;bottom:200px'>${venueInner(event)}</div>
+${body(event)}
 ${footer(footerHandle(event), 'baeventos.com')}</div>`).join('')
   const closing = `<div class='s'>${PHOTO_DARK}<div class='brand'>BA Eventos</div>
 <div class='block' style='top:380px'>${closingInner(CLOSING.headline, CLOSING.body, CLOSING.button)}</div>${footer(CLOSING.footer, '')}</div>`
@@ -90,13 +95,14 @@ body{width:1080px;background:#000}
 .brand{position:absolute;top:72px;left:80px;font-weight:600;font-size:36px;letter-spacing:-.3px}
 .counter{position:absolute;top:78px;right:80px;font-size:28px;color:rgba(255,255,255,.6)}
 .block{position:absolute;left:80px;right:80px}
+.stack{position:absolute;left:80px;right:80px;top:119px;bottom:109px;display:flex;flex-direction:column;justify-content:center}
 .venue{border-top:2px solid rgba(255,255,255,.18);padding-top:44px}
 .safe{position:absolute;left:80px;right:80px;top:${STORY_SAFE.top}px;height:${STORY_SAFE.bottom - STORY_SAFE.top}px;display:flex;flex-direction:column;padding:28px 0}
-.safe .bar{display:flex;justify-content:space-between;align-items:baseline}
+.safe .bar{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:baseline}
 .brand-in{font-weight:600;font-size:36px;letter-spacing:-.3px}
 .counter-in{font-size:28px;color:rgba(255,255,255,.6)}
-.safe .middle{flex:1;display:flex;flex-direction:column;justify-content:center}
-.safe .foot{position:static;margin-top:auto}
+.safe .middle{position:absolute;inset:0;padding:150px 0;display:flex;flex-direction:column;justify-content:center}
+.safe .foot{position:relative;z-index:1;bottom:auto;margin-top:auto}
 .meta{display:flex;align-items:center;gap:24px;margin-top:16px;font-size:34px;color:rgba(255,255,255,.75)}
 .pill{border:2px solid rgba(255,255,255,.5);border-radius:999px;padding:9px 24px;font-size:30px}
 .pill.free{border:0;background:#2fbf71;color:#06210f;padding:10px 26px;font-weight:600}

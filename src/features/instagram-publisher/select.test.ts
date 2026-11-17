@@ -133,6 +133,6 @@ describe('titles naming the venue after an @', () => {
     expect(stripVenueSuffix('Noche de tango @Café Artigas', 'Cafe artigas')).toBe('Noche de tango')
     expect(stripVenueSuffix('Fiesta @ La Tangente', 'Niceto Club')).toBe('Fiesta @ La Tangente')
     expect(stripVenueSuffix('Hablemos de @usuario y más', 'Sala')).toBe('Hablemos de @usuario y más')
-    expect(toPostEvent(event({ name: 'JOHNNY MARR @ C ART MEDIA', venue: 'C Art Media' })).title).toBe('Johnny marr')
+    expect(toPostEvent(event({ name: 'JOHNNY MARR @ C ART MEDIA', venue: 'C Art Media' })).title).toBe('Johnny Marr')
   })
 })

@@ -82,13 +82,27 @@ export function priceLabel({ isFree, price, payWhatYouWant }: PriceInput): strin
   return null
 }
 
-/** Titles stay as the catalog has them, except an all-uppercase title becomes sentence case. */
+/** Small words that stay lowercase in a title-cased title, unless they come first. */
+const SMALL_WORDS = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e', 'en', 'a', 'al', 'con', 'por', 'para', 'o', 'u', 'the', 'of', 'and', 'an', 'in', 'on'])
+
+/**
+ * Titles stay as the catalog has them, except an all-uppercase title becomes title case: each word capitalized, small
+ * words lowercase unless first, and words of one or two letters (other than the small words) or with digits kept as written (DJ, FEJA 2026 → Feja 2026).
+ */
 export function displayTitle(name: string): string {
   const title = name.trim()
   const letters = title.replace(/[^\p{L}]/gu, '')
   if (!letters || letters !== letters.toLocaleUpperCase('es') || letters === letters.toLocaleLowerCase('es')) return title
-  const lower = title.toLocaleLowerCase('es')
-  return lower.replace(/\p{L}/u, c => c.toLocaleUpperCase('es'))
+  let first = true
+  return title.replace(/[\p{L}\p{N}'’]+/gu, word => {
+    const isFirst = first
+    first = false
+    const bare = word.replace(/['’]/g, '')
+    if (/\p{N}/u.test(word) || bare.length <= 2 && !SMALL_WORDS.has(bare.toLocaleLowerCase('es'))) return word
+    const lower = word.toLocaleLowerCase('es')
+    if (!isFirst && SMALL_WORDS.has(lower)) return lower
+    return lower.replace(/\p{L}/u, c => c.toLocaleUpperCase('es'))
+  })
 }
 
 /** The first sentence of the Spanish summary when it is 90 characters or fewer. */

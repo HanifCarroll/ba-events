@@ -38,9 +38,15 @@ describe('prices', () => {
 })
 
 describe('titles and descriptions', () => {
-  it('turns an all-uppercase title into sentence case and leaves others alone', () => {
-    expect(displayTitle('JOHNNY MARR @ C ART MEDIA')).toBe('Johnny marr @ c art media')
-    expect(displayTitle('¡ÚLTIMA FUNCIÓN!')).toBe('¡Última función!')
+  it('turns an all-uppercase title into title case and leaves others alone', () => {
+    expect(displayTitle('JOHNNY MARR')).toBe('Johnny Marr')
+    expect(displayTitle('¡ÚLTIMA FUNCIÓN!')).toBe('¡Última Función!')
+    expect(displayTitle('NOCHE DE TANGO Y MILONGA EN EL CLUB')).toBe('Noche de Tango y Milonga en el Club')
+    expect(displayTitle('EL ARTE DE LA FUGA')).toBe('El Arte de la Fuga')
+    expect(displayTitle('THE LEMON TWIGS AND FRIENDS')).toBe('The Lemon Twigs and Friends')
+    expect(displayTitle('DJ SET CON MC LUNA')).toBe('DJ Set con MC Luna')
+    expect(displayTitle('FESTIVAL FEJA 2026 VOL. 2')).toBe('Festival Feja 2026 Vol. 2')
+    expect(displayTitle('MAGGIE CULLEN - LATINPEÑA')).toBe('Maggie Cullen - Latinpeña')
     expect(displayTitle('Dear Munro')).toBe('Dear Munro')
     expect(displayTitle('FIDBA #15 — Na passagem do trópico')).toBe('FIDBA #15 — Na passagem do trópico')
   })
