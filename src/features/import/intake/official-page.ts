@@ -19,13 +19,17 @@ export function publicPageUrl(value: string): boolean {
   return !host.startsWith('[') && !/^[\d.]+$/.test(host) && !/(^|\.)(local|localhost|internal|lan|home|arpa)$/.test(host)
 }
 
-/** Accent-, case- and whitespace-insensitive: the page's markup splits and spaces text in ways the reader never sees. */
-export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[\s\u00a0]+/gu, '')
+/** Accent- and case-insensitive, with every whitespace run as one space: words and numbers keep their boundaries. */
+export const normalizePageText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
+/** For the name check only: punctuation is a space too, so "¡Forever Young!" is found as "forever young". */
+const nameText = (value: string) => ` ${normalizePageText(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `
 
 export function visibleText(html: string): string {
   const $ = load(html)
   $('head, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
   $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') ?? '')).remove()
+  // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
+  $('*').each((_, element) => { $(element).prepend(' ').append(' ') })
   return $.root().text()
 }
 
@@ -67,8 +71,25 @@ export async function readOfficialPage(url: string, fetcher: typeof fetch = fetc
 }
 export type ReadPage = (url: string) => Promise<string>
 
-/** The reasons official-page evidence doesn't verify now; empty when every page was fetched and contains its excerpt. */
-export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], readPage: ReadPage = url => readOfficialPage(url)) => Effect.gen(function*() {
+/** The candidate facts a page excerpt must back: its name, its BA date, and its BA time when it has one. */
+export type PageFacts = { name: string; date: string; time: string | null }
+
+/** Why an excerpt doesn't state the date or time it is cited for; null when it does. Digit runs are compared as numbers. */
+export function excerptFactsReason(excerpt: string, fields: readonly string[], facts: PageFacts): string | null {
+  const runs = (excerpt.match(/\d+/g) ?? []).filter(run => run.length <= 2).map(Number)
+  const day = Number(facts.date.slice(8, 10))
+  if (fields.includes('date') && !runs.includes(day)) return `does not state the day ${day}`
+  if (fields.includes('time') && facts.time) {
+    const [hour, minute] = facts.time.split(':').map(Number)
+    const pm = /\bp\.?\s?m\b/i.test(excerpt)
+    const hours = pm && hour >= 12 ? [hour, hour === 12 ? 12 : hour - 12] : [hour]
+    if (!hours.some(value => runs.includes(value)) || minute !== 0 && !runs.includes(minute)) return `does not state the time ${facts.time}`
+  }
+  return null
+}
+
+/** The reasons official-page evidence doesn't verify now; empty when every page was fetched and backs its facts. */
+export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: PageFacts, readPage: ReadPage = url => readOfficialPage(url)) => Effect.gen(function*() {
   const pages = evidence.filter(isOfficialPage)
   const texts = new Map<string, Promise<string>>()
   const reasons: string[] = []
@@ -76,11 +97,17 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], readPag
     if (!publicPageUrl(page.url)) { reasons.push(`Official page must be a public HTTPS address: ${page.url}`); continue }
     const excerpt = normalizePageText(page.excerpt)
     if (excerpt.length < MIN_EXCERPT) { reasons.push(`Official page excerpt is too short to verify: ${page.url}`); continue }
-    if (!texts.has(page.url)) texts.set(page.url, readPage(page.url).then(normalizePageText))
+    const missing = excerptFactsReason(excerpt, page.fields, facts)
+    if (missing) { reasons.push(`Official page excerpt ${missing}: ${page.url}`); continue }
+    if (!texts.has(page.url)) texts.set(page.url, readPage(page.url))
     const text = yield* Effect.promise(() => texts.get(page.url)!.then(value => ({ value }), (error: unknown) => ({ error })))
     if ('error' in text) {
       reasons.push(`Official page could not be read: ${page.url} (${text.error instanceof Error ? text.error.message : String(text.error)})`)
-    } else if (!text.value.includes(excerpt)) reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
+    } else if (!new RegExp(`(?<![\\p{L}\\p{N}])${excerpt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u').test(normalizePageText(text.value))) {
+      reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
+    } else if (!nameText(text.value).includes(nameText(facts.name))) {
+      reasons.push(`Official page does not name "${facts.name}": ${page.url}`)
+    }
   }
   return reasons
 })

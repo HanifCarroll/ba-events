@@ -6,7 +6,7 @@ import { buildDescriptionPresentationFields } from '#features/events/lib/descrip
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
 import { verifyOfficialPagesEffect, type ReadPage } from './official-page.ts'
-import { candidateStart, decideMatch, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
+import { baDate, candidateStart, decideMatch, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
@@ -37,7 +37,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   const candidate = yield* Effect.try({ try: () => decodeCandidate({ ...row.payload, expected_revision: row.revision }), catch: () => failure('Stored candidate is invalid') })
   const { observations, media } = yield* readEvidenceEffect(store, candidate)
   const reasons = validateEvidence(candidate, observations, media, now)
-  reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, readPage))
+  reasons.push(...yield* verifyOfficialPagesEffect(candidate.evidence, { name: candidate.name, date: candidate.date, time: candidate.time }, readPage))
   // Changed source observations invalidate earlier evidence even if the candidate was not edited yet.
   const currentObservations = yield* Effect.forEach(observations, post => Effect.gen(function* () {
     const latest = yield* store.latestObservation(post.post_id)
@@ -114,6 +114,14 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   return { ...plan, venue_name: venueName } as IntakePlan & { venue_name: string | null }
 })
 
+/** The plan's name and Buenos Aires date and time, the facts its page excerpts must state. */
+const planFacts = (plan: IntakePlanRow) => {
+  const start = new Date(plan.payload.starts_at)
+  const time = plan.payload.time_tba ? null : new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(start)
+  return { name: plan.payload.name, date: baDate(start.toISOString()), time }
+}
+
 type Publishers = {
   embed: typeof embedEventWithDocument;
   presentation: typeof buildDescriptionPresentationFields;
@@ -128,8 +136,10 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: Inta
   // Run all stale-plan checks before provider calls or making artwork public.
   yield* store.checkPlan(id)
   // A page can change after preview, so commit fetches it again.
-  const pages = yield* verifyOfficialPagesEffect(plan.evidence, publishers.readPage)
-  if (pages.length) return yield* failure(pages.join('; '))
+  if (plan.evidence.some(isOfficialPage)) {
+    const pages = yield* verifyOfficialPagesEffect(plan.evidence, planFacts(plan), publishers.readPage)
+    if (pages.length) return yield* failure(pages.join('; '))
+  }
   if (plan.action !== 'link' && !plan.payload.embedding) {
     const venue = yield* store.eventVenue(plan.payload.venue_id)
     const [{ embedding, searchDocument }, presentation] = yield* Effect.all([

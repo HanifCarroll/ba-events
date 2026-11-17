@@ -315,7 +315,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     const post = await observation(runId, 'Synthetic Jazz en Synthetic Venue, entradas en la web')
     const day = shiftDay(baToday(), 5)
     const url = 'https://teatro.example.org/obra/synthetic-jazz/'
-    let html = `<html><body><div>PRÓXIMAS FUNCIONES</div><div>${day}</div><div>21:00</div></body></html>`
+    let html = `<html><body><h1>Synthetic Jazz</h1><div>PRÓXIMAS FUNCIONES</div><div>${day}</div><div>21:00</div></body></html>`
     const readPage = async (requested: string) => { expect(requested).toBe(url); return visibleTextFor(html) }
     const candidate = id()
     await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { evidence: [
@@ -328,7 +328,7 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     html = '<html><body>Funciones agotadas</body></html>'
     expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
       .toBe(`Official page evidence must be an excerpt of the page's visible text: ${url}`)
-    html = `<html><body>${day} 21:00</body></html>`
+    html = `<html><body>Synthetic Jazz: ${day} 21:00</body></html>`
     const receipt = await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
     expect(receipt).toMatchObject({ action: 'create', event_id: preview.event_id })
     expect((await db.prepare('SELECT observation_id FROM event_source_evidence').all()).results).toEqual([{ observation_id: post }])
