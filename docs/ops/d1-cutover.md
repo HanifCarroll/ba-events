@@ -72,7 +72,7 @@ export PATH=$HOME/.local/share/mise/shims:$PATH
    bun --env-file=.env scripts/telegram-webhook.ts delete
    ```
 
-What the freeze doesn't cover: before the deploy, the old code still writes guest diagnostics (`guest_request_lifecycle`, `guest_chat_debug`), rate-limit windows, feedback, and signed-in chat to Supabase. Those rows are lost between the export and the deploy. They are diagnostics or very rare at 01:00, so this is accepted. The 4 accounts' saved events and profiles are copied as they stand at export.
+What the freeze doesn't cover: before the deploy, the old code still writes guest diagnostics (`guest_request_lifecycle`, `guest_chat_debug`), rate-limit windows, feedback, and signed-in chat to Supabase. Those rows are lost between the export and the deploy. They are diagnostics or very rare at 01:00, so this is accepted. `verify --production` reports growth in `guest_request_lifecycle`, `guest_chat_debug`, and `rate_limit_windows` as tolerated and doesn't fail on it. Any change in another table, such as feedback, a conversation, or a saved event, still fails it (see step 5). The 4 accounts' saved events and profiles are copied as they stand at export.
 
 ## 3. Export (about 7 minutes)
 
@@ -111,7 +111,21 @@ Then the search gate. It is read-only on both sides, takes about 30 seconds, and
 time node --env-file=.env evals/search/backend-overlap.ts --production
 ```
 
-`verify` exits 1 on any mismatch: a row count in any of the 28 tables, a field in 100 events or 50 venues, the vector count or 100 sampled vectors, an R2 hash, a user, or a production count that changed since the export. If either check fails, find the cause, rerun `load` with `--only` for the failing part, and verify again. If the window runs out, go to "Abort before the switch".
+`verify` exits 1 on any of these mismatches:
+
+- a D1 row count that differs from the export, in any of the 28 tables;
+- a field in 100 events or 50 venues;
+- the vector count, or 100 sampled vectors;
+- an R2 hash;
+- a user;
+- a production count that changed since the export, outside the three diagnostic tables, which are reported as tolerated.
+
+If it fails, the fix depends on the cause:
+
+- **The copy is wrong** (D1, vectors, R2, or users differ from the export). Rerun `load` with `--only` for that part, then run `verify` again.
+- **Production changed since the export** (for example a feedback row, a signed-in chat, or a saved event). Reloading the same export can't fix this. Make a new run directory and repeat steps 3 to 5: export, transform, load, then the overlap check and `verify`. That takes about 20 minutes.
+
+If the window runs out, go to "Abort before the switch".
 
 ## 6. Switch, in order
 
@@ -159,8 +173,39 @@ time node --env-file=.env evals/search/backend-overlap.ts --production
 
 Supabase stays as it was: nothing in the window writes to it after the export.
 
-- **Abort before the switch** (verify fails or time runs out). Don't merge. Delete `DB_READ_ONLY` (the old code ignores it anyway), set the Telegram webhook again, and reload the intake LaunchAgent. Production never left Supabase.
-- **Within 48 hours of the switch,** revert the merge on `main`. The deploy job deploys the old configs, which have no D1 bindings, so every Worker reads Supabase again. Writes made to D1 since the switch are lost: scrapes repeat on their own, and intake publishes can be redone from the run's evidence. Remove `INTAKE_API_URL` and `INTAKE_API_TOKEN` from both intake `.env` files. After the first good intake run on D1, fix forward instead.
+- **Abort before the switch** (verify fails or time runs out). Don't merge. Production never left Supabase. Run steps 2 to 4 of the next item to clear `DB_READ_ONLY`, turn Telegram back on, and reload the intake. The intake `.env` files have no API settings yet, so step 4 only loads the agent.
+- **After the merge** (a failed smoke test, or a problem within 48 hours), roll back in this order. It works whether or not the freeze was cleared, Telegram was turned back on, or the intake was reloaded.
+
+  1. Revert the merge and wait for the deploy job. The old configs have no D1 bindings, so every Worker reads Supabase again.
+
+     ```sh
+     git checkout main && git pull --ff-only && git revert -m 1 --no-edit <merge sha> && git push
+     gh run watch "$(gh run list --branch main --workflow CI --limit 1 --json databaseId -q '.[0].databaseId')" --exit-status
+     curl -sS https://baeventos.com/api/events/happening-soon | head -c 300    # events from Supabase
+     ```
+
+  2. Clear the freeze secrets if they are still set. The old code ignores them, but a later redeploy of the cutover code would start frozen.
+
+     ```sh
+     for c in wrangler.jsonc wrangler.telegram.jsonc wrangler.jobs.jsonc; do yes | bunx wrangler secret delete DB_READ_ONLY --config $c || true; done
+     ```
+
+  3. Turn Telegram back on (VPS, `~/projects/ba-events`), whether it was deleted in step 2 of the window or set again later. The second command should show the URL and 0 pending after a minute.
+
+     ```sh
+     bun --env-file=.env scripts/telegram-webhook.ts set && bun --env-file=.env scripts/telegram-webhook.ts info
+     ```
+
+  4. Put the intake back on Supabase (Pro). In both checkouts, delete the `INTAKE_API_URL` and `INTAKE_API_TOKEN` lines from `.env` and run `git pull --ff-only` to get the revert. Then check it and load the agent if it isn't loaded:
+
+     ```sh
+     bun run instagram:intake preflight                                                     # Supabase mode, publishing_ready true
+     launchctl print gui/$(id -u)/com.hanif.ba-events-intake >/dev/null 2>&1 \
+       || launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hanif.ba-events-intake.plist
+     launchctl print gui/$(id -u)/com.hanif.ba-events-intake | grep -E 'state =|last exit code'
+     ```
+
+  5. Writes made to D1 since the switch are lost. Scrapes repeat on their own, and intake publishes can be redone from the run's evidence. After the first good intake run on D1, fix forward instead of rolling back.
 - **Mistakes inside D1** are covered by Time Travel (30 days): `bunx wrangler d1 time-travel restore baeventos-production --timestamp <ISO time> --config wrangler.jsonc`.
 
 ## 8. Afterwards
