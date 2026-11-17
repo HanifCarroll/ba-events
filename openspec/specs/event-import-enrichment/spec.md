@@ -58,6 +58,10 @@ Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous 
 - **THEN** settlement reuses that venue
 - **AND** a score from 0.6 up to 0.85, or a similar name at another street and number, never attaches the event to that venue: settlement creates the venue and, for the 0.6–0.85 band, queues the lookalike in `venue_review_queue`
 
+#### Scenario: Name similarity on D1
+- **WHEN** a venue lookup runs on D1, which has no pg_trgm
+- **THEN** the score is `trigramSimilarity`, which equals Postgres `similarity()` on 500 production name pairs (`src/shared/lib/search/trigram.test.ts`), and `findSimilarVenueD1` and `intakeSimilarVenuesD1` return what `find_similar_venue` and `intake_similar_venues` return
+
 ### Requirement: Enrichment is bounded and source-backed
 Enrichment SHALL use the registered source strategy, retain available source data on partial failure, and mark unavailable descriptions or terminal failures explicitly. It MUST NOT invent event facts to make a record appear complete.
 
