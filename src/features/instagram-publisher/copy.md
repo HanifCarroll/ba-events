@@ -78,7 +78,7 @@ This matches the live post `instagram.com/p/Df2OC_UkRZu/` (`templates/ba-p2/`).
 ```
 {N} planes independientes para este finde en Buenos Aires:
 
-{one line per event}
+{one line per event, with a blank line between events}
 
 Más planes en baeventos.com (link en la bio).
 
@@ -104,7 +104,7 @@ Each event line reads "{Weekday} {d}, {time}. {Title} en @{handle}, {Barrio}. {P
 ```
 {N} planes gratis esta semana en Buenos Aires:
 
-{one line per event}
+{one line per event, with a blank line between events}
 
 Más planes en baeventos.com (link en la bio).
 
