@@ -74,7 +74,10 @@ EOF
   cat >"$t/.local/bin/ssh" <<'EOF'
 #!/bin/bash
 input=$(cat)
-if [ -f "$HOME/vps-down" ]; then echo "x" >>"$HOME/ssh-failed"; echo "ssh: connect to host hetzner port 22: Operation timed out" >&2; exit 255; fi
+if [ -f "$HOME/vps-down" ] || { [ -f "$HOME/vps-down-for" ] && case "${@: -1}" in *"$(cat "$HOME/vps-down-for")"*) true ;; *) false ;; esac; }; then
+  echo "x" >>"$HOME/ssh-failed"; echo "ssh: connect to host hetzner port 22: Operation timed out" >&2; exit 255
+fi
+if [ -f "$HOME/ssh-sleep" ] && [ ! -f "$HOME/ssh-slept" ]; then touch "$HOME/ssh-slept"; sleep "$(cat "$HOME/ssh-sleep")"; fi
 echo "${@: -1} <<< $input" >>"$HOME/ssh-calls"
 case "$*" in *slack_api.py*) echo '{"ok": true, "ts": "1.2"}' ;; esac
 case "$*" in *"alert raise"*) echo '{"action": "opened"}' ;; esac
@@ -253,7 +256,7 @@ echo "# an unreachable VPS: retries with backoff, then queues; the next run deli
 setup 10 report; touch "$t/vps-down"
 HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_POST_BACKOFF_SECONDS=1 INTAKE_POST_BUDGET_SECONDS=3 /bin/bash "$run" </dev/null >/dev/null 2>&1; rc=$?
 check "posting problems don't fail the run" [ "$rc" -eq 0 ]
-check "retried with backoff within the budget" eval 'grep -q "retrying in 1s" "$t"/state/runs/*.log && grep -q "retrying in 2s" "$t"/state/runs/*.log && ! grep -q "retrying in 4s" "$t"/state/runs/*.log'
+check "retried with backoff, then stopped at the budget" eval 'grep -q "retrying in 1s" "$t"/state/runs/*.log && ! grep -q "retrying in 4s" "$t"/state/runs/*.log && grep -q "delivery budget spent\|stay queued" "$t"/state/runs/*.log'
 check "report, fixes resolve, and resolve queued; nothing delivered" eval '[ "$(ls "$t/state/outbox" | grep -c .)" -eq 3 ] && [ ! -s "$t/ssh-calls" ]'
 check "queued report is the report file" eval 'grep -l "^slack$" "$t"/state/outbox/* | xargs grep -q "Run went fine"'
 rm -f "$t/vps-down"; : >"$t/pending"; echo sentinel >"$t/scenario"
@@ -278,7 +281,42 @@ setup 10 report
 sed -i.bak 's/echo .{"ok": true, "ts": "1.2"}./echo "{\"ok\": false, \"error\": \"channel_not_found\"}"/' "$t/.local/bin/ssh"
 go
 check "exit 1 with the post alert" eval '[ "$rc" -eq 1 ] && alerted "couldn.t be posted"'
-check "nothing queued" eval '[ -z "$(ls -A "$t/state/outbox" 2>/dev/null)" ]'
+check "nothing left to send; the refusal is kept in refused/" eval '[ -z "$(ls "$t/state/outbox" | grep -v "^refused$")" ] && [ "$(ls "$t/state/outbox/refused" | grep -c .)" -eq 1 ]'
+rm -rf "$t"
+
+echo "# an older raise waits for the VPS, and a newer resolve never overtakes it"
+setup 10 report; echo "alert raise pro/ba-events-intake " >"$t/vps-down-for"
+mkdir -p "$t/state/outbox"; printf "ssh\n2026-11-16 1\n~/.local/bin/alert raise pro/ba-events-intake --title x\nOld failure\n" >"$t/state/outbox/20261116T120000Z-1-0001"
+HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_POST_BACKOFF_SECONDS=0 /bin/bash "$run" </dev/null >/dev/null 2>&1; rc=$?
+check "exit 0" [ "$rc" -eq 0 ]
+check "nothing sent while the old raise waits" [ ! -s "$t/ssh-calls" ]
+check "old raise first, then this run's report and resolves" eval '[ "$(ls "$t/state/outbox" | head -1)" = 20261116T120000Z-1-0001 ] && [ "$(ls "$t/state/outbox" | grep -c .)" -eq 4 ]'
+rm -f "$t/vps-down-for"; : >"$t/pending"; echo sentinel >"$t/scenario"; go
+check "the raise is delivered before any resolve" eval 'head -1 "$t/ssh-calls" | grep -q "alert raise pro/ba-events-intake .*Delayed" && sed -n 2p "$t/ssh-calls" | grep -q "Old failure" && [ "$(grep -n "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls" | head -1 | cut -d: -f1)" -gt 2 ]'
+check "outbox drained" eval '[ -z "$(ls -A "$t/state/outbox" 2>/dev/null)" ]'
+rm -rf "$t"
+
+echo "# a stalled ssh is cut off and retried within the budget"
+setup 0 sentinel; echo 30 >"$t/ssh-sleep"
+start=$(date +%s)
+HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_SSH_SECONDS=2 INTAKE_POST_BACKOFF_SECONDS=1 /bin/bash "$run" </dev/null >/dev/null 2>&1; rc=$?
+check "exit 0, well before the stalled ssh would end" eval '[ "$rc" -eq 0 ] && [ $(( $(date +%s) - start )) -lt 20 ]'
+check "cut off, retried, and delivered" eval 'grep -q "ssh cut off after 2s" "$t"/state/runs/*.log && grep -q "retrying in 1s" "$t"/state/runs/*.log && grep -q "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls"'
+check "nothing left queued" eval '[ -z "$(ls -A "$t/state/outbox" 2>/dev/null)" ]'
+rm -rf "$t"
+
+echo "# the budget counts attempt time, not only sleeps"
+setup 0 sentinel; echo 30 >"$t/ssh-sleep"
+HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_SSH_SECONDS=3 INTAKE_POST_BACKOFF_SECONDS=1 INTAKE_POST_BUDGET_SECONDS=3 /bin/bash "$run" </dev/null >/dev/null 2>&1
+check "no retry once the cut-off attempt used the budget" eval '! grep -q "retrying in" "$t"/state/runs/*.log && [ "$(ls "$t/state/outbox" | grep -c .)" -ge 1 ]'
+rm -rf "$t"
+
+echo "# an interrupted run's unsent message is replayed at the next start, in order"
+setup 0 sentinel; mkdir -p "$t/state/runs"
+printf "slack\n2026-11-16\ncmd slack_api.py\nInterrupted report\n" >"$t/state/runs/.send.abc123"; touch -t 202611161200 "$t/state/runs/.send.abc123"
+go
+check "replayed first, marked delayed" eval 'head -1 "$t/ssh-calls" | grep -q "slack_api.py.*Delayed: this is from the BA Eventos intake run of 2026-11-16.*Interrupted report"'
+check "no leftover file" eval '! ls "$t"/state/runs/.send.* >/dev/null 2>&1'
 rm -rf "$t"
 
 [ "$failures" -eq 0 ] && echo "all passed" || { echo "$failures failed"; exit 1; }
