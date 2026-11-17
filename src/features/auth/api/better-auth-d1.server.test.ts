@@ -128,12 +128,12 @@ describe('session', () => {
 })
 
 describe('Google', () => {
-	const googleSignIn = (emailVerified: boolean) => {
+	const googleSignIn = (emailVerified: boolean, email = 'alice@example.test', sub = 'google-sub-1') => {
 		env = { ...env, GOOGLE_CLIENT_ID: 'client', GOOGLE_CLIENT_SECRET: 'secret' }
 		const google = createBetterAuth(ORIGIN, env, {
 			clientId: 'client', clientSecret: 'secret',
 			verifyIdToken: async () => true,
-			getUserInfo: async () => ({ user: { email: 'alice@example.test', emailVerified, name: 'Alice' }, data: { sub: 'google-sub-1' } as never }),
+			getUserInfo: async () => ({ user: { email, emailVerified, name: 'Someone' }, data: { sub } as never }),
 		})
 		return google.handler(post('/sign-in/social', { provider: 'google', idToken: { token: 'synthetic' } }))
 	}
@@ -156,6 +156,28 @@ describe('Google', () => {
 			{ user_id: ALICE, provider_id: 'google', issuer: 'https://accounts.google.com', account_id: 'google-sub-1' },
 		])
 		expect((await db.prepare('SELECT count(*) AS n FROM users').first<number>('n'))).toBe(2)
+	})
+
+	const sessionCookieSet = (response: Response) =>
+		response.headers.getSetCookie().some((cookie) => cookie.includes('session_token=') && !cookie.includes('session_token=;'))
+
+	it('never registers an unknown Google email that Google has not verified', async () => {
+		const response = await googleSignIn(false, 'carol@example.test', 'google-sub-carol')
+		expect(response.status).toBe(403)
+		expect(sessionCookieSet(response)).toBe(false)
+		expect(await db.prepare(`SELECT count(*) AS n FROM users WHERE email = 'carol@example.test'`).first<number>('n')).toBe(0)
+		expect(await db.prepare(`SELECT count(*) AS n FROM accounts WHERE provider_id = 'google'`).first<number>('n')).toBe(0)
+		expect(await db.prepare('SELECT count(*) AS n FROM sessions').first<number>('n')).toBe(0)
+	})
+
+	it('signs an unknown verified Google email in as a new user', async () => {
+		const response = await googleSignIn(true, 'carol@example.test', 'google-sub-carol')
+		expect(response.status).toBe(200)
+		expect(sessionCookieSet(response)).toBe(true)
+		const user = await db.prepare(`SELECT id, email_verified FROM users WHERE email = 'carol@example.test'`).first<{ id: string; email_verified: number }>()
+		expect(user).toMatchObject({ email_verified: 1 })
+		expect(await db.prepare(`SELECT count(*) AS n FROM accounts WHERE provider_id = 'google' AND user_id = ?`).bind(user!.id).first<number>('n')).toBe(1)
+		expect(await db.prepare('SELECT count(*) AS n FROM sessions WHERE user_id = ?').bind(user!.id).first<number>('n')).toBe(1)
 	})
 })
 
