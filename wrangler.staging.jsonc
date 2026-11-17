@@ -1,7 +1,7 @@
 // Staging only: the `baeventos-staging` Worker on workers.dev and its `-staging` resources (DECISIONS.md). CI never
 // deploys this file; production configs get a D1 binding only at the cutover (delivery PR 08).
 // PR 01 adds the staging D1 so `wrangler d1 migrations apply baeventos-staging --remote --config wrangler.staging.jsonc`
-// works. Later PRs add the Vectorize, R2, and other bindings the staging Worker needs before it is first deployed;
+// works, and PR 03 the staging Vectorize index that search reads. Later PRs add the R2 and other bindings they need;
 // it must never bind a production Worker, Durable Object, or database.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -43,5 +43,6 @@
       "database_id": "136c27ff-1093-4519-825a-7ec4e17b1ff7",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events-staging" }]
 }

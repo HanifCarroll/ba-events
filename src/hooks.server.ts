@@ -6,6 +6,7 @@ import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts';
+import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts';
 
 const CANONICAL_HOST = 'baeventos.com';
 
@@ -82,10 +83,13 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		)
 	);
 
-// (d) Chat backend — D1 when the Worker binds `DB` (the staging Worker), Supabase otherwise.
-const handleD1Binding: Handle = ({ event, resolve }) => {
-	useD1Binding((event.platform as { env?: unknown } | undefined)?.env);
+// (d) Cloudflare backend — search, chat, guests, feedback, and the rate limiter use D1 (and search Vectorize) when the
+// Worker binds them (the staging Worker), Supabase otherwise.
+const handleCloudflareBackend: Handle = ({ event, resolve }) => {
+	const env = (event.platform as { env?: unknown } | undefined)?.env;
+	useCloudflareBindings(env);
+	useD1Binding(env);
 	return resolve(event);
 };
 
-export const handle = sequence(handleCanonicalOrigin, handleD1Binding, handleSupabase, handleLocaleSync, handleParaglide);
+export const handle = sequence(handleCanonicalOrigin, handleCloudflareBackend, handleSupabase, handleLocaleSync, handleParaglide);

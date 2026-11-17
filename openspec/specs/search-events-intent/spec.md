@@ -74,6 +74,27 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 - **WHEN** objective `surprise` is valid for the request
 - **THEN** the search uses surprise ranking and returns exactly one event, regardless of a larger display limit
 
+### Requirement: Search the same way on either backend
+
+The reads behind `search_events` MUST run on Supabase unless the Worker binds the D1 database `DB`, and then MUST run on D1, with Vectorize (`VECTORIZE`) for semantic retrieval. On D1 they MUST apply the same filters as the Supabase reads, lexical retrieval MUST accept the same query syntax as `websearch_to_tsquery` (words ANDed, quoted phrases, `or`, and `-` negation) over the same event text, and semantic retrieval MUST return only scheduled events above the same similarity threshold. Production binds no D1 database until the cutover.
+
+#### Scenario: Production keeps Supabase
+- **WHEN** a Worker's env has no `DB` binding
+- **THEN** lexical, semantic, filter-only, count, happening-now, furthest-date, and venue-name reads use Supabase as before
+
+#### Scenario: A D1 Worker searches D1 and Vectorize
+- **WHEN** a Worker's env binds `DB` and `VECTORIZE`
+- **THEN** lexical search matches the FTS5 index `events_fts`, semantic search asks Vectorize for the 100 nearest scheduled events in the date window and applies the other filters in D1, and the rows have the same fields the Supabase RPCs return
+- **AND** semantic search fails rather than falling back to Supabase when `VECTORIZE` is missing
+
+#### Scenario: Rankings stay close to Supabase
+- **WHEN** the fixed overlap queries run against production and staging
+- **THEN** each query's top 10 shares at least 70% of events for lexical search and 80% for semantic search
+
+#### Scenario: A venue name with accented capitals
+- **WHEN** a request names a venue in different case from the catalog, such as "casa gómez" for "CASA GÓMEZ"
+- **THEN** the venue resolves on D1 as it does with Postgres' ilike, and the search keeps it as a hard constraint
+
 ### Requirement: Emit deterministic search evidence
 
 `search_events` MUST return metadata describing the retrieval mode, displayed count, event ids, zero-result state, and coverage (`searchedFrom`/`searchedTo` or exact `searchedWindows`, `totalMatches`, returned count, and maximum event date). Ranking and diversity MUST preserve deterministic fallback/order behavior when hosted reranking is unavailable, and the result MUST be built from the canonicalized, bounded search path.
@@ -93,17 +114,22 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 - `src/features/chat/api/tools/search-events.ts`
 - `src/features/chat/api/tools/search-ranking.ts`
 - `src/shared/lib/search/rerank.ts`
+- `src/shared/lib/db/client.server.ts`, `src/shared/lib/db/search-bindings.server.ts`, `src/shared/lib/db/search-d1.server.ts`
+- `src/shared/lib/search/websearch-fts5.ts`, `migrations/0002_events_fts.sql`
 
 ### Deterministic tests
 - `src/features/chat/api/tools/search-intent.test.ts`
 - `src/features/chat/api/tools/search-events.test.ts`
 - `src/features/chat/api/tools/search-query-annotations.test.ts`
 - `src/shared/lib/search/rerank.test.ts`
+- `src/shared/lib/db/search-d1.server.test.ts`, `src/shared/lib/search/websearch-fts5.test.ts`, `evals/search/backend-overlap-score.test.ts`
 
 ### Verification command
 ```sh
-bunx vitest run src/features/chat/api/tools/search-intent.test.ts src/features/chat/api/tools/search-events.test.ts src/features/chat/api/tools/search-query-annotations.test.ts src/shared/lib/search/rerank.test.ts
+bunx vitest run src/features/chat/api/tools/search-intent.test.ts src/features/chat/api/tools/search-events.test.ts src/features/chat/api/tools/search-query-annotations.test.ts src/shared/lib/search/rerank.test.ts src/shared/lib/db/search-d1.server.test.ts src/shared/lib/search/websearch-fts5.test.ts
 ```
+
+The overlap with production is a provider-backed evaluation, run by hand: `node --env-file=.env evals/search/backend-overlap.ts`.
 
 ### Advisory conformance review
 `$openspec-review-conformance search-events-intent` compares these requirements with implementation and deterministic evidence; the review is advisory rather than proof.
