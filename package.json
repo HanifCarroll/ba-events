@@ -34,6 +34,7 @@
 		"snapshot:search-corpus": "bun scripts/snapshot-search-corpus.ts",
 		"source:health": "bun scripts/source-health.ts",
 		"instagram:intake": "bun scripts/instagram-intake.ts",
+		"instagram:publisher": "bun scripts/instagram-publisher.ts",
 		"eval:titles": "bun evals/titles/run.ts",
 		"eval:enrichment": "bun evals/enrichment/run.ts",
 		"jobs:dry-run": "wrangler deploy --config wrangler.jobs.jsonc --dry-run",

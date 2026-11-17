@@ -1,0 +1,10 @@
+[Unit]
+Description=BA Eventos Instagram publisher: draft, preview in #ba-eventos, and publish approved posts
+OnFailure=notify-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/ba-events
+ExecStart=%h/.local/bin/mise exec -- bun scripts/instagram-publisher.ts tick
+TimeoutStartSec=20min
+Nice=10
