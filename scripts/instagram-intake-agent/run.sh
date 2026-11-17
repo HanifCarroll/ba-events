@@ -14,8 +14,10 @@
 # without a report leaves it alone.
 # State lives in ~/agents/ba-events-intake: memory.md (the agent's notes between runs), runs/ (logs, notes and
 # reports, disposable) and sessions/ (Pi session files, which are kept).
+# When the VPS can't be reached, alerts and the report are retried for about 20 minutes and then queued in
+# $state/outbox for the next run (see `send`).
 # Overrides: INTAKE_CHECKOUT, INTAKE_STATE, INTAKE_NO_POST=1 (log instead of posting or alerting; for tests and
-# dry runs), INTAKE_MODEL, INTAKE_THINKING, and the budgets below.
+# dry runs), INTAKE_MODEL, INTAKE_THINKING, INTAKE_POST_BUDGET_SECONDS, INTAKE_POST_BACKOFF_SECONDS, and the budgets below.
 set -uo pipefail
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
@@ -50,13 +52,82 @@ failed="" # phases that failed, for the alert
 # No lock file: launchd never starts a job while its previous run is still going, and manual runs go through
 # `launchctl kickstart`. A lock left behind by a killed run would silently stop every later run.
 
+# Delivery to the VPS (alerts and Slack) goes through `send`. When ssh can't reach the VPS (exit 255), it retries with
+# backoff from a budget shared by the whole run (INTAKE_POST_BUDGET_SECONDS, about 20 minutes); after that, the message
+# waits in $outbox and goes out at the start of the next run, or after the next successful send, oldest first, with a
+# line saying it was delayed and from which run. A remote refusal (Slack's ok:false, a failed alert command) is not
+# retried. Posting problems never fail the run; only a refused report does, as before.
+outbox="$state/outbox"
+post_budget="${INTAKE_POST_BUDGET_SECONDS:-1200}"
+post_delay="${INTAKE_POST_BACKOFF_SECONDS:-30}"
+post_waited=0
+queued=0
+slack_cmd='f=$(mktemp); cat >"$f"; python3 -I ~/.hermes/skills/productivity/slack-workspace/scripts/slack_api.py chat.postMessage "@file=$f"; rm -f "$f"'
+
+deliver() { # deliver <item> [delayed]: one attempt; returns 255 when the VPS wasn't reached and 1 when it refused
+  local kind day cmd body input out rc
+  kind=$(sed -n 1p "$1"); day=$(sed -n 2p "$1"); cmd=$(sed -n 3p "$1"); body=$(tail -n +4 "$1")
+  if [ -n "${2:-}" ] && [ -n "$body" ]; then
+    body="⏳ Delayed: this is from the BA Eventos intake run of $day, which couldn't reach the VPS to send it.
+$body"
+  fi
+  input=$(mktemp)
+  if [ "$kind" = slack ]; then
+    python3 -I -c 'import json,sys; print(json.dumps({"channel": sys.argv[1], "text": sys.argv[2], "unfurl_links": False}))' "$channel" "$body" >"$input"
+  elif [ -n "$body" ]; then printf '%s\n' "$body" >"$input"; fi
+  out=$(ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner "$cmd" <"$input" 2>>"$log"); rc=$?
+  rm -f "$input"
+  [ -n "$out" ] && printf '%s\n' "$out" >>"$log"
+  [ "$rc" -eq 255 ] && return 255
+  if [ "$kind" = slack ]; then
+    printf '%s' "$out" | python3 -I -c 'import json,sys; d=json.load(sys.stdin); print("slack", d.get("ok"), d.get("error") or d.get("ts")); sys.exit(0 if d.get("ok") else 1)' >>"$log" 2>&1 || return 1
+  fi
+  return "$rc"
+}
+
+flush_outbox() { # deliver queued messages oldest first; stop at the first one the VPS still can't take
+  local item rc
+  for item in "$outbox"/*; do
+    [ -f "$item" ] || continue
+    deliver "$item" delayed; rc=$?
+    [ "$rc" -eq 255 ] && return 0
+    if [ "$rc" -eq 0 ]; then echo "delivered queued message $(basename "$item")" >>"$log"; rm -f "$item"
+    else mkdir -p "$outbox/refused"; mv "$item" "$outbox/refused/"; echo "queued message $(basename "$item") refused; kept in $outbox/refused" >>"$log"; fi
+  done
+}
+
+send() { # send slack|ssh <remote command> [text]: deliver now, or queue it when the VPS stays unreachable
+  local item rc delay="$post_delay"
+  # Older queued messages go first, so a recovered VPS gets them in order.
+  ls "$outbox"/* >/dev/null 2>&1 && flush_outbox
+  item=$(mktemp "$state/runs/.send.XXXXXX")
+  printf '%s\n%s\n%s\n' "$1" "$day" "$2" >"$item"
+  [ -n "${3:-}" ] && printf '%s\n' "$3" >>"$item"
+  while :; do
+    deliver "$item"; rc=$?
+    [ "$rc" -eq 255 ] || break
+    if [ "$delay" -le 0 ] || [ $(( post_waited + delay )) -gt "$post_budget" ]; then break; fi
+    echo "VPS unreachable; retrying in ${delay}s" >>"$log"
+    sleep "$delay"; post_waited=$(( post_waited + delay ))
+    delay=$(( delay * 2 > 300 ? 300 : delay * 2 ))
+  done
+  if [ "$rc" -eq 255 ]; then
+    queued=$(( queued + 1 )); mkdir -p "$outbox"
+    mv "$item" "$outbox/$(date -u +%Y%m%dT%H%M%SZ)-$(printf %04d "$queued")"
+    echo "VPS unreachable; queued the message in $outbox" >>"$log"
+    return 0
+  fi
+  rm -f "$item"
+  [ "$rc" -eq 0 ] && flush_outbox
+  return "$rc"
+}
+
 vps_alert() { # vps_alert raise|resolve [text]
   if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert $1 ${2:-}" >>"$log"; return 0; fi
   if [ "$1" = raise ]; then
-    printf '%s\n' "$2" | ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner \
-      "~/.local/bin/alert raise $alert_key --title 'BA Eventos intake' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events" >>"$log" 2>&1
+    send ssh "~/.local/bin/alert raise $alert_key --title 'BA Eventos intake' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events" "$2"
   else
-    ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner "~/.local/bin/alert resolve $alert_key" >>"$log" 2>&1 || true
+    send ssh "~/.local/bin/alert resolve $alert_key" || true
   fi
 }
 
@@ -67,7 +138,7 @@ fix_alert() { # raise pro/ba-events-intake/fixes with the fix list, or resolve i
   local key="$alert_key/fixes" text fp
   if [ -z "$(tr -d '[:space:]' <"$fixes" 2>/dev/null)" ]; then
     if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert resolve $key" >>"$log"; return 0; fi
-    ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner "~/.local/bin/alert resolve $key --quiet" >>"$log" 2>&1 || true
+    send ssh "~/.local/bin/alert resolve $key --quiet" || true
     return 0
   fi
   text="BA Eventos intake on the Pro hit problems it could not fix itself: tool bugs, or catalog facts it verified that its CLI can not change. The events they block stay held until they are fixed.
@@ -78,18 +149,14 @@ import hashlib, sys
 items = sorted({l.strip() for l in open(sys.argv[1]) if l.strip()})
 print(hashlib.sha256("\n".join(items).encode()).hexdigest()[:16])' "$fixes") || fp=""
   if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert raise $key fingerprint=$fp $text" >>"$log"; return 0; fi
-  printf '%s\n' "$text" | ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner \
-    "out=\$(~/.local/bin/alert raise $key --title 'BA Eventos intake fixes' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events${fp:+ --fingerprint $fp}) && echo \"\$out\" && case \"\$out\" in *'\"action\": \"updated\"'*) ~/.local/bin/alert triage $key --auto ;; esac" >>"$log" 2>&1 ||
+  send ssh "out=\$(~/.local/bin/alert raise $key --title 'BA Eventos intake fixes' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events${fp:+ --fingerprint $fp}) && echo \"\$out\" && case \"\$out\" in *'\"action\": \"updated\"'*) ~/.local/bin/alert triage $key --auto ;; esac" "$text" ||
     echo "fix alert failed" >>"$log"
   return 0
 }
 
-slack_post() { # slack_post <file>: post the file's text to #ba-eventos as the Chipa bot
+slack_post() { # slack_post <file>: post the file's text to #ba-eventos as the Chipa bot; 1 only when Slack refused it
   if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: slack $(wc -c <"$1" | tr -d ' ') bytes" >>"$log"; return 0; fi
-  python3 -I -c 'import json,sys; print(json.dumps({"channel": sys.argv[1], "text": open(sys.argv[2]).read(), "unfurl_links": False}))' "$channel" "$1" |
-    ssh -o BatchMode=yes -o ConnectTimeout=20 hetzner \
-      'f=$(mktemp); cat >"$f"; python3 -I ~/.hermes/skills/productivity/slack-workspace/scripts/slack_api.py chat.postMessage "@file=$f"; rm -f "$f"' |
-    python3 -I -c 'import json,sys; d=json.load(sys.stdin); print("slack", d.get("ok"), d.get("error") or d.get("ts")); sys.exit(0 if d.get("ok") else 1)' >>"$log" 2>&1
+  send slack "$slack_cmd" "$(cat "$1")"
 }
 
 minutes_left() { echo $(( total_min - ($(date +%s) - started) / 60 )); }
@@ -138,6 +205,8 @@ held = sum(1 for i in ids if i in deferred)
 print(len(ids) - held, held)' "$deferred" 2>>"$log"
 }
 
+# Messages an earlier run couldn't deliver go first, oldest first.
+[ "${INTAKE_NO_POST:-}" = 1 ] || flush_outbox
 echo "start $(date -u +%FT%TZ) model=$model thinking=$thinking total=${total_min}m session=${session_min}m batch=$batch max_batches=$max_batches" >>"$log"
 cd "$checkout" || { vps_alert raise "BA Eventos intake didn't run: the checkout $checkout is missing on the Pro. Next run tomorrow at 09:00."; exit 1; }
 printf '\n## run.sh: run started at %s\n' "$(date -u +%FT%TZ)" >>"$notes"

@@ -74,6 +74,7 @@ EOF
   cat >"$t/.local/bin/ssh" <<'EOF'
 #!/bin/bash
 input=$(cat)
+if [ -f "$HOME/vps-down" ]; then echo "x" >>"$HOME/ssh-failed"; echo "ssh: connect to host hetzner port 22: Operation timed out" >&2; exit 255; fi
 echo "${@: -1} <<< $input" >>"$HOME/ssh-calls"
 case "$*" in *slack_api.py*) echo '{"ok": true, "ts": "1.2"}' ;; esac
 case "$*" in *"alert raise"*) echo '{"action": "opened"}' ;; esac
@@ -246,6 +247,38 @@ echo "# INTAKE_NO_POST logs the fixes alert instead of sending it"
 setup 0 fixes; HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_NO_POST=1 /bin/bash "$run" </dev/null >/dev/null 2>&1
 check "no ssh at all" [ ! -s "$t/ssh-calls" ]
 check "log has the fixes alert" grep -q 'no-post: alert raise pro/ba-events-intake/fixes' "$t"/state/runs/*.log
+rm -rf "$t"
+
+echo "# an unreachable VPS: retries with backoff, then queues; the next run delivers oldest first, marked delayed"
+setup 10 report; touch "$t/vps-down"
+HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_POST_BACKOFF_SECONDS=1 INTAKE_POST_BUDGET_SECONDS=3 /bin/bash "$run" </dev/null >/dev/null 2>&1; rc=$?
+check "posting problems don't fail the run" [ "$rc" -eq 0 ]
+check "retried with backoff within the budget" eval 'grep -q "retrying in 1s" "$t"/state/runs/*.log && grep -q "retrying in 2s" "$t"/state/runs/*.log && ! grep -q "retrying in 4s" "$t"/state/runs/*.log'
+check "report, fixes resolve, and resolve queued; nothing delivered" eval '[ "$(ls "$t/state/outbox" | grep -c .)" -eq 3 ] && [ ! -s "$t/ssh-calls" ]'
+check "queued report is the report file" eval 'grep -l "^slack$" "$t"/state/outbox/* | xargs grep -q "Run went fine"'
+rm -f "$t/vps-down"; : >"$t/pending"; echo sentinel >"$t/scenario"
+go
+check "second run exits 0" [ "$rc" -eq 0 ]
+check "queued report delivered first, marked delayed with its run" eval 'head -1 "$t/ssh-calls" | grep -q "slack_api.py.*Delayed: this is from the BA Eventos intake run of $(TZ=America/Argentina/Buenos_Aires date +%F).*Run went fine"'
+check "then the queued resolves in order, then this run's" eval 'sed -n 2p "$t/ssh-calls" | grep -q "alert resolve pro/ba-events-intake/fixes --quiet" && sed -n 3p "$t/ssh-calls" | grep -q "alert resolve pro/ba-events-intake <<<" && [ "$(grep -c "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls")" -eq 2 ]'
+check "outbox empty" eval '[ -z "$(ls -A "$t/state/outbox" 2>/dev/null)" ]'
+rm -rf "$t"
+
+echo "# a message still undeliverable at the next start stays queued"
+setup 0 sentinel; mkdir -p "$t/state/outbox"; printf 'slack\n2026-11-16\ncmd slack_api.py\nOld report\n' >"$t/state/outbox/20261116T120000Z-0001"; touch "$t/vps-down"
+HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_POST_BACKOFF_SECONDS=0 /bin/bash "$run" </dev/null >/dev/null 2>&1; rc=$?
+check "exit 0" [ "$rc" -eq 0 ]
+check "old message still queued, and this run's messages queued behind it" eval '[ "$(ls "$t/state/outbox" | head -1)" = 20261116T120000Z-0001 ] && [ "$(ls "$t/state/outbox" | grep -c .)" -eq 3 ]'
+rm -f "$t/vps-down"; go
+check "delivered later with its own run date" eval 'head -1 "$t/ssh-calls" | grep -q "run of 2026-11-16.*Old report"'
+rm -rf "$t"
+
+echo "# a refused report is not retried or queued, and still fails the run"
+setup 10 report
+sed -i.bak 's/echo .{"ok": true, "ts": "1.2"}./echo "{\"ok\": false, \"error\": \"channel_not_found\"}"/' "$t/.local/bin/ssh"
+go
+check "exit 1 with the post alert" eval '[ "$rc" -eq 1 ] && alerted "couldn.t be posted"'
+check "nothing queued" eval '[ -z "$(ls -A "$t/state/outbox" 2>/dev/null)" ]'
 rm -rf "$t"
 
 [ "$failures" -eq 0 ] && echo "all passed" || { echo "$failures failed"; exit 1; }
