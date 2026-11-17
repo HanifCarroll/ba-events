@@ -11,14 +11,17 @@ export PATH=$HOME/.local/share/mise/shims:$PATH
 
 ## 1. Before the window (any day before it)
 
-1. **Search baselines.** Capture them from production, read-only. You'll compare them after the switch.
+1. **Search baselines.** Capture them from production, read-only, outside the repo. You'll compare them after the switch.
 
    ```sh
-   bun run eval:search > /tmp/ba-baseline-search.txt; bun run eval:relevance > /tmp/ba-baseline-relevance.txt
-   bun run snapshot:search-corpus
+   B=~/.cache/ba-events-cutover/baselines; mkdir -p $B
+   bun run eval:search > $B/eval-search.txt 2>&1; bun run eval:relevance > $B/eval-relevance.txt 2>&1
+   bun run snapshot:search-corpus && cp evals/search/corpus/events.json $B/events.json && git checkout -- evals/search/corpus/events.json
    ```
 
-2. **A full staging rehearsal.** Run sections 3 to 5 against the `-staging` targets: run the copy tool without `--production`, and run `backend-overlap.ts` without `--production`. Then deploy the staging Workers ([D1 "Staging"](../d1.md#staging)) and run the step 6 smoke tests against `https://baeventos-staging.paseaban-decorosa0m.workers.dev`, with `DB_READ_ONLY` set and cleared on `wrangler.staging.jsonc`. Note each step's time.
+   `eval:search` exits 1 at 0% today. Its golden event ids date from August, and those events are all `past`, so no scheduled search can find them. That isn't a failure of the cutover. What matters is that the run after the switch prints the same top results. The snapshot rewrites a committed file, so copy it out and restore it.
+
+2. **A full staging rehearsal.** Run sections 3 to 5 against the `-staging` targets: run the copy tool without `--production`, and run `backend-overlap.ts` without `--production`. Then deploy the staging Workers ([D1 "Staging"](../d1.md#staging)) and run the step 6 smoke tests against `https://baeventos-staging.paseaban-decorosa0m.workers.dev`, with `DB_READ_ONLY` set and cleared on `wrangler.staging.jsonc` and `wrangler.intake.staging.jsonc` (staging's intake API runs on its own Worker). Use `~/.cache/ba-events-cutover/smoke.sh frozen|open`, which the 2026-11-17 rehearsal used. The intake staging token is `~/.config/ba-events/intake-staging-token`. Note each step's time.
 3. **Cloudflare resources.** Hermes creates these. They are the only production resources that are new:
 
    ```sh
@@ -167,7 +170,7 @@ If the window runs out, go to "Abort before the switch".
    ```
 
 6. **Hermes' reads.** Use `bin/ba-d1-read.sh "SELECT ..."` (production, read-only, with the deploy token in `~/.config/ba-events/cloudflare-deploy-token`). Writes are reviewed `.sql` files run with `bunx wrangler d1 execute baeventos-production --remote --config wrangler.jsonc --file <file>`. A fix that changes protected event facts inserts into `write_context` first and deletes from it last, in the same file ([D1](../d1.md#writing-from-server-code)). `/intake/sources` replaces `import_sources.py`.
-7. **Baselines.** Run `bun run eval:search` and `bun run eval:relevance` again, and compare them with step 1. These are additional checks: they run outside a Worker, so they don't prove D1 retrieval. The overlap gate in step 5 does.
+7. **Baselines.** Run `bun run eval:search` and `bun run eval:relevance` again into new files, and `diff` them against `~/.cache/ba-events-cutover/baselines/`. These are additional checks: they run outside a Worker, so they don't prove D1 retrieval. The overlap gate in step 5 does.
 
 ## 7. Rollback
 
