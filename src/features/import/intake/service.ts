@@ -6,6 +6,7 @@ import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument } from '#shared/lib/a
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
 import { matchVenueEffect } from '../scrapers/venue-matcher.ts'
+import { supabaseCatalog } from '../core/catalog-store.ts'
 import { decodeCandidate, type Candidate } from './schema.ts'
 import { candidateStart, decideMatch, validateEvidence, normalizeTitle, type CatalogMatch, type Observation, type Media } from './planning.ts'
 import { allRowsEffect, dbEffect } from './repository.ts'
@@ -68,7 +69,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(clie
     }
   } else if (candidate.venue_name) {
     // Advisory only: without a venue_id the plan is held anyway, so a failed lookup just omits the hint.
-    const match = yield* matchVenueEffect(candidate.venue_name, 0.6, client).pipe(Effect.orElseSucceed(() => ({ venue: null })))
+    const match = yield* matchVenueEffect(candidate.venue_name, 0.6, supabaseCatalog(client)).pipe(Effect.orElseSucceed(() => ({ venue: null })))
     if (match.venue) reasons.push(`Possible venue: ${match.venue.name} (${match.venue.id}); confirm and submit a new revision`)
   }
   const linked = yield* dbEffect('intake.links', () => client.from('event_source_evidence').select('event_id').eq('candidate_id', candidate.id))

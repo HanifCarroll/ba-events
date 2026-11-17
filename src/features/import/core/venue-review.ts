@@ -4,12 +4,12 @@
  * Approve/reject/merge operations for the venue review queue.
  *
  * The admin review UI was removed (agents operate the site); these functions
- * keep the review operations callable from agent scripts with a service-role
- * client. `reviewedBy` is optional because service-role contexts have no auth
+ * keep the review operations callable from agent scripts through a catalog
+ * store (catalog-store.ts). `reviewedBy` is optional because service-role contexts have no auth
  * user.
  */
 import { Data, Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CatalogStore } from './catalog-store.ts'
 import { importTry } from './effect-utils.ts'
 
 interface VenueReviewInput {
@@ -39,43 +39,27 @@ const reviewError = (operation: string, message: string, cause?: unknown) =>
  * Update the review queue entry and re-point its events at a venue.
  */
 function settleReviewEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: VenueReviewInput & { finalVenueId: string | null; status: 'approved' | 'rejected' | 'merged' }
 ): Effect.Effect<{ success: true }, VenueReviewError> {
   return Effect.gen(function* () {
     const { id, notes, reviewedBy, finalVenueId, status } = input
 
-    const { error } = yield* importTry('venue-review.update-queue', () => client
-      .from('venue_review_queue')
-      .update({
-        status,
-        final_venue_id: finalVenueId,
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: reviewedBy ?? null,
-        notes: notes ?? null,
-      })
-      .eq('id', id)
-    ).pipe(Effect.mapError((cause) => reviewError('venue-review.update-queue', cause.message, cause)))
+    yield* importTry('venue-review.update-queue', () => catalog.settleVenueReview(id, {
+      status,
+      final_venue_id: finalVenueId,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewedBy ?? null,
+      notes: notes ?? null,
+    })).pipe(Effect.mapError((cause) => reviewError('venue-review.update-queue', cause.message, cause)))
 
-    if (error) return yield* Effect.fail(reviewError('venue-review.update-queue', error.message, error))
-
-    // Update events to use the settled venue. A rejected SDK promise still
-    // fails the program, while a response-level update error remains ignored
-    // as it was in the legacy implementation.
+    // Update events to use the settled venue. A failed read re-points nothing, as before.
     if (finalVenueId) {
-      const { data: review } = yield* importTry('venue-review.load-queue', () => client
-        .from('venue_review_queue')
-        .select('source_event_ids')
-        .eq('id', id)
-        .single()
-      ).pipe(Effect.mapError((cause) => reviewError('venue-review.load-queue', cause.message, cause)))
+      const eventIds = yield* importTry('venue-review.load-queue', () => catalog.venueReviewEventIds(id))
+        .pipe(Effect.mapError((cause) => reviewError('venue-review.load-queue', cause.message, cause)))
 
-      if (review?.source_event_ids?.length) {
-        yield* importTry('venue-review.repoint-events', () => client
-          .from('events')
-          .update({ venue_id: finalVenueId })
-          .in('id', review.source_event_ids)
-        ).pipe(
+      if (eventIds.length) {
+        yield* importTry('venue-review.repoint-events', () => catalog.setEventsVenue(eventIds, finalVenueId)).pipe(
           Effect.mapError((cause) => reviewError('venue-review.repoint-events', cause.message, cause)),
           Effect.asVoid
         )
@@ -95,10 +79,10 @@ const runReview = <A>(effect: Effect.Effect<A, VenueReviewError>): Promise<A> =>
  * Approve a venue review (use the suggested match).
  */
 export function approveVenueReviewEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: ApproveVenueReviewInput
 ): Effect.Effect<{ success: true }, VenueReviewError> {
-  return settleReviewEffect(client, {
+  return settleReviewEffect(catalog, {
     ...input,
     finalVenueId: input.venueId,
     status: 'approved',
@@ -106,20 +90,20 @@ export function approveVenueReviewEffect(
 }
 
 export async function approveVenueReview(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: ApproveVenueReviewInput
 ): Promise<{ success: true }> {
-  return runReview(approveVenueReviewEffect(client, input))
+  return runReview(approveVenueReviewEffect(catalog, input))
 }
 
 /**
  * Reject a venue review (don't use this venue).
  */
 export function rejectVenueReviewEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: VenueReviewInput
 ): Effect.Effect<{ success: true }, VenueReviewError> {
-  return settleReviewEffect(client, {
+  return settleReviewEffect(catalog, {
     ...input,
     finalVenueId: null,
     status: 'rejected',
@@ -127,20 +111,20 @@ export function rejectVenueReviewEffect(
 }
 
 export async function rejectVenueReview(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: VenueReviewInput
 ): Promise<{ success: true }> {
-  return runReview(rejectVenueReviewEffect(client, input))
+  return runReview(rejectVenueReviewEffect(catalog, input))
 }
 
 /**
  * Merge a venue review into an existing venue.
  */
 export function mergeVenueReviewEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: MergeVenueReviewInput
 ): Effect.Effect<{ success: true }, VenueReviewError> {
-  return settleReviewEffect(client, {
+  return settleReviewEffect(catalog, {
     ...input,
     finalVenueId: input.targetVenueId,
     status: 'merged',
@@ -148,8 +132,8 @@ export function mergeVenueReviewEffect(
 }
 
 export async function mergeVenueReview(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: MergeVenueReviewInput
 ): Promise<{ success: true }> {
-  return runReview(mergeVenueReviewEffect(client, input))
+  return runReview(mergeVenueReviewEffect(catalog, input))
 }

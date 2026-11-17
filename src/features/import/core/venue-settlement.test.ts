@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { areaOnlyVenueName, getVenueIdFromResults, settleVenue, settleVenues, venueSettlementKey } from './venue-settlement.ts'
 import { venueNameKey } from './venue-identity.ts'
+import { supabaseCatalog } from './catalog-store.ts'
 
 describe('areaOnlyVenueName', () => {
   it('sorts a city, region, or postal code from a barrio', () => {
@@ -47,7 +48,7 @@ function venuesTable(
       return { data: hit ? [{ id: 'unused', ...hit }] : [], error: null }
     },
   }
-  return { client: client as unknown as SupabaseClient, rows, queued }
+  return { client: supabaseCatalog(client as unknown as SupabaseClient), raw: client, rows, queued }
 }
 
 describe('settleVenue with an area-only name', () => {
@@ -181,8 +182,8 @@ describe('settleVenue with duplicate and lookalike catalog names', () => {
   })
 
   it('leaves the event unlinked when the venue lookup fails, rather than creating a duplicate', async () => {
-    const { client, rows } = venuesTable([{ id: 'sala', name: 'Sala Sintética', address: null }])
-    ;(client as unknown as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'function venues_named does not exist' } })
+    const { client, raw, rows } = venuesTable([{ id: 'sala', name: 'Sala Sintética', address: null }])
+    ;(raw as unknown as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'function venues_named does not exist' } })
     expect(await settleVenue(client, { name: 'Sala Sintética' }, { source: 'luma' })).toMatchObject({ venueId: null, action: 'skipped' })
     expect(rows).toHaveLength(1)
   })

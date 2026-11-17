@@ -5,6 +5,15 @@ export const CRON_WORKFLOWS = {
   '0 13 * * *': { binding: 'ENRICHMENT_CATCHUP', prefix: 'enrichment-catchup' }, // 10:00
 } as const
 
+/**
+ * Cron (UTC) → a short catalog task that runs in `scheduled()` itself, only on D1 (index.ts `runCatalogTask`). Keep in
+ * step with `triggers.crons` too. 06:00 UTC is 03:00 Buenos Aires, clear of the cutover window and the 06:00 scrape.
+ */
+export const CRON_TASKS = {
+  '0 * * * *': 'mark-past-events',
+  '0 6 * * *': 'reconcile-vectors',
+} as const
+
 /** One instance ID per firing, so a repeated delivery of the same firing cannot start a second run. */
 export function cronInstance(cron: string, scheduledTimeMs: number) {
   const job = CRON_WORKFLOWS[cron as keyof typeof CRON_WORKFLOWS]

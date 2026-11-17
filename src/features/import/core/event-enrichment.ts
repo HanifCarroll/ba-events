@@ -5,7 +5,6 @@
  * for automated scraping jobs. Uses existing AI functions from shared lib.
  */
 import { Data, Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Neighborhood } from '#shared/lib/types.ts'
 import {
   enrichEventFull,
@@ -27,6 +26,7 @@ import { buildDescriptionPresentationFields } from '#features/events/lib/descrip
 import { type VenueSettlementResult, settleVenueEffect } from './venue-settlement.ts'
 import { delayEffect } from './nominatim.ts'
 import { importTry } from './effect-utils.ts'
+import type { CatalogStore } from './catalog-store.ts'
 import { enrichmentStageRecord, type EnrichmentProvenance } from './enrichment-provenance.ts'
 
 // ============================================================================
@@ -98,26 +98,12 @@ const enrichmentError = (operation: string, message: string, cause?: unknown) =>
  * during this enrichment pass (e.g. sources that ship a venue_id at import).
  */
 function getVenueNameAndNeighborhoodEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   venueId: string
 ): Effect.Effect<{ name: string | null; neighborhood: Neighborhood | null }, EventEnrichmentError> {
-  return importTry('event-enrichment.load-venue', () => client
-    .from('venues')
-    .select('name, neighborhood')
-    .eq('id', venueId)
-    .maybeSingle()
-  ).pipe(
+  return importTry('event-enrichment.load-venue', () => catalog.venueNameAndNeighborhood(venueId)).pipe(
     Effect.mapError((error) => enrichmentError('event-enrichment.load-venue', error.message, error)),
-    Effect.map(({ data, error }) => {
-      if (error) {
-        console.error(`[event-enrichment] Failed to fetch venue ${venueId}:`, error)
-        return { name: null, neighborhood: null }
-      }
-      return {
-        name: data?.name ?? null,
-        neighborhood: (data?.neighborhood as Neighborhood | null) ?? null,
-      }
-    })
+    Effect.map((venue) => ({ name: venue.name, neighborhood: venue.neighborhood as Neighborhood | null }))
   )
 }
 
@@ -125,7 +111,7 @@ function getVenueNameAndNeighborhoodEffect(
  * Update event with enrichment data.
  */
 function updateEventEnrichmentEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   eventId: string,
   data: {
     description_es?: string | null
@@ -147,18 +133,8 @@ function updateEventEnrichmentEffect(
     status?: 'scheduled' | 'canceled' | 'postponed' | 'past' | 'pending_review'
   }
 ): Effect.Effect<void, EventEnrichmentError> {
-  return importTry('event-enrichment.update-event', () => client
-    .from('events')
-    .update(data)
-    .eq('id', eventId)
-  ).pipe(
-    Effect.flatMap(({ error }) => error
-      ? Effect.fail(enrichmentError('event-enrichment.update-event', `Failed to update event: ${error.message}`, error))
-      : Effect.succeed(undefined)
-    ),
-    Effect.mapError((error) => error instanceof EventEnrichmentError
-      ? error
-      : enrichmentError('event-enrichment.update-event', error.message, error))
+  return importTry('event-enrichment.update-event', () => catalog.updateEvent(eventId, data)).pipe(
+    Effect.mapError((error) => enrichmentError('event-enrichment.update-event', `Failed to update event: ${error.message}`, error))
   )
 }
 
@@ -216,7 +192,7 @@ function enrichmentTry<A>(operation: string, run: () => PromiseLike<A>) {
  * stay in this program until the Trigger adapter runs it.
  */
 export function enrichSingleEventEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: EventEnrichmentInput,
   options: EnrichSingleEventOptions = {}
 ): Effect.Effect<EventEnrichmentResult, EventEnrichmentError> {
@@ -248,7 +224,7 @@ export function enrichSingleEventEffect(
       }))
 
       if (isEmptyFacets(facets)) {
-        yield* updateEventEnrichmentEffect(client, id, {
+        yield* updateEventEnrichmentEffect(catalog, id, {
           facets,
           enrichment_provenance: {
             ...input.enrichment_provenance,
@@ -259,7 +235,7 @@ export function enrichSingleEventEffect(
         let venueName: string | null = null
         let venueNeighborhood: Neighborhood | null = null
         if (venue_id) {
-          const existingVenue = yield* getVenueNameAndNeighborhoodEffect(client, venue_id)
+          const existingVenue = yield* getVenueNameAndNeighborhoodEffect(catalog, venue_id)
           venueName = existingVenue.name
           venueNeighborhood = existingVenue.neighborhood
         }
@@ -278,7 +254,7 @@ export function enrichSingleEventEffect(
           })
         )
 
-        yield* updateEventEnrichmentEffect(client, id, {
+        yield* updateEventEnrichmentEffect(catalog, id, {
           facets,
           embedding,
           search_document: searchDocument,
@@ -302,7 +278,7 @@ export function enrichSingleEventEffect(
     const needsVenue = !venue_id
 
     if (adapter?.config.requiresClientSide && !adapter.serverEnrich) {
-      yield* updateEventEnrichmentEffect(client, id, {
+      yield* updateEventEnrichmentEffect(catalog, id, {
         enrichment_status: 'skipped',
         enrichment_error: `${source} requires client-side extraction`,
       })
@@ -339,7 +315,7 @@ export function enrichSingleEventEffect(
       // Persist the source's privacy reading first, so a missing description or a later
       // translation or embedding failure can't leave a newly hidden event public with a venue.
       if (enrichmentResult?.location_hidden !== undefined) {
-        yield* updateEventEnrichmentEffect(client, id, enrichmentResult.location_hidden
+        yield* updateEventEnrichmentEffect(catalog, id, enrichmentResult.location_hidden
           ? { location_hidden: true, venue_id: null }
           : { location_hidden: false })
       }
@@ -371,7 +347,7 @@ export function enrichSingleEventEffect(
     }
 
     if (!enrichmentResult || !enrichmentResult.description_es) {
-      yield* updateEventEnrichmentEffect(client, id, {
+      yield* updateEventEnrichmentEffect(catalog, id, {
         enrichment_status: 'failed',
         enrichment_error: 'Failed to extract description',
       })
@@ -387,7 +363,7 @@ export function enrichSingleEventEffect(
       // translateText returns null on provider errors. Keep the Spanish text and
       // leave the row retryable (`failed`) instead of completing it untranslated.
       const error = 'Failed to translate description to English'
-      yield* updateEventEnrichmentEffect(client, id, {
+      yield* updateEventEnrichmentEffect(catalog, id, {
         description_es: enrichmentResult.description_es,
         enrichment_status: 'failed',
         enrichment_error: error,
@@ -402,7 +378,7 @@ export function enrichSingleEventEffect(
     const hidden = enrichmentResult.location_hidden === true
     if (needsVenue && enrichmentResult.venue_name && !hidden) {
       console.log(`[event-enrichment] Settling venue: ${enrichmentResult.venue_name}`)
-      venueSettlement = yield* settleVenueEffect(client, {
+      venueSettlement = yield* settleVenueEffect(catalog, {
         name: enrichmentResult.venue_name,
       }, {
         source,
@@ -428,7 +404,7 @@ export function enrichSingleEventEffect(
     } else if (settledVenueId) {
       venueName = venueSettlement!.venueName
     } else if (venue_id) {
-      const existingVenue = yield* getVenueNameAndNeighborhoodEffect(client, venue_id)
+      const existingVenue = yield* getVenueNameAndNeighborhoodEffect(catalog, venue_id)
       venueName = existingVenue.name
       venueNeighborhood = existingVenue.neighborhood
     } else {
@@ -472,7 +448,7 @@ export function enrichSingleEventEffect(
     }
     if (settledVenueId) updateData.venue_id = settledVenueId
 
-    yield* updateEventEnrichmentEffect(client, id, updateData)
+    yield* updateEventEnrichmentEffect(catalog, id, updateData)
     console.log(`[event-enrichment] Enriched: ${name}${settledVenueId ? ` (venue: ${enrichmentResult.venue_name})` : ''}`)
 
     return {
@@ -488,7 +464,7 @@ export function enrichSingleEventEffect(
     if (cause instanceof EnrichmentSkippedError) {
       const errorMsg = cause.message
       console.log(`[event-enrichment] Marking as skipped: ${name} (${errorMsg})`)
-      return updateEventEnrichmentEffect(client, id, {
+      return updateEventEnrichmentEffect(catalog, id, {
         enrichment_status: 'skipped',
         enrichment_error: errorMsg,
       }).pipe(Effect.as({
@@ -502,7 +478,7 @@ export function enrichSingleEventEffect(
     if (cause instanceof HttpError && cause.isNotFound) {
       const errorMsg = `HTTP ${cause.status} - Event page not found`
       console.log(`[event-enrichment] Event page gone (${cause.status}), marking as canceled: ${name}`)
-      return updateEventEnrichmentEffect(client, id, {
+      return updateEventEnrichmentEffect(catalog, id, {
         status: 'canceled',
         enrichment_status: 'skipped',
         enrichment_error: errorMsg,
@@ -517,7 +493,7 @@ export function enrichSingleEventEffect(
 
     const errorMsg = cause instanceof Error ? cause.message : 'Unknown error'
     console.error(`[event-enrichment] Failed to enrich ${name}:`, errorMsg)
-    return updateEventEnrichmentEffect(client, id, {
+    return updateEventEnrichmentEffect(catalog, id, {
       enrichment_status: 'failed',
       enrichment_error: errorMsg,
     }).pipe(Effect.as({
@@ -531,12 +507,12 @@ export function enrichSingleEventEffect(
 
 /** Promise compatibility adapter for Trigger jobs and existing scripts. */
 export async function enrichSingleEvent(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: EventEnrichmentInput,
   options: EnrichSingleEventOptions = {}
 ): Promise<EventEnrichmentResult> {
   try {
-    return await Effect.runPromise(enrichSingleEventEffect(client, input, options))
+    return await Effect.runPromise(enrichSingleEventEffect(catalog, input, options))
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error))
   }
@@ -553,13 +529,13 @@ interface BatchEnrichmentOptions extends EnrichSingleEventOptions {
 }
 
 type EnrichmentHandler = (
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: EventEnrichmentInput,
   options?: EnrichSingleEventOptions
 ) => Promise<EventEnrichmentResult>
 
 type EnrichmentHandlerEffect = (
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: EventEnrichmentInput,
   options?: EnrichSingleEventOptions
 ) => Effect.Effect<EventEnrichmentResult, EventEnrichmentError>
@@ -571,7 +547,7 @@ const DEFAULT_ENRICHMENT_CONCURRENCY = 4
  * Bounded concurrency; optional delay after each item (default none).
  */
 function processBatchEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   events: EventEnrichmentInput[],
   handler: EnrichmentHandlerEffect,
   logPrefix: string,
@@ -599,7 +575,7 @@ function processBatchEffect(
     )
 
     yield* Effect.forEach(events, (event) => Effect.gen(function* () {
-      const result = yield* handler(client, event, enrichOptions)
+      const result = yield* handler(catalog, event, enrichOptions)
 
       if (result.canceled) {
         stats.canceled++
@@ -634,19 +610,19 @@ function processBatchEffect(
  * Enrich multiple events with bounded concurrency.
  */
 export function enrichEvents(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   events: EventEnrichmentInput[],
   options?: BatchEnrichmentOptions
 ): Promise<EnrichmentStats> {
-  return Effect.runPromise(enrichEventsEffect(client, events, options))
+  return Effect.runPromise(enrichEventsEffect(catalog, events, options))
 }
 
 export function enrichEventsEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   events: EventEnrichmentInput[],
   options?: BatchEnrichmentOptions
 ): Effect.Effect<EnrichmentStats, EventEnrichmentError> {
-  return processBatchEffect(client, events, enrichSingleEventEffect, 'batch enrichment', options)
+  return processBatchEffect(catalog, events, enrichSingleEventEffect, 'batch enrichment', options)
 }
 
 // ============================================================================
@@ -660,7 +636,6 @@ export function enrichEventsEffect(
  */
 /** Sources removed from the daily import. Their events stay and age out without paid enrichment. */
 export const RETIRED_SOURCES = ['passline', 'eventbrite', 'venti'] as const
-const RETIRED_SOURCE_FILTER = `(${RETIRED_SOURCES.join(',')})`
 
 interface EnrichmentQueryOptions {
   source?: string
@@ -669,295 +644,47 @@ interface EnrichmentQueryOptions {
   statuses?: Array<'pending' | 'failed'>
 }
 
+const enrichmentQuery = (options?: EnrichmentQueryOptions) => ({
+  ...options,
+  startsAtFloor: enrichmentStartsAtFloor(),
+  retiredSources: RETIRED_SOURCES,
+})
+
 export function getEventsNeedingEnrichmentEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options?: EnrichmentQueryOptions
 ): Effect.Effect<EventEnrichmentInput[], EventEnrichmentError> {
-  let query = client
-    .from('events')
-    .select(
-      'id, name, link, source, categories, venue_id, description_es, description_en, facets, enrichment_status, embedding, price, is_free, enrichment_provenance'
-    )
-    .in('enrichment_status', options?.statuses ?? ['pending', 'failed'])
-    .neq('status', 'canceled')
-    .neq('status', 'past')
-    .gte('starts_at', enrichmentStartsAtFloor())
-    .not('link', 'is', null)
-    .not('source', 'in', RETIRED_SOURCE_FILTER)
-    .order('starts_at', { ascending: true })
-
-  if (options?.source) query = query.eq('source', options.source)
-  if (options?.createdAfter) query = query.gte('created_at', options.createdAfter)
-  query = query.limit(options?.limit || 100)
-
-  return importTry('event-enrichment.load-pending', () => query).pipe(
-    Effect.flatMap(({ data, error }) => {
-      if (error) {
-        console.error('[event-enrichment] Failed to get events needing enrichment:', error)
-      }
-      return Effect.succeed((data || []) as EventEnrichmentInput[])
-    }),
+  return importTry('event-enrichment.load-pending', () => catalog.eventsNeedingEnrichment(enrichmentQuery(options))).pipe(
+    Effect.map((rows) => rows as EventEnrichmentInput[]),
     Effect.mapError((error) => enrichmentError('event-enrichment.load-pending', error.message, error))
   )
 }
 
 export async function getEventsNeedingEnrichment(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options?: EnrichmentQueryOptions
 ): Promise<EventEnrichmentInput[]> {
   return Effect.runPromise(Effect.catchEager(
-    getEventsNeedingEnrichmentEffect(client, options),
+    getEventsNeedingEnrichmentEffect(catalog, options),
     () => Effect.succeed([] as EventEnrichmentInput[])
   ))
 }
 
 export function countEventsNeedingEnrichmentEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options?: Omit<EnrichmentQueryOptions, 'limit'>
 ): Effect.Effect<number, EventEnrichmentError> {
-  let query = client
-    .from('events')
-    .select('*', { count: 'exact', head: true })
-    .in('enrichment_status', options?.statuses ?? ['pending', 'failed'])
-    .neq('status', 'canceled')
-    .neq('status', 'past')
-    .gte('starts_at', enrichmentStartsAtFloor())
-    .not('link', 'is', null)
-    .not('source', 'in', RETIRED_SOURCE_FILTER)
-
-  if (options?.source) query = query.eq('source', options.source)
-  if (options?.createdAfter) query = query.gte('created_at', options.createdAfter)
-
-  return importTry('event-enrichment.count-pending', () => query).pipe(
-    Effect.flatMap(({ count, error }) => {
-      if (error) {
-        console.error('[event-enrichment] Failed to count events needing enrichment:', error)
-      }
-      return Effect.succeed(count ?? 0)
-    }),
+  return importTry('event-enrichment.count-pending', () => catalog.countEventsNeedingEnrichment(enrichmentQuery(options))).pipe(
     Effect.mapError((error) => enrichmentError('event-enrichment.count-pending', error.message, error))
   )
 }
 
 export async function countEventsNeedingEnrichment(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options?: Omit<EnrichmentQueryOptions, 'limit'>
 ): Promise<number> {
   return Effect.runPromise(Effect.catchEager(
-    countEventsNeedingEnrichmentEffect(client, options),
+    countEventsNeedingEnrichmentEffect(catalog, options),
     () => Effect.succeed(0)
   ))
-}
-
-export function getEnrichmentPendingCountsEffect(
-  client: SupabaseClient
-): Effect.Effect<Record<string, number>, EventEnrichmentError> {
-  return importTry('event-enrichment.count-by-source', () => client
-    .from('events')
-    .select('source')
-    .eq('enrichment_status', 'pending')
-    .not('link', 'is', null)
-  ).pipe(
-    Effect.flatMap(({ data, error }) => {
-      if (error) {
-        console.error('[event-enrichment] Failed to get pending counts:', error)
-      }
-      const counts: Record<string, number> = {}
-      for (const event of data || []) {
-        const source = event.source || 'unknown'
-        counts[source] = (counts[source] || 0) + 1
-      }
-      return Effect.succeed(counts)
-    }),
-    Effect.mapError((error) => enrichmentError('event-enrichment.count-by-source', error.message, error))
-  )
-}
-
-export async function getEnrichmentPendingCounts(
-  client: SupabaseClient
-): Promise<Record<string, number>> {
-  return Effect.runPromise(Effect.catchEager(
-    getEnrichmentPendingCountsEffect(client),
-    () => Effect.succeed({} as Record<string, number>)
-  ))
-}
-
-// ============================================================================
-// VENUE-ONLY ENRICHMENT
-// ============================================================================
-
-/**
- * Enrich a single event with only venue extraction (for events that already have descriptions).
- */
-export function enrichEventVenueOnlyEffect(
-  client: SupabaseClient,
-  input: EventEnrichmentInput,
-  _options?: EnrichSingleEventOptions
-): Effect.Effect<EventEnrichmentResult, EventEnrichmentError> {
-  const { id, name, link, source, venue_id } = input
-
-  const program = Effect.gen(function* () {
-    if (!link) {
-      return {
-        eventId: id,
-        success: true,
-        enriched: false,
-        error: 'No link available',
-      } satisfies EventEnrichmentResult
-    }
-
-    if (venue_id) {
-      return {
-        eventId: id,
-        success: true,
-        enriched: false,
-        error: 'Already has venue',
-      } satisfies EventEnrichmentResult
-    }
-
-    console.log(`[event-enrichment] Extracting venue for: ${name}`)
-    const venueName = yield* enrichmentTry('event-enrichment.extract-venue', () => extractVenueFromUrl(link))
-
-    if (!venueName) {
-      console.log(`[event-enrichment] No venue found for: ${name}`)
-      return {
-        eventId: id,
-        success: true,
-        enriched: false,
-        error: 'No venue found on page',
-      } satisfies EventEnrichmentResult
-    }
-
-    console.log(`[event-enrichment] Settling venue: ${venueName}`)
-    const venueSettlement = yield* settleVenueEffect(client, { name: venueName }, {
-      source,
-      eventIds: [id],
-    }).pipe(Effect.mapError((error) => enrichmentError(
-      'event-enrichment.settle-venue-only', error.message, error
-    )))
-
-    if (!venueSettlement.venueId) {
-      console.log(`[event-enrichment] Venue settlement returned no ID for: ${name}`)
-      return {
-        eventId: id,
-        success: true,
-        enriched: false,
-        error: 'Venue settlement failed',
-        venueSettlement,
-      } satisfies EventEnrichmentResult
-    }
-
-    yield* updateEventEnrichmentEffect(client, id, { venue_id: venueSettlement.venueId })
-    console.log(`[event-enrichment] Added venue to: ${name} (${venueName})`)
-
-    return {
-      eventId: id,
-      success: true,
-      enriched: true,
-      venueSettlement,
-    } satisfies EventEnrichmentResult
-  })
-
-  return Effect.catchEager(program, (error) => {
-    const cause = error instanceof EventEnrichmentError ? error.cause : error
-    if (cause instanceof HttpError && cause.isNotFound) {
-      const errorMsg = `HTTP ${cause.status} - Event page not found`
-      console.log(`[event-enrichment] Event page gone (${cause.status}), marking as canceled: ${name}`)
-      const cancellation = importTry('event-enrichment.mark-canceled', () => client
-        .from('events')
-        .update({ status: 'canceled', enrichment_error: errorMsg })
-        .eq('id', id)
-      ).pipe(
-        Effect.catchEager((update) => {
-          console.error('[event-enrichment] Failed to mark event as canceled:', update)
-          return Effect.succeed(undefined)
-        }),
-        Effect.as({
-          eventId: id,
-          success: false,
-          enriched: false,
-          canceled: true,
-          error: errorMsg,
-        } satisfies EventEnrichmentResult)
-      )
-      return cancellation
-    }
-
-    const errorMsg = cause instanceof Error ? cause.message : 'Unknown error'
-    console.error(`[event-enrichment] Failed venue enrichment for ${name}:`, errorMsg)
-    return Effect.succeed({
-      eventId: id,
-      success: false,
-      enriched: false,
-      error: errorMsg,
-    } satisfies EventEnrichmentResult)
-  })
-}
-
-export async function enrichEventVenueOnly(
-  client: SupabaseClient,
-  input: EventEnrichmentInput,
-  options?: EnrichSingleEventOptions
-): Promise<EventEnrichmentResult> {
-  try {
-    return await Effect.runPromise(enrichEventVenueOnlyEffect(client, input, options))
-  } catch (error) {
-    throw new Error(error instanceof Error ? error.message : String(error))
-  }
-}
-
-/**
- * Get events that have descriptions but are missing venues.
- */
-export function getEventsNeedingVenueOnlyEffect(
-  client: SupabaseClient,
-  options?: { limit?: number }
-): Effect.Effect<EventEnrichmentInput[], EventEnrichmentError> {
-  let query = client
-    .from('events')
-    .select('id, name, link, source, categories, venue_id')
-    .eq('enrichment_status', 'completed')
-    .is('venue_id', null)
-    .not('link', 'is', null)
-    .order('starts_at', { ascending: true })
-    .limit(options?.limit || 100)
-
-  return importTry('event-enrichment.load-venue-pending', () => query).pipe(
-    Effect.flatMap(({ data, error }) => {
-      if (error) {
-        console.error('[event-enrichment] Failed to get events needing venue:', error)
-      }
-      return Effect.succeed((data || []) as EventEnrichmentInput[])
-    }),
-    Effect.mapError((error) => enrichmentError('event-enrichment.load-venue-pending', error.message, error))
-  )
-}
-
-export async function getEventsNeedingVenueOnly(
-  client: SupabaseClient,
-  options?: { limit?: number }
-): Promise<EventEnrichmentInput[]> {
-  return Effect.runPromise(Effect.catchEager(
-    getEventsNeedingVenueOnlyEffect(client, options),
-    () => Effect.succeed([] as EventEnrichmentInput[])
-  ))
-}
-
-/**
- * Enrich multiple events with venue only.
- */
-export function enrichEventsVenueOnly(
-  client: SupabaseClient,
-  events: EventEnrichmentInput[],
-  options?: BatchEnrichmentOptions
-): Promise<EnrichmentStats> {
-  return Effect.runPromise(enrichEventsVenueOnlyEffect(client, events, options))
-}
-
-export function enrichEventsVenueOnlyEffect(
-  client: SupabaseClient,
-  events: EventEnrichmentInput[],
-  options?: BatchEnrichmentOptions
-): Effect.Effect<EnrichmentStats, EventEnrichmentError> {
-  return processBatchEffect(client, events, enrichEventVenueOnlyEffect, 'venue-only enrichment', options)
 }
