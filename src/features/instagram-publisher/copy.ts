@@ -75,7 +75,8 @@ export function skipText(reason: SkipReason): string {
   }
 }
 
-export const heldText = (title: string) => `Held: ${title} was cancelled. Ask Hermes to regenerate it.`
+export const heldText = (title: string, why: 'cancelled' | 'over' = 'cancelled') =>
+  why === 'over' ? `Held: ${title} has already happened. Ask Hermes to regenerate it.` : `Held: ${title} was cancelled. Ask Hermes to regenerate it.`
 
 /** The too-few notice is a new top-level message: there is no preview to reply to. */
 export function tooFewText(format: FormatKey, window: RunWindow, count: number): string {

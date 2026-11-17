@@ -102,6 +102,8 @@ describe('Slack', () => {
     expect(skipText({ kind: 'late', by: baInstant('2026-11-18', 19) })).toBe('Skipped: not published by 19:00')
     expect(heldText('Mandatos')).toBe('Held: Mandatos was cancelled. Ask Hermes to regenerate it.')
     expect(copyMd).toContain('"Held: {title} was cancelled. Ask Hermes to regenerate it."')
+    expect(heldText('Mandatos', 'over')).toBe('Held: Mandatos has already happened. Ask Hermes to regenerate it.')
+    expect(copyMd).toContain('"Held: {title} has already happened. Ask Hermes to regenerate it."')
     expect(copyMd).toContain('"not published by {HH:MM}"')
     expect(tooFewText('gratis', runWindow('gratis', '2026-11-23'), 3)).toBe('Instagram draft: Gratis esta semana carousel for November 23 to 29. Skipped: only 3 events qualified')
   })

@@ -26,7 +26,12 @@ export function decide(window: RunWindow, reactions: Reactions, approvedSeenAt: 
 
 /** Thrown before an Instagram write that is no longer allowed. `unapproved` waits for the ✅ to return; the others end the draft. */
 export class PublishStop extends Error {
-  constructor(readonly kind: 'rejected' | 'unapproved' | 'deadline', message: string) { super(message) }
+  constructor(
+    readonly kind: 'rejected' | 'unapproved' | 'deadline' | 'stale',
+    message: string,
+    /** For 'stale': the event and why it no longer belongs in the post. */
+    readonly stale?: { id: string; title: string; why: 'cancelled' | 'over'; detail: string },
+  ) { super(message) }
 }
 
 /** The check before every new Instagram write: the deadline, then Hanif's current reactions. */

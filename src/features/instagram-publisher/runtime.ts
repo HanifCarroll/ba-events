@@ -135,16 +135,18 @@ async function d1Read(sql: string): Promise<unknown> {
   return JSON.parse(out)
 }
 
-/** The current status of each id ('missing' when the row is gone). Ids are UUIDs; anything else is refused. */
-export async function readEventStatuses(ids: string[]): Promise<Map<string, string>> {
+export interface EventNow { status: string; startsAt: string | null; endsAt: string | null }
+
+/** Each id's current status and times (status 'missing' when the row is gone). Ids are UUIDs; anything else is refused. */
+export async function readEvents(ids: string[]): Promise<Map<string, EventNow>> {
   if (ids.some(id => !/^[0-9a-f-]{36}$/.test(id))) throw new Error('Refusing to query non-UUID event ids')
-  const rows = await d1Read(`SELECT id, status FROM events WHERE id IN (${ids.map(id => `'${id}'`).join(', ')})`)
-  if (!Array.isArray(rows) || rows.some(row => typeof row?.id !== 'string' || typeof row?.status !== 'string')) {
+  const rows = await d1Read(`SELECT id, status, starts_at, ends_at FROM events WHERE id IN (${ids.map(id => `'${id}'`).join(', ')})`)
+  if (!Array.isArray(rows) || rows.some(row => typeof row?.id !== 'string' || typeof row?.status !== 'string' || typeof row?.starts_at !== 'string')) {
     throw new Error(`D1 read returned an error: ${JSON.stringify(rows).slice(0, 300)}`)
   }
-  const statuses = new Map(ids.map(id => [id, 'missing']))
-  for (const row of rows) statuses.set(row.id, row.status)
-  return statuses
+  const events = new Map<string, EventNow>(ids.map(id => [id, { status: 'missing', startsAt: null, endsAt: null }]))
+  for (const row of rows) events.set(row.id, { status: row.status, startsAt: row.starts_at, endsAt: row.ends_at ?? null })
+  return events
 }
 
 export async function readCatalog(window: RunWindow): Promise<CatalogEvent[]> {

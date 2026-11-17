@@ -44,8 +44,12 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **THEN** the job creates and publishes no new media and only reconciles requests it already sent
 
 #### Scenario: A selected event is cancelled before publishing
-- **WHEN** any selected event is no longer scheduled at the first publishing write
+- **WHEN** any selected event is no longer scheduled at the first write of a publishing attempt, including a retry
 - **THEN** the draft is held and the thread gets "Held: {title} was cancelled. Ask Hermes to regenerate it."
+
+#### Scenario: A selected event is over by the time the post would go out
+- **WHEN** at the first write of a publishing attempt a selected event has ended, or has started and has no end time
+- **THEN** the draft is held and the thread gets "Held: {title} has already happened. Ask Hermes to regenerate it."
 
 #### Scenario: Late ✅ on a carousel
 - **WHEN** a carousel's ✅ arrives after its slot but before its cutoff

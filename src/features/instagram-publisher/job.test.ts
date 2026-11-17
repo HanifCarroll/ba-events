@@ -46,6 +46,7 @@ class World {
   slackFails = 0
   slackFailPrefix = ''
   alerts: Array<{ key: string; text: string }> = []
+  resolved: string[] = []
   r2: string[] = []
   config: Config = { auto: { hoy: false, finde: false, gratis: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' } }
   renderCount = 0
@@ -58,7 +59,10 @@ class World {
       now: () => new Date(this.clock),
       config: () => this.config,
       readCatalog: async (_window: RunWindow) => this.catalog,
-      readEventStatuses: async ids => new Map(ids.map(id => [id, this.statuses.get(id) ?? 'scheduled'])),
+      readEvents: async ids => new Map(ids.map(id => {
+        const event = this.catalog.find(candidate => candidate.id === id)!
+        return [id, { status: this.statuses.get(id) ?? 'scheduled', startsAt: event.startsAt, endsAt: event.endsAt }]
+      })),
       render: async (_html, outDir, _height) => {
         this.renderCount++
         const { mkdirSync } = await import('node:fs')
@@ -78,7 +82,7 @@ class World {
       loadToken: async () => ({ state: 'ok', token: { access_token: 'T', ig_user_id: '17841', expires_at: '2027-01-01T00:00:00.000Z' }, warning: null }),
       instagram: () => this.ig,
       alert: async (key, _title, text) => { this.alerts.push({ key, text }) },
-      resolveAlert: async () => {},
+      resolveAlert: async key => { this.resolved.push(key) },
       sleep: async () => {},
       log: () => {},
     }
@@ -205,6 +209,55 @@ describe('tick: cancelled events', () => {
   })
 })
 
+describe('tick: events checked at the real publishing time', () => {
+  it('holds a late approval when an event has already ended', async () => {
+    const w = new World()
+    // Event 1 runs Friday 10:00 to 11:00: after Thursday's slot, so it is selected, but over before a Friday-noon ✅.
+    w.catalog[0] = { ...w.catalog[0]!, startsAt: baInstant('2026-11-20', 10).toISOString(), endsAt: baInstant('2026-11-20', 11).toISOString() }
+    await w.job().tick()
+    expect(w.draft().events.map(event => event.id)).toContain(uuid(1))
+    w.at('2026-11-20', 12)
+    w.approve()
+    await w.job().tick()
+    expect(w.ig.calls.filter(call => call.startsWith('POST'))).toEqual([])
+    expect(w.r2).toEqual([])
+    expect(w.draft().state).toBe('held')
+    expect(w.replies()).toEqual(['Held: Evento 1 has already happened. Ask Hermes to regenerate it.'])
+    expect(w.alerts.find(alert => alert.key === 'draft/finde-2026-11-20')!.text).toContain(`--exclude ${uuid(1)}`)
+  })
+
+  it('holds a retry when an event was cancelled between two attempts', async () => {
+    const w = await previewed()
+    w.approve()
+    w.at('2026-11-19', 12)
+    w.ig.quotaUsage = 50 // the first attempt creates containers, then stops before media_publish
+    await w.job().tick()
+    expect(w.draft().state).toBe('publishing')
+    w.ig.quotaUsage = 0
+    w.statuses.set(uuid(4), 'canceled')
+    w.at('2026-11-19', 12, 10)
+    const before = w.ig.calls.filter(call => call.startsWith('POST')).length
+    await w.job().tick()
+    expect(w.ig.calls.filter(call => call.startsWith('POST')).length).toBe(before)
+    expect(w.ig.published).toHaveLength(0)
+    expect(w.draft().state).toBe('held')
+    expect(w.replies()).toEqual(['Held: Evento 4 was cancelled. Ask Hermes to regenerate it.'])
+  })
+
+  it('still settles an unclear publish after an event was cancelled', async () => {
+    const w = await previewed()
+    w.approve()
+    w.at('2026-11-19', 12)
+    w.ig.publishFault = 'after'
+    await w.job().tick()
+    w.statuses.set(uuid(4), 'canceled')
+    w.at('2026-11-19', 12, 10)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(1)
+    expect(w.draft().state).toBe('published')
+  })
+})
+
 describe('tick: Slack replies', () => {
   it('keeps the outcome and retries the Slack reply, alerting that the post went out', async () => {
     const w = await previewed()
@@ -251,6 +304,28 @@ describe('regenerate', () => {
     await w.job().tick()
     expect(w.ig.calls).toEqual([])
     expect(w.draft().state).toBe('failed')
+    const alert = w.alerts.find(a => a.key === 'draft/finde-2026-11-20')!
+    expect(alert.text).toContain("stopped part-way")
+    expect(alert.text).toContain(`regenerate finde-2026-11-20 --exclude ${uuid(2)}`)
+    // A later tick that succeeds doesn't clear the draft's alert.
+    w.at('2026-11-19', 12, 10)
+    await w.job().tick()
+    expect(w.resolved).not.toContain('draft/finde-2026-11-20')
+  })
+
+  it('alerts when the preview never reached Slack before the cutoff', async () => {
+    const w = new World()
+    const job = w.job()
+    ;(job.s as { slackShareTs: Services['slackShareTs'] }).slackShareTs = async () => null
+    await job.tick() // uploaded, but Slack never reports the message
+    expect(w.draft().state).toBe('previewing')
+    w.at('2026-11-20', 18)
+    await w.job().tick()
+    expect(w.draft().state).toBe('failed')
+    expect(w.alerts.find(a => a.key === 'draft/finde-2026-11-20')!.text).toMatch(/preview couldn't be posted/)
+    w.at('2026-11-20', 18, 10)
+    await w.job().tick()
+    expect(w.resolved).not.toContain('draft/finde-2026-11-20')
   })
 
   it("refuses to upload frames that don't match the saved revision", async () => {

@@ -13,7 +13,7 @@ import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, 
 import { FRAME, framesHtml } from './html.ts'
 import { emptyPublishState, footerTag, instagramApi, publish, type InstagramApi, type PublishState, type Slide } from './instagram.ts'
 import * as runtime from './runtime.ts'
-import type { Config, TokenCheck } from './runtime.ts'
+import type { Config, EventNow, TokenCheck } from './runtime.ts'
 import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
 
 export type DraftState = 'previewing' | 'previewed' | 'publishing' | 'published' | 'skipped' | 'failed' | 'held' | 'rebuilding'
@@ -50,7 +50,7 @@ export interface Services {
   now(): Date
   config(): Config
   readCatalog(window: RunWindow): Promise<CatalogEvent[]>
-  readEventStatuses(ids: string[]): Promise<Map<string, string>>
+  readEvents(ids: string[]): Promise<Map<string, EventNow>>
   render(html: string, outDir: string, height: number): Promise<string[]>
   slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string): Promise<unknown>
@@ -72,7 +72,7 @@ export const liveServices = (): Services => ({
   now: () => new Date(),
   config: runtime.readConfig,
   readCatalog: runtime.readCatalog,
-  readEventStatuses: runtime.readEventStatuses,
+  readEvents: runtime.readEvents,
   render: (html, outDir, height) => runtime.renderFrames(html, outDir, height),
   slackUploadFiles: runtime.slackUploadFiles,
   slackShareFiles: runtime.slackShareFiles,
@@ -219,15 +219,23 @@ export class Job {
 
   // Publishing
 
-  /** Before the first Instagram write: hold the draft if any selected event is no longer scheduled. */
-  private async holdIfCancelled(draft: Draft): Promise<boolean> {
-    const statuses = await this.s.readEventStatuses(draft.events.map(event => event.id))
-    const gone = draft.events.find(event => statuses.get(event.id) !== 'scheduled')
-    if (!gone) return false
-    const text = heldText(gone.title)
-    await this.settle(draft, 'held', text, { note: `${gone.id} is ${statuses.get(gone.id)}` })
-    await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} held`, `${text} (event ${gone.id} is ${statuses.get(gone.id)}). Run: bun scripts/instagram-publisher.ts regenerate ${draft.id} --exclude ${gone.id}`)
-    return true
+  /**
+   * Throws a 'stale' stop when any selected event, read fresh from D1, is no longer scheduled or is already over at the
+   * current time (ended, or started when it has no end).
+   */
+  private async checkEvents(draft: Draft) {
+    const current = await this.s.readEvents(draft.events.map(event => event.id))
+    const now = this.s.now().getTime()
+    for (const event of draft.events) {
+      const fresh = current.get(event.id)!
+      if (fresh.status === 'past' || (fresh.status === 'scheduled' && Date.parse(fresh.endsAt ?? fresh.startsAt!) <= now)) {
+        const detail = fresh.status === 'past' ? 'is marked past' : `${fresh.endsAt ? 'ended' : 'started'} at ${fresh.endsAt ?? fresh.startsAt}`
+        throw new PublishStop('stale', `${event.title} has already happened`, { id: event.id, title: event.title, why: 'over', detail })
+      }
+      if (fresh.status !== 'scheduled') {
+        throw new PublishStop('stale', `${event.title} is ${fresh.status}`, { id: event.id, title: event.title, why: 'cancelled', detail: `is ${fresh.status}` })
+      }
+    }
   }
 
   /** Returns false when publishing had to be skipped for missing setup (token or R2). */
@@ -237,11 +245,14 @@ export class Job {
     if (token.state === 'missing') { this.s.log(`${draft.id}: no Instagram token file; skipping publishing`); return false }
     if (!config.r2) { this.s.log(`${draft.id}: no R2 bucket in the config; skipping publishing`); return false }
     const auto = config.auto[draft.format]
-    const beforeWrite = async () => checkWrite(window, readReactions(await this.s.slackReactions(draft.slack.ts!)), auto, this.s.now())
-    if (!draft.publish) {
-      await beforeWrite()
-      if (await this.holdIfCancelled(draft)) return true
+    // Every write re-checks the reactions and the deadline; the first write of each attempt also re-checks the events.
+    // Reconciling an earlier unclear publish never calls this, so it isn't blocked by any of these checks.
+    let eventsChecked = false
+    const beforeWrite = async () => {
+      checkWrite(window, readReactions(await this.s.slackReactions(draft.slack.ts!)), auto, this.s.now())
+      if (!eventsChecked) { await this.checkEvents(draft); eventsChecked = true }
     }
+    if (!draft.publish) await beforeWrite()
     const prefix = `instagram/${draft.id}/${draft.framesHash}`
     if (draft.r2Uploaded !== prefix) {
       this.verifyFrames(draft)
@@ -276,6 +287,13 @@ export class Job {
   private async stopped(draft: Draft, stop: PublishStop, window: RunWindow) {
     if (stop.kind === 'unapproved') { this.s.log(`${draft.id}: ${stop.message}; waiting`); return }
     const out = draft.publish?.units.filter(unit => unit.published || unit.mediaId).length ?? 0
+    if (stop.kind === 'stale' && out === 0) {
+      const { id, title, why, detail } = stop.stale!
+      const text = heldText(title, why)
+      await this.settle(draft, 'held', text, { note: `${id} ${detail}` })
+      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} held`, `${text} (event ${id} ${detail}). To rebuild without it: bun scripts/instagram-publisher.ts regenerate ${draft.id} --exclude ${id}`)
+      return
+    }
     if (out > 0) {
       // Some story frames already went out; nothing more is posted. Hermes decides what to do with the rest.
       await this.settle(draft, 'failed', null, { note: `Stopped after ${out} of ${draft.publish!.units.length} frames: ${stop.message}` })
@@ -291,10 +309,16 @@ export class Job {
     const window = runWindow(draft.format, draft.from)
     if (draft.state === 'rebuilding') {
       // A regenerate that didn't finish. Its approval is already cleared, so nothing can publish from it.
-      return this.settle(draft, 'failed', null, { note: 'A regenerate did not finish; run it again.' })
+      await this.settle(draft, 'failed', null, { note: 'A regenerate did not finish; run it again.' })
+      const cmd = `bun scripts/instagram-publisher.ts regenerate ${draft.id}${draft.exclude.map(id => ` --exclude ${id}`).join('')}`
+      const recover = now < window.cutoff ? `Run it again from ~/projects/ba-events: ${cmd}` : 'It is past its cutoff, so this run is lost; nothing was posted.'
+      return this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id}: regenerate didn't finish`,
+        `Regenerating ${draft.id} (revision ${draft.revision}) stopped part-way, so the draft has no preview and can't publish. ${recover}`)
     }
     if (draft.state === 'previewing' && now >= window.cutoff) {
-      return this.settle(draft, 'failed', null, { note: 'The preview never reached Slack before the cutoff.' })
+      await this.settle(draft, 'failed', null, { note: 'The preview never reached Slack before the cutoff.' })
+      return this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id}: preview never reached Slack`,
+        `The ${draft.id} preview couldn't be posted to #ba-eventos before its cutoff, so nothing was published. Check the tick alert and journalctl --user -u ba-events-instagram.service for the Slack error. This run is lost; the next run of this format drafts as usual.`)
     }
     if (draft.state === 'previewing') await this.sendPreview(draft)
     if (draft.state === 'previewed') {
