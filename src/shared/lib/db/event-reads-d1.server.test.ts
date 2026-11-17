@@ -1,0 +1,158 @@
+/**
+ * The public catalog reads on real Miniflare D1, through the same `client.server.ts` functions the routes call, with
+ * the env's `DB` recorded by `useCloudflareBindings` as the SvelteKit hook and the MCP Worker do.
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import type { D1Database } from '@cloudflare/workers-types'
+import { freshD1 } from '../../../../tests/support/d1.ts'
+import { useCloudflareBindings } from './search-bindings.server.ts'
+import {
+  getDisplayableEventById,
+  getEventArtwork,
+  getEventFactsByIds,
+  getEventsWithVenues,
+  getEventWithVenue,
+  getHappeningSoonEvents,
+  getVenueById,
+  createEvent,
+} from './client.server.ts'
+import { createWorkerHandler } from '../../../mcp-worker/index.ts'
+
+let db: D1Database
+let dispose: () => Promise<void>
+beforeAll(async () => {
+  ({ db, dispose } = await freshD1())
+  useCloudflareBindings({ DB: db })
+}, 60_000)
+afterAll(async () => {
+  useCloudflareBindings({})
+  await dispose()
+})
+
+let counter = 0
+const id = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`
+const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString()
+
+async function venue(name: string, fields: { neighborhood?: string; address?: string } = {}) {
+  const venueId = id()
+  await db.prepare('INSERT INTO venues (id, name, neighborhood, address) VALUES (?, ?, ?, ?)')
+    .bind(venueId, name, fields.neighborhood ?? null, fields.address ?? null).run()
+  return venueId
+}
+
+type EventFields = Partial<{ starts_at: string; status: string; venue_id: string | null; image_url: string | null;
+  description_summary_es: string | null; location_tba: boolean; location_hidden: boolean; categories: string[] }>
+async function event(name: string, fields: EventFields = {}) {
+  const eventId = id()
+  await db.prepare(`INSERT INTO events (id, name, starts_at, status, venue_id, image_url, image_width, image_height,
+      description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document)
+    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, 1, NULL, '{"genres":["jazz"]}', 'luma', 'secreto')`).bind(
+    eventId, name, fields.starts_at ?? inDays(2), fields.status ?? 'scheduled', fields.venue_id ?? null,
+    fields.image_url === undefined ? 'https://images.lumacdn.com/uploads/a.png' : fields.image_url,
+    fields.description_summary_es === undefined ? 'Una noche de jazz' : fields.description_summary_es,
+    fields.location_tba ? 1 : 0, fields.location_hidden ? 1 : 0, JSON.stringify(fields.categories ?? ['music'])).run()
+  return eventId
+}
+
+beforeEach(async () => {
+  await db.batch([db.prepare('DELETE FROM events'), db.prepare('DELETE FROM venues')])
+})
+
+describe('public event reads on D1', () => {
+  it('home feed: complete scheduled events 12 hours out, soonest first, with only the card columns', async () => {
+    const bar = await venue('Bar Sintético', { neighborhood: 'Palermo' })
+    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5) })
+    const sooner = await event('Jazz temprano', { venue_id: bar, starts_at: inDays(1) })
+    await event('Empieza ya', { venue_id: bar, starts_at: inDays(0.25) })
+    await event('Sin foto', { venue_id: bar, image_url: null })
+    await event('Foto vacía', { venue_id: bar, image_url: '' })
+    await event('Sin lugar', { venue_id: null })
+    await event('Lugar a confirmar', { venue_id: bar, location_tba: true })
+    await event('Sin descripción', { venue_id: bar, description_summary_es: null })
+    await event('Cancelado', { venue_id: bar, status: 'canceled' })
+
+    const cards = await getHappeningSoonEvents(4)
+    expect(cards.map(card => card.id)).toEqual([sooner, later])
+    expect(cards[0]).toEqual({
+      id: sooner, name: 'Jazz temprano', starts_at: expect.any(String), time_tba: false,
+      image_url: 'https://images.lumacdn.com/uploads/a.png', image_width: 800, image_height: 600,
+      venue_name: 'Bar Sintético', venue_neighborhood: 'Palermo', price: null, is_free: true,
+    })
+    expect(await getHappeningSoonEvents(1)).toHaveLength(1)
+  })
+
+  it('event page and chat tools: any status, decoded like events_with_venues, missing ids throw', async () => {
+    const bar = await venue('Bar Sintético', { address: 'Calle Falsa 123' })
+    const past = await event('Ya pasó', { venue_id: bar, status: 'past' })
+    const row = await getEventWithVenue(past)
+    expect(row).toMatchObject({ id: past, status: 'past', venue_name: 'Bar Sintético', venue_address: 'Calle Falsa 123',
+      categories: ['music'], is_free: true, location_hidden: false, facets: { genres: ['jazz'] } })
+    expect(row).not.toHaveProperty('search_document')
+    const pending = await event('En revisión', { status: 'pending_review' })
+    expect((await getEventWithVenue(pending)).status).toBe('pending_review')
+    await expect(getEventWithVenue(id())).rejects.toThrow('not found')
+  })
+
+  it('MCP get_event: displayable events only, with the public columns', async () => {
+    const live = await event('Público')
+    const hidden = await event('Cancelado', { status: 'canceled' })
+    const record = await getDisplayableEventById(live)
+    expect(record).toMatchObject({ id: live, name: 'Público', status: 'scheduled', is_free: true })
+    expect(record).not.toHaveProperty('source')
+    expect(record).not.toHaveProperty('facets')
+    expect(await getDisplayableEventById(hidden)).toBeNull()
+    expect(await getDisplayableEventById(id())).toBeNull()
+
+
+    // Through the MCP Worker's own entry point, which records the env's DB binding.
+    const handler = createWorkerHandler()
+    const response = await handler(new Request('https://mcp.test/mcp', {
+      method: 'POST',
+      headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json', origin: 'https://claude.ai' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_event', arguments: { eventId: live } } }),
+    }), { DB: db, MCP_RATE_LIMIT: { limit: async () => ({ success: true }) } } as unknown as Env, {} as Parameters<typeof handler>[2])
+    const text = await response.text()
+    const body = JSON.parse(text.startsWith('event:') ? text.split('\n').find(line => line.startsWith('data: '))!.slice(6) : text)
+    expect(body.result.structuredContent.events.map((item: { id: string }) => item.id)).toEqual([live])
+  })
+
+  it('artwork lookup: the image of a scheduled or past event only', async () => {
+    const live = await event('Con foto')
+    const gone = await event('Cancelado', { status: 'canceled' })
+    expect(await getEventArtwork(live)).toEqual({ image_url: 'https://images.lumacdn.com/uploads/a.png' })
+    expect(await getEventArtwork(gone)).toBeNull()
+  })
+
+  it('event facts: only the fact columns, with the venue withheld when the location is hidden or unconfirmed', async () => {
+    const bar = await venue('Bar Sintético')
+    const shown = await event('Visible', { venue_id: bar })
+    const tba = await event('A confirmar', { venue_id: bar, location_tba: true })
+    const facts = await getEventFactsByIds([shown, tba, shown, id()])
+    expect(facts.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: shown, name: 'Visible', venue_id: bar, venue_name: 'Bar Sintético', status: 'scheduled' },
+      { id: tba, name: 'A confirmar', venue_id: null, venue_name: 'Bar Sintético', status: 'scheduled' },
+    ])
+    expect(await getEventFactsByIds([])).toEqual([])
+  })
+
+  it('venue details: the venue row, and a missing id throws as PostgREST .single() did', async () => {
+    const bar = await venue('Bar Sintético', { neighborhood: 'Almagro', address: 'Calle Falsa 123' })
+    expect(await getVenueById(bar)).toMatchObject({ id: bar, name: 'Bar Sintético', neighborhood: 'Almagro', address: 'Calle Falsa 123' })
+    await expect(getVenueById(id())).rejects.toThrow('not found')
+  })
+
+  it('GET /api/events: every status by start, with the admin columns and no search document', async () => {
+    const second = await event('Segundo', { starts_at: inDays(3) })
+    const first = await event('Primero', { starts_at: inDays(-3), status: 'past' })
+    const events = await getEventsWithVenues(10)
+    expect(events.map(row => row.id)).toEqual([first, second])
+    expect(events[0]).toMatchObject({ status: 'past', is_free: true, categories: ['music'], venue_name: null })
+    expect(events[0]).not.toHaveProperty('facets')
+    expect(events[0]).not.toHaveProperty('search_document')
+    expect(await getEventsWithVenues(1)).toHaveLength(1)
+  })
+
+  it('POST /api/events refuses on D1 instead of writing Supabase', async () => {
+    await expect(createEvent({ name: 'x', starts_at: inDays(1), source: 'api' })).rejects.toThrow('not available on D1')
+  })
+})

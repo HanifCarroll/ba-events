@@ -26,7 +26,7 @@ export const EVENT_COLUMNS = `e.id, e.name, e.description_es, e.description_en, 
   e.external_id, e.status, e.location_hidden, e.location_tba, e.description_unavailable, e.enrichment_status,
   e.enrichment_error, e.enriched_at, e.created_at, e.updated_at, v.name AS venue_name, v.neighborhood AS venue_neighborhood,
   v.address AS venue_address, e.facets`
-const FROM_EVENTS = 'events e LEFT JOIN venues v ON v.id = e.venue_id'
+export const FROM_EVENTS = 'events e LEFT JOIN venues v ON v.id = e.venue_id'
 
 const text = Schema.NullOr(Schema.String)
 const integer = Schema.NullOr(Schema.Number)

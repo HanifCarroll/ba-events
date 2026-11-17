@@ -11,7 +11,18 @@ const IMAGE_PATHS: Record<string, RegExp> = {
   'images.lumacdn.com': /^\/(?:uploads|event-covers)\//,
 }
 
+/** The R2 key of an artwork URL in the copy tool's and the D1 intake's form, `https://baeventos.com/api/event-artwork/<event id>/<sha256>.<ext>`. */
+const R2_ARTWORK = /^https:\/\/baeventos\.com\/api\/event-artwork\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/([0-9a-f]{64}\.(?:jpg|png|webp))$/
+export const R2_ARTWORK_KEY = /^[0-9a-f]{64}\.(?:jpg|png|webp)$/
+
+/** The R2 artwork key `value` names, or null. With `eventId`, only the key of that event's own URL. */
+export function r2ArtworkKey(value: string, eventId?: string): string | null {
+  const match = R2_ARTWORK.exec(value)
+  return match && (!eventId || match[1] === eventId.toLowerCase()) ? match[2] : null
+}
+
 export function isArtworkOriginAllowed(value: string, ownedStorageOrigin?: string): boolean {
+  if (r2ArtworkKey(value)) return true
   try {
     const url = new URL(value)
     const owned = ownedStorageOrigin && url.origin === new URL(ownedStorageOrigin).origin &&
