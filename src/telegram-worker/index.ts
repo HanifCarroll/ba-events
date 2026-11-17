@@ -7,6 +7,7 @@ import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { purgeTelegramRetentionEffect } from '#features/telegram/retention.ts'
 import { runTelegramHealthCheckEffect } from '#features/telegram/health.ts'
 import { createInboxLifecycle } from './inbox-lifecycle.ts'
+import { boundD1, useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
 
 const ITEM_PREFIX = 'item:'
 const SEEN_PREFIX = 'seen:'
@@ -41,6 +42,8 @@ type Env = {
   OPENAI_API_KEY: string
   VOYAGE_API_KEY: string
   TELEGRAM_INBOX: DurableObjectNamespaceLike
+  /** Staging only until the cutover: with a D1 `DB` binding every read and write goes to D1 instead of Supabase. */
+  DB?: unknown
 }
 
 export type InboxItem = {
@@ -104,6 +107,7 @@ export class TelegramInbox {
   }
 
   async alarm(): Promise<void> {
+    useD1Binding(this.env)
     const items = await this.state.storage.list<InboxItem>({ prefix: ITEM_PREFIX, limit: 1 })
     const entry = items.entries().next().value as [string, InboxItem] | undefined
     if (!entry) return
@@ -140,6 +144,7 @@ export class TelegramInbox {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    useD1Binding(env)
     const url = new URL(request.url)
     if (url.pathname !== '/api/telegram') return new Response('Not Found', { status: 404 })
     return Effect.runPromise(handleTelegramWebhookEffect(request, {
@@ -157,9 +162,12 @@ export default {
     }))
   },
   async scheduled(controller: ScheduledControllerLike, env: Env, ctx: ExecutionContextLike): Promise<void> {
+    useD1Binding(env)
+    const d1 = boundD1()
+    const store = d1 ? { d1 } : getSupabaseServiceRoleClient()
     const job = controller.cron === '0 * * * *'
-      ? Effect.runPromise(runTelegramHealthCheckEffect(createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN }), getSupabaseServiceRoleClient()))
-      : Effect.runPromise(purgeTelegramRetentionEffect(getSupabaseServiceRoleClient()))
+      ? Effect.runPromise(runTelegramHealthCheckEffect(createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN }), store))
+      : Effect.runPromise(purgeTelegramRetentionEffect(store))
     ctx.waitUntil(job)
   },
 }

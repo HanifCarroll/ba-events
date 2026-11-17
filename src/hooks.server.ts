@@ -5,15 +5,18 @@ import { getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
+import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts';
 
 const CANONICAL_HOST = 'baeventos.com';
 
 export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
 	if (dev) return resolve(event);
-	if (event.url.protocol === 'https:' && event.url.hostname === CANONICAL_HOST) return resolve(event);
+	// Only the staging Worker sets CANONICAL_HOST (its workers.dev host); production keeps baeventos.com.
+	const host = (event.platform as { env?: { CANONICAL_HOST?: string } } | undefined)?.env?.CANONICAL_HOST || CANONICAL_HOST;
+	if (event.url.protocol === 'https:' && event.url.hostname === host) return resolve(event);
 	const destination = new URL(event.url);
 	destination.protocol = 'https:';
-	destination.hostname = CANONICAL_HOST;
+	destination.hostname = host;
 	destination.port = '';
 	// 308 keeps the method and body of non-GET requests across the redirect.
 	const { method } = event.request;
@@ -79,4 +82,10 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		)
 	);
 
-export const handle = sequence(handleCanonicalOrigin, handleSupabase, handleLocaleSync, handleParaglide);
+// (d) Chat backend — D1 when the Worker binds `DB` (the staging Worker), Supabase otherwise.
+const handleD1Binding: Handle = ({ event, resolve }) => {
+	useD1Binding((event.platform as { env?: unknown } | undefined)?.env);
+	return resolve(event);
+};
+
+export const handle = sequence(handleCanonicalOrigin, handleD1Binding, handleSupabase, handleLocaleSync, handleParaglide);

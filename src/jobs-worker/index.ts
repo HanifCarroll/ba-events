@@ -15,6 +15,7 @@ import { importAllSources, mapBatchRunsToResults } from './daily-scrape-outcome.
 import { closeScrapeRun, openScrapeRun, timed } from './daily-scrape.ts'
 import { catchupMaxBatches, countCatchupBacklog, dailyMaxBatches, runCatchupBatch, runDailyEnrichmentBatch } from './enrichment.ts'
 import { purgeGuestLifecycleRetention } from './guest-lifecycle-retention.ts'
+import { boundD1Database } from '#shared/lib/db/d1.server.ts'
 import { SOURCES } from './source-health.ts'
 import { startScheduledWorkflow } from './schedule.ts'
 import { importSource, readSourceCatalog } from './sources.ts'
@@ -96,7 +97,11 @@ export class EnrichmentCatchupWorkflow extends WorkflowEntrypoint<JobsEnv, unkno
 /** 10:00 UTC (07:00 Buenos Aires): delete guest lifecycle and transcript rows older than 30 days. */
 export class GuestRetentionWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(_event: WorkflowEvent<unknown>, step: WorkflowStep) {
-    return step.do('purge guest lifecycle', policy('10 minutes'), () => purgeGuestLifecycleRetention(serviceClient(this.env)))
+    // A Worker with a D1 `DB` binding (staging until the cutover) purges D1 instead of Supabase.
+    return step.do('purge guest lifecycle', policy('10 minutes'), () => {
+      const d1 = boundD1Database(this.env)
+      return purgeGuestLifecycleRetention(d1 ? { d1 } : serviceClient(this.env))
+    })
   }
 }
 
