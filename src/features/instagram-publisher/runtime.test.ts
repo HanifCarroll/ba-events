@@ -39,6 +39,12 @@ describe('Instagram token', () => {
     expect(await loadToken(now, fetch, '/nonexistent/instagram-token.json')).toEqual({ state: 'missing' })
   })
 
+  it('never refreshes or warns about a system-user token that never expires', async () => {
+    const file = tokenFile({ ...fresh, expires_at: 'never' }, 400)
+    const check = await loadToken(now, (() => { throw new Error('no fetch expected') }) as unknown as typeof fetch, file)
+    expect(check).toMatchObject({ state: 'ok', warning: null })
+  })
+
   it('leaves a token under 7 days old alone', async () => {
     const file = tokenFile(fresh, 3)
     const check = await loadToken(now, (() => { throw new Error('no fetch expected') }) as unknown as typeof fetch, file)

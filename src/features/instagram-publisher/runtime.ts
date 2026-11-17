@@ -296,6 +296,7 @@ export async function r2Put(bucket: string, key: string, path: string) {
 
 // The Instagram token
 
+/** `expires_at` is an ISO date, or "never" for a system-user token, which has no expiry and no refresh. */
 export interface InstagramToken { access_token: string; ig_user_id: string; expires_at: string; refreshed_at?: string }
 
 export type TokenCheck =
@@ -309,6 +310,7 @@ export async function loadToken(now: Date, fetchImpl: typeof fetch = fetch, file
   if (!existsSync(file)) return { state: 'missing' }
   const token = JSON.parse(readFileSync(file, 'utf8')) as InstagramToken
   if (!token.access_token || !token.ig_user_id || !token.expires_at) throw new Error(`${file} lacks access_token, ig_user_id, or expires_at`)
+  if (token.expires_at === 'never') return { state: 'ok', token, warning: null }
   const issued = Date.parse(token.refreshed_at ?? '') || statSync(file).mtimeMs
   let warning: string | null = null
   if (now.getTime() - issued > 7 * DAY && Date.parse(token.expires_at) > now.getTime()) {
