@@ -242,6 +242,9 @@ describe('tick: events checked at the real publishing time', () => {
     expect(w.ig.published).toHaveLength(0)
     expect(w.draft().state).toBe('held')
     expect(w.replies()).toEqual(['Held: Evento 4 was cancelled. Ask Hermes to regenerate it.'])
+    const alert = w.alerts.find(a => a.key === 'draft/finde-2026-11-20' && a.text.startsWith('Held:'))!
+    expect(alert.text).toContain('scripts/instagram-publisher.ts status')
+    expect(alert.text).not.toContain('regenerate finde')
   })
 
   it('still settles an unclear publish after an event was cancelled', async () => {

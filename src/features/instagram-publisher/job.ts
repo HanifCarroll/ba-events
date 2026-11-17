@@ -291,7 +291,11 @@ export class Job {
       const { id, title, why, detail } = stop.stale!
       const text = heldText(title, why)
       await this.settle(draft, 'held', text, { note: `${id} ${detail}` })
-      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} held`, `${text} (event ${id} ${detail}). To rebuild without it: bun scripts/instagram-publisher.ts regenerate ${draft.id} --exclude ${id}`)
+      // regenerate refuses a draft that has publish state, so only a draft with none gets that advice.
+      const next = draft.publish
+        ? `An earlier attempt already created Instagram containers (nothing was posted), so regenerate refuses this draft. Inspect it with: bun scripts/instagram-publisher.ts status (state: ${this.draftFile(draft.id)})`
+        : `To rebuild without it: bun scripts/instagram-publisher.ts regenerate ${draft.id} --exclude ${id}`
+      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} held`, `${text} (event ${id} ${detail}). ${next}`)
       return
     }
     if (out > 0) {

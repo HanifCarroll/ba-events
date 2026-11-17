@@ -102,7 +102,7 @@ body{width:1080px;background:#000}
 .brand-in{font-weight:600;font-size:36px;letter-spacing:-.3px}
 .counter-in{font-size:28px;color:rgba(255,255,255,.6)}
 .safe .middle{position:absolute;inset:0;padding:150px 0;display:flex;flex-direction:column;justify-content:center}
-.safe .foot{position:relative;z-index:1;bottom:auto;margin-top:auto}
+.safe .foot{position:relative;z-index:1;inset:auto;margin-top:auto}
 .meta{display:flex;align-items:center;gap:24px;margin-top:16px;font-size:34px;color:rgba(255,255,255,.75)}
 .pill{border:2px solid rgba(255,255,255,.5);border-radius:999px;padding:9px 24px;font-size:30px}
 .pill.free{border:0;background:#2fbf71;color:#06210f;padding:10px 26px;font-weight:600}
