@@ -180,7 +180,8 @@ export const retryMissingMediaEffect = (store: CollectionStore,
     }) }),
     Effect.catchCause(cause => Effect.sync(() => {
       const error = Cause.squash(cause)
-      result.error = `Media retry stopped early: ${error instanceof Error ? error.message : String(error)}; the next collect retries`
+      const where = error instanceof ImportOperationError ? ` (in ${error.operation})` : ''
+      result.error = `Media retry stopped early: ${error instanceof Error ? error.message : String(error)}${where}; the next collect retries`
     })),
     Effect.as(result),
   )
@@ -201,9 +202,11 @@ const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(sto
       }
       if (result.attempted >= cap) { result.deferred.push(item); continue }
       result.attempted++
-      const retained = yield* Effect.result(retainImageEffect(store, observation.id, position, url, fetcher))
-      if (retained._tag === 'Success') result.retained++
-      else result.failed.push(item)
+      // Only the download is caught: a storage failure ends the pass, and the outer boundary names it in `error`.
+      const image = yield* Effect.result(importTry('intake.image', () => fetcher(url)))
+      if (image._tag === 'Failure') { result.failed.push(item); continue }
+      yield* store.retainImage(observation.id, position, image.success)
+      result.retained++
     }
   }
 })
