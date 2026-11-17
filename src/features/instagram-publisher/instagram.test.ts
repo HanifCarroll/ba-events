@@ -1,49 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { FakeInstagram } from './fake-instagram.ts'
 import { InstagramError, emptyPublishState, footerTag, publish, type InstagramApi, type PublishDeps, type PublishJob, type PublishState } from './instagram.ts'
-
-/** A fake Instagram account: containers finish at once, media_publish can be told to time out after or before it posts. */
-class FakeInstagram implements InstagramApi {
-  calls: string[] = []
-  containers = new Map<string, { status: string; params: Record<string, string> }>()
-  media: Array<{ id: string; caption?: string; timestamp: string; container: string }> = []
-  next = 1
-  /** 'after': post, then throw as if the response was lost. 'before': throw without posting. */
-  publishFault: 'after' | 'before' | null = null
-  quotaUsage = 0
-  clock = Date.parse('2026-11-19T15:00:00.000Z')
-
-  async get(path: string, params: Record<string, string> = {}) {
-    this.calls.push(`GET ${path}`)
-    if (path.endsWith('/content_publishing_limit')) return { data: [{ quota_usage: this.quotaUsage, config: { quota_total: 50 } }] }
-    if (path.endsWith('/media') || path.endsWith('/stories')) return { data: this.media.map(({ container: _container, ...media }) => media) }
-    if (params.fields === 'permalink') return { permalink: `https://www.instagram.com/p/${path}/` }
-    const container = this.containers.get(path)
-    if (!container) throw new InstagramError(`unknown ${path}`, true)
-    return { status_code: container.status }
-  }
-
-  async post(path: string, params: Record<string, string>) {
-    this.calls.push(`POST ${path}`)
-    if (path.endsWith('/media')) {
-      const id = `c${this.next++}`
-      this.containers.set(id, { status: 'FINISHED', params })
-      return { id }
-    }
-    if (path.endsWith('/media_publish')) {
-      const fault = this.publishFault
-      this.publishFault = null
-      if (fault === 'before') throw new InstagramError('POST media_publish: no response (TimeoutError)', false)
-      const container = this.containers.get(params.creation_id!)!
-      if (container.status === 'PUBLISHED') throw new InstagramError('already published', true)
-      container.status = 'PUBLISHED'
-      const id = `m${this.next++}`
-      this.media.unshift({ id, caption: container.params.caption, timestamp: new Date(this.clock).toISOString(), container: params.creation_id! })
-      if (fault === 'after') throw new InstagramError('POST media_publish: no response (TimeoutError)', false)
-      return { id }
-    }
-    throw new Error(`unexpected POST ${path}`)
-  }
-}
 
 const carousel: PublishJob = {
   kind: 'carousel',
@@ -58,7 +15,7 @@ const carousel: PublishJob = {
 
 const story: PublishJob = { ...carousel, kind: 'story', caption: null }
 
-function harness(api: FakeInstagram) {
+function harness(api: FakeInstagram, beforeWrite: () => Promise<void> = async () => {}) {
   const saved: string[] = []
   const deps: PublishDeps = {
     api,
@@ -66,19 +23,20 @@ function harness(api: FakeInstagram) {
     now: () => new Date(api.clock),
     sleep: async () => {},
     log: () => {},
+    beforeWrite,
   }
   return { deps, saved }
 }
 
 const reload = (saved: string[]): PublishState => JSON.parse(saved.at(-1)!)
+const writes = (api: FakeInstagram) => api.calls.filter(call => call.startsWith('POST'))
 
 describe('carousel publishing', () => {
   it('creates tagged children, the carousel, checks the limit, and publishes once', async () => {
     const api = new FakeInstagram()
     const { deps } = harness(api)
-    const state = emptyPublishState(carousel)
-    const permalink = await publish(carousel, state, deps)
-    expect(api.media).toHaveLength(1)
+    const permalink = await publish(carousel, emptyPublishState(carousel), deps)
+    expect(api.published).toHaveLength(1)
     expect(permalink).toBe(`https://www.instagram.com/p/${api.media[0]!.id}/`)
     const children = [...api.containers.values()].filter(c => c.params.is_carousel_item === 'true')
     expect(children).toHaveLength(3)
@@ -89,21 +47,19 @@ describe('carousel publishing', () => {
     expect(api.calls.indexOf('GET 17841/content_publishing_limit')).toBeLessThan(api.calls.indexOf('POST 17841/media_publish'))
   })
 
-  it('finds the post after a timeout following media_publish instead of posting again', async () => {
+  it('reads the container after a timeout following media_publish and never posts again', async () => {
     const api = new FakeInstagram()
     api.publishFault = 'after'
     const { deps, saved } = harness(api)
     await expect(publish(carousel, emptyPublishState(carousel), deps)).rejects.toThrow(/no response/)
     const afterCrash = reload(saved)
     expect(afterCrash.units[0]!.pendingSince).not.toBeNull()
-    expect(afterCrash.units[0]!.mediaId).toBeNull()
 
-    // The next tick starts from the saved state, as a new process would.
     api.calls = []
     const permalink = await publish(carousel, afterCrash, deps)
-    expect(api.media).toHaveLength(1)
-    expect(api.calls[0]).toBe('GET 17841/media')
-    expect(api.calls).not.toContain('POST 17841/media_publish')
+    expect(api.published).toHaveLength(1)
+    expect(api.calls[0]).toBe('GET c4')
+    expect(writes(api)).toEqual([])
     expect(permalink).toContain(api.media[0]!.id)
   })
 
@@ -114,7 +70,7 @@ describe('carousel publishing', () => {
     await expect(publish(carousel, emptyPublishState(carousel), deps)).rejects.toThrow()
     const containersBefore = api.containers.size
     await publish(carousel, reload(saved), deps)
-    expect(api.media).toHaveLength(1)
+    expect(api.published).toHaveLength(1)
     expect(api.containers.size).toBe(containersBefore)
   })
 
@@ -136,6 +92,25 @@ describe('carousel publishing', () => {
     await publish(carousel, reload(saved), deps)
     expect([...api.containers.values()].filter(c => c.params.is_carousel_item === 'true')).toHaveLength(3)
   })
+
+  it('asks before every write, and stops when told to', async () => {
+    const api = new FakeInstagram()
+    let asked = 0
+    const { deps } = harness(api, async () => { if (++asked === 3) throw new Error('withdrawn') })
+    await expect(publish(carousel, emptyPublishState(carousel), deps)).rejects.toThrow('withdrawn')
+    expect(writes(api)).toHaveLength(2)
+    expect(api.media).toHaveLength(0)
+  })
+
+  it('reconciles an unclear publish without asking, even after approval is gone', async () => {
+    const api = new FakeInstagram()
+    api.publishFault = 'after'
+    const first = harness(api)
+    await expect(publish(carousel, emptyPublishState(carousel), first.deps)).rejects.toThrow()
+    const { deps } = harness(api, async () => { throw new Error('past the deadline') })
+    await publish(carousel, reload(first.saved), deps)
+    expect(api.published).toHaveLength(1)
+  })
 })
 
 describe('story publishing', () => {
@@ -143,22 +118,44 @@ describe('story publishing', () => {
     const api = new FakeInstagram()
     const { deps } = harness(api)
     await publish(story, emptyPublishState(story), deps)
-    expect(api.media).toHaveLength(3)
+    expect(api.published).toHaveLength(3)
     const frames = [...api.containers.values()]
     expect(frames.every(frame => frame.params.media_type === 'STORIES')).toBe(true)
     expect(JSON.parse(frames[1]!.params.user_tags!)).toEqual([{ username: 'salalucida' }])
   })
 
-  it('after a lost response on frame 2, finds it and goes on to frame 3', async () => {
+  it('after a lost response on frame 2, ties it to its container and goes on to frame 3', async () => {
     const api = new FakeInstagram()
     const { deps, saved } = harness(api)
     let publishes = 0
     const lossy: InstagramApi = { get: api.get.bind(api), post: async (path, params) => { if (path.endsWith('media_publish') && ++publishes === 2) api.publishFault = 'after'; return api.post(path, params) } }
     await expect(publish(story, emptyPublishState(story), { ...deps, api: lossy })).rejects.toThrow()
-    expect(api.media).toHaveLength(2)
     await publish(story, reload(saved), deps)
-    expect(api.media).toHaveLength(3)
-    expect(new Set(reload(saved).units.map(unit => unit.mediaId)).size).toBe(3)
+    expect(api.published).toHaveLength(3)
+    expect(reload(saved).units.every(unit => unit.published)).toBe(true)
+  })
+
+  it("doesn't adopt an unrelated story posted around a failed attempt", async () => {
+    const api = new FakeInstagram()
+    api.publishFault = 'before'
+    const { deps, saved } = harness(api)
+    await expect(publish(story, emptyPublishState(story), deps)).rejects.toThrow()
+    api.postStoryByHand()
+    await publish(story, reload(saved), deps)
+    // Frame 1 was retried from its own container rather than taken to be the hand-posted story.
+    expect(api.published).toHaveLength(3)
+    expect(reload(saved).units.map(unit => unit.mediaId)).not.toContain(api.media.find(media => media.container === null)!.id)
+  })
+
+  it('holds instead of reposting when the container state is unknown', async () => {
+    const api = new FakeInstagram()
+    api.publishFault = 'after'
+    const { deps, saved } = harness(api)
+    await expect(publish(story, emptyPublishState(story), deps)).rejects.toThrow()
+    api.containers.get('c1')!.status = 'IN_PROGRESS'
+    api.calls = []
+    await expect(publish(story, reload(saved), deps)).rejects.toThrow(/holding/)
+    expect(writes(api)).toEqual([])
   })
 })
 

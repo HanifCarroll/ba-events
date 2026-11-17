@@ -1,24 +1,30 @@
-/** The tick, dry-run, regenerate, and status commands. One JSON state file per draft under STATE_DIR/drafts. */
+/**
+ * The tick, dry-run, regenerate, and status commands. One JSON state file per draft under <state>/drafts.
+ *
+ * A draft moves previewing → previewed → publishing → published | skipped | failed | held. Every Instagram write
+ * re-checks Hanif's current reactions and the deadline (`beforeWrite`). The Slack reply that reports the outcome is a
+ * separate pending step (`notify`), saved with the outcome and retried by later ticks until Slack takes it.
+ */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { decide, readReactions } from './approval.ts'
-import { caption as captionFor, footerHandle, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
+import { caption as captionFor, footerHandle, heldText, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, framesHtml } from './html.ts'
-import { emptyPublishState, footerTag, instagramApi, publish, type PublishState, type Slide } from './instagram.ts'
-import {
-  REPO, STATE_DIR, alert, fileHash, loadToken, log, r2Put, readCatalog, readConfig, renderFrames, resolveAlert,
-  sleep, slackPost, slackReactions, slackShareFiles, slackShareTs, slackUploadFiles, withLock, writeJson,
-} from './runtime.ts'
-import { selectEvents, type PostEvent } from './select.ts'
+import { emptyPublishState, footerTag, instagramApi, publish, type InstagramApi, type PublishState, type Slide } from './instagram.ts'
+import * as runtime from './runtime.ts'
+import type { Config, TokenCheck } from './runtime.ts'
+import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
 
-export type DraftState = 'previewing' | 'previewed' | 'publishing' | 'published' | 'skipped' | 'failed'
+export type DraftState = 'previewing' | 'previewed' | 'publishing' | 'published' | 'skipped' | 'failed' | 'held' | 'rebuilding'
 
 export interface Draft {
   id: string
   format: FormatKey
   from: string
   to: string
+  /** Bumped by every regenerate; frames live in their own rev-<n> directory and approval belongs to one revision. */
+  revision: number
   state: DraftState
   exclude: string[]
   events: PostEvent[]
@@ -30,53 +36,353 @@ export interface Draft {
   r2Uploaded: string | null
   publish: PublishState | null
   publishFailures: number
+  /** A Slack message still to deliver for this draft's outcome. */
+  notify: { text: string; threadTs: string | null } | null
   skipReason: string | null
   note: string | null
   updatedAt: string
 }
 
-const DRAFTS = join(STATE_DIR, 'drafts')
-const draftFile = (id: string) => join(DRAFTS, `${id}.json`)
-const framesDir = (id: string) => join(DRAFTS, id)
-const MAX_PUBLISH_FAILURES = 6
-const TERMINAL: DraftState[] = ['published', 'skipped', 'failed']
-
-function loadDraft(id: string): Draft | null {
-  return existsSync(draftFile(id)) ? JSON.parse(readFileSync(draftFile(id), 'utf8')) : null
+/** Everything the job touches outside its state directory. Tests replace these with fakes. */
+export interface Services {
+  stateDir: string
+  repo: string
+  now(): Date
+  config(): Config
+  readCatalog(window: RunWindow): Promise<CatalogEvent[]>
+  readEventStatuses(ids: string[]): Promise<Map<string, string>>
+  render(html: string, outDir: string, height: number): Promise<string[]>
+  slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
+  slackShareFiles(files: Array<{ id: string; title: string }>, text: string): Promise<unknown>
+  slackShareTs(fileId: string): Promise<string | null>
+  slackPost(text: string, threadTs?: string): Promise<{ ts: string }>
+  slackReactions(ts: string): Promise<Array<{ name: string; users?: string[] }> | undefined>
+  r2Put(bucket: string, key: string, path: string): Promise<void>
+  loadToken(now: Date): Promise<TokenCheck>
+  instagram(accessToken: string): InstagramApi
+  alert(key: string, title: string, text: string): Promise<void>
+  resolveAlert(key: string): Promise<void>
+  sleep(ms: number): Promise<void>
+  log(message: string): void
 }
 
-function saveDraft(draft: Draft) {
-  draft.updatedAt = new Date().toISOString()
-  writeJson(draftFile(draft.id), draft)
-}
-
-function allDrafts(): Draft[] {
-  if (!existsSync(DRAFTS)) return []
-  return readdirSync(DRAFTS).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(DRAFTS, name), 'utf8')))
-}
-
-const heightOf = (format: FormatKey) => FRAME[FORMATS[format].kind].height
-const assets = () => ({
-  fontsDir: join(REPO, 'src/features/instagram-publisher/assets/fonts'),
-  heroPhoto: join(REPO, 'static/hero-rooftop-buenos-aires.jpg'),
+export const liveServices = (): Services => ({
+  stateDir: runtime.STATE_DIR,
+  repo: runtime.REPO,
+  now: () => new Date(),
+  config: runtime.readConfig,
+  readCatalog: runtime.readCatalog,
+  readEventStatuses: runtime.readEventStatuses,
+  render: (html, outDir, height) => runtime.renderFrames(html, outDir, height),
+  slackUploadFiles: runtime.slackUploadFiles,
+  slackShareFiles: runtime.slackShareFiles,
+  slackShareTs: runtime.slackShareTs,
+  slackPost: runtime.slackPost,
+  slackReactions: runtime.slackReactions,
+  r2Put: runtime.r2Put,
+  loadToken: now => runtime.loadToken(now),
+  instagram: token => instagramApi(token),
+  alert: runtime.alert,
+  resolveAlert: runtime.resolveAlert,
+  sleep: runtime.sleep,
+  log: runtime.log,
 })
 
-interface Built { window: RunWindow; events: PostEvent[]; caption: string | null; frames: string[] | null }
+const MAX_PUBLISH_FAILURES = 6
+/** States a tick no longer advances (a pending notification is still delivered). */
+const SETTLED: DraftState[] = ['published', 'skipped', 'failed', 'held']
 
-/** Read the catalog, pick the events, and render the frames when enough events qualify. */
-async function build(format: FormatKey, from: string, exclude: string[], outDir: string): Promise<Built> {
-  const window = runWindow(format, from)
-  const events = selectEvents(await readCatalog(window), format, window, exclude)
-  if (events.length < FORMATS[format].min) return { window, events, caption: null, frames: null }
-  const frames = await renderFrames(framesHtml(format, window, events, assets()), outDir, heightOf(format))
-  return { window, events, caption: captionFor(format, events), frames }
+export class Job {
+  constructor(readonly s: Services) {}
+
+  private get drafts() { return join(this.s.stateDir, 'drafts') }
+  draftFile(id: string) { return join(this.drafts, `${id}.json`) }
+  private framesDir(id: string) { return join(this.drafts, id) }
+
+  loadDraft(id: string): Draft | null {
+    return existsSync(this.draftFile(id)) ? JSON.parse(readFileSync(this.draftFile(id), 'utf8')) : null
+  }
+
+  private save(draft: Draft) {
+    draft.updatedAt = this.s.now().toISOString()
+    runtime.writeJson(this.draftFile(draft.id), draft)
+  }
+
+  allDrafts(): Draft[] {
+    if (!existsSync(this.drafts)) return []
+    return readdirSync(this.drafts).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(this.drafts, name), 'utf8')))
+  }
+
+  private assets() {
+    return { fontsDir: join(this.s.repo, 'src/features/instagram-publisher/assets/fonts'), heroPhoto: join(this.s.repo, 'static/hero-rooftop-buenos-aires.jpg') }
+  }
+
+  /** Read the catalog, pick the events, and render the frames when enough events qualify. */
+  async build(format: FormatKey, from: string, exclude: string[], outDir: string) {
+    const window = runWindow(format, from)
+    const events = selectEvents(await this.s.readCatalog(window), format, window, exclude)
+    if (events.length < FORMATS[format].min) return { window, events, caption: null, frames: null }
+    const frames = await this.s.render(framesHtml(format, window, events, this.assets()), outDir, FRAME[FORMATS[format].kind].height)
+    return { window, events, caption: captionFor(format, events), frames }
+  }
+
+  // Drafting and previewing
+
+  /** Build revision `revision` of a draft into its own directory and preview it. Approval always starts empty. */
+  async createDraft(format: FormatKey, from: string, exclude: string[], revision: number): Promise<Draft> {
+    const id = draftId(format, from)
+    const dir = join(this.framesDir(id), `rev-${revision}`)
+    const built = await this.build(format, from, exclude, dir)
+    const draft: Draft = {
+      id, format, from, to: built.window.to, revision, state: 'previewing', exclude, events: built.events, caption: built.caption,
+      frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: { fileIds: [], ts: null },
+      approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '',
+    }
+    if (!built.frames) {
+      rmSync(dir, { recursive: true, force: true })
+      draft.state = 'skipped'
+      draft.skipReason = skipText({ kind: 'too-few', count: built.events.length })
+      draft.notify = { text: tooFewText(format, built.window, built.events.length), threadTs: null }
+      this.save(draft)
+      this.s.log(`${id}: ${draft.skipReason}`)
+      await this.deliver(draft)
+      return draft
+    }
+    this.save(draft)
+    await this.sendPreview(draft)
+    return draft
+  }
+
+  private async sendPreview(draft: Draft) {
+    if (draft.slack.fileIds.length && !draft.slack.ts) {
+      // An earlier run uploaded the files but didn't learn where they landed; look before posting again.
+      draft.slack.ts = await this.s.slackShareTs(draft.slack.fileIds[0]!)
+      if (!draft.slack.ts) { draft.slack.fileIds = []; this.save(draft) }
+    }
+    if (!draft.slack.ts) {
+      this.verifyFrames(draft)
+      const text = slackPreview(draft.format, runWindow(draft.format, draft.from), draft.caption, this.s.config().auto[draft.format])
+      const files = await this.s.slackUploadFiles(draft.frames, draft.id)
+      // Saved before sharing: if the share's answer is lost, the next tick looks the message up instead of posting again.
+      draft.slack.fileIds = files.map(file => file.id)
+      this.save(draft)
+      await this.s.slackShareFiles(files, text)
+      draft.slack.ts = await this.s.slackShareTs(draft.slack.fileIds[0]!)
+      if (!draft.slack.ts) throw new Error(`${draft.id}: the preview was uploaded but Slack didn't report its message yet`)
+    }
+    draft.state = 'previewed'
+    this.save(draft)
+    this.s.log(`${draft.id}: preview posted (${draft.slack.ts})`)
+  }
+
+  /** Fail closed when the frames on disk aren't the ones this revision previewed. */
+  private verifyFrames(draft: Draft) {
+    const dir = join(this.framesDir(draft.id), `rev-${draft.revision}`)
+    if (!draft.frames.length || draft.frames.some(path => !path.startsWith(`${dir}/`)) || runtime.fileHash(draft.frames) !== draft.framesHash) {
+      throw new Error(`${draft.id}: the frames on disk don't match revision ${draft.revision}; not uploading them`)
+    }
+  }
+
+  // Outcomes and notifications
+
+  /** Record an outcome and its Slack message together, then try to deliver it. */
+  private async settle(draft: Draft, state: DraftState, text: string | null, extra: Partial<Draft> = {}) {
+    Object.assign(draft, extra)
+    draft.state = state
+    draft.notify = text && draft.slack.ts ? { text, threadTs: draft.slack.ts } : null
+    this.save(draft)
+    this.s.log(`${draft.id}: ${state}${text ? ` (${text})` : ''}`)
+    await this.deliver(draft)
+  }
+
+  private async skip(draft: Draft, reason: SkipReason) {
+    const text = skipText(reason)
+    await this.settle(draft, 'skipped', text, { skipReason: text })
+  }
+
+  /** Deliver a pending Slack message. A failure leaves it pending for the next tick and raises an accurate alert. */
+  async deliver(draft: Draft) {
+    const notify = draft.notify
+    if (!notify) return
+    try {
+      const posted = await this.s.slackPost(notify.text, notify.threadTs ?? undefined)
+      if (!draft.slack.ts && !notify.threadTs) draft.slack.ts = posted.ts
+      draft.notify = null
+      this.save(draft)
+      await this.s.resolveAlert(`draft/${draft.id}/slack`)
+    } catch (error) {
+      const outcome = draft.state === 'published' ? `went out on Instagram (${draft.publish?.permalink})` : `is ${draft.state}`
+      await this.s.alert(`draft/${draft.id}/slack`, `Instagram ${draft.id}: Slack reply failed`,
+        `Instagram ${draft.id} ${outcome}, but the Slack reply failed: ${(error as Error).message}. Retrying next tick. Text: ${notify.text}`)
+    }
+  }
+
+  // Publishing
+
+  /** Before the first Instagram write: hold the draft if any selected event is no longer scheduled. */
+  private async holdIfCancelled(draft: Draft): Promise<boolean> {
+    const statuses = await this.s.readEventStatuses(draft.events.map(event => event.id))
+    const gone = draft.events.find(event => statuses.get(event.id) !== 'scheduled')
+    if (!gone) return false
+    const text = heldText(gone.title)
+    await this.settle(draft, 'held', text, { note: `${gone.id} is ${statuses.get(gone.id)}` })
+    await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} held`, `${text} (event ${gone.id} is ${statuses.get(gone.id)}). Run: bun scripts/instagram-publisher.ts regenerate ${draft.id} --exclude ${gone.id}`)
+    return true
+  }
+
+  /** Returns false when publishing had to be skipped for missing setup (token or R2). */
+  private async publishDraft(draft: Draft, window: RunWindow): Promise<boolean> {
+    const config = this.s.config()
+    const token = await this.s.loadToken(this.s.now())
+    if (token.state === 'missing') { this.s.log(`${draft.id}: no Instagram token file; skipping publishing`); return false }
+    if (!config.r2) { this.s.log(`${draft.id}: no R2 bucket in the config; skipping publishing`); return false }
+    const auto = config.auto[draft.format]
+    const beforeWrite = async () => checkWrite(window, readReactions(await this.s.slackReactions(draft.slack.ts!)), auto, this.s.now())
+    if (!draft.publish) {
+      await beforeWrite()
+      if (await this.holdIfCancelled(draft)) return true
+    }
+    const prefix = `instagram/${draft.id}/${draft.framesHash}`
+    if (draft.r2Uploaded !== prefix) {
+      this.verifyFrames(draft)
+      for (const [index, path] of draft.frames.entries()) await this.s.r2Put(config.r2.bucket, `${prefix}/frame-${index + 1}.jpg`, path)
+      draft.r2Uploaded = prefix
+      this.save(draft)
+    }
+    const kind = FORMATS[draft.format].kind
+    const height = FRAME[kind].height
+    // Frame 1 is the cover and the last one the closing frame; the cards in between carry the tags.
+    const slides: Slide[] = draft.frames.map((_, index) => {
+      const event = index > 0 && index <= draft.events.length ? draft.events[index - 1]! : null
+      return { url: `${config.r2!.publicBaseUrl}/${prefix}/frame-${index + 1}.jpg`, tag: event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null }
+    })
+    const job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
+    draft.publish ??= emptyPublishState(job)
+    draft.state = 'publishing'
+    this.save(draft)
+    const permalink = await publish(job, draft.publish, {
+      api: this.s.instagram(token.token.access_token),
+      save: state => { draft.publish = state; this.save(draft) },
+      now: () => this.s.now(),
+      sleep: ms => this.s.sleep(ms),
+      log: message => this.s.log(`${draft.id}: ${message}`),
+      beforeWrite,
+    })
+    await this.settle(draft, 'published', postedText(permalink))
+    return true
+  }
+
+  /** A stop before a write: wait for a withdrawn ✅, otherwise end the draft without creating anything more. */
+  private async stopped(draft: Draft, stop: PublishStop, window: RunWindow) {
+    if (stop.kind === 'unapproved') { this.s.log(`${draft.id}: ${stop.message}; waiting`); return }
+    const out = draft.publish?.units.filter(unit => unit.published || unit.mediaId).length ?? 0
+    if (out > 0) {
+      // Some story frames already went out; nothing more is posted. Hermes decides what to do with the rest.
+      await this.settle(draft, 'failed', null, { note: `Stopped after ${out} of ${draft.publish!.units.length} frames: ${stop.message}` })
+      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} stopped part-way`, `${draft.note}. State: ${this.draftFile(draft.id)}`)
+      return
+    }
+    const reason: SkipReason = stop.kind === 'rejected' ? { kind: 'rejected' } : { kind: 'late', by: window.deadline }
+    await this.skip(draft, reason)
+  }
+
+  async advance(draft: Draft) {
+    const now = this.s.now()
+    const window = runWindow(draft.format, draft.from)
+    if (draft.state === 'rebuilding') {
+      // A regenerate that didn't finish. Its approval is already cleared, so nothing can publish from it.
+      return this.settle(draft, 'failed', null, { note: 'A regenerate did not finish; run it again.' })
+    }
+    if (draft.state === 'previewing' && now >= window.cutoff) {
+      return this.settle(draft, 'failed', null, { note: 'The preview never reached Slack before the cutoff.' })
+    }
+    if (draft.state === 'previewing') await this.sendPreview(draft)
+    if (draft.state === 'previewed') {
+      const reactions = readReactions(await this.s.slackReactions(draft.slack.ts!))
+      if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = now.toISOString(); this.save(draft) }
+      const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.s.config().auto[draft.format], now)
+      if (decision.action === 'skip') return this.skip(draft, decision.reason)
+      if (decision.action === 'wait') return
+    }
+    if (draft.state !== 'previewed' && draft.state !== 'publishing') return
+    try {
+      const done = await this.publishDraft(draft, window)
+      if (!done && now >= window.deadline && draft.state === 'previewed') {
+        return this.settle(draft, 'failed', null, { note: 'Not published: the Instagram token or the R2 setup was missing.' })
+      }
+      if (done && (draft.state as DraftState) === 'published') await this.s.resolveAlert(`draft/${draft.id}`)
+    } catch (error) {
+      if (error instanceof PublishStop) return this.stopped(draft, error, window)
+      draft.publishFailures++
+      draft.note = (error as Error).message
+      const pending = draft.publish?.units.some(unit => unit.pendingSince) ?? false
+      if (draft.publishFailures >= MAX_PUBLISH_FAILURES && !pending) draft.state = 'failed'
+      this.save(draft)
+      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} didn't publish`, `${draft.note} (attempt ${draft.publishFailures}${draft.state === 'failed' ? ', giving up' : ', retrying next tick'}). State: ${this.draftFile(draft.id)}`)
+    }
+  }
+
+  /** Remove local frames of settled drafts after 14 days; the state files stay. */
+  private prune() {
+    for (const draft of this.allDrafts()) {
+      if (SETTLED.includes(draft.state) && !draft.notify && this.s.now().getTime() - Date.parse(draft.updatedAt) > 14 * 86_400_000) {
+        rmSync(this.framesDir(draft.id), { recursive: true, force: true })
+      }
+    }
+  }
+
+  async tick() {
+    const now = this.s.now()
+    const token = await this.s.loadToken(now).catch(error => ({ state: 'ok' as const, warning: (error as Error).message }))
+    if (token.state === 'ok' && token.warning) await this.s.alert('token', 'Instagram token needs attention', token.warning)
+    else if (token.state === 'ok') await this.s.resolveAlert('token')
+    const failures: string[] = []
+    for (const format of Object.keys(FORMATS) as FormatKey[]) {
+      for (const from of activeRuns(format, now)) {
+        if (this.loadDraft(draftId(format, from))) continue
+        try { await this.createDraft(format, from, [], 1) } catch (error) { failures.push(`${draftId(format, from)}: ${(error as Error).message}`) }
+      }
+    }
+    for (const draft of this.allDrafts()) {
+      try {
+        if (draft.notify) await this.deliver(draft)
+        if (!SETTLED.includes(draft.state)) await this.advance(draft)
+      } catch (error) {
+        failures.push(`${draft.id}: ${(error as Error).message}`)
+      }
+    }
+    this.prune()
+    if (failures.length) {
+      for (const failure of failures) this.s.log(failure)
+      // The alert is the report; exiting 0 keeps notify-failure for crashes the tick couldn't catch.
+      await this.s.alert('tick', 'Instagram publisher tick failed', failures.join('\n'))
+    } else {
+      await this.s.resolveAlert('tick')
+    }
+  }
+
+  async regenerate(id: string, excludeIds: string[]): Promise<Draft> {
+    const { format, from } = parseDraftId(id)
+    const old = this.loadDraft(id)
+    if (!old) throw new Error(`No draft ${id}; see \`status\``)
+    if (old.publish || ['publishing', 'published'].includes(old.state)) throw new Error(`${id} has started publishing; it can't be rebuilt`)
+    if (this.s.now() >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
+    const exclude = [...new Set([...old.exclude, ...excludeIds])]
+    const revision = (old.revision ?? 1) + 1
+    // Approval is cleared and saved before any frame is touched, so a crash can't leave old approval on new frames.
+    this.save({ ...old, revision, state: 'rebuilding', exclude, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null })
+    const draft = await this.createDraft(format, from, exclude, revision)
+    if (draft.state === 'skipped') throw new Error(`Without ${excludeIds.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
+    return draft
+  }
 }
 
-// dry-run
+// CLI entry points
 
 export async function dryRun(format: FormatKey, from: string, outDir: string) {
+  const job = new Job(liveServices())
   const work = join(outDir, '.render')
-  const built = await build(format, from, [], work)
+  const built = await job.build(format, from, [], work)
   mkdirSync(outDir, { recursive: true })
   const summary = built.events.map(event => `${event.id}  ${event.date} ${event.time}  ${event.title} · ${event.venue} (${event.barrio})${event.handle ? ` ${footerHandle(event)}` : ''}${event.price ? ` · ${event.price}` : ''}`)
   writeFileSync(join(outDir, 'events.txt'), `${summary.join('\n')}\n`)
@@ -90,206 +396,27 @@ export async function dryRun(format: FormatKey, from: string, outDir: string) {
   built.frames.forEach((path, index) => copyFileSync(path, join(outDir, `${format === 'hoy' ? 'frame' : 'slide'}-${index + 1}.jpg`)))
   rmSync(work, { recursive: true, force: true })
   writeFileSync(join(outDir, 'caption.txt'), `${built.caption ?? 'Stories have no caption.'}\n`)
-  writeFileSync(join(outDir, 'slack.txt'), `${slackPreview(format, built.window, built.caption, readConfig().auto[format])}\n`)
+  writeFileSync(join(outDir, 'slack.txt'), `${slackPreview(format, built.window, built.caption, runtime.readConfig().auto[format])}\n`)
   console.log(`${built.frames.length} frames and the caption written to ${outDir}`)
 }
 
-// Drafting and previewing
-
-const buildDraft = (format: FormatKey, from: string, exclude: string[]) => build(format, from, exclude, join(framesDir(draftId(format, from)), 'next'))
-
-async function createDraft(format: FormatKey, from: string, exclude: string[], built: Built): Promise<Draft> {
-  const id = draftId(format, from)
-  const draft: Draft = {
-    id, format, from, to: built.window.to, state: 'previewing', exclude, events: built.events, caption: built.caption,
-    frames: [], framesHash: '', slack: { fileIds: [], ts: null }, approvedSeenAt: null, r2Uploaded: null, publish: null,
-    publishFailures: 0, skipReason: null, note: null, updatedAt: '',
-  }
-  if (!built.frames) {
-    rmSync(framesDir(id), { recursive: true, force: true })
-    draft.state = 'skipped'
-    draft.skipReason = skipText({ kind: 'too-few', count: built.events.length })
-    const posted = await slackPost(tooFewText(format, built.window, built.events.length))
-    draft.slack.ts = posted.ts
-    saveDraft(draft)
-    log(`${id}: ${draft.skipReason}`)
-    return draft
-  }
-  // Swap the freshly rendered frames into place only now, so a failed rebuild leaves the old ones alone.
-  const current = join(framesDir(id), 'current')
-  rmSync(current, { recursive: true, force: true })
-  mkdirSync(current, { recursive: true })
-  draft.frames = built.frames.map((path, index) => { const target = join(current, `frame-${index + 1}.jpg`); copyFileSync(path, target); return target })
-  rmSync(join(framesDir(id), 'next'), { recursive: true, force: true })
-  draft.framesHash = fileHash(draft.frames)
-  saveDraft(draft)
-  await sendPreview(draft)
-  return draft
-}
-
-async function sendPreview(draft: Draft) {
-  if (draft.slack.fileIds.length && !draft.slack.ts) {
-    // An earlier run uploaded the files but didn't learn where they landed; look before posting again.
-    draft.slack.ts = await slackShareTs(draft.slack.fileIds[0]!)
-    if (!draft.slack.ts) { draft.slack.fileIds = []; saveDraft(draft) }
-  }
-  if (!draft.slack.ts) {
-    const window = runWindow(draft.format, draft.from)
-    const text = slackPreview(draft.format, window, draft.caption, readConfig().auto[draft.format])
-    const files = await slackUploadFiles(draft.frames, draft.id)
-    // Saved before sharing: if the share's answer is lost, the next tick looks the message up instead of posting again.
-    draft.slack.fileIds = files.map(file => file.id)
-    saveDraft(draft)
-    await slackShareFiles(files, text)
-    draft.slack.ts = await slackShareTs(draft.slack.fileIds[0]!)
-    if (!draft.slack.ts) throw new Error(`${draft.id}: the preview was uploaded but Slack didn't report its message yet`)
-  }
-  draft.state = 'previewed'
-  saveDraft(draft)
-  log(`${draft.id}: preview posted (${draft.slack.ts})`)
-}
-
-// Publishing
-
-async function skip(draft: Draft, reason: SkipReason) {
-  draft.state = 'skipped'
-  draft.skipReason = skipText(reason)
-  saveDraft(draft)
-  if (draft.slack.ts) await slackPost(draft.skipReason, draft.slack.ts)
-  log(`${draft.id}: ${draft.skipReason}`)
-}
-
-/** Returns false when publishing had to be skipped for missing setup (token or R2). */
-async function publishDraft(draft: Draft, now: Date): Promise<boolean> {
-  const config = readConfig()
-  const token = await loadToken(now)
-  if (token.state === 'missing') { log(`${draft.id}: no Instagram token file; skipping publishing`); return false }
-  if (!config.r2) { log(`${draft.id}: no R2 bucket in the config; skipping publishing`); return false }
-  const prefix = `instagram/${draft.id}/${draft.framesHash}`
-  if (draft.r2Uploaded !== prefix) {
-    for (const [index, path] of draft.frames.entries()) await r2Put(config.r2.bucket, `${prefix}/frame-${index + 1}.jpg`, path)
-    draft.r2Uploaded = prefix
-    saveDraft(draft)
-  }
-  const kind = FORMATS[draft.format].kind
-  const height = heightOf(draft.format)
-  // Frame 1 is the cover and the last one the closing frame; the cards in between carry the tags.
-  const slides: Slide[] = draft.frames.map((_, index) => {
-    const event = index > 0 && index <= draft.events.length ? draft.events[index - 1]! : null
-    return { url: `${config.r2!.publicBaseUrl}/${prefix}/frame-${index + 1}.jpg`, tag: event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null }
-  })
-  const job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
-  draft.publish ??= emptyPublishState(job)
-  draft.state = 'publishing'
-  saveDraft(draft)
-  const permalink = await publish(job, draft.publish, {
-    api: instagramApi(token.token.access_token),
-    save: state => { draft.publish = state; saveDraft(draft) },
-    now: () => new Date(),
-    sleep,
-    log: message => log(`${draft.id}: ${message}`),
-  })
-  draft.state = 'published'
-  saveDraft(draft)
-  log(`${draft.id}: published ${permalink}`)
-  await slackPost(postedText(permalink), draft.slack.ts ?? undefined)
-  return true
-}
-
-async function advance(draft: Draft, now: Date) {
-  if (draft.state === 'previewing' && now >= runWindow(draft.format, draft.from).cutoff) {
-    draft.state = 'failed'
-    draft.note = 'The preview never reached Slack before the cutoff.'
-    return saveDraft(draft)
-  }
-  if (draft.state === 'previewing') await sendPreview(draft)
-  if (draft.state === 'previewed') {
-    const window = runWindow(draft.format, draft.from)
-    const reactions = readReactions(await slackReactions(draft.slack.ts!))
-    if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = now.toISOString(); saveDraft(draft) }
-    const auto = readConfig().auto[draft.format]
-    const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, auto, now)
-    if (decision.action === 'skip') return skip(draft, decision.reason)
-    if (decision.action === 'wait') return
-  }
-  if (draft.state === 'previewed' || draft.state === 'publishing') {
-    try {
-      const done = await publishDraft(draft, now)
-      if (!done && now >= new Date(runWindow(draft.format, draft.from).cutoff.getTime() + 10 * 60_000) && draft.state === 'previewed') {
-        draft.state = 'failed'
-        draft.note = 'Not published: the Instagram token or the R2 setup was missing.'
-        saveDraft(draft)
-      }
-      await resolveAlert(`draft/${draft.id}`)
-    } catch (error) {
-      draft.publishFailures++
-      draft.note = (error as Error).message
-      if (draft.publishFailures >= MAX_PUBLISH_FAILURES && !draft.publish?.units.some(unit => unit.pendingSince)) draft.state = 'failed'
-      saveDraft(draft)
-      await alert(`draft/${draft.id}`, `Instagram ${draft.id} didn't publish`, `${draft.note} (attempt ${draft.publishFailures}${draft.state === 'failed' ? ', giving up' : ', retrying next tick'}). State: ${draftFile(draft.id)}`)
-    }
-  }
-}
-
-/** Remove local frames of finished drafts after 14 days; the state files stay. */
-function prune(now: Date) {
-  for (const draft of allDrafts()) {
-    if (TERMINAL.includes(draft.state) && now.getTime() - Date.parse(draft.updatedAt) > 14 * 86_400_000 && existsSync(framesDir(draft.id))) {
-      rmSync(framesDir(draft.id), { recursive: true, force: true })
-    }
-  }
-}
-
-export async function tick(now = new Date()) {
-  await withLock(async () => {
-    const token = await loadToken(now).catch(error => ({ state: 'ok' as const, warning: (error as Error).message }))
-    if (token.state === 'ok' && token.warning) await alert('token', 'Instagram token needs attention', token.warning)
-    else if (token.state === 'ok') await resolveAlert('token')
-    const failures: string[] = []
-    for (const format of Object.keys(FORMATS) as FormatKey[]) {
-      for (const from of activeRuns(format, now)) {
-        if (loadDraft(draftId(format, from))) continue
-        try { await createDraft(format, from, [], await buildDraft(format, from, [])) } catch (error) { failures.push(`${draftId(format, from)}: ${(error as Error).message}`) }
-      }
-    }
-    for (const draft of allDrafts().filter(draft => !TERMINAL.includes(draft.state))) {
-      try { await advance(draft, now) } catch (error) { failures.push(`${draft.id}: ${(error as Error).message}`) }
-    }
-    prune(now)
-    if (failures.length) {
-      for (const failure of failures) log(failure)
-      // The alert is the report; exiting 0 keeps notify-failure for crashes the tick couldn't catch.
-      await alert('tick', 'Instagram publisher tick failed', failures.join('\n'))
-    } else {
-      await resolveAlert('tick')
-    }
-  })
-}
+export const tick = () => runtime.withLock(() => new Job(liveServices()).tick())
 
 export async function regenerate(id: string, excludeIds: string[]) {
-  const { format, from } = parseDraftId(id)
-  await withLock(async () => {
-    const old = loadDraft(id)
-    if (!old) throw new Error(`No draft ${id}; see \`status\``)
-    if (old.state === 'publishing' || old.state === 'published') throw new Error(`${id} is ${old.state}; it can't be rebuilt`)
-    const window = runWindow(format, from)
-    if (new Date() >= window.cutoff) throw new Error(`${id} is past its cutoff`)
-    const exclude = [...new Set([...old.exclude, ...excludeIds])]
-    const built = await buildDraft(format, from, exclude)
-    if (!built.frames) throw new Error(`Without ${excludeIds.join(', ')} only ${built.events.length} events qualify; the draft is unchanged`)
-    // The new draft is a new top-level preview; reactions on the old message no longer count.
-    const draft = await createDraft(format, from, exclude, built)
-    console.log(`${draft.id}: rebuilt with ${draft.events.length} events and previewed again (${draft.slack.ts})`)
+  await runtime.withLock(async () => {
+    const draft = await new Job(liveServices()).regenerate(id, excludeIds)
+    console.log(`${draft.id}: revision ${draft.revision} with ${draft.events.length} events, previewed again (${draft.slack.ts})`)
   })
 }
 
 export function status() {
-  const drafts = allDrafts().sort((a, b) => a.from.localeCompare(b.from) || a.id.localeCompare(b.id))
+  const drafts = new Job(liveServices()).allDrafts().sort((a, b) => a.from.localeCompare(b.from) || a.id.localeCompare(b.id))
   if (!drafts.length) { console.log('No drafts yet.'); return }
   const fmt = (date: Date) => date.toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 16)
   for (const draft of drafts) {
     const window = runWindow(draft.format, draft.from)
     const extra = draft.state === 'published' ? draft.publish?.permalink : draft.skipReason ?? draft.note
-    console.log([draft.id.padEnd(18), draft.state.padEnd(10), `draft ${fmt(window.draftAt)}`, `publish ${fmt(window.publishAt)}`, `cutoff ${fmt(window.cutoff)}`, `${draft.events.length} events`, extra ?? ''].join('  ').trimEnd())
+    console.log([draft.id.padEnd(18), `r${draft.revision ?? 1}`, draft.state.padEnd(10), `draft ${fmt(window.draftAt)}`, `publish ${fmt(window.publishAt)}`,
+      `deadline ${fmt(window.deadline)}`, `${draft.events.length} events`, draft.notify ? 'Slack reply pending' : '', extra ?? ''].join('  ').trimEnd())
   }
 }

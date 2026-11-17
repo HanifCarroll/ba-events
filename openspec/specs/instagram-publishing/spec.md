@@ -35,6 +35,18 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **WHEN** there is no ✅ by 17:00 for Hoy, Friday 18:00 for Este finde, or Tuesday 20:00 for Gratis, and auto mode is off
 - **THEN** the draft is skipped and the thread gets "Skipped: no ✅ by {HH:MM}"
 
+#### Scenario: Approval changes after publishing has started
+- **WHEN** a draft is publishing and Hanif reacts ❌, or removes his ✅ with auto mode off
+- **THEN** no further Instagram write is made: ❌ skips the draft, a removed ✅ pauses it
+
+#### Scenario: Past the deadline
+- **WHEN** the deadline has passed (Hoy 19:00, a carousel's cutoff)
+- **THEN** the job creates and publishes no new media and only reconciles requests it already sent
+
+#### Scenario: A selected event is cancelled before publishing
+- **WHEN** any selected event is no longer scheduled at the first publishing write
+- **THEN** the draft is held and the thread gets "Held: {title} was cancelled. Ask Hermes to regenerate it."
+
 #### Scenario: Late ✅ on a carousel
 - **WHEN** a carousel's ✅ arrives after its slot but before its cutoff
 - **THEN** it publishes at once
@@ -48,14 +60,19 @@ The job MUST save each container and media id before the next step, check `conte
 
 #### Scenario: media_publish times out after Instagram posted
 - **WHEN** the response to `media_publish` is lost
-- **THEN** the next attempt finds the new media in the account's recent media and records it instead of publishing again
+- **THEN** the next attempt reads that container's status and records the post instead of publishing again
+- **AND** it never adopts an unrelated story or post by its timestamp
+
+#### Scenario: Slack fails after a publish
+- **WHEN** the post went out but the "Posted:" reply fails
+- **THEN** the draft stays published, the reply is retried on later ticks, and the alert says the post went out
 
 #### Scenario: The post is published
 - **WHEN** publishing finishes
 - **THEN** the preview's thread gets "Posted: {permalink}"
 
 ### Requirement: The job never writes the catalog and never exposes secrets
-The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Slack, or Cloudflare tokens, and MUST NOT publish when the Instagram token file is missing.
+The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Slack, or Cloudflare tokens or pass them in any process's arguments, and MUST NOT publish when the Instagram token file is missing.
 
 #### Scenario: Token file missing
 - **WHEN** `~/.config/ba-events/instagram-token.json` does not exist

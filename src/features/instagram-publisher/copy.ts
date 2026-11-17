@@ -64,15 +64,18 @@ export function slackPreview(format: FormatKey, window: RunWindow, captionText: 
   return `Instagram draft: ${FORMATS[format].slackName} for ${englishDates(window.from, window.to)}. ${gate}\n\n${captionText ?? 'Stories have no caption.'}`
 }
 
-export type SkipReason = { kind: 'rejected' } | { kind: 'no-approval'; by: Date } | { kind: 'too-few'; count: number }
+export type SkipReason = { kind: 'rejected' } | { kind: 'no-approval'; by: Date } | { kind: 'late'; by: Date } | { kind: 'too-few'; count: number }
 
 export function skipText(reason: SkipReason): string {
   switch (reason.kind) {
     case 'rejected': return 'Skipped: you reacted ❌'
     case 'no-approval': return `Skipped: no ✅ by ${hhmm(baLocal(reason.by))}`
+    case 'late': return `Skipped: not published by ${hhmm(baLocal(reason.by))}`
     case 'too-few': return `Skipped: only ${reason.count} events qualified`
   }
 }
+
+export const heldText = (title: string) => `Held: ${title} was cancelled. Ask Hermes to regenerate it.`
 
 /** The too-few notice is a new top-level message: there is no preview to reply to. */
 export function tooFewText(format: FormatKey, window: RunWindow, count: number): string {

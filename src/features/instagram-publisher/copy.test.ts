@@ -1,7 +1,7 @@
 /** Golden tests: the live weekend post (templates ba-p2) and copy.md's templates, filled in. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CLOSING, HOY_CLOSING, caption, cardKicker, cover, eventLine, footerHandle, skipText, slackPreview, tooFewText } from './copy.ts'
+import { CLOSING, HOY_CLOSING, caption, cardKicker, cover, eventLine, footerHandle, heldText, skipText, slackPreview, tooFewText } from './copy.ts'
 import { baInstant } from './format.ts'
 import { runWindow } from './formats.ts'
 import type { PostEvent } from './select.ts'
@@ -99,6 +99,10 @@ describe('Slack', () => {
     expect(skipText({ kind: 'rejected' })).toBe('Skipped: you reacted ❌')
     expect(skipText({ kind: 'no-approval', by: baInstant('2026-11-18', 17) })).toBe('Skipped: no ✅ by 17:00')
     expect(skipText({ kind: 'too-few', count: 3 })).toBe('Skipped: only 3 events qualified')
+    expect(skipText({ kind: 'late', by: baInstant('2026-11-18', 19) })).toBe('Skipped: not published by 19:00')
+    expect(heldText('Mandatos')).toBe('Held: Mandatos was cancelled. Ask Hermes to regenerate it.')
+    expect(copyMd).toContain('"Held: {title} was cancelled. Ask Hermes to regenerate it."')
+    expect(copyMd).toContain('"not published by {HH:MM}"')
     expect(tooFewText('gratis', runWindow('gratis', '2026-11-23'), 3)).toBe('Instagram draft: Gratis esta semana carousel for November 23 to 29. Skipped: only 3 events qualified')
   })
 })

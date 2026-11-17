@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { catalogSql, loadToken, toCatalogEvent } from './runtime.ts'
+import { catalogSql, loadToken, renderFrames, toCatalogEvent, type Runner } from './runtime.ts'
 
 describe('catalog read', () => {
   it('is one read-only SELECT over the run window, intake events only', () => {
@@ -64,5 +64,24 @@ describe('Instagram token', () => {
     const soon = await loadToken(now, fetch, tokenFile({ ...fresh, expires_at: '2026-11-25T00:00:00.000Z' }, 1))
     expect(soon.state === 'ok' && soon.warning).toMatch(/expires in 4 days/)
     expect(JSON.stringify([failed, soon].map(check => check.state === 'ok' && check.warning))).not.toContain('SECRET')
+  })
+})
+
+describe('rendering', () => {
+  it('stops the whole named scope when the render times out', async () => {
+    const calls: string[][] = []
+    const runner: Runner = async argv => { calls.push(argv); return argv[0] === 'systemd-run' ? { out: '', err: '', code: null } : { out: '', err: '', code: 0 } }
+    const out = mkdtempSync(join(tmpdir(), 'ig-render-'))
+    await expect(renderFrames('<html></html>', out, 1350, runner)).rejects.toThrow(/timed out/)
+    const unit = calls[0]!.find(arg => arg.startsWith('--unit='))!.slice('--unit='.length)
+    expect(calls[0]).toEqual(expect.arrayContaining(['-p', 'MemoryMax=900M', 'MemorySwapMax=0', 'RuntimeMaxSec=170']))
+    expect(calls[1]).toEqual(['systemctl', '--user', 'stop', `${unit}.scope`])
+  })
+
+  it('leaves the scope alone after a clean render', async () => {
+    const calls: string[][] = []
+    const runner: Runner = async argv => { calls.push(argv); return { out: '', err: '', code: 0 } }
+    await renderFrames('<html></html>', mkdtempSync(join(tmpdir(), 'ig-render-')), 1350, runner)
+    expect(calls).toHaveLength(1)
   })
 })

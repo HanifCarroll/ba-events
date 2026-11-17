@@ -13,11 +13,14 @@ if grep -qiE '\b(insert|update|delete|drop|alter|create|replace|attach|detach|va
 fi
 grep -qiE '^\s*(select|with|explain)\b' <<<"$sql" || { echo "refused: statement must start with SELECT, WITH, or EXPLAIN" >&2; exit 2; }
 account=38d9d25d890a220fb7cf6dd92f8a322a
-token=$(cat "${BA_D1_TOKEN_FILE:-$HOME/.config/ba-events/cloudflare-deploy-token}")
+token_file=${BA_D1_TOKEN_FILE:-$HOME/.config/ba-events/cloudflare-deploy-token}
 api=https://api.cloudflare.com/client/v4/accounts/$account/d1/database
-id=$(curl -sS --max-time 30 -G -H "Authorization: Bearer $token" --data-urlencode "name=$db" "$api" |
+# The Authorization header reaches curl on stdin (`-K -`), never in argv, where `ps` and health snapshots would see it.
+auth() { printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\r\n' < "$token_file")"; }
+id=$(auth | curl -sS --max-time 30 -K - -G --data-urlencode "name=$db" "$api" |
   python3 -I -c 'import json,sys; d=json.load(sys.stdin); r=[x["uuid"] for x in d.get("result") or [] if x["name"]==sys.argv[1]]; print(r[0] if r else "")' "$db")
 [ -n "$id" ] || { echo "no D1 named $db (or the token can't read D1)" >&2; exit 1; }
-python3 -I -c 'import json,sys; print(json.dumps({"sql": sys.argv[1]}))' "$sql" |
-  curl -sS --max-time 60 -X POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data @- "$api/$id/query" |
+body=$(mktemp); trap 'rm -f "$body"' EXIT
+python3 -I -c 'import json,sys; print(json.dumps({"sql": sys.argv[1]}))' "$sql" > "$body"
+auth | curl -sS --max-time 60 -K - -X POST -H 'Content-Type: application/json' --data @"$body" "$api/$id/query" |
   python3 -I -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d["result"][0]["results"] if d.get("success") else d.get("errors"), indent=1))'

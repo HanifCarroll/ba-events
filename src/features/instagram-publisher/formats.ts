@@ -36,6 +36,8 @@ export interface RunWindow {
   publishAt: Date
   /** After this a draft without approval is skipped. */
   cutoff: Date
+  /** No new Instagram write after this; only requests already issued are reconciled. Hoy 19:00, carousels the cutoff. */
+  deadline: Date
 }
 
 /** The run that covers `from`, which must be the format's first day (any day for Hoy, a Friday, or a Monday). */
@@ -46,9 +48,9 @@ export function runWindow(format: FormatKey, from: string): RunWindow {
   }
   const to = addDays(from, spec.days - 1)
   switch (format) {
-    case 'hoy': return { from, to, draftAt: baInstant(from, 11), publishAt: baInstant(from, 17), cutoff: baInstant(from, 17) }
-    case 'finde': return { from, to, draftAt: baInstant(addDays(from, -2), 18), publishAt: baInstant(addDays(from, -1), 12), cutoff: baInstant(from, 18) }
-    case 'gratis': return { from, to, draftAt: baInstant(addDays(from, -1), 18), publishAt: baInstant(from, 12), cutoff: baInstant(addDays(from, 1), 20) }
+    case 'hoy': return { from, to, draftAt: baInstant(from, 11), publishAt: baInstant(from, 17), cutoff: baInstant(from, 17), deadline: baInstant(from, 19) }
+    case 'finde': return { from, to, draftAt: baInstant(addDays(from, -2), 18), publishAt: baInstant(addDays(from, -1), 12), cutoff: baInstant(from, 18), deadline: baInstant(from, 18) }
+    case 'gratis': return { from, to, draftAt: baInstant(addDays(from, -1), 18), publishAt: baInstant(from, 12), cutoff: baInstant(addDays(from, 1), 20), deadline: baInstant(addDays(from, 1), 20) }
   }
 }
 

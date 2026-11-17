@@ -58,6 +58,14 @@ describe('qualifying events', () => {
     expect(selectEvents([early, six, late, tomorrow], 'hoy', hoy).map(p => p.id)).toEqual([six.id, late.id])
   })
 
+  it('drops events that are over by the publish slot', () => {
+    const gratis = runWindow('gratis', '2026-11-23') // publishes Monday 12:00
+    const morning = event({ startsAt: '2026-11-23T13:00:00.000Z', endsAt: '2026-11-23T14:00:00.000Z', isFree: true, price: 0 }) // Monday 10:00 to 11:00
+    const allDay = event({ startsAt: '2026-11-23T13:00:00.000Z', endsAt: '2026-11-23T20:00:00.000Z', isFree: true, price: 0 }) // until 17:00
+    const noEnd = event({ startsAt: '2026-11-23T14:00:00.000Z', isFree: true, price: 0 }) // Monday 11:00, no end
+    expect(selectEvents([morning, allDay, noEnd], 'gratis', gratis).map(p => p.id)).toEqual([allDay.id])
+  })
+
   it('takes only free events for Gratis', () => {
     const gratis = runWindow('gratis', '2026-11-23')
     const free = event({ startsAt: '2026-11-24T23:00:00.000Z', isFree: true, price: 0 })

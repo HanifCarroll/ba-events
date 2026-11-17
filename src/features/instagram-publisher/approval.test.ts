@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HANIF, decide, readReactions } from './approval.ts'
+import { HANIF, PublishStop, checkWrite, decide, readReactions } from './approval.ts'
 import { baInstant } from './format.ts'
 import { runWindow } from './formats.ts'
 
@@ -26,7 +26,7 @@ describe('Hoy (no grace after 17:00 besides one tick)', () => {
 
   it('takes a ✅ first seen by the tick right after 17:00, but not later', () => {
     expect(decide(hoy, yes, at(17, 5), false, at(17, 5))).toEqual({ action: 'publish' })
-    expect(decide(hoy, yes, at(17, 20), false, at(17, 20)).action).toBe('skip')
+    expect(decide(hoy, yes, at(17, 20), false, at(17, 20))).toEqual({ action: 'skip', reason: { kind: 'no-approval', by: at(17) } })
   })
 
   it('auto mode publishes at the slot without a ✅', () => {
@@ -52,8 +52,30 @@ describe('Este finde (late ✅ until Friday 18:00)', () => {
     expect(decide(finde, yes, friday(19), false, friday(19))).toEqual({ action: 'skip', reason: { kind: 'no-approval', by: friday(18) } })
   })
 
-  it('still publishes a ✅ seen before the cutoff on a later retry', () => {
-    expect(decide(finde, yes, friday(17), false, friday(20))).toEqual({ action: 'publish' })
+  it("doesn't publish a ✅ seen before the cutoff once the deadline has passed", () => {
+    expect(decide(finde, yes, friday(17), false, friday(20))).toEqual({ action: 'skip', reason: { kind: 'late', by: friday(18) } })
+  })
+})
+
+describe('the check before every Instagram write', () => {
+  const hoy = runWindow('hoy', '2026-11-18')
+  const at = (h: number, m = 0) => baInstant('2026-11-18', h, m)
+  const stop = (fn: () => void) => { try { fn(); return null } catch (error) { return (error as PublishStop).kind } }
+
+  it('allows a write while ✅ stands and the deadline (Hoy 19:00) is ahead', () => {
+    expect(stop(() => checkWrite(hoy, yes, false, at(18, 50)))).toBeNull()
+    expect(stop(() => checkWrite(hoy, none, true, at(17)))).toBeNull()
+  })
+
+  it('stops on ❌, on a removed ✅, and at the deadline', () => {
+    expect(stop(() => checkWrite(hoy, { approved: true, rejected: true }, false, at(17)))).toBe('rejected')
+    expect(stop(() => checkWrite(hoy, none, false, at(17)))).toBe('unapproved')
+    expect(stop(() => checkWrite(hoy, yes, false, at(19)))).toBe('deadline')
+  })
+
+  it("won't start publishing at or after the deadline, even with an old ✅", () => {
+    expect(decide(hoy, yes, at(12), false, at(19))).toEqual({ action: 'skip', reason: { kind: 'late', by: at(19) } })
+    expect(decide(hoy, none, null, true, at(19, 30))).toEqual({ action: 'skip', reason: { kind: 'late', by: at(19) } })
   })
 })
 

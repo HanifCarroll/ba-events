@@ -71,9 +71,9 @@ export function readConfig(): Config {
 
 // Lock: one tick or command at a time.
 
-export function withLock<T>(fn: () => Promise<T>): Promise<T> {
-  mkdirSync(STATE_DIR, { recursive: true })
-  const lock = join(STATE_DIR, 'lock')
+export function withLock<T>(fn: () => Promise<T>, stateDir = STATE_DIR): Promise<T> {
+  mkdirSync(stateDir, { recursive: true })
+  const lock = join(stateDir, 'lock')
   try {
     mkdirSync(lock)
   } catch {
@@ -129,12 +129,28 @@ export function toCatalogEvent(row: Record<string, any>): CatalogEvent {
   }
 }
 
-export async function readCatalog(window: RunWindow): Promise<CatalogEvent[]> {
-  const { out, err, code } = await run([join(REPO, 'bin/ba-d1-read.sh'), catalogSql(window)], 120_000)
+async function d1Read(sql: string): Promise<unknown> {
+  const { out, err, code } = await run([join(REPO, 'bin/ba-d1-read.sh'), sql], 120_000)
   if (code !== 0) throw new Error(`D1 read failed: ${err.trim().slice(0, 300)}`)
-  const rows = JSON.parse(out)
+  return JSON.parse(out)
+}
+
+/** The current status of each id ('missing' when the row is gone). Ids are UUIDs; anything else is refused. */
+export async function readEventStatuses(ids: string[]): Promise<Map<string, string>> {
+  if (ids.some(id => !/^[0-9a-f-]{36}$/.test(id))) throw new Error('Refusing to query non-UUID event ids')
+  const rows = await d1Read(`SELECT id, status FROM events WHERE id IN (${ids.map(id => `'${id}'`).join(', ')})`)
+  if (!Array.isArray(rows) || rows.some(row => typeof row?.id !== 'string' || typeof row?.status !== 'string')) {
+    throw new Error(`D1 read returned an error: ${JSON.stringify(rows).slice(0, 300)}`)
+  }
+  const statuses = new Map(ids.map(id => [id, 'missing']))
+  for (const row of rows) statuses.set(row.id, row.status)
+  return statuses
+}
+
+export async function readCatalog(window: RunWindow): Promise<CatalogEvent[]> {
+  const rows = await d1Read(catalogSql(window)) as any
   if (!Array.isArray(rows) || rows.some(row => typeof row?.id !== 'string' || typeof row?.starts_at !== 'string')) {
-    throw new Error(`D1 read returned an error: ${out.slice(0, 300)}`)
+    throw new Error(`D1 read returned an error: ${JSON.stringify(rows).slice(0, 300)}`)
   }
   return rows.map(toCatalogEvent)
 }
@@ -168,19 +184,34 @@ export async function renderFramesInProcess(htmlFile: string, outDir: string, he
   }
 }
 
-/** Render in a child process under `systemd-run --user --scope -p MemoryMax=900M -p MemorySwapMax=0`. */
-export async function renderFrames(html: string, outDir: string, height: number): Promise<string[]> {
+export type Runner = typeof run
+
+/**
+ * Render in a child process inside a named transient scope (900 MB, no swap, RuntimeMaxSec), so a timeout or a crash
+ * can stop the whole scope with every Chromium process in it, not just the direct child.
+ */
+export async function renderFrames(html: string, outDir: string, height: number, runner: Runner = run): Promise<string[]> {
   rmSync(outDir, { recursive: true, force: true })
   mkdirSync(outDir, { recursive: true })
   const htmlFile = join(outDir, 'frames.html')
   writeFileSync(htmlFile, html)
   const entry = join(REPO, 'scripts/instagram-publisher.ts')
   const command = [process.execPath, entry, 'render-frames', htmlFile, outDir, String(height)]
+  const unit = `ba-events-instagram-render-${process.pid}-${Date.now()}`
   const scoped = process.env.BA_INSTAGRAM_RENDER_NO_SCOPE === '1'
     ? command
-    : ['systemd-run', '--user', '--scope', '--quiet', '-p', 'MemoryMax=900M', '-p', 'MemorySwapMax=0', ...command]
-  const { err, code } = await run(scoped, 180_000, REPO)
-  if (code !== 0) throw new Error(`Rendering failed (exit ${code}): ${err.trim().slice(-500)}`)
+    : ['systemd-run', '--user', '--scope', '--quiet', `--unit=${unit}`, '-p', 'MemoryMax=900M', '-p', 'MemorySwapMax=0', '-p', 'RuntimeMaxSec=170', ...command]
+  let result: Awaited<ReturnType<Runner>>
+  try {
+    result = await runner(scoped, 180_000, REPO)
+  } catch (error) {
+    result = { out: '', err: (error as Error).message, code: -1 }
+  }
+  if (result.code !== 0) {
+    // Killed on timeout (code null) or failed: stop the scope so no Chromium process outlives the render.
+    if (scoped !== command) await runner(['systemctl', '--user', 'stop', `${unit}.scope`], 30_000).catch(() => undefined)
+    throw new Error(`Rendering failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${result.err.trim().slice(-500)}`)
+  }
   return readdirSync(outDir).filter(name => /^frame-\d+\.jpg$/.test(name))
     .sort((a, b) => Number(a.match(/\d+/)![0]) - Number(b.match(/\d+/)![0]))
     .map(name => join(outDir, name))
@@ -195,6 +226,7 @@ export const fileHash = (paths: string[]) => {
 // Slack, through Hermes' slack_api.py (it reads the bot token itself).
 
 export async function slack(method: string, args: Record<string, string>): Promise<any> {
+  // The args file holds only message text and ids; the bot token stays inside slack_api.py.
   const dir = join(STATE_DIR, 'tmp')
   mkdirSync(dir, { recursive: true })
   const argsFile = join(dir, `slack-${process.pid}-${Date.now()}.json`)

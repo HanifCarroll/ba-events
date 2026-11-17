@@ -129,3 +129,6 @@ Once the post is published, reply in that message's thread with "Posted: {permal
 - "you reacted ❌"
 - "no ✅ by {HH:MM}"
 - "only {n} events qualified"
+- "not published by {HH:MM}" (approved, but nothing could go out before the deadline: 19:00 for Hoy, the cutoff for a carousel)
+
+If an event in an approved draft is cancelled before the post goes out, the draft is held, not published, and the thread gets "Held: {title} was cancelled. Ask Hermes to regenerate it."
