@@ -97,6 +97,9 @@ const retainImageEffect = (store: CollectionStore, observationId: string, positi
     yield* store.retainImage(observationId, position, image)
   })
 
+// Posts saved at once. Sequential saving took 30+ minutes for a normal day of ~300 posts (mostly image round trips).
+export const RETAIN_CONCURRENCY = 6
+
 export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store: CollectionStore, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
   const posts = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Schema.Array(PostSchema))(raw), catch: () => fail('Apify dataset has an invalid shape') })
   let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>(); const observationIds = new Set<string>()
@@ -105,35 +108,46 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store
   if (coverage.dead_sources.length) failures.push(`Sources not found or restricted (consider disabling): ${coverage.dead_sources.map(s => s.username).join(', ')}`)
   if (coverage.errored_sources.length) failures.push(`Sources returned errors: ${coverage.errored_sources.map(s => `${s.username} (${s.reason})`).join(', ')}`)
   if (coverage.uncovered_sources.length) failures.push(`Run stopped before covering ${coverage.uncovered_sources.length} sources; posts they published before the next run's window are not collected; raise run_cap_usd or reduce sources`)
+  const work: Array<{ post: Post & { id: string; shortCode: string }; source: string; urls: string[]; hash: string }> = []
   for (const post of posts) {
     if (post.error) continue
     if (!post.id || !post.shortCode) { failures.push('A requested profile returned an invalid post'); continue }
+    // Deduplicated here, before dispatch, so two copies of one post (a collab under two accounts) never run concurrently.
     if (seen.has(post.id)) continue; seen.add(post.id)
     const source = postSource(post, usernames)
     if (!source) { failures.push('A post owner did not match the configured source'); continue }
     const urls = mediaUrls(post)
     if (urls.length > 30) { failures.push('A post exceeded the supported carousel size'); continue }
     const hash = yield* importTry('intake.hash', () => sha256(JSON.stringify({ caption: post.caption ?? '', images: urls.map(url => { try { const u = new URL(url); return u.origin + u.pathname } catch { return url } }) })))
+    work.push({ post: { ...post, id: post.id, shortCode: post.shortCode }, source, urls, hash })
+  }
+  const retained = yield* Effect.forEach(work, ({ post, source, urls, hash }) => Effect.gen(function*() {
     const latest = yield* store.latestObservation(post.id)
+    const fresh = latest?.content_hash !== hash
     let observationId: string
-    if (latest?.content_hash === hash) {
-      observationId = latest.id
+    if (!fresh) {
+      observationId = latest!.id
       yield* store.touchObservation(observationId)
-      unchanged++
     } else {
       const observation = yield* store.upsertObservation({
         run_id: runId, post_id: post.id, source_username: source, post_url: `https://www.instagram.com/p/${post.shortCode}/`,
         caption: post.caption ?? '', published_at: post.timestamp ?? null, content_hash: hash, media_urls: urls,
       })
-      observationId = observation.id; changed++
+      observationId = observation.id
     }
-    observationIds.add(observationId)
     const saved = yield* store.mediaPositions(observationId)
+    const failed: MediaPosition[] = []
+    // A post's images stay sequential; RETAIN_CONCURRENCY posts at a time already bounds parallel downloads and uploads.
     for (let position = 0; position < urls.length; position++) {
       if (saved.includes(position)) continue
-      const retained = yield* Effect.result(retainImageEffect(store, observationId, position, urls[position], fetcher))
-      if (retained._tag === 'Failure') mediaFailed.push({ observation_id: observationId, position })
+      const image = yield* Effect.result(retainImageEffect(store, observationId, position, urls[position], fetcher))
+      if (image._tag === 'Failure') failed.push({ observation_id: observationId, position })
     }
+    return { observationId, fresh, failed }
+  }), { concurrency: RETAIN_CONCURRENCY })
+  for (const { observationId, fresh, failed } of retained) {
+    if (fresh) changed++; else unchanged++
+    observationIds.add(observationId); mediaFailed.push(...failed)
   }
   return { posts: seen.size, changed, unchanged, failures, coverage, observationIds, mediaFailed }
 })

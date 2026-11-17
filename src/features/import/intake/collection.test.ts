@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { retainPostsEffect, retryMissingMediaEffect, signedUrlExpiry, sourceCoverage } from './collection.ts'
+import { RETAIN_CONCURRENCY, retainPostsEffect, retryMissingMediaEffect, signedUrlExpiry, sourceCoverage } from './collection.ts'
 import { supabaseIntake } from './store-supabase.ts'
 import type { CollectionStore } from './store.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
@@ -94,6 +94,36 @@ describe('incremental Instagram collection', () => {
     expect(result).toMatchObject({ changed: 1, failures: [expect.stringContaining('covering 1 sources'), 'A post owner did not match the configured source'] })
     expect(result.coverage.uncovered_sources).toEqual(['synthetic_club'])
     expect(sourceCoverage([collab], ['synthetic_venue'], 1)).toMatchObject({ uncovered_sources: [], at_ceiling_sources: ['synthetic_venue'] })
+  })
+
+  it('saves posts concurrently, never more than RETAIN_CONCURRENCY at once', async () => {
+    const { db, observations } = memoryDb()
+    let inFlight = 0; let peak = 0
+    const fetcher = async (url: string) => {
+      inFlight++; peak = Math.max(peak, inFlight)
+      await new Promise(resolve => setTimeout(resolve, 5))
+      inFlight--; return image(url)
+    }
+    const store: CollectionStore = { ...db, retainImage: () => Effect.void }
+    const posts = Array.from({ length: 20 }, (_, index) => ({ ...post(String(index)), displayUrl: `https://scontent.cdninstagram.com/v/${index}.jpg` }))
+    const result = await Effect.runPromise(retainPostsEffect(store, 'run', posts, ['synthetic_venue'], 50, fetcher))
+    expect(result).toMatchObject({ posts: 20, changed: 20, unchanged: 0, mediaFailed: [] })
+    expect(observations).toHaveLength(20)
+    expect(peak).toBeGreaterThan(1)
+    expect(peak).toBeLessThanOrEqual(RETAIN_CONCURRENCY)
+  })
+
+  it('counts a mixed batch of new, unchanged, duplicate and failing-image posts as the sequential version did', async () => {
+    const { db, observations } = memoryDb()
+    const withImage = (id: string) => ({ ...post(id), displayUrl: `https://scontent.cdninstagram.com/v/${id}.jpg` })
+    const store: CollectionStore = { ...db, retainImage: () => Effect.void }
+    const fetcher = async (url: string) => { if (url.includes('/3.jpg')) throw new Error('offline'); return image(url) }
+    await Effect.runPromise(retainPostsEffect(store, 'run-1', [withImage('1')], ['synthetic_venue'], 20, fetcher))
+    const result = await Effect.runPromise(retainPostsEffect(store, 'run-2',
+      [withImage('1'), withImage('2'), withImage('2'), withImage('3'), noItems('quiet_one')], ['synthetic_venue', 'quiet_one'], 20, fetcher))
+    expect(result).toMatchObject({ posts: 3, changed: 2, unchanged: 1, failures: [], mediaFailed: [{ observation_id: 'obs-2', position: 0 }] })
+    expect([...result.observationIds].sort()).toEqual(['obs-0', 'obs-1', 'obs-2'])
+    expect(observations.map(item => item.post_id)).toEqual(['1', '2', '3'])
   })
 
   it('flags accounts that reached the per-run ceiling', () => {
