@@ -1,5 +1,6 @@
 /**
- * Idempotent publishing through the Instagram API with Instagram Login (graph.instagram.com).
+ * Idempotent publishing through the Instagram Graph API on graph.facebook.com, with the app's system-user token from
+ * Facebook Login for Business (new Meta apps only offer that "Unified login" setup; graph.instagram.com refuses its tokens).
  * Every id is saved before the next step. A media_publish without a clear answer marks the unit `pendingSince`; the
  * next attempt reads that container's own `status_code` before anything else. PUBLISHED means this attempt went out;
  * FINISHED means it didn't, and the same container (which can only publish once) is retried; anything else holds.
@@ -7,7 +8,7 @@
  * `beforeWrite` runs before every new write (container, carousel, media_publish), never before a reconciling read.
  */
 
-export const GRAPH = 'https://graph.instagram.com/v27.0'
+export const GRAPH = 'https://graph.facebook.com/v27.0'
 export const PROFILE_URL = 'https://www.instagram.com/baeventos.app/'
 
 export class InstagramError extends Error {
