@@ -24,7 +24,7 @@ function fakeDb(responses: Array<{ data: unknown; error: { message: string } | n
 }
 const ok = (data: unknown) => ({ data, error: null })
 const error = (message: string) => ({ data: null, error: { message } })
-const plan = { id: 'plan', action: 'create', candidate_id: 'candidate', revision: 1, receipt: null,
+const plan = { id: 'plan', action: 'create', candidate_id: 'candidate', revision: 1, receipt: null, evidence: [],
   artwork_media_id: 'media', payload: { embedding: Array(1536).fill(0.1) } }
 
 describe('intake failure and retry orchestration', () => {

@@ -185,6 +185,40 @@ describe('intake venue resolution', () => {
     expect([...stated.inserts, ...derived.inserts]).toHaveLength(0)
     expect(stated.venues[0].address).toBeNull()
   })
+  it('corrects a stored barrio at the same street and number when the geocoder confirms the new one, and records the old value', async () => {
+    const cambalache = () => fakeDb([{ id: 'cs', name: 'Club Social Sintético', address: 'Defensa 1179', neighborhood: 'Almagro' }])
+    const sanTelmo = geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', '1179')
+    const ask = (overrides: Partial<VenueRequest> = {}) => request({ name: 'Club Social Sintético', address: 'Defensa 1179, CABA', neighborhood: 'San Telmo', ...overrides })
+    const fixed = cambalache()
+    expect(await run(fixed.db, ask(), sanTelmo)).toMatchObject({ outcome: 'existing', match: 'same name and address',
+      venue: { id: 'cs', neighborhood: 'San Telmo' }, corrected: { neighborhood: { from: 'Almagro', to: 'San Telmo' } } })
+    expect(fixed.inserts).toEqual([expect.objectContaining({ table: 'venue_review_queue',
+      row: expect.objectContaining({ notes: expect.stringContaining('corrected neighborhood from Almagro to San Telmo') }) })])
+    // A rerun finds the corrected venue as it is.
+    expect(await run(fixed.db, ask(), sanTelmo)).toMatchObject({ outcome: 'existing', match: 'same name' })
+
+    // The geocoder disagrees, can't confirm the number, or is down: nothing changes.
+    for (const geocode of [geocoded('Ciudad Autónoma de Buenos Aires', 'Monserrat', 'Defensa', '1179'),
+      geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', ''), () => Effect.fail('timeout')]) {
+      const held = cambalache()
+      expect(await run(held.db, ask(), geocode as Geocode)).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'cs' }] })
+      expect(held.venues[0].neighborhood).toBe('Almagro')
+      expect(held.inserts).toHaveLength(0)
+    }
+    // Only an official barrio in `suburb` confirms: an Abasto neighbourhood (aliased to Balvanera elsewhere) never corrects Almagro.
+    const abasto = fakeDb([{ id: 'ab', name: 'Sala Abasto', address: 'Corrientes 3200', neighborhood: 'Almagro' }])
+    const abastoGeocode = () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic', address: { road: 'Avenida Corrientes', house_number: '3200',
+      neighbourhood: 'Abasto', suburb: 'Almagro', state: 'Ciudad Autónoma de Buenos Aires', country_code: 'ar' } } as NominatimResult)
+    expect(await run(abasto.db, request({ name: 'Sala Abasto', address: 'Av. Corrientes 3200', neighborhood: 'Balvanera' }), abastoGeocode))
+      .toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'ab', why: expect.stringContaining('places it in Almagro, not Balvanera') }] })
+    expect(abasto.venues[0].neighborhood).toBe('Almagro')
+    expect(abasto.inserts).toHaveLength(0)
+    // A different number keeps today's behavior.
+    const elsewhere = cambalache()
+    expect(await run(elsewhere.db, ask({ address: 'Defensa 1200' }), geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', '1200')))
+      .toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'cs', why: 'same name, different address' }] })
+    expect(elsewhere.venues[0].neighborhood).toBe('Almagro')
+  })
   it('flags Biri Biri against BIRIBIRI CLUB SOCIAL as a possible alias instead of creating a duplicate', async () => {
     const { db, inserts } = fakeDb([{ id: 'bb', name: 'BIRIBIRI CLUB SOCIAL', address: 'Malabia 1171', neighborhood: null }])
     expect(await run(db, request({ name: 'Biri Biri', address: 'Malabia 1175', neighborhood: 'Villa Crespo' }))).toMatchObject({

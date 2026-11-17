@@ -79,7 +79,7 @@ export interface IntakeStore extends CollectionStore {
   observationsByIds(ids: string[]): Op<Row[]>
   sourceAuthorities(usernames: string[]): Op<Array<{ username: string; authority: string }>>
   mediaForObservations(ids: string[]): Op<Media[]>
-  venue(id: string): Op<{ id: string; name: string; neighborhood: string | null } | null>
+  venue(id: string): Op<{ id: string; name: string; neighborhood: string | null; website?: string | null } | null>
   /** The plan venue's name and barrio for the search document; fails when it doesn't exist. */
   eventVenue(id: string | null | undefined): Op<{ name: string; neighborhood: string | null }>
   /** The importers' venue match, advisory only. */
@@ -108,6 +108,8 @@ export interface IntakeStore extends CollectionStore {
   similarVenues(name: string, threshold: number): Op<Array<VenueRow & { similarity: number }>>
   /** Fills only the listed fields that are still empty; returns the row if it changed. */
   completeVenue(id: string, fill: VenueFill): Op<VenueRow[]>
+  /** Replaces the barrio only while it is still `from`; returns the row if it changed. */
+  correctVenueNeighborhood(id: string, from: string, to: string): Op<VenueRow[]>
   venueRow(id: string): Op<VenueRow>
   createVenue(venue: VenueCreate): Op<VenueRow>
   recordVenueEvidence(row: Row): Op<void>

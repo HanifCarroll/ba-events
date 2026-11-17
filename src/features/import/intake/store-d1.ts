@@ -93,8 +93,10 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
       WHERE EXISTS (SELECT 1 FROM intake_observations newer WHERE newer.post_id = o.post_id AND newer.observed_at > o.observed_at))`,
       JSON.stringify(plan.evidence)),
+    // Official-page evidence has no observation; commitPlanEffect fetches it again instead.
     batchAssert(db, 'Evidence is missing', `NOT EXISTS (SELECT 1 FROM json_each(?) x
-      LEFT JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id') WHERE o.id IS NULL)`, JSON.stringify(plan.evidence)),
+      LEFT JOIN intake_observations o ON o.id = json_extract(x.value, '$.observation_id')
+      WHERE o.id IS NULL AND json_extract(x.value, '$.kind') IS NOT 'official_page')`, JSON.stringify(plan.evidence)),
   ]
 
   /** The event's vector from the plan's prepared embedding and the event row as it is now. */
@@ -262,7 +264,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
       'SELECT username, authority FROM instagram_sources WHERE username IN (SELECT value FROM json_each(?))').bind(JSON.stringify(usernames)))),
     mediaForObservations: ids => d1('intake.media', () => all<Media>(db.prepare(
       'SELECT * FROM intake_media WHERE observation_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)))),
-    venue: id => d1('intake.venue', () => first(db.prepare('SELECT id, name, neighborhood FROM venues WHERE id = ?').bind(id))),
+    venue: id => d1('intake.venue', () => first(db.prepare('SELECT id, name, neighborhood, website FROM venues WHERE id = ?').bind(id))),
     eventVenue: id => d1('intake.venue', async () => {
       const row = id ? await first<{ name: string; neighborhood: string | null }>(db.prepare('SELECT name, neighborhood FROM venues WHERE id = ?').bind(id)) : null
       if (!row) throw new Error('Venue not found')
@@ -387,7 +389,7 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
           e.embedding_version ?? 1, e.enrichment_status ?? 'pending', bit(e.description_unavailable) ?? 0, plan.event_id))
       }
       writes.push(db.prepare(`INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision)
-        SELECT ?, ?, json_extract(value, '$.observation_id'), ? FROM json_each(?) WHERE true
+        SELECT ?, ?, json_extract(value, '$.observation_id'), ? FROM json_each(?) WHERE json_extract(value, '$.observation_id') IS NOT NULL
         ON CONFLICT (event_id, candidate_id, observation_id) DO UPDATE SET revision = excluded.revision`)
         .bind(plan.event_id, plan.candidate_id, plan.revision, JSON.stringify(plan.evidence)))
       if (plan.action !== 'link') {
@@ -438,6 +440,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         ${columns.map(column => `AND ${column} IS NULL`).join(' ')} RETURNING id, name, address, neighborhood`)
         .bind(...columns.map(column => fill[column as keyof typeof fill]), id))
     }),
+    correctVenueNeighborhood: (id, from, to) => d1('intake.venue-correct', () => all<VenueRow>(db.prepare(
+      'UPDATE venues SET neighborhood = ? WHERE id = ? AND neighborhood = ? RETURNING id, name, address, neighborhood').bind(to, id, from))),
     venueRow: id => d1('intake.venue-read', async () => {
       const row = await first<VenueRow>(db.prepare('SELECT id, name, address, neighborhood FROM venues WHERE id = ?').bind(id))
       if (!row) throw new Error('Venue not found')

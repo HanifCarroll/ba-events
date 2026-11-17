@@ -10,6 +10,7 @@ import { freshD1 } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { describeImage } from './collection.ts'
+import { visibleText as visibleTextFor } from './official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
 import { d1Intake, importSourcesEffect } from './store-d1.ts'
 import { heldBacklogEffect, resolveIntakeVenueEffect, decodeVenueRequest } from './venues.ts'
@@ -307,6 +308,33 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     expect(await db.prepare('SELECT count(*) AS n FROM event_intake_protection').first()).toEqual({ n: 0 })
   })
 
+  it('publishes a date and time that only the official page states, and refuses it once the page drops them', async () => {
+    await source()
+    const runId = (await run(store.reserveCollection())).id
+    const venueId = await venue()
+    await db.prepare("UPDATE venues SET website = 'https://www.teatro.example.org' WHERE id = ?").bind(venueId).run()
+    const post = await observation(runId, 'Synthetic Jazz en Synthetic Venue, entradas en la web')
+    const day = shiftDay(baToday(), 5)
+    const url = 'https://teatro.example.org/obra/synthetic-jazz/'
+    let html = `<html><body><h1>Synthetic Jazz</h1><div>PRÓXIMAS FUNCIONES</div><div>${day}</div><div>21:00</div></body></html>`
+    const readPage = async (requested: string, sites: ReadonlySet<string>) => { expect(requested).toBe(url); expect(sites.has('example.org')).toBe(true); return visibleTextFor(html) }
+    const candidate = id()
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { evidence: [
+      { observation_id: post, fields: ['name', 'venue'], excerpt: 'Synthetic Jazz en Synthetic Venue', media_id: null },
+      { kind: 'official_page', url, fields: ['date', 'time'], excerpt: `${day} 21:00` },
+    ] })))
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    expect(preview).toMatchObject({ action: 'create', reasons: [] })
+
+    html = '<html><body>Funciones agotadas</body></html>'
+    expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
+      .toBe(`Official page evidence must be an excerpt of the page's visible text: ${url}`)
+    html = `<html><body>Synthetic Jazz: ${day} 21:00</body></html>`
+    const receipt = await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
+    expect(receipt).toMatchObject({ action: 'create', event_id: preview.event_id })
+    expect((await db.prepare('SELECT observation_id FROM event_source_evidence').all()).results).toEqual([{ observation_id: post }])
+  })
+
   it('resolves venues: creates with evidence, finds it again, fills an empty barrio, and stops on a lookalike', async () => {
     const geocode = () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic',
       address: { state: 'Ciudad Autónoma de Buenos Aires', suburb: 'Almagro', country_code: 'ar' } })
@@ -323,6 +351,13 @@ describe.skipIf(bun)('the operator flow on D1', () => {
       .toMatchObject({ outcome: 'existing', venue: { id: empty, neighborhood: 'Almagro', address: 'Calle Otra 55' }, completed: ['address', 'neighborhood'] })
     expect(await run(resolveIntakeVenueEffect(store, request({ name: 'Sala Sintetica 2', address: 'Lejana 900' }), geocode as never)))
       .toMatchObject({ outcome: 'ambiguous' })
+  })
+
+  it('corrects a stored barrio only while it is still the old value', async () => {
+    const venueId = await venue('Club Social Sintético', 'Almagro', 'Defensa 1179')
+    expect(await run(store.correctVenueNeighborhood(venueId, 'Palermo', 'San Telmo'))).toEqual([])
+    expect(await run(store.correctVenueNeighborhood(venueId, 'Almagro', 'San Telmo'))).toEqual([
+      { id: venueId, name: 'Club Social Sintético', address: 'Defensa 1179', neighborhood: 'San Telmo' }])
   })
 
   it('finds venues and events by an accented fragment in any case', async () => {

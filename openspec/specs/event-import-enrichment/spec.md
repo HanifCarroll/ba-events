@@ -254,6 +254,11 @@ Each run SHALL request only posts newer than 2 hours before the latest successfu
 ### Requirement: Agent candidates have a shared publication boundary
 The agent SHALL submit validated structured candidates with supporting observation/image references. Publication SHALL resolve a known Buenos Aires venue, preserve unknown time/price states, hold unsupported or conflicting facts, and compare the full relevant catalog date window. Exact identities MAY link sources; ambiguous matches SHALL remain held. Source discoveries SHALL be stored separately from the enabled paid watchlist.
 
+#### Scenario: A date, time or address appears only on an official page
+- **WHEN** a candidate cites `{ kind: 'official_page', url, excerpt }` evidence for a field the post doesn't state
+- **THEN** preview and commit each fetch the URL themselves (public HTTPS hosts only, no cookies, bounded size and time) and accept it only when the page's visible text contains the excerpt after whitespace-, case- and accent-insensitive normalization
+- **AND** the candidate still needs at least one Instagram observation, caption evidence still requires an exact excerpt, and a correction of an existing event still needs the organizer's or venue's own post
+
 #### Scenario: A flyer describes several occurrences or several posts promote one occurrence
 - **WHEN** candidates are prepared from the observations
 - **THEN** each occurrence retains its own stable candidate/event identity, and repeated promotion may attach additional evidence to the existing event
