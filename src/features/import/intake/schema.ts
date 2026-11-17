@@ -5,12 +5,25 @@ const text = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength
 const nonempty = (max: number) => text(max).pipe(Schema.check(Schema.isMinLength(1)))
 const uuid = Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)))
 const count = Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
-export const EvidenceSchema = Schema.Struct({
+const fields = Schema.Array(Schema.Literals(['name', 'date', 'time', 'venue', 'price', 'status', 'description', 'ticket'])).pipe(Schema.check(Schema.isMinLength(1)))
+/** A caption excerpt (`media_id` null) or a retained image of an Instagram observation. */
+const PostEvidenceSchema = Schema.Struct({
   observation_id: uuid,
-  fields: Schema.Array(Schema.Literals(['name', 'date', 'time', 'venue', 'price', 'status', 'description', 'ticket'])).pipe(Schema.check(Schema.isMinLength(1))),
+  fields,
   excerpt: nonempty(4000),
   media_id: Schema.NullOr(uuid),
 })
+/** An excerpt of the venue's, organizer's or ticket seller's own web page; preview and commit fetch it to verify. */
+const OfficialPageEvidenceSchema = Schema.Struct({
+  kind: Schema.Literal('official_page'),
+  url: nonempty(2048),
+  fields,
+  excerpt: nonempty(1000),
+})
+export const EvidenceSchema = Schema.Union([PostEvidenceSchema, OfficialPageEvidenceSchema])
+export type Evidence = typeof EvidenceSchema.Type
+export type OfficialPageEvidence = typeof OfficialPageEvidenceSchema.Type
+export const isOfficialPage = (evidence: Evidence): evidence is OfficialPageEvidence => 'kind' in evidence
 
 /** Operator contract, shared by CLI and future background extraction. */
 export const CandidateSchema = Schema.Struct({

@@ -10,6 +10,7 @@ import { freshD1 } from '../../../../tests/support/d1.ts'
 import { fakeVectorize } from '../../../../tests/support/vectorize.ts'
 import { fakeR2 } from '../../../../tests/support/r2.ts'
 import { describeImage } from './collection.ts'
+import { visibleText as visibleTextFor } from './official-page.ts'
 import { commitPlanEffect, previewCandidateEffect, submitCandidateEffect } from './service.ts'
 import { d1Intake, importSourcesEffect } from './store-d1.ts'
 import { heldBacklogEffect, resolveIntakeVenueEffect, decodeVenueRequest } from './venues.ts'
@@ -305,6 +306,32 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     expect((await db.prepare('SELECT count(*) AS n FROM events').first<{ n: number }>())!.n).toBe(1)
     expect(vectors.vectors.size).toBe(0)
     expect(await db.prepare('SELECT count(*) AS n FROM event_intake_protection').first()).toEqual({ n: 0 })
+  })
+
+  it('publishes a date and time that only the official page states, and refuses it once the page drops them', async () => {
+    await source()
+    const runId = (await run(store.reserveCollection())).id
+    const venueId = await venue()
+    const post = await observation(runId, 'Synthetic Jazz en Synthetic Venue, entradas en la web')
+    const day = shiftDay(baToday(), 5)
+    const url = 'https://teatro.example.org/obra/synthetic-jazz/'
+    let html = `<html><body><div>PRÓXIMAS FUNCIONES</div><div>${day}</div><div>21:00</div></body></html>`
+    const readPage = async (requested: string) => { expect(requested).toBe(url); return visibleTextFor(html) }
+    const candidate = id()
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { evidence: [
+      { observation_id: post, fields: ['name', 'venue'], excerpt: 'Synthetic Jazz en Synthetic Venue', media_id: null },
+      { kind: 'official_page', url, fields: ['date', 'time'], excerpt: `${day} 21:00` },
+    ] })))
+    const preview = await run(previewCandidateEffect(store, candidate, new Date(), readPage))
+    expect(preview).toMatchObject({ action: 'create', reasons: [] })
+
+    html = '<html><body>Funciones agotadas</body></html>'
+    expect(await fails(commitPlanEffect(store, preview.id, { ...publishers, readPage })))
+      .toBe(`Official page evidence must be an excerpt of the page's visible text: ${url}`)
+    html = `<html><body>${day} 21:00</body></html>`
+    const receipt = await run(commitPlanEffect(store, preview.id, { ...publishers, readPage }))
+    expect(receipt).toMatchObject({ action: 'create', event_id: preview.event_id })
+    expect((await db.prepare('SELECT observation_id FROM event_source_evidence').all()).results).toEqual([{ observation_id: post }])
   })
 
   it('resolves venues: creates with evidence, finds it again, fills an empty barrio, and stops on a lookalike', async () => {

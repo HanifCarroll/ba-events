@@ -31,6 +31,14 @@ describe('Instagram candidate publication rules', () => {
     expect(validateEvidence({ ...candidate(), venue_id: null }, [post], [], now)).toContain('Venue must be resolved before publishing')
     expect(validateEvidence({ ...candidate(), artwork_media_id: eventId }, [post], [], now)).toContain('Artwork must come from the retained evidence')
   })
+  it('counts official-page fields without changing the caption rule, and still needs a post', () => {
+    const page = { kind: 'official_page' as const, url: 'https://teatro.example.org/obra', fields: ['date' as const, 'time' as const], excerpt: 'Lunes 23 noviembre 21:00' }
+    const value = { ...candidate(), evidence: [{ ...candidate().evidence[0], fields: ['name' as const, 'venue' as const], excerpt: 'Synthetic Jazz' }, page] }
+    expect(validateEvidence(value, [post], [], now)).toEqual([])
+    expect(validateEvidence({ ...value, evidence: [{ ...value.evidence[0], excerpt: 'Synthetic  Jazz' }, page] }, [post], [], now)).toContain('Caption evidence must be an exact excerpt')
+    expect(validateEvidence({ ...value, evidence: [page] }, [], [], now)).toContain('At least one Instagram post must support the candidate')
+    expect(() => decodeCandidate({ ...value, expected_revision: 0, evidence: [{ ...page, observation_id: observationId }] })).toThrow()
+  })
   it('does not accept another post\'s flyer as evidence', () => {
     const value = { ...candidate(), evidence: [{ ...candidate().evidence[0], media_id: eventId }] }
     const media: Media = { id: eventId, observation_id: id, object_key: 'synthetic.jpg', sha256: 'a'.repeat(64), content_type: 'image/jpeg' }

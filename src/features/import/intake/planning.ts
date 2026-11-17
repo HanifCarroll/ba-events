@@ -1,5 +1,5 @@
 import type { Candidate } from './schema.ts'
-import { validPublicUrl } from './schema.ts'
+import { isOfficialPage, validPublicUrl } from './schema.ts'
 
 export type Observation = {
   id: string; post_id: string; source_username: string; caption: string;
@@ -44,7 +44,10 @@ export function validateEvidence(candidate: Candidate, observations: Observation
   if (candidate.price_kind === 'conditional' && !candidate.price_note) reasons.push('Conditional admission needs its conditions')
   if (candidate.ticket_url && (!validPublicUrl(candidate.ticket_url) || /(^|\.)instagram\.com$/i.test(new URL(candidate.ticket_url).hostname))) reasons.push('Ticket link must be a supported external HTTPS destination')
   const supported = new Set<string>()
+  if (candidate.evidence.every(isOfficialPage)) reasons.push('At least one Instagram post must support the candidate')
   for (const evidence of candidate.evidence) {
+    // Verified by fetching the page (official-page.ts), not here.
+    if (isOfficialPage(evidence)) { for (const field of evidence.fields) supported.add(field); continue }
     const post = observations.find(item => item.id === evidence.observation_id)
     if (!post) { reasons.push('Evidence observation is missing'); continue }
     if (post.media_urls && media.filter(item => item.observation_id === post.id).length !== post.media_urls.length) reasons.push('Some source images have not been retained; resolve incomplete evidence')
