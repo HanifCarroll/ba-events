@@ -183,6 +183,13 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         .bind(crypto.randomUUID(), observationId, position, image.object_key, image.content_type, image.sha256).run()
     }),
 
+    unreviewedMedia: () => d1('intake.missing-media', async () => (await db.prepare(`SELECT o.id, o.media_urls,
+        (SELECT json_group_array(m.position) FROM intake_media m WHERE m.observation_id = o.id) AS positions
+      FROM intake_observations o WHERE o.reviewed_at IS NULL
+        AND json_array_length(o.media_urls) > (SELECT count(*) FROM intake_media m WHERE m.observation_id = o.id)
+      ORDER BY o.observed_at`).all<{ id: string; media_urls: string; positions: string }>()).results
+      .map(row => ({ id: row.id, media_urls: JSON.parse(row.media_urls) as string[], positions: JSON.parse(row.positions) as number[] }))),
+
     // ---------------------------------------------------------------------------------------------------------------
     // Operator reads
 

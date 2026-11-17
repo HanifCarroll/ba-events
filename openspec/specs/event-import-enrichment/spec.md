@@ -240,6 +240,12 @@ Each run SHALL request only posts newer than 2 hours before the latest successfu
 - **WHEN** the dataset contains `no_items`, `not_found` or restricted rows, or omits some requested accounts
 - **THEN** collection succeeds without observations for those rows and the summary names each affected account
 
+#### Scenario: An image failed to save on an earlier run
+- **WHEN** an unreviewed observation is missing an image position and its post is not in today's dataset
+- **THEN** each collect, including a resumed or repeated one, retries that position from the observation's stored URL, at most a bounded number of downloads per run, without refetching saved positions
+- **AND** the run summary lists, by observation and position, today's first-attempt failures, positions that failed again on this retry, positions skipped because their stored URL's signed expiry has passed, and positions deferred by the cap
+- **AND** a failed read or write in the retry, or its overall deadline, ends only the retry: collection still returns its summary with the retry's error named
+
 #### Scenario: The collection process stops after starting Apify
 - **WHEN** the collector resumes with a retained Apify run identity
 - **THEN** it resumes that run without starting another paid collection

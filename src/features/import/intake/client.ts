@@ -5,7 +5,7 @@
  */
 import { Effect } from 'effect'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import type { CollectionStore, IntakePolicy, Reservation } from './store.ts'
+import type { CollectionStore, IntakePolicy, Reservation, UnreviewedMedia } from './store.ts'
 
 export type IntakeApi = {
   /** POST /intake/<operation> with a JSON body; resolves to the JSON answer, rejects with the API's error message. */
@@ -57,5 +57,6 @@ export function remoteCollection(api: IntakeApi): CollectionStore {
     retainImage: (observationId, position, image) => op('intake.store-image', () => api.putMedia(observationId, position, image.bytes)).pipe(
       Effect.flatMap(stored => stored.object_key === image.object_key ? Effect.void
         : Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'Stored image hash differs from the download' })))),
+    unreviewedMedia: () => op('intake.missing-media', () => api.call<UnreviewedMedia[]>('collection/missing-media')),
   }
 }

@@ -36,6 +36,20 @@ export function supabaseIntake(client: SupabaseClient, storageOrigin = ''): Inta
       yield* dbEffect('intake.record-image', () => client.from('intake_media').upsert({ observation_id: observationId, position,
         object_key: image.object_key, content_type: image.content_type, sha256: image.sha256 }, { onConflict: 'observation_id,position' }).select('id').single())
     }),
+    unreviewedMedia: () => Effect.gen(function*() {
+      const observations = (yield* allRowsEffect(client, 'intake_observations', 'id,media_urls',
+        query => query.is('reviewed_at', null).order('observed_at'))) as unknown as Array<{ id: string; media_urls: unknown }>
+      const withUrls = observations.filter(row => Array.isArray(row.media_urls) && row.media_urls.length)
+      const saved = new Map<string, number[]>()
+      for (let index = 0; index < withUrls.length; index += 100) {
+        const ids = withUrls.slice(index, index + 100).map(row => row.id)
+        const rows = (yield* allRowsEffect(client, 'intake_media', 'observation_id,position',
+          query => query.in('observation_id', ids).order('observation_id'))) as unknown as Array<{ observation_id: string; position: number }>
+        for (const row of rows) saved.set(row.observation_id, [...saved.get(row.observation_id) ?? [], row.position])
+      }
+      return withUrls.map(row => ({ id: row.id, media_urls: row.media_urls as string[], positions: saved.get(row.id) ?? [] }))
+        .filter(row => row.positions.length < row.media_urls.length)
+    }),
 
     enabledSourceCount: () => dbEffect('intake.sources', () => client.from('instagram_sources').select('username').eq('enabled', true)).pipe(Effect.map(rows => rows.length)),
     storageReady: () => dbEffect('intake.buckets', () => client.storage.listBuckets()).pipe(Effect.map(buckets =>

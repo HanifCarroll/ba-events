@@ -1,6 +1,6 @@
-import { Effect, Schema } from 'effect'
+import { Cause, Effect, Schema } from 'effect'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import type { CollectionStore } from './store.ts'
+import type { CollectionStore, UnreviewedMedia } from './store.ts'
 
 export type ApifyRequest = (method: 'GET' | 'POST', path: string, params?: Record<string, unknown>, body?: unknown) => Promise<unknown>
 const Child = Schema.Struct({ displayUrl: Schema.optional(Schema.String), images: Schema.optional(Schema.Array(Schema.String)) })
@@ -90,9 +90,17 @@ export async function describeImage(bytes: Uint8Array<ArrayBuffer>) {
   return { bytes, content_type: `image/${type}`, sha256: hash, object_key: `${hash}.${type === 'jpeg' ? 'jpg' : type}` }
 }
 
+/** Saves one image of an observation. Idempotent: evidence is keyed by content hash and `intake_media` by (observation_id, position). */
+const retainImageEffect = (store: CollectionStore, observationId: string, position: number, url: string, fetcher: typeof fetchInstagramImage) =>
+  Effect.gen(function*() {
+    const image = yield* importTry('intake.image', () => fetcher(url))
+    yield* store.retainImage(observationId, position, image)
+  })
+
 export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store: CollectionStore, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
   const posts = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Schema.Array(PostSchema))(raw), catch: () => fail('Apify dataset has an invalid shape') })
-  let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>()
+  let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>(); const observationIds = new Set<string>()
+  const mediaFailed: MediaPosition[] = []
   const coverage = sourceCoverage(posts, usernames, ceiling)
   if (coverage.dead_sources.length) failures.push(`Sources not found or restricted (consider disabling): ${coverage.dead_sources.map(s => s.username).join(', ')}`)
   if (coverage.errored_sources.length) failures.push(`Sources returned errors: ${coverage.errored_sources.map(s => `${s.username} (${s.reason})`).join(', ')}`)
@@ -119,17 +127,88 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store
       })
       observationId = observation.id; changed++
     }
+    observationIds.add(observationId)
     const saved = yield* store.mediaPositions(observationId)
     for (let position = 0; position < urls.length; position++) {
       if (saved.includes(position)) continue
-      const retained = yield* Effect.result(Effect.gen(function*() {
-        const image = yield* importTry('intake.image', () => fetcher(urls[position]))
-        yield* store.retainImage(observationId, position, image)
-      }))
-      if (retained._tag === 'Failure') failures.push(`Media ${position} could not be retained for observation ${observationId}`)
+      const retained = yield* Effect.result(retainImageEffect(store, observationId, position, urls[position], fetcher))
+      if (retained._tag === 'Failure') mediaFailed.push({ observation_id: observationId, position })
     }
   }
-  return { posts: seen.size, changed, unchanged, failures, coverage }
+  return { posts: seen.size, changed, unchanged, failures, coverage, observationIds, mediaFailed }
+})
+
+/** Instagram's signed CDN URLs carry their expiry as `oe`, hex Unix seconds. Null when absent or unreadable. */
+export function signedUrlExpiry(url: string): Date | null {
+  try {
+    const oe = new URL(url).searchParams.get('oe')
+    return oe && /^[0-9a-f]{1,12}$/i.test(oe) ? new Date(parseInt(oe, 16) * 1000) : null
+  } catch { return null }
+}
+
+export const MEDIA_RETRY_CAP = 20
+// The whole retry pass, reads and uploads included, stops here; 20 failing downloads at 15 s alone would take 5 minutes.
+export const MEDIA_RETRY_DEADLINE_MS = 4 * 60_000
+
+export type MediaPosition = { observation_id: string; position: number }
+/**
+ * `failed`: positions that failed on an earlier collect and failed again on this retry, the only image problem worth a fix.
+ * `expired`: positions whose stored URL expired (or is unreadable); nobody can recover them. `deferred`: left by the cap.
+ */
+type MediaRetry = { attempted: number; retained: number; failed: MediaPosition[]; expired: Array<MediaPosition & { expired_at: string | null }>;
+  deferred: MediaPosition[]; error?: string }
+
+/**
+ * Collection only fetches posts newer than the last run, so an image that failed to save would never come back in a
+ * dataset. This retries missing positions of unreviewed observations from their stored URLs, oldest first, at most
+ * `cap` downloads a run. Expired URLs are skipped and reported, since Instagram rejects them.
+ *
+ * It never fails: a failed read, upload or upsert, or the deadline, ends the pass with `error` set and keeps what was
+ * saved so far. A failed read is never reported as "nothing missing".
+ */
+export const retryMissingMediaEffect = (store: CollectionStore,
+  options: { skip?: ReadonlySet<string>; fetcher?: typeof fetchInstagramImage; now?: Date; cap?: number; deadlineMs?: number } = {}) => {
+  const { skip = new Set<string>(), fetcher = fetchInstagramImage, now = new Date(), cap = MEDIA_RETRY_CAP, deadlineMs = MEDIA_RETRY_DEADLINE_MS } = options
+  const result: MediaRetry = { attempted: 0, retained: 0, failed: [], expired: [], deferred: [] }
+  const pass = Effect.gen(function*() {
+    const pending = (yield* store.unreviewedMedia()).filter(row => !skip.has(row.id) && Array.isArray(row.media_urls) && row.media_urls.length)
+    yield* retryPositionsEffect(store, pending, result, { fetcher, now, cap })
+  })
+  return pass.pipe(
+    Effect.timeoutOrElse({ duration: deadlineMs, orElse: () => Effect.sync(() => {
+      result.error = `Media retry stopped at its ${Math.round(deadlineMs / 1000)} s deadline; the next collect continues it`
+    }) }),
+    Effect.catchCause(cause => Effect.sync(() => {
+      const error = Cause.squash(cause)
+      const where = error instanceof ImportOperationError ? ` (in ${error.operation})` : ''
+      result.error = `Media retry stopped early: ${error instanceof Error ? error.message : String(error)}${where}; the next collect retries`
+    })),
+    Effect.as(result),
+  )
+}
+
+const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(store: CollectionStore,
+  pending: readonly UnreviewedMedia[], result: MediaRetry, { fetcher, now, cap }: { fetcher: typeof fetchInstagramImage; now: Date; cap: number }) {
+  for (const observation of pending) {
+    const urls = observation.media_urls as unknown[]
+    for (let position = 0; position < urls.length; position++) {
+      if (observation.positions.includes(position)) continue
+      const url = urls[position]
+      const expiry = typeof url === 'string' ? signedUrlExpiry(url) : null
+      const item = { observation_id: observation.id, position }
+      if (typeof url !== 'string' || expiry && expiry <= now) {
+        result.expired.push({ ...item, expired_at: typeof url === 'string' ? expiry!.toISOString() : null })
+        continue
+      }
+      if (result.attempted >= cap) { result.deferred.push(item); continue }
+      result.attempted++
+      // Only the download is caught: a storage failure ends the pass, and the outer boundary names it in `error`.
+      const image = yield* Effect.result(importTry('intake.image', () => fetcher(url)))
+      if (image._tag === 'Failure') { result.failed.push(item); continue }
+      yield* store.retainImage(observation.id, position, image.success)
+      result.retained++
+    }
+  }
 })
 
 /**
@@ -179,7 +258,16 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(stor
     if (!Array.isArray(page) || offset >= 10000) return yield* fail('Dataset incomplete or larger than the supported bound')
     items.push(...page); if (page.length < 500) break
   }
-  const result = yield* retainPostsEffect(store, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit), fetcher)
+  const { observationIds, mediaFailed, ...result } = yield* retainPostsEffect(store, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit), fetcher)
   yield* store.updateRun(reservation.id, { state: 'succeeded', charged_usd: run.usageTotalUsd ?? null, completed_at: new Date().toISOString() })
-  return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result }
+  // After the run is recorded, so a failed retry can't leave it unfinished. Posts in today's dataset were just tried with
+  // fresh URLs; every other unreviewed observation gets one retry per collect, including a resumed or repeated one.
+  const retry = yield* retryMissingMediaEffect(store, { skip: observationIds, fetcher })
+  if (retry.error) result.failures.push(retry.error)
+  return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result,
+    media: {
+      first_attempt_failed: mediaFailed, // today's posts; the next collect retries them, so not a fix yet
+      retry: { attempted: retry.attempted, retained: retry.retained, ...(retry.error ? { error: retry.error } : {}) },
+      retried_failed: retry.failed, expired: retry.expired, deferred: retry.deferred,
+    } }
 })

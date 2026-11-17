@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { freshD1 } from '../../tests/support/d1.ts'
 import { fakeR2 } from '../../tests/support/r2.ts'
 import { fakeVectorize } from '../../tests/support/vectorize.ts'
-import { collectInstagramEffect, describeImage, type ApifyRequest } from '#features/import/intake/collection.ts'
+import { collectInstagramEffect, describeImage, retainPostsEffect, retryMissingMediaEffect, type ApifyRequest } from '#features/import/intake/collection.ts'
 import { intakeApi, remoteCollection } from '#features/import/intake/client.ts'
 import { bearerMatches, handleIntakeRequest, type IntakeApiEnv } from './intake-api.ts'
 
@@ -117,5 +117,21 @@ describe.skipIf(bun)('collect through the CLI client', () => {
     const again = await Effect.runPromise(collectInstagramEffect(store, apify, fetcher))
     expect(again).toMatchObject({ state: 'succeeded', changed: 0, unchanged: 1 })
     expect(await (client().getMedia(media.results[0].object_key))).toEqual(flyer)
+  })
+
+  it('retries a missing image through the API into R2', async () => {
+    await db.prepare("INSERT INTO instagram_sources (username, authority, enabled, qualification) VALUES ('synthetic_venue', 'venue', 1, 'Synthetic')").run()
+    const store = remoteCollection(client())
+    const runId = (await Effect.runPromise(store.reserveCollection())).id
+    const flyer = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7, 7, 7])
+    const offline = async () => { throw new Error('offline') }
+    const first = await Effect.runPromise(retainPostsEffect(store, runId, [{ id: 'p2', shortCode: 'sc2', ownerUsername: 'synthetic_venue',
+      displayUrl: 'https://scontent.cdninstagram.com/v/later.jpg' }], ['synthetic_venue'], 20, offline))
+    expect(first.mediaFailed).toHaveLength(1)
+    const retry = await Effect.runPromise(retryMissingMediaEffect(store, { fetcher: async () => describeImage(flyer) }))
+    expect(retry).toEqual({ attempted: 1, retained: 1, failed: [], expired: [], deferred: [] })
+    const saved = await db.prepare('SELECT object_key FROM intake_media').first<{ object_key: string }>()
+    expect(env.INTAKE_EVIDENCE.objects.has(saved!.object_key)).toBe(true)
+    expect(await Effect.runPromise(store.unreviewedMedia())).toEqual([])
   })
 })

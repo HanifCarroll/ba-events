@@ -169,12 +169,21 @@ function extractPartialNominatimData(rawData: unknown): NominatimResult | null {
 // ============================================================================
 
 /**
- * Search for a venue using Nominatim API.
+ * The city of Buenos Aires' bounding box (west,north,east,south). Sent without `bounded=1`, it ranks city matches first
+ * but still returns a place that only exists outside: "Godoy Cruz 1631" resolves to Palermo instead of the Pilar postcode
+ * 1631. Ranking is not validation: it can also swap a real suburban address for a same-named city street, so callers
+ * opt in and check the result themselves.
+ */
+export const CABA_VIEWBOX = '-58.5315,-34.5265,-58.3350,-34.7056'
+export type NominatimSearchOptions = { cityBias?: boolean }
+
+/**
+ * Search for a venue using Nominatim API. `cityBias` ranks matches inside the city of Buenos Aires first.
  * Includes required User-Agent header per Nominatim usage policy.
  */
-export function searchNominatimEffect(query: string, retries: number = 1): Effect.Effect<NominatimResult | null, NominatimApiError | NominatimRequestError> {
+export function searchNominatimEffect(query: string, retries: number = 1, options: NominatimSearchOptions = {}): Effect.Effect<NominatimResult | null, NominatimApiError | NominatimRequestError> {
   const encodedQuery = encodeURIComponent(`${query} Buenos Aires Argentina`)
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodedQuery}&format=json&addressdetails=1&extratags=1&limit=1`
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodedQuery}&format=json&addressdetails=1&extratags=1&limit=1${options.cityBias ? `&viewbox=${CABA_VIEWBOX}` : ''}`
   const attempt = Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       try: () => fetch(url, {
@@ -203,7 +212,7 @@ export function searchNominatimEffect(query: string, retries: number = 1): Effec
     if (!(error instanceof NominatimRequestError) || !error.timeoutLike || retries <= 0) return Effect.fail(error)
     return Effect.gen(function* () {
       yield* delayEffect(2000)
-      return yield* searchNominatimEffect(query, retries - 1)
+      return yield* searchNominatimEffect(query, retries - 1, options)
     })
   })
 }

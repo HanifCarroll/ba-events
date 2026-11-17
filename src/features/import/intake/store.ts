@@ -29,6 +29,8 @@ export type ObservationInput = {
   run_id: string; post_id: string; source_username: string; post_url: string; caption: string
   published_at: string | null; content_hash: string; media_urls: string[]
 }
+/** An unreviewed observation still missing some of its images: its stored URLs and the positions already saved. */
+export type UnreviewedMedia = { id: string; media_urls: string[]; positions: number[] }
 export type RetainedImage = { bytes: Uint8Array; content_type: string; sha256: string; object_key: string }
 export type IntakePlanRow = {
   id: string; candidate_id: string; revision: number; action: 'held' | 'create' | 'update' | 'link'
@@ -54,6 +56,8 @@ export interface CollectionStore {
   mediaPositions(observationId: string): Op<number[]>
   /** Keeps the bytes privately and records them as the observation's image at `position`. */
   retainImage(observationId: string, position: number, image: RetainedImage): Op<void>
+  /** Unreviewed observations with fewer saved images than URLs, oldest first. */
+  unreviewedMedia(): Op<UnreviewedMedia[]>
 }
 
 export interface IntakeStore extends CollectionStore {

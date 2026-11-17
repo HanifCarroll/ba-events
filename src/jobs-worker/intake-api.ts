@@ -127,6 +127,7 @@ const OPERATIONS: Record<string, Handler> = {
   'collection/seen': (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => store.touchObservation(id)), Effect.as({ ok: true })),
   'collection/observe': (store, body) => fromBadRequest(() => strict(Observation, body)).pipe(Effect.flatMap(row => store.upsertObservation({ ...row, media_urls: [...row.media_urls] }))),
   'collection/positions': (store, body) => fromBadRequest(() => strict(ById, body)).pipe(Effect.flatMap(({ id }) => store.mediaPositions(id))),
+  'collection/missing-media': (store, body) => fromBadRequest(() => strict(Empty, body)).pipe(Effect.andThen(() => store.unreviewedMedia())),
 }
 
 async function run(effect: Effect.Effect<unknown, ImportOperationError>): Promise<Response> {

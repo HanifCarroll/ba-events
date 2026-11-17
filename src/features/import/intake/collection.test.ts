@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { retainPostsEffect, sourceCoverage } from './collection.ts'
+import { retainPostsEffect, retryMissingMediaEffect, signedUrlExpiry, sourceCoverage } from './collection.ts'
 import { supabaseIntake } from './store-supabase.ts'
+import type { CollectionStore } from './store.ts'
+import { ImportOperationError } from '../core/effect-utils.ts'
 
 /** In-memory intake_observations/intake_media with only the query shapes retainPostsEffect uses. */
 function memoryDb() {
@@ -40,6 +42,13 @@ describe('incremental Instagram collection', () => {
     expect(first).toMatchObject({ changed: 2, unchanged: 0 })
     expect(second).toMatchObject({ changed: 1, unchanged: 1 })
     expect(observations.map(item => item.post_id)).toEqual(['1', '2', '3'])
+  })
+
+  it('lists first-attempt image failures separately from other failures', async () => {
+    const { db } = memoryDb()
+    const result = await Effect.runPromise(retainPostsEffect(db, 'run', [{ ...post('8'), displayUrl: 'https://scontent.cdninstagram.com/v/a.jpg?oe=1' }],
+      ['synthetic_venue'], 20, async () => { throw new Error('offline') }))
+    expect(result).toMatchObject({ failures: [], mediaFailed: [{ observation_id: 'obs-0', position: 0 }] })
   })
 
   it('marks a re-fetched carousel seen even when its signed image URLs changed', async () => {
@@ -89,5 +98,78 @@ describe('incremental Instagram collection', () => {
 
   it('flags accounts that reached the per-run ceiling', () => {
     expect(sourceCoverage([post('1'), post('2'), post('3', 'other')], ['synthetic_venue', 'other'], 2).at_ceiling_sources).toEqual(['synthetic_venue'])
+  })
+})
+
+/** The collection store's two media calls the retry makes, over in-memory observations and saved media. */
+function mediaDb(observations: Array<{ id: string; media_urls: string[]; reviewed_at?: string }>, media: Array<{ observation_id: string; position: number }>) {
+  const unreviewedMedia = () => Effect.succeed(observations.filter(item => !item.reviewed_at).map(item => ({ id: item.id, media_urls: item.media_urls,
+    positions: media.filter(row => row.observation_id === item.id).map(row => row.position) })).filter(item => item.positions.length < item.media_urls.length))
+  const retainImage = (observation_id: string, position: number) => Effect.sync(() => { media.push({ observation_id, position }) })
+  return { db: { unreviewedMedia, retainImage } as unknown as CollectionStore, media }
+}
+const now = new Date('2026-11-16T12:00:00Z')
+const signed = (name: string, expiry: Date) => `https://scontent.cdninstagram.com/v/${name}.jpg?oh=sig&oe=${Math.floor(expiry.getTime() / 1000).toString(16)}`
+const image = async (url: string) => ({ bytes: new Uint8Array([1]), content_type: 'image/jpeg', sha256: 'a'.repeat(64), object_key: `${url.length}.jpg` })
+
+describe('retrying missing images of unreviewed observations', () => {
+  const later = new Date('2026-11-19T12:00:00Z'), earlier = new Date('2026-11-15T12:00:00Z')
+
+  it('saves a previously failed position, never refetches a saved one, and skips and reports an expired URL', async () => {
+    const observations = [
+      { id: 'colon', media_urls: [signed('slide0', later), signed('slide1', later), signed('slide2', later)] },
+      { id: 'old', media_urls: [signed('gone', earlier)] },
+      { id: 'done', media_urls: [signed('reviewed', later)], reviewed_at: '2026-11-15T13:00:00Z' },
+    ]
+    const { db, media } = mediaDb(observations, [{ observation_id: 'colon', position: 1 }])
+    const fetched: string[] = []
+    const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
+    expect(fetched).toEqual([signed('slide0', later), signed('slide2', later)])
+    expect(media).toEqual(expect.arrayContaining([expect.objectContaining({ observation_id: 'colon', position: 0 }), expect.objectContaining({ observation_id: 'colon', position: 2 })]))
+    expect(result).toEqual({ attempted: 2, retained: 2, failed: [], deferred: [],
+      expired: [{ observation_id: 'old', position: 0, expired_at: '2026-11-15T12:00:00.000Z' }] })
+
+    fetched.length = 0
+    const again = await Effect.runPromise(retryMissingMediaEffect(db, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
+    expect(fetched).toEqual([])
+    expect(again).toMatchObject({ attempted: 0, retained: 0, expired: [{ observation_id: 'old' }] })
+  })
+
+  it('reports a retry that fails again, skips observations collected this run, and caps downloads per run', async () => {
+    const { db } = mediaDb([
+      { id: 'flaky', media_urls: [signed('a', later)] },
+      { id: 'today', media_urls: [signed('b', later)] },
+      { id: 'big', media_urls: [signed('c', later), signed('d', later), signed('e', later)] },
+    ], [])
+    const fetched: string[] = []
+    const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, cap: 2, skip: new Set(['today']),
+      fetcher: async url => { fetched.push(url); if (url.includes('/a.jpg')) throw new Error('offline'); return image(url) } }))
+    expect(fetched).toEqual([signed('a', later), signed('c', later)])
+    expect(result).toEqual({ attempted: 2, retained: 1, expired: [], failed: [{ observation_id: 'flaky', position: 0 }],
+      deferred: [{ observation_id: 'big', position: 1 }, { observation_id: 'big', position: 2 }] })
+  })
+
+  it('ends the pass on a storage failure, names it, and downloads nothing after it', async () => {
+    const { db } = mediaDb([{ id: 'first', media_urls: [signed('a', later), signed('b', later)] }, { id: 'second', media_urls: [signed('c', later)] }], [])
+    const store = { ...db, retainImage: () => Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'Intake API answered 503' })) } as CollectionStore
+    const fetched: string[] = []
+    const result = await Effect.runPromise(retryMissingMediaEffect(store, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
+    expect(fetched).toEqual([signed('a', later)])
+    expect(result).toMatchObject({ attempted: 1, retained: 0, failed: [],
+      error: 'Media retry stopped early: Intake API answered 503 (in intake.store-image); the next collect retries' })
+  })
+
+  it('stops at its deadline, keeps what it saved, and says so', async () => {
+    const { db, media } = mediaDb([{ id: 'slow', media_urls: [signed('fast', later), signed('stuck', later)] }], [])
+    const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, deadlineMs: 50,
+      fetcher: url => url.includes('stuck') ? new Promise(() => {}) : image(url) }))
+    expect(media).toEqual([expect.objectContaining({ observation_id: 'slow', position: 0 })])
+    expect(result).toMatchObject({ attempted: 2, retained: 1, error: expect.stringContaining('deadline') })
+  })
+
+  it('reads the hex expiry from a signed Instagram URL', () => {
+    expect(signedUrlExpiry('https://scontent.cdninstagram.com/v/x.jpg?oe=691E1234')?.toISOString()).toBe('2025-11-19T18:53:40.000Z')
+    expect(signedUrlExpiry('https://scontent.cdninstagram.com/v/x.jpg')).toBeNull()
+    expect(signedUrlExpiry('not a url')).toBeNull()
   })
 })

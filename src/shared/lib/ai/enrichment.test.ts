@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 
-vi.mock('ai', () => ({
-  generateObject: vi.fn(),
-  generateText: vi.fn(),
-}))
+vi.mock('ai', () => {
+  // Bun's vi.mock has no importOriginal, so a stand-in with the same static check replaces the SDK's error class.
+  class NoObjectGeneratedError extends Error { static isInstance(error: unknown) { return error instanceof NoObjectGeneratedError } }
+  return { NoObjectGeneratedError, generateObject: vi.fn(), generateText: vi.fn() }
+})
 
-import { generateObject, generateText } from 'ai'
+import { generateObject, generateText, NoObjectGeneratedError } from 'ai'
 import { enrichEventFull, generateDescriptionSummary } from './enrichment.ts'
 
 // The mocked module export IS the mock fn; cast only for typing
@@ -99,6 +100,23 @@ describe('generateDescriptionSummary', () => {
         prompt: expect.stringContaining('Summarize this event description'),
       })
     )
+  })
+
+  it('retries once when the model returns no object, then falls back to null', async () => {
+    const noObject = () => new (NoObjectGeneratedError as unknown as new (message: string) => Error)('No object generated')
+    generateObjectMock.mockRejectedValueOnce(noObject()).mockResolvedValueOnce({ object: { summary: 'Jazz en vivo.' } })
+    expect(await generateDescriptionSummary('Jazz en vivo esta noche.', 'spanish')).toBe('Jazz en vivo.')
+    expect(generateObjectMock).toHaveBeenCalledTimes(2)
+
+    generateObjectMock.mockReset()
+    generateObjectMock.mockRejectedValue(noObject())
+    expect(await generateDescriptionSummary('Jazz en vivo esta noche.', 'spanish')).toBeNull()
+    expect(generateObjectMock).toHaveBeenCalledTimes(2)
+
+    generateObjectMock.mockReset()
+    generateObjectMock.mockRejectedValue(new Error('401 unauthorized'))
+    expect(await generateDescriptionSummary('Jazz en vivo esta noche.', 'spanish')).toBeNull()
+    expect(generateObjectMock).toHaveBeenCalledTimes(1)
   })
 
   it('enforces 180-char summary maximum in return value', async () => {
