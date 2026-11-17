@@ -199,7 +199,7 @@ describe('intake venue resolution', () => {
 
     // The geocoder disagrees, can't confirm the number, or is down: nothing changes.
     for (const geocode of [geocoded('Ciudad Autónoma de Buenos Aires', 'Monserrat', 'Defensa', '1179'),
-      geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', ''), () => Effect.fail(new Error('timeout'))]) {
+      geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', ''), () => Effect.fail('timeout')]) {
       const held = cambalache()
       expect(await run(held.db, ask(), geocode as Geocode)).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'cs' }] })
       expect(held.venues[0].neighborhood).toBe('Almagro')
