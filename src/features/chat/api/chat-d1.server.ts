@@ -378,22 +378,24 @@ export type PreviewRow = {
 }
 
 /**
- * Conversations whose messages contain every word of the query. Postgres used `websearch_to_tsquery`; with 4 users and a
- * few dozen conversations a case-insensitive word match is enough.
+ * Conversations whose messages contain every word of the query, case-insensitively. Postgres used `websearch_to_tsquery`.
+ * The match runs in JavaScript because SQLite's lower() folds only ASCII ("Ópera" would never match "ópera"); one user's
+ * messages are a few hundred rows at most.
  */
 export function searchConversations(db: D1Database, userId: string, query: string, limit: number) {
 	return run(async () => {
-		const words = query.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 10)
+		const words = query.toLocaleLowerCase('es').split(/\s+/).filter(Boolean).slice(0, 10)
 		if (!words.length) return []
 		const { results } = await db.prepare(`SELECT m.conversation_id, m.visible_content, m.content, c.title, c.updated_at
 				FROM messages m JOIN conversations c ON c.id = m.conversation_id
-				WHERE c.user_id = ? AND c.deleted_at IS NULL
-					AND NOT EXISTS (SELECT 1 FROM json_each(?) w WHERE instr(lower(m.visible_content), w.value) = 0)
-				LIMIT ?`)
-			.bind(userId, JSON.stringify(words), limit * 2).all<{
+				WHERE c.user_id = ? AND c.deleted_at IS NULL ORDER BY c.updated_at DESC, m.turn_index, m.id`)
+			.bind(userId).all<{
 				conversation_id: string; visible_content: string; content: string; title: string; updated_at: string
 			}>()
-		return results
+		return results.filter((row) => {
+			const text = row.visible_content.toLocaleLowerCase('es')
+			return words.every((word) => text.includes(word))
+		}).slice(0, limit * 2)
 	})
 }
 

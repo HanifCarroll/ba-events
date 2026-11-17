@@ -278,6 +278,18 @@ describe('cross-user isolation', () => {
 	})
 })
 
+describe('conversation search', () => {
+	it('matches accented capitals in Spanish text, for the owner only', async () => {
+		const input = turnInput({ content: 'Ópera en el Colón ÉSTE sábado' })
+		await chat.bootstrapTurn(db, ALICE, input)
+		for (const query of ['Ópera en el Colón ÉSTE sábado', 'Ópera', 'ópera colón', 'éste SÁBADO']) {
+			expect((await chat.searchConversations(db, ALICE, query, 20)).map((row) => row.conversation_id)).toEqual([input.conversationId])
+		}
+		expect(await chat.searchConversations(db, ALICE, 'ópera tango', 20)).toEqual([])
+		expect(await chat.searchConversations(db, BOB, 'Ópera', 20)).toEqual([])
+	})
+})
+
 describe('external (Telegram) conversations', () => {
 	const hash = 'a'.repeat(64)
 
