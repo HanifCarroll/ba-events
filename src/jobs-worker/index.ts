@@ -19,6 +19,7 @@ import { closeScrapeRun, openScrapeRun, timed } from './daily-scrape.ts'
 import { catchupMaxBatches, countCatchupBacklog, dailyMaxBatches, runCatchupBatch, runDailyEnrichmentBatch } from './enrichment.ts'
 import { purgeGuestLifecycleRetention } from './guest-lifecycle-retention.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
+import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
 import { SOURCES } from './source-health.ts'
 import { CRON_TASKS, startScheduledWorkflow } from './schedule.ts'
 import { runCatalogTask } from './catalog-maintenance.ts'
@@ -62,6 +63,8 @@ function message(error: unknown): string {
 /** 09:00 UTC (06:00 Buenos Aires): import every source, then drain the new events' enrichment. */
 export class DailyScrapeWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
+    // run() re-executes from the top on every wake, so each isolate records the binding before any step reaches the acquisition cache.
+    useD1Binding(this.env)
     const params = event.payload as { scheduledTime?: string } | undefined
     const scheduledTime = params?.scheduledTime ?? null
     const run = await step.do('open scrape run', policy('10 minutes'), () => openScrapeRun(catalog(this.env), event.instanceId, scheduledTime))
@@ -95,6 +98,7 @@ export class DailyScrapeWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
 /** 13:00 UTC (10:00 Buenos Aires): retry failed rows once and drain any pending backlog. */
 export class EnrichmentCatchupWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
+    useD1Binding(this.env)
     const pendingCount = await step.do('count backlog', policy('10 minutes'), () => countCatchupBacklog(catalog(this.env)))
     if (pendingCount === 0) return { pendingCount, batches: 0 }
     const maxBatches = catchupMaxBatches(pendingCount)
@@ -128,6 +132,7 @@ const checkSchema = Schema.Struct({ days: Schema.optional(Schema.Int.check(Schem
  */
 export class SourceCheckWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
+    useD1Binding(this.env)
     const { days = 1 } = Schema.decodeUnknownSync(checkSchema)(event.payload ?? {})
     const day = (offset: number) => new Date(Date.now() - 3 * 3600_000 + offset * 86400_000).toISOString().slice(0, 10)
     const results = []
