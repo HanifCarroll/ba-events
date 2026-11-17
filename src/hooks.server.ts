@@ -7,6 +7,7 @@ import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
 import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts';
 import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts';
+import { readOnlyResponse } from '#shared/lib/db/read-only.ts';
 
 const CANONICAL_HOST = 'baeventos.com';
 
@@ -92,4 +93,13 @@ const handleCloudflareBackend: Handle = ({ event, resolve }) => {
 	return resolve(event);
 };
 
-export const handle = sequence(handleCanonicalOrigin, handleCloudflareBackend, handleSupabase, handleLocaleSync, handleParaglide);
+// (e) Cutover freeze — with DB_READ_ONLY=1 writes answer 503, except sign-in and guest chat (read-only.ts). After the
+// session handle, because guest chat is allowed and a signed-in turn isn't.
+export const handleReadOnly: Handle = ({ event, resolve }) => {
+	const env = (event.platform as { env?: unknown } | undefined)?.env;
+	// The request URL, not event.url: SvelteKit rewrites event.url to the calling page for remote commands.
+	const { pathname } = new URL(event.request.url);
+	return readOnlyResponse(env, event.request.method, pathname, !!event.locals.user) ?? resolve(event);
+};
+
+export const handle = sequence(handleCanonicalOrigin, handleCloudflareBackend, handleSupabase, handleReadOnly, handleLocaleSync, handleParaglide);

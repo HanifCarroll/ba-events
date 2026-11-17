@@ -39,7 +39,7 @@ The concierge MAY read saved membership and show the appropriate heart control, 
 - **THEN** chat returns event detail guidance and leaves membership unchanged
 
 ### Requirement: Sign-in follows the Worker's backend
-A Worker without a D1 binding MUST sign people in through Supabase Auth. A Worker that binds D1 MUST sign people in through Better Auth with a one-time magic link, sent from a `baeventos.com` address in the sign-in page's language, and with Google, and MUST sign nobody in when its auth secret is missing. A Google sign-in MUST join an existing account only when Google reports the email verified; an unverified Google email MUST NOT be linked or signed in. A tab MUST pick up a sign-in or sign-out from another tab when it is next focused or shown. Admin access MUST come from `profiles.role`.
+A Worker without a D1 binding MUST sign people in through Supabase Auth. A Worker that binds D1 MUST sign people in through Better Auth with a one-time magic link, sent from a `baeventos.com` address in the sign-in page's language, and with Google, and MUST sign nobody in when its auth secret is missing. A Google sign-in MUST join an existing account only when Google reports the email verified; an unverified Google email MUST NOT be linked or signed in. A tab MUST pick up a sign-in or sign-out from another tab when it is next focused or shown. Admin access MUST come from `profiles.role`. While the Worker's `DB_READ_ONLY` is `1`, sign-in and sign-out MUST keep working and every other account write (saving, profile changes, deletion) MUST answer 503 and change nothing.
 
 #### Scenario: Magic link used twice
 - **WHEN** a magic link that already signed someone in is opened again

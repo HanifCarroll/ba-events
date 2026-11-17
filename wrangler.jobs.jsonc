@@ -5,7 +5,8 @@
   "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
-  "workers_dev": false,
+  // workers.dev serves the intake API (`/intake/*`, bearer INTAKE_API_TOKEN) to the operator CLI. Every other path is 404.
+  "workers_dev": true,
   "preview_urls": false,
   // Workflows run steps as separate invocations; scraping and enrichment parse
   // large pages and make many provider calls per step.
@@ -13,13 +14,20 @@
   "browser": { "binding": "BROWSER", "remote": true },
   // UTC (Buenos Aires is UTC-3 all year): 06:00 daily scrape, 07:00 guest retention,
   // 10:00 enrichment catch-up. scheduled() maps each to a Workflow (CRON_WORKFLOWS).
-  // Hourly mark-past-events and the 03:00 Vectorize reconcile (CRON_TASKS) do nothing until this config binds D1.
+  // Hourly mark-past-events and the 03:00 Vectorize reconcile (CRON_TASKS) run on the D1 binding below.
   "triggers": { "crons": ["0 9 * * *", "0 10 * * *", "0 13 * * *", "0 * * * *", "0 6 * * *"] },
   "workflows": [
     { "binding": "DAILY_SCRAPE", "name": "baeventos-daily-scrape", "class_name": "DailyScrapeWorkflow" },
     { "binding": "GUEST_RETENTION", "name": "baeventos-guest-retention", "class_name": "GuestRetentionWorkflow" },
     { "binding": "ENRICHMENT_CATCHUP", "name": "baeventos-enrichment-catchup", "class_name": "EnrichmentCatchupWorkflow" },
     { "binding": "SOURCE_CHECK", "name": "baeventos-source-check", "class_name": "SourceCheckWorkflow" }
+  ],
+  // D1 cutover (docs/ops/d1-cutover.md): the catalog, crons and intake API on D1, Vectorize and R2.
+  "d1_databases": [{ "binding": "DB", "database_name": "baeventos-production", "database_id": "bda62412-f0b7-40f1-b12a-1fe2aa4c787f", "migrations_dir": "migrations" }],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events" }],
+  "r2_buckets": [
+    { "binding": "INTAKE_EVIDENCE", "bucket_name": "baeventos-intake-evidence" },
+    { "binding": "INTAKE_ARTWORK", "bucket_name": "baeventos-artwork" }
   ],
   "observability": {
     "enabled": true,

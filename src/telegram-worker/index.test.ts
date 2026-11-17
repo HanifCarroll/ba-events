@@ -5,7 +5,7 @@ import { searchVenuesByName } from '#shared/lib/db/client.server.ts'
 import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts'
 import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
 import { TelegramApiError } from '#features/telegram/client.ts'
-import { TelegramInbox, boundedBackoffMs, type InboxItem } from './index.ts'
+import worker, { TelegramInbox, boundedBackoffMs, type InboxItem } from './index.ts'
 
 function storage() {
   const values = new Map<string, unknown>()
@@ -173,5 +173,16 @@ describe('Telegram inbox on a DB-bound Worker', () => {
       if (original.key === undefined) delete process.env.SUPABASE_ANON_KEY; else process.env.SUPABASE_ANON_KEY = original.key
     }
     expect(found).toEqual(['Teatro Colón'])
+  })
+})
+
+describe('DB_READ_ONLY on the Telegram Worker', () => {
+  it('asks Telegram to retry webhooks later and runs no cron work during the cutover freeze', async () => {
+    const env = { DB_READ_ONLY: '1' } as unknown as Parameters<typeof worker.fetch>[1]
+    const response = await worker.fetch(new Request('https://telegram.example/api/telegram', { method: 'POST', body: '{}' }), env)
+    expect(response.status).toBe(503)
+    const waited: Promise<unknown>[] = []
+    await worker.scheduled({ cron: '0 * * * *' }, env, { waitUntil: (task) => { waited.push(task) } })
+    expect(waited).toEqual([])
   })
 })

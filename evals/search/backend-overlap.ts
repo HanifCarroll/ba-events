@@ -9,10 +9,14 @@
  *
  * Run it with Node, because Wrangler's remote bindings hang under Bun:
  *   node --env-file=.env evals/search/backend-overlap.ts
+ * In the cutover (docs/ops/d1-cutover.md, step 5) it reads the production copy instead, still read-only:
+ *   node --env-file=.env evals/search/backend-overlap.ts --production
+ * That targets D1 `baeventos-production` and Vectorize `baeventos-events` as bound in wrangler.jsonc.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseArgs } from 'node:util'
 import { getPlatformProxy, unstable_readConfig } from 'wrangler'
 import type { D1Database, VectorizeIndex } from '@cloudflare/workers-types'
 import { getSupabase, lexicalEventSearch, semanticEventSearch } from '#shared/lib/db/client.server.ts'
@@ -33,14 +37,22 @@ export const OVERLAP_QUERIES = [
   'yoga or meditación',
 ]
 
-// The staging config's D1 and Vectorize bindings, marked remote in a throwaway config so nothing local stands in.
-const staging = unstable_readConfig({ config: new URL('../../wrangler.staging.jsonc', import.meta.url).pathname }) as {
+const { values: options } = parseArgs({ options: { production: { type: 'boolean', default: false } } })
+// The target config's D1 and Vectorize bindings, marked remote in a throwaway config so nothing local stands in.
+const targetConfig = options.production ? 'wrangler.jsonc' : 'wrangler.staging.jsonc'
+const staging = unstable_readConfig({ config: new URL(`../../${targetConfig}`, import.meta.url).pathname }) as {
   account_id: string; compatibility_date: string
   d1_databases: Array<{ binding: string; database_name: string; database_id: string }>
   vectorize: Array<{ binding: string; index_name: string }>
 }
-if (!staging.d1_databases.every(item => item.database_name.endsWith('-staging'))
-  || !staging.vectorize.every(item => item.index_name.endsWith('-staging'))) throw new Error('Only -staging resources may be read')
+const expected = options.production
+  ? (name: string) => name === 'baeventos-production' || name === 'baeventos-events'
+  : (name: string) => name.endsWith('-staging')
+if (!staging.d1_databases.every(item => expected(item.database_name)) || !staging.vectorize.every(item => expected(item.index_name))) {
+  throw new Error(`Unexpected targets in ${targetConfig}`)
+}
+if (staging.d1_databases.some(item => item.database_id.startsWith('REPLACE_WITH'))) throw new Error(`Fill in the D1 id in ${targetConfig} first`)
+console.log(`Comparing Supabase with ${staging.d1_databases[0]?.database_name} and ${staging.vectorize[0]?.index_name} (read-only).`)
 const dir = mkdtempSync(join(tmpdir(), 'backend-overlap-'))
 writeFileSync(join(dir, 'wrangler.json'), JSON.stringify({
   name: 'backend-overlap', account_id: staging.account_id, compatibility_date: staging.compatibility_date,
@@ -53,7 +65,8 @@ const proxy = await getPlatformProxy<{ DB: D1Database; VECTORIZE: VectorizeIndex
 try {
   // Events that start in the next hour may turn `past` on one side between the copy and now; leave them out of both.
   const filters = { startsAfter: new Date(Date.now() + 60 * 60 * 1000).toISOString() }
-  // Staging is a copy that drifts: the importers being tested write to it, and production keeps changing. Only events
+  // A staging copy drifts: the importers being tested write to it, and production keeps changing (the frozen production
+  // copy shouldn't, so nearly nothing is left out there). Only events
   // that exist on both sides with the same status, start, and searched text are compared, so a drifted event can't
   // count as a ranking difference. How many were left out is reported.
   const POOL = 40

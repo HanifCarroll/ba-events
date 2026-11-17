@@ -4,6 +4,7 @@ import { defaultTelegramTurnDependencies, processTelegramTurnEffect, telegramTur
 import { parseTelegramTaskPayload, type TelegramTaskPayload } from '#features/telegram/task-payload.ts'
 import { handleTelegramWebhookEffect } from '#features/telegram/webhook.server.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
+import { isReadOnly } from '#shared/lib/db/read-only.ts'
 import { purgeTelegramRetentionEffect } from '#features/telegram/retention.ts'
 import { runTelegramHealthCheckEffect } from '#features/telegram/health.ts'
 import { createInboxLifecycle } from './inbox-lifecycle.ts'
@@ -53,6 +54,8 @@ type Env = {
   DB?: unknown
   /** Staging only until the cutover, with `DB`: the event index that search reads. */
   VECTORIZE?: unknown
+  /** '1' during the D1 cutover window: no writes (read-only.ts). */
+  DB_READ_ONLY?: string
 }
 
 export type InboxItem = {
@@ -156,6 +159,8 @@ export default {
     useBackend(env)
     const url = new URL(request.url)
     if (url.pathname !== '/api/telegram') return new Response('Not Found', { status: 404 })
+    // Telegram keeps the update and retries it, so messages sent during the cutover window are answered after it.
+    if (isReadOnly(env)) return new Response('Read-only', { status: 503, headers: { 'Retry-After': '600' } })
     return Effect.runPromise(handleTelegramWebhookEffect(request, {
       webhookSecret: env.TELEGRAM_WEBHOOK_SECRET,
       identitySecret: env.TELEGRAM_ID_HASH_SECRET,
@@ -172,6 +177,7 @@ export default {
   },
   async scheduled(controller: ScheduledControllerLike, env: Env, ctx: ExecutionContextLike): Promise<void> {
     useBackend(env)
+    if (isReadOnly(env)) return
     const d1 = boundD1()
     const store = d1 ? { d1 } : getSupabaseServiceRoleClient()
     const job = controller.cron === '0 * * * *'

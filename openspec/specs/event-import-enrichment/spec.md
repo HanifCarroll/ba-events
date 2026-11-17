@@ -106,7 +106,7 @@ Enrichment SHALL move an imported `pending` event to a terminal status in the pa
 ### Requirement: The catalog runs on D1 and Vectorize behind the backend seam
 Imports, venue settlement, the venue review queue, enrichment, the blocklist, and the daily-scrape audit SHALL read and write the catalog through one repository that uses D1 and Vectorize when the jobs Worker binds `DB` and `VECTORIZE`, and the Supabase service client otherwise. On D1, every event write that carries a new embedding SHALL upsert the vector with the event id and `{ status, starts_at }` metadata (epoch ms), and a write that changes `status` or `starts_at` SHALL rewrite that metadata. A vector MUST NOT change when intake protection reverts the event's search document. Hourly, scheduled and pending-review events SHALL become `past` by the 4-hour and 28-hour rule, and nightly the vectors of live and recently changed events SHALL be reconciled with D1; both run only when `DB` is bound.
 
-#### Scenario: Production has no D1 binding
+#### Scenario: A jobs Worker without a D1 binding
 - **WHEN** the jobs Worker runs without `DB`
 - **THEN** every job uses Supabase as before and the D1-only crons report that they skipped
 
@@ -273,15 +273,19 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - **THEN** it returns its persisted receipt without inserting another event or repeating provider preparation
 
 ### Requirement: The intake API is the D1 backend for the operator CLI
-Where the jobs Worker binds the D1 database, `/intake/*` on that Worker SHALL serve every intake operation with the same results as the Supabase path, behind a bearer `INTAKE_API_TOKEN` of at least 32 characters compared in constant time, and SHALL decode every request body strictly, refusing unknown fields. Without the D1 binding every `/intake/*` path SHALL answer 404. The operator CLI SHALL use the API only when both `INTAKE_API_URL` and `INTAKE_API_TOKEN` are set, keep its commands and output shapes, and keep Apify calls and image downloads on the operator's machine. Evidence images SHALL be stored privately in R2 under their sha256 key after the server checks their type, size and hash; published artwork SHALL be copied to the artwork bucket and named by the site's artwork route. On D1 the candidate submission, plan check, commit and collection reservation SHALL each run as one transaction with the Postgres functions' rules and messages, and a commit SHALL set `write_context` so intake protection lets it change protected facts. `/intake/sources` SHALL insert new Instagram sources disabled and leave every existing username unchanged.
+Where the jobs Worker binds the D1 database, `/intake/*` on that Worker SHALL serve every intake operation with the same results as the Supabase path, behind a bearer `INTAKE_API_TOKEN` of at least 32 characters compared in constant time, and SHALL decode every request body strictly, refusing unknown fields. Without the D1 binding every `/intake/*` path SHALL answer 404. The operator CLI SHALL use the API only when both `INTAKE_API_URL` and `INTAKE_API_TOKEN` are set, keep its commands and output shapes, and keep Apify calls and image downloads on the operator's machine. Evidence images SHALL be stored privately in R2 under their sha256 key after the server checks their type, size and hash; published artwork SHALL be copied to the artwork bucket and named by the site's artwork route. On D1 the candidate submission, plan check, commit and collection reservation SHALL each run as one transaction with the Postgres functions' rules and messages, and a commit SHALL set `write_context` so intake protection lets it change protected facts. `/intake/sources` SHALL insert new Instagram sources disabled and leave every existing username unchanged. While `DB_READ_ONLY` is `1` the API SHALL serve only operations that never write and answer 503 to the rest, and the jobs crons SHALL start nothing.
 
 #### Scenario: A request lacks the token
 - **WHEN** a request to `/intake/*` has no bearer token or the wrong one
 - **THEN** it is refused with 401 and nothing is read or written
 
-#### Scenario: Production before the cutover
+#### Scenario: A jobs Worker without D1
 - **WHEN** `baeventos-jobs` has no D1 binding
 - **THEN** every `/intake/*` request answers 404 and the CLI without `INTAKE_API_URL` keeps using Supabase
+
+#### Scenario: Writes are frozen for the cutover
+- **WHEN** `DB_READ_ONLY` is `1` and the operator calls `preflight`, then `source`
+- **THEN** `preflight` answers as usual and `source` answers 503 without writing
 
 #### Scenario: A committed plan's vector upsert failed
 - **WHEN** the D1 commit succeeded but the Vectorize upsert did not

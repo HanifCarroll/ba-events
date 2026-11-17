@@ -1,3 +1,5 @@
+import { isReadOnly } from '#shared/lib/db/read-only.ts'
+
 /** Cron (UTC) → Workflow binding. Keep in step with `triggers.crons` in wrangler.jobs.jsonc. */
 export const CRON_WORKFLOWS = {
   '0 9 * * *': { binding: 'DAILY_SCRAPE', prefix: 'daily-scrape' }, // 06:00 Buenos Aires
@@ -23,6 +25,17 @@ export function cronInstance(cron: string, scheduledTimeMs: number) {
 }
 
 type Bindings = Record<(typeof CRON_WORKFLOWS)[keyof typeof CRON_WORKFLOWS]['binding'], { create(options: { id: string; params?: unknown }): Promise<unknown> }>
+
+/**
+ * What `scheduled()` does for a firing: nothing while `DB_READ_ONLY` freezes writes (the cutover window), the catalog
+ * task for a CRON_TASKS cron, or the firing's Workflow instance.
+ */
+export function dispatchCron<E extends Bindings>(controller: { cron: string; scheduledTime: number }, env: E,
+  runTask: (task: (typeof CRON_TASKS)[keyof typeof CRON_TASKS], env: E) => Promise<unknown>): Promise<void> {
+  if (isReadOnly(env)) return Promise.resolve()
+  const task = CRON_TASKS[controller.cron as keyof typeof CRON_TASKS]
+  return task ? runTask(task, env).then(() => undefined) : startScheduledWorkflow(controller, env)
+}
 
 /** Start the firing's instance. Only "already exists" (a repeated delivery) is ignored; other errors propagate. */
 export async function startScheduledWorkflow(controller: { cron: string; scheduledTime: number }, env: Bindings): Promise<void> {

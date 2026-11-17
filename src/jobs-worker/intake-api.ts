@@ -13,6 +13,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import type { D1Database, R2Bucket, Vectorize } from '@cloudflare/workers-types'
 import { Effect, Schema } from 'effect'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
+import { isReadOnly } from '#shared/lib/db/read-only.ts'
 import { ImportOperationError } from '#features/import/core/effect-utils.ts'
 import { describeImage } from '#features/import/intake/collection.ts'
 import { decodeId, decodeReview, decodeSource, lookupEffect, pendingEffect, preflightEffect, publicReceipt } from '#features/import/intake/operations.ts'
@@ -29,11 +30,14 @@ export interface IntakeApiEnv {
   INTAKE_API_TOKEN?: string
   OPENAI_API_KEY?: string
   DEEPSEEK_API_KEY?: string
+  DB_READ_ONLY?: string
 }
 
 class BadRequest extends Error {}
 const MAX_JSON_BYTES = 1_048_576
 const OBJECT_KEY = /^[0-9a-f]{64}\.(jpg|png|webp)$/
+/** Operations that never write, served during the cutover freeze (`DB_READ_ONLY=1`); everything else answers 503. */
+const READ_OPERATIONS = new Set(['preflight', 'sources/list', 'pending', 'candidates', 'held', 'lookup'])
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const notFound = () => new Response(null, { status: 404 })
@@ -143,6 +147,10 @@ export async function handleIntakeRequest(request: Request, env: IntakeApiEnv): 
   if (!env.VECTORIZE || !env.INTAKE_EVIDENCE || !env.INTAKE_ARTWORK) return json({ error: 'Intake API is not configured' }, 500)
   const store = d1Intake({ db, vectors: env.VECTORIZE, evidence: env.INTAKE_EVIDENCE, artwork: env.INTAKE_ARTWORK })
   const path = url.pathname.slice('/intake/'.length)
+  if (isReadOnly(env) && !READ_OPERATIONS.has(path) && !(request.method === 'GET' && path.startsWith('media/'))) {
+    return new Response(JSON.stringify({ error: 'Intake is paused for the database move; try again after it' }),
+      { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '600' } })
+  }
   try {
     if (path === 'collection/media' && request.method === 'PUT') {
       const observationId = strict(Uuid, url.searchParams.get('observation_id'))

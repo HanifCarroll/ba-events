@@ -29,6 +29,26 @@ export const TABLES: ReadonlyArray<readonly [table: string, order: string]> = [
 ]
 export const VIEWS = ['events_with_venues', 'events_admin_list']
 
+/**
+ * Tables the pre-switch Workers keep writing during the cutover freeze (it starts only when the cutover code deploys):
+ * guest diagnostics and rate-limit windows. Their production counts may grow after the export; losing those rows is
+ * accepted (docs/ops/d1-cutover.md). Every other table must still match production exactly.
+ */
+export const DIAGNOSTIC_TABLES = new Set(['guest_request_lifecycle', 'guest_chat_debug', 'rate_limit_windows'])
+
+/** With --production, the problems a live production count raises against the export. */
+export function liveCountProblems(exported: Record<string, number>, live: Record<string, number>): { problems: string[]; tolerated: string[] } {
+	const problems: string[] = [], tolerated: string[] = []
+	for (const [table, rows] of Object.entries(exported)) {
+		if (live[table] === rows) continue
+		const line = `${table}: production has ${live[table]} rows, the export ${rows}`
+		// Only growth is tolerated, and only in diagnostic tables; a shrink means something deleted rows mid-window.
+		if (DIAGNOSTIC_TABLES.has(table) && live[table]! > rows) tolerated.push(line)
+		else problems.push(line)
+	}
+	return { problems, tolerated }
+}
+
 /** The Supabase Storage buckets that are copied. `source-acquisitions` is a cache and starts empty. */
 export const BUCKETS = { evidence: 'instagram-evidence', artwork: 'event-artwork' } as const
 

@@ -9,13 +9,14 @@
  * every exported object is in its R2 bucket with the sha256 its key names, with nothing extra; and every exported auth
  * user is a Better Auth user with the same id, its profile, and one email account.
  * With SUPABASE_URL set it also prints production's live row counts. A difference fails only with --production
- * (the cutover freezes writes); on staging, production keeps changing after the export.
+ * (the cutover freezes writes); on staging, production keeps changing after the export. Even with --production, growth in
+ * the diagnostic tables (DIAGNOSTIC_TABLES in lib.ts) is reported, not failed: the old Workers write them until the deploy.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import type { R2Bucket } from '@cloudflare/workers-types'
-import { BUCKETS, bucketFor, checkTargets, connect, elapsed, pool, readJsonl, readManifest, requireDir, targetOptions, targetsFrom } from './lib.ts'
+import { BUCKETS, bucketFor, checkTargets, connect, elapsed, liveCountProblems, pool, readJsonl, readManifest, requireDir, targetOptions, targetsFrom } from './lib.ts'
 import { d1Columns, decodeValue, expectedRow, sameValue, type D1Value, type VectorRecord } from './transform.ts'
 import { checkUsers, type AuthUser } from './users.ts'
 
@@ -69,11 +70,15 @@ async function main() {
 		for (const [table, info] of Object.entries(manifest.tables)) {
 			const d1 = (await remote.db.prepare(`SELECT count(*) AS n FROM "${table}"`).first<number>('n'))!
 			if (d1 !== info.rows) problems.push(`${table}: D1 has ${d1} rows, the export ${info.rows}`)
-			if (live && values.production && live[table] !== info.rows) problems.push(`${table}: production has ${live[table]} rows, the export ${info.rows}`)
 			console.log(`${table.padEnd(28)} ${String(info.rows).padStart(8)} ${String(d1).padStart(7)}${live ? String(live[table]).padStart(16) : ''}${d1 !== info.rows ? '  MISMATCH' : ''}`)
 		}
 		const totalRows = Object.values(manifest.tables).reduce((sum, t) => sum + t.rows, 0)
 		console.log(`rows: ${totalRows} in ${Object.keys(manifest.tables).length} tables`)
+		if (live && values.production) {
+			const drift = liveCountProblems(Object.fromEntries(Object.entries(manifest.tables).map(([table, info]) => [table, info.rows])), live)
+			problems.push(...drift.problems)
+			for (const line of drift.tolerated) console.log(`tolerated (diagnostic rows written before the freeze): ${line}`)
+		}
 
 		// Better Auth users keep their Supabase ids.
 		const users: AuthUser[] = []
