@@ -34,7 +34,7 @@ Each source SHALL use its registered transformer and enrichment capabilities. So
 - **WHEN** a venue name is only a city, region, or postal code (such as "Buenos Aires, Argentina", "C1437EFA, Argentina", or "CABA")
 - **THEN** venue settlement and the intake `venue` operation neither match nor create a venue from it
 - **AND** a venue named only after a barrio is identified by its street address: the event must carry its own numbered address, a same-name venue is reused only at the same street and number, and otherwise a new venue is created; an event without its own numbered address gets no venue, and a catalog venue's address is never evidence for another event. Barrios named after a park ("Parque Chacabuco") are not area names
-- **AND** batch settlement keys barrio-named inputs by name plus normalized address, and importers send one input per event, so events in one import never share a barrio-named venue by name alone
+- **AND** batch settlement keys every input by name plus normalized street and number, and importers send one input per event, so events in one import never share a venue by name alone
 
 ### Requirement: Venue settlement is deterministic and reviewable
 Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous or invalid candidates for review rather than silently attach an unrelated venue.
@@ -42,6 +42,25 @@ Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous 
 #### Scenario: Venue match is ambiguous
 - **WHEN** no candidate satisfies the settlement rules
 - **THEN** import does not claim an unsupported venue match
+
+#### Scenario: A catalog venue's name differs only in spacing, case, accents, punctuation, or a city suffix
+- **WHEN** an importer settles a venue name whose `venue_name_key` (case, accents, every kind of whitespace including non-breaking spaces, and punctuation folded; trailing "- Buenos Aires", "- CABA", "- Argentina" dropped) equals an existing venue's
+- **THEN** it reuses that venue as an exact match, and `%` or `_` in a name are plain characters, never wildcards
+- **AND** when several venues share that name it reuses the one at the event's own street and number; a same-name venue at another street and number is never reused, and the event gets a new venue instead
+- **AND** without a numbered address on the event, or among copies with no numbered address, it reuses the copy the duplicate merge keeps (numbered address and barrio, then most events, then oldest)
+
+#### Scenario: A venue lookup fails
+- **WHEN** the same-name or similar-name lookup returns an error
+- **THEN** settlement leaves the event without a venue rather than creating a possible duplicate
+
+#### Scenario: Only a similar name exists
+- **WHEN** the closest catalog name scores at least 0.85 and no numbered address on either side conflicts
+- **THEN** settlement reuses that venue
+- **AND** a score from 0.6 up to 0.85, or a similar name at another street and number, never attaches the event to that venue: settlement creates the venue and, for the 0.6–0.85 band, queues the lookalike in `venue_review_queue`
+
+#### Scenario: Name similarity on D1
+- **WHEN** a venue lookup runs on D1, which has no pg_trgm
+- **THEN** the score is `trigramSimilarity`, which equals Postgres `similarity()` on 500 production name pairs (`src/shared/lib/search/trigram.test.ts`), and `findSimilarVenueD1` and `intakeSimilarVenuesD1` return what `find_similar_venue` and `intake_similar_venues` return
 
 ### Requirement: Enrichment is bounded and source-backed
 Enrichment SHALL use the registered source strategy, retain available source data on partial failure, and mark unavailable descriptions or terminal failures explicitly. It MUST NOT invent event facts to make a record appear complete.
@@ -83,6 +102,25 @@ Enrichment SHALL move an imported `pending` event to a terminal status in the pa
 #### Scenario: A retired source still has pending or failed events
 - **WHEN** the daily chain or catch-up selects or counts events needing enrichment
 - **THEN** those events are excluded and keep their stored values
+
+### Requirement: The catalog runs on D1 and Vectorize behind the backend seam
+Imports, venue settlement, the venue review queue, enrichment, the blocklist, and the daily-scrape audit SHALL read and write the catalog through one repository that uses D1 and Vectorize when the jobs Worker binds `DB` and `VECTORIZE`, and the Supabase service client otherwise. On D1, every event write that carries a new embedding SHALL upsert the vector with the event id and `{ status, starts_at }` metadata (epoch ms), and a write that changes `status` or `starts_at` SHALL rewrite that metadata. A vector MUST NOT change when intake protection reverts the event's search document. Hourly, scheduled and pending-review events SHALL become `past` by the 4-hour and 28-hour rule, and nightly the vectors of live and recently changed events SHALL be reconciled with D1; both run only when `DB` is bound.
+
+#### Scenario: A jobs Worker without a D1 binding
+- **WHEN** the jobs Worker runs without `DB`
+- **THEN** every job uses Supabase as before and the D1-only crons report that they skipped
+
+#### Scenario: An event is imported on D1
+- **WHEN** an importer inserts or re-embeds an event
+- **THEN** the event row and its vector are written, and the vector's metadata matches the row's status and start
+
+#### Scenario: An event passes its end
+- **WHEN** the hourly task finds a scheduled event that ended, a timed event that started more than 4 hours ago, or a date-only event that started more than 28 hours ago
+- **THEN** the event becomes `past` and its vector's status follows
+
+#### Scenario: Vectorize drifts from D1
+- **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row
+- **THEN** it re-embeds the document, restores the vector, or rewrites the metadata, within a bounded number of embedding calls per night
 
 ### Requirement: Catch-up retries are bounded per scheduled chain
 The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
@@ -240,6 +278,25 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - **WHEN** the same plan is committed again
 - **THEN** it returns its persisted receipt without inserting another event or repeating provider preparation
 
+### Requirement: The intake API is the D1 backend for the operator CLI
+Where the jobs Worker binds the D1 database, `/intake/*` on that Worker SHALL serve every intake operation with the same results as the Supabase path, behind a bearer `INTAKE_API_TOKEN` of at least 32 characters compared in constant time, and SHALL decode every request body strictly, refusing unknown fields. Without the D1 binding every `/intake/*` path SHALL answer 404. The operator CLI SHALL use the API only when both `INTAKE_API_URL` and `INTAKE_API_TOKEN` are set, keep its commands and output shapes, and keep Apify calls and image downloads on the operator's machine. Evidence images SHALL be stored privately in R2 under their sha256 key after the server checks their type, size and hash; published artwork SHALL be copied to the artwork bucket and named by the site's artwork route. On D1 the candidate submission, plan check, commit and collection reservation SHALL each run as one transaction with the Postgres functions' rules and messages, and a commit SHALL set `write_context` so intake protection lets it change protected facts. `/intake/sources` SHALL insert new Instagram sources disabled and leave every existing username unchanged. While `DB_READ_ONLY` is `1` the API SHALL serve only operations that never write and answer 503 to the rest, and the jobs crons SHALL start nothing.
+
+#### Scenario: A request lacks the token
+- **WHEN** a request to `/intake/*` has no bearer token or the wrong one
+- **THEN** it is refused with 401 and nothing is read or written
+
+#### Scenario: A jobs Worker without D1
+- **WHEN** `baeventos-jobs` has no D1 binding
+- **THEN** every `/intake/*` request answers 404 and the CLI without `INTAKE_API_URL` keeps using Supabase
+
+#### Scenario: Writes are frozen for the cutover
+- **WHEN** `DB_READ_ONLY` is `1` and the operator calls `preflight`, then `source`
+- **THEN** `preflight` answers as usual and `source` answers 503 without writing
+
+#### Scenario: A committed plan's vector upsert failed
+- **WHEN** the D1 commit succeeded but the Vectorize upsert did not
+- **THEN** committing the same plan again returns the same receipt and upserts the event's vector
+
 ## Verification
 
 ### Implementation anchors
@@ -253,15 +310,29 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/`
 - `scripts/instagram-intake.ts`
 - `src/features/import/intake/venues.ts`
+- `src/features/import/intake/store-d1.ts`
+- `src/features/import/intake/client.ts`
+- `src/jobs-worker/intake-api.ts`
 - `supabase/migrations/20261025205334_instagram_intake.sql`
 - `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
 - `supabase/migrations/20261115120000_intake_similar_venues.sql`
 - `supabase/migrations/20261116120000_hidden_location_has_no_venue.sql`
+- `supabase/migrations/20261116180000_venue_name_matching.sql`
+- `src/features/import/core/venue-identity.ts`
+- `src/features/import/scrapers/venue-matcher.ts`
 - `src/features/import/scrapers/luma/location.ts`
+- `src/features/import/core/catalog-store.ts`, `catalog-store-d1.ts`, and `catalog-store-for.ts`
+- `src/jobs-worker/catalog-maintenance.ts`
 
 ### Deterministic tests
 - `src/features/import/core/event-enrichment.test.ts`
+- `src/features/import/core/venue-identity.test.ts`
+- `src/features/import/core/venue-settlement.test.ts`
+- `src/features/import/core/venue-duplicates.test.ts`
+- `supabase/tests/venue-matching.sql` and `supabase/tests/venue-merge.sql` (run by `scripts/test-instagram-intake-db.sh`)
 - `src/features/import/api/duplicate-detection.test.ts`
+- `src/features/import/core/catalog-store-d1.test.ts` and `importers-d1.test.ts` (Miniflare D1)
+- `src/jobs-worker/catalog-maintenance.test.ts` (Miniflare D1)
 - `src/jobs-worker/daily-scrape-outcome.test.ts`
 - `src/jobs-worker/enrichment.test.ts`
 - `src/features/import/acquisition/run.test.ts`
@@ -269,6 +340,8 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/service.test.ts`
 - `src/features/import/intake/collection.test.ts`
 - `src/features/import/intake/venues.test.ts`
+- `src/features/import/intake/store-d1.test.ts`
+- `src/jobs-worker/intake-api.test.ts`
 - `supabase/tests/instagram-intake.sql`
 - `supabase/tests/instagram-intake-venues.sql`
 - `supabase/tests/hidden-location.sql`

@@ -111,3 +111,52 @@ describe('catalog artwork delivery', () => {
     expect(options.images.input).not.toHaveBeenCalled()
   })
 })
+
+describe('R2 artwork (a Worker that binds D1)', () => {
+  const key = `${'a'.repeat(64)}.jpg`
+  const r2Url = `https://baeventos.com/api/event-artwork/${id}/${key}`
+  const bucket = (contentType = 'image/jpeg') => ({
+    get: vi.fn(async (wanted: string) => wanted === key
+      ? { body: new Response('jpeg').body!, httpMetadata: { contentType } } : null),
+  })
+  const original = (overrides: Partial<Parameters<typeof serveArtwork>[0]> = {}) => {
+    const lookup = vi.fn(async () => ({ image_url: r2Url }))
+    return { request: new Request(r2Url), id, variant: key, lookup, bucket: bucket(), ...overrides }
+  }
+
+  it('serves the original the copy tool and the D1 intake link to, immutable', async () => {
+    const options = original()
+    const response = await serveArtwork(options)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('jpeg')
+    expect(response.headers.get('Content-Type')).toBe('image/jpeg')
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable')
+    expect(options.bucket.get).toHaveBeenCalledWith(key)
+  })
+
+  it('serves only the current artwork of that displayable event', async () => {
+    const other = `${'b'.repeat(64)}.jpg`
+    expect((await serveArtwork(original({ variant: other }))).status).toBe(404)
+    expect((await serveArtwork(original({ lookup: vi.fn(async () => null) }))).status).toBe(404)
+    const elsewhere = `https://baeventos.com/api/event-artwork/${'f'.repeat(8)}-a83e-4a2e-b47d-0fd6e55b93e4/${key}`
+    expect((await serveArtwork(original({ lookup: vi.fn(async () => ({ image_url: elsewhere })) }))).status).toBe(404)
+    expect((await serveArtwork(original({ bucket: undefined }))).status).toBe(404)
+    expect((await serveArtwork(original({ bucket: bucket('text/html') }))).status).toBe(404)
+    expect((await serveArtwork(original({ request: new Request(`${r2Url}?x=1`) }))).status).toBe(400)
+  })
+
+  it('resizes R2 artwork from the bucket instead of fetching its URL', async () => {
+    const options = { ...setup(r2Url), bucket: bucket() }
+    const response = await serveArtwork(options)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe('image/webp')
+    expect(options.fetchImage).not.toHaveBeenCalled()
+    expect(options.bucket.get).toHaveBeenCalledWith(key)
+  })
+
+  it('falls back to the original on this host when resizing fails', async () => {
+    const options = { ...setup(r2Url), bucket: bucket() }
+    vi.mocked(options.images.info).mockRejectedValueOnce(new Error('9422 free quota exceeded'))
+    expect((await serveArtwork(options)).headers.get('Location')).toBe(`/api/event-artwork/${id}/${key}`)
+  })
+})

@@ -1,11 +1,28 @@
 import { browser } from '$app/env'
-import { getSupabaseBrowserClient } from '#features/auth/api/client.ts'
+import { getSupabaseBrowserClient, usesBetterAuth } from '#features/auth/api/client.ts'
 import type { Event, Venue, SavedEventWithDetails } from '#shared/lib/types.ts'
 
 function dispatchSavedEventsChanged() {
   if (!browser) return
   window.dispatchEvent(new CustomEvent('event-save-changed'))
 }
+
+// Better Auth (a Worker that binds D1, staging until the cutover) has no Supabase session in the browser, so there
+// saved events go through /api/saved, which takes the user from the server session. `expectedUserId` makes the server
+// refuse (409) when the session belongs to another account than the one this view was showing. Production keeps the
+// Supabase calls below unchanged.
+async function savedApi<T>(init: RequestInit & { query?: Record<string, string> }): Promise<T> {
+  const query = new URLSearchParams(init.query).toString()
+  const response = await fetch(`/api/saved${query ? `?${query}` : ''}`, {
+    ...init,
+    headers: init.body ? { 'content-type': 'application/json' } : undefined,
+  })
+  if (response.status === 409) throw new Error('Account changed during saved-event request')
+  if (!response.ok) throw new Error(`Saved-event request failed (${response.status})`)
+  return await response.json() as T
+}
+
+const expected = (userId?: string): Record<string, string> => (userId ? { expectedUserId: userId } : {})
 
 interface SavedEventRow {
   created_at: string
@@ -30,6 +47,7 @@ function mapSavedEventRow(item: SavedEventRow): SavedEventWithDetails | null {
 
 // Get all saved events for the current user
 export async function getSavedEvents(expectedUserId?: string): Promise<SavedEventWithDetails[]> {
+  if (usesBetterAuth()) return (await savedApi<{ events: SavedEventWithDetails[] }>({ query: expected(expectedUserId) })).events
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
@@ -70,6 +88,7 @@ export async function getSavedEvents(expectedUserId?: string): Promise<SavedEven
 
 // Get IDs of all saved events for the current user
 export async function getSavedEventIds(): Promise<Set<string>> {
+  if (usesBetterAuth()) return new Set((await savedApi<{ events: SavedEventWithDetails[] }>({})).events.map((event) => event.id))
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
@@ -92,6 +111,11 @@ export async function getSavedEventIds(): Promise<Set<string>> {
 
 // Save an event
 export async function saveEvent(eventId: string, expectedUserId?: string): Promise<boolean> {
+  if (usesBetterAuth()) {
+    await savedApi({ method: 'POST', body: JSON.stringify({ eventId, ...expected(expectedUserId) }) })
+    dispatchSavedEventsChanged()
+    return true
+  }
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
@@ -122,6 +146,11 @@ export async function saveEvent(eventId: string, expectedUserId?: string): Promi
 
 // Unsave an event
 export async function unsaveEvent(eventId: string, expectedUserId?: string): Promise<boolean> {
+  if (usesBetterAuth()) {
+    await savedApi({ method: 'DELETE', body: JSON.stringify({ eventId, ...expected(expectedUserId) }) })
+    dispatchSavedEventsChanged()
+    return true
+  }
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()
@@ -147,6 +176,10 @@ export async function unsaveEvent(eventId: string, expectedUserId?: string): Pro
 
 // Check if a specific event is saved
 export async function isEventSaved(eventId: string, expectedUserId?: string): Promise<boolean> {
+  if (usesBetterAuth()) {
+    const { savedIds } = await savedApi<{ savedIds: string[] }>({ query: { ids: eventId, ...expected(expectedUserId) } })
+    return savedIds.includes(eventId)
+  }
   const client = getSupabaseBrowserClient()
 
   const { data: { user } } = await client.auth.getUser()

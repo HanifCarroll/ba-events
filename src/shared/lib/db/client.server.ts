@@ -18,6 +18,24 @@ import type {
 import { generateEmbedding } from '../ai/embeddings.ts'
 import { rrfFuse } from '../search/rrf.ts'
 import { withReadSignal } from './read-signal.ts'
+import { cloudflareSearchBackend } from './search-bindings.server.ts'
+import {
+  countEventsWithFiltersD1,
+  getEventsHappeningNowD1,
+  getFurthestEventDateD1,
+  lexicalEventSearchD1,
+  searchEventsWithFiltersD1,
+  searchVenuesByNameD1,
+  semanticEventSearchD1,
+} from './search-d1.server.ts'
+import {
+  eventArtworkD1,
+  eventByIdD1,
+  eventsByIdsD1,
+  eventsByStartD1,
+  happeningSoonD1,
+  venueByIdD1,
+} from './event-reads-d1.server.ts'
 import type { HomeEventCard } from '#features/events/lib/home-feed.ts'
 // Lazy-initialize Supabase client (only when needed, server-side only)
 let supabaseInstance: SupabaseClient | null = null
@@ -40,7 +58,25 @@ export function getSupabase(): SupabaseClient {
 // VENUE OPERATIONS
 // ============================================================================
 
+/** The D1 database when the Worker binds one (staging until the cutover), else null (read Supabase). */
+const boundCatalogD1 = () => cloudflareSearchBackend()?.db ?? null
+
+/** Mirrors PostgREST's `.single()` on no rows, which the callers treat as not found. */
+function requireRow<T>(row: T | null, what: string): T {
+  if (!row) throw new Error(`${what} not found`)
+  return row
+}
+
+/** Keeps the columns a Supabase `.select(columns)` returns, so a D1 row has the same keys. */
+function pickColumns<T>(row: object, columns: string): T {
+  const record = row as Record<string, unknown>
+  return Object.fromEntries(columns.split(',').map(column => column.trim()).filter(Boolean)
+    .map(column => [column, record[column]])) as T
+}
+
 export async function getVenueById(id: string, abortSignal?: AbortSignal) {
+  const d1 = boundCatalogD1()
+  if (d1) return requireRow(await venueByIdD1(d1, id), 'Venue')
   const { data, error } = await withReadSignal(getSupabase()
     .from('venues')
     .select('*')
@@ -52,6 +88,8 @@ export async function getVenueById(id: string, abortSignal?: AbortSignal) {
 }
 
 export async function searchVenuesByName(query: string, abortSignal?: AbortSignal) {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return searchVenuesByNameD1(cloudflare.db, query)
   const { data, error } = await withReadSignal(getSupabase()
     .from('venues')
     .select('*')
@@ -109,6 +147,8 @@ const CHAT_EVENT_COLUMNS = `
 `
 
 export async function getEventsWithVenues(limit = 50) {
+  const d1 = boundCatalogD1()
+  if (d1) return (await eventsByStartD1(d1, limit)).map(row => pickColumns<EventWithVenue>(row, EVENT_ADMIN_COLUMNS))
   // Explicit columns, no embedding — the 1536-dim vectors bloat responses
   // (1000 events ≈ 24MB) and no caller reads them from this fetch.
   const { data, error } = await getSupabase()
@@ -134,12 +174,16 @@ export async function getEventsWithVenues(limit = 50) {
  * Floor is now + 12 hours, rolling. Daytime events can appear if they
  * start at least 12 hours out; a night already in progress does not.
  */
+const HOME_CARD_COLUMNS = 'id, name, starts_at, time_tba, image_url, image_width, image_height, venue_name, venue_neighborhood, price, is_free'
+
 export async function getHappeningSoonEvents(limit = 4): Promise<HomeEventCard[]> {
   const earliestStartUTC = addHours(new Date(), 12).toISOString()
+  const d1 = boundCatalogD1()
+  if (d1) return (await happeningSoonD1(d1, earliestStartUTC, limit)).map(row => pickColumns<HomeEventCard>(row, HOME_CARD_COLUMNS))
 
   const { data, error } = await getSupabase()
     .from('events_with_venues')
-    .select('id, name, starts_at, time_tba, image_url, image_width, image_height, venue_name, venue_neighborhood, price, is_free')
+    .select(HOME_CARD_COLUMNS)
     .eq('status', 'scheduled')
     .gte('starts_at', earliestStartUTC)
     .eq('location_tba', false)
@@ -164,6 +208,8 @@ export async function getHappeningSoonEvents(limit = 4): Promise<HomeEventCard[]
 
 /** Catalog-mediated image lookup: callers cannot supply upstream URLs. */
 export async function getEventArtwork(id: string, signal?: AbortSignal) {
+  const d1 = boundCatalogD1()
+  if (d1) return eventArtworkD1(d1, id)
   const { data, error } = await withReadSignal(getSupabase().from('events')
     .select('image_url').eq('id', id).in('status', ['scheduled', 'past']), signal).maybeSingle()
   if (error) throw error
@@ -176,6 +222,11 @@ export async function getEventArtwork(id: string, signal?: AbortSignal) {
 
 /** Public read boundary: only displayable statuses and explicit public columns. */
 export async function getDisplayableEventById(id: string, abortSignal?: AbortSignal): Promise<PublicEventRecord | null> {
+  const d1 = boundCatalogD1()
+  if (d1) {
+    const row = await eventByIdD1(d1, id, true)
+    return row ? pickColumns<PublicEventRecord>(row, PUBLIC_EVENT_COLUMNS) : null
+  }
   const { data, error } = await withReadSignal(getSupabase()
     .from('events_with_venues')
     .select(PUBLIC_EVENT_COLUMNS)
@@ -189,6 +240,8 @@ export async function getDisplayableEventById(id: string, abortSignal?: AbortSig
 }
 
 export async function getEventWithVenue(id: string, abortSignal?: AbortSignal) {
+  const d1 = boundCatalogD1()
+  if (d1) return requireRow(await eventByIdD1(d1, id), 'Event') as unknown as EventWithVenue
   const { data, error } = await withReadSignal(getSupabase()
     .from('events_with_venues')
     .select('*')
@@ -210,6 +263,8 @@ export async function getEventWithVenue(id: string, abortSignal?: AbortSignal) {
  * or other internal columns. Non-displayable filtering (status) is the pure
  * caller's responsibility (`isDisplayableStatus` in the agent follow-up module).
  */
+const FACT_COLUMNS = 'id, name, venue_id, venue_name, status, location_hidden, location_tba'
+
 export async function getEventFactsByIds(
   ids: string[],
   abortSignal?: AbortSignal,
@@ -228,14 +283,17 @@ export async function getEventFactsByIds(
   ].slice(0, 100)
   if (unique.length === 0) return []
 
-  const { data, error } = await withReadSignal((client ?? getSupabase())
-    .from('events_with_venues')
-    .select('id, name, venue_id, venue_name, status, location_hidden, location_tba')
-    .in('id', unique)
-    .limit(100), abortSignal)
+  const d1 = client ? null : boundCatalogD1()
+  const { data, error } = d1
+    ? { data: (await eventsByIdsD1(d1, unique)).map(row => pickColumns<object>(row, FACT_COLUMNS)), error: null }
+    : await withReadSignal((client ?? getSupabase())
+      .from('events_with_venues')
+      .select(FACT_COLUMNS)
+      .in('id', unique)
+      .limit(100), abortSignal)
 
   if (error) throw error
-  return ((data ?? []) as Array<{
+  return ((data ?? []) as unknown as Array<{
     id: string
     name: string
     venue_id: string | null
@@ -249,6 +307,8 @@ export async function getEventFactsByIds(
 }
 
 export async function createEvent(event: EventInsert, client?: SupabaseClient) {
+  // shortcut: POST /api/events has no D1 write (no production event has source 'api'); refuse rather than write to Supabase behind D1's back.
+  if (!client && boundCatalogD1()) throw new Error('Creating events through the API is not available on D1')
   const db = client ?? getSupabase()
   const { data, error } = await db
     .from('events')
@@ -282,6 +342,8 @@ export function applyAvoidGenres<T extends { facets?: { genres?: string[] } | nu
 
 // Filter-based search (for structured queries)
 export async function searchEventsWithFilters(filters: EventFilters, limit: number = 50, abortSignal?: AbortSignal): Promise<ChatEventPayload[]> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return applyAvoidGenres(await searchEventsWithFiltersD1(cloudflare.db, filters, limit), filters.avoidGenres)
   let query = getSupabase().from('events_with_venues').select(CHAT_EVENT_COLUMNS)
 
   // Default to scheduled events
@@ -325,6 +387,8 @@ export async function searchEventsWithFilters(filters: EventFilters, limit: numb
 // report search coverage so the model knows how much it searched vs. returned.
 // Mirrors the predicate in searchEventsWithFilters.
 export async function countEventsWithFilters(filters: EventFilters, abortSignal?: AbortSignal): Promise<number> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return countEventsWithFiltersD1(cloudflare.db, filters)
   // Avoid genres can't be expressed as a PostgREST filter (the `ov` operator on
   // a `facets->genres` jsonb path errors, and `cs`/overlap mishandles events
   // with no genres key). So when avoid is present we fetch matched `facets` and
@@ -413,6 +477,8 @@ export async function countEventsWithFilters(filters: EventFilters, abortSignal?
 // Furthest future start date of any scheduled event. The source of truth for
 // "what's the event furthest into the future" and for the coverage guard.
 export async function getFurthestEventDate(abortSignal?: AbortSignal): Promise<string | null> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return getFurthestEventDateD1(cloudflare.db)
   const { data, error } = await withReadSignal(getSupabase()
     .from('events')
     .select('starts_at')
@@ -426,6 +492,8 @@ export async function getFurthestEventDate(abortSignal?: AbortSignal): Promise<s
 
 // Get events happening now or starting soon
 export async function getEventsHappeningNow(abortSignal?: AbortSignal): Promise<ChatEventPayload[]> {
+  const cloudflare = cloudflareSearchBackend()
+  if (cloudflare) return getEventsHappeningNowD1(cloudflare.db)
   const now = new Date().toISOString()
 
   const { data, error } = await withReadSignal(getSupabase()
@@ -440,7 +508,8 @@ export async function getEventsHappeningNow(abortSignal?: AbortSignal): Promise<
   return data as ChatEventPayload[]
 }
 
-// Dense (vector) semantic search with filter application done in PostgreSQL.
+// Dense (vector) semantic search with filter application done in PostgreSQL, or in Vectorize and D1 when the
+// Worker binds them (search-bindings.server.ts).
 interface SearchReadDependencies {
   client?: SupabaseClient
   embedQuery?: typeof generateEmbedding
@@ -458,8 +527,12 @@ export async function semanticEventSearch(
   abortSignal?.throwIfAborted()
   if (!query.trim()) return []
 
+  const cloudflare = dependencies.client ? null : cloudflareSearchBackend()
+  if (cloudflare && !cloudflare.vectorize) throw new Error('Semantic search on D1 needs the VECTORIZE binding')
+
   // Generate embedding for the search query
   const queryEmbedding = await (dependencies.embedQuery ?? generateEmbedding)(query, abortSignal)
+  if (cloudflare) return semanticEventSearchD1(cloudflare.db, cloudflare.vectorize!, queryEmbedding, filters, matchCount)
 
   // Call the PostgreSQL function with all filters applied server-side
   const { data, error } = await withReadSignal((dependencies.client ?? getSupabase()).rpc(
@@ -485,7 +558,7 @@ export async function semanticEventSearch(
 }
 
 // Lexical (full-text) search over the events search document, with the same
-// filter surface applied server-side. Orders by ts_rank_cd.
+// filter surface applied server-side. Orders by ts_rank_cd (bm25 on D1).
 export async function lexicalEventSearch(
   query: string,
   filters: EventFilters,
@@ -495,6 +568,9 @@ export async function lexicalEventSearch(
 ): Promise<ChatEventPayload[]> {
   abortSignal?.throwIfAborted()
   if (!query.trim()) return []
+
+  const cloudflare = dependencies.client ? null : cloudflareSearchBackend()
+  if (cloudflare) return lexicalEventSearchD1(cloudflare.db, query, filters, matchCount)
 
   const { data, error } = await withReadSignal((dependencies.client ?? getSupabase()).rpc(
     'lexical_match_events_with_venues',

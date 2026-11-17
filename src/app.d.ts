@@ -1,6 +1,5 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
-import type { User } from '@supabase/supabase-js';
 import type { Profile } from '#shared/lib/types.ts';
 
 declare global {
@@ -8,7 +7,7 @@ declare global {
 		// interface Error {}
 		interface Locals {
 			chatTiming?: import('#features/chat/lib/timing.ts').ChatTiming;
-			user: User | null;
+			user: import('#shared/lib/types.ts').AuthUser | null;
 			profile: Profile | null;
 			isAdmin: boolean;
 		}

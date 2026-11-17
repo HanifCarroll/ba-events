@@ -6,7 +6,7 @@ Cloudflare Workers Builds is disconnected and does not deploy on push; do not re
 
 ## Order
 
-The job builds the SvelteKit Worker, then runs `bun run cloudflare:deploy`, which deploys the five Cloudflare Workers in this order:
+The job builds the SvelteKit Worker. It then runs `bun scripts/check-production-bindings.ts`, which refuses to deploy while a production config still has the D1 id placeholder (see [the D1 cutover runbook](ops/d1-cutover.md)). Next, `bun run migrate:production` applies pending D1 migrations to `baeventos-production` (`wrangler d1 migrations apply --remote`), before any Worker runs code that needs them. A new migration must therefore work with the Workers still running the previous release. Finally, `bun run cloudflare:deploy` deploys the five Cloudflare Workers in this order:
 
 1. `baeventos-telegram` (`wrangler.telegram.jsonc`)
 2. `baeventos-mcp` (`wrangler.mcp.jsonc`)
@@ -22,9 +22,31 @@ The job reads these GitHub repository settings:
 
 | Kind | Name | Use |
 | --- | --- | --- |
-| Secret | `CLOUDFLARE_API_TOKEN` | Wrangler deploys. It must be allowed to deploy all five Workers, their Workflows and the jobs Worker's Browser Rendering binding, and update the `baeventos.com` routes. |
+| Secret | `CLOUDFLARE_API_TOKEN` | Wrangler deploys and D1 migrations. It must be allowed to deploy all five Workers, their Workflows and the jobs Worker's Browser Rendering binding, update the `baeventos.com` routes, and edit D1, Vectorize, and R2 (the bindings below). |
 | Secret | `CLOUDFLARE_ACCOUNT_ID` | Wrangler account. |
 | Variable | `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, `PUBLIC_POSTHOG_KEY`, `PUBLIC_POSTHOG_HOST` | Public values compiled into the web build. |
+
+## Data bindings
+
+Since the D1 cutover, production stores its data on Cloudflare. A Worker with these bindings uses them; a Worker without them still falls back to Supabase until PR 09 removes that code.
+
+| Worker | Bindings |
+| --- | --- |
+| `baeventos` | D1 `DB` (`baeventos-production`), Vectorize `VECTORIZE` (`baeventos-events`), R2 `ARTWORK` (`baeventos-artwork`), `send_email` `EMAIL` (`alerts@` and `accounts@baeventos.com`) |
+| `baeventos-mcp` | `DB`, `VECTORIZE` |
+| `baeventos-telegram` | `DB`, `VECTORIZE` |
+| `baeventos-jobs` | `DB`, `VECTORIZE`, R2 `INTAKE_EVIDENCE` (`baeventos-intake-evidence`) and `INTAKE_ARTWORK` (`baeventos-artwork`); workers.dev serves only the intake API |
+| `baeventos-chat-delivery` | None; it reaches data through `baeventos` |
+
+Production reads: `bin/ba-d1-read.sh "SELECT ..."` (it refuses anything but reads). Writes are reviewed `.sql` files run with `bunx wrangler d1 execute baeventos-production --remote --config wrangler.jsonc --file <file>`.
+
+**`DB_READ_ONLY`.** While the secret `DB_READ_ONLY` is `1`, data writes are frozen, for the cutover window or a later migration that needs a freeze:
+
+- On `baeventos`, any write request answers 503 with `Retry-After`. Reads, sign-in and sign-out, and guest chat (whose history lives in the browser) keep working. A signed-in chat turn is refused.
+- On `baeventos-telegram`, webhooks answer 503, so Telegram retries them later, and its crons do nothing.
+- On `baeventos-jobs`, the crons start nothing, and the intake API serves only its read operations.
+
+Set it with `printf 1 | bunx wrangler secret put DB_READ_ONLY --config <config>`, and end it with `bunx wrangler secret delete DB_READ_ONLY --config <config>`.
 
 Each Worker keeps its runtime variables and secrets in its own Cloudflare Settings → Variables & Secrets. Do not copy runtime secrets into GitHub. Configure the same `CHAT_DELIVERY_SECRET` on `baeventos` and `baeventos-chat-delivery`; see [chat streaming](chat-streaming.md).
 
@@ -39,7 +61,9 @@ Each Worker keeps its runtime variables and secrets in its own Cloudflare Settin
 | `baeventos-enrichment-catchup` | `0 13 * * *` | 10:00 | Retry failed enrichment once and drain the pending backlog |
 | `baeventos-source-check` | none | | Manual no-write catalog read of each source |
 
-Every step retries twice more with exponential backoff from one second (Trigger.dev's old three attempts) and keeps the old per-task time budget as its timeout. Secrets: `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (database and the private acquisition cache), `DEEPSEEK_API_KEY` (categorization, description extraction, translation, and facets), and `OPENAI_API_KEY` (embeddings). They reach shared code through `process.env` (`nodejs_compat_populate_process_env`). Run a job by hand with `bunx wrangler workflows trigger <workflow> --config wrangler.jobs.jsonc`, and read it with `bunx wrangler workflows instances describe <workflow> latest --config wrangler.jobs.jsonc`.
+Two more crons run in `scheduled()` itself (`CRON_TASKS`): `mark-past-events` hourly (`0 * * * *`) and the Vectorize reconcile at 03:00 Buenos Aires (`0 6 * * *`). They work only when the Worker binds D1; since the cutover they replace Supabase's pg_cron job, which stops mattering once Supabase is no longer read. That makes five crons, the most a Worker may have. See [D1](d1.md#catalog).
+
+Every step retries twice more with exponential backoff from one second (Trigger.dev's old three attempts) and keeps the old per-task time budget as its timeout. Secrets: `INTAKE_API_TOKEN` (the intake API, see [Instagram intake](instagram-intake.md)), `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (the private acquisition cache, until PR 09), `DEEPSEEK_API_KEY` (categorization, description extraction, translation, and facets), and `OPENAI_API_KEY` (embeddings). They reach shared code through `process.env` (`nodejs_compat_populate_process_env`). Run a job by hand with `bunx wrangler workflows trigger <workflow> --config wrangler.jobs.jsonc`, and read it with `bunx wrangler workflows instances describe <workflow> latest --config wrangler.jobs.jsonc`.
 
 ## Local checks
 

@@ -1,13 +1,13 @@
 import { createContext } from 'svelte'
 import { browser } from '$app/env'
 import { createActor } from 'xstate'
-import type { User } from '@supabase/supabase-js'
-import type { Profile } from '#shared/lib/types.ts'
-import { getSupabaseBrowserClient, fetchProfile } from '#features/auth/api/client.ts'
+import type { AuthUser, Profile } from '#shared/lib/types.ts'
+import { getSupabaseBrowserClient, fetchProfile, usesBetterAuth } from '#features/auth/api/client.ts'
 import { createAuthMachine, type AuthSeed } from './auth.machine.ts'
+import { watchBetterAuthSession } from './better-auth-session-sync.ts'
 
 export interface AuthContextValue {
-	user: User | null
+	user: AuthUser | null
 	profile: Profile | null
 	isAdmin: boolean
 	loading: boolean
@@ -28,7 +28,7 @@ export class AuthState implements AuthContextValue {
 	}
 
 	get user() { return this.snapshot.context.user }
-	set user(user: User | null) { this.actor.send({ type: 'SESSION_CHANGED', user }) }
+	set user(user: AuthUser | null) { this.actor.send({ type: 'SESSION_CHANGED', user }) }
 	get profile() { return this.snapshot.context.profile }
 	set profile(profile: Profile | null) {
 		if (this.user) this.updateProfile(this.user.id, profile)
@@ -54,9 +54,20 @@ export function initAuthContext(initial?: AuthSeed | null): AuthContextValue {
 	if (!browserAuthState) {
 		browserAuthState = new AuthState(initial ?? {})
 		const state = browserAuthState
-		getSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
-			state.user = session?.user ?? null
-		})
+		if (usesBetterAuth()) {
+			// Better Auth has no onAuthStateChange: re-read the session when the tab returns and after this tab signs out.
+			watchBetterAuthSession({
+				target: window,
+				visibilityTarget: document,
+				isVisible: () => document.visibilityState === 'visible',
+				currentUserId: () => state.user?.id ?? null,
+				apply: (user) => { state.user = user },
+			})
+		} else {
+			getSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
+				state.user = session?.user ?? null
+			})
+		}
 	} else {
 		browserAuthState.seed(initial ?? {})
 	}

@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { D1Database } from '@cloudflare/workers-types'
+import { freshD1 } from '../../tests/support/d1.ts'
+import { searchVenuesByName } from '#shared/lib/db/client.server.ts'
+import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts'
+import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
 import { TelegramApiError } from '#features/telegram/client.ts'
-import { TelegramInbox, boundedBackoffMs, type InboxItem } from './index.ts'
+import worker, { TelegramInbox, boundedBackoffMs, type InboxItem } from './index.ts'
 
 function storage() {
   const values = new Map<string, unknown>()
@@ -136,3 +141,48 @@ function viProcessor(error?: Error) {
     void item
   }
 }
+
+describe('Telegram inbox on a DB-bound Worker', () => {
+  let db: D1Database
+  let dispose: () => Promise<void>
+  beforeAll(async () => { ({ db, dispose } = await freshD1()) }, 60_000)
+  afterAll(async () => {
+    useCloudflareBindings(undefined)
+    useD1Binding(undefined)
+    await dispose()
+  })
+
+  it('the alarm points the shared search readers at D1, never Supabase', async () => {
+    await db.prepare("INSERT INTO venues (id, name) VALUES ('00000000-0000-4000-8000-0000000000aa', 'Teatro Colón')").run()
+    // Start where search would use Supabase, as in a fresh isolate.
+    useCloudflareBindings(undefined)
+    useD1Binding(undefined)
+    const original = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_ANON_KEY }
+    // Without these a Supabase read throws for missing configuration, so the test can never reach a real project.
+    delete process.env.SUPABASE_URL
+    delete process.env.SUPABASE_ANON_KEY
+    let found: string[] = []
+    try {
+      const inbox = new TelegramInbox({ storage: storage() }, { DB: db } as never, async () => {
+        found = (await searchVenuesByName('colón')).map((venue) => venue.name)
+      })
+      await enqueue(inbox, '77')
+      await inbox.alarm()
+    } finally {
+      if (original.url === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = original.url
+      if (original.key === undefined) delete process.env.SUPABASE_ANON_KEY; else process.env.SUPABASE_ANON_KEY = original.key
+    }
+    expect(found).toEqual(['Teatro Colón'])
+  })
+})
+
+describe('DB_READ_ONLY on the Telegram Worker', () => {
+  it('asks Telegram to retry webhooks later and runs no cron work during the cutover freeze', async () => {
+    const env = { DB_READ_ONLY: '1' } as unknown as Parameters<typeof worker.fetch>[1]
+    const response = await worker.fetch(new Request('https://telegram.example/api/telegram', { method: 'POST', body: '{}' }), env)
+    expect(response.status).toBe(503)
+    const waited: Promise<unknown>[] = []
+    await worker.scheduled({ cron: '0 * * * *' }, env, { waitUntil: (task) => { waited.push(task) } })
+    expect(waited).toEqual([])
+  })
+})

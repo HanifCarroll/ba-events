@@ -5,6 +5,8 @@ import { Effect } from 'effect'
 import type { EventInsert } from '#shared/lib/types.ts'
 
 // Isolated SDK doubles keep Bun's module mocks out of other deterministic suites.
+// The exit code is the result (tests/support/run-fixture.ts): anything short of the last line fails.
+process.exitCode = 3
 const source = process.argv[2]
 const event = { id: 'synthetic', api_id: 'synthetic', name: 'Synthetic Jazz', url: 'https://example.com/event', dateTime: '2026-12-01T20:00:00-03:00' }
 const transformed: EventInsert = {
@@ -34,7 +36,6 @@ mock.module('#features/events/lib/description-presentation.server.ts', () => ({
     return presentation
   },
 }))
-mock.module('#shared/lib/db/blocklist.ts', () => ({ getBlocklistEntries: async () => [] }))
 mock.module('#features/import/scrapers/ai-categorizer.ts', () => ({
   categorizeEventsBatchWithStats: async () => ({ categories: ['music'], stats: { successful: 1, fallback: 0 } }),
 }))
@@ -63,10 +64,11 @@ mock.module('#features/import/scrapers/meetup/detail.ts', () => ({ enrichMeetupE
 mock.module('#features/import/core/geo-validation.ts', () => ({ filterEventsByLocation: identity }))
 mock.module('#features/import/scrapers/ba-tourism/browser-scraper.ts', () => ({ scrapeBATourismEventsWithBrowser: async () => ({ events: [event], weekContext: {} }) }))
 
-const client = { from: () => ({
-  insert: async (data: Record<string, unknown>) => { writes.push(data); return { error: null } },
-  update: (data: Record<string, unknown>) => ({ eq: async () => { writes.push(data); return { error: null } } }),
-}) }
+const client = {
+  blocklistEntries: async () => [],
+  insertEvent: async (data: Record<string, unknown>) => { writes.push(data) },
+  updateEvent: async (_id: string, data: Record<string, unknown>) => { writes.push(data) },
+}
 const coordinators = {
   luma: (await import('./luma.ts')).processLumaImportEffect,
   meetup: (await import('./meetup.ts')).processMeetupImportEffect,
@@ -103,3 +105,4 @@ for (mode of ['new', 'changed', 'stale', 'unchanged', 'mutable', 'embedding-fail
   }
 }
 console.log(JSON.stringify({ source, passed: true }))
+process.exitCode = 0

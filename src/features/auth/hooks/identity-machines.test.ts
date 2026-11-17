@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createActor, SimulatedClock, waitFor, type Actor, type AnyActorLogic } from 'xstate'
-import type { User } from '@supabase/supabase-js'
+import type { AuthUser as User } from '#shared/lib/types.ts'
 import type { Profile } from '#shared/lib/types.ts'
 import { createAuthMachine } from './auth.machine.ts'
 import { createSignInMachine, createAuthCallbackMachine } from './sign-in.machine.ts'

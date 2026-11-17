@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { NominatimResult } from '../core/nominatim.ts'
+import { supabaseIntake } from './store-supabase.ts'
 import { addressKey, decodeVenueRequest, type Geocode, groupHeldByVenue, resolveIntakeVenueEffect, type VenueRequest } from './venues.ts'
 
 type Row = { id: string; name: string; address: string | null; neighborhood: string | null }
@@ -44,7 +45,7 @@ function fakeDb(venues: Row[], options: { similar?: Record<string, number>; fail
   const rpc = (_name: string, args: { p_name: string }) => Promise.resolve(options.failReads ? { data: null, error: { message: 'database unavailable' } } : {
     data: venues.map(row => ({ ...row, similarity: row.name.toLowerCase() === args.p_name.toLowerCase() ? 1 : options.similar?.[row.id] ?? 0 }))
       .filter(row => row.similarity >= 0.6).sort((a, b) => b.similarity - a.similarity), error: null })
-  return { db: { from, rpc } as unknown as SupabaseClient, inserts, venues }
+  return { db: supabaseIntake({ from, rpc } as unknown as SupabaseClient), inserts, venues }
 }
 // By default the synthetic geocoder finds the request's own street and number (Av. Ficticia 1234).
 const geocoded = (state: string, suburb?: string, road = 'Avenida Ficticia', house_number = '1234') => () => Effect.succeed({
@@ -52,7 +53,7 @@ const geocoded = (state: string, suburb?: string, road = 'Avenida Ficticia', hou
 const request = (overrides: Partial<VenueRequest> = {}): VenueRequest => decodeVenueRequest({
   name: 'Sala Sintética', address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro',
   evidence: [{ url: 'https://example.org/sala', confirms: 'name, address and barrio on the official site' }], ...overrides })
-const run = (db: SupabaseClient, input: VenueRequest, geocode: Geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro')) =>
+const run = (db: ReturnType<typeof supabaseIntake>, input: VenueRequest, geocode: Geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro')) =>
   Effect.runPromise(resolveIntakeVenueEffect(db, input, geocode))
 
 describe('intake venue resolution', () => {

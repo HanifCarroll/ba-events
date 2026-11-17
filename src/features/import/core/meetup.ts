@@ -7,7 +7,6 @@
  * Note: Meetup requires browser scraping and scrapes day-by-day for accurate results.
  */
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { addDays, format } from 'date-fns'
 import {
   scrapeMeetupCatalog,
@@ -29,12 +28,12 @@ import {
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../api/duplicate-detection.ts'
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
-import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
 import { settleVenuesEffect, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput, type VenueSettlementResult } from './venue-settlement.ts'
 import { delayEffect } from './nominatim.ts'
 import { filterEventsByLocation } from './geo-validation.ts'
-import type { EventInsert } from '#shared/lib/types.ts'
+import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
+import type { CatalogStore } from './catalog-store.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
 import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 
@@ -90,7 +89,7 @@ export interface MeetupImportResult {
  */
 function filterBlockedEvents(
   events: MeetupEvent[],
-  blocklistEntries: Awaited<ReturnType<typeof getBlocklistEntries>>
+  blocklistEntries: ImportBlocklistEntry[]
 ): MeetupEvent[] {
   return events.filter((event) => {
     const venueName = event.venue?.name || ''
@@ -143,7 +142,7 @@ function asMeetupError(operation: string, error: unknown): ImportOperationError 
 /** Effect-native daily batch. Pure transforms stay synchronous; AI, database,
  * presentation, and rate-limit calls are explicit side-effect leaves. */
 function processMeetupBatchEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   batchEvents: MeetupEvent[],
   venueResults: Map<string, VenueSettlementResult>,
   existingEventsMap: Map<string, ExistingEventData>,
@@ -219,11 +218,7 @@ function processMeetupBatchEffect(
         if (existing && updateKind === 'unchanged') return
 
         if (existing && updateKind === 'mutable-only') {
-          const { error } = yield* meetupTry('meetup.update-mutable', () => client
-            .from('events')
-            .update(getChangedMutableFields(transformed, existing))
-            .eq('id', existing.id)
-          )
+          const error = yield* meetupTry('meetup.update-mutable', () => catalog.updateEvent(existing.id, getChangedMutableFields(transformed, existing)).then(() => null, (error: Error) => error))
           if (error) {
             logger.error('[meetup] Failed to update event', { error: error.message })
             result.skipped++
@@ -265,9 +260,7 @@ function processMeetupBatchEffect(
         }
 
         if (existing) {
-          const { error } = yield* meetupTry('meetup.update-event', () => client
-            .from('events')
-            .update({
+          const error = yield* meetupTry('meetup.update-event', () => catalog.updateEvent(existing.id, {
               name: eventWithEmbedding.name,
               description_es: eventWithEmbedding.description_es,
               description_en: eventWithEmbedding.description_en,
@@ -279,8 +272,7 @@ function processMeetupBatchEffect(
               search_document: eventWithEmbedding.search_document,
               embedding_version: eventWithEmbedding.embedding_version,
               ...getChangedMutableFields(eventWithEmbedding, existing),
-            })
-            .eq('id', existing.id)
+            }).then(() => null, (error: Error) => error)
           )
           if (error) {
             logger.error('[meetup] Failed to update event', { error: error.message })
@@ -289,7 +281,7 @@ function processMeetupBatchEffect(
             result.updated++
           }
         } else {
-          const { error } = yield* meetupTry('meetup.insert-event', () => client.from('events').insert(eventWithEmbedding))
+          const error = yield* meetupTry('meetup.insert-event', () => catalog.insertEvent(eventWithEmbedding).then(() => null, (error: Error) => error))
           if (error) {
             logger.error('[meetup] Failed to insert event', { error: error.message })
             result.skipped++
@@ -315,7 +307,7 @@ function processMeetupBatchEffect(
  * leaves while filtering, expansion, batching, and expected item failures are
  * represented in the Effect program. */
 export function processMeetupImportEffect(
-  client: SupabaseClient,
+  store: CatalogStore,
   options: MeetupImportOptions
 ): Effect.Effect<MeetupImportResult, ImportOperationError> {
   return Effect.gen(function* () {
@@ -352,7 +344,7 @@ export function processMeetupImportEffect(
     }
 
     logger.info('[meetup] Filtering events')
-    const blocklistEntries = yield* meetupTry('meetup.load-blocklist', () => getBlocklistEntries('meetup', client))
+    const blocklistEntries = yield* meetupTry('meetup.load-blocklist', () => store.blocklistEntries('meetup'))
     const inPersonEvents = filterInPersonEvents(allEvents)
     const nonBlockedEvents = filterBlockedEvents(inPersonEvents, blocklistEntries)
     const dateFilteredEvents = filterByDateRange(nonBlockedEvents, startDate, endDate)
@@ -369,7 +361,7 @@ export function processMeetupImportEffect(
     }
 
     logger.info('[meetup] Settling venues')
-    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    // One input per event; settlement dedupes by `venueSettlementKey` (name plus street and number).
     const venueInputs: VenueSettlementInput[] = filteredEvents
       .filter((event) => event.venue?.name)
       .map((event) => ({
@@ -380,7 +372,7 @@ export function processMeetupImportEffect(
           : null,
       }))
     const { results: venueResults, stats: venueStats } = yield* settleVenuesEffect(
-      client,
+      store,
       venueInputs,
       { source: 'meetup', scrapeRunId: options.scrapeRunId }
     ).pipe(Effect.mapError((error) => asMeetupError('meetup.settle-venues', error)))
@@ -397,7 +389,7 @@ export function processMeetupImportEffect(
     }
     const existingEventsMap = options.skipDuplicateCheck
       ? new Map<string, ExistingEventData>()
-      : yield* checkDuplicateEventsWithDataEffect(allExternalIds, 'meetup', client).pipe(
+      : yield* checkDuplicateEventsWithDataEffect(allExternalIds, 'meetup', store).pipe(
           Effect.mapError((error) => asMeetupError('meetup.duplicate-check', error))
         )
 
@@ -408,7 +400,7 @@ export function processMeetupImportEffect(
       const dayEvents = eventsByDay.get(dayKey)!
       logger.debug(`[meetup] Processing batch for ${dayKey}`, { count: dayEvents.length })
       const batchResult = yield* processMeetupBatchEffect(
-        client,
+        store,
         dayEvents,
         venueResults,
         existingEventsMap,
@@ -432,11 +424,11 @@ export function processMeetupImportEffect(
 }
 
 export async function processMeetupImport(
-  client: SupabaseClient,
+  store: CatalogStore,
   options: MeetupImportOptions
 ): Promise<MeetupImportResult> {
   try {
-    return await Effect.runPromise(processMeetupImportEffect(client, options))
+    return await Effect.runPromise(processMeetupImportEffect(store, options))
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error))
   }

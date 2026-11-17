@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { artworkSrcset, artworkVersion, isArtworkOriginAllowed } from './artwork-delivery.ts'
+import { artworkSrcset, artworkVersion, isArtworkOriginAllowed, r2ArtworkKey } from './artwork-delivery.ts'
 
 const SOURCE_IMAGES = [
   ['passline', 'https://imagenes.passline.com/eventos/example-rec.jpg'],
@@ -18,6 +18,18 @@ describe('bounded artwork delivery', () => {
     expect(isArtworkOriginAllowed('https://other.supabase.co' + path, origin)).toBe(false)
     expect(isArtworkOriginAllowed(origin + path + '?redirect=1', origin)).toBe(false)
     expect(isArtworkOriginAllowed(origin + '/storage/v1/object/public/instagram-evidence/private.jpg', origin)).toBe(false)
+  })
+  it('allows R2 artwork only in the site route form, and finds its key', () => {
+    const event = 'e739fcbc-a83e-4a2e-b47d-0fd6e55b93e4'
+    const url = `https://baeventos.com/api/event-artwork/${event}/${'a'.repeat(64)}.png`
+    expect(isArtworkOriginAllowed(url)).toBe(true)
+    expect(r2ArtworkKey(url, event)).toBe(`${'a'.repeat(64)}.png`)
+    expect(r2ArtworkKey(url, 'f739fcbc-a83e-4a2e-b47d-0fd6e55b93e4')).toBeNull()
+    for (const bad of [url + '?x=1', url.replace('baeventos.com', 'evil.test'), url.replace('.png', '.svg'),
+      `https://baeventos.com/api/event-artwork/${event}/320.webp`]) {
+      expect(isArtworkOriginAllowed(bad)).toBe(false)
+      expect(r2ArtworkKey(bad)).toBeNull()
+    }
   })
   it('caps candidate descriptors and removes duplicate no-upscale variants when source dimensions are known', () => {
     const sources = artworkSrcset('catalog-id', SOURCE_IMAGES[0][1], 400)

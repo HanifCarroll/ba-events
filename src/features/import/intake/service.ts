@@ -1,65 +1,50 @@
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EventInsert } from '#shared/lib/types.ts'
 import { EMPTY_FACETS, type EventFacets } from '#shared/lib/search-facets.ts'
 import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import { matchVenueEffect } from '../scrapers/venue-matcher.ts'
 import { decodeCandidate, type Candidate } from './schema.ts'
-import { candidateStart, decideMatch, validateEvidence, normalizeTitle, type CatalogMatch, type Observation, type Media } from './planning.ts'
-import { allRowsEffect, dbEffect } from './repository.ts'
+import { candidateStart, decideMatch, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
+import type { IntakePlanRow, IntakeStore } from './store.ts'
 
-type CandidateRow = { id: string; revision: number; payload: Candidate }
-export type IntakePlan = {
-  id: string; candidate_id: string; revision: number; action: 'held' | 'create' | 'update' | 'link';
-  event_id: string; expected_event_updated_at: string | null; payload: EventInsert;
-  artwork_media_id: string | null;
-  evidence: Candidate['evidence']; reasons: string[]; receipt: Record<string, unknown> | null;
-}
+export type IntakePlan = IntakePlanRow
+export { publicArtworkUrl } from './store-supabase.ts'
 const failure = (message: string) => new ImportOperationError({ operation: 'intake', message })
 
-export const submitCandidateEffect = Effect.fn('intake.submit')(function*(client: SupabaseClient, input: unknown) {
-  const candidate = yield* Effect.try({ try: () => decodeCandidate(input), catch: () => failure('Invalid candidate; see the candidate schema') })
+export const submitCandidateEffect = Effect.fn('intake.submit')(function*(store: IntakeStore, input: unknown) {
+  const candidate = yield* Effect.try({ try: () => decodeCandidate(input),
+    catch: () => new ImportOperationError({ operation: 'intake.input', message: 'Invalid candidate; see the candidate schema' }) })
   const { expected_revision, ...payload } = candidate
-  return yield* dbEffect('intake.submit', () => client.rpc('submit_intake_candidate', {
-    p_id: candidate.id, p_expected_revision: expected_revision, p_payload: payload,
-  }))
+  return yield* store.submitCandidate(candidate.id, expected_revision, payload)
 })
 
-export const readEvidenceEffect = Effect.fn('intake.evidence')(function*(client: SupabaseClient, candidate: Candidate) {
+export const readEvidenceEffect = Effect.fn('intake.evidence')(function*(store: IntakeStore, candidate: Candidate) {
   const ids = [...new Set(candidate.evidence.map(item => item.observation_id))]
   return yield* Effect.all({
     observations: Effect.gen(function* () {
-      const posts = yield* dbEffect('intake.observations', () => client.from('intake_observations').select('*').in('id', ids))
-      const sources = yield* dbEffect('intake.sources', () => client.from('instagram_sources').select('username,authority').in('username', [...new Set(posts.map(post => post.source_username))]))
+      const posts = yield* store.observationsByIds(ids)
+      const sources = yield* store.sourceAuthorities([...new Set(posts.map(post => post.source_username as string))])
       return posts.map(post => ({ ...post, authority: sources.find(source => source.username === post.source_username)?.authority })) as Observation[]
     }),
-    media: dbEffect('intake.media', () => client.from('intake_media').select('*').in('observation_id', ids)).pipe(Effect.map(media => media as Media[])),
+    media: store.mediaForObservations(ids),
   }, { concurrency: 2 })
 })
 
-export function publicArtworkUrl(storageOrigin: string, media: Media): string {
-  const origin = new URL(storageOrigin)
-  if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/' || origin.port) throw new Error('Invalid storage origin')
-  return `${origin.origin}/storage/v1/object/public/event-artwork/${media.object_key}`
-}
-
-export const previewCandidateEffect = Effect.fn('intake.preview')(function*(client: SupabaseClient, id: string, storageOrigin: string, now = new Date()) {
-  const row = (yield* dbEffect('intake.candidate', () => client.from('intake_candidates').select('*').eq('id', id).single())) as CandidateRow
+export const previewCandidateEffect = Effect.fn('intake.preview')(function*(store: IntakeStore, id: string, now = new Date()) {
+  const row = yield* store.candidate(id)
   const candidate = yield* Effect.try({ try: () => decodeCandidate({ ...row.payload, expected_revision: row.revision }), catch: () => failure('Stored candidate is invalid') })
-  const { observations, media } = yield* readEvidenceEffect(client, candidate)
+  const { observations, media } = yield* readEvidenceEffect(store, candidate)
   const reasons = validateEvidence(candidate, observations, media, now)
   // Changed source observations invalidate earlier evidence even if the candidate was not edited yet.
   const currentObservations = yield* Effect.forEach(observations, post => Effect.gen(function* () {
-    const latest = yield* dbEffect('intake.latest', () => client.from('intake_observations').select('id').eq('post_id', post.post_id).order('observed_at', { ascending: false }).limit(1))
-    return latest[0]?.id === post.id
+    const latest = yield* store.latestObservation(post.post_id)
+    return latest?.id === post.id
   }), { concurrency: 4 })
   if (currentObservations.includes(false)) reasons.push('Source post changed; review the newest observation')
   let venueName = candidate.venue_name
   if (candidate.venue_id) {
-    const venues = yield* dbEffect('intake.venue', () => client.from('venues').select('id,name,neighborhood').eq('id', candidate.venue_id).limit(1))
-    const venue = venues[0]
+    const venue = yield* store.venue(candidate.venue_id)
     if (!venue) reasons.push('Selected venue does not exist')
     else {
       venueName = venue.name
@@ -67,17 +52,16 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(clie
       if (candidate.venue_name && normalizeTitle(candidate.venue_name) !== normalizeTitle(venue.name)) reasons.push('Venue name differs from selected venue; resolve its identity')
     }
   } else if (candidate.venue_name) {
-    const match = yield* matchVenueEffect(candidate.venue_name, 0.6, client).pipe(Effect.mapError(error => failure(error.message)))
-    if (match.venue) reasons.push(`Possible venue: ${match.venue.name} (${match.venue.id}); confirm and submit a new revision`)
+    // Advisory only: without a venue_id the plan is held anyway, so a failed lookup just omits the hint.
+    const hint = yield* store.venueHint(candidate.venue_name).pipe(Effect.orElseSucceed(() => null))
+    if (hint) reasons.push(`Possible venue: ${hint.name} (${hint.id}); confirm and submit a new revision`)
   }
-  const linked = yield* dbEffect('intake.links', () => client.from('event_source_evidence').select('event_id').eq('candidate_id', candidate.id))
-  const linkedIds = linked.map(item => item.event_id as string)
+  const linkedIds = yield* store.linkedEventIds(candidate.id)
   const explicitIds = [...new Set([...linkedIds, ...(candidate.target_event_id ? [candidate.target_event_id] : [])])]
   const day = new Date(`${candidate.date}T00:00:00-03:00`)
-  const catalog = Number.isNaN(day.getTime()) ? [] : yield* allRowsEffect(client, 'events', '*', query => query
-    .gte('starts_at', day.toISOString()).lt('starts_at', new Date(day.getTime() + 86400000).toISOString()).order('id'))
+  const catalog = Number.isNaN(day.getTime()) ? [] : yield* store.eventsBetween(day.toISOString(), new Date(day.getTime() + 86400000).toISOString())
   if (explicitIds.length) {
-    const targets = yield* dbEffect('intake.targets', () => client.from('events').select('*').in('id', explicitIds))
+    const targets = yield* store.eventsByIds(explicitIds)
     for (const target of targets) if (!catalog.some(event => event.id === target.id)) catalog.push(target)
   }
   const decision = decideMatch(candidate, catalog as unknown as CatalogMatch[], linkedIds, reasons)
@@ -86,6 +70,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(clie
   }
   const old = decision.target ? catalog.find(event => event.id === decision.target!.id) : undefined
   const flyer = media.find(item => item.id === candidate.artwork_media_id)
+  const eventId = decision.target?.id ?? crypto.randomUUID()
   const description = [candidate.description_es, candidate.price_note].filter(Boolean).join('\n\n') || null
   const payload: EventInsert = {
     name: candidate.name, starts_at: decision.action === 'held' ? `${candidate.date}T00:00:00-03:00` : candidateStart(candidate),
@@ -99,7 +84,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(clie
     is_free: candidate.price_kind === 'free' || candidate.price_kind === 'unknown' && old?.is_free === true,
     ticket_url: candidate.ticket_url ?? old?.ticket_url as string | null ?? null,
     source: 'instagram', external_id: candidate.id, status: candidate.status,
-    image_url: flyer ? publicArtworkUrl(storageOrigin, flyer) : old?.image_url as string | null ?? null,
+    image_url: flyer ? store.artworkUrl(eventId, flyer) : old?.image_url as string | null ?? null,
     image_width: flyer ? null : old?.image_width as number | null ?? null,
     image_height: flyer ? null : old?.image_height as number | null ?? null,
     link: observations[0]?.post_url ?? null,
@@ -118,11 +103,11 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(clie
       decision.action = 'held'; decision.reasons.push(`Correction of ${field} needs direct organizer or venue evidence`)
     }
   }
-  const plan = yield* dbEffect('intake.plan', () => client.from('intake_plans').insert({
+  const plan = yield* store.insertPlan({
     candidate_id: id, revision: row.revision, action: decision.action,
-    event_id: decision.target?.id ?? crypto.randomUUID(), expected_event_updated_at: decision.target?.updated_at ?? null,
+    event_id: eventId, expected_event_updated_at: decision.target?.updated_at ?? null,
     payload, artwork_media_id: candidate.artwork_media_id, evidence: candidate.evidence, reasons: [...new Set(decision.reasons)],
-  }).select().single())
+  })
   return { ...plan, venue_name: venueName } as IntakePlan & { venue_name: string | null }
 })
 
@@ -130,16 +115,16 @@ type Publishers = {
   embed: typeof embedEventWithDocument;
   presentation: typeof buildDescriptionPresentationFields;
 }
-export const commitPlanEffect = Effect.fn('intake.commit')(function*(client: SupabaseClient, id: string,
+export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: IntakeStore, id: string,
   publishers: Publishers = { embed: embedEventWithDocument, presentation: buildDescriptionPresentationFields }) {
-  const plan = (yield* dbEffect('intake.plan', () => client.from('intake_plans').select('*').eq('id', id).single())) as IntakePlan
-  if (plan.receipt) return plan.receipt
-  const policy = yield* dbEffect('intake.policy', () => client.from('intake_policy').select('publishing_enabled').single())
-  if (!policy.publishing_enabled || plan.action === 'held') return yield* failure('Publishing is disabled or this plan is held')
+  const plan = yield* store.plan(id)
+  if (plan.receipt) return yield* store.replayReceipt(plan)
+  const enabled = yield* store.publishingEnabled()
+  if (!enabled || plan.action === 'held') return yield* failure('Publishing is disabled or this plan is held')
   // Run all stale-plan checks before provider calls or making artwork public.
-  yield* dbEffect('intake.check-plan', () => client.rpc('check_intake_plan', { p_plan_id: id }))
+  yield* store.checkPlan(id)
   if (plan.action !== 'link' && !plan.payload.embedding) {
-    const venue = yield* dbEffect('intake.venue', () => client.from('venues').select('name,neighborhood').eq('id', plan.payload.venue_id).single())
+    const venue = yield* store.eventVenue(plan.payload.venue_id)
     const [{ embedding, searchDocument }, presentation] = yield* Effect.all([
       importTry('intake.embedding', () => publishers.embed({ ...plan.payload,
         is_free: plan.payload.is_free || plan.payload.price != null ? plan.payload.is_free : undefined,
@@ -147,14 +132,13 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(client: Sup
       importTry('intake.presentation', () => publishers.presentation(plan.payload)),
     ], { concurrency: 2 })
     if (!embedding || embedding.length !== 1536 || !embedding.every(Number.isFinite)) return yield* failure('A valid embedding is required before publishing')
-    yield* dbEffect('intake.prepare', () => client.from('intake_plans').update({ payload: {
+    yield* store.preparePlan(id, {
       ...plan.payload, ...presentation, embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION,
-    } }).eq('id', id).is('receipt', null).select().single())
+    })
   }
   if (plan.action !== 'link' && plan.artwork_media_id) {
-    const media = yield* dbEffect('intake.artwork', () => client.from('intake_media').select('*').eq('id', plan.artwork_media_id).single())
-    const stored = yield* dbEffect('intake.download', () => client.storage.from('instagram-evidence').download(media.object_key))
-    yield* dbEffect('intake.publish-artwork', () => client.storage.from('event-artwork').upload(media.object_key, stored, { contentType: media.content_type, upsert: true, cacheControl: '31536000' }))
+    const media = yield* store.artworkMedia(plan.artwork_media_id)
+    yield* store.publishArtwork(media)
   }
-  return yield* dbEffect('intake.commit', () => client.rpc('commit_intake_plan', { p_plan_id: id }))
+  return yield* store.commitPlan(id)
 })

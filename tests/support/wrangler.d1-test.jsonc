@@ -1,0 +1,6 @@
+// Local-only config for tests/support/d1.ts. Never deployed; the database id is a placeholder.
+{
+  "name": "baeventos-d1-test",
+  "compatibility_date": "2026-08-25",
+  "d1_databases": [{ "binding": "DB", "database_name": "baeventos-d1-test", "database_id": "00000000-0000-0000-0000-000000000000" }]
+}

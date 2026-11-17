@@ -1,0 +1,20 @@
+// Staging only: `baeventos-chat-delivery-staging`, the chat delivery Durable Object and `baeventos-chat-response-staging`
+// Workflow for the `baeventos-staging` web Worker (DECISIONS.md). CI never deploys it. It must never bind a production
+// Worker: CHAT_EXECUTION points at `baeventos-staging`. Deploy by hand, this file first, then wrangler.staging.jsonc:
+//   bunx wrangler deploy --config wrangler.chat.staging.jsonc
+// Secret: CHAT_DELIVERY_SECRET, the same value as on baeventos-staging.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-chat-delivery-staging",
+  "main": "src/chat-delivery-worker/worker.ts",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "services": [{ "binding": "CHAT_EXECUTION", "service": "baeventos-staging" }],
+  "durable_objects": { "bindings": [{ "name": "CHAT_DELIVERY", "class_name": "ChatDelivery" }] },
+  "workflows": [{ "binding": "CHAT_RESPONSE_WORKFLOW", "name": "baeventos-chat-response-staging", "class_name": "ChatResponseWorkflow" }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChatDelivery"] }],
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": true } }
+}

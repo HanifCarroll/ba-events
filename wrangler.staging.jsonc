@@ -1,0 +1,55 @@
+// Staging only: the `baeventos-staging` Worker on workers.dev and its `-staging` resources (DECISIONS.md). CI never
+// deploys this file; production configs get a D1 binding only at the cutover (delivery PR 08).
+// PR 01 adds the staging D1 so `wrangler d1 migrations apply baeventos-staging --remote --config wrangler.staging.jsonc`
+// works, and PR 03 the staging Vectorize index that search reads. Later PRs add the R2 and other bindings they need;
+// it must never bind a production Worker, Durable Object, or database.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-staging",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env",
+    "enable_request_signal"
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".svelte-kit/cloudflare"
+  },
+  "workers_dev": true,
+  "preview_urls": false,
+  // PR 05: chat runs through the staging delivery Worker (wrangler.chat.staging.jsonc), never production's. No Supabase
+  // secrets are set here, so chat, guest diagnostics, feedback, and the rate limiter can only reach the staging D1.
+  // Secrets: CHAT_DELIVERY_SECRET (same value as baeventos-chat-delivery-staging), DEEPSEEK_API_KEY, OPENAI_API_KEY.
+  "durable_objects": {
+    "bindings": [{ "name": "CHAT_DELIVERY", "class_name": "ChatDelivery", "script_name": "baeventos-chat-delivery-staging" }]
+  },
+  // Placeholders on purpose: staging must not send sign-ins to production Supabase Auth (a `.invalid` host never
+  // resolves) or events to production PostHog (empty key turns it off). Sign-in on staging arrives with Better Auth
+  // (delivery PR 07); until then staging serves guests only.
+  "vars": {
+    "CANONICAL_HOST": "baeventos-staging.paseaban-decorosa0m.workers.dev",
+    "PUBLIC_SUPABASE_URL": "https://no-auth-on-staging.invalid",
+    "PUBLIC_SUPABASE_ANON_KEY": "staging-has-no-supabase",
+    "PUBLIC_POSTHOG_KEY": "",
+    "PUBLIC_POSTHOG_HOST": ""
+  },
+  // PR 07: Better Auth's magic links (src/features/auth/api/magic-link-email.server.ts). Secret AUTH_SECRET signs the
+  // session cookies; GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET turn on Google once the staging callback is registered.
+  "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["accounts@baeventos.com"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "baeventos-staging",
+      "database_id": "136c27ff-1093-4519-825a-7ec4e17b1ff7",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events-staging" }],
+  // PR 07b: the artwork route serves R2 artwork (`/api/event-artwork/<event id>/<sha256>.<ext>`) from `ARTWORK`, and
+  // resizes catalog artwork through `IMAGES` as production does. PR 08 binds `ARTWORK` to `baeventos-artwork` in production.
+  "r2_buckets": [{ "binding": "ARTWORK", "bucket_name": "baeventos-artwork-staging" }],
+  "images": { "binding": "IMAGES" }
+}

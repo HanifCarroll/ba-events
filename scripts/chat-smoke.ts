@@ -9,11 +9,35 @@
  *   bun scripts/chat-smoke.ts --url https://baeventos.com --prompt "what's on tonight?"
  *   bun scripts/chat-smoke.ts --url http://localhost:3000 --prompt "techno in Palermo" --locale es
  *
- * Exit code 0 = assistant produced text; 1 = HTTP/stream failure or empty reply.
+ * Sends a guest turn in the current delivery protocol (client ids plus the x-chat-attempt/x-chat-token capability),
+ * so it also works while DB_READ_ONLY=1 freezes signed-in writes.
+ *
+ * Exit code 0 = assistant produced text; 1 = HTTP/stream failure or empty reply, or no events with --require-events 1.
  */
 
 import { randomUUID } from 'crypto'
+import { DELIVERY_ATTEMPT_HEADER, DELIVERY_TOKEN_HEADER } from '../src/features/chat/lib/delivery-protocol.ts'
 
+/** A guest turn as the browser starts one: client-made ids and a random delivery capability (delivery.ts). */
+export function guestChatRequest(prompt: string, locale: 'en' | 'es') {
+  const turnId = randomUUID()
+  const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  const userClientMessageId = randomUUID()
+  return {
+    headers: {
+      'Content-Type': 'application/json', Accept: 'text/event-stream',
+      [DELIVERY_ATTEMPT_HEADER]: randomUUID(), [DELIVERY_TOKEN_HEADER]: token,
+    },
+    body: {
+      locale, turnId, conversationId: randomUUID(), userClientMessageId, assistantClientMessageId: randomUUID(),
+      messages: [{ id: userClientMessageId, role: 'user', parts: [{ type: 'text', text: prompt }] }],
+    },
+  }
+}
+
+if (import.meta.main) await main()
+
+async function main() {
 const args: Record<string, string> = {}
 const argv = process.argv.slice(2)
 for (let i = 0; i < argv.length; i++) {
@@ -25,28 +49,19 @@ for (let i = 0; i < argv.length; i++) {
 
 const url = args.url
 const prompt = args.prompt
-const locale = args.locale ?? 'en'
+const locale = args.locale === 'es' ? 'es' : 'en'
 
 if (!url || !prompt) {
   console.error('Usage: bun scripts/chat-smoke.ts --url <base> --prompt "<text>" [--locale en|es]')
   process.exit(1)
 }
 
-const body = {
-  locale,
-  messages: [
-    {
-      id: randomUUID(),
-      role: 'user',
-      parts: [{ type: 'text', text: prompt }],
-    },
-  ],
-}
-
+const request = guestChatRequest(prompt, locale)
 const res = await fetch(`${url}/api/chat`, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-  body: JSON.stringify(body),
+  headers: request.headers,
+  body: JSON.stringify(request.body),
+  signal: AbortSignal.timeout(120_000),
 })
 
 if (!res.ok || !res.body) {
@@ -62,6 +77,7 @@ let buffer = ''
 let assistantText = ''
 let finishReason: string | null = null
 let toolCalls = 0
+let events = 0
 let lastStatus = ''
 
 function handleEvent(evt: Record<string, unknown>) {
@@ -74,15 +90,17 @@ function handleEvent(evt: Record<string, unknown>) {
   } else if (type === 'finish') {
     finishReason = String(evt.finishReason ?? 'unknown')
   } else if (type === 'data-execution-trace') {
-    // This route reports tool calls inside the execution-trace envelope.
-    const envelope = evt.data as { data?: Array<{ toolCalls?: unknown[] }> } | undefined
-    for (const step of envelope?.data ?? []) {
+    // Tool calls are reported inside the execution trace's steps.
+    const trace = evt.data as { steps?: Array<{ toolCalls?: unknown[] }> } | undefined
+    for (const step of trace?.steps ?? []) {
       for (const call of step.toolCalls ?? []) {
         const c = call as { toolName?: string; input?: unknown }
         toolCalls++
         console.log(`  [tool] ${c.toolName ?? '?'} args=${JSON.stringify(c.input ?? {})}`)
       }
     }
+  } else if (type === 'data-response') {
+    events = ((evt.data as { events?: unknown[] } | undefined)?.events ?? []).length
   } else if (type === 'data-status') {
     const phase = (evt.data as { phase?: string } | undefined)?.phase
     if (phase && phase !== lastStatus) {
@@ -112,6 +130,7 @@ while (true) {
 }
 
 console.log(`\n[assistant] ${assistantText.trim() || '(no text)'}`)
-console.log(`[finish] ${finishReason ?? 'stream ended'} | tool calls: ${toolCalls}`)
+console.log(`[finish] ${finishReason ?? 'stream ended'} | tool calls: ${toolCalls} | events: ${events}`)
 
-if (!assistantText.trim()) process.exit(1)
+if (!assistantText.trim() || (args['require-events'] !== undefined && events === 0)) process.exit(1)
+}

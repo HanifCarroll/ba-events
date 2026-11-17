@@ -3,12 +3,15 @@
  *
  * Matches venue names from external sources to existing venues in the database.
  * Uses a three-tier approach: exact match, fuzzy match, no match.
+ * Reads through the catalog store: on Supabase that needs migration 20261116180000_venue_name_matching.sql (`venues_named`,
+ * and `find_similar_venue` fixed); on D1 it compares `venueNameKey` and the pg_trgm port in TypeScript.
  */
 
 import { Data, Effect } from 'effect'
-import { getSupabase, type SupabaseClient } from '#shared/lib/db/client.server.ts'
 import type { Venue } from '#shared/lib/types.ts'
 import { importTry } from '../core/effect-utils.ts'
+import type { CatalogStore } from '../core/catalog-store.ts'
+import { pickVenue, venueNameKey } from '../core/venue-identity.ts'
 
 export interface VenueMatchResult {
   venue: Venue | null
@@ -23,79 +26,38 @@ export class VenueMatchError extends Data.TaggedError('VenueMatchError')<{
   readonly cause?: unknown
 }> {}
 
+const matchError = (cause: { operation: string; message: string; cause?: unknown }) => new VenueMatchError({
+  operation: cause.operation,
+  message: cause.message,
+  cause: cause.cause,
+})
+
 /**
- * Normalize a venue name for comparison
- * - Lowercase
- * - Remove extra whitespace
- * - Remove common suffixes
+ * Every venue whose `venueNameKey` equals this name's, with its event count (`venues_named` on Supabase). No `ilike`, so
+ * `%` and `_` in a name are plain characters. A failed lookup is an error, never "no venue".
  */
-function normalizeVenueName(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\s*-\s*buenos aires$/i, '')
-    .replace(/\s*-\s*caba$/i, '')
-    .replace(/\s*-\s*argentina$/i, '')
+export function findSameNameVenuesEffect(
+  venueName: string,
+  catalog: CatalogStore
+): Effect.Effect<Array<Venue & { event_count: number }>, VenueMatchError> {
+  if (!venueNameKey(venueName)) return Effect.succeed([])
+  return importTry('venue-matcher.same-name', () => catalog.venuesNamed(venueName)).pipe(Effect.mapError(matchError))
 }
 
 /**
- * Find a venue by exact name match (case-insensitive)
- */
-function findExactMatchEffect(venueName: string, client?: SupabaseClient) {
-  const normalized = normalizeVenueName(venueName)
-
-  return importTry('venue-matcher.exact', () => (client ?? getSupabase())
-    .from('venues')
-    .select('*')
-    .ilike('name', normalized)
-    .limit(1)
-    .single()
-  ).pipe(
-    Effect.map(({ data, error }) => (error || !data ? null : data as Venue)),
-    Effect.mapError((error) => new VenueMatchError({
-      operation: error.operation,
-      message: error.message,
-      cause: error.cause,
-    }))
-  )
-}
-
-/**
- * Find a venue by fuzzy match using pg_trgm
+ * Find a venue by fuzzy match (pg_trgm `similarity`), then settle on that name's preferred copy (`pickVenue`).
  */
 function findFuzzyMatchEffect(
   venueName: string,
-  threshold: number = 0.6,
-  client?: SupabaseClient
+  threshold: number,
+  catalog: CatalogStore,
+  address: string | null | undefined
 ): Effect.Effect<{ venue: Venue; similarity: number } | null, VenueMatchError> {
-  const db = client ?? getSupabase()
   return Effect.gen(function* () {
-    const { data, error } = yield* importTry('venue-matcher.fuzzy-rpc', () => db.rpc('find_similar_venue', {
-      search_name: venueName,
-      similarity_threshold: threshold,
-    })).pipe(Effect.mapError((cause) => new VenueMatchError({
-      operation: cause.operation,
-      message: cause.message,
-      cause: cause.cause,
-    })))
-
-    if (error || !data || data.length === 0) return null
-
-    const match = data[0]
-    const { data: venue, error: venueError } = yield* importTry('venue-matcher.fuzzy-venue', () => db
-      .from('venues')
-      .select('*')
-      .eq('id', match.id)
-      .single()
-    ).pipe(Effect.mapError((cause) => new VenueMatchError({
-      operation: cause.operation,
-      message: cause.message,
-      cause: cause.cause,
-    })))
-
-    if (venueError || !venue) return null
-    return { venue: venue as Venue, similarity: match.similarity }
+    const match = yield* importTry('venue-matcher.fuzzy-rpc', () => catalog.similarVenue(venueName, threshold)).pipe(Effect.mapError(matchError))
+    if (!match) return null
+    const venue = pickVenue(yield* findSameNameVenuesEffect(match.name, catalog), address)
+    return venue ? { venue, similarity: match.similarity } : null
   })
 }
 
@@ -103,14 +65,18 @@ function findFuzzyMatchEffect(
  * Match a venue name to an existing venue in the database
  *
  * Strategy:
- * 1. Try exact match (normalized, case-insensitive)
+ * 1. Try exact match: the same `venueNameKey`. Several same-name venues resolve with `pickVenue`: those at the event's
+ *    own street and number first, then the copy the duplicate merge keeps
  * 2. Try fuzzy match using pg_trgm with similarity threshold
  * 3. Return no match if nothing found
+ *
+ * A failed lookup fails the effect rather than looking like "no match".
  */
 export function matchVenueEffect(
   venueName: string,
-  fuzzyThreshold: number = 0.6,
-  client?: SupabaseClient
+  fuzzyThreshold: number,
+  catalog: CatalogStore,
+  address?: string | null
 ): Effect.Effect<VenueMatchResult, VenueMatchError> {
   // Handle empty/null names
   if (!venueName || venueName.trim() === '') {
@@ -126,7 +92,7 @@ export function matchVenueEffect(
 
   return Effect.gen(function* () {
     // Try exact match first
-    const exactMatch = yield* findExactMatchEffect(searchName, client)
+    const exactMatch = pickVenue(yield* findSameNameVenuesEffect(searchName, catalog), address)
     if (exactMatch) {
       return {
         venue: exactMatch,
@@ -137,7 +103,7 @@ export function matchVenueEffect(
     }
 
     // Try fuzzy match
-    const fuzzyMatch = yield* findFuzzyMatchEffect(searchName, fuzzyThreshold, client)
+    const fuzzyMatch = yield* findFuzzyMatchEffect(searchName, fuzzyThreshold, catalog, address)
     if (fuzzyMatch) {
       return {
         venue: fuzzyMatch.venue,
@@ -154,52 +120,4 @@ export function matchVenueEffect(
       searchName,
     }
   })
-}
-
-/** Promise compatibility adapter; legacy matching treats lookup errors as no match. */
-export async function matchVenue(
-  venueName: string,
-  fuzzyThreshold: number = 0.6,
-  client?: SupabaseClient
-): Promise<VenueMatchResult> {
-  return Effect.runPromise(
-    Effect.catchEager(matchVenueEffect(venueName, fuzzyThreshold, client), () => Effect.succeed({
-      venue: null,
-      matchType: 'none' as const,
-      confidence: 0,
-      searchName: venueName?.trim() ?? '',
-    }))
-  )
-}
-
-/**
- * Batch match multiple venue names
- * Returns a map from venue name to match result
- */
-export function matchVenuesEffect(
-  venueNames: string[],
-  fuzzyThreshold: number = 0.6,
-  client?: SupabaseClient
-): Effect.Effect<Map<string, VenueMatchResult>, VenueMatchError> {
-  return Effect.gen(function* () {
-    const results = new Map<string, VenueMatchResult>()
-    const uniqueNames = [...new Set(venueNames.filter(Boolean))]
-    for (const name of uniqueNames) {
-      const result = yield* matchVenueEffect(name, fuzzyThreshold, client)
-      results.set(name, result)
-    }
-    return results
-  })
-}
-
-export async function matchVenues(
-  venueNames: string[],
-  fuzzyThreshold: number = 0.6,
-  client?: SupabaseClient
-): Promise<Map<string, VenueMatchResult>> {
-  return Effect.runPromise(
-    Effect.catchEager(matchVenuesEffect(venueNames, fuzzyThreshold, client), () =>
-      Effect.succeed(new Map<string, VenueMatchResult>())
-    )
-  )
 }

@@ -34,6 +34,7 @@ import { enrichSingleEvent, countEventsNeedingEnrichment, getEventsNeedingEnrich
 import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
 import { HttpError } from '#shared/lib/errors.ts'
+import { supabaseCatalog } from './catalog-store.ts'
 import { ENRICHMENT_VERSION, type EnrichmentStageRecord } from './enrichment-provenance.ts'
 
 const embedEventWithDocumentMock = embedEventWithDocument as unknown as Mock
@@ -79,7 +80,7 @@ function makeQueryClient(result: unknown) {
     calls.push({ method: 'from', args: [table] })
     return builder
   }
-  return { client: { from } as unknown as SupabaseClient, calls }
+  return { client: supabaseCatalog({ from } as unknown as SupabaseClient), calls }
 }
 
 const queryArgsFor = (calls: Array<{ method: string; args: unknown[] }>, method: string) =>
@@ -105,7 +106,7 @@ describe('enrichSingleEvent facets-only path', () => {
     const client: ReturnType<typeof makeClient> = makeClient()
 
     const result = await enrichSingleEvent(
-      client as never,
+      supabaseCatalog(client as never),
       {
         id: 'evt-1',
         name: 'Noche de Jazz',
@@ -151,7 +152,7 @@ describe('enrichSingleEvent facets-only path', () => {
     const client: ReturnType<typeof makeClient> = makeClient()
 
     const result = await enrichSingleEvent(
-      client as never,
+      supabaseCatalog(client as never),
       {
         id: 'evt-3',
         name: 'Milonga sin señales',
@@ -196,7 +197,7 @@ describe('imported pending rows leave the enrichment queue', () => {
         return builder
       },
     }
-    return client as unknown as SupabaseClient
+    return supabaseCatalog(client as unknown as SupabaseClient)
   }
 
   it('completes an imported row (embedding + Spanish description) once, then reselection and a retried batch spend nothing', async () => {
@@ -269,7 +270,7 @@ describe('enrichSingleEvent source provenance', () => {
       return { description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null }
     })
     const client = makeClient()
-    const running = enrichSingleEvent(client as never, {
+    const running = enrichSingleEvent(supabaseCatalog(client as never), {
       id: 'ordered', name: 'Synthetic Jazz', link: 'https://example.com/jazz', source: 'meetup',
       description_es: 'Jazz.', description_en: 'Jazz.',
     }, { extractFacets: async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] }), buildPresentationFields })
@@ -299,7 +300,7 @@ describe('enrichSingleEvent source provenance', () => {
       description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null,
     })
     const client = makeClient()
-    const result = await enrichSingleEvent(client as never, {
+    const result = await enrichSingleEvent(supabaseCatalog(client as never), {
       id: 'failed-embedding', name: 'Synthetic Jazz', link: 'https://example.com/jazz', source: 'meetup',
       description_es: 'Jazz.', description_en: 'Jazz.',
     }, { extractFacets: async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] }), buildPresentationFields })
@@ -322,7 +323,7 @@ describe('enrichSingleEvent source provenance', () => {
     })
     for (const stored of [false, true]) {
       const client = makeClient()
-      const result = await enrichSingleEvent(client as never, {
+      const result = await enrichSingleEvent(supabaseCatalog(client as never), {
         id: 'provenance', name: 'Jazz', link: 'https://example.com/jazz', source: 'meetup',
         ...(stored ? { description_es: 'Jazz en vivo.', description_en: 'Live jazz.' } : {}),
       }, {
@@ -357,7 +358,7 @@ describe('enrichSingleEvent terminal skipped handling', () => {
     })
     const client: ReturnType<typeof makeClient> = makeClient()
 
-    const result = await enrichSingleEvent(client as never, {
+    const result = await enrichSingleEvent(supabaseCatalog(client as never), {
       id: 'evt-4',
       name: 'Evento Passline',
       link: 'https://www.passline.com/evento/1',
@@ -382,7 +383,7 @@ describe('enrichSingleEvent terminal skipped handling', () => {
     })
     const client: ReturnType<typeof makeClient> = makeClient()
 
-    const result = await enrichSingleEvent(client as never, {
+    const result = await enrichSingleEvent(supabaseCatalog(client as never), {
       id: 'evt-5',
       name: 'Evento muerto',
       link: 'https://example.com/gone',
@@ -499,9 +500,11 @@ describe('enrichSingleEvent hidden locations', () => {
       from: (table: string) => table === 'venues'
         ? (venueLookups.push(table), builder)
         : { update: (data: Record<string, unknown>) => { updates.push(data); Object.assign(row, data); return { eq: async () => ({ error: null }) } } },
-      rpc: async () => ({ data: [], error: null }),
+      rpc: async (name: string) => name === 'venues_named'
+        ? (venueLookups.push(name), { data: [{ venue, event_count: 0 }], error: null })
+        : { data: [], error: null },
     }
-    return { client: client as unknown as SupabaseClient, row, updates, venueLookups }
+    return { client: supabaseCatalog(client as unknown as SupabaseClient), row, updates, venueLookups }
   }
   // Bilingual adapter output skips language detection; `english: null` is what a failed translation leaves.
   const adapter = (location_hidden: boolean | undefined, { spanish = 'Jazz en vivo.' as string | null, english = 'Live jazz.' as string | null } = {}) => getEnrichmentAdapterMock.mockReturnValue({

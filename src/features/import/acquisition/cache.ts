@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { Schema } from 'effect'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
 
 export const ACQUISITION_BUCKET = 'source-acquisitions'
 const entrySchema = Schema.Struct({ version: Schema.Literal(1), expiresAt: Schema.Number, value: Schema.Unknown })
@@ -9,6 +10,9 @@ const memory = new Map<string, { expiresAt: number; value: unknown }>()
 function storageClient(): SupabaseClient | undefined {
   // Unit tests exercise in-memory reuse; local .env credentials must not cause remote I/O.
   if (process.env.NODE_ENV === 'test') return undefined
+  // A Worker that binds D1 (the jobs Worker records it with useD1Binding) keeps the cache in memory, even while the
+  // Supabase secrets stay set through the cutover's rollback hold. shortcut: retries in a new isolate re-fetch; move to R2 if that costs too much.
+  if (boundD1()) return undefined
   if (client) return client
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY

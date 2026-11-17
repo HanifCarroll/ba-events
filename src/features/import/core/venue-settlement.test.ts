@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { areaOnlyVenueName, getVenueIdFromResults, settleVenue, settleVenues, venueSettlementKey } from './venue-settlement.ts'
+import { venueNameKey } from './venue-identity.ts'
+import { supabaseCatalog } from './catalog-store.ts'
 
 describe('areaOnlyVenueName', () => {
   it('sorts a city, region, or postal code from a barrio', () => {
@@ -18,32 +20,35 @@ describe('areaOnlyVenueName', () => {
   })
 })
 
-/** In-memory `venues` table for the queries settlement makes: name lookups (exact and same-name lists) and inserts. */
-function venuesTable(seed: Array<{ id: string; name: string; address: string | null; neighborhood?: string | null }> = []) {
-  const rows = seed.map((row) => ({ neighborhood: null, ...row }))
+/**
+ * In-memory `venues` table for the calls settlement makes: `venues_named` (same name key), `find_similar_venue`
+ * (scores from `similar`), inserts, and review-queue inserts.
+ */
+function venuesTable(
+  seed: Array<{ id: string; name: string; address: string | null; neighborhood?: string | null; created_at?: string; events?: number }> = [],
+  similar: Record<string, { name: string; similarity: number }> = {},
+) {
+  const rows = seed.map((row) => ({ neighborhood: null, created_at: '2026-01-01T00:00:00Z', events: 0, ...row }))
+  const queued: Array<Record<string, unknown>> = []
   let created = 0
   const client = {
-    from: () => {
-      let name: string | null = null
-      const matches = () => rows.filter((row) => name !== null && row.name.toLowerCase() === name.toLowerCase())
-      const builder: Record<string, unknown> = {
-        select: () => builder,
-        eq: () => builder,
-        limit: () => builder,
-        ilike: (_: string, value: string) => { name = value; return builder },
-        single: async () => matches()[0] ? { data: matches()[0], error: null } : { data: null, error: { message: 'none' } },
-        then: (resolve: (value: unknown) => void) => resolve({ data: matches(), error: null }),
-        insert: (row: { name: string; address: string | null; neighborhood: string | null }) => ({ select: () => ({ single: async () => {
-          const venue = { id: `created-${++created}`, name: row.name, address: row.address, neighborhood: row.neighborhood }
+    from: (table: string) => table === 'venue_review_queue'
+      ? { insert: async (row: Record<string, unknown>) => { queued.push(row); return { error: null } } }
+      : { insert: (row: { name: string; address: string | null; neighborhood: string | null }) => ({ select: () => ({ single: async () => {
+          const venue = { id: `created-${++created}`, name: row.name, address: row.address, neighborhood: row.neighborhood, created_at: '2026-11-16T00:00:00Z', events: 0 }
           rows.push(venue)
           return { data: venue, error: null }
-        } }) }),
+        } }) }) },
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      if (name === 'venues_named') {
+        return { data: rows.filter((row) => venueNameKey(row.name) === venueNameKey(String(args.p_name)))
+          .map(({ events, ...venue }) => ({ venue, event_count: events })), error: null }
       }
-      return builder
+      const hit = similar[String(args.search_name)]
+      return { data: hit ? [{ id: 'unused', ...hit }] : [], error: null }
     },
-    rpc: async () => ({ data: [], error: null }),
   }
-  return { client: client as unknown as SupabaseClient, rows }
+  return { client: supabaseCatalog(client as unknown as SupabaseClient), raw: client, rows, queued }
 }
 
 describe('settleVenue with an area-only name', () => {
@@ -109,9 +114,77 @@ describe('barrio-named venues across imports', () => {
     expect(rows.map((row) => row.address).sort()).toEqual(['Bolívar 624', 'Defensa 1200'])
   }, 10_000)
 
-  it('keeps keying ordinary venue names by name', () => {
-    expect(venueSettlementKey('Teatro Sintético', 'Av. Ficticia 1234')).toBe(venueSettlementKey('Teatro Sintético', null))
+  it('keys every venue name by name plus street and number', () => {
+    expect(venueSettlementKey('Teatro Sintético', 'Av. Ficticia 1234')).toBe(venueSettlementKey('Teatro Sintético', 'Ficticia 1234, CABA'))
+    expect(venueSettlementKey('Teatro Sintético', 'Calle Norte 100')).not.toBe(venueSettlementKey('Teatro Sintético', 'Calle Sur 200'))
     expect(venueSettlementKey('San Telmo', 'Bolívar 624')).not.toBe(venueSettlementKey('San Telmo', 'Defensa 1200'))
     expect(venueSettlementKey('San Telmo', 'Bolívar 624')).toBe(venueSettlementKey('San Telmo', 'Bolivar 624, CABA'))
+  })
+})
+
+describe('settleVenue with duplicate and lookalike catalog names', () => {
+  it('matches a stored name with doubled or non-breaking spaces and a city suffix', async () => {
+    const { client } = venuesTable([{ id: 'sala', name: 'Sala\u00a0Sintética  - Buenos Aires', address: 'Av. Ficticia 1234', neighborhood: 'Almagro' }])
+    expect(await settleVenue(client, { name: 'SALA SINTETICA' }, { source: 'meetup' })).toMatchObject({ venueId: 'sala', action: 'matched', method: 'exact' })
+  })
+
+  it('reuses the copy at the event\u2019s own street and number, else the merge keeper', async () => {
+    const { client } = venuesTable([
+      { id: 'sala-bare', name: 'Sala Sintética', address: null, events: 9 },
+      { id: 'sala-norte', name: 'Sala Sintética', address: 'Calle Norte 100', neighborhood: 'Palermo', events: 1 },
+      { id: 'sala-sur', name: 'Sala  Sintética', address: 'Calle Sur 200', neighborhood: 'Boedo', events: 2 },
+    ])
+    expect(await settleVenue(client, { name: 'Sala Sintética', address: 'Calle Norte 100, CABA' }, { source: 'luma' })).toMatchObject({ venueId: 'sala-norte' })
+    expect(await settleVenue(client, { name: 'Sala Sintética', address: 'Av. Sur N° 200' }, { source: 'luma' })).toMatchObject({ venueId: 'sala-sur' })
+    expect(await settleVenue(client, { name: 'Sala Sintética' }, { source: 'luma' })).toMatchObject({ venueId: 'sala-sur' })
+  })
+
+  it('never attaches an event to a same-name venue at another street and number', async () => {
+    const { client, rows } = venuesTable([
+      { id: 'sala-norte', name: 'Sala Sintética', address: 'Calle Norte 100', neighborhood: 'Palermo' },
+      { id: 'sala-sur', name: 'Sala Sintética', address: 'Calle Sur 200', neighborhood: 'Boedo', events: 5 },
+    ], { 'Sala Sintética': { name: 'Sala Sintética', similarity: 1 } })
+    const result = await settleVenue(client, { name: 'Sala Sintética', address: 'Calle Oeste 300', neighborhood: 'Flores' }, { source: 'luma' })
+    expect(result).toMatchObject({ venueId: 'created-1', action: 'auto-created' })
+    expect(rows.at(-1)).toMatchObject({ name: 'Sala Sintética', address: 'Calle Oeste 300' })
+  })
+
+  it('gives each event in one batch the same-name venue at its own address, in any order', async () => {
+    const seed = [
+      { id: 'iglesia-a', name: 'Iglesia Sintética', address: 'Calle Norte 100', neighborhood: 'Palermo' },
+      { id: 'iglesia-b', name: 'Iglesia  Sintética', address: 'Calle Sur 200', neighborhood: 'Boedo' },
+    ]
+    const A = { name: 'Iglesia Sintética', address: 'Calle Norte 100' }
+    const B = { name: 'Iglesia Sintética', address: 'Av. Sur N° 200, CABA' }
+    for (const batch of [[A, B], [B, A]]) {
+      const { results } = await settleVenues(venuesTable(seed).client, batch, { source: 'meetup' })
+      expect(getVenueIdFromResults(results, A.name, A.address)).toBe('iglesia-a')
+      expect(getVenueIdFromResults(results, B.name, B.address)).toBe('iglesia-b')
+    }
+  })
+
+  it('creates the venue and queues a low-score lookalike for review instead of attaching it', async () => {
+    const { client, rows, queued } = venuesTable([{ id: 'cc', name: 'Centro Sintético', address: 'Calle Norte 100' }],
+      { 'Centro Sintético Raíz': { name: 'Centro Sintético', similarity: 0.68 } })
+    const result = await settleVenue(client, { name: 'Centro Sintético Raíz', neighborhood: 'Palermo' }, { source: 'meetup' })
+    expect(result).toMatchObject({ venueId: 'created-1', action: 'queued-review' })
+    expect(rows).toHaveLength(2)
+    expect(queued).toEqual([expect.objectContaining({ best_match_venue_id: 'cc', match_confidence: 0.68 })])
+  })
+
+  it('auto-uses a close fuzzy match, but not one at another street and number', async () => {
+    const seed = [{ id: 'agujero', name: 'El Agujero Sintético', address: 'Calle Norte 100' }]
+    const similar = { 'Agujero Sintético': { name: 'El Agujero Sintético', similarity: 0.9 } }
+    expect(await settleVenue(venuesTable(seed, similar).client, { name: 'Agujero Sintético', address: 'Calle Norte 100' }, { source: 'luma' }))
+      .toMatchObject({ venueId: 'agujero', action: 'matched', method: 'fuzzy' })
+    expect(await settleVenue(venuesTable(seed, similar).client, { name: 'Agujero Sintético', address: 'Calle Sur 200', neighborhood: 'Boedo' }, { source: 'luma' }))
+      .toMatchObject({ venueId: 'created-1', action: 'auto-created' })
+  })
+
+  it('leaves the event unlinked when the venue lookup fails, rather than creating a duplicate', async () => {
+    const { client, raw, rows } = venuesTable([{ id: 'sala', name: 'Sala Sintética', address: null }])
+    ;(raw as unknown as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'function venues_named does not exist' } })
+    expect(await settleVenue(client, { name: 'Sala Sintética' }, { source: 'luma' })).toMatchObject({ venueId: null, action: 'skipped' })
+    expect(rows).toHaveLength(1)
   })
 })

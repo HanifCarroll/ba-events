@@ -10,6 +10,8 @@ import { getSessionUserEffect } from '#features/auth/api/session.server.ts'
 import { getEventWithVenue } from '#shared/lib/db/client.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { withReadSignal } from '#shared/lib/db/read-signal.ts'
+import { boundD1Database } from '#shared/lib/db/d1.server.ts'
+import { d1UserStore } from '#features/auth/api/user-store.server.ts'
 import type { ChatEventPayload, EventWithVenue, SavedMembershipResult } from '#shared/lib/types.ts'
 import { ensureChatEventPayload } from './tools/utils.ts'
 
@@ -70,6 +72,12 @@ function promiseEffect<A>(run: (signal: AbortSignal) => PromiseLike<A>, fallback
   })
 }
 
+/** The D1 database when this Worker binds one (staging until the cutover); Supabase otherwise. D1 has no RLS, so its
+ * reads filter by the session user's id. */
+function d1For(ctx: UserToolContext) {
+  return ctx.event ? boundD1Database((ctx.event.platform as { env?: unknown } | undefined)?.env) : null
+}
+
 /** Effect-native bounded authoritative saved-membership query. */
 export function getSavedMembershipForIdsEffect(
   ctx: UserToolContext,
@@ -78,6 +86,19 @@ export function getSavedMembershipForIdsEffect(
 ): Effect.Effect<SavedMembershipResult, never> {
   if (!ctx.isAuthenticated || !ctx.userId || !ctx.event) return Effect.succeed({ status: 'unavailable' })
   if (ids.length === 0) return Effect.succeed({ status: 'complete', savedIds: new Set<string>() })
+  const d1 = d1For(ctx)
+  if (d1) {
+    return Effect.match(
+      promiseEffect(() => d1UserStore(d1).savedMembership(ctx.userId!, ids), 'Failed to load saved event membership'),
+      {
+        onFailure: (error) => {
+          console.error('[getSavedMembershipForIds] Error:', error)
+          return { status: 'unavailable' as const }
+        },
+        onSuccess: (savedIds) => ({ status: 'complete' as const, savedIds }),
+      },
+    )
+  }
   const program = Effect.gen(function* () {
     const client = createSupabaseServerClient(ctx.event!)
     const { data, error } = yield* promiseEffect(
@@ -216,6 +237,26 @@ export function listSavedEventsForUserEffect(
       events: [],
       message: 'You need to be logged in to see your saved events.',
     } as ListSavedEventsResult & { message: string })
+  }
+  const d1 = d1For(ctx)
+  if (d1) {
+    return Effect.match(
+      promiseEffect(() => d1UserStore(d1).savedEvents(ctx.userId!), 'Failed to list saved events'),
+      {
+        onFailure: (error) => {
+          console.error('[listSavedEventsForUser] Unexpected error:', error)
+          return { success: false, error: 'unknown_error', events: [] } satisfies ListSavedEventsResult
+        },
+        onSuccess: (saved) => {
+          const now = new Date()
+          const allEvents: EventWithVenue[] = saved.map(({ saved_at: _savedAt, ...event }) => event)
+          const upcomingEvents = allEvents.filter((event) => new Date(event.starts_at) >= now)
+          const pastEvents = allEvents.filter((event) => new Date(event.starts_at) < now)
+          const filteredEvents = filter === 'upcoming' ? upcomingEvents : filter === 'past' ? pastEvents : allEvents
+          return { success: true, events: filteredEvents, count: allEvents.length, upcomingCount: upcomingEvents.length, pastCount: pastEvents.length }
+        },
+      },
+    )
   }
   const program = Effect.gen(function* () {
     const client = createSupabaseServerClient(ctx.event!)

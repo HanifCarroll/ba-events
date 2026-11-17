@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { supabaseCatalog } from '#features/import/core/catalog-store.ts'
 import { catalogImportProvenance, CATALOG_IMPORT_VERSION } from '#features/import/core/enrichment-provenance.ts'
 import {
   mapBatchRunsToResults,
@@ -145,7 +146,7 @@ describe('finalizeScrapeRun', () => {
       return { eq }
     })
     const from = vi.fn(() => ({ update }))
-    return { client: { from } as unknown as SupabaseClient, updates, eq }
+    return { client: supabaseCatalog({ from } as unknown as SupabaseClient), updates, eq }
   }
 
   it('writes status completed, completed_at and stats for a fully-successful run', async () => {
@@ -184,7 +185,7 @@ describe('finalizeScrapeRun', () => {
   it('throws when the update returns an error', async () => {
     const eq = vi.fn(() => Promise.resolve({ error: { message: 'db constraint violated' } }))
     const update = vi.fn(() => ({ eq }))
-    const client = { from: vi.fn(() => ({ update })) } as unknown as SupabaseClient
+    const client = supabaseCatalog({ from: vi.fn(() => ({ update })) } as unknown as SupabaseClient)
 
     await expect(
       finalizeScrapeRun(client, 'run-4', null, resultsFor([true]), false, 0, 0)
@@ -194,7 +195,7 @@ describe('finalizeScrapeRun', () => {
   it('throws when the update rejects', async () => {
     const eq = vi.fn(() => Promise.reject(new Error('db down')))
     const update = vi.fn(() => ({ eq }))
-    const client = { from: vi.fn(() => ({ update })) } as unknown as SupabaseClient
+    const client = supabaseCatalog({ from: vi.fn(() => ({ update })) } as unknown as SupabaseClient)
 
     await expect(
       finalizeScrapeRun(client, 'run-3', null, resultsFor([true]), false, 0, 0)
@@ -217,7 +218,7 @@ describe('reconcileStaleScrapeRuns', () => {
     })
     const from = vi.fn(() => ({ update }))
 
-    return { client: { from } as unknown as SupabaseClient, updates, eq, lt }
+    return { client: supabaseCatalog({ from } as unknown as SupabaseClient), updates, eq, lt }
   }
 
   it('marks only runs older than two hours as failed', async () => {
@@ -301,7 +302,7 @@ describe('recordEnrichmentAudit', () => {
       update,
     }))
 
-    return { client: { from } as unknown as SupabaseClient, updates, eqUpdate }
+    return { client: supabaseCatalog({ from } as unknown as SupabaseClient), updates, eqUpdate }
   }
 
   it('merges the chain counts into the parent\'s eligible and updates columns', async () => {
@@ -344,7 +345,7 @@ describe('recordEnrichmentAudit', () => {
     )
     const eqSelect = vi.fn(() => ({ maybeSingle }))
     const select = vi.fn(() => ({ eq: eqSelect }))
-    const client = { from: vi.fn(() => ({ select })) } as unknown as SupabaseClient
+    const client = supabaseCatalog({ from: vi.fn(() => ({ select })) } as unknown as SupabaseClient)
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await expect(

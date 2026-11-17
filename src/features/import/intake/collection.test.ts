@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { retainPostsEffect, retryMissingMediaEffect, signedUrlExpiry, sourceCoverage } from './collection.ts'
+import { supabaseIntake } from './store-supabase.ts'
+import type { CollectionStore } from './store.ts'
 
 /** In-memory intake_observations/intake_media with only the query shapes retainPostsEffect uses. */
 function memoryDb() {
@@ -26,7 +28,7 @@ function memoryDb() {
     }
     return chain
   }
-  return { db: { from: table } as unknown as SupabaseClient, observations, seen }
+  return { db: supabaseIntake({ from: table } as unknown as SupabaseClient), observations, seen }
 }
 const post = (id: string, owner = 'synthetic_venue') => ({ id, shortCode: `sc${id}`, ownerUsername: owner, caption: `Synthetic ${id}`, timestamp: '2026-11-12T12:00:00Z' })
 const noItems = (name: string) => ({ url: `https://www.instagram.com/${name}`, inputUrl: `https://www.instagram.com/${name}`, error: 'no_items', errorDescription: 'Empty or private data for provided input' })
@@ -98,26 +100,12 @@ describe('incremental Instagram collection', () => {
   })
 })
 
-/** Unreviewed observations with stored URLs and their saved media, behind the query shapes the media retry uses. */
+/** The collection store's two media calls the retry makes, over in-memory observations and saved media. */
 function mediaDb(observations: Array<{ id: string; media_urls: string[]; reviewed_at?: string }>, media: Array<{ observation_id: string; position: number }>) {
-  const uploads: string[] = []
-  const from = (name: string) => {
-    let row: Record<string, unknown> | null = null; let ids: string[] | null = null; let unreviewed = false
-    const chain: Record<string, unknown> = {
-      select: () => chain, order: () => chain, range: () => chain, single: () => chain, abortSignal: () => chain,
-      is: () => { unreviewed = true; return chain },
-      in: (_key: string, values: string[]) => { ids = values; return chain },
-      upsert: (value: Record<string, unknown>) => { row = value; return chain },
-      then: (resolve: (value: unknown) => void) => {
-        if (row) { media.push(row as { observation_id: string; position: number }); return resolve({ data: { id: 'media' }, error: null }) }
-        if (name === 'intake_observations') return resolve({ data: observations.filter(item => !unreviewed || !item.reviewed_at), error: null })
-        return resolve({ data: media.filter(item => !ids || ids.includes(item.observation_id)), error: null })
-      },
-    }
-    return chain
-  }
-  const storage = { from: () => ({ upload: async (key: string) => { uploads.push(key); return { data: { path: key }, error: null } } }) }
-  return { db: { from, storage } as unknown as SupabaseClient, media, uploads }
+  const unreviewedMedia = () => Effect.succeed(observations.filter(item => !item.reviewed_at).map(item => ({ id: item.id, media_urls: item.media_urls,
+    positions: media.filter(row => row.observation_id === item.id).map(row => row.position) })).filter(item => item.positions.length < item.media_urls.length))
+  const retainImage = (observation_id: string, position: number) => Effect.sync(() => { media.push({ observation_id, position }) })
+  return { db: { unreviewedMedia, retainImage } as unknown as CollectionStore, media }
 }
 const now = new Date('2026-11-16T12:00:00Z')
 const signed = (name: string, expiry: Date) => `https://scontent.cdninstagram.com/v/${name}.jpg?oh=sig&oe=${Math.floor(expiry.getTime() / 1000).toString(16)}`

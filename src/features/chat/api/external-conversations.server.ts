@@ -11,6 +11,8 @@ import { CHAT_CONTRACT_VERSION } from '#shared/lib/types.ts'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { sortMessagesByTurnOrderAsc } from '#features/chat/lib/message-order.ts'
 import { buildMessageRpcPayload } from './messages.server.ts'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import * as d1 from './chat-d1.server.ts'
 
 export type ExternalConversationChannel = Exclude<ConversationChannel, 'web'>
 export type ExternalConversation = Pick<
@@ -25,6 +27,22 @@ class ExternalConversationError extends Data.TaggedError('ExternalConversationEr
 }> {}
 
 const externalFailure = (message: string) => new ExternalConversationError({ message })
+
+/** The D1 path when the Worker binds `DB` and no Supabase client was passed in (tests pass one). */
+function d1For(client: SupabaseClient | undefined) {
+  return client ? null : boundD1()
+}
+
+function d1Effect<A>(work: () => Promise<A>, message: string) {
+  return Effect.tryPromise({ try: work, catch: () => externalFailure(message) })
+}
+
+function external(conversation: Conversation): ExternalConversation {
+  const { id, channel, title, created_at, updated_at, metadata } = conversation
+  return { id, channel, title, created_at, updated_at, metadata }
+}
+
+const serviceClient = () => getSupabaseServiceRoleClient()
 
 function requireIdentityHash(hash: string): string {
   if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid external identity hash')
@@ -84,7 +102,7 @@ export function getOrCreateExternalConversationEffect(
     title?: string
     metadata?: Record<string, Json>
   },
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<ExternalConversation, ExternalConversationError> {
   return Effect.gen(function* () {
     let hash: string
@@ -93,11 +111,18 @@ export function getOrCreateExternalConversationEffect(
     } catch {
       return yield* Effect.fail(externalFailure('Invalid external identity hash'))
     }
+    const db = d1For(client)
+    if (db) {
+      return external(yield* d1Effect(() => d1.getOrCreateExternalConversation(db, input.channel, hash,
+        input.title ?? 'New conversation', input.metadata ?? {}), 'Failed to create external conversation'))
+    }
+    client ??= serviceClient()
     const existing = yield* findByHashEffect(client, input.channel, hash)
     if (existing) return existing
 
+    const supabase = client
     const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('conversations')
         .insert({
           user_id: null,
@@ -114,7 +139,7 @@ export function getOrCreateExternalConversationEffect(
 
     if (!error && data) return data as ExternalConversation
     if (error?.code === '23505') {
-      const raced = yield* findByHashEffect(client, input.channel, hash)
+      const raced = yield* findByHashEffect(supabase, input.channel, hash)
       if (raced) return raced
     }
     return yield* Effect.fail(externalFailure('Failed to create external conversation'))
@@ -128,7 +153,7 @@ export function getOrCreateExternalConversation(
     title?: string
     metadata?: Record<string, Json>
   },
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(getOrCreateExternalConversationEffect(input, client))
 }
@@ -136,11 +161,17 @@ export function getOrCreateExternalConversation(
 /** Effect-native external conversation lookup program. */
 export function getExternalConversationEffect(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<ExternalConversation, ExternalConversationError> {
+  const db = d1For(client)
+  if (db) {
+    return Effect.flatMap(d1Effect(() => d1.getExternalConversation(db, input.channel, input.conversationId), 'External conversation not found'),
+      (conversation) => conversation ? Effect.succeed(external(conversation)) : Effect.fail(externalFailure('External conversation not found')))
+  }
+  const supabase = client ?? serviceClient()
   return Effect.gen(function* () {
     const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('conversations')
         .select(CONVERSATION_FIELDS)
         .eq('id', input.conversationId)
@@ -158,7 +189,7 @@ export function getExternalConversationEffect(
 
 export function getExternalConversation(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(getExternalConversationEffect(input, client))
 }
@@ -166,11 +197,17 @@ export function getExternalConversation(
 /** Effect-native external conversation message read program. */
 export function loadExternalConversationMessagesEffect(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<Message[], ExternalConversationError> {
+  const db = d1For(client)
+  if (db) {
+    return d1Effect(async () => sortMessagesByTurnOrderAsc(await d1.loadExternalMessages(db, input.channel, input.conversationId)),
+      'Failed to load external conversation messages')
+  }
+  const supabase = client ?? serviceClient()
   return Effect.gen(function* () {
     const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('messages')
         .select('*, conversations!inner(id)')
         .eq('conversation_id', input.conversationId)
@@ -189,7 +226,7 @@ export function loadExternalConversationMessagesEffect(
 
 export function loadExternalConversationMessages(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(loadExternalConversationMessagesEffect(input, client))
 }
@@ -208,12 +245,22 @@ export function insertExternalConversationMessageEffect(
     attachedData?: Message['attached_data']
     responseContractVersion?: number
   },
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<Message, ExternalConversationError> {
+  const db = d1For(client)
+  if (db) {
+    return d1Effect(() => d1.insertMessage(db, { channel: input.channel }, {
+      conversationId: input.conversationId, role: input.role, content: input.content,
+      visibleContent: input.visibleContent ?? input.content, executionTrace: input.executionTrace ?? [],
+      responseContractVersion: input.responseContractVersion ?? CHAT_CONTRACT_VERSION, attachedData: input.attachedData ?? {},
+      clientMessageId: input.clientMessageId, parentId: input.parentMessageId ?? null,
+    }), 'Failed to insert external conversation message')
+  }
+  const supabase = client ?? serviceClient()
   return Effect.gen(function* () {
-    yield* requireExternalConversationEffect(client, input.channel, input.conversationId)
+    yield* requireExternalConversationEffect(supabase, input.channel, input.conversationId)
     const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client.rpc(
+      try: (signal) => supabase.rpc(
         'insert_message_with_turn',
         buildMessageRpcPayload({
           conversationId: input.conversationId,
@@ -248,7 +295,7 @@ export function insertExternalConversationMessage(
     attachedData?: Message['attached_data']
     responseContractVersion?: number
   },
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(insertExternalConversationMessageEffect(input, client))
 }
@@ -260,11 +307,16 @@ export function updateExternalConversationMetadataEffect(
     conversationId: string
     metadataPatch: Record<string, Json>
   },
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<ExternalConversation, ExternalConversationError> {
+  const db = d1For(client)
+  const supabase = db ? null : client ?? serviceClient()
   return Effect.gen(function* () {
-    const { data: current, error: readError } = yield* Effect.tryPromise({
-      try: (signal) => client
+    const { data: current, error: readError } = db
+      ? { data: yield* d1Effect(() => d1.getExternalConversation(db, input.channel, input.conversationId),
+        'Failed to update external conversation metadata'), error: null }
+      : yield* Effect.tryPromise({
+      try: (signal) => supabase!
         .from('conversations')
         .select('metadata')
         .eq('id', input.conversationId)
@@ -293,8 +345,13 @@ export function updateExternalConversationMetadataEffect(
       ...Object.fromEntries(patchEntries),
     }
 
+    if (db) {
+      // The metadata was read just before; at Telegram's one-update-at-a-time per chat a lost patch is not a concern.
+      return external(yield* d1Effect(() => d1.setExternalMetadata(db, input.channel, input.conversationId, metadata),
+        'Failed to update external conversation metadata'))
+    }
     const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase!
         .from('conversations')
         .update({ metadata })
         .eq('id', input.conversationId)
@@ -316,7 +373,7 @@ export function updateExternalConversationMetadata(
     conversationId: string
     metadataPatch: Record<string, Json>
   },
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(updateExternalConversationMetadataEffect(input, client))
 }
@@ -324,12 +381,20 @@ export function updateExternalConversationMetadata(
 /** Effect-native external message clearing program. */
 export function clearExternalConversationMessagesEffect(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<void, ExternalConversationError> {
+  const db = d1For(client)
+  if (db) {
+    return Effect.flatMap(d1Effect(() => d1.getExternalConversation(db, input.channel, input.conversationId), 'External conversation not found'),
+      (conversation) => conversation
+        ? d1Effect(() => d1.clearExternalMessages(db, input.channel, input.conversationId), 'Failed to clear external conversation messages')
+        : Effect.fail(externalFailure('External conversation not found')))
+  }
+  const supabase = client ?? serviceClient()
   return Effect.gen(function* () {
-    yield* requireExternalConversationEffect(client, input.channel, input.conversationId)
+    yield* requireExternalConversationEffect(supabase, input.channel, input.conversationId)
     const { error } = yield* Effect.tryPromise({
-      try: (signal) => client.from('messages').delete().eq('conversation_id', input.conversationId).abortSignal(signal),
+      try: (signal) => supabase.from('messages').delete().eq('conversation_id', input.conversationId).abortSignal(signal),
       catch: () => externalFailure('Failed to clear external conversation messages'),
     })
     if (error) return yield* Effect.fail(externalFailure('Failed to clear external conversation messages'))
@@ -338,7 +403,7 @@ export function clearExternalConversationMessagesEffect(
 
 export function clearExternalConversationMessages(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(clearExternalConversationMessagesEffect(input, client))
 }
@@ -346,11 +411,14 @@ export function clearExternalConversationMessages(
 /** Effect-native external conversation hard-delete program. */
 export function hardDeleteExternalConversationEffect(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<void, ExternalConversationError> {
+  const db = d1For(client)
+  if (db) return d1Effect(() => d1.deleteExternalConversation(db, input.channel, input.conversationId), 'Failed to delete external conversation')
+  const supabase = client ?? serviceClient()
   return Effect.gen(function* () {
     const { error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('conversations')
         .delete()
         .eq('id', input.conversationId)
@@ -364,7 +432,7 @@ export function hardDeleteExternalConversationEffect(
 
 export function hardDeleteExternalConversation(
   input: { channel: ExternalConversationChannel; conversationId: string },
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(hardDeleteExternalConversationEffect(input, client))
 }

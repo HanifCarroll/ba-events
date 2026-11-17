@@ -8,7 +8,6 @@
  * The site is updated weekly, so we import all events (no date range filter).
  */
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   scrapeBATourismEventsWithBrowser,
 } from '../scrapers/ba-tourism/browser-scraper.ts'
@@ -26,12 +25,12 @@ import { buildDescriptionPresentationFields } from '#features/events/lib/descrip
 import { catalogImportProvenance, type CatalogImportProvenance } from './enrichment-provenance.ts'
 import { checkDuplicateEventsWithDataEffect, type ExistingEventData } from '../api/duplicate-detection.ts'
 import { classifyScraperUpdate, getChangedMutableFields, sourceDescriptionsChanged, type ScraperUpdateKind } from './scraper-update.ts'
-import { getBlocklistEntries } from '#shared/lib/db/blocklist.ts'
 import { isBlockedByEntries } from '../scrapers/shared/blocklist-filter.ts'
 import { settleVenuesEffect, getVenueIdFromResults, isPlaceholderResult, type VenueSettlementInput } from './venue-settlement.ts'
 import { delayEffect } from './nominatim.ts'
+import type { CatalogStore } from './catalog-store.ts'
 import { importTry, ImportOperationError } from './effect-utils.ts'
-import type { EventInsert } from '#shared/lib/types.ts'
+import type { EventInsert, ImportBlocklistEntry } from '#shared/lib/types.ts'
 
 // ============================================================================
 // TYPES
@@ -83,7 +82,7 @@ export interface BATourismImportResult {
  */
 function filterBlockedEvents(
   events: BATourismEvent[],
-  blocklistEntries: Awaited<ReturnType<typeof getBlocklistEntries>>
+  blocklistEntries: ImportBlocklistEntry[]
 ): BATourismEvent[] {
   return events.filter((event) => {
     return !isBlockedByEntries(event.name, event.venueName, blocklistEntries)
@@ -123,7 +122,7 @@ function asBATourismError(operation: string, error: unknown): ImportOperationErr
 /** Effect-native BA Tourism coordinator. Browser scraping is a leaf; import
  * filtering, persistence, and per-event fallback are controlled here. */
 export function processBATourismImportEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options: BATourismImportOptions
 ): Effect.Effect<BATourismImportResult, ImportOperationError> {
   return Effect.gen(function* () {
@@ -159,7 +158,7 @@ export function processBATourismImportEffect(
     console.log('[ba-tourism] Filtering events...')
     const blocklistEntries = yield* baTourismTry(
       'ba-tourism.load-blocklist',
-      () => getBlocklistEntries('ba_tourism', client)
+      () => catalog.blocklistEntries('ba_tourism')
     )
     const filteredEvents = filterBlockedEvents(allEvents, blocklistEntries)
     result.eventsFiltered = filteredEvents.length
@@ -167,7 +166,7 @@ export function processBATourismImportEffect(
     if (filteredEvents.length === 0) return result
 
     console.log('[ba-tourism] Settling venues...')
-    // One input per event; settlement dedupes by `venueSettlementKey`, so a barrio-named venue stays per address.
+    // One input per event; settlement dedupes by `venueSettlementKey` (name plus street and number).
     const venueInputs: VenueSettlementInput[] = filteredEvents
       .filter((event) => event.venueName && event.venueName !== 'Ubicación no especificada')
       .map((event) => ({
@@ -177,7 +176,7 @@ export function processBATourismImportEffect(
         coordinates: event.coordinates || null,
       }))
     const { results: venueResults, stats: venueStats } = yield* settleVenuesEffect(
-      client,
+      catalog,
       venueInputs,
       { source: 'ba-tourism', scrapeRunId: options.scrapeRunId }
     ).pipe(Effect.mapError((error) => asBATourismError('ba-tourism.settle-venues', error)))
@@ -206,7 +205,7 @@ export function processBATourismImportEffect(
       .filter((id): id is string => id !== null)
     const existingEventsMap = options.skipDuplicateCheck
       ? new Map<string, ExistingEventData>()
-      : yield* checkDuplicateEventsWithDataEffect(externalIds, 'ba-tourism', client).pipe(
+      : yield* checkDuplicateEventsWithDataEffect(externalIds, 'ba-tourism', catalog).pipe(
           Effect.mapError((error) => asBATourismError('ba-tourism.duplicate-check', error))
         )
 
@@ -254,11 +253,7 @@ export function processBATourismImportEffect(
       const itemProgram = Effect.gen(function* () {
         if (existing && updateKind === 'unchanged') return
         if (existing && updateKind === 'mutable-only') {
-          const { error } = yield* baTourismTry('ba-tourism.update-mutable', () => client
-            .from('events')
-            .update(getChangedMutableFields(transformed, existing))
-            .eq('id', existing.id)
-          )
+          const error = yield* baTourismTry('ba-tourism.update-mutable', () => catalog.updateEvent(existing.id, getChangedMutableFields(transformed, existing)).then(() => null, (error: Error) => error))
           if (error) {
             console.error(`[ba-tourism] Failed to update event: ${error.message}`)
             result.eventsSkipped++
@@ -302,9 +297,7 @@ export function processBATourismImportEffect(
         }
 
         if (existing) {
-          const { error } = yield* baTourismTry('ba-tourism.update-event', () => client
-            .from('events')
-            .update({
+          const error = yield* baTourismTry('ba-tourism.update-event', () => catalog.updateEvent(existing.id, {
               name: eventWithEmbedding.name,
               description_es: eventWithEmbedding.description_es,
               description_en: eventWithEmbedding.description_en,
@@ -315,8 +308,7 @@ export function processBATourismImportEffect(
               search_document: eventWithEmbedding.search_document,
               embedding_version: eventWithEmbedding.embedding_version,
               ...getChangedMutableFields(eventWithEmbedding, existing),
-            })
-            .eq('id', existing.id)
+            }).then(() => null, (error: Error) => error)
           )
           if (error) {
             console.error(`[ba-tourism] Failed to update event: ${error.message}`)
@@ -325,7 +317,7 @@ export function processBATourismImportEffect(
             result.eventsUpdated++
           }
         } else {
-          const { error } = yield* baTourismTry('ba-tourism.insert-event', () => client.from('events').insert(eventWithEmbedding))
+          const error = yield* baTourismTry('ba-tourism.insert-event', () => catalog.insertEvent(eventWithEmbedding).then(() => null, (error: Error) => error))
           if (error) {
             console.error(`[ba-tourism] Failed to insert event: ${error.message}`)
             result.eventsSkipped++
@@ -350,11 +342,11 @@ export function processBATourismImportEffect(
 }
 
 export async function processBATourismImport(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   options: BATourismImportOptions
 ): Promise<BATourismImportResult> {
   try {
-    return await Effect.runPromise(processBATourismImportEffect(client, options))
+    return await Effect.runPromise(processBATourismImportEffect(catalog, options))
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error))
   }

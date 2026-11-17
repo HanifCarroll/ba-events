@@ -1,5 +1,5 @@
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CatalogStore } from '#features/import/core/catalog-store.ts'
 import type { BrowserWorker } from '@cloudflare/playwright'
 import { withAcquisitionRun } from '#features/import/acquisition/run.ts'
 import { processLumaImportEffect, type LumaImportResult } from '#features/import/core/luma.ts'
@@ -17,15 +17,15 @@ export type SourceImportResult = LumaImportResult | MeetupImportResult | BATouri
 /** Import one source. Acquisitions are keyed by `runId` so a retried step reuses a completed source read. */
 export function importSource(
   id: SourceId,
-  client: SupabaseClient,
+  catalog: CatalogStore,
   browser: BrowserWorker,
   runId: string,
   scrapeRunId: string
 ): Promise<SourceImportResult> {
   return withAcquisitionRun<SourceImportResult>(`${runId}:${id}`, () =>
-    id === 'meetup' ? Effect.runPromise(processMeetupImportEffect(client, { daysAhead: 14, scrapeRunId, openBrowser: cloudflareBrowser(browser, id) }))
-      : id === 'ba-tourism' ? Effect.runPromise(processBATourismImportEffect(client, { scrapeRunId, openBrowser: cloudflareBrowser(browser, id) }))
-      : Effect.runPromise(processLumaImportEffect(client, { scrapeRunId })))
+    id === 'meetup' ? Effect.runPromise(processMeetupImportEffect(catalog, { daysAhead: 14, scrapeRunId, openBrowser: cloudflareBrowser(browser, id) }))
+      : id === 'ba-tourism' ? Effect.runPromise(processBATourismImportEffect(catalog, { scrapeRunId, openBrowser: cloudflareBrowser(browser, id) }))
+      : Effect.runPromise(processLumaImportEffect(catalog, { scrapeRunId })))
 }
 
 /** Catalog read only: no database, model, or embedding calls. Used to check a source without writing. */
