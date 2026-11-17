@@ -176,13 +176,21 @@ Supabase stays as it was: nothing in the window writes to it after the export.
 - **Abort before the switch** (verify fails or time runs out). Don't merge. Production never left Supabase. Run steps 2 to 4 of the next item to clear `DB_READ_ONLY`, turn Telegram back on, and reload the intake. The intake `.env` files have no API settings yet, so step 4 only loads the agent.
 - **After the merge** (a failed smoke test, or a problem within 48 hours), roll back in this order. It works whether or not the freeze was cleared, Telegram was turned back on, or the intake was reloaded.
 
-  1. Revert the merge and wait for the deploy job. The old configs have no D1 bindings, so every Worker reads Supabase again.
+  1. Revert the merge and wait for the deploy run of that exact revert commit. The old configs have no D1 bindings, so every Worker reads Supabase again. Runs register a few seconds after a push, so poll by commit. Never take "the latest run": that can be the cutover's own successful run.
 
      ```sh
      git checkout main && git pull --ff-only && git revert -m 1 --no-edit <merge sha> && git push
-     gh run watch "$(gh run list --branch main --workflow CI --limit 1 --json databaseId -q '.[0].databaseId')" --exit-status
-     curl -sS https://baeventos.com/api/events/happening-soon | head -c 300    # events from Supabase
+     REVERT=$(git rev-parse HEAD)
+     for i in $(seq 60); do
+       RUN=$(gh run list --commit "$REVERT" --workflow CI --event push --json databaseId -q '.[0].databaseId')
+       [ -n "$RUN" ] && break; sleep 5
+     done
+     [ -n "$RUN" ] || { echo "no CI run for $REVERT: STOP"; exit 1; }
+     gh run watch "$RUN" --exit-status || { echo "revert deploy failed: STOP"; exit 1; }
+     curl -sS -o /dev/null -w '%{http_code}\n' https://baeventos.com/api/auth/get-session   # 404 = Supabase; 200 or 503 = still D1
      ```
+
+     **Stop here** if no run appears, the run fails, or `get-session` doesn't answer 404. Production is still on the D1 release, and still frozen if the freeze was on. Fix the deploy, for example by re-running the failed job with `gh run rerun "$RUN" --failed`, and repeat this step. Don't do steps 2 to 4 until it passes, because they would let writers loose on the release you are rolling back.
 
   2. Clear the freeze secrets if they are still set. The old code ignores them, but a later redeploy of the cutover code would start frozen.
 
