@@ -5,7 +5,7 @@
  *
  * Needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Writes, with mode 600:
  *   raw/<table>.jsonl      every row of every production table (PostgREST GET, 1,000-row pages in a stable order)
- *   raw/auth_users.jsonl   the auth users, id and email only, for the Better Auth import (plan PR 7)
+ *   raw/auth_users.jsonl   the auth users' id, email and whether the email is confirmed, for the Better Auth import (load.ts)
  *   objects/<bucket>/<key> every object of the instagram-evidence and event-artwork buckets, each checked against the
  *                          sha256 its key names
  *   manifest.json          columns, row counts, object hashes
@@ -119,12 +119,12 @@ async function main() {
 		console.log(`export ${table}: ${rows} rows in ${elapsed(tableStart)}`)
 	}
 
-	const users = await src.json<{ users: Array<{ id: string; email: string | null }> }>('/auth/v1/admin/users?page=1&per_page=1000')
+	const users = await src.json<{ users: Array<{ id: string; email: string | null; email_confirmed_at: string | null }> }>('/auth/v1/admin/users?page=1&per_page=1000')
 	const auth = jsonlWriter(join(dir, 'raw', 'auth_users.jsonl'))
-	for (const user of users.users) await auth.write({ id: user.id, email: user.email })
+	for (const user of users.users) await auth.write({ id: user.id, email: user.email, email_verified: Boolean(user.email_confirmed_at) })
 	await auth.close()
 	manifest.auth_users = users.users.length
-	console.log(`export auth users: ${users.users.length} (id and email only)`)
+	console.log(`export auth users: ${users.users.length} (id, email and confirmation only)`)
 
 	for (const bucket of Object.values(BUCKETS)) {
 		const bucketStart = Date.now()

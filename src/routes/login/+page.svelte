@@ -140,8 +140,7 @@
 					</div>
 
 					<p class="text-xs text-muted-foreground">
-						{m.login_magic_description()} New accounts are created automatically when your
-						email is allowed by Supabase.
+						{m.login_magic_description()}
 					</p>
 
 					{#if error}

@@ -1,5 +1,4 @@
-import type { User } from '@supabase/supabase-js';
-import type { ChatMessage, EventWithVenue } from '#shared/lib/types.ts';
+import type { AuthUser as User, ChatMessage, EventWithVenue } from '#shared/lib/types.ts';
 
 export type Locale = 'es' | 'en';
 export const fixtureLocale = (value: unknown): Locale => value === 'en' ? 'en' : 'es';
@@ -31,8 +30,7 @@ export function makeEvent(overrides: Partial<EventWithVenue> = {}): EventWithVen
 }
 
 export const fixtureUser: User = {
-	id: '00000000-0000-4000-8000-000000000099', aud: 'authenticated',
-	app_metadata: {}, user_metadata: {}, created_at: '2026-10-13T15:00:00Z'
+	id: '00000000-0000-4000-8000-000000000099', email: 'reader@example.test'
 };
 
 const translations = [
