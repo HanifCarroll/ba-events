@@ -205,6 +205,14 @@ describe('intake venue resolution', () => {
       expect(held.venues[0].neighborhood).toBe('Almagro')
       expect(held.inserts).toHaveLength(0)
     }
+    // Only an official barrio in `suburb` confirms: an Abasto neighbourhood (aliased to Balvanera elsewhere) never corrects Almagro.
+    const abasto = fakeDb([{ id: 'ab', name: 'Sala Abasto', address: 'Corrientes 3200', neighborhood: 'Almagro' }])
+    const abastoGeocode = () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic', address: { road: 'Avenida Corrientes', house_number: '3200',
+      neighbourhood: 'Abasto', suburb: 'Almagro', state: 'Ciudad Autónoma de Buenos Aires', country_code: 'ar' } } as NominatimResult)
+    expect(await run(abasto.db, request({ name: 'Sala Abasto', address: 'Av. Corrientes 3200', neighborhood: 'Balvanera' }), abastoGeocode))
+      .toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'ab', why: expect.stringContaining('places it in Almagro, not Balvanera') }] })
+    expect(abasto.venues[0].neighborhood).toBe('Almagro')
+    expect(abasto.inserts).toHaveLength(0)
     // A different number keeps today's behavior.
     const elsewhere = cambalache()
     expect(await run(elsewhere.db, ask({ address: 'Defensa 1200' }), geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', '1200')))

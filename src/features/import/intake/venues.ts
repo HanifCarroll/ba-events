@@ -100,9 +100,9 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(stor
   if (named && stated && named.neighborhood && named.neighborhood !== stated && !!named.address && addressKey(named.address) === key) {
     const located = yield* locateEffect(geocode, address, stated)
     if ('reasons' in located) return { outcome: 'rejected', reasons: located.reasons } satisfies VenueOutcome
-    if (located.confirmed !== stated) {
-      return { outcome: 'ambiguous', candidates: [{ ...pick(named), why: located.confirmed
-        ? `same name and address, stored in ${named.neighborhood}; the geocoder places it in ${located.confirmed}, not ${stated}`
+    if (located.official !== stated) {
+      return { outcome: 'ambiguous', candidates: [{ ...pick(named), why: located.official
+        ? `same name and address, stored in ${named.neighborhood}; the geocoder places it in ${located.official}, not ${stated}`
         : `same name and address, stored in ${named.neighborhood}; the geocoder could not confirm ${stated}` }] } satisfies VenueOutcome
     }
     const from = named.neighborhood
@@ -157,7 +157,9 @@ const pick = (venue: VenueRow): VenueRow => ({ id: venue.id, name: venue.name, a
 // Exact barrio names only: the importers' partial matching would turn "Villa" into Villa Crespo.
 const barrio = (given: string) => NEIGHBORHOODS.find(item => fold(item) === fold(given.trim())) ?? null
 // `confirmed`: the barrio of a geocoder result with the requested street and house number, if any.
-type Located = { neighborhood: Neighborhood; method: 'stated' | 'geocoded'; warnings: string[]; confirmed: Neighborhood | null } | { reasons: string[] }
+// `official`: the exact-number geocoder result's `suburb` when it is an official barrio name (accents and case aside).
+// Only that may correct a stored barrio: `neighbourhood` and the importers' aliases (Abasto → Balvanera) never do.
+type Located = { neighborhood: Neighborhood; method: 'stated' | 'geocoded'; warnings: string[]; official: Neighborhood | null } | { reasons: string[] }
 const inCity = (result: NominatimResult) => result.address.country_code === 'ar' && !!result.address.state && fold(result.address.state) === CITY_STATE
 const houseNumber = (result: NominatimResult) => result.address.house_number?.match(/^\d+/)?.[0] ?? null
 /**
@@ -189,12 +191,13 @@ const locateEffect = Effect.fn('intake.venue-locate')(function*(geocode: Geocode
   }
   const warnings: string[] = []
   const derived = confirmed ? mapNominatimNeighborhood(confirmed.address.neighbourhood, confirmed.address.suburb) : null
+  const official = confirmed?.address.suburb ? barrio(confirmed.address.suburb) : null
   if (!confirmed) warnings.push(plain.error ? 'Geocoder unavailable; city not confirmed' : 'Geocoder did not find the address; city not confirmed')
   if (stated) {
     if (derived && derived !== stated) warnings.push(`Geocoder places the address in ${derived}; kept the stated ${stated}`)
-    return { neighborhood: stated, method: 'stated', warnings, confirmed: derived } as Located
+    return { neighborhood: stated, method: 'stated', warnings, official } as Located
   }
-  return (derived ? { neighborhood: derived, method: 'geocoded', warnings, confirmed: derived }
+  return (derived ? { neighborhood: derived, method: 'geocoded', warnings, official }
     : { reasons: ['Neighborhood not found; supply it from an authoritative source'] }) as Located
 })
 
