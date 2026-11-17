@@ -1,7 +1,6 @@
 import { Effect, Schema } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import { dbEffect } from './repository.ts'
+import type { CollectionStore } from './store.ts'
 
 export type ApifyRequest = (method: 'GET' | 'POST', path: string, params?: Record<string, unknown>, body?: unknown) => Promise<unknown>
 const Child = Schema.Struct({ displayUrl: Schema.optional(Schema.String), images: Schema.optional(Schema.Array(Schema.String)) })
@@ -77,6 +76,12 @@ export async function fetchInstagramImage(url: string, fetcher: typeof fetch = f
   } finally { await reader.cancel().catch(() => {}) }
   const bytes = new Uint8Array(length); let offset = 0
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+  return describeImage(bytes)
+}
+
+/** Evidence image identity from its bytes alone: JPEG, PNG or WebP by magic number, keyed by its sha256. */
+export async function describeImage(bytes: Uint8Array<ArrayBuffer>) {
+  if (bytes.byteLength > 10485760) throw new Error('Image exceeds limit')
   const type = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? 'jpeg' :
     bytes[0] === 137 && String.fromCharCode(...bytes.slice(1, 4)) === 'PNG' ? 'png' :
     String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP' ? 'webp' : null
@@ -85,7 +90,7 @@ export async function fetchInstagramImage(url: string, fetcher: typeof fetch = f
   return { bytes, content_type: `image/${type}`, sha256: hash, object_key: `${hash}.${type === 'jpeg' ? 'jpg' : type}` }
 }
 
-export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(client: SupabaseClient, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
+export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store: CollectionStore, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
   const posts = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Schema.Array(PostSchema))(raw), catch: () => fail('Apify dataset has an invalid shape') })
   let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>()
   const coverage = sourceCoverage(posts, usernames, ceiling)
@@ -101,27 +106,25 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(clien
     const urls = mediaUrls(post)
     if (urls.length > 30) { failures.push('A post exceeded the supported carousel size'); continue }
     const hash = yield* importTry('intake.hash', () => sha256(JSON.stringify({ caption: post.caption ?? '', images: urls.map(url => { try { const u = new URL(url); return u.origin + u.pathname } catch { return url } }) })))
-    const latest = yield* dbEffect('intake.latest', () => client.from('intake_observations').select('id,content_hash').eq('post_id', post.id).order('observed_at', { ascending: false }).limit(1))
+    const latest = yield* store.latestObservation(post.id)
     let observationId: string
-    if (latest[0]?.content_hash === hash) {
-      observationId = latest[0].id
-      yield* dbEffect('intake.seen', () => client.from('intake_observations').update({ last_seen_at: new Date().toISOString() }).eq('id', observationId).select('id').single())
+    if (latest?.content_hash === hash) {
+      observationId = latest.id
+      yield* store.touchObservation(observationId)
       unchanged++
     } else {
-      const observation = yield* dbEffect('intake.observe', () => client.from('intake_observations').upsert({
+      const observation = yield* store.upsertObservation({
         run_id: runId, post_id: post.id, source_username: source, post_url: `https://www.instagram.com/p/${post.shortCode}/`,
         caption: post.caption ?? '', published_at: post.timestamp ?? null, content_hash: hash, media_urls: urls,
-      }, { onConflict: 'run_id,post_id,content_hash' }).select('id').single())
+      })
       observationId = observation.id; changed++
     }
-    const saved = yield* dbEffect('intake.saved-media', () => client.from('intake_media').select('position').eq('observation_id', observationId))
+    const saved = yield* store.mediaPositions(observationId)
     for (let position = 0; position < urls.length; position++) {
-      if (saved.some(item => item.position === position)) continue
+      if (saved.includes(position)) continue
       const retained = yield* Effect.result(Effect.gen(function*() {
         const image = yield* importTry('intake.image', () => fetcher(urls[position]))
-        yield* dbEffect('intake.store-image', () => client.storage.from('instagram-evidence').upload(image.object_key, image.bytes, { contentType: image.content_type, upsert: true }))
-        yield* dbEffect('intake.record-image', () => client.from('intake_media').upsert({ observation_id: observationId, position,
-          object_key: image.object_key, content_type: image.content_type, sha256: image.sha256 }, { onConflict: 'observation_id,position' }).select('id').single())
+        yield* store.retainImage(observationId, position, image)
       }))
       if (retained._tag === 'Failure') failures.push(`Media ${position} could not be retained for observation ${observationId}`)
     }
@@ -145,11 +148,12 @@ const checkCreditEffect = Effect.fn('intake.checkCredit')(function*(api: ApifyRe
   if (headroom < cap + 0.02) return yield* fail('Apify monthly usage limit reached; no run started')
 })
 
-export const collectInstagramEffect = Effect.fn('intake.collect')(function*(client: SupabaseClient, api: ApifyRequest) {
-  const policy = yield* dbEffect('intake.policy', () => client.from('intake_policy').select('*').single())
+export const collectInstagramEffect = Effect.fn('intake.collect')(function*(store: CollectionStore, api: ApifyRequest,
+  fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
+  const policy = yield* store.policy()
   if (!policy.collection_enabled) return yield* fail('Collection is disabled; finish deployment and configuration first')
-  const reservation = yield* dbEffect('intake.reserve', () => client.rpc('reserve_instagram_collection'))
-  let runId: string = reservation.apify_run_id
+  const reservation = yield* store.reserveCollection()
+  let runId = reservation.apify_run_id
   if (reservation.fresh) {
     // Existing runs can still be retrieved when no credit remains for a new run.
     yield* checkCreditEffect(api, Number(reservation.reserved_usd))
@@ -159,14 +163,14 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
     }, reservation.input))
     const run = yield* Effect.try({ try: () => readRun(started), catch: () => fail('Unknown Apify start result; reconcile the reserved run before retrying') })
     runId = run.id
-    yield* dbEffect('intake.started', () => client.from('intake_runs').update({ apify_run_id: runId, dataset_id: run.defaultDatasetId, state: 'started' }).eq('id', reservation.id).select('id').single())
+    yield* store.updateRun(reservation.id, { apify_run_id: run.id, dataset_id: run.defaultDatasetId, state: 'started' })
   }
   if (!runId) return yield* fail('A previous run has an unknown start outcome; do not start another paid run')
   const status = yield* importTry('apify.status', () => api('GET', `actor-runs/${runId}`, { waitForFinish: 30 }))
   const run = yield* Effect.try({ try: () => readRun(status), catch: () => fail('Invalid Apify run status') })
   if (!['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'].includes(run.status)) return { state: 'running', run_id: runId }
   if (run.status !== 'SUCCEEDED') {
-    yield* dbEffect('intake.failed', () => client.from('intake_runs').update({ state: 'failed', charged_usd: run.usageTotalUsd ?? null }).eq('id', reservation.id).select('id').single())
+    yield* store.updateRun(reservation.id, { state: 'failed', charged_usd: run.usageTotalUsd ?? null })
     return yield* fail('Apify collection did not succeed; the existing reservation remains recorded')
   }
   const items: unknown[] = []
@@ -175,7 +179,7 @@ export const collectInstagramEffect = Effect.fn('intake.collect')(function*(clie
     if (!Array.isArray(page) || offset >= 10000) return yield* fail('Dataset incomplete or larger than the supported bound')
     items.push(...page); if (page.length < 500) break
   }
-  const result = yield* retainPostsEffect(client, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit))
-  yield* dbEffect('intake.finished', () => client.from('intake_runs').update({ state: 'succeeded', charged_usd: run.usageTotalUsd ?? null, completed_at: new Date().toISOString() }).eq('id', reservation.id).select('id').single())
+  const result = yield* retainPostsEffect(store, reservation.id, items, reservation.input.username, Number(reservation.input.resultsLimit), fetcher)
+  yield* store.updateRun(reservation.id, { state: 'succeeded', charged_usd: run.usageTotalUsd ?? null, completed_at: new Date().toISOString() })
   return { state: 'succeeded', run_id: runId, scope: 'posts since 2 hours before the last successful run started (7 days with none, at most 30), capped per source; stories and video audio excluded', ...result }
 })

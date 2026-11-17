@@ -23,10 +23,12 @@ import { SOURCES } from './source-health.ts'
 import { CRON_TASKS, startScheduledWorkflow } from './schedule.ts'
 import { runCatalogTask } from './catalog-maintenance.ts'
 import { importSource, readSourceCatalog } from './sources.ts'
+import { handleIntakeRequest, type IntakeApiEnv } from './intake-api.ts'
 
 interface WorkflowBinding { create(options: { id: string; params?: unknown }): Promise<unknown> }
 
-export interface JobsEnv {
+/** The intake API's bindings (`DB`, `VECTORIZE`, the two R2 buckets, `INTAKE_API_TOKEN`) exist only in staging until the cutover. */
+export interface JobsEnv extends IntakeApiEnv {
   SUPABASE_URL: string
   SUPABASE_SERVICE_ROLE_KEY: string
   BROWSER: BrowserWorker
@@ -156,7 +158,8 @@ export class CatalogTaskWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
 }
 
 export default {
-  fetch: () => new Response(null, { status: 404 }),
+  // `/intake/*` answers only where the env binds DB (intake-api.ts); everything else stays a 404.
+  fetch: (request: Request, env: JobsEnv) => handleIntakeRequest(request, env),
   scheduled: (controller: { cron: string; scheduledTime: number }, env: JobsEnv) => {
     const task = CRON_TASKS[controller.cron as keyof typeof CRON_TASKS]
     return task ? runCatalogTask(task, env).then(() => undefined) : startScheduledWorkflow(controller, env)

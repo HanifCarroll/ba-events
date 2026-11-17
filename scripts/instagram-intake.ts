@@ -1,16 +1,16 @@
 /** Operator boundary. All publishing goes through revision-checked intake plans. */
-import { Effect, Schema } from 'effect'
+import { Effect } from 'effect'
 import { createClient } from '@supabase/supabase-js'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { collectInstagramEffect, type ApifyRequest } from '../src/features/import/intake/collection.ts'
-import { SourceSchema } from '../src/features/import/intake/schema.ts'
+import { intakeApi, remoteCollection, type IntakeApi } from '../src/features/import/intake/client.ts'
+import { decodeReview, decodeSource, lookupEffect, pendingEffect, preflightEffect, publicReceipt } from '../src/features/import/intake/operations.ts'
 import { submitCandidateEffect, previewCandidateEffect, commitPlanEffect } from '../src/features/import/intake/service.ts'
-import { allRowsEffect, dbEffect } from '../src/features/import/intake/repository.ts'
+import { supabaseIntake } from '../src/features/import/intake/store-supabase.ts'
 import { decodeVenueRequest, heldBacklogEffect, resolveIntakeVenueEffect } from '../src/features/import/intake/venues.ts'
-
 const HELP = `Instagram event intake
   preflight                    Read configuration readiness; no paid or catalog writes
   sources                      List the qualified watchlist
@@ -51,85 +51,90 @@ const apify: ApifyRequest = async (method, path, params, body) => {
   return JSON.parse(stdout)
 }
 
+/** The intake API when both are set (D1, after the cutover); otherwise Supabase with the service key, as before. */
+function api(): IntakeApi | null {
+  const url = process.env.INTAKE_API_URL, token = process.env.INTAKE_API_TOKEN
+  if (!url && !token) return null
+  if (!url || !token) throw new Error('Set both INTAKE_API_URL and INTAKE_API_TOKEN, or neither')
+  return intakeApi(url, token)
+}
+const readJson = async (path: string) => JSON.parse(await readFile(path, 'utf8')) as unknown
+const workFolder = () => resolve(process.env.INTAKE_WORK_DIR ?? join(homedir(), 'Library/Application Support/BA Events/Instagram Intake'))
+
+/** Writes pending evidence privately for image inspection; `download` reads one retained image by key. */
+async function exportPending(records: Array<Record<string, unknown> & { media: Array<Record<string, unknown>> }>, download: (key: string) => Promise<Uint8Array>) {
+  const folder = workFolder()
+  if (folder === process.cwd() || folder.startsWith(process.cwd() + '/')) throw new Error('Evidence must be saved outside the repository')
+  await mkdir(folder, { recursive: true, mode: 0o700 })
+  const saved = []
+  for (const record of records) {
+    const media = []
+    for (const image of record.media) {
+      const key = image.object_key as string
+      if (!/^[0-9a-f]{64}\.(jpg|png|webp)$/.test(key)) throw new Error('Invalid retained media key')
+      const path = join(folder, key)
+      await writeFile(path, await download(key), { mode: 0o600 })
+      media.push({ ...image, path })
+    }
+    saved.push({ ...record, media })
+  }
+  const path = join(folder, 'pending.json')
+  await writeFile(path, JSON.stringify(saved, null, 2) + '\n', { mode: 0o600 })
+  return { path, observations: saved.length }
+}
+
+/** API mode: the same commands and output, through `/intake/*` on baeventos-jobs. Inputs are decoded again server-side. */
+async function viaApi(remote: IntakeApi, command: string, input: string | undefined): Promise<unknown> {
+  switch (command) {
+    case 'preflight': case 'candidates': case 'held': case 'pending': return remote.call(command)
+    case 'sources': return remote.call('sources/list')
+    case 'source': return remote.call('source', await Effect.runPromise(decodeSource(await readJson(input!))))
+    case 'collect': return Effect.runPromise(collectInstagramEffect(remoteCollection(remote), apify))
+    case 'export': return exportPending(await remote.call('pending'), key => remote.getMedia(key))
+    case 'venue': {
+      let request
+      try { request = decodeVenueRequest(await readJson(input!)) }
+      catch (error) { throw new Error(`Invalid venue request: ${error instanceof Error ? error.message : 'see docs/instagram-intake.md'}`) }
+      return remote.call('venue', request)
+    }
+    case 'lookup': return remote.call('lookup', { name: input ?? '' })
+    case 'submit': return remote.call('submit', await readJson(input!))
+    case 'preview': return remote.call('preview', { id: input })
+    case 'commit': return remote.call('commit', { id: input })
+    case 'review': return remote.call('review', await Effect.runPromise(decodeReview(await readJson(input!))))
+    default: throw new Error('Unknown command. Use --help')
+  }
+}
+
 export async function main(args: string[]) {
   const [command, input] = args
   if (!command || command === '--help') { console.log(HELP); return }
+  const remote = api()
+  if (remote) { console.log(JSON.stringify(await viaApi(remote, command, input), null, 2)); return }
   const db = client()
+  const store = supabaseIntake(db, process.env.SUPABASE_URL!)
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
   let result: unknown
   switch (command) {
-    case 'preflight': {
-      const policy = await run(dbEffect('intake.policy', () => db.from('intake_policy').select('*').single()))
-      const sources = await run(dbEffect('intake.sources', () => db.from('instagram_sources').select('username').eq('enabled', true)))
-      const buckets = await run(dbEffect('intake.buckets', () => db.storage.listBuckets()))
-      const storage = buckets.some(bucket => bucket.id === 'instagram-evidence' && !bucket.public) && buckets.some(bucket => bucket.id === 'event-artwork' && bucket.public)
-      result = { schema_ready: true, storage_ready: storage, active_sources: sources.length,
-        collection_enabled: policy.collection_enabled, publishing_enabled: policy.publishing_enabled,
-        run_cap_usd: Number(policy.run_cap_usd), monthly_cap_usd: Number(policy.monthly_cap_usd),
-        embedding_key_present: !!process.env.OPENAI_API_KEY, presentation_key_present: !!process.env.DEEPSEEK_API_KEY,
-        publishing_ready: storage && policy.publishing_enabled && !!process.env.OPENAI_API_KEY && !!process.env.DEEPSEEK_API_KEY,
-        collection_ready: storage && policy.collection_enabled && sources.length > 0 && sources.length <= policy.max_sources }
-      break
-    }
-    case 'sources': result = await run(allRowsEffect(db, 'instagram_sources', '*', query => query.order('username'))); break
-    case 'source': {
-      const source = Schema.decodeUnknownSync(SourceSchema, { onExcessProperty: 'error' })(JSON.parse(await readFile(input, 'utf8')))
-      result = await run(dbEffect('intake.source', () => db.from('instagram_sources').upsert(source).select().single())); break
-    }
-    case 'collect': result = await run(collectInstagramEffect(db, apify)); break
-    case 'pending':
-    case 'export': {
-      const observations = await run(allRowsEffect(db, 'intake_observations', '*', query => query.is('reviewed_at', null).order('observed_at')))
-      const records = []
-      const folder = resolve(process.env.INTAKE_WORK_DIR ?? join(homedir(), 'Library/Application Support/BA Events/Instagram Intake'))
-      if (command === 'export' && (folder === process.cwd() || folder.startsWith(process.cwd() + '/'))) throw new Error('Evidence must be saved outside the repository')
-      if (command === 'export') await mkdir(folder, { recursive: true, mode: 0o700 })
-      for (const observation of observations) {
-        const media = await run(dbEffect('intake.media', () => db.from('intake_media').select('*').eq('observation_id', observation.id).order('position')))
-        const localMedia = []
-        for (const image of media) {
-          if (command === 'export') {
-            if (!/^[0-9a-f]{64}\.(jpg|png|webp)$/.test(image.object_key)) throw new Error('Invalid retained media key')
-            const blob = await run(dbEffect('intake.download', () => db.storage.from('instagram-evidence').download(image.object_key)))
-            const path = join(folder, image.object_key)
-            await writeFile(path, new Uint8Array(await blob.arrayBuffer()), { mode: 0o600 })
-            localMedia.push({ ...image, path })
-          } else localMedia.push(image)
-        }
-        records.push({ ...observation, media: localMedia })
-      }
-      if (command === 'export') {
-        const path = join(folder, 'pending.json')
-        await writeFile(path, JSON.stringify(records, null, 2) + '\n', { mode: 0o600 })
-        result = { path, observations: records.length }
-      } else result = records
-      break
-    }
-    case 'candidates': result = await run(allRowsEffect(db, 'intake_candidates', '*', query => query.order('updated_at'))); break
-    case 'held': result = await run(heldBacklogEffect(db)); break
+    case 'preflight': result = await run(preflightEffect(store, { embedding: !!process.env.OPENAI_API_KEY, presentation: !!process.env.DEEPSEEK_API_KEY })); break
+    case 'sources': result = await run(store.sources()); break
+    case 'source': result = await run(decodeSource(await readJson(input)).pipe(Effect.flatMap(source => store.upsertSource(source)))); break
+    case 'collect': result = await run(collectInstagramEffect(store, apify)); break
+    case 'pending': result = await run(pendingEffect(store)); break
+    case 'export': result = await exportPending(await run(pendingEffect(store)), key => run(store.evidenceBytes(key))); break
+    case 'candidates': result = await run(store.candidates()); break
+    case 'held': result = await run(heldBacklogEffect(store)); break
     case 'venue': {
       let request
-      try { request = decodeVenueRequest(JSON.parse(await readFile(input, 'utf8'))) }
+      try { request = decodeVenueRequest(await readJson(input)) }
       catch (error) { throw new Error(`Invalid venue request: ${error instanceof Error ? error.message : 'see docs/instagram-intake.md'}`) }
-      result = await run(resolveIntakeVenueEffect(db, request)); break
+      result = await run(resolveIntakeVenueEffect(store, request)); break
     }
-    case 'lookup': {
-      if (!input || input.length > 100 || /[%_,()]/.test(input)) throw new Error('Use a plain name fragment')
-      const venues = await run(dbEffect('intake.venues', () => db.from('venues').select('id,name,address,neighborhood').ilike('name', `%${input}%`).limit(30)))
-      const events = await run(dbEffect('intake.events', () => db.from('events').select('id,name,starts_at,venue_id,price,is_free,status,source,ticket_url,link,updated_at').ilike('name', `%${input}%`).order('starts_at', { ascending: false }).limit(100)))
-      result = { venues, events, coverage: 'bounded name lookup; preview performs the complete date-window comparison' }; break
-    }
-    case 'submit': result = await run(submitCandidateEffect(db, JSON.parse(await readFile(input, 'utf8')))); break
-    case 'preview': result = await run(previewCandidateEffect(db, input, process.env.SUPABASE_URL!)); break
-    case 'commit': {
-      const { previous_event: _privateSnapshot, ...receipt } = await run(commitPlanEffect(db, input))
-      result = receipt; break
-    }
-    case 'review': {
-      const review = Schema.decodeUnknownSync(Schema.Struct({ observation_id: Schema.String,
-        note: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(4000))) }), { onExcessProperty: 'error' })(JSON.parse(await readFile(input, 'utf8')))
-      result = await run(dbEffect('intake.review', () => db.from('intake_observations').update({ reviewed_at: new Date().toISOString(), review_note: review.note }).eq('id', review.observation_id).select('id,reviewed_at').single())); break
-    }
+    case 'lookup': result = await run(lookupEffect(store, input)); break
+    case 'submit': result = await run(submitCandidateEffect(store, await readJson(input))); break
+    case 'preview': result = await run(previewCandidateEffect(store, input)); break
+    case 'commit': result = publicReceipt(await run(commitPlanEffect(store, input))); break
+    case 'review': result = await run(decodeReview(await readJson(input)).pipe(Effect.flatMap(review => store.reviewObservation(review.observation_id, review.note)))); break
     default: throw new Error('Unknown command. Use --help')
   }
   console.log(JSON.stringify(result, null, 2))

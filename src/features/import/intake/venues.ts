@@ -1,15 +1,13 @@
 /** Operator venue resolution for the Instagram intake: dedupe, check the city and neighborhood, create, keep evidence. */
 import { Effect, Schema } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { createVenue } from '#shared/lib/db/client.server.ts'
 import { createVenueSchema } from '#shared/lib/schemas.ts'
-import { NEIGHBORHOODS, type Neighborhood, type Venue } from '#shared/lib/types.ts'
-import { importTry, ImportOperationError } from '../core/effect-utils.ts'
+import { NEIGHBORHOODS, type Neighborhood } from '#shared/lib/types.ts'
+import { ImportOperationError } from '../core/effect-utils.ts'
 import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult } from '../core/nominatim.ts'
 import { REVIEW_QUEUE_THRESHOLD, addressKey, areaOnlyVenueName, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
-import { validPublicUrl, type Candidate } from './schema.ts'
+import { validPublicUrl } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
-import { allRowsEffect, dbEffect } from './repository.ts'
+import type { CandidateRow, IntakeStore, PlanSummary, VenueRow } from './store.ts'
 
 export { addressKey }
 
@@ -27,7 +25,6 @@ export const VenueRequestSchema = Schema.Struct({
     .pipe(Schema.check(Schema.isMaxLength(20)))),
 })
 export type VenueRequest = typeof VenueRequestSchema.Type
-type VenueRow = Pick<Venue, 'id' | 'name' | 'address' | 'neighborhood'>
 export type VenueOutcome =
   | { outcome: 'existing'; venue: VenueRow; match: string; completed?: string[]; warnings?: string[] }
   | { outcome: 'created'; venue: VenueRow; warnings: string[]; distinct_from?: VenueRequest['distinct_from'] }
@@ -63,7 +60,7 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
  * might be a match is `ambiguous`, unless every candidate is only a similar name or alias that the operator lists in
  * `distinct_from` with a reason. A repeated request finds the venue it created (same name), so `venue` is idempotent.
  */
-export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(client: SupabaseClient, request: VenueRequest,
+export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(store: IntakeStore, request: VenueRequest,
   geocode: Geocode = query => searchNominatimEffect(query)) {
   const name = request.name.trim(), address = request.address.trim()
   // A barrio-named place passes: the address below must carry a house number. A city or postal code never does.
@@ -73,10 +70,8 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
   const key = addressKey(address)
   if (!key) return { outcome: 'rejected', reasons: ['Address needs a street name followed by a house number'] } satisfies VenueOutcome
   // Strict reads: a database outage must fail here rather than look like "no match" and create a duplicate.
-  const venues = (yield* allRowsEffect(client, 'venues', 'id,name,address,neighborhood', query => query.order('id'))) as unknown as VenueRow[]
-  // Not the importers' matchVenueEffect: it reads any RPC error as "no match".
-  const similar = (yield* dbEffect('intake.venue-similar', () => client.rpc('intake_similar_venues', {
-    p_name: name, p_threshold: REVIEW_QUEUE_THRESHOLD }))) as Array<VenueRow & { similarity: number }>
+  const venues = yield* store.allVenues()
+  const similar = yield* store.similarVenues(name, REVIEW_QUEUE_THRESHOLD)
   // PostgREST caps responses at 1000 rows; a full page could be truncated, so don't decide on it.
   if (similar.length >= 1000) return yield* failure('Too many similar venue names to check; use a more specific name')
   const candidates = new Map<string, VenueRow & { why: string }>()
@@ -108,12 +103,10 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
       return { outcome: 'ambiguous', candidates: [{ ...pick(named), why: `same name, but this address is in ${located.neighborhood}` }] } satisfies VenueOutcome
     }
     const fill = { ...(named.address ? {} : { address }), ...(named.neighborhood ? {} : { neighborhood: located.neighborhood }) }
-    let update = client.from('venues').update(fill).eq('id', named.id)
-    for (const field of Object.keys(fill)) update = update.is(field, null)
-    const rows = (yield* dbEffect('intake.venue-complete', () => update.select('id,name,address,neighborhood'))) as VenueRow[]
-    if (rows.length) yield* recordEvidenceEffect(client, rows[0], request, `completed ${Object.keys(fill).join(', ')}`, located)
+    const rows = yield* store.completeVenue(named.id, fill)
+    if (rows.length) yield* recordEvidenceEffect(store, rows[0], request, `completed ${Object.keys(fill).join(', ')}`, located)
     // No row means another writer filled it first; report what is there now.
-    const current = rows[0] ?? ((yield* dbEffect('intake.venue-read', () => client.from('venues').select('id,name,address,neighborhood').eq('id', named.id).single())) as VenueRow)
+    const current = rows[0] ?? (yield* store.venueRow(named.id))
     return { ...found, venue: pick(current), completed: rows.length ? Object.keys(fill) : [], warnings: located.warnings } satisfies VenueOutcome
   }
   if (![...candidates.keys()].every(cleared)) return { outcome: 'ambiguous', candidates: [...candidates.values()] } satisfies VenueOutcome
@@ -123,20 +116,20 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(clie
   const parsed = createVenueSchema.safeParse({ name, address, neighborhood: located.neighborhood,
     website: request.website ?? '', instagram_handle: request.instagram_handle ?? '' })
   if (!parsed.success) return { outcome: 'rejected', reasons: parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`) } satisfies VenueOutcome
-  const venue = yield* importTry('intake.venue-create', () => createVenue(parsed.data, client))
-  yield* recordEvidenceEffect(client, venue, request, 'created', located)
+  const venue = yield* store.createVenue(parsed.data)
+  yield* recordEvidenceEffect(store, venue, request, 'created', located)
   return { outcome: 'created', venue: pick(venue), warnings: located.warnings,
     ...(candidates.size ? { distinct_from: request.distinct_from } : {}) } satisfies VenueOutcome
 })
 
 /** The venue's evidence lives in the existing review log as an approved row tied to the venue. A rerun of `venue` repeats it. */
-const recordEvidenceEffect = (client: SupabaseClient, venue: VenueRow, request: VenueRequest, action: string,
-  located: { method: string; warnings: string[] }) => dbEffect('intake.venue-evidence', () => client.from('venue_review_queue').insert({
+const recordEvidenceEffect = (store: IntakeStore, venue: VenueRow, request: VenueRequest, action: string,
+  located: { method: string; warnings: string[] }) => store.recordVenueEvidence({
   source: INTAKE_VENUE_SOURCE, source_venue_name: request.name.trim(), source_address: request.address.trim(), status: 'approved',
   final_venue_id: venue.id, best_match_venue_id: null, match_confidence: null, reviewed_at: new Date().toISOString(),
   notes: JSON.stringify({ action, evidence: request.evidence, distinct_from: request.distinct_from ?? [],
     neighborhood_method: located.method, warnings: located.warnings }),
-}).select('id').single()).pipe(Effect.mapError(error => failure(
+}).pipe(Effect.mapError(error => failure(
   `Venue ${venue.id} (${venue.name}) was ${action} but has no evidence row (${error.message}). A retry returns it as existing without adding one, so note this venue ID in the run memory and report`)))
 
 const pick = (venue: VenueRow): VenueRow => ({ id: venue.id, name: venue.name, address: venue.address, neighborhood: venue.neighborhood })
@@ -170,8 +163,7 @@ const locateEffect = Effect.fn('intake.venue-locate')(function*(geocode: Geocode
 // ---------------------------------------------------------------------------
 // Held backlog
 
-type CandidateRow = { id: string; revision: number; payload: Omit<Candidate, 'expected_revision'>; updated_at: string }
-type PlanRow = { candidate_id: string; revision: number; action: string; reasons: string[]; receipt: unknown; created_at: string }
+type PlanRow = PlanSummary
 export type HeldGroup = {
   venue_name: string | null; venue_id: string | null; venue_only: number
   candidates: Array<{ id: string; revision: number; name: string; date: string; time: string | null; reasons: string[]; venue_only: boolean }>
@@ -207,15 +199,12 @@ export function groupHeldByVenue(candidates: CandidateRow[], plans: PlanRow[], t
 }
 
 /** Reads only future candidates and their own plans, so the listing stays bounded as history grows. */
-export const heldBacklogEffect = Effect.fn('intake.held')(function*(client: SupabaseClient, now = new Date()) {
+export const heldBacklogEffect = Effect.fn('intake.held')(function*(store: IntakeStore, now = new Date()) {
   const today = baDate(now.toISOString())
-  const candidates = (yield* allRowsEffect(client, 'intake_candidates', 'id,revision,payload,updated_at',
-    query => query.gte('payload->>date', today).order('id'))) as unknown as CandidateRow[]
+  const candidates = yield* store.futureCandidates(today)
   const plans: PlanRow[] = []
   for (let index = 0; index < candidates.length; index += 100) {
-    const ids = candidates.slice(index, index + 100).map(row => row.id)
-    plans.push(...(yield* allRowsEffect(client, 'intake_plans', 'candidate_id,revision,action,reasons,receipt,created_at',
-      query => query.in('candidate_id', ids).order('created_at'))) as unknown as PlanRow[])
+    plans.push(...(yield* store.plansFor(candidates.slice(index, index + 100).map(row => row.id))))
   }
   const groups = groupHeldByVenue(candidates, plans, today)
   return { today, held: groups.reduce((sum, group) => sum + group.candidates.length, 0),

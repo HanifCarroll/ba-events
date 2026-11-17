@@ -272,6 +272,21 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - **WHEN** the same plan is committed again
 - **THEN** it returns its persisted receipt without inserting another event or repeating provider preparation
 
+### Requirement: The intake API is the D1 backend for the operator CLI
+Where the jobs Worker binds the D1 database, `/intake/*` on that Worker SHALL serve every intake operation with the same results as the Supabase path, behind a bearer `INTAKE_API_TOKEN` of at least 32 characters compared in constant time, and SHALL decode every request body strictly, refusing unknown fields. Without the D1 binding every `/intake/*` path SHALL answer 404. The operator CLI SHALL use the API only when both `INTAKE_API_URL` and `INTAKE_API_TOKEN` are set, keep its commands and output shapes, and keep Apify calls and image downloads on the operator's machine. Evidence images SHALL be stored privately in R2 under their sha256 key after the server checks their type, size and hash; published artwork SHALL be copied to the artwork bucket and named by the site's artwork route. On D1 the candidate submission, plan check, commit and collection reservation SHALL each run as one transaction with the Postgres functions' rules and messages, and a commit SHALL set `write_context` so intake protection lets it change protected facts. `/intake/sources` SHALL insert new Instagram sources disabled and leave every existing username unchanged.
+
+#### Scenario: A request lacks the token
+- **WHEN** a request to `/intake/*` has no bearer token or the wrong one
+- **THEN** it is refused with 401 and nothing is read or written
+
+#### Scenario: Production before the cutover
+- **WHEN** `baeventos-jobs` has no D1 binding
+- **THEN** every `/intake/*` request answers 404 and the CLI without `INTAKE_API_URL` keeps using Supabase
+
+#### Scenario: A committed plan's vector upsert failed
+- **WHEN** the D1 commit succeeded but the Vectorize upsert did not
+- **THEN** committing the same plan again returns the same receipt and upserts the event's vector
+
 ## Verification
 
 ### Implementation anchors
@@ -285,6 +300,9 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/`
 - `scripts/instagram-intake.ts`
 - `src/features/import/intake/venues.ts`
+- `src/features/import/intake/store-d1.ts`
+- `src/features/import/intake/client.ts`
+- `src/jobs-worker/intake-api.ts`
 - `supabase/migrations/20261025205334_instagram_intake.sql`
 - `supabase/migrations/20261113220000_instagram_incremental_collection.sql`
 - `supabase/migrations/20261115120000_intake_similar_venues.sql`
@@ -312,6 +330,8 @@ The shared preview/commit interface SHALL persist candidate revisions, proposed 
 - `src/features/import/intake/service.test.ts`
 - `src/features/import/intake/collection.test.ts`
 - `src/features/import/intake/venues.test.ts`
+- `src/features/import/intake/store-d1.test.ts`
+- `src/jobs-worker/intake-api.test.ts`
 - `supabase/tests/instagram-intake.sql`
 - `supabase/tests/instagram-intake-venues.sql`
 - `supabase/tests/hidden-location.sql`
