@@ -13,6 +13,8 @@ import { Data, Effect } from 'effect'
 import { addMessageEffect } from '../messages.server.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { CHAT_CONTRACT_VERSION, type CanonicalChatResponse, type MessageExecutionStep } from '#shared/lib/types.ts'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import { findOwnMessageId } from '../chat-d1.server.ts'
 
 export interface PersistAssistantInput {
   event: RequestEvent
@@ -39,24 +41,26 @@ export function persistAssistantMessageV4Effect(
   input: PersistAssistantInput
 ): Effect.Effect<PersistAssistantResult, AssistantPersistenceError> {
   const program = Effect.gen(function* () {
-    const supabase = createSupabaseServerClient(input.event)
-    const {
-      data: { user },
-    } = yield* Effect.tryPromise({
-      try: () => supabase.auth.getUser(),
+    const db = boundD1()
+    const supabase = db ? null : createSupabaseServerClient(input.event)
+    const user = db ? input.event.locals?.user ?? null : (yield* Effect.tryPromise({
+      try: () => supabase!.auth.getUser(),
       catch: () => persistenceFailure('Failed to read authenticated user'),
-    })
+    })).data.user
     if (!user) return { persisted: false } satisfies PersistAssistantResult
 
     let parentMessageId: string | null = null
     if (input.userClientMessageId) {
+      const userClientMessageId = input.userClientMessageId
       const { data } = yield* Effect.tryPromise({
-        try: () => supabase
-          .from('messages')
-          .select('id')
-          .eq('conversation_id', input.conversationId)
-          .eq('client_message_id', input.userClientMessageId)
-          .maybeSingle(),
+        try: async () => db
+          ? { data: { id: await findOwnMessageId(db, user.id, input.conversationId, userClientMessageId) } }
+          : supabase!
+            .from('messages')
+            .select('id')
+            .eq('conversation_id', input.conversationId)
+            .eq('client_message_id', userClientMessageId)
+            .maybeSingle(),
         catch: () => persistenceFailure('Failed to find triggering user message'),
       })
       if (data?.id) {

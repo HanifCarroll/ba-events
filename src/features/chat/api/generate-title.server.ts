@@ -13,6 +13,8 @@ import {
   normalizeConversationTitle,
 } from '#features/chat/lib/title.ts'
 import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import { updateConversation } from './chat-d1.server.ts'
 
 /**
  * Core title generation, shared by the server function and evals.
@@ -65,6 +67,17 @@ export async function generateAndSaveTitle(
   event: RequestEvent,
   data: { conversationId: string; firstMessage: string }
 ) {
+  const db = boundD1()
+  if (db) {
+    const userId = event.locals?.user?.id
+    if (!userId) throw new Error('Not authenticated')
+    const { title } = await generateTitle({ firstMessage: data.firstMessage })
+    // Don't throw: title generation worked, only saving failed.
+    await updateConversation(db, userId, data.conversationId, { title })
+      .catch((error) => console.error('[generateAndSaveTitle] Error updating conversation:', error))
+    return { title }
+  }
+
   const supabase = createSupabaseServerClient(event)
 
   const {

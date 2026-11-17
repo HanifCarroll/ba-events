@@ -5,16 +5,19 @@ import { getTextDirection } from '#lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '#lib/paraglide/server.js';
 import { requestChatTiming } from "#features/chat/lib/timing.ts";
 import { getSessionUserEffect } from '#features/auth/api/session.server.ts';
+import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts';
 import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts';
 
 const CANONICAL_HOST = 'baeventos.com';
 
 export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
 	if (dev) return resolve(event);
-	if (event.url.protocol === 'https:' && event.url.hostname === CANONICAL_HOST) return resolve(event);
+	// Only the staging Worker sets CANONICAL_HOST (its workers.dev host); production keeps baeventos.com.
+	const host = (event.platform as { env?: { CANONICAL_HOST?: string } } | undefined)?.env?.CANONICAL_HOST || CANONICAL_HOST;
+	if (event.url.protocol === 'https:' && event.url.hostname === host) return resolve(event);
 	const destination = new URL(event.url);
 	destination.protocol = 'https:';
-	destination.hostname = CANONICAL_HOST;
+	destination.hostname = host;
 	destination.port = '';
 	// 308 keeps the method and body of non-GET requests across the redirect.
 	const { method } = event.request;
@@ -80,10 +83,13 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		)
 	);
 
-// (d) Search backend — D1 and Vectorize when the Worker binds them (the staging Worker), Supabase otherwise.
-const handleSearchBackend: Handle = ({ event, resolve }) => {
-	useCloudflareBindings((event.platform as { env?: unknown } | undefined)?.env);
+// (d) Cloudflare backend — search, chat, guests, feedback, and the rate limiter use D1 (and search Vectorize) when the
+// Worker binds them (the staging Worker), Supabase otherwise.
+const handleCloudflareBackend: Handle = ({ event, resolve }) => {
+	const env = (event.platform as { env?: unknown } | undefined)?.env;
+	useCloudflareBindings(env);
+	useD1Binding(env);
 	return resolve(event);
 };
 
-export const handle = sequence(handleCanonicalOrigin, handleSearchBackend, handleSupabase, handleLocaleSync, handleParaglide);
+export const handle = sequence(handleCanonicalOrigin, handleCloudflareBackend, handleSupabase, handleLocaleSync, handleParaglide);

@@ -45,4 +45,13 @@ describe('canonical origin', () => {
 			expect(resolve).not.toHaveBeenCalled();
 		}
 	});
+
+	it('uses the env CANONICAL_HOST when the Worker sets one (staging), and baeventos.com otherwise', async () => {
+		const staging = 'baeventos-staging.example.workers.dev';
+		const rendered = new Response('Staging app');
+		const event = { ...eventFor(`https://${staging}/path`), platform: { env: { CANONICAL_HOST: staging } } };
+		expect(await handleCanonicalOrigin({ event, resolve: vi.fn().mockResolvedValue(rendered) } as never)).toBe(rendered);
+		const production = await handleCanonicalOrigin({ event: eventFor(`https://${staging}/path`), resolve: vi.fn() } as never);
+		expect(production.headers.get('location')).toBe('https://baeventos.com/path');
+	});
 });

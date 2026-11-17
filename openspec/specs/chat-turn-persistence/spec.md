@@ -24,6 +24,21 @@ Only a valid active claim SHALL complete or fail a running turn. Expired running
 - **THEN** no assistant message or terminal state is written
 - **AND** replay of an already completed turn by its completing claim returns the existing result without changing it
 
+### Requirement: Authenticated turns are owned and atomic on either backend
+On Supabase the turn RPCs and row-level security enforce this. On D1 (the staging Worker until the cutover) each turn operation SHALL run as one `db.batch()` transaction whose preconditions abort the whole batch, and every read and write SHALL be filtered by the signed-in user's id. Bootstrap SHALL create the conversation, user message, and pending turn together. Completion SHALL store the assistant message and complete the turn together, or neither.
+
+#### Scenario: Two requests claim the same turn at once
+- **WHEN** two claims for one pending turn arrive together
+- **THEN** exactly one claim holds the turn and both callers see that claim
+
+#### Scenario: Completion arrives after the turn failed
+- **WHEN** a claim's holder completes a turn that its own failure already ended
+- **THEN** completion is rejected and no assistant message is written
+
+#### Scenario: Another user names the turn or conversation
+- **WHEN** a signed-in user reads, claims, completes, fails, renames, deletes, or adds a message to another user's conversation or turn
+- **THEN** nothing is returned or changed
+
 ### Requirement: Guest response persistence and completion are atomic
 Guest completion SHALL validate the claim, save the server-produced canonical assistant response under the turn's fixed message identifiers, and mark the turn completed in one IndexedDB transaction. Rejected completion SHALL leave both messages and turn state unchanged. Ordinary message writes SHALL NOT replace a turn-owned assistant response.
 

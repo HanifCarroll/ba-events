@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { Data, Effect } from 'effect'
 import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { createTelegramEnvelopeKey } from './envelope.server.ts'
+import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import * as d1 from './telegram-d1.server.ts'
 
 export type TelegramDeliveryClaim =
   | { completed: true }
@@ -13,17 +15,42 @@ class TelegramDeliveryError extends Data.TaggedError('TelegramDeliveryError')<{
 
 const deliveryFailure = (message: string) => new TelegramDeliveryError({ message })
 
+/** The D1 path when the Worker binds `DB` and no Supabase client was passed in (tests pass one). */
+function d1For(client: SupabaseClient | undefined) {
+  return client ? null : boundD1()
+}
+
+function d1Effect<A>(work: () => Promise<A>, message: string) {
+  return Effect.tryPromise({ try: work, catch: () => deliveryFailure(message) })
+}
+
 /** Effect-native idempotency claim program. */
 export function claimTelegramUpdateEffect(
   updateId: string,
   identityHash: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient()
+  client?: SupabaseClient
 ): Effect.Effect<TelegramDeliveryClaim, TelegramDeliveryError> {
   return Effect.gen(function* () {
     if (!/^[a-f0-9]{64}$/.test(identityHash)) return yield* Effect.fail(deliveryFailure('Invalid Telegram identity hash'))
     const envelopeKey = createTelegramEnvelopeKey()
+    const db = d1For(client)
+    if (db) {
+      const now = new Date().toISOString()
+      if (yield* d1Effect(() => d1.insertClaim(db, updateId, identityHash, envelopeKey, now), 'Failed to claim Telegram update')) {
+        return { completed: false, envelopeKey, checkRateLimit: true }
+      }
+      const data = yield* d1Effect(() => d1.readClaim(db, updateId), 'Failed to read Telegram update claim')
+      if (!data) return yield* Effect.fail(deliveryFailure('Failed to read Telegram update claim'))
+      if (data.status === 'completed') return { completed: true }
+      if (data.identity_hash !== identityHash) return yield* Effect.fail(deliveryFailure('Telegram update identity mismatch'))
+      if (typeof data.envelope_key !== 'string') return yield* Effect.fail(deliveryFailure('Telegram update retry key is unavailable'))
+      const retryKey = data.envelope_key
+      yield* d1Effect(() => d1.renewClaim(db, updateId, identityHash, now), 'Failed to renew Telegram update claim')
+      return { completed: false, envelopeKey: retryKey, checkRateLimit: data.status === 'failed' }
+    }
+    const supabase = client ?? getSupabaseServiceRoleClient()
     const { error: insertError } = yield* Effect.tryPromise({
-      try: (signal) => client.from('telegram_updates').insert({
+      try: (signal) => supabase.from('telegram_updates').insert({
         update_id: updateId,
         status: 'processing',
         identity_hash: identityHash,
@@ -35,7 +62,7 @@ export function claimTelegramUpdateEffect(
     if (insertError.code !== '23505') return yield* Effect.fail(deliveryFailure('Failed to claim Telegram update'))
 
     const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('telegram_updates')
         .select('status, attempt_count, identity_hash, envelope_key')
         .eq('update_id', updateId)
@@ -50,7 +77,7 @@ export function claimTelegramUpdateEffect(
     const checkRateLimit = data.status === 'failed'
 
     const { error: updateError } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('telegram_updates')
         .update({
           status: 'processing',
@@ -70,7 +97,7 @@ export function claimTelegramUpdateEffect(
 export function claimTelegramUpdate(
   updateId: string,
   identityHash: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(claimTelegramUpdateEffect(updateId, identityHash, client))
 }
@@ -80,11 +107,19 @@ export function attachTelegramUpdateConversationEffect(
   updateId: string,
   identityHash: string,
   conversationId: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ): Effect.Effect<void, TelegramDeliveryError> {
+  const db = d1For(client)
+  if (db) {
+    return Effect.flatMap(
+      d1Effect(() => d1.attachConversation(db, updateId, identityHash, conversationId, new Date().toISOString()),
+        'Failed to attach Telegram conversation claim'),
+      (attached) => attached ? Effect.void : Effect.fail(deliveryFailure('Failed to attach Telegram conversation claim')))
+  }
+  const supabase = client ?? getSupabaseServiceRoleClient()
   return Effect.gen(function* () {
     const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('telegram_updates')
         .update({ conversation_id: conversationId, updated_at: new Date().toISOString() })
         .eq('update_id', updateId)
@@ -103,7 +138,7 @@ export function attachTelegramUpdateConversation(
   updateId: string,
   identityHash: string,
   conversationId: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(attachTelegramUpdateConversationEffect(updateId, identityHash, conversationId, client))
 }
@@ -111,11 +146,15 @@ export function attachTelegramUpdateConversation(
 /** Effect-native delivery envelope lookup program. */
 export function getTelegramUpdateEnvelopeKeyEffect(
   updateId: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ): Effect.Effect<string | null, TelegramDeliveryError> {
+  const db = d1For(client)
+  const supabase = db ? null : client ?? getSupabaseServiceRoleClient()
   return Effect.gen(function* () {
-    const { data, error } = yield* Effect.tryPromise({
-      try: (signal) => client
+    const { data, error } = db
+      ? { data: yield* d1Effect(() => d1.readClaim(db, updateId), 'Telegram update envelope key unavailable'), error: null }
+      : yield* Effect.tryPromise({
+      try: (signal) => supabase!
         .from('telegram_updates')
         .select('status, envelope_key')
         .eq('update_id', updateId)
@@ -132,7 +171,7 @@ export function getTelegramUpdateEnvelopeKeyEffect(
 
 export function getTelegramUpdateEnvelopeKey(
   updateId: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(getTelegramUpdateEnvelopeKeyEffect(updateId, client))
 }
@@ -141,12 +180,17 @@ export function getTelegramUpdateEnvelopeKey(
 export function markTelegramUpdateCompletedEffect(
   updateId: string,
   conversationId: string | null,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ): Effect.Effect<void, TelegramDeliveryError> {
+  const db = d1For(client)
+  if (db) {
+    return d1Effect(() => d1.markCompleted(db, updateId, conversationId, new Date().toISOString()), 'Failed to complete Telegram update claim')
+  }
+  const supabase = client ?? getSupabaseServiceRoleClient()
   return Effect.gen(function* () {
     const now = new Date().toISOString()
     const { error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('telegram_updates')
         .update({
           status: 'completed',
@@ -167,7 +211,7 @@ export function markTelegramUpdateCompletedEffect(
 export function markTelegramUpdateCompleted(
   updateId: string,
   conversationId: string | null,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(markTelegramUpdateCompletedEffect(updateId, conversationId, client))
 }
@@ -175,12 +219,15 @@ export function markTelegramUpdateCompleted(
 /** Effect-native identity redaction program. */
 export function redactTelegramIdentityClaimsEffect(
   identityHash: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ): Effect.Effect<void, TelegramDeliveryError> {
+  const db = d1For(client)
+  if (db) return d1Effect(() => d1.redactIdentity(db, identityHash, new Date().toISOString()), 'Failed to redact Telegram identity claims')
+  const supabase = client ?? getSupabaseServiceRoleClient()
   return Effect.gen(function* () {
     const now = new Date().toISOString()
     const { error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('telegram_updates')
         .update({
           status: 'completed',
@@ -200,7 +247,7 @@ export function redactTelegramIdentityClaimsEffect(
 
 export function redactTelegramIdentityClaims(
   identityHash: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(redactTelegramIdentityClaimsEffect(identityHash, client))
 }
@@ -209,11 +256,14 @@ export function redactTelegramIdentityClaims(
 export function markTelegramUpdateFailedEffect(
   updateId: string,
   errorCode: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ): Effect.Effect<void, TelegramDeliveryError> {
+  const db = d1For(client)
+  if (db) return d1Effect(() => d1.markFailed(db, updateId, errorCode, new Date().toISOString()), 'Failed to mark Telegram update failed')
+  const supabase = client ?? getSupabaseServiceRoleClient()
   return Effect.gen(function* () {
     const { error } = yield* Effect.tryPromise({
-      try: (signal) => client
+      try: (signal) => supabase
         .from('telegram_updates')
         .update({
           status: 'failed',
@@ -231,7 +281,7 @@ export function markTelegramUpdateFailedEffect(
 export function markTelegramUpdateFailed(
   updateId: string,
   errorCode: string,
-  client: SupabaseClient = getSupabaseServiceRoleClient(),
+  client?: SupabaseClient,
 ) {
   return Effect.runPromise(markTelegramUpdateFailedEffect(updateId, errorCode, client))
 }
