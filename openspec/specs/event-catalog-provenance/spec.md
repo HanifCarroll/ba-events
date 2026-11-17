@@ -87,6 +87,11 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 - **AND** it does not permit private evidence paths, other storage projects, arbitrary query parameters or expiring Instagram CDN links
 - **AND** Instagram remains identified as the original source rather than a ticket seller
 
+#### Scenario: Artwork stored in R2 on a Worker that binds D1
+- **WHEN** a displayable event's artwork URL is `https://baeventos.com/api/event-artwork/<event id>/<sha256>.<ext>` (the form the D1 copy and the D1 intake write) and the Worker binds the `ARTWORK` bucket
+- **THEN** that path serves the stored original from R2 with an immutable one-year cache, only while it is that event's current artwork and only with a JPEG, PNG, or WebP content type
+- **AND** the finite-size variants read the same object from R2 instead of fetching a URL, and fall back to that original path on this host
+
 #### Scenario: A small original is selected through a larger cached candidate
 - **WHEN** no-upscale delivery returns fewer physical pixels than the requested variant and candidate selection changes
 - **THEN** artwork in a reserved aspect-ratio frame retains its rendered size independently of density-corrected natural dimensions, remains uncropped, and caps candidate descriptors to known source widths without duplicate variants
@@ -105,6 +110,7 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 - `src/features/chat/api/tools/get-directions.ts`
 - `src/features/chat/api/tools/utils.ts`
 - `src/shared/lib/db/client.server.ts`
+- `src/shared/lib/db/event-reads-d1.server.ts`
 
 ### Deterministic tests
 - `src/features/events/lib/location-presentation.test.ts`
@@ -115,6 +121,7 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 - `src/features/events/api/home-feed.server.test.ts`
 - `src/features/events/api/artwork.server.test.ts`
 - `src/features/events/lib/artwork-delivery.test.ts`
+- `src/shared/lib/db/event-reads-d1.server.test.ts`
 - `src/features/chat/api/tools/presentation.test.ts`
 - `src/features/chat/api/agent/orchestrate.test.ts`
 

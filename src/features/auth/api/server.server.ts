@@ -92,23 +92,20 @@ function sessionUserIdEffect(event: RequestEvent, action: string) {
 }
 
 /**
- * Delete an account. On D1 it deletes only the signed-in user, and the client's `userId` must match the session.
- * Supabase (production until the cutover) keeps its existing behavior; see the PR's note on that path.
+ * Delete the signed-in user's account. The client's `userId` only guards against a replaced account; the session
+ * decides who is deleted, on D1 and on Supabase (whose service-role delete would otherwise trust the browser).
  */
 export function deleteAccountEffect(event: RequestEvent, data: { userId: string }) {
-	const db = d1Of(event)
-	if (db) {
-		return Effect.gen(function* () {
-			const userId = yield* sessionUserIdEffect(event, 'delete your account')
-			if (data.userId !== userId) return yield* Effect.fail(authFailure('Account changed during deletion'))
+	return Effect.gen(function* () {
+		const userId = yield* sessionUserIdEffect(event, 'delete your account')
+		if (data.userId !== userId) return yield* Effect.fail(authFailure('Account changed during deletion'))
+		const db = d1Of(event)
+		if (db) {
 			yield* supabaseEffect(() => d1UserStore(db).deleteAccount(userId), 'Failed to delete account')
 			return { success: true }
-		})
-	}
-	const adminClient = getSupabaseServiceRoleClient()
-	return Effect.gen(function* () {
+		}
 		const { error } = yield* supabaseEffect(
-			() => adminClient.auth.admin.deleteUser(data.userId),
+			() => getSupabaseServiceRoleClient().auth.admin.deleteUser(userId),
 			'Failed to delete account',
 		)
 		if (error) return yield* Effect.fail(authFailure(error.message, error))

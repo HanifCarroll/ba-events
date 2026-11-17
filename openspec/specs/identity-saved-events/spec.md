@@ -49,6 +49,10 @@ A Worker without a D1 binding MUST sign people in through Supabase Auth. A Worke
 - **WHEN** a Google identity with an existing account's email arrives with `email_verified` false
 - **THEN** no account is linked and no session is created
 
+#### Scenario: Unknown Google email arrives unverified
+- **WHEN** a Google identity whose email matches no account arrives with `email_verified` false
+- **THEN** no user, account, or session is created
+
 #### Scenario: Imported user signs in
 - **WHEN** a user copied from Supabase signs in on D1
 - **THEN** their session carries their Supabase user id, so their profile, saved events, preferences, and conversations are theirs
@@ -59,6 +63,10 @@ Account deletion MUST require the authenticated account and MUST NOT trust a mis
 #### Scenario: Deletion request names another account
 - **WHEN** the supplied identifier differs from the session user
 - **THEN** deletion is denied
+
+#### Scenario: Deletion request without a session
+- **WHEN** nobody is signed in, on either backend
+- **THEN** deletion is denied and no account is deleted
 
 ### Requirement: Saved controls preserve localized accessible names
 Save controls SHALL use the active UI locale. When a saved control has visible text, its accessible name SHALL include that text and describe the remove action.

@@ -47,5 +47,9 @@
       "migrations_dir": "migrations"
     }
   ],
-  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events-staging" }]
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events-staging" }],
+  // PR 07b: the artwork route serves R2 artwork (`/api/event-artwork/<event id>/<sha256>.<ext>`) from `ARTWORK`, and
+  // resizes catalog artwork through `IMAGES` as production does. PR 08 binds `ARTWORK` to `baeventos-artwork` in production.
+  "r2_buckets": [{ "binding": "ARTWORK", "bucket_name": "baeventos-artwork-staging" }],
+  "images": { "binding": "IMAGES" }
 }
