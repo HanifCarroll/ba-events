@@ -76,9 +76,9 @@ Define the current `search_events` intent boundary: canonicalize user/tool input
 
 ### Requirement: Search the same way on either backend
 
-The reads behind `search_events` MUST run on Supabase unless the Worker binds the D1 database `DB`, and then MUST run on D1, with Vectorize (`VECTORIZE`) for semantic retrieval. On D1 they MUST apply the same filters as the Supabase reads, lexical retrieval MUST accept the same query syntax as `websearch_to_tsquery` (words ANDed, quoted phrases, `or`, and `-` negation) over the same event text, and semantic retrieval MUST return only scheduled events above the same similarity threshold. Production binds no D1 database until the cutover.
+The reads behind `search_events` MUST run on Supabase unless the Worker binds the D1 database `DB`, and then MUST run on D1, with Vectorize (`VECTORIZE`) for semantic retrieval. On D1 they MUST apply the same filters as the Supabase reads, lexical retrieval MUST accept the same query syntax as `websearch_to_tsquery` (words ANDed, quoted phrases, `or`, and `-` negation) over the same event text, and semantic retrieval MUST return only scheduled events above the same similarity threshold. Since the cutover every production Worker that searches binds `DB` and `VECTORIZE`.
 
-#### Scenario: Production keeps Supabase
+#### Scenario: A Worker without D1 keeps Supabase
 - **WHEN** a Worker's env has no `DB` binding
 - **THEN** lexical, semantic, filter-only, count, happening-now, furthest-date, and venue-name reads use Supabase as before
 

@@ -25,7 +25,11 @@ Only a valid active claim SHALL complete or fail a running turn. Expired running
 - **AND** replay of an already completed turn by its completing claim returns the existing result without changing it
 
 ### Requirement: Authenticated turns are owned and atomic on either backend
-On Supabase the turn RPCs and row-level security enforce this. On D1 (the staging Worker until the cutover) each turn operation SHALL run as one `db.batch()` transaction whose preconditions abort the whole batch, and every read and write SHALL be filtered by the signed-in user's id. Bootstrap SHALL create the conversation, user message, and pending turn together. Completion SHALL store the assistant message and complete the turn together, or neither.
+On Supabase the turn RPCs and row-level security enforce this. On D1 (production since the cutover) each turn operation SHALL run as one `db.batch()` transaction whose preconditions abort the whole batch, and every read and write SHALL be filtered by the signed-in user's id. Bootstrap SHALL create the conversation, user message, and pending turn together. Completion SHALL store the assistant message and complete the turn together, or neither.
+
+#### Scenario: Writes are frozen for the cutover
+- **WHEN** the web Worker has `DB_READ_ONLY` set to `1`
+- **THEN** a signed-in turn, message, or conversation write answers 503 with `Retry-After` and nothing is stored, while a guest chat, whose history stays in the browser, is answered as usual
 
 #### Scenario: Two requests claim the same turn at once
 - **WHEN** two claims for one pending turn arrive together

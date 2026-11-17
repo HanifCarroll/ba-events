@@ -44,6 +44,17 @@ describe.skipIf(bun)('intake API boundary', () => {
     expect((await handleIntakeRequest(new Request('https://jobs.example/'), env)).status).toBe(404)
   })
 
+  it('serves only read operations while DB_READ_ONLY is set (the cutover freeze)', async () => {
+    const frozen = { ...env, DB_READ_ONLY: '1' }
+    expect((await call('preflight', {}, frozen)).status).toBe(200)
+    expect((await call('pending', {}, frozen)).status).toBe(200)
+    const refused = await call('source', body({ username: 'synthetic', authority: 'venue', enabled: false, qualification: 'x' }), frozen)
+    expect(refused.status).toBe(503)
+    expect(await db.prepare('SELECT count(*) AS n FROM instagram_sources').first('n')).toBe(0)
+    expect((await call('collection/reserve', {}, frozen)).status).toBe(503)
+    expect((await call('preflight', {}, { ...frozen, INTAKE_API_TOKEN: 'wrong-token-0123456789abcdef0123456789' })).status).toBe(401)
+  })
+
   it('requires the bearer token and refuses a short configured token', async () => {
     expect((await call('preflight', { headers: { 'content-type': 'application/json' } })).status).toBe(401)
     expect((await call('preflight', { headers: { authorization: `Bearer ${TOKEN}x`, 'content-type': 'application/json' } })).status).toBe(401)

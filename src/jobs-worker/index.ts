@@ -20,7 +20,7 @@ import { catchupMaxBatches, countCatchupBacklog, dailyMaxBatches, runCatchupBatc
 import { purgeGuestLifecycleRetention } from './guest-lifecycle-retention.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
 import { SOURCES } from './source-health.ts'
-import { CRON_TASKS, startScheduledWorkflow } from './schedule.ts'
+import { dispatchCron } from './schedule.ts'
 import { runCatalogTask } from './catalog-maintenance.ts'
 import { importSource, readSourceCatalog } from './sources.ts'
 import { handleIntakeRequest, type IntakeApiEnv } from './intake-api.ts'
@@ -38,6 +38,8 @@ export interface JobsEnv extends IntakeApiEnv {
   /** Only staging binds these until the cutover (delivery PR 08); without `DB` every job uses Supabase. */
   DB?: D1Database
   VECTORIZE?: Vectorize
+  /** '1' during the D1 cutover window: crons start nothing (read-only.ts). */
+  DB_READ_ONLY?: string
 }
 
 type Budget = '10 minutes' | '30 minutes' | '1 hour'
@@ -160,8 +162,5 @@ export class CatalogTaskWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
 export default {
   // `/intake/*` answers only where the env binds DB (intake-api.ts); everything else stays a 404.
   fetch: (request: Request, env: JobsEnv) => handleIntakeRequest(request, env),
-  scheduled: (controller: { cron: string; scheduledTime: number }, env: JobsEnv) => {
-    const task = CRON_TASKS[controller.cron as keyof typeof CRON_TASKS]
-    return task ? runCatalogTask(task, env).then(() => undefined) : startScheduledWorkflow(controller, env)
-  },
+  scheduled: (controller: { cron: string; scheduledTime: number }, env: JobsEnv) => dispatchCron(controller, env, runCatalogTask),
 }

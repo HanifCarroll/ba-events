@@ -84,6 +84,15 @@ jobs:
           PUBLIC_SUPABASE_ANON_KEY: ${{ vars.PUBLIC_SUPABASE_ANON_KEY }}
           PUBLIC_POSTHOG_KEY: ${{ vars.PUBLIC_POSTHOG_KEY }}
           PUBLIC_POSTHOG_HOST: ${{ vars.PUBLIC_POSTHOG_HOST }}
+      # The production configs carry a D1 id placeholder until Hermes creates the database (docs/ops/d1-cutover.md).
+      - name: Check production bindings
+        run: bun scripts/check-production-bindings.ts
+      # Before any Worker runs new code against the schema. Needs D1 Edit on the token.
+      - name: Apply D1 migrations
+        run: bun run migrate:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Telegram, MCP, web, chat delivery, then jobs; stops at the first failure.
       - name: Deploy Cloudflare Workers
         run: bun run cloudflare:deploy
