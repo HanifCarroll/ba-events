@@ -5,6 +5,7 @@ import { collectInstagramEffect, type ApifyRequest } from './collection.ts'
 import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect } from './service.ts'
 import { decodeCandidate } from './schema.ts'
 import { allRowsEffect } from './repository.ts'
+import { ImportOperationError } from '../core/effect-utils.ts'
 import { supabaseIntake } from './store-supabase.ts'
 
 /** Recorded SDK responses, with no real credentials, providers or database access. */
@@ -228,6 +229,26 @@ describe('intake failure and retry orchestration', () => {
     expect(result).toMatchObject({ state: 'succeeded', run_id: 'done-run', posts: 0,
       media: { retry: { attempted: 0, error: expect.stringContaining('database unavailable') }, retried_failed: [], expired: [], deferred: [] },
       failures: expect.arrayContaining([expect.stringContaining('Media retry stopped early: database unavailable')]) })
+  })
+  it('returns the collection summary and names the storage failure when the retry cannot save an image', async () => {
+    const later = Math.floor(Date.now() / 1000 + 3 * 86400).toString(16)
+    const url = (name: string) => `https://scontent.cdninstagram.com/v/${name}.jpg?oe=${later}`
+    const { db: base } = fakeDb([ok({ collection_enabled: true }), ok({ fresh: false, id: 'run', apify_run_id: 'done-run', input: { username: ['a'], resultsLimit: 20 } }),
+      ok({ id: 'run' })])
+    const stored: number[] = []; const fetched: string[] = []
+    const store = { ...base,
+      unreviewedMedia: () => Effect.succeed([{ id: 'old', media_urls: [url('a'), url('b')], positions: [] }]),
+      retainImage: (_id: string, position: number) => { stored.push(position)
+        return Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'R2 unavailable' })) } }
+    const api: ApifyRequest = async (_method, path) => path.startsWith('datasets/') ? []
+      : { data: { id: 'done-run', status: 'SUCCEEDED', defaultDatasetId: 'dataset', usageTotalUsd: 0.5 } }
+    const result = await Effect.runPromise(collectInstagramEffect(store, api, async image => {
+      fetched.push(image); return { bytes: new Uint8Array([1]), content_type: 'image/jpeg', sha256: 'a'.repeat(64), object_key: `${'a'.repeat(64)}.jpg` } }))
+    expect(fetched).toEqual([url('a')])
+    expect(stored).toEqual([0])
+    expect(result).toMatchObject({ state: 'succeeded', run_id: 'done-run',
+      media: { retry: { attempted: 1, retained: 0, error: expect.stringContaining('R2 unavailable (in intake.store-image)') }, retried_failed: [] },
+      failures: expect.arrayContaining([expect.stringContaining('intake.store-image')]) })
   })
   it('resumes an existing paid run without needing new credit', async () => {
     const { db } = fakeDb([ok({ collection_enabled: true }), ok({ fresh: false, apify_run_id: 'existing-run' })])

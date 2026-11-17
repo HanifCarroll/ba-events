@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { retainPostsEffect, retryMissingMediaEffect, signedUrlExpiry, sourceCoverage } from './collection.ts'
 import { supabaseIntake } from './store-supabase.ts'
 import type { CollectionStore } from './store.ts'
+import { ImportOperationError } from '../core/effect-utils.ts'
 
 /** In-memory intake_observations/intake_media with only the query shapes retainPostsEffect uses. */
 function memoryDb() {
@@ -146,6 +147,16 @@ describe('retrying missing images of unreviewed observations', () => {
     expect(fetched).toEqual([signed('a', later), signed('c', later)])
     expect(result).toEqual({ attempted: 2, retained: 1, expired: [], failed: [{ observation_id: 'flaky', position: 0 }],
       deferred: [{ observation_id: 'big', position: 1 }, { observation_id: 'big', position: 2 }] })
+  })
+
+  it('ends the pass on a storage failure, names it, and downloads nothing after it', async () => {
+    const { db } = mediaDb([{ id: 'first', media_urls: [signed('a', later), signed('b', later)] }, { id: 'second', media_urls: [signed('c', later)] }], [])
+    const store = { ...db, retainImage: () => Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'Intake API answered 503' })) } as CollectionStore
+    const fetched: string[] = []
+    const result = await Effect.runPromise(retryMissingMediaEffect(store, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
+    expect(fetched).toEqual([signed('a', later)])
+    expect(result).toMatchObject({ attempted: 1, retained: 0, failed: [],
+      error: 'Media retry stopped early: Intake API answered 503 (in intake.store-image); the next collect retries' })
   })
 
   it('stops at its deadline, keeps what it saved, and says so', async () => {
