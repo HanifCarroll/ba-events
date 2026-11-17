@@ -1,21 +1,76 @@
+import childProcess, { type ChildProcess } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { Readable } from 'node:stream'
 import type { D1Database } from '@cloudflare/workers-types'
 import { getPlatformProxy, unstable_splitSqlQuery } from 'wrangler'
 
 const root = join(import.meta.dirname, '../..')
+
+type Proxy = Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>
+
+/** How long one Miniflare start may take before it is abandoned and tried again. */
+const START_TIMEOUT_MS = 20_000
+const START_ATTEMPTS = 3
+
+/**
+ * Bun 1.3.14 sometimes fails to open a child's extra stdio pipe (`connect ENOENT` on fd 3; about 1 spawn in 10 in a
+ * plain `bun` loop). Miniflare reads workerd's ready signal from fd 3 and has no listener for that error, so under
+ * `bun test` it surfaced as an unhandled error and Miniflare waited forever for ports. While Miniflare starts, this
+ * listens on fd 3 and kills a workerd whose pipe failed, so the start fails at once and is retried. Node never fails here.
+ */
+function watchControlPipes(onBrokenPipe: () => void) {
+	const spawn = childProcess.spawn
+	childProcess.spawn = ((...args: Parameters<typeof spawn>) => {
+		const child = spawn(...args) as ChildProcess
+		const control = child.stdio[3] as Readable | null | undefined
+		control?.on('error', () => {
+			onBrokenPipe()
+			// Miniflare may still be writing the config; that start is abandoned, so its EPIPE is expected.
+			child.stdin?.on('error', () => undefined)
+			child.kill()
+		})
+		return child
+	}) as typeof spawn
+	return () => { childProcess.spawn = spawn }
+}
+
+/** Starts Miniflare, retrying a start that fails or never settles. */
+async function startProxy(): Promise<Proxy> {
+	let brokenPipes = 0
+	const restore = watchControlPipes(() => { brokenPipes++ })
+	try {
+		for (let attempt = 1; ; attempt++) {
+			const start = getPlatformProxy<{ DB: D1Database }>({
+				configPath: join(root, 'tests/support/wrangler.d1-test.jsonc'),
+				persist: false,
+				remoteBindings: false,
+				envFiles: [],
+			})
+			let timer: ReturnType<typeof setTimeout> | undefined
+			const timedOut = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), START_TIMEOUT_MS) })
+			let failure: unknown
+			const proxy = await Promise.race([start, timedOut])
+				.catch((error: unknown) => { failure = error; return null })
+				.finally(() => clearTimeout(timer))
+			if (proxy) return proxy
+			// If the abandoned start finishes after all, stop its workerd.
+			void start.then((late) => late.dispose(), () => undefined)
+			if (attempt === START_ATTEMPTS) {
+				throw new Error(`Miniflare did not start in ${START_ATTEMPTS} attempts (${brokenPipes} broken control pipes)`, { cause: failure })
+			}
+		}
+	} finally {
+		restore()
+	}
+}
 
 /**
  * A fresh, empty Miniflare D1 database with every file in `migrations/` applied in order, the way
  * `wrangler d1 migrations apply` does. Nothing is persisted; call `dispose()` when the test file is done.
  */
 export async function freshD1(): Promise<{ db: D1Database; dispose: () => Promise<void> }> {
-	const proxy = await getPlatformProxy<{ DB: D1Database }>({
-		configPath: join(root, 'tests/support/wrangler.d1-test.jsonc'),
-		persist: false,
-		remoteBindings: false,
-		envFiles: [],
-	})
+	const proxy = await startProxy()
 	const db = proxy.env.DB
 	const dir = join(root, 'migrations')
 	for (const file of (await readdir(dir)).filter((name) => name.endsWith('.sql')).sort()) {

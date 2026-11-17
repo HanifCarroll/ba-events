@@ -36,6 +36,9 @@
     "PUBLIC_POSTHOG_KEY": "",
     "PUBLIC_POSTHOG_HOST": ""
   },
+  // PR 07: Better Auth's magic links (src/features/auth/api/magic-link-email.server.ts). Secret AUTH_SECRET signs the
+  // session cookies; GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET turn on Google once the staging callback is registered.
+  "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["accounts@baeventos.com"] }],
   "d1_databases": [
     {
       "binding": "DB",

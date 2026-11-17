@@ -6,7 +6,8 @@
  * Checks: every table's D1 row count equals the export; 100 events and 50 venues, spread evenly over the export, equal
  * production field by field after decoding (the only expected change is the artwork URL rewrite); the Vectorize index
  * holds exactly one vector per exported embedding, and 100 sampled vectors equal production's values and metadata; and
- * every exported object is in its R2 bucket with the sha256 its key names, with nothing extra.
+ * every exported object is in its R2 bucket with the sha256 its key names, with nothing extra; and every exported auth
+ * user is a Better Auth user with the same id, its profile, and one email account.
  * With SUPABASE_URL set it also prints production's live row counts. A difference fails only with --production
  * (the cutover freezes writes); on staging, production keeps changing after the export.
  */
@@ -16,6 +17,7 @@ import { parseArgs } from 'node:util'
 import type { R2Bucket } from '@cloudflare/workers-types'
 import { BUCKETS, bucketFor, checkTargets, connect, elapsed, pool, readJsonl, readManifest, requireDir, targetOptions, targetsFrom } from './lib.ts'
 import { d1Columns, decodeValue, expectedRow, sameValue, type D1Value, type VectorRecord } from './transform.ts'
+import { checkUsers, type AuthUser } from './users.ts'
 
 /** n rows spread evenly over the export, so the sample is the same on every run. */
 async function sample(file: string, total: number, n: number): Promise<Record<string, unknown>[]> {
@@ -72,6 +74,13 @@ async function main() {
 		}
 		const totalRows = Object.values(manifest.tables).reduce((sum, t) => sum + t.rows, 0)
 		console.log(`rows: ${totalRows} in ${Object.keys(manifest.tables).length} tables`)
+
+		// Better Auth users keep their Supabase ids.
+		const users: AuthUser[] = []
+		for await (const user of readJsonl<AuthUser>(join(dir, 'raw', 'auth_users.jsonl'))) users.push(user)
+		const userProblems = await checkUsers(remote.db, users)
+		problems.push(...userProblems)
+		console.log(`users: ${users.length - userProblems.length} of ${users.length} auth users imported with their ids, profiles, and email accounts`)
 
 		// 2. Field by field.
 		for (const [table, n] of [['events', 100], ['venues', 50]] as const) {

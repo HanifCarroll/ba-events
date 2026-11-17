@@ -1,6 +1,5 @@
 import { createAsyncLogic, setup, types } from 'xstate'
-import type { User } from '@supabase/supabase-js'
-import type { Profile } from '#shared/lib/types.ts'
+import type { AuthUser as User, Profile } from '#shared/lib/types.ts'
 
 export interface AuthSeed {
 	user?: User | null

@@ -13,7 +13,12 @@
 // global at open time). Preload runs before every test file, so this is the
 // only reliable ordering.
 import 'fake-indexeddb/auto'
-import { mock, vi } from 'bun:test'
+import { mock, setDefaultTimeout, vi } from 'bun:test'
+
+// Bun's default test timeout is 5 s (and bunfig.toml's is ignored). When a test overruns it, Bun SIGTERMs every
+// subprocess of the file, including the Miniflare workerd a file's beforeAll started (tests/support/d1.ts), so one
+// slow D1 test on a busy machine failed every test after it. Vitest's default is the same 5 s, but it never kills.
+setDefaultTimeout(30_000)
 
 // SvelteKit 3's `$app/env` is virtual in Vite but literal Bun has no plugin
 // resolver. Tests exercise SSR behavior, so the server-side values are enough.

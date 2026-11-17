@@ -19,7 +19,8 @@ export const VECTORIZE_TOP_K = 100
 /** The cosine similarity a semantic match must exceed, as in `match_events_with_venues_filtered`. */
 export const SEMANTIC_MATCH_THRESHOLD = 0.2
 
-const EVENT_COLUMNS = `e.id, e.name, e.description_es, e.description_en, e.description_display_es, e.description_display_en,
+/** The `events_with_venues` columns (without embedding and search_document), over events e and venues v. */
+export const EVENT_COLUMNS = `e.id, e.name, e.description_es, e.description_en, e.description_display_es, e.description_display_en,
   e.description_summary_es, e.description_summary_en, e.starts_at, e.ends_at, e.is_all_day, e.time_tba, e.venue_id,
   e.categories, e.price, e.is_free, e.min_age, e.image_url, e.image_width, e.image_height, e.link, e.ticket_url, e.source,
   e.external_id, e.status, e.location_hidden, e.location_tba, e.description_unavailable, e.enrichment_status,
@@ -45,7 +46,8 @@ const EventRow = Schema.Struct({
   facets: Schema.fromJsonString(Schema.Unknown),
 })
 const decodeEvent = Schema.decodeUnknownSync(EventRow)
-const toPayload = (row: unknown) => decodeEvent(row) as unknown as ChatEventPayload
+/** Decodes one EVENT_COLUMNS row to the shape Supabase's events_with_venues returns. */
+export const toPayload = (row: unknown) => decodeEvent(row) as unknown as ChatEventPayload
 
 const iso = (value: string) => new Date(value).toISOString()
 const list = (values: readonly string[] | undefined) => (values && values.length > 0 ? JSON.stringify(values) : null)

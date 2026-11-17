@@ -8,6 +8,8 @@
  * D1: empties every copied table (the migrations must already be applied), then inserts 500-row db.batch() calls in
  * foreign-key order. Vectorize: upserts the event vectors in batches of 1,000 and deletes ids that are not events.
  * R2: puts each object with its sha256, which R2 checks on upload; objects already there with that hash are skipped.
+ * Users: the Supabase auth users become Better Auth users with the same ids, each with an email account (users.ts).
+ * `--only d1,users,vectorize,r2` picks parts; `--only users` reimports the users alone, leaving the tables as they are.
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -16,6 +18,7 @@ import { parseArgs } from 'node:util'
 import type { D1PreparedStatement } from '@cloudflare/workers-types'
 import { TABLES, bucketFor, checkTargets, connect, elapsed, objectPath, pool, readJsonl, readManifest, requireDir, targetOptions, targetsFrom, wrangler, type Remote } from './lib.ts'
 import { d1Columns, type D1Value, type VectorRecord } from './transform.ts'
+import { importUsers, type AuthUser } from './users.ts'
 
 const D1_BATCH = 500
 const D1_BATCH_BYTES = 4_000_000 // Keeps big JSON rows (plans, chat debug) under the request size limit.
@@ -125,17 +128,25 @@ async function loadObjects(remote: Remote, dir: string) {
 	console.log(`load r2: ${put} objects put, ${skipped} already present with the same hash, in ${elapsed(start)}`)
 }
 
+async function loadUsers(remote: Remote, dir: string) {
+	const users: AuthUser[] = []
+	for await (const user of readJsonl<AuthUser>(join(dir, 'raw', 'auth_users.jsonl'))) users.push(user)
+	if (users.length !== readManifest(dir).auth_users) throw new Error(`auth_users.jsonl has ${users.length} users, the manifest ${readManifest(dir).auth_users}`)
+	console.log(`load users: ${await importUsers(remote.db, users)} Better Auth users with their Supabase ids`)
+}
+
 async function main() {
 	const { values } = parseArgs({ options: { ...targetOptions, only: { type: 'string' } } })
 	const dir = requireDir(values.dir)
 	const targets = targetsFrom(values)
 	checkTargets(targets, values.production!)
-	const only = values.only?.split(',') ?? ['d1', 'vectorize', 'r2']
+	const only = values.only?.split(',') ?? ['d1', 'users', 'vectorize', 'r2']
 	const start = Date.now()
 	console.log(`load into D1 ${targets.d1}, Vectorize ${targets.vectorize}, R2 ${targets.evidenceBucket} and ${targets.artworkBucket}`)
 	const remote = await connect(dir, targets)
 	try {
 		if (only.includes('d1')) await loadD1(remote, dir)
+		if (only.includes('users')) await loadUsers(remote, dir)
 		if (only.includes('vectorize')) await loadVectors(remote, dir, targets.vectorize)
 		if (only.includes('r2')) await loadObjects(remote, dir)
 	} finally { await remote.dispose() }
