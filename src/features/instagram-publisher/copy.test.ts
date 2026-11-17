@@ -26,10 +26,15 @@ describe('Este finde', () => {
     expect(caption('finde', weekend)).toBe(`Seis planes independientes para este finde en Buenos Aires:
 
 Viernes 20, 21:00. Demián Ornstein Trío en @gelsomina_cultural, San Cristóbal. $15.000.
+
 Sábado 21, 11:00 a 16:30. 24 horas por el Cine Argentino en @salalucida, Saavedra. Gratis.
+
 Sábado 21, 19:30. Ponerse de pie en @saviacultural, Villa Crespo.
+
 Sábado 21, 20:00. Mandatos en @laba.arg, Chacarita.
+
 Sábado 21, 21:30. Mantecas en @cafe.artigas, Villa General Mitre. A la gorra.
+
 Domingo 22, 20:00. Dear Munro en Planta Inclán, Parque Patricios.
 
 Más planes en baeventos.com (link en la bio).

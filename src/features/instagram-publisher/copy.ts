@@ -49,7 +49,7 @@ export function eventLine(format: FormatKey, event: PostEvent): string {
 export function caption(format: FormatKey, events: PostEvent[]): string | null {
   if (format === 'hoy') return null
   const n = events.length
-  const lines = events.map(event => eventLine(format, event)).join('\n')
+  const lines = events.map(event => eventLine(format, event)).join('\n\n')
   const [intro, english] = format === 'finde'
     ? [`${numberWord(n, 'es')} planes independientes para este finde en Buenos Aires:`, `${numberWord(n, 'en')} independent events this weekend in Buenos Aires. More at baeventos.com.`]
     : [`${numberWord(n, 'es')} planes gratis esta semana en Buenos Aires:`, `${numberWord(n, 'en')} free events this week in Buenos Aires. More at baeventos.com.`]
