@@ -97,7 +97,9 @@ const handleCloudflareBackend: Handle = ({ event, resolve }) => {
 // session handle, because guest chat is allowed and a signed-in turn isn't.
 export const handleReadOnly: Handle = ({ event, resolve }) => {
 	const env = (event.platform as { env?: unknown } | undefined)?.env;
-	return readOnlyResponse(env, event.request.method, event.url.pathname, !!event.locals.user) ?? resolve(event);
+	// The request URL, not event.url: SvelteKit rewrites event.url to the calling page for remote commands.
+	const { pathname } = new URL(event.request.url);
+	return readOnlyResponse(env, event.request.method, pathname, !!event.locals.user) ?? resolve(event);
 };
 
 export const handle = sequence(handleCanonicalOrigin, handleCloudflareBackend, handleSupabase, handleReadOnly, handleLocaleSync, handleParaglide);
