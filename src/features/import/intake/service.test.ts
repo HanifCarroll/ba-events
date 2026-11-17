@@ -5,6 +5,7 @@ import { collectInstagramEffect, type ApifyRequest } from './collection.ts'
 import { commitPlanEffect, readEvidenceEffect, previewCandidateEffect } from './service.ts'
 import { decodeCandidate } from './schema.ts'
 import { allRowsEffect } from './repository.ts'
+import { supabaseIntake } from './store-supabase.ts'
 
 /** Recorded SDK responses, with no real credentials, providers or database access. */
 function fakeDb(responses: Array<{ data: unknown; error: { message: string } | null }>) {
@@ -18,7 +19,7 @@ function fakeDb(responses: Array<{ data: unknown; error: { message: string } | n
     rpc: (name: string) => { calls.push(`rpc:${name}`); return take() },
     storage: { from: (bucket: string) => ({ download: () => { calls.push(`download:${bucket}`); return take() },
       upload: () => { calls.push(`upload:${bucket}`); return take() } }) } } as unknown as SupabaseClient
-  return { db, calls }
+  return { db: supabaseIntake(db), client: db, calls }
 }
 const ok = (data: unknown) => ({ data, error: null })
 const error = (message: string) => ({ data: null, error: { message } })
@@ -42,7 +43,7 @@ describe('intake failure and retry orchestration', () => {
       return () => query(table)
     } })
     const db = { from: query } as unknown as SupabaseClient
-    const running = Effect.runPromise(readEvidenceEffect(db, { evidence: [{ observation_id: 'observation' }] } as never))
+    const running = Effect.runPromise(readEvidenceEffect(supabaseIntake(db), { evidence: [{ observation_id: 'observation' }] } as never))
     try {
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(calls).toEqual(['intake_observations', 'intake_media'])
@@ -76,7 +77,7 @@ describe('intake failure and retry orchestration', () => {
       return (value: string) => query(table, method === 'select' ? value : columns)
     } })
     const db = { from: (table: string) => { tables.push(table); return query(table) } } as unknown as SupabaseClient
-    const running = Effect.runPromise(previewCandidateEffect(db, candidate.id, 'https://example.supabase.co', new Date('2026-10-25')))
+    const running = Effect.runPromise(previewCandidateEffect(supabaseIntake(db, 'https://example.supabase.co'), candidate.id, new Date('2026-10-25')))
     const outcome = running.then(() => null, (failure: Error) => failure)
     try {
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -110,7 +111,7 @@ describe('intake failure and retry orchestration', () => {
     } })
     const db = { from: (table: string) => query(table),
       rpc: async (name: string) => { rpcs.push(name); return error('function venues_named does not exist') } } as unknown as SupabaseClient
-    const preview = await Effect.runPromise(previewCandidateEffect(db, candidate.id, 'https://example.supabase.co', new Date('2026-10-25')))
+    const preview = await Effect.runPromise(previewCandidateEffect(supabaseIntake(db, 'https://example.supabase.co'), candidate.id, new Date('2026-10-25')))
     expect(rpcs).toEqual(['venues_named'])
     expect(inserted).toHaveLength(1)
     expect(inserted[0]).toMatchObject({ action: 'held', payload: { venue_id: null } })
@@ -140,8 +141,8 @@ describe('intake failure and retry orchestration', () => {
   })
 
   it('fails a catalog read rather than treating a database outage as an empty catalog', async () => {
-    const { db } = fakeDb([error('database unavailable')])
-    await expect(Effect.runPromise(allRowsEffect(db, 'events', '*'))).rejects.toThrow('database unavailable')
+    const { client } = fakeDb([error('database unavailable')])
+    await expect(Effect.runPromise(allRowsEffect(client, 'events', '*'))).rejects.toThrow('database unavailable')
   })
   it('does no preparation or publication for a disabled workflow', async () => {
     const { db, calls } = fakeDb([ok(plan), ok({ publishing_enabled: false })])

@@ -1,0 +1,24 @@
+// Staging only: `baeventos-intake-staging`, the jobs Worker's code serving only the intake API (`/intake/*`) on the staging
+// D1, Vectorize index, and R2 buckets (DECISIONS.md). No crons or Workflows. CI never deploys it; deploy by hand with
+// `bunx wrangler deploy --config wrangler.intake.staging.jsonc`. Secrets: INTAKE_API_TOKEN, OPENAI_API_KEY (commit
+// embeddings), and DEEPSEEK_API_KEY (description summaries). The CLI reaches it with INTAKE_API_URL set to its
+// workers.dev URL. Production gets these bindings on `baeventos-jobs` only at the cutover (delivery PR 08).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baeventos-intake-staging",
+  "main": "src/jobs-worker/index.ts",
+  "account_id": "38d9d25d890a220fb7cf6dd92f8a322a",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    { "binding": "DB", "database_name": "baeventos-staging", "database_id": "136c27ff-1093-4519-825a-7ec4e17b1ff7", "migrations_dir": "migrations" }
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events-staging" }],
+  "r2_buckets": [
+    { "binding": "INTAKE_EVIDENCE", "bucket_name": "baeventos-intake-evidence-staging" },
+    { "binding": "INTAKE_ARTWORK", "bucket_name": "baeventos-artwork-staging" }
+  ],
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": true } }
+}

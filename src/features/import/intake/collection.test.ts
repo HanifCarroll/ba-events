@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { retainPostsEffect, sourceCoverage } from './collection.ts'
+import { supabaseIntake } from './store-supabase.ts'
 
 /** In-memory intake_observations/intake_media with only the query shapes retainPostsEffect uses. */
 function memoryDb() {
@@ -26,7 +27,7 @@ function memoryDb() {
     }
     return chain
   }
-  return { db: { from: table } as unknown as SupabaseClient, observations, seen }
+  return { db: supabaseIntake({ from: table } as unknown as SupabaseClient), observations, seen }
 }
 const post = (id: string, owner = 'synthetic_venue') => ({ id, shortCode: `sc${id}`, ownerUsername: owner, caption: `Synthetic ${id}`, timestamp: '2026-11-12T12:00:00Z' })
 const noItems = (name: string) => ({ url: `https://www.instagram.com/${name}`, inputUrl: `https://www.instagram.com/${name}`, error: 'no_items', errorDescription: 'Empty or private data for provided input' })
