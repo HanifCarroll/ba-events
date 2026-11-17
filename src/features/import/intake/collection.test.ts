@@ -104,8 +104,9 @@ describe('incremental Instagram collection', () => {
       await new Promise(resolve => setTimeout(resolve, 5))
       inFlight--; return image(url)
     }
+    const store: CollectionStore = { ...db, retainImage: () => Effect.void }
     const posts = Array.from({ length: 20 }, (_, index) => ({ ...post(String(index)), displayUrl: `https://scontent.cdninstagram.com/v/${index}.jpg` }))
-    const result = await Effect.runPromise(retainPostsEffect(db, 'run', posts, ['synthetic_venue'], 50, fetcher))
+    const result = await Effect.runPromise(retainPostsEffect(store, 'run', posts, ['synthetic_venue'], 50, fetcher))
     expect(result).toMatchObject({ posts: 20, changed: 20, unchanged: 0, mediaFailed: [] })
     expect(observations).toHaveLength(20)
     expect(peak).toBeGreaterThan(1)
@@ -115,9 +116,10 @@ describe('incremental Instagram collection', () => {
   it('counts a mixed batch of new, unchanged, duplicate and failing-image posts as the sequential version did', async () => {
     const { db, observations } = memoryDb()
     const withImage = (id: string) => ({ ...post(id), displayUrl: `https://scontent.cdninstagram.com/v/${id}.jpg` })
+    const store: CollectionStore = { ...db, retainImage: () => Effect.void }
     const fetcher = async (url: string) => { if (url.includes('/3.jpg')) throw new Error('offline'); return image(url) }
-    await Effect.runPromise(retainPostsEffect(db, 'run-1', [withImage('1')], ['synthetic_venue'], 20, fetcher))
-    const result = await Effect.runPromise(retainPostsEffect(db, 'run-2',
+    await Effect.runPromise(retainPostsEffect(store, 'run-1', [withImage('1')], ['synthetic_venue'], 20, fetcher))
+    const result = await Effect.runPromise(retainPostsEffect(store, 'run-2',
       [withImage('1'), withImage('2'), withImage('2'), withImage('3'), noItems('quiet_one')], ['synthetic_venue', 'quiet_one'], 20, fetcher))
     expect(result).toMatchObject({ posts: 3, changed: 2, unchanged: 1, failures: [], mediaFailed: [{ observation_id: 'obs-2', position: 0 }] })
     expect([...result.observationIds].sort()).toEqual(['obs-0', 'obs-1', 'obs-2'])
