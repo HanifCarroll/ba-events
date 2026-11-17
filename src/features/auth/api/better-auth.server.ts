@@ -39,7 +39,13 @@ export function createBetterAuth(origin: string, env: BetterAuthEnv, googleTest?
 		secret: env.AUTH_SECRET,
 		trustedOrigins: [origin],
 		telemetry: { enabled: false },
-		user: { modelName: 'users', fields: { emailVerified: 'email_verified', createdAt: 'created_at', updatedAt: 'updated_at' } },
+		user: {
+			modelName: 'users', fields: { emailVerified: 'email_verified', createdAt: 'created_at', updatedAt: 'updated_at' },
+			// Better Auth would otherwise register an unknown Google email Google hasn't verified. This runs before any
+			// user or account row is written; magic links pass because the link itself proves the email.
+			validateUserInfo: ({ user, source }) =>
+				source.method === 'oauth' && !user.emailVerified ? { error: 'email_not_verified', errorDescription: 'Google has not verified this email' } : undefined,
+		},
 		session: {
 			modelName: 'sessions',
 			fields: { userId: 'user_id', expiresAt: 'expires_at', createdAt: 'created_at', updatedAt: 'updated_at', ipAddress: 'ip_address', userAgent: 'user_agent' },
@@ -64,7 +70,7 @@ export function createBetterAuth(origin: string, env: BetterAuthEnv, googleTest?
 			ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
 		},
 		socialProviders: env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
-			? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, ...googleTest } }
+			? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, requireEmailVerification: true, ...googleTest } }
 			: {},
 		plugins: [
 			magicLink({
