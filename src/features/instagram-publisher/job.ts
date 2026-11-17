@@ -2,7 +2,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { decide, readReactions } from './approval.ts'
-import { caption as captionFor, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { caption as captionFor, footerHandle, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, framesHtml } from './html.ts'
 import { emptyPublishState, footerTag, instagramApi, publish, type PublishState, type Slide } from './instagram.ts'
@@ -78,7 +78,7 @@ export async function dryRun(format: FormatKey, from: string, outDir: string) {
   const work = join(outDir, '.render')
   const built = await build(format, from, [], work)
   mkdirSync(outDir, { recursive: true })
-  const summary = built.events.map(event => `${event.id}  ${event.date} ${event.time}  ${event.title} · ${event.venue} (${event.barrio})${event.handle ? ` @${event.handle}` : ''}${event.price ? ` · ${event.price}` : ''}`)
+  const summary = built.events.map(event => `${event.id}  ${event.date} ${event.time}  ${event.title} · ${event.venue} (${event.barrio})${event.handle ? ` ${footerHandle(event)}` : ''}${event.price ? ` · ${event.price}` : ''}`)
   writeFileSync(join(outDir, 'events.txt'), `${summary.join('\n')}\n`)
   if (!built.frames) {
     const text = tooFewText(format, built.window, built.events.length)
@@ -175,8 +175,8 @@ async function publishDraft(draft: Draft, now: Date): Promise<boolean> {
   const height = heightOf(draft.format)
   // Frame 1 is the cover and the last one the closing frame; the cards in between carry the tags.
   const slides: Slide[] = draft.frames.map((_, index) => {
-    const handle = index > 0 && index <= draft.events.length ? draft.events[index - 1]!.handle : null
-    return { url: `${config.r2!.publicBaseUrl}/${prefix}/frame-${index + 1}.jpg`, tag: handle ? footerTag(handle, height) : null }
+    const event = index > 0 && index <= draft.events.length ? draft.events[index - 1]! : null
+    return { url: `${config.r2!.publicBaseUrl}/${prefix}/frame-${index + 1}.jpg`, tag: event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null }
   })
   const job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
   draft.publish ??= emptyPublishState(job)

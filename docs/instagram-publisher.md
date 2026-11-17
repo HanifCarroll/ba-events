@@ -38,7 +38,9 @@ A failure raises the alert `ba-events/instagram/tick` or `ba-events/instagram/dr
 
 Events come from the Instagram intake (they have `event_source_evidence`) and must be scheduled, not time-TBA, not all-day, not location-hidden, and have a venue with a barrio. The pick is greedy and deterministic: one event per venue (names compared without accents or punctuation), a free event first for Hoy and Este finde when one qualifies, then whichever event adds a new barrio, a new category, and a description line, earliest first on ties. The cards are in start order.
 
-The tag is the venue's `instagram_handle`, else the account of the intake post the event came from, else none (the caption then names the venue). "A la gorra" comes from the intake candidate's `price_note` when its `price_kind` is `conditional` and the note says "a la gorra", "contribución consciente", or "a voluntad"; the catalog has no column for it.
+Placeholder start times don't count as real ones: a 23:59 start (the intake's end-of-day stand-in), and a 00:00 start when an intake candidate (not a link to a scraped event) left `time` empty. Time-TBA rows are already `time_tba`. A title ending in "@ {venue}" (or "@{venue}") that names the event's own venue loses that suffix.
+
+The tag is the venue's `instagram_handle`, else the account of the intake post the event came from, else none (the caption then names the venue). When the tag is the posting account and its name doesn't match the venue's (`accountIsVenue`: "salalucida" is Sala Lúcida, "ccmacedonia" is Centro Cultural Macedonia, "vamos_gratis" isn't Facultad de Derecho), the caption names the venue and ends the line "Vía @handle.", and the card footer reads "Vía @handle". "A la gorra" comes from the intake candidate's `price_note` when its `price_kind` is `conditional` and the note says "a la gorra", "contribución consciente", or "a voluntad"; the catalog has no column for it.
 
 ## Publishing and idempotency
 

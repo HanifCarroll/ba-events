@@ -1,15 +1,15 @@
 /** Golden tests: the live weekend post (templates ba-p2) and copy.md's templates, filled in. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CLOSING, HOY_CLOSING, caption, cardKicker, cover, eventLine, skipText, slackPreview, tooFewText } from './copy.ts'
+import { CLOSING, HOY_CLOSING, caption, cardKicker, cover, eventLine, footerHandle, skipText, slackPreview, tooFewText } from './copy.ts'
 import { baInstant } from './format.ts'
 import { runWindow } from './formats.ts'
 import type { PostEvent } from './select.ts'
 
 const copyMd = readFileSync(new URL('./copy.md', import.meta.url), 'utf8')
 
-const post = (date: string, time: string, title: string, handle: string | null, barrio: string, price: string | null, venue = 'Sala'): PostEvent =>
-  ({ id: title, date, startsAt: '', title, time, description: null, venue, barrio, price, handle })
+const post = (date: string, time: string, title: string, handle: string | null, barrio: string, price: string | null, venue = 'Sala', via = false): PostEvent =>
+  ({ id: title, date, startsAt: '', title, time, description: null, venue, barrio, price, handle, via })
 
 // The live weekend carousel's events, as the catalog would give them.
 const weekend: PostEvent[] = [
@@ -56,6 +56,23 @@ describe('Gratis esta semana', () => {
   })
 })
 
+describe('a handle that is the posting account, not the venue', () => {
+  const feja = post('2026-11-27', '19:30', 'Festival de Jazz FEJA 2026', 'vamos_gratis', 'Recoleta', 'Gratis', 'Facultad de Derecho (UBA)', true)
+  const troilo = post('2026-11-27', '18:00', 'Troilo inédito', 'instituto.iiet', 'Monserrat', '$5.000', 'La Vidriera', true)
+
+  it('names the venue and credits the account with "Vía"', () => {
+    expect(eventLine('finde', troilo)).toBe('Viernes 27, 18:00. Troilo inédito en La Vidriera, Monserrat. $5.000. Vía @instituto.iiet.')
+    expect(eventLine('gratis', feja)).toBe('Viernes 27, 19:30. Festival de Jazz FEJA 2026 en Facultad de Derecho (UBA), Recoleta. Vía @vamos_gratis.')
+    expect(eventLine('finde', { ...troilo, price: null })).toBe('Viernes 27, 18:00. Troilo inédito en La Vidriera, Monserrat. Vía @instituto.iiet.')
+  })
+
+  it('writes "Vía @handle" in the footer, and "@handle" for the venue\'s own account', () => {
+    expect(footerHandle(feja)).toBe('Vía @vamos_gratis')
+    expect(footerHandle(weekend[0]!)).toBe('@gelsomina_cultural')
+    expect(footerHandle(weekend[5]!)).toBe('')
+  })
+})
+
 describe('Hoy', () => {
   it('has a cover, cards, and no caption', () => {
     const window = runWindow('hoy', '2026-11-18')
@@ -92,7 +109,8 @@ describe('copy.md', () => {
       'esta semana', 'Más planes en baeventos.com (link en la bio).', 'independent events this weekend in Buenos Aires. More at baeventos.com.',
       'free events this week in Buenos Aires. More at baeventos.com.', 'planes independientes para elegir.', 'planes gratis en Buenos Aires para elegir.',
       'planes para esta noche.', 'Stories have no caption.', 'once you react ✅. React ❌ to skip it.', '"you reacted ❌"', 'Deslizá →',
-      'Hoy story', 'Este finde carousel', 'Gratis esta semana carousel', 'Posted: {permalink}']) {
+      'Hoy story', 'Este finde carousel', 'Gratis esta semana carousel', 'Posted: {permalink}',
+      '"{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. {Price}. Vía @{handle}."', '"Vía @{handle}" instead of "@{handle}"']) {
       expect(copyMd).toContain(text)
     }
     expect(eventLine('finde', weekend[0]!)).toMatch(/^\{?Viernes 20, 21:00\. /)

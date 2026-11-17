@@ -35,10 +35,14 @@ export function cover(format: FormatKey, window: RunWindow, count: number): Cove
 /** The card kicker: "Hoy · 21:00" in a story, "Viernes 20 · 21:00" in a carousel. */
 export const cardKicker = (format: FormatKey, event: PostEvent) => `${format === 'hoy' ? 'Hoy' : weekdayDay(event.date)} · ${event.time}`
 
+/** The card footer's tag text: "@handle", or "Vía @handle" when the handle isn't the venue's own account. */
+export const footerHandle = (event: PostEvent) => event.handle ? `${event.via ? 'Vía ' : ''}@${event.handle}` : ''
+
 export function eventLine(format: FormatKey, event: PostEvent): string {
-  const where = `${event.handle ? `@${event.handle}` : event.venue}, ${event.barrio}.`
+  const where = `${event.handle && !event.via ? `@${event.handle}` : event.venue}, ${event.barrio}.`
   const price = format !== 'gratis' && event.price ? ` ${event.price}.` : ''
-  return `${weekdayDay(event.date)}, ${event.time}. ${event.title} en ${where}${price}`
+  const via = event.handle && event.via ? ` Vía @${event.handle}.` : ''
+  return `${weekdayDay(event.date)}, ${event.time}. ${event.title} en ${where}${price}${via}`
 }
 
 /** The post caption, or null for a story (stories have no caption). */

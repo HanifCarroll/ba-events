@@ -1,5 +1,5 @@
 /** The frames as one HTML page, in the look of the live weekend carousel (templates ba-p2): one `.s` element per frame. */
-import { CLOSING, HOY_CLOSING, cardKicker, cover } from './copy.ts'
+import { CLOSING, HOY_CLOSING, cardKicker, cover, footerHandle } from './copy.ts'
 import { FORMATS, type FormatKey, type RunWindow } from './formats.ts'
 import type { PostEvent } from './select.ts'
 
@@ -16,49 +16,61 @@ const pill = (price: string) => price === 'Gratis'
 
 export interface Assets { fontsDir: string; heroPhoto: string }
 
+/** Instagram covers a story's top 250 px (progress bar, account) and bottom 250 px (reply bar). */
+export const STORY_SAFE = { top: 250, bottom: 1670 } as const
+
+const coverInner = (c: ReturnType<typeof cover>) => `<div class='kicker'>${escape(c.kicker)}</div>
+ <div class='serif' style='font-size:${c.headline.length === 1 ? 112 : 128}px;line-height:.98;letter-spacing:-3px;margin-top:30px'>${c.headline.map(line => `<span style='white-space:nowrap'>${escape(line)}</span>`).join('<br>')}</div>
+ <div style='font-size:42px;margin-top:48px;color:rgba(255,255,255,.9)'>${escape(c.body)}</div>
+ ${c.english ? `<div style='font-size:30px;margin-top:28px;color:rgba(255,255,255,.65)'>${escape(c.english)}</div>` : ''}`
+
+const cardText = (format: FormatKey, event: PostEvent) => `<div class='kicker'>${escape(cardKicker(format, event))}</div>
+ <div class='serif' style='font-size:${titleSize(event.title)}px;line-height:1.02;letter-spacing:-2px;margin-top:34px'>${escape(event.title)}</div>
+ ${event.description ? `<div style='font-size:40px;line-height:1.35;margin-top:30px;color:rgba(255,255,255,.85)'>${escape(event.description)}</div>` : ''}`
+
+const venueInner = (event: PostEvent) => `<div style='font-size:44px;font-weight:600'>${escape(event.venue)}</div>
+ <div class='meta'><span>${escape(event.barrio)}</span>${event.price ? pill(event.price) : ''}</div>`
+
+const footer = (left: string, right: string) => `<div class='foot'><span>${escape(left)}</span><span>${escape(right)}</span></div>`
+
+const closingInner = (headline: string, body: string, button: string | null) => `<div class='serif' style='font-size:112px;line-height:1.02;letter-spacing:-2px'>${escape(headline)}</div>
+ <div style='font-size:40px;line-height:1.4;margin-top:40px;color:rgba(255,255,255,.9)'>${escape(body)}</div>
+ ${button ? `<div style='margin-top:60px'><span class='btn'>${escape(button)}</span></div>` : ''}`
+
+const PHOTO = `<div class='photo'></div><div class='shade'></div>`
+const PHOTO_DARK = `<div class='photo'></div><div class='shade' style='background:rgba(10,15,40,.86)'></div>`
+
+/** Carousel slides (1080 × 1350), as in the live weekend post. */
+function carouselFrames(format: FormatKey, c: ReturnType<typeof cover>, events: PostEvent[]): string {
+  const coverHtml = `<div class='s'>${PHOTO}<div class='brand'>BA Eventos</div>
+<div class='block' style='top:380px'>${coverInner(c)}</div>${footer('baeventos.com', 'Deslizá →')}</div>`
+  const cards = events.map((event, index) => `<div class='s card'><div class='brand'>BA Eventos</div><div class='counter'>${index + 1}/${events.length}</div>
+<div class='block' style='top:300px'>${cardText(format, event)}</div>
+<div class='venue' style='position:absolute;left:80px;right:80px;bottom:200px'>${venueInner(event)}</div>
+${footer(footerHandle(event), 'baeventos.com')}</div>`).join('')
+  const closing = `<div class='s'>${PHOTO_DARK}<div class='brand'>BA Eventos</div>
+<div class='block' style='top:380px'>${closingInner(CLOSING.headline, CLOSING.body, CLOSING.button)}</div>${footer(CLOSING.footer, '')}</div>`
+  return coverHtml + cards + closing
+}
+
+/** Story frames (1080 × 1920): everything inside the safe band, the content centred in it. */
+function storyFrames(format: FormatKey, c: ReturnType<typeof cover>, events: PostEvent[]): string {
+  const frame = (background: string, extraClass: string, top: string, middle: string, bottom: string) =>
+    `<div class='s ${extraClass}'>${background}<div class='safe'><div class='bar'>${top}</div><div class='middle'>${middle}</div>${bottom}</div></div>`
+  const brand = (counter: string) => `<span class='brand-in'>BA Eventos</span><span class='counter-in'>${counter}</span>`
+  const coverHtml = frame(PHOTO, '', brand(''), `<div>${coverInner(c)}</div>`, footer('baeventos.com', ''))
+  const cards = events.map((event, index) => frame('', 'card', brand(`${index + 1}/${events.length}`),
+    `<div>${cardText(format, event)}</div><div class='venue' style='margin-top:96px'>${venueInner(event)}</div>`,
+    footer(footerHandle(event), 'baeventos.com'))).join('')
+  const closing = frame(PHOTO_DARK, '', brand(''), `<div>${closingInner(HOY_CLOSING.headline, HOY_CLOSING.body, null)}</div>`, footer(HOY_CLOSING.footer, ''))
+  return coverHtml + cards + closing
+}
+
 export function framesHtml(format: FormatKey, window: RunWindow, events: PostEvent[], assets: Assets): string {
   const story = FORMATS[format].kind === 'story'
   const { height } = story ? FRAME.story : FRAME.carousel
-  // A story frame is taller; its content sits lower so Instagram's top bar and reply box don't cover it.
-  const top = story ? 1.32 : 1
   const c = cover(format, window, events.length)
-  const coverHtml = `<div class='s'><div class='photo'></div><div class='shade'></div>
-<div class='brand'>BA Eventos</div>
-<div class='block' style='top:${Math.round(380 * top)}px'>
- <div class='kicker'>${escape(c.kicker)}</div>
- <div class='serif' style='font-size:${c.headline.length === 1 ? 112 : 128}px;line-height:.98;letter-spacing:-3px;margin-top:30px'>${c.headline.map(line => `<span style='white-space:nowrap'>${escape(line)}</span>`).join('<br>')}</div>
- <div style='font-size:42px;margin-top:48px;color:rgba(255,255,255,.9)'>${escape(c.body)}</div>
- ${c.english ? `<div style='font-size:30px;margin-top:28px;color:rgba(255,255,255,.65)'>${escape(c.english)}</div>` : ''}
-</div>
-<div class='foot'><span>baeventos.com</span><span>${story ? '' : 'Deslizá →'}</span></div></div>`
-  const cards = events.map((event, index) => `<div class='s card'>
-<div class='brand'>BA Eventos</div><div class='counter'>${index + 1}/${events.length}</div>
-<div class='block' style='top:${Math.round(300 * top)}px'>
- <div class='kicker'>${escape(cardKicker(format, event))}</div>
- <div class='serif' style='font-size:${titleSize(event.title)}px;line-height:1.02;letter-spacing:-2px;margin-top:34px'>${escape(event.title)}</div>
- ${event.description ? `<div style='font-size:40px;line-height:1.35;margin-top:30px;color:rgba(255,255,255,.85)'>${escape(event.description)}</div>` : ''}
-</div>
-<div class='venue' style='bottom:${story ? 330 : 200}px'>
- <div style='font-size:44px;font-weight:600'>${escape(event.venue)}</div>
- <div class='meta'><span>${escape(event.barrio)}</span>${event.price ? pill(event.price) : ''}</div>
-</div>
-<div class='foot'><span>${event.handle ? `@${escape(event.handle)}` : ''}</span><span>baeventos.com</span></div></div>`).join('')
-  const closing = story
-    ? `<div class='s'><div class='photo'></div><div class='shade' style='background:rgba(10,15,40,.86)'></div>
-<div class='brand'>BA Eventos</div>
-<div class='block' style='top:${Math.round(380 * top)}px'>
- <div class='serif' style='font-size:112px;line-height:1.02;letter-spacing:-2px'>${escape(HOY_CLOSING.headline)}</div>
- <div style='font-size:40px;line-height:1.4;margin-top:40px;color:rgba(255,255,255,.9)'>${escape(HOY_CLOSING.body)}</div>
-</div>
-<div class='foot'><span>${escape(HOY_CLOSING.footer)}</span><span></span></div></div>`
-    : `<div class='s'><div class='photo'></div><div class='shade' style='background:rgba(10,15,40,.86)'></div>
-<div class='brand'>BA Eventos</div>
-<div class='block' style='top:380px'>
- <div class='serif' style='font-size:112px;line-height:1.02;letter-spacing:-2px'>${escape(CLOSING.headline)}</div>
- <div style='font-size:40px;line-height:1.4;margin-top:40px;color:rgba(255,255,255,.9)'>${escape(CLOSING.body)}</div>
- <div style='margin-top:60px'><span class='btn'>${escape(CLOSING.button)}</span></div>
-</div>
-<div class='foot'><span>${escape(CLOSING.footer)}</span><span></span></div></div>`
+  const body = story ? storyFrames(format, c, events) : carouselFrames(format, c, events)
   const font = (family: string, file: string, range: string, axis: string) =>
     `@font-face{font-family:'${family}';font-style:normal;font-weight:${axis};src:url('${assets.fontsDir}/${file}') format('woff2');unicode-range:${range}}`
   const LATIN = 'U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD'
@@ -78,12 +90,18 @@ body{width:1080px;background:#000}
 .brand{position:absolute;top:72px;left:80px;font-weight:600;font-size:36px;letter-spacing:-.3px}
 .counter{position:absolute;top:78px;right:80px;font-size:28px;color:rgba(255,255,255,.6)}
 .block{position:absolute;left:80px;right:80px}
-.venue{position:absolute;left:80px;right:80px;border-top:2px solid rgba(255,255,255,.18);padding-top:44px}
+.venue{border-top:2px solid rgba(255,255,255,.18);padding-top:44px}
+.safe{position:absolute;left:80px;right:80px;top:${STORY_SAFE.top}px;height:${STORY_SAFE.bottom - STORY_SAFE.top}px;display:flex;flex-direction:column;padding:28px 0}
+.safe .bar{display:flex;justify-content:space-between;align-items:baseline}
+.brand-in{font-weight:600;font-size:36px;letter-spacing:-.3px}
+.counter-in{font-size:28px;color:rgba(255,255,255,.6)}
+.safe .middle{flex:1;display:flex;flex-direction:column;justify-content:center}
+.safe .foot{position:static;margin-top:auto}
 .meta{display:flex;align-items:center;gap:24px;margin-top:16px;font-size:34px;color:rgba(255,255,255,.75)}
 .pill{border:2px solid rgba(255,255,255,.5);border-radius:999px;padding:9px 24px;font-size:30px}
 .pill.free{border:0;background:#2fbf71;color:#06210f;padding:10px 26px;font-weight:600}
 .foot{position:absolute;bottom:72px;left:80px;right:80px;display:flex;justify-content:space-between;font-size:28px;color:rgba(255,255,255,.75)}
 .kicker{font-size:30px;letter-spacing:4px;text-transform:uppercase;color:#a9b4ff;font-weight:600}
 .btn{display:inline-block;background:#5b5bd6;border-radius:18px;padding:22px 38px;font-size:34px;font-weight:600}
-</style></head><body>${coverHtml}${cards}${closing}</body></html>`
+</style></head><body>${body}</body></html>`
 }

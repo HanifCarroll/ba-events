@@ -98,7 +98,9 @@ export function catalogSql(window: RunWindow): string {
   (SELECT o.source_username FROM event_source_evidence x JOIN intake_observations o ON o.id = x.observation_id
     WHERE x.event_id = e.id ORDER BY o.observed_at LIMIT 1) AS source_account,
   (SELECT json_extract(c.payload, '$.price_note') FROM event_source_evidence x JOIN intake_candidates c ON c.id = x.candidate_id
-    WHERE x.event_id = e.id AND json_extract(c.payload, '$.price_kind') = 'conditional' LIMIT 1) AS price_note
+    WHERE x.event_id = e.id AND json_extract(c.payload, '$.price_kind') = 'conditional' LIMIT 1) AS price_note,
+  EXISTS (SELECT 1 FROM event_source_evidence x JOIN intake_candidates c ON c.id = x.candidate_id
+    WHERE x.event_id = e.id AND json_extract(c.payload, '$.intent') <> 'link' AND json_extract(c.payload, '$.time') IS NULL) AS intake_time_unknown
 FROM events e JOIN venues v ON v.id = e.venue_id
 WHERE e.status = 'scheduled' AND e.starts_at >= '${start}' AND e.starts_at < '${end}' AND coalesce(e.location_hidden, 0) = 0
   AND EXISTS (SELECT 1 FROM event_source_evidence x WHERE x.event_id = e.id)
@@ -123,6 +125,7 @@ export function toCatalogEvent(row: Record<string, any>): CatalogEvent {
     barrio: row.barrio ?? null,
     venueHandle: row.venue_handle ?? null,
     sourceAccount: row.source_account ?? null,
+    intakeTimeUnknown: row.intake_time_unknown === 1,
   }
 }
 

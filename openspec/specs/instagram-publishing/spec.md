@@ -8,6 +8,14 @@ Define how the VPS job drafts the recurring @baeventos.app posts from the catalo
 ### Requirement: Posts show only qualifying intake events
 A post MUST show only events from the Instagram intake that are scheduled, have a real start time (not time-TBA, not all-day), a venue, and a barrio, and fall in the format's days. Hoy MUST show only events starting at 18:00 or later Buenos Aires time; Gratis MUST show only free events. A post MUST NOT show two events at the same venue.
 
+#### Scenario: Placeholder start time
+- **WHEN** an event starts at 23:59, or at 00:00 while its intake candidate has no time
+- **THEN** it does not qualify
+
+#### Scenario: The tag is a curator, not the venue
+- **WHEN** the tagged account is the intake post's account and isn't the venue's own
+- **THEN** the caption line names the venue and ends "Vía @{handle}.", and the card footer reads "Vía @{handle}"
+
 #### Scenario: Too few events qualify
 - **WHEN** fewer events qualify than the format's minimum (Hoy 2, Este finde 4, Gratis 5)
 - **THEN** the run is skipped and a new top-level message in #ba-eventos says "Skipped: only {n} events qualified"

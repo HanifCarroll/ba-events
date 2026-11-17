@@ -181,8 +181,8 @@ export async function publish(job: PublishJob, state: PublishState, deps: Publis
   return state.permalink!
 }
 
-/** Tag position: the centre of the footer handle ("@handle" at left 80px, 72px from the bottom, 28px DM Sans). */
-export function footerTag(handle: string, height: number): Slide['tag'] {
-  const textWidth = (handle.length + 1) * 15
+/** Tag position: the centre of the footer text ("@handle" or "Vía @handle" at left 80px, 72px from the bottom, 28px DM Sans). */
+export function footerTag(handle: string, height: number, footerText = `@${handle}`): Slide['tag'] {
+  const textWidth = footerText.length * 15
   return { username: handle, x: Number(((80 + textWidth / 2) / 1080).toFixed(3)), y: Number(((height - 72 - 18) / height).toFixed(3)) }
 }

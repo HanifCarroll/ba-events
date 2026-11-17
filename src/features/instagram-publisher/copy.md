@@ -20,6 +20,9 @@ Hermes wrote this text and Hanif's rules apply to it. Commit it word for word. C
   - Never print a price range or a guess.
 - **Card description:** the first sentence of the catalog's Spanish summary when that sentence is 90 characters or fewer. Otherwise there's no description line.
 - **Tag line on a card:** "@{handle}" in the footer, plus a real Instagram tag on the image, using the same handle.
+- **When the handle is the posting account, not the venue's own:** don't present it as the venue.
+  - Caption line: "{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. {Price}. Vía @{handle}." For Gratis, drop the price part: "{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. Vía @{handle}."
+  - Card and frame footer: "Vía @{handle}" instead of "@{handle}".
 - **Closing slide** (carousels):
   - Headline: "Encontrá más planes"
   - Body: "Buscá por día, barrio o presupuesto. Gratis y sin registrarte."

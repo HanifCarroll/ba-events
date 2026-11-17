@@ -12,6 +12,7 @@ describe('catalog read', () => {
     expect(sql).not.toMatch(/\b(insert|update|delete|drop|alter|create|replace|attach|pragma)\b/i)
     expect(sql).toContain("e.starts_at >= '2026-11-20T03:00:00.000Z' AND e.starts_at < '2026-11-23T03:00:00.000Z'")
     expect(sql).toContain('event_source_evidence')
+    expect(sql).toContain("json_extract(c.payload, '$.intent') <> 'link'")
   })
 
   it('reads pay-what-you-want from the intake price note', () => {
