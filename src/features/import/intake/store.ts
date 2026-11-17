@@ -108,6 +108,8 @@ export interface IntakeStore extends CollectionStore {
   similarVenues(name: string, threshold: number): Op<Array<VenueRow & { similarity: number }>>
   /** Fills only the listed fields that are still empty; returns the row if it changed. */
   completeVenue(id: string, fill: VenueFill): Op<VenueRow[]>
+  /** Replaces the barrio only while it is still `from`; returns the row if it changed. */
+  correctVenueNeighborhood(id: string, from: string, to: string): Op<VenueRow[]>
   venueRow(id: string): Op<VenueRow>
   createVenue(venue: VenueCreate): Op<VenueRow>
   recordVenueEvidence(row: Row): Op<void>

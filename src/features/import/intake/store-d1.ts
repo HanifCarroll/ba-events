@@ -440,6 +440,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
         ${columns.map(column => `AND ${column} IS NULL`).join(' ')} RETURNING id, name, address, neighborhood`)
         .bind(...columns.map(column => fill[column as keyof typeof fill]), id))
     }),
+    correctVenueNeighborhood: (id, from, to) => d1('intake.venue-correct', () => all<VenueRow>(db.prepare(
+      'UPDATE venues SET neighborhood = ? WHERE id = ? AND neighborhood = ? RETURNING id, name, address, neighborhood').bind(to, id, from))),
     venueRow: id => d1('intake.venue-read', async () => {
       const row = await first<VenueRow>(db.prepare('SELECT id, name, address, neighborhood FROM venues WHERE id = ?').bind(id))
       if (!row) throw new Error('Venue not found')

@@ -26,7 +26,8 @@ export const VenueRequestSchema = Schema.Struct({
 })
 export type VenueRequest = typeof VenueRequestSchema.Type
 export type VenueOutcome =
-  | { outcome: 'existing'; venue: VenueRow; match: string; completed?: string[]; warnings?: string[] }
+  | { outcome: 'existing'; venue: VenueRow; match: string; completed?: string[]; warnings?: string[]
+    corrected?: { neighborhood: { from: string; to: string } } }
   | { outcome: 'created'; venue: VenueRow; warnings: string[]; distinct_from?: VenueRequest['distinct_from'] }
   | { outcome: 'ambiguous'; candidates: Array<VenueRow & { why: string }> }
   | { outcome: 'rejected'; reasons: string[] }
@@ -95,6 +96,22 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(stor
   const cleared = (id: string) => !blocking.has(id) && !!distinct.get(id)
   // Other lookalikes the operator cleared don't stop the one same-name venue from matching, which keeps a retry idempotent.
   const named = same.length === 1 && [...candidates.keys()].every(id => id === same[0].id || cleared(id)) ? same[0] : null
+  // A wrong stored barrio at the same street and number: the operator's barrio replaces it only when the geocoder confirms it.
+  if (named && stated && named.neighborhood && named.neighborhood !== stated && !!named.address && addressKey(named.address) === key) {
+    const located = yield* locateEffect(geocode, address, stated)
+    if ('reasons' in located) return { outcome: 'rejected', reasons: located.reasons } satisfies VenueOutcome
+    if (located.confirmed !== stated) {
+      return { outcome: 'ambiguous', candidates: [{ ...pick(named), why: located.confirmed
+        ? `same name and address, stored in ${named.neighborhood}; the geocoder places it in ${located.confirmed}, not ${stated}`
+        : `same name and address, stored in ${named.neighborhood}; the geocoder could not confirm ${stated}` }] } satisfies VenueOutcome
+    }
+    const from = named.neighborhood
+    const rows = yield* store.correctVenueNeighborhood(named.id, from, stated)
+    if (!rows.length) return yield* failure(`Venue ${named.id} changed while correcting its barrio; run venue again`)
+    yield* recordEvidenceEffect(store, rows[0], request, `corrected neighborhood from ${from} to ${stated}`, located)
+    return { outcome: 'existing', venue: pick(rows[0]), match: 'same name and address', corrected: { neighborhood: { from, to: stated } },
+      warnings: located.warnings } satisfies VenueOutcome
+  }
   if (named && !conflict(named, stated)) {
     const found = { outcome: 'existing', venue: pick(named), match: 'same name' } as const
     if (named.address && named.neighborhood) return found satisfies VenueOutcome
@@ -139,7 +156,8 @@ const pick = (venue: VenueRow): VenueRow => ({ id: venue.id, name: venue.name, a
 /** The operator's barrio, from an authoritative source, wins; the geocoder rejects places outside the city and fills a missing barrio. */
 // Exact barrio names only: the importers' partial matching would turn "Villa" into Villa Crespo.
 const barrio = (given: string) => NEIGHBORHOODS.find(item => fold(item) === fold(given.trim())) ?? null
-type Located = { neighborhood: Neighborhood; method: 'stated' | 'geocoded'; warnings: string[] } | { reasons: string[] }
+// `confirmed`: the barrio of a geocoder result with the requested street and house number, if any.
+type Located = { neighborhood: Neighborhood; method: 'stated' | 'geocoded'; warnings: string[]; confirmed: Neighborhood | null } | { reasons: string[] }
 const inCity = (result: NominatimResult) => result.address.country_code === 'ar' && !!result.address.state && fold(result.address.state) === CITY_STATE
 const houseNumber = (result: NominatimResult) => result.address.house_number?.match(/^\d+/)?.[0] ?? null
 /**
@@ -174,9 +192,9 @@ const locateEffect = Effect.fn('intake.venue-locate')(function*(geocode: Geocode
   if (!confirmed) warnings.push(plain.error ? 'Geocoder unavailable; city not confirmed' : 'Geocoder did not find the address; city not confirmed')
   if (stated) {
     if (derived && derived !== stated) warnings.push(`Geocoder places the address in ${derived}; kept the stated ${stated}`)
-    return { neighborhood: stated, method: 'stated', warnings } as Located
+    return { neighborhood: stated, method: 'stated', warnings, confirmed: derived } as Located
   }
-  return (derived ? { neighborhood: derived, method: 'geocoded', warnings }
+  return (derived ? { neighborhood: derived, method: 'geocoded', warnings, confirmed: derived }
     : { reasons: ['Neighborhood not found; supply it from an authoritative source'] }) as Located
 })
 

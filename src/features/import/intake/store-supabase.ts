@@ -105,6 +105,8 @@ export function supabaseIntake(client: SupabaseClient, storageOrigin = ''): Inta
       for (const field of Object.keys(fill)) update = update.is(field, null)
       return dbEffect('intake.venue-complete', () => update.select(venueColumns)).pipe(Effect.map(rows => rows as VenueRow[]))
     },
+    correctVenueNeighborhood: (id, from, to) => dbEffect('intake.venue-correct', () => client.from('venues').update({ neighborhood: to })
+      .eq('id', id).eq('neighborhood', from).select(venueColumns)).pipe(Effect.map(rows => rows as VenueRow[])),
     venueRow: id => dbEffect('intake.venue-read', () => client.from('venues').select(venueColumns).eq('id', id).single()).pipe(Effect.map(row => row as VenueRow)),
     createVenue: venue => importTry('intake.venue-create', () => createVenue(venue as VenueInsert, client)),
     recordVenueEvidence: row => ok(dbEffect('intake.venue-evidence', () => client.from('venue_review_queue').insert(row).select('id').single())),

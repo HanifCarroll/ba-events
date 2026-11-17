@@ -352,6 +352,13 @@ describe.skipIf(bun)('the operator flow on D1', () => {
       .toMatchObject({ outcome: 'ambiguous' })
   })
 
+  it('corrects a stored barrio only while it is still the old value', async () => {
+    const venueId = await venue('Club Social Sintético', 'Almagro', 'Defensa 1179')
+    expect(await run(store.correctVenueNeighborhood(venueId, 'Palermo', 'San Telmo'))).toEqual([])
+    expect(await run(store.correctVenueNeighborhood(venueId, 'Almagro', 'San Telmo'))).toEqual([
+      { id: venueId, name: 'Club Social Sintético', address: 'Defensa 1179', neighborhood: 'San Telmo' }])
+  })
+
   it('finds venues and events by an accented fragment in any case', async () => {
     const venueId = await venue('CASA GÓMEZ')
     await db.prepare("INSERT INTO events (id, name, starts_at, venue_id, source) VALUES (?, 'Noche en Casa Gómez', '2026-11-21T00:00:00.000Z', ?, 'luma')").bind(id(), venueId).run()
