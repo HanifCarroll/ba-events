@@ -21,12 +21,17 @@ let store: IntakeStore
 let evidence: R2Bucket & { objects: Map<string, Uint8Array> }
 let artwork: R2Bucket & { objects: Map<string, Uint8Array> }
 let vectors: ReturnType<typeof fakeVectorize>
-beforeAll(async () => { ({ db, dispose } = await freshD1()) }, 60_000)
-afterAll(async () => { await dispose() })
+// Vitest only: under `bun test` these files' Miniflare work reliably tripped Bun's intermittent spawn failure (`connect
+// ENOENT` on workerd's control pipe), which failed d1-schema.test.ts after them. Vitest runs them in every gate.
+// shortcut: drop the skip once Bun's child_process extra-stdio bug is fixed or tests/support/d1.ts retries the start.
+const bun = 'Bun' in globalThis
+beforeAll(async () => { if (bun) return; ({ db, dispose } = await freshD1()) }, 60_000)
+afterAll(async () => { if (bun) return; await dispose() })
 
 const TABLES = ['vector_sync', 'event_intake_protection', 'event_source_evidence', 'intake_plans', 'intake_candidate_revisions', 'intake_candidates',
   'intake_media', 'intake_observations', 'intake_runs', 'instagram_sources', 'venue_review_queue', 'events', 'venues']
 beforeEach(async () => {
+  if (bun) return
   await db.batch([...TABLES.map(table => db.prepare(`DELETE FROM ${table}`)),
     db.prepare('UPDATE intake_policy SET collection_enabled = 1, publishing_enabled = 1, data_detail_level = ?').bind('detailedData')])
   evidence = fakeR2(); artwork = fakeR2(); vectors = fakeVectorize()
@@ -61,7 +66,7 @@ async function observation(runId: string, caption = 'Synthetic Jazz 20/11 21:00 
     caption, published_at: null, content_hash: (caption.length.toString(16) + postId).padEnd(64, 'a').slice(0, 64).replace(/[^0-9a-f]/g, 'a'), media_urls: mediaUrls }))).id
 }
 
-describe('reserve_instagram_collection on D1', () => {
+describe.skipIf(bun)('reserve_instagram_collection on D1', () => {
   it('computes the incremental window from the last succeeded run: 2 hours before it, 7 days with none, never past 30 days', async () => {
     await source()
     const window = async () => {
@@ -109,7 +114,7 @@ describe('reserve_instagram_collection on D1', () => {
   })
 })
 
-describe('submit_intake_candidate on D1', () => {
+describe.skipIf(bun)('submit_intake_candidate on D1', () => {
   it('keeps the revision for a repeated payload, refuses a stale revision, and records every revision', async () => {
     const candidate = id()
     expect(await run(store.submitCandidate(candidate, 0, { name: 'Synthetic candidate' } as never))).toMatchObject({ revision: 1 })
@@ -121,7 +126,7 @@ describe('submit_intake_candidate on D1', () => {
   })
 })
 
-describe('commit_intake_plan on D1', () => {
+describe.skipIf(bun)('commit_intake_plan on D1', () => {
   const body = (venueId: string, fields: Record<string, unknown> = {}) => ({ name: 'Synthetic Jazz', starts_at: '2026-11-21T00:00:00Z', time_tba: false,
     venue_id: venueId, categories: ['music'], source: 'instagram', status: 'scheduled', is_free: false, embedding: Array(1536).fill(0.1),
     search_document: 'Synthetic Jazz', embedding_version: 2, enrichment_status: 'skipped', description_unavailable: true, ...fields })
@@ -239,7 +244,7 @@ describe('commit_intake_plan on D1', () => {
   })
 })
 
-describe('the operator flow on D1', () => {
+describe.skipIf(bun)('the operator flow on D1', () => {
   const candidateInput = (candidate: string, post: string, venueId: string | null, fields: Record<string, unknown> = {}) => ({
     id: candidate, expected_revision: 0, intent: 'create', target_event_id: null, name: 'Synthetic Jazz', date: shiftDay(baToday(), 5), time: '21:00',
     venue_name: 'Synthetic Venue', venue_id: venueId, description_es: null, description_en: null, categories: ['music'], status: 'scheduled',
@@ -328,7 +333,7 @@ describe('the operator flow on D1', () => {
   })
 })
 
-describe('source import on D1', () => {
+describe.skipIf(bun)('source import on D1', () => {
   it('inserts new sources disabled and leaves existing ones untouched', async () => {
     await source('synthetic_venue', 'organizer', 1)
     const result = await run(importSourcesEffect(db, [
