@@ -9,6 +9,9 @@
  */
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { D1Database, Vectorize } from '@cloudflare/workers-types'
+import { catalogStoreFor } from '#features/import/core/catalog-store-for.ts'
+import type { CatalogStore } from '#features/import/core/catalog-store.ts'
 import type { BrowserWorker } from '@cloudflare/playwright'
 import { Schema } from 'effect'
 import { importAllSources, mapBatchRunsToResults } from './daily-scrape-outcome.ts'
@@ -17,7 +20,8 @@ import { catchupMaxBatches, countCatchupBacklog, dailyMaxBatches, runCatchupBatc
 import { purgeGuestLifecycleRetention } from './guest-lifecycle-retention.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
 import { SOURCES } from './source-health.ts'
-import { startScheduledWorkflow } from './schedule.ts'
+import { CRON_TASKS, startScheduledWorkflow } from './schedule.ts'
+import { runCatalogTask } from './catalog-maintenance.ts'
 import { importSource, readSourceCatalog } from './sources.ts'
 
 interface WorkflowBinding { create(options: { id: string; params?: unknown }): Promise<unknown> }
@@ -29,6 +33,9 @@ export interface JobsEnv {
   DAILY_SCRAPE: WorkflowBinding
   GUEST_RETENTION: WorkflowBinding
   ENRICHMENT_CATCHUP: WorkflowBinding
+  /** Only staging binds these until the cutover (delivery PR 08); without `DB` every job uses Supabase. */
+  DB?: D1Database
+  VECTORIZE?: Vectorize
 }
 
 type Budget = '10 minutes' | '30 minutes' | '1 hour'
@@ -41,6 +48,11 @@ function serviceClient(env: JobsEnv): SupabaseClient {
   return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
 }
 
+/** The catalog for one step: D1 when the env binds it, else Supabase. Fresh per step, like the client. */
+function catalog(env: JobsEnv): CatalogStore {
+  return catalogStoreFor(env, () => serviceClient(env))
+}
+
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -50,20 +62,20 @@ export class DailyScrapeWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
     const params = event.payload as { scheduledTime?: string } | undefined
     const scheduledTime = params?.scheduledTime ?? null
-    const run = await step.do('open scrape run', policy('10 minutes'), () => openScrapeRun(serviceClient(this.env), event.instanceId, scheduledTime))
+    const run = await step.do('open scrape run', policy('10 minutes'), () => openScrapeRun(catalog(this.env), event.instanceId, scheduledTime))
 
     // Sources run concurrently, so a hung source cannot delay the others.
     const outcomes = await importAllSources(step, SOURCES, id => SOURCE_BUDGET[id], id =>
-      timed(id, () => importSource(id, serviceClient(this.env), this.env.BROWSER, event.instanceId, run.id)))
+      timed(id, () => importSource(id, catalog(this.env), this.env.BROWSER, event.instanceId, run.id)))
 
     const results = mapBatchRunsToResults(outcomes, SOURCES)
-    const eligible = await step.do('close scrape run', policy('10 minutes'), () => closeScrapeRun(serviceClient(this.env), run, outcomes, results))
+    const eligible = await step.do('close scrape run', policy('10 minutes'), () => closeScrapeRun(catalog(this.env), run, outcomes, results))
 
     if (eligible > 0) {
       const maxBatches = dailyMaxBatches(eligible)
       let totals = { enrichedSoFar: 0, failedSoFar: 0 }
       for (let batchNumber = 1; batchNumber <= maxBatches; batchNumber++) {
-        const batch = await step.do(`enrich batch ${batchNumber}`, policy('30 minutes'), () => runDailyEnrichmentBatch(serviceClient(this.env), {
+        const batch = await step.do(`enrich batch ${batchNumber}`, policy('30 minutes'), () => runDailyEnrichmentBatch(catalog(this.env), {
           runId: event.instanceId, scrapeRunId: run.id, createdAfter: run.startedAt, eligible, batchNumber, maxBatches, ...totals,
         }))
         totals = { enrichedSoFar: batch.enrichedSoFar, failedSoFar: batch.failedSoFar }
@@ -81,13 +93,13 @@ export class DailyScrapeWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
 /** 13:00 UTC (10:00 Buenos Aires): retry failed rows once and drain any pending backlog. */
 export class EnrichmentCatchupWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
-    const pendingCount = await step.do('count backlog', policy('10 minutes'), () => countCatchupBacklog(serviceClient(this.env)))
+    const pendingCount = await step.do('count backlog', policy('10 minutes'), () => countCatchupBacklog(catalog(this.env)))
     if (pendingCount === 0) return { pendingCount, batches: 0 }
     const maxBatches = catchupMaxBatches(pendingCount)
     let batchNumber = 1
     for (; batchNumber <= maxBatches; batchNumber++) {
       const batch = await step.do(`catch-up batch ${batchNumber}`, policy('1 hour'), () =>
-        runCatchupBatch(serviceClient(this.env), event.instanceId, batchNumber, maxBatches))
+        runCatchupBatch(catalog(this.env), event.instanceId, batchNumber, maxBatches))
       if (!batch.chainNext) break
     }
     return { pendingCount, batches: Math.min(batchNumber, maxBatches) }
@@ -129,7 +141,24 @@ export class SourceCheckWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
   }
 }
 
+const catalogTaskSchema = Schema.Struct({ task: Schema.Literals(['mark-past-events', 'reconcile-vectors']) })
+
+/**
+ * Manual run of a D1 catalog task, for staging and the cutover rehearsal:
+ * `wrangler workflows trigger baeventos-catalog-task-staging '{"task":"mark-past-events"}' --config wrangler.jobs.staging.jsonc`.
+ * Only the staging config binds it; without D1 the task reports that it skipped.
+ */
+export class CatalogTaskWorkflow extends WorkflowEntrypoint<JobsEnv, unknown> {
+  async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
+    const { task } = Schema.decodeUnknownSync(catalogTaskSchema)(event.payload ?? {})
+    return step.do(task, { retries: { limit: 0, delay: '1 second', backoff: 'constant' }, timeout: '30 minutes' }, async () => JSON.parse(JSON.stringify(await runCatalogTask(task, this.env))))
+  }
+}
+
 export default {
   fetch: () => new Response(null, { status: 404 }),
-  scheduled: (controller: { cron: string; scheduledTime: number }, env: JobsEnv) => startScheduledWorkflow(controller, env),
+  scheduled: (controller: { cron: string; scheduledTime: number }, env: JobsEnv) => {
+    const task = CRON_TASKS[controller.cron as keyof typeof CRON_TASKS]
+    return task ? runCatalogTask(task, env).then(() => undefined) : startScheduledWorkflow(controller, env)
+  },
 }

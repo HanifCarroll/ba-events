@@ -8,7 +8,6 @@
  * - < 0.60 or no match: Auto-create with neighborhood lookup
  */
 import { Data, Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { findSameNameVenuesEffect, matchVenueEffect, type VenueMatchResult } from '../scrapers/venue-matcher.ts'
 import { addressKey, pickVenue } from './venue-identity.ts'
 import {
@@ -19,6 +18,7 @@ import {
 } from './nominatim.ts'
 import { NEIGHBORHOODS, type Venue, type Neighborhood, type VenueInsert } from '#shared/lib/types.ts'
 import { importTry } from './effect-utils.ts'
+import type { CatalogStore } from './catalog-store.ts'
 
 export { addressKey }
 
@@ -193,64 +193,38 @@ const noVenueMatch = (searchName: string): VenueMatchResult => ({
  * Create a new venue with the given data.
  */
 function createVenueEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   venue: VenueInsert,
   addressCheckStatus: 'pending' | 'flagged' | 'not_flagged' = 'pending'
 ): Effect.Effect<Venue, VenueSettlementError> {
-  return importTry('venue-settlement.create', () => client
-    .from('venues')
-    .insert({
-      name: venue.name,
-      address: venue.address || null,
-      neighborhood: venue.neighborhood || null,
-      enrichment_status: 'pending',
-      address_check_status: addressCheckStatus,
-    })
-    .select()
-    .single()
-  ).pipe(
-    Effect.flatMap(({ data, error }) => error
-      ? Effect.fail(settlementError('venue-settlement.create', `Failed to create venue: ${error.message}`, error))
-      : data
-        ? Effect.succeed(data as Venue)
-        : Effect.fail(settlementError('venue-settlement.create', 'Failed to create venue'))
-    ),
-    Effect.mapError((error) => error instanceof VenueSettlementError
-      ? error
-      : settlementError(error.operation, error.message, error.cause))
-  )
+  return importTry('venue-settlement.create', () => catalog.createVenue({
+    name: venue.name,
+    address: venue.address || null,
+    neighborhood: venue.neighborhood || null,
+    enrichment_status: 'pending',
+    address_check_status: addressCheckStatus,
+  })).pipe(Effect.mapError((error) => settlementError(error.operation, error.message, error.cause)))
 }
 
 /**
  * Queue a venue for admin review.
  */
 function queueVenueForReviewEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   scrapeRunId: string | null,
   entry: VenueReviewQueueEntry
 ): Effect.Effect<void> {
-  const queued = importTry('venue-settlement.queue-review', () => client
-    .from('venue_review_queue')
-    .insert({
-      scrape_run_id: scrapeRunId,
-      source: entry.source,
-      source_venue_name: entry.source_venue_name,
-      source_address: entry.source_address,
-      source_coordinates: entry.source_coordinates,
-      best_match_venue_id: entry.best_match_venue_id,
-      match_confidence: entry.match_confidence,
-      source_event_ids: entry.source_event_ids || [],
-      status: 'pending',
-    })
-  ).pipe(
-    Effect.flatMap(({ error }) => error
-      ? Effect.fail(settlementError('venue-settlement.queue-review', error.message, error))
-      : Effect.succeed(undefined)
-    ),
-    Effect.mapError((error) => error instanceof VenueSettlementError
-      ? error
-      : settlementError(error.operation, error.message, error.cause))
-  )
+  const queued = importTry('venue-settlement.queue-review', () => catalog.queueVenueReview({
+    scrape_run_id: scrapeRunId,
+    source: entry.source,
+    source_venue_name: entry.source_venue_name,
+    source_address: entry.source_address,
+    source_coordinates: entry.source_coordinates,
+    best_match_venue_id: entry.best_match_venue_id,
+    match_confidence: entry.match_confidence,
+    source_event_ids: entry.source_event_ids || [],
+    status: 'pending',
+  }))
   return Effect.catchEager(queued, (error) => {
     console.error('[venue-settlement] Failed to queue venue for review:', error)
     return Effect.succeed(undefined)
@@ -274,7 +248,7 @@ function queueVenueForReviewEffect(
  * 3. For auto-create: lookup neighborhood using tiered approach
  */
 export function settleVenueEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: VenueSettlementInput,
   options: {
     source: string
@@ -366,14 +340,14 @@ export function settleVenueEffect(
     const lookupFailed = { venueId: null, action: 'skipped', confidence: 0, venueName } satisfies VenueSettlementResult
     let match: VenueMatchResult
     if (barrioAddress) {
-      const sameName = yield* Effect.result(findSameNameVenuesEffect(venueName, client))
+      const sameName = yield* Effect.result(findSameNameVenuesEffect(venueName, catalog))
       if (sameName._tag === 'Failure') return lookupFailed
       const atAddress = sameName.success.filter(venue => addressKey(venue.address) === barrioAddress)
       match = atAddress.length
         ? { venue: pickVenue(atAddress)!, matchType: 'exact', confidence: 1, searchName: venueName }
         : noVenueMatch(venueName)
     } else {
-      const found = yield* Effect.result(matchVenueEffect(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, client, input.address))
+      const found = yield* Effect.result(matchVenueEffect(resolvedVenueName, REVIEW_QUEUE_THRESHOLD, catalog, input.address))
       if (found._tag === 'Failure') {
         console.error(`[venue-settlement] Venue lookup failed for "${resolvedVenueName}":`, found.failure.message)
         return lookupFailed
@@ -459,7 +433,7 @@ export function settleVenueEffect(
     : 'not_flagged'
 
   // Create the venue with the resolved name
-    const newVenue = yield* createVenueEffect(client, {
+    const newVenue = yield* createVenueEffect(catalog, {
     name: resolvedVenueName,
     address: addressToStore,
     neighborhood: neighborhood,
@@ -472,7 +446,7 @@ export function settleVenueEffect(
   }
 
     if (lookalike) {
-      yield* queueVenueForReviewEffect(client, options.scrapeRunId || null, {
+      yield* queueVenueForReviewEffect(catalog, options.scrapeRunId || null, {
       source: options.source,
       source_venue_name: venueName, // Original name for review context
       source_address: input.address,
@@ -496,7 +470,7 @@ export function settleVenueEffect(
 
 /** Promise compatibility adapter for Trigger tests and legacy scripts. */
 export async function settleVenue(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   input: VenueSettlementInput,
   options: {
     source: string
@@ -505,7 +479,7 @@ export async function settleVenue(
   }
 ): Promise<VenueSettlementResult> {
   try {
-    return await Effect.runPromise(settleVenueEffect(client, input, options))
+    return await Effect.runPromise(settleVenueEffect(catalog, input, options))
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error))
   }
@@ -525,7 +499,7 @@ export function venueSettlementKey(name: string, address: string | null | undefi
  * Returns a map from `venueSettlementKey` to settlement result.
  */
 export function settleVenuesEffect(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   venues: VenueSettlementInput[],
   options: {
     source: string
@@ -560,7 +534,7 @@ export function settleVenuesEffect(
 
     let i = 0
     for (const [, venue] of uniqueVenues) {
-      const result = yield* settleVenueEffect(client, venue, options)
+      const result = yield* settleVenueEffect(catalog, venue, options)
       results.set(venueSettlementKey(venue.name, venue.address), result)
 
     // Update stats
@@ -599,7 +573,7 @@ export function settleVenuesEffect(
 }
 
 export async function settleVenues(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   venues: VenueSettlementInput[],
   options: {
     source: string
@@ -610,7 +584,7 @@ export async function settleVenues(
   stats: VenueSettlementStats
 }> {
   try {
-    return await Effect.runPromise(settleVenuesEffect(client, venues, options))
+    return await Effect.runPromise(settleVenuesEffect(catalog, venues, options))
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error))
   }

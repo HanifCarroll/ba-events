@@ -5,7 +5,7 @@
  * fail the others. The `scrape_runs` row, blocklist cleanup, and the eligible
  * count keep the shape the Trigger.dev job wrote.
  */
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CatalogStore } from '#features/import/core/catalog-store.ts'
 import { pruneAcquisitionCache } from '#features/import/acquisition/cache.ts'
 import { countEventsNeedingEnrichment } from '#features/import/core/event-enrichment.ts'
 import {
@@ -24,28 +24,23 @@ export async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> 
 }
 
 /** Create the audit row after closing any earlier run that never finalized. */
-export async function openScrapeRun(client: SupabaseClient, workflowRunId: string, scheduledTime: string | null): Promise<{ id: string; metadata: unknown; startedAt: string }> {
+export async function openScrapeRun(catalog: CatalogStore, workflowRunId: string, scheduledTime: string | null): Promise<{ id: string; metadata: unknown; startedAt: string }> {
   await pruneAcquisitionCache().catch(() => console.warn('[daily-scrape] Cache retention unavailable'))
   const startedAt = new Date().toISOString()
   try {
-    const reconciled = await timed('stale-run reconciliation', () => reconcileStaleScrapeRuns(client, new Date(startedAt)))
+    const reconciled = await timed('stale-run reconciliation', () => reconcileStaleScrapeRuns(catalog, new Date(startedAt)))
     if (reconciled > 0) console.warn(`[daily-scrape] Reconciled ${reconciled} stale scrape run(s)`)
   } catch (error) {
     console.error('[daily-scrape] Failed to reconcile stale scrape runs:', error)
   }
-  const { data, error } = await client
-    .from('scrape_runs')
-    .insert({ source: 'all', status: 'running', trigger_id: workflowRunId, metadata: { scheduledTime } })
-    .select()
-    .single()
-  if (error) throw new Error(`Failed to create scrape run: ${error.message}`)
+  const data = await catalog.createScrapeRun({ source: 'all', status: 'running', trigger_id: workflowRunId, metadata: { scheduledTime } })
   console.log(`[daily-scrape] Created scrape run: ${data.id}`)
   return { id: data.id, metadata: data.metadata, startedAt }
 }
 
 /** Blocklist cleanup, eligible count, and the final audit write. Returns the eligible count. */
 export async function closeScrapeRun(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   run: { id: string; metadata: unknown; startedAt: string },
   outcomes: BatchRunLike[],
   results: Parameters<typeof finalizeScrapeRun>[3]
@@ -54,11 +49,11 @@ export async function closeScrapeRun(
   let blocklistCleanup = 0
   let eligible = 0
   try {
-    blocklistCleanup = await timed('blocklist cleanup', () => cleanupBlocklistedEvents(client))
+    blocklistCleanup = await timed('blocklist cleanup', () => cleanupBlocklistedEvents(catalog))
     if (blocklistCleanup > 0) console.log(`[daily-scrape] Blocklist cleanup: deleted ${blocklistCleanup} events`)
-    eligible = await timed('enrichment eligible count', () => countEventsNeedingEnrichment(client, { createdAfter: run.startedAt }))
+    eligible = await timed('enrichment eligible count', () => countEventsNeedingEnrichment(catalog, { createdAfter: run.startedAt }))
   } finally {
-    await finalizeScrapeRun(client, run.id, run.metadata, results, eligible > 0, blocklistCleanup, eligible)
+    await finalizeScrapeRun(catalog, run.id, run.metadata, results, eligible > 0, blocklistCleanup, eligible)
   }
   return eligible
 }
@@ -67,21 +62,15 @@ export async function closeScrapeRun(
  * Clean up existing events that match blocklist patterns.
  * This handles events imported before blocklist entries were added.
  */
-async function cleanupBlocklistedEvents(client: SupabaseClient): Promise<number> {
-  const { data: blocklistEntries, error: blocklistError } = await client
-    .from('import_blocklist')
-    .select('pattern, target_field, source')
-
-  if (blocklistError || !blocklistEntries || blocklistEntries.length === 0) {
-    return 0
-  }
-
-  const { data: events, error: eventsError } = await client
-    .from('events_with_venues')
-    .select('id, name, source, venue_name')
-
-  if (eventsError || !events) {
-    console.error('[daily-scrape] Failed to fetch events for blocklist cleanup:', eventsError)
+async function cleanupBlocklistedEvents(catalog: CatalogStore): Promise<number> {
+  let blocklistEntries
+  let events
+  try {
+    blocklistEntries = await catalog.blocklistEntries()
+    if (blocklistEntries.length === 0) return 0
+    events = await catalog.blocklistCandidates()
+  } catch (error) {
+    console.error('[daily-scrape] Failed to fetch events for blocklist cleanup:', error)
     return 0
   }
 
@@ -114,12 +103,9 @@ async function cleanupBlocklistedEvents(client: SupabaseClient): Promise<number>
     return 0
   }
 
-  const { error: deleteError } = await client
-    .from('events')
-    .delete()
-    .in('id', eventIdsToDelete)
-
-  if (deleteError) {
+  try {
+    await catalog.deleteEvents(eventIdsToDelete)
+  } catch (deleteError) {
     console.error('[daily-scrape] Failed to delete blocklisted events:', deleteError)
     return 0
   }

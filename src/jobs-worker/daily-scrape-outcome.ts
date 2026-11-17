@@ -5,7 +5,7 @@
  * results, aggregating stats, and reliably finalizing the `scrape_runs` row.
  * Kept free of Workers runtime imports so they can be unit-tested in isolation.
  */
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CatalogStore, ScrapeRunPatch } from '#features/import/core/catalog-store.ts'
 import type { CatalogImportProvenance } from '#features/import/core/enrichment-provenance.ts'
 import { buildSourceHealthReport, measuredCount } from './source-health.ts'
 
@@ -85,32 +85,21 @@ export const STALE_SCRAPE_RUN_AGE_MS = 2 * 60 * 60 * 1000
  * Source-level step results remain in the Workflow instance history.
  */
 export async function reconcileStaleScrapeRuns(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   now: Date = new Date()
 ): Promise<number> {
   const reconciledAt = now.toISOString()
   const cutoff = new Date(now.getTime() - STALE_SCRAPE_RUN_AGE_MS).toISOString()
 
-  const { data, error } = await client
-    .from('scrape_runs')
-    .update({
-      status: 'failed',
-      completed_at: reconciledAt,
-      error_message: 'Run did not finalize before the two-hour stale cutoff',
-      error_details: {
-        reason: 'stale_running_run',
-        reconciledAt,
-      },
-    })
-    .eq('status', 'running')
-    .lt('started_at', cutoff)
-    .select('id')
-
-  if (error) {
-    throw new Error(`Failed to reconcile stale scrape runs: ${error.message}`)
-  }
-
-  return data?.length ?? 0
+  return catalog.failStaleScrapeRuns(cutoff, {
+    status: 'failed',
+    completed_at: reconciledAt,
+    error_message: 'Run did not finalize before the two-hour stale cutoff',
+    error_details: {
+      reason: 'stale_running_run',
+      reconciledAt,
+    },
+  })
 }
 
 function getUnknownMessage(value: unknown): string | null {
@@ -260,7 +249,7 @@ function buildScrapeRunErrorMessage(results: DailyScrapeResult['results']): stri
  * report success on a run whose finalization failed.
  */
 export async function finalizeScrapeRun(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   scrapeRunId: string,
   metadata: unknown,
   results: DailyScrapeResult['results'],
@@ -277,9 +266,8 @@ export async function finalizeScrapeRun(
   ], new Date(completedAt))
   if (sourceHealth.needsAttention) console.warn('[daily-scrape] Source health needs attention', sourceHealth)
 
-  const { error: updateError } = await client
-    .from('scrape_runs')
-    .update({
+  try {
+    await catalog.updateScrapeRun(scrapeRunId, {
       status,
       completed_at: completedAt,
       error_message: errorMessage,
@@ -297,10 +285,8 @@ export async function finalizeScrapeRun(
         enrichment: mergeEnrichmentMetadata(undefined, { eligible: enrichmentEligible }),
       },
     })
-    .eq('id', scrapeRunId)
-
-  if (updateError) {
-    throw new Error(`Failed to finalize scrape run: ${updateError.message}`)
+  } catch (error) {
+    throw new Error(`Failed to finalize scrape run: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -312,36 +298,30 @@ export async function finalizeScrapeRun(
  * failed audit write never marks the enrichment chain as failed.
  */
 export async function recordEnrichmentAudit(
-  client: SupabaseClient,
+  catalog: CatalogStore,
   scrapeRunId: string,
   patch: Partial<EnrichmentAudit>
 ): Promise<void> {
-  const { data: current, error: readError } = await client
-    .from('scrape_runs')
-    .select('metadata')
-    .eq('id', scrapeRunId)
-    .maybeSingle()
-
-  if (readError) {
+  let current: unknown
+  try {
+    current = await catalog.scrapeRunMetadata(scrapeRunId)
+  } catch (readError) {
     console.error('[enrichment-audit] Failed to read scrape run metadata:', readError)
     return
   }
 
-  const existingMetadata = (current?.metadata as Record<string, unknown> | null) ?? {}
+  const existingMetadata = (current as Record<string, unknown> | null | undefined) ?? {}
   const enrichment = mergeEnrichmentMetadata(existingMetadata.enrichment, patch)
 
-  const update: Record<string, unknown> = {
+  const update: ScrapeRunPatch = {
     metadata: { ...existingMetadata, enrichment },
   }
   if (patch.enriched !== undefined) update.enrichments_completed = patch.enriched
   if (patch.failed !== undefined) update.enrichments_failed = patch.failed
 
-  const { error: updateError } = await client
-    .from('scrape_runs')
-    .update(update)
-    .eq('id', scrapeRunId)
-
-  if (updateError) {
+  try {
+    await catalog.updateScrapeRun(scrapeRunId, update)
+  } catch (updateError) {
     console.error('[enrichment-audit] Failed to write enrichment audit:', updateError)
   }
 }
