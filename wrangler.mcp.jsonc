@@ -13,7 +13,7 @@
     "traces": { "enabled": true, "head_sampling_rate": 1 }
   },
   // D1 cutover (docs/ops/d1-cutover.md): search and get_event read D1 and Vectorize.
-  "d1_databases": [{ "binding": "DB", "database_name": "baeventos-production", "database_id": "REPLACE_WITH_BAEVENTOS_PRODUCTION_D1_ID", "migrations_dir": "migrations" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "baeventos-production", "database_id": "bda62412-f0b7-40f1-b12a-1fe2aa4c787f", "migrations_dir": "migrations" }],
   "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events" }],
   "ratelimits": [
     {
