@@ -61,10 +61,12 @@ export function dateRange(from: string, to: string): string {
 }
 
 /** English dates for Hanif's Slack message: "November 18", "November 20 to 22", "November 28 to December 4". */
-export function englishDates(from: string, to: string): string {
+export function englishDates(from: string, to: string, style: 'long' | 'compact' = 'long'): string {
   const [d1, m1, d2, m2] = [Number(from.slice(8, 10)), Number(from.slice(5, 7)) - 1, Number(to.slice(8, 10)), Number(to.slice(5, 7)) - 1]
-  if (from === to) return `${MONTHS_EN[m1]} ${d1}`
-  return m1 === m2 ? `${MONTHS_EN[m1]} ${d1} to ${d2}` : `${MONTHS_EN[m1]} ${d1} to ${MONTHS_EN[m2]} ${d2}`
+  const month = (index: number) => style === 'compact' ? MONTHS_EN[index]!.slice(0, 3) : MONTHS_EN[index]
+  const start = `${month(m1)} ${d1}`
+  if (from === to) return start
+  return `${start}${style === 'compact' ? '–' : ' to '}${m1 === m2 ? d2 : `${month(m2)} ${d2}`}`
 }
 
 export function numberWord(n: number, lang: 'es' | 'en'): string {

@@ -1,6 +1,9 @@
 /** The approved formats: which days they cover, how many events they show, and when they draft and publish. */
 import { addDays, baInstant, weekdayOf } from './format.ts'
 
+// Keep in sync with ops/systemd/ba-events-instagram.timer.
+export const TICK_MS = 10 * 60_000
+
 export type FormatKey = 'hoy' | 'finde' | 'gratis' | 'reel'
 
 export interface FormatSpec {

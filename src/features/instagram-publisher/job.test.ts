@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { describeFailure, TickFailures } from './alerts.ts'
 import { HANIF } from './approval.ts'
 import { FakeInstagram } from './fake-instagram.ts'
 import { baInstant } from './format.ts'
@@ -55,12 +56,17 @@ class World {
   /** Fail this many Slack replies whose text starts with the prefix. */
   slackFails = 0
   slackFailPrefix = ''
-  alerts: Array<{ key: string; text: string }> = []
+  alerts: Array<{ key: string; text: string; fingerprint?: string }> = []
+  openAlerts = new Map<string, string | undefined>()
   resolved: string[] = []
+  logs: string[] = []
+  recovery: Array<{ key: string; text: string }> = []
   r2: string[] = []
   music = musicDir()
   config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
   reelRenders: Array<{ track: string; total: number; events: string[] }> = []
+  renderError: Error | null = null
+  tokenWarning: string | null = null
   renderCount = 0
   nextTs = 1
 
@@ -77,6 +83,7 @@ class World {
       })),
       render: async (_html, outDir, _height) => {
         this.renderCount++
+        if (this.renderError) throw this.renderError
         const { mkdirSync } = await import('node:fs')
         mkdirSync(outDir, { recursive: true })
         return Array.from({ length: 8 }, (_, i) => { const path = join(outDir, `frame-${i + 1}.jpg`); writeFileSync(path, `render ${this.renderCount} frame ${i + 1}`); return path })
@@ -98,12 +105,20 @@ class World {
       },
       slackReactions: async ts => ts === this.reel()?.slack.ts ? this.reelReactions : this.reactions,
       r2Put: async (_bucket, key) => { this.r2.push(key) },
-      loadToken: async () => ({ state: 'ok', token: { access_token: 'T', ig_user_id: '17841', expires_at: '2027-01-01T00:00:00.000Z' }, warning: null }),
+      loadToken: async () => ({ state: 'ok', token: { access_token: 'T', ig_user_id: '17841', expires_at: '2027-01-01T00:00:00.000Z' }, warning: this.tokenWarning }),
       instagram: () => this.ig,
-      alert: async (key, _title, text) => { this.alerts.push({ key, text }) },
-      resolveAlert: async key => { this.resolved.push(key) },
+      alert: async (key, _title, text, fingerprint) => {
+        const headline = text.split('\n').slice(0, 2).join('\n')
+        expect(headline).not.toMatch(/journalctl|\/home\/|bun scripts|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
+        if (!this.openAlerts.has(key) || this.openAlerts.get(key) !== (fingerprint ?? text)) this.alerts.push({ key, text, fingerprint })
+        this.openAlerts.set(key, fingerprint ?? text)
+      },
+      resolveAlert: async (key, text) => {
+        this.resolved.push(key)
+        if (this.openAlerts.delete(key) && text) this.recovery.push({ key, text })
+      },
       sleep: async () => {},
-      log: () => {},
+      log: message => { this.logs.push(message) },
     }
   }
 
@@ -125,6 +140,164 @@ async function previewed() {
   return w
 }
 
+describe('tick: preview alerts', () => {
+  it('reconciles a new preview in the same tick without recording a failure', async () => {
+    const w = new World()
+    const job = w.job()
+    let lookups = 0
+    job.s.slackShareTs = async () => ++lookups === 1 ? null : '42.0'
+    await job.tick()
+    expect(w.draft()).toMatchObject({ state: 'previewed', slack: { ts: '42.0' } })
+    expect(w.slackPosts).toHaveLength(1)
+    expect(w.alerts).toEqual([])
+    expect(w.logs).toContain('finde-2026-11-20: Slack preview lookup failed: the upload has no message yet')
+    expect(() => readFileSync(join(w.dir, 'tick-failures.json'))).toThrow(/ENOENT/)
+  })
+
+  it('does not give a new skip notice a second attempt in the same tick', async () => {
+    const w = new World()
+    w.catalog = []
+    w.slackFails = 1
+    await w.job().tick()
+    expect(w.draft()).toMatchObject({ state: 'skipped', notify: { failures: 1 } })
+    expect(w.slackPosts).toHaveLength(0)
+    w.at('2026-11-18', 18, 10)
+    await w.job().tick()
+    expect(w.draft().notify).toBeNull()
+    expect(w.slackPosts).toHaveLength(1)
+  })
+
+  it.each(['{broken', 'null'])('quarantines a broken streak file (%s) without blocking a publish', async contents => {
+    const w = await previewed()
+    const file = join(w.dir, 'tick-failures.json')
+    writeFileSync(file, contents)
+    w.approve()
+    w.at('2026-11-19', 12)
+    await w.job().tick()
+    expect(w.draft().state).toBe('published')
+    expect(readFileSync(`${file}.bad-${w.clock.getTime()}`, 'utf8')).toBe(contents)
+    expect(w.logs.some(log => log.includes('tick-failures.json'))).toBe(true)
+  })
+  it('logs one failed render without alerting, then clears the streak', async () => {
+    const w = new World()
+    w.renderError = new Error('Rendering failed (timed out):')
+    await w.job().tick()
+    expect(w.alerts).toEqual([])
+    w.renderError = null
+    w.at('2026-11-18', 18, 10)
+    await w.job().tick()
+    expect(w.draft().state).toBe('previewed')
+    expect(w.alerts).toEqual([])
+    expect(w.recovery).toEqual([])
+    expect(w.logs).toContain('finde-2026-11-20: Rendering failed (timed out):')
+    expect(JSON.parse(readFileSync(join(w.dir, 'tick-failures.json'), 'utf8'))).toEqual({})
+  })
+
+  it('alerts on the third failed render and names the recovered preview', async () => {
+    const w = new World()
+    w.renderError = Object.assign(new Error('Rendering failed (timed out):'), { availableMemoryMb: 450 })
+    for (const minute of [0, 10, 20]) {
+      w.at('2026-11-18', 18, minute)
+      await w.job().tick()
+      expect(w.alerts).toHaveLength(minute === 20 ? 1 : 0)
+    }
+    expect(w.alerts[0]).toMatchObject({ key: 'tick', text: [
+      "🚨 *The Este finde carousel preview for Nov 20–22 hasn't reached Slack* (3 tries since 18:00). {triage}",
+      'Building its images took longer than the 3-minute limit. The VPS was short on memory then (450 MB free). The publisher tries again at 18:30. The post is due Thu 12:00.',
+      '`Rendering failed (timed out):` · 3rd failed try in a row · finde-2026-11-20',
+    ].join('\n') })
+    w.at('2026-11-18', 18, 30)
+    w.renderError = Object.assign(new Error('Rendering failed (timed out): another diagnostic'), { availableMemoryMb: 438 })
+    await w.job().tick()
+    expect(w.alerts).toHaveLength(1)
+    expect(JSON.parse(w.alerts[0]!.fingerprint!)).toEqual([['finde-2026-11-20', 'Building its images took longer than the 3-minute limit. The VPS was short on memory then.']])
+    w.renderError = null
+    w.at('2026-11-18', 18, 40)
+    const job = w.job()
+    const resolve = job.s.resolveAlert
+    job.s.resolveAlert = async (key, text) => key === 'tick' ? false : resolve(key, text)
+    await job.tick()
+    expect(w.recovery).toEqual([])
+    w.at('2026-11-18', 18, 50)
+    await w.job().tick()
+    expect(w.recovery).toContainEqual({ key: 'tick', text: '✅ *Instagram publisher recovered* at 18:50: the Este finde carousel preview for Nov 20–22 is in #ba-eventos.' })
+  })
+
+  it('closes a legacy tick alert even without a recorded streak', async () => {
+    const w = new World()
+    w.openAlerts.set('tick', 'old alert')
+    await w.job().tick()
+    expect(w.recovery).toContainEqual({ key: 'tick', text: '✅ *Instagram publisher recovered* at 18:05: the latest tick finished without errors.' })
+  })
+
+  it('alerts on the first failed render when the preview is an hour late', async () => {
+    const w = new World()
+    w.renderError = new Error('Rendering failed: test')
+    w.at('2026-11-18', 19)
+    await w.job().tick()
+    expect(w.alerts).toHaveLength(1)
+    expect(w.alerts[0]!.text).toContain('1st failed try in a row')
+  })
+
+  it('groups late previews, keeps the oldest first, and updates when the cause changes', async () => {
+    const w = new World()
+    w.renderError = new Error('Rendering failed: render test')
+    w.at('2026-11-18', 19)
+    await w.job().tick()
+    w.at('2026-11-20', 12)
+    await w.job().tick()
+    const grouped = w.alerts[1]!
+    expect(grouped.text).toContain("Este finde carousel preview for Nov 20–22 hasn't reached Slack")
+    expect(grouped.text.split('\n')[2]).toBe('Also failing: the Hoy story for Nov 20 (1 tries).')
+    expect(JSON.parse(grouped.fingerprint!)).toEqual([
+      ['finde-2026-11-20', 'Building its images failed.'],
+      ['hoy-2026-11-20', 'Building its images failed.'],
+    ])
+    w.renderError = new Error('Rendering failed (timed out): test')
+    w.at('2026-11-20', 12, 10)
+    await w.job().tick()
+    expect(w.alerts).toHaveLength(3)
+    expect(w.alerts[2]!.text).toContain('Building its images took longer than the 3-minute limit. The publisher tries again')
+  })
+
+  it('closes a tick alert with the actual skipped outcome, not a recovery', async () => {
+    const w = await previewed()
+    const job = w.job()
+    job.s.slackReactions = async () => { throw new Error('Slack reactions.get failed: ratelimited') }
+    for (const minute of [10, 20, 30]) {
+      w.at('2026-11-18', 18, minute)
+      await job.tick()
+    }
+    expect(w.alerts[0]?.key).toBe('tick')
+    w.reject()
+    w.at('2026-11-18', 18, 40)
+    await w.job().tick()
+    expect(w.recovery[0]).toMatchObject({ key: 'tick', text: expect.stringMatching(/^⚠️ .*the Este finde carousel for Nov 20–22 was skipped\.$/) })
+  })
+
+  it('reports a missed cutoff without claiming a render that never created a draft recovered', async () => {
+    const w = new World()
+    w.renderError = new Error('Rendering failed (timed out):')
+    w.at('2026-11-18', 19)
+    await w.job().tick()
+    w.at('2026-11-20', 18)
+    await w.job().tick()
+    expect(w.alerts.find(alert => alert.key === 'draft/finde-2026-11-20')?.text).toContain('preview never reached Slack')
+    expect(w.recovery).toContainEqual({ key: 'tick', text: "⚠️ *Instagram publisher stopped retrying* at 18:00: the Este finde carousel for Nov 20–22 didn't get a preview before cutoff." })
+  })
+})
+
+it('formats a token expiry warning in Buenos Aires time and resolves when it clears', async () => {
+  const w = new World()
+  w.tokenWarning = 'The Instagram token expires in 1 days (2026-11-19T21:00:00.000Z).'
+  await w.job().tick()
+  expect(w.alerts[0]).toMatchObject({ key: 'token', text: '⚠️ *The Instagram token needs attention*. {triage}\nThe Instagram token expires in 1 days (Thu 18:00).' })
+  w.tokenWarning = null
+  w.at('2026-11-18', 18, 10)
+  await w.job().tick()
+  expect(w.recovery).toContainEqual({ key: 'token', text: '✅ *The Instagram token is working again* at 18:10.' })
+})
+
 describe('tick: approval and publishing', () => {
   it('publishes an approved carousel at its slot and replies with the permalink', async () => {
     const w = await previewed()
@@ -137,6 +310,71 @@ describe('tick: approval and publishing', () => {
     expect(w.ig.published).toHaveLength(1)
     expect(w.draft().state).toBe('published')
     expect(w.replies()).toEqual([`Posted: https://www.instagram.com/p/${w.ig.media[0]!.id}/`])
+  })
+
+  it('alerts on the third publishing failure and updates the alert when the sixth gives up', async () => {
+    const w = await previewed()
+    w.approve()
+    w.ig.quotaUsage = 50
+    for (const minute of [0, 10, 20, 30, 40, 50]) {
+      w.at('2026-11-19', 12, minute)
+      await w.job().tick()
+      expect(w.alerts).toHaveLength(minute < 20 ? 0 : minute < 50 ? 1 : 2)
+    }
+    expect(w.alerts[0]!.text).toBe([
+      "🚨 *The Este finde carousel for Nov 20–22 hasn't published yet* (3 tries since 12:00). {triage}",
+      'Instagram returned an error. It tries again at 12:30. The last chance is Fri 18:00.',
+      '`publishing limit reached (50/50 in 24 hours)` · 3rd failed try in a row · finde-2026-11-20',
+    ].join('\n'))
+    expect(w.alerts[1]!.text).toContain("didn't publish*: the publisher gave up after 6 tries at 12:50. {triage}")
+    expect(w.alerts[1]!.text).toContain("Nothing went out on Instagram, and the publisher won't try again.")
+    expect(w.draft().state).toBe('failed')
+  })
+
+  it('alerts on the third failed tick across reactions and uploads, without spending the publish budget on reaction reads', async () => {
+    const w = await previewed()
+    w.approve()
+    for (const minute of [0, 10, 20, 30]) {
+      w.at('2026-11-19', 12, minute)
+      const job = w.job()
+      if (minute === 0 || minute === 30) job.s.slackReactions = async () => { throw new Error('Slack reactions.get failed: ratelimited') }
+      else job.s.r2Put = async () => { throw new Error('R2 upload failed: HTTP 503') }
+      await job.tick()
+      expect(w.alerts).toHaveLength(minute < 20 ? 0 : minute === 20 ? 1 : 2)
+    }
+    expect(w.draft().publishFailures).toBe(2)
+    expect(w.alerts.map(alert => alert.key)).toEqual(['draft/finde-2026-11-20', 'draft/finde-2026-11-20'])
+    expect(w.alerts[0]!.text).toContain('3rd failed try in a row')
+    expect(w.alerts[1]!.text).toContain('4th failed try in a row')
+  })
+
+  it('updates the publish alert when an unchanged network cause leaves the post outcome unclear', async () => {
+    const w = await previewed()
+    w.approve()
+    w.at('2026-11-20', 17, 10)
+    const job = w.job()
+    job.s.r2Put = async () => { throw new Error('fetch failed') }
+    await job.tick()
+    expect(w.alerts[0]!.text).toContain("hasn't published yet")
+    w.ig.publishFault = 'before'
+    w.at('2026-11-20', 17, 20)
+    await w.job().tick()
+    expect(w.alerts).toHaveLength(2)
+    expect(w.alerts[1]!.text).toContain("hasn't confirmed whether")
+  })
+
+  it('alerts on the first failure less than an hour before the deadline and resolves on publish', async () => {
+    const w = await previewed()
+    w.approve()
+    w.ig.quotaUsage = 50
+    w.at('2026-11-20', 17, 10)
+    await w.job().tick()
+    expect(w.alerts[0]!.text).toContain('1st failed try in a row')
+    w.ig.quotaUsage = 0
+    w.at('2026-11-20', 17, 20)
+    await w.job().tick()
+    expect(w.recovery).toContainEqual({ key: 'draft/finde-2026-11-20', text: `✅ *The Este finde carousel for Nov 20–22 is on Instagram* at 17:20: ${w.draft().publish!.permalink}` })
+    expect(JSON.parse(readFileSync(join(w.dir, 'tick-failures.json'), 'utf8'))).toEqual({})
   })
 
   it('stops a retry when Hanif reacts ❌ after a failed attempt', async () => {
@@ -182,10 +420,77 @@ describe('tick: approval and publishing', () => {
     w.ig.publishFault = 'after'
     await w.job().tick()
     expect(w.draft().publish!.units[0]!.pendingSince).not.toBeNull()
+    expect(w.alerts[0]!.text).toContain("hasn't confirmed whether the Este finde carousel for Nov 20–22 went out")
     w.at('2026-11-20', 18, 30) // past Friday 18:00
     await w.job().tick()
     expect(w.ig.published).toHaveLength(1)
     expect(w.draft().state).toBe('published')
+  })
+
+  it('updates and closes a shared tick alert truthfully when a live post exhausts its link retries', async () => {
+    const w = await previewed()
+    w.approve()
+    const job = w.job()
+    job.s.slackReactions = async () => { throw new Error('fetch failed') }
+    for (const minute of [0, 10, 20]) {
+      w.at('2026-11-19', 12, minute)
+      await job.tick()
+    }
+    expect(w.alerts.map(alert => alert.key)).toEqual(['tick'])
+
+    const get = w.ig.get.bind(w.ig)
+    w.ig.get = async (path, params) => {
+      if (params?.fields === 'permalink') throw new Error('fetch failed')
+      return get(path, params)
+    }
+    w.at('2026-11-19', 12, 30)
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(1)
+    const retry = w.alerts[1]
+    expect(retry?.key).toBe('tick')
+    expect(retry?.text).toContain('is on Instagram')
+    expect(retry?.text).toContain('It tries again at 12:40 to find the link.')
+
+    for (const [hour, minute] of [[12, 40], [12, 50], [13, 0], [13, 10], [13, 20]]) {
+      w.at('2026-11-19', hour, minute)
+      await w.job().tick()
+    }
+    expect(w.draft().state).toBe('failed')
+    expect(w.ig.published).toHaveLength(1)
+    const terminal = w.alerts.at(-1)
+    expect(terminal?.key).toBe('draft/finde-2026-11-20')
+    expect(terminal?.text).toContain('is on Instagram')
+    expect(w.recovery.find(reply => reply.key === 'tick')?.text).toBe("⚠️ *Instagram publisher stopped retrying* at 13:20: the Este finde carousel for Nov 20–22 is on Instagram, but the publisher couldn't get its link.")
+  })
+
+  it('does not say a post failed to publish when only the link lookup failed', async () => {
+    const w = await previewed()
+    w.approve()
+    w.at('2026-11-20', 17, 10)
+    const get = w.ig.get.bind(w.ig)
+    w.ig.get = async (path, params) => {
+      if (params?.fields === 'permalink') throw new Error('fetch failed')
+      return get(path, params)
+    }
+    await w.job().tick()
+    expect(w.ig.published).toHaveLength(1)
+    expect(w.alerts[0]!.text).toContain("is on Instagram, but the publisher hasn't found its link")
+  })
+
+  it('reports a story that stops after one frame without posting the rest', async () => {
+    const w = new World()
+    const job = w.job()
+    w.at('2026-11-20', 11)
+    const draft = await job.createDraft('hoy', '2026-11-20', [], 1)
+    w.at('2026-11-20', 17)
+    job.s.slackReactions = async () => [{ name: w.ig.published.length ? 'x' : 'white_check_mark', users: [HANIF] }]
+    await job.advance(draft, new TickFailures(job.s))
+    expect(w.ig.published).toHaveLength(1)
+    expect(w.alerts[0]).toMatchObject({ key: 'draft/hoy-2026-11-20', text: [
+      '🚨 *The Hoy story for Nov 20 stopped part-way*: 1 of 8 frames went out. {triage}',
+      'Hanif reacted ❌. Nothing more will be posted for it.',
+      `hoy-2026-11-20 · state ${job.draftFile(draft.id)}`,
+    ].join('\n') })
   })
 
   it('skips an approved draft that could not go out before the deadline', async () => {
@@ -194,12 +499,30 @@ describe('tick: approval and publishing', () => {
     w.at('2026-11-20', 17, 50)
     w.ig.quotaUsage = 50
     await w.job().tick()
+    expect(w.alerts[0]!.text).toContain('There is no retry before the 18:00 deadline.')
     w.ig.quotaUsage = 0
     w.at('2026-11-20', 18)
     await w.job().tick()
     expect(w.ig.published).toHaveLength(0)
     // The Reel, drafted Thursday with no ✅, is skipped at the same moment in its own thread.
     expect(w.slackPosts.filter(post => post.threadTs === w.draft().slack.ts).map(post => post.text)).toEqual(['Skipped: not published by 18:00'])
+    expect(w.recovery[0]!.text).toContain("wasn't posted*: its deadline passed at 18:00.")
+  })
+
+  it('closes a retry alert when approval is withdrawn before cutoff', async () => {
+    const w = await previewed()
+    w.approve()
+    w.at('2026-11-20', 17, 10)
+    const job = w.job()
+    job.s.r2Put = async () => { throw new Error('R2 upload failed: HTTP 503') }
+    await job.tick()
+    expect(w.draft().state).toBe('previewed')
+    expect(w.alerts).toHaveLength(1)
+    w.reactions = []
+    w.at('2026-11-20', 18)
+    await w.job().tick()
+    expect(w.draft().state).toBe('skipped')
+    expect(w.recovery[0]!.text).toContain("it didn't have a ✅ by 18:00.")
   })
 
   it('a ✅ seen before the cutoff does not publish a day later', async () => {
@@ -265,7 +588,7 @@ describe('tick: events checked at the real publishing time', () => {
     expect(w.ig.published).toHaveLength(0)
     expect(w.draft().state).toBe('held')
     expect(w.replies()).toEqual(['Held: Evento 4 was cancelled. Ask Hermes to regenerate it.'])
-    const alert = w.alerts.find(a => a.key === 'draft/finde-2026-11-20' && a.text.startsWith('Held:'))!
+    const alert = w.alerts.find(a => a.key === 'draft/finde-2026-11-20' && a.text.includes('is on hold'))!
     expect(alert.text).toContain('scripts/instagram-publisher.ts status')
     expect(alert.text).not.toContain('regenerate finde')
   })
@@ -289,15 +612,25 @@ describe('tick: Slack replies', () => {
     const w = await previewed()
     w.approve()
     w.at('2026-11-19', 12)
-    w.slackFails = 1
+    w.slackFails = 3
     w.slackFailPrefix = 'Posted:'
-    await w.job().tick()
-    expect(w.draft().state).toBe('published')
-    expect(w.draft().notify?.text).toMatch(/^Posted: /)
-    expect(w.alerts.find(alert => alert.key === 'draft/finde-2026-11-20/slack')!.text).toMatch(/went out on Instagram .*but the Slack reply failed/)
-    w.at('2026-11-19', 12, 10)
+    for (const minute of [0, 10, 20]) {
+      w.at('2026-11-19', 12, minute)
+      await w.job().tick()
+      expect(w.draft().state).toBe('published')
+      expect(w.draft().notify?.text).toMatch(/^Posted: /)
+      expect(w.alerts).toHaveLength(minute === 20 ? 1 : 0)
+    }
+    const key = 'draft/finde-2026-11-20/slack'
+    expect(w.alerts[0]).toMatchObject({ key, text: [
+      "⚠️ *The Este finde carousel for Nov 20–22 is on Instagram, but its Slack reply didn't go through*. No action needed.",
+      `The publisher retries the reply at 12:30. The post: ${w.draft().publish!.permalink}`,
+      '`Slack chat.postMessage failed: ratelimited` · 3rd failed try in a row · finde-2026-11-20',
+    ].join('\n') })
+    w.at('2026-11-19', 12, 30)
     await w.job().tick()
     expect(w.draft().notify).toBeNull()
+    expect(w.recovery).toContainEqual({ key, text: '✅ *The Slack reply for the Este finde carousel for Nov 20–22 went through* at 12:30.' })
     expect(w.replies().filter(text => text.startsWith('Posted:'))).toHaveLength(1)
     expect(w.ig.published).toHaveLength(1)
   })
@@ -331,12 +664,43 @@ describe('regenerate', () => {
     expect(w.ig.calls).toEqual([])
     expect(w.draft().state).toBe('failed')
     const alert = w.alerts.find(a => a.key === 'draft/finde-2026-11-20')!
-    expect(alert.text).toContain("stopped part-way")
+    expect(alert.text).toContain("Rebuilding the Este finde carousel for Nov 20–22 didn't finish")
     expect(alert.text).toContain(`regenerate finde-2026-11-20 --exclude ${uuid(2)}`)
     // A later tick that succeeds doesn't clear the draft's alert.
     w.at('2026-11-19', 12, 10)
     await w.job().tick()
     expect(w.resolved).not.toContain('draft/finde-2026-11-20')
+  })
+
+  it('leaves an interrupted rebuild unretried and drops the rebuild command after cutoff', async () => {
+    const w = await previewed()
+    const job = w.job()
+    job.s.render = async () => { throw new Error('render crashed') }
+    await expect(job.regenerate('finde-2026-11-20', [])).rejects.toThrow('render crashed')
+    expect(w.draft().state).toBe('rebuilding')
+    w.at('2026-11-20', 18)
+    await w.job().tick()
+    expect(w.draft().state).toBe('failed')
+    expect(w.renderCount).toBe(1)
+    expect(w.alerts.find(a => a.key === 'draft/finde-2026-11-20')!.text).toBe([
+      "🚨 *Rebuilding the Este finde carousel for Nov 20–22 didn't finish*. No action needed.",
+      "It's past its 18:00 cutoff, so this one is lost. Nothing was posted.",
+      'finde-2026-11-20',
+    ].join('\n'))
+  })
+
+  it('reconciles a rebuilt preview when Slack took the upload but the lookup failed', async () => {
+    const w = await previewed()
+    const job = w.job()
+    job.s.slackShareTs = async () => null
+    await expect(job.regenerate('finde-2026-11-20', [])).rejects.toThrow('Slack preview lookup failed')
+    expect(w.draft().state).toBe('previewing')
+    expect(w.slackPosts).toHaveLength(2)
+    w.at('2026-11-18', 18, 10)
+    await w.job().tick()
+    expect(w.draft().state).toBe('previewed')
+    expect(w.slackPosts).toHaveLength(2)
+    expect(w.alerts).toEqual([])
   })
 
   it('alerts when the preview never reached Slack before the cutoff', async () => {
@@ -345,10 +709,14 @@ describe('regenerate', () => {
     ;(job.s as { slackShareTs: Services['slackShareTs'] }).slackShareTs = async () => null
     await job.tick() // uploaded, but Slack never reports the message
     expect(w.draft().state).toBe('previewing')
+    const streaks = JSON.parse(readFileSync(join(w.dir, 'tick-failures.json'), 'utf8'))
+    expect(streaks[w.draft().id].count).toBe(1)
     w.at('2026-11-20', 18)
     await w.job().tick()
     expect(w.draft().state).toBe('failed')
-    expect(w.alerts.find(a => a.key === 'draft/finde-2026-11-20')!.text).toMatch(/preview couldn't be posted/)
+    const alert = w.alerts.find(a => a.key === 'draft/finde-2026-11-20')!
+    expect(alert.text).toContain('its preview never reached Slack before the 18:00 cutoff')
+    expect(alert.text.split('\n')[2]).toBe('`Slack preview lookup failed: the upload has no message yet` · finde-2026-11-20')
     w.at('2026-11-20', 18, 10)
     await w.job().tick()
     expect(w.resolved).not.toContain('draft/finde-2026-11-20')
@@ -484,7 +852,7 @@ describe('Este finde Reel', () => {
     expect(w.reelRenders.at(-1)!.track).toBe('b')
   })
 
-  it('fails the draft with an alert, never a silent Reel, when its track is unmeasured or its file is missing', async () => {
+  it('logs each unusable track failure and alerts without rendering a silent Reel', async () => {
     const w = new World()
     w.music = musicDir([{ id: 'x', bpm: null, startSec: null } as never])
     w.config.reel.musicDir = w.music
@@ -492,15 +860,43 @@ describe('Este finde Reel', () => {
     await w.job().tick()
     expect(w.reel()).toBeNull()
     expect(w.reelRenders).toHaveLength(0)
-    expect(w.alerts.find(alert => alert.key === 'tick')!.text).toContain('reel-2026-11-20: Reel track x has no bpm and startSec yet')
+    expect(w.logs).toContainEqual(expect.stringContaining('reel-2026-11-20: Reel track x has no bpm and startSec yet'))
     const { rmSync } = await import('node:fs')
     w.config.reel.musicDir = w.music = musicDir()
     rmSync(join(w.music, 'a.flac'))
+    w.at('2026-11-19', 18, 10)
     await w.job().tick()
-    expect(w.alerts.at(-1)!.text).toContain('a.flac is missing')
+    expect(w.logs.some(log => log.includes('a.flac is missing'))).toBe(true)
+    expect(w.alerts).toEqual([])
     w.config.reel.musicDir = '/nonexistent/reel-music'
+    w.at('2026-11-19', 18, 20)
     await w.job().tick()
-    expect(w.alerts.at(-1)!.text).toContain('tracks.json is missing')
+    expect(w.reelRenders).toHaveLength(0)
+    expect(w.alerts[0]!.text).toContain('tracks.json is missing')
+    expect(w.alerts[0]!.text).toContain('3rd failed try in a row')
+  })
+
+  it.each([
+    'Rendering the Reel failed (exit 1): test',
+    'Remuxing the Reel failed: test',
+    'Extracting the Reel cover failed: test',
+    "The rendered Reel isn't the expected 1080 × 1920 H.264/AAC at 30 fps",
+  ])('uses the plain video cause for %s', message => {
+    expect(describeFailure(new Error(message)).cause).toBe('Building its video failed.')
+  })
+
+  it('uses the video time limit and measured memory in a Reel render timeout alert', async () => {
+    const w = new World()
+    const job = w.job()
+    job.s.renderReel = async () => { throw Object.assign(new Error('Rendering the Reel failed (timed out):'), { availableMemoryMb: 450 }) }
+    for (const minute of [0, 10, 20]) {
+      w.at('2026-11-19', 18, minute)
+      await job.tick()
+      expect(w.alerts).toHaveLength(minute === 20 ? 1 : 0)
+    }
+    expect(w.alerts[0]!.text).toContain("The Este finde Reel preview for Nov 20–22 hasn't reached Slack")
+    expect(w.alerts[0]!.text).toContain('3rd failed try in a row')
+    expect(w.alerts[0]!.text).toContain('Building its video took longer than the 10-minute limit. The VPS was short on memory then (450 MB free).')
   })
 })
 

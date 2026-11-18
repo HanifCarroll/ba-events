@@ -1,9 +1,9 @@
 /** The approval state machine: what a tick does with a previewed draft, given Hanif's reactions and the clock. */
 import type { SkipReason } from './copy.ts'
-import type { RunWindow } from './formats.ts'
+import { TICK_MS, type RunWindow } from './formats.ts'
 
 /** Ticks run every 10 minutes and Slack's reactions carry no time, so a ✅ first seen within one tick of the cutoff counts. */
-export const TICK_GRACE_MS = 10 * 60_000
+export const TICK_GRACE_MS = TICK_MS
 
 export interface Reactions { approved: boolean; rejected: boolean }
 

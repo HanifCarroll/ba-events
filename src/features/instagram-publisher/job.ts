@@ -8,6 +8,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
+import * as alerts from './alerts.ts'
 import { caption as captionFor, footerHandle, heldText, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, framesHtml } from './html.ts'
@@ -40,9 +41,10 @@ export interface Draft {
   approvedSeenAt: string | null
   r2Uploaded: string | null
   publish: PublishState | null
+  /** Total failures for the publish retry budget, separate from the shared tick streak. */
   publishFailures: number
   /** A Slack message still to deliver for this draft's outcome. */
-  notify: { text: string; threadTs: string | null } | null
+  notify: { text: string; threadTs: string | null; failures?: number } | null
   skipReason: string | null
   note: string | null
   updatedAt: string
@@ -67,8 +69,8 @@ export interface Services {
   r2Put(bucket: string, key: string, path: string): Promise<void>
   loadToken(now: Date): Promise<TokenCheck>
   instagram(accessToken: string): InstagramApi
-  alert(key: string, title: string, text: string): Promise<void>
-  resolveAlert(key: string): Promise<void>
+  alert(key: string, title: string, text: string, fingerprint?: string): Promise<void>
+  resolveAlert(key: string, text?: string): Promise<boolean | void>
   sleep(ms: number): Promise<void>
   log(message: string): void
 }
@@ -195,7 +197,7 @@ export class Job {
       this.save(draft)
       await this.s.slackShareFiles(files, text)
       draft.slack.ts = await this.s.slackShareTs(draft.slack.fileIds[0]!)
-      if (!draft.slack.ts) throw new Error(`${draft.id}: the preview was uploaded but Slack didn't report its message yet`)
+      if (!draft.slack.ts) throw new Error('Slack preview lookup failed: the upload has no message yet')
     }
     draft.state = 'previewed'
     this.save(draft)
@@ -225,23 +227,34 @@ export class Job {
   private async skip(draft: Draft, reason: SkipReason) {
     const text = skipText(reason)
     await this.settle(draft, 'skipped', text, { skipReason: text })
+    if (draft.publishFailures && reason.kind !== 'too-few') {
+      await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishSkipped(draft, reason, this.s.now()))
+    }
   }
 
-  /** Deliver a pending Slack message. A failure leaves it pending for the next tick and raises an accurate alert. */
+  /** Deliver a pending Slack message. A failure leaves it pending for the next tick. */
   async deliver(draft: Draft) {
     const notify = draft.notify
     if (!notify) return
+    const key = `${alerts.draftKey(draft)}/slack`
+    let posted: { ts: string }
     try {
-      const posted = await this.s.slackPost(notify.text, notify.threadTs ?? undefined)
-      if (!draft.slack.ts && !notify.threadTs) draft.slack.ts = posted.ts
-      draft.notify = null
-      this.save(draft)
-      await this.s.resolveAlert(`draft/${draft.id}/slack`)
+      posted = await this.s.slackPost(notify.text, notify.threadTs ?? undefined)
     } catch (error) {
-      const outcome = draft.state === 'published' ? `went out on Instagram (${draft.publish?.permalink})` : `is ${draft.state}`
-      await this.s.alert(`draft/${draft.id}/slack`, `Instagram ${draft.id}: Slack reply failed`,
-        `Instagram ${draft.id} ${outcome}, but the Slack reply failed: ${(error as Error).message}. Retrying next tick. Text: ${notify.text}`)
+      const failure = alerts.describeFailure(error)
+      this.s.log(`${draft.id}: Slack reply failed: ${error}`)
+      notify.failures = (notify.failures ?? 0) + 1
+      this.save(draft)
+      if (notify.failures >= alerts.ALERT_FAILURES) {
+        await this.s.alert(key, alerts.draftTitle(draft), alerts.slackAlert(draft, failure, notify.failures, this.s.now()), failure.cause)
+      }
+      return
     }
+    if (!draft.slack.ts && !notify.threadTs) draft.slack.ts = posted.ts
+    draft.notify = null
+    this.save(draft)
+    // The alert command does nothing when no alert was open, including for replies queued on the old version.
+    await this.s.resolveAlert(key, alerts.slackRecovered(draft, this.s.now(), notify.threadTs))
   }
 
   // Publishing
@@ -313,7 +326,7 @@ export class Job {
       log: message => this.s.log(`${draft.id}: ${message}`),
       beforeWrite,
     })
-    await this.settle(draft, 'published', postedText(permalink))
+    await this.settle(draft, 'published', postedText(permalink), { publishFailures: 0 })
     return true
   }
 
@@ -325,38 +338,30 @@ export class Job {
       const { id, title, why, detail } = stop.stale!
       const text = heldText(title, why)
       await this.settle(draft, 'held', text, { note: `${id} ${detail}` })
-      // regenerate refuses a draft that has publish state, so only a draft with none gets that advice.
-      const next = draft.publish
-        ? `An earlier attempt already created Instagram containers (nothing was posted), so regenerate refuses this draft. Inspect it with: bun scripts/instagram-publisher.ts status (state: ${this.draftFile(draft.id)})`
-        : `To rebuild without it: bun scripts/instagram-publisher.ts regenerate ${draft.id} --exclude ${id}`
-      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} held`, `${text} (event ${id} ${detail}). ${next}`)
+      await this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.heldAlert(draft, stop.stale!, this.s.now()))
       return
     }
     if (out > 0) {
       // Some story frames already went out; nothing more is posted. Hermes decides what to do with the rest.
       await this.settle(draft, 'failed', null, { note: `Stopped after ${out} of ${draft.publish!.units.length} frames: ${stop.message}` })
-      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} stopped part-way`, `${draft.note}. State: ${this.draftFile(draft.id)}`)
+      await this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.partialAlert(draft, stop.message, out, this.draftFile(draft.id)))
       return
     }
     const reason: SkipReason = stop.kind === 'rejected' ? { kind: 'rejected' } : { kind: 'late', by: window.deadline }
     await this.skip(draft, reason)
   }
 
-  async advance(draft: Draft) {
+  async advance(draft: Draft, failures: alerts.TickFailures) {
     const now = this.s.now()
     const window = runWindow(draft.format, draft.from)
     if (draft.state === 'rebuilding') {
       // A regenerate that didn't finish. Its approval is already cleared, so nothing can publish from it.
       await this.settle(draft, 'failed', null, { note: 'A regenerate did not finish; run it again.' })
-      const cmd = `bun scripts/instagram-publisher.ts regenerate ${draft.id}${draft.exclude.map(id => ` --exclude ${id}`).join('')}${draft.track ? ` --track ${draft.track.id}` : ''}`
-      const recover = now < window.cutoff ? `Run it again from ~/projects/ba-events: ${cmd}` : 'It is past its cutoff, so this run is lost; nothing was posted.'
-      return this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id}: regenerate didn't finish`,
-        `Regenerating ${draft.id} (revision ${draft.revision}) stopped part-way, so the draft has no preview and can't publish. ${recover}`)
+      return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.rebuildAlert(draft, now))
     }
     if (draft.state === 'previewing' && now >= window.cutoff) {
       await this.settle(draft, 'failed', null, { note: 'The preview never reached Slack before the cutoff.' })
-      return this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id}: preview never reached Slack`,
-        `The ${draft.id} preview couldn't be posted to #ba-eventos before its cutoff, so nothing was published. Check the tick alert and journalctl --user -u ba-events-instagram.service for the Slack error. This run is lost; the next run of this format drafts as usual.`)
+      return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.previewExpired(draft, now, failures.last(draft.id)))
     }
     if (draft.state === 'previewing') await this.sendPreview(draft)
     if (draft.state === 'previewed') {
@@ -367,21 +372,23 @@ export class Job {
       if (decision.action === 'wait') return
     }
     if (draft.state !== 'previewed' && draft.state !== 'publishing') return
+    let done: boolean
     try {
-      const done = await this.publishDraft(draft, window)
-      if (!done && now >= window.deadline && draft.state === 'previewed') {
-        return this.settle(draft, 'failed', null, { note: 'Not published: the Instagram token or the R2 setup was missing.' })
-      }
-      if (done && (draft.state as DraftState) === 'published') await this.s.resolveAlert(`draft/${draft.id}`)
+      done = await this.publishDraft(draft, window)
     } catch (error) {
       if (error instanceof PublishStop) return this.stopped(draft, error, window)
       if (error instanceof StillProcessing) { this.s.log(`${draft.id}: ${error.message}`); return }
       draft.publishFailures++
-      draft.note = (error as Error).message
+      draft.note = error instanceof Error ? error.message : String(error)
       const pending = draft.publish?.units.some(unit => unit.pendingSince) ?? false
       if (draft.publishFailures >= MAX_PUBLISH_FAILURES && !pending) draft.state = 'failed'
       this.save(draft)
-      await this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id} didn't publish`, `${draft.note} (attempt ${draft.publishFailures}${draft.state === 'failed' ? ', giving up' : ', retrying next tick'}). State: ${this.draftFile(draft.id)}`)
+      failures.recordPublish(draft, error, this.draftFile(draft.id))
+      return
+    }
+    if (done) await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishRecovered(draft, this.s.now()))
+    else if (now >= window.deadline && draft.state === 'previewed') {
+      await this.settle(draft, 'failed', null, { note: 'Not published: the Instagram token or the R2 setup was missing.' })
     }
   }
 
@@ -397,31 +404,34 @@ export class Job {
   async tick() {
     const now = this.s.now()
     const token = await this.s.loadToken(now).catch(error => ({ state: 'ok' as const, warning: (error as Error).message }))
-    if (token.state === 'ok' && token.warning) await this.s.alert('token', 'Instagram token needs attention', token.warning)
-    else if (token.state === 'ok') await this.s.resolveAlert('token')
-    const failures: string[] = []
+    if (token.state === 'ok' && token.warning) await this.s.alert('token', 'Instagram token needs attention', alerts.tokenAlert(token.warning, now), token.warning)
+    else if (token.state === 'ok') await this.s.resolveAlert('token', alerts.tokenRecovered(now))
+    const failures = new alerts.TickFailures(this.s)
+    const attempted = new Set<string>()
     for (const format of Object.keys(FORMATS) as FormatKey[]) {
       for (const from of activeRuns(format, now)) {
-        if (this.loadDraft(draftId(format, from))) continue
-        try { await this.createDraft(format, from, [], 1) } catch (error) { failures.push(`${draftId(format, from)}: ${(error as Error).message}`) }
+        const id = draftId(format, from)
+        if (this.loadDraft(id)) continue
+        attempted.add(id)
+        try { await this.createDraft(format, from, [], 1) } catch (error) {
+          // Advance retries a saved preview this tick. Only an unsuccessful retry counts toward the streak.
+          if (this.loadDraft(id)?.state === 'previewing') this.s.log(`${id}: ${error instanceof Error ? error.message : String(error)}`)
+          else failures.record({ id, format, from }, false, error)
+        }
       }
     }
     for (const draft of this.allDrafts()) {
       try {
-        if (draft.notify) await this.deliver(draft)
-        if (!SETTLED.includes(draft.state)) await this.advance(draft)
+        // Creation already tried any skip notice, but a pending preview gets another chance.
+        if (draft.notify && !attempted.has(draft.id)) await this.deliver(draft)
+        if (!SETTLED.includes(draft.state)) await this.advance(draft, failures)
       } catch (error) {
-        failures.push(`${draft.id}: ${(error as Error).message}`)
+        failures.record(draft, Boolean(draft.slack.ts), error)
       }
     }
     this.prune()
-    if (failures.length) {
-      for (const failure of failures) this.s.log(failure)
-      // The alert is the report; exiting 0 keeps notify-failure for crashes the tick couldn't catch.
-      await this.s.alert('tick', 'Instagram publisher tick failed', failures.join('\n'))
-    } else {
-      await this.s.resolveAlert('tick')
-    }
+    // Exit 0 for handled failures; notify-failure reports crashes the tick couldn't catch.
+    await failures.report(id => this.loadDraft(id))
   }
 
   async regenerate(id: string, excludeIds: string[], trackId: string | null = null): Promise<Draft> {

@@ -193,6 +193,13 @@ export async function renderFramesInProcess(htmlFile: string, outDir: string, he
 
 export type Runner = typeof run
 
+function availableMemoryMb() {
+  try {
+    const kb = readFileSync('/proc/meminfo', 'utf8').match(/^MemAvailable:\s+(\d+) kB$/m)?.[1]
+    return kb === undefined ? undefined : Math.floor(Number(kb) / 1024)
+  } catch { return undefined }
+}
+
 /**
  * Render in a child process inside a named transient scope (900 MB, no swap, RuntimeMaxSec), so a timeout or a crash
  * can stop the whole scope with every Chromium process in it, not just the direct child.
@@ -215,9 +222,11 @@ export async function renderFrames(html: string, outDir: string, height: number,
     result = { out: '', err: (error as Error).message, code: -1 }
   }
   if (result.code !== 0) {
+    const memory = availableMemoryMb()
     // Killed on timeout (code null) or failed: stop the scope so no Chromium process outlives the render.
     if (scoped !== command) await runner(['systemctl', '--user', 'stop', `${unit}.scope`], 30_000).catch(() => undefined)
-    throw new Error(`Rendering failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${result.err.trim().slice(-500)}`)
+    throw Object.assign(new Error(`Rendering failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${result.err.trim().slice(-500)}`),
+      { availableMemoryMb: memory })
   }
   return readdirSync(outDir).filter(name => /^frame-\d+\.jpg$/.test(name))
     .sort((a, b) => Number(a.match(/\d+/)![0]) - Number(b.match(/\d+/)![0]))
@@ -301,8 +310,10 @@ export async function renderReel(window: RunWindow, events: PostEvent[], timing:
       result = { out: '', err: (error as Error).message, code: -1 }
     }
     if (result.code !== 0 || !existsSync(raw)) {
+      const memory = availableMemoryMb()
       if (scoped !== command) await runner(['systemctl', '--user', 'stop', `${unit}.scope`], 30_000).catch(() => undefined)
-      throw new Error(`Rendering the Reel failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${(result.err || result.out).trim().slice(-500)}`)
+      throw Object.assign(new Error(`Rendering the Reel failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${(result.err || result.out).trim().slice(-500)}`),
+        { availableMemoryMb: memory })
     }
     const video = join(outDir, 'reel.mp4')
     const cover = join(outDir, 'cover.jpg')
@@ -428,8 +439,11 @@ const DAY = 86_400_000
 /** Read the token, refresh it when it's more than 7 days old, and say whether it needs Hermes. Never prints it. */
 export async function loadToken(now: Date, fetchImpl: typeof fetch = fetch, file = TOKEN_FILE): Promise<TokenCheck> {
   if (!existsSync(file)) return { state: 'missing' }
-  const token = JSON.parse(readFileSync(file, 'utf8')) as InstagramToken
-  if (!token.access_token || !token.ig_user_id || !token.expires_at) throw new Error(`${file} lacks access_token, ig_user_id, or expires_at`)
+  const json = readFileSync(file, 'utf8')
+  let token: InstagramToken
+  // JSON parse errors can include a snippet of the secret-bearing file.
+  try { token = JSON.parse(json) } catch { throw new Error('The Instagram token file contains invalid JSON.') }
+  if (!token?.access_token || !token.ig_user_id || !token.expires_at) throw new Error('The Instagram token file is missing required fields.')
   if (token.expires_at === 'never') return { state: 'ok', token, warning: null }
   const issued = Date.parse(token.refreshed_at ?? '') || statSync(file).mtimeMs
   let warning: string | null = null
@@ -456,11 +470,16 @@ export async function loadToken(now: Date, fetchImpl: typeof fetch = fetch, file
 
 // Alerts
 
-export async function alert(key: string, title: string, text: string) {
-  const { err, code } = await run([ALERT, 'raise', `ba-events/instagram/${key}`, '--title', title, '--text', text], 60_000)
+const ALERT_TIMEOUT_MS = 180_000
+
+export async function alert(key: string, title: string, text: string, fingerprint?: string) {
+  const { err, code } = await run([ALERT, 'raise', `ba-events/instagram/${key}`, '--title', title, '--text', text,
+    ...(fingerprint === undefined ? [] : ['--fingerprint', fingerprint])], ALERT_TIMEOUT_MS)
   if (code !== 0) log(`alert raise failed: ${err.trim()}`)
 }
 
-export async function resolveAlert(key: string) {
-  await run([ALERT, 'resolve', `ba-events/instagram/${key}`, '--quiet'], 60_000)
+export async function resolveAlert(key: string, text?: string) {
+  const { err, code } = await run([ALERT, 'resolve', `ba-events/instagram/${key}`, ...(text === undefined ? ['--quiet'] : ['--text', text])], ALERT_TIMEOUT_MS)
+  if (code !== 0) log(`alert resolve failed: ${err.trim()}`)
+  return code === 0
 }
