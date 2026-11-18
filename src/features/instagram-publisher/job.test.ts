@@ -529,3 +529,72 @@ describe('Este finde Reel: Friday daytime events', () => {
     }
   })
 })
+
+describe('Este finde Reel: a container that never finishes processing', () => {
+  async function stuck() {
+    const w = new World()
+    await w.job().tick()
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    w.reelReactions = [{ name: 'white_check_mark', users: [HANIF] }]
+    w.ig.reelStatus = 'IN_PROGRESS'
+    w.at('2026-11-20', 12)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('publishing')
+    expect(w.reel()!.publish!.units[0]!.containerId).not.toBeNull()
+    return w
+  }
+  const polls = (w: World) => w.ig.calls.filter(call => /^GET c\d+$/.test(call)).length
+
+  it('stops polling and skips on ❌', async () => {
+    const w = await stuck()
+    w.reelReactions = [{ name: 'x', users: [HANIF] }]
+    const before = polls(w)
+    w.at('2026-11-20', 12, 10)
+    await w.job().tick()
+    expect(polls(w)).toBe(before)
+    expect(w.reel()!.state).toBe('skipped')
+    expect(w.slackPosts.filter(post => post.threadTs === w.reel()!.slack.ts).map(post => post.text)).toEqual(['Skipped: you reacted ❌'])
+  })
+
+  it('pauses without polling while the ✅ is removed', async () => {
+    const w = await stuck()
+    w.reelReactions = []
+    const before = polls(w)
+    w.at('2026-11-20', 12, 10)
+    await w.job().tick()
+    expect(polls(w)).toBe(before)
+    expect(w.reel()!.state).toBe('publishing')
+  })
+
+  it('ends at the deadline with the "not published by" reply', async () => {
+    const w = await stuck()
+    const before = polls(w)
+    w.at('2026-11-20', 18)
+    await w.job().tick()
+    expect(polls(w)).toBe(before)
+    expect(w.reel()!.state).toBe('skipped')
+    expect(w.slackPosts.filter(post => post.threadTs === w.reel()!.slack.ts).map(post => post.text)).toEqual(['Skipped: not published by 18:00'])
+    expect(w.ig.published).toHaveLength(0)
+  })
+})
+
+describe('Este finde Reel: recovering a failed track-only regenerate', () => {
+  it('saves the requested track and names it in the recovery command', async () => {
+    const w = new World()
+    await w.job().tick()
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    w.at('2026-11-19', 19)
+    const job = w.job()
+    const services = job.s as { renderReel: unknown }
+    services.renderReel = async () => { throw new Error('render crashed') }
+    await expect(job.regenerate('reel-2026-11-20', [], 'b')).rejects.toThrow(/render crashed/)
+    expect(w.reel()!.state).toBe('rebuilding')
+    expect(w.reel()!.track!.id).toBe('b')
+    w.at('2026-11-19', 19, 10)
+    await w.job().tick()
+    const alert = w.alerts.find(a => a.key === 'draft/reel-2026-11-20')!
+    expect(alert.text).toContain('regenerate reel-2026-11-20 --track b')
+  })
+})

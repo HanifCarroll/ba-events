@@ -54,3 +54,18 @@ describe.skipIf(!ffmpeg)('excerpt', () => {
     await expect(writeExcerpt(exec, src, 6, 8, join(dir, 'y.wav'))).rejects.toThrow(/music runs out/)
   }, 60_000)
 })
+
+describe('credits', () => {
+  it('fails closed on a CC BY track without a credit, and accepts null credit for other licenses', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reel-credit-'))
+    writeFileSync(join(dir, 'tracks.json'), JSON.stringify({ tracks: [
+      { ...track('cc'), license: 'CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)', credit: '  ' },
+      { ...track('ok'), license: 'CC BY 3.0', credit: 'Música: "x" de y, CC BY 3.0.' },
+      { ...track('meta'), license: 'Meta Sound Collection Terms', credit: null },
+    ] }))
+    for (const id of ['cc', 'ok', 'meta']) writeFileSync(join(dir, `${id}.flac`), '')
+    expect(() => readyTrack(dir, 'cc')).toThrow(/CC BY license but no credit/)
+    expect(readyTrack(dir, 'ok').credit).toContain('CC BY')
+    expect(readyTrack(dir, 'meta').credit).toBeNull()
+  })
+})

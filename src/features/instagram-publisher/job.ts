@@ -348,7 +348,7 @@ export class Job {
     if (draft.state === 'rebuilding') {
       // A regenerate that didn't finish. Its approval is already cleared, so nothing can publish from it.
       await this.settle(draft, 'failed', null, { note: 'A regenerate did not finish; run it again.' })
-      const cmd = `bun scripts/instagram-publisher.ts regenerate ${draft.id}${draft.exclude.map(id => ` --exclude ${id}`).join('')}`
+      const cmd = `bun scripts/instagram-publisher.ts regenerate ${draft.id}${draft.exclude.map(id => ` --exclude ${id}`).join('')}${draft.track ? ` --track ${draft.track.id}` : ''}`
       const recover = now < window.cutoff ? `Run it again from ~/projects/ba-events: ${cmd}` : 'It is past its cutoff, so this run is lost; nothing was posted.'
       return this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id}: regenerate didn't finish`,
         `Regenerating ${draft.id} (revision ${draft.revision}) stopped part-way, so the draft has no preview and can't publish. ${recover}`)
@@ -436,8 +436,10 @@ export class Job {
     if (trackId && format !== 'reel') throw new Error('--track only applies to a Reel')
     // A Reel keeps its track unless --track names another (a skipped draft never got one, so it is chosen again).
     const track = format === 'reel' ? trackId ?? old.track?.id ?? this.chooseTrack() : null
-    if (track) readyTrack(this.s.config().reel.musicDir, track)
-    this.save({ ...old, revision, state: 'rebuilding', exclude, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null })
+    const ready = track ? readyTrack(this.s.config().reel.musicDir, track) : null
+    // The requested track is saved with the rebuilding state, so a crash's recovery command restores it.
+    const savedTrack = ready ? { id: ready.id, title: ready.title, artist: ready.artist, credit: ready.credit } : old.track
+    this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null })
     const draft = await this.createDraft(format, from, exclude, revision, track)
     if (draft.state === 'skipped') throw new Error(`Without ${exclude.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
     return draft

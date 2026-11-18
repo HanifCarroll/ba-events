@@ -15,6 +15,7 @@ export interface Track {
   startSec: number | null
   /** A caption credit line, when the license needs one. */
   credit: string | null
+  license?: string
 }
 
 /** A track ready for a Reel: measured, with its audio file. */
@@ -50,6 +51,9 @@ export function readyTrack(dir: string, id: string): ReadyTrack {
   if (!track) throw new Error(`Reel track ${id} is not in ${join(dir, 'tracks.json')}`)
   if (typeof track.bpm !== 'number' || typeof track.startSec !== 'number') {
     throw new Error(`Reel track ${id} has no bpm and startSec yet; measure it and fill them in ${join(dir, 'tracks.json')}`)
+  }
+  if (/^CC BY/i.test(track.license ?? '') && !track.credit?.trim()) {
+    throw new Error(`Reel track ${id} has a CC BY license but no credit line in ${join(dir, 'tracks.json')}`)
   }
   const path = join(dir, track.file)
   if (!existsSync(path)) throw new Error(`Reel track ${id}: ${path} is missing`)

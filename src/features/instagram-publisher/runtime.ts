@@ -286,34 +286,38 @@ export async function renderReel(window: RunWindow, events: PostEvent[], timing:
   managedChrome(chromeRoot)
   rmSync(outDir, { recursive: true, force: true })
   const project = join(outDir, 'project')
-  await writeReelProject(project, window, events, timing, track)
-  const raw = join(outDir, 'render.mp4')
-  const command = ['npx', '--yes', HYPERFRAMES, 'render', '--quality', 'delivery', '--workers', '1', '-o', raw]
-  const unit = `ba-events-instagram-reel-${process.pid}-${Date.now()}`
-  const scoped = process.env.BA_INSTAGRAM_RENDER_NO_SCOPE === '1'
-    ? command
-    : ['systemd-run', '--user', '--scope', '--collect', '--quiet', `--unit=${unit}`, '-p', 'MemoryMax=1000M', '-p', 'MemorySwapMax=0', '-p', 'RuntimeMaxSec=600', ...command]
-  let result: Awaited<ReturnType<Runner>>
   try {
-    result = await runner(scoped, 620_000, project, mediaEnv())
-  } catch (error) {
-    result = { out: '', err: (error as Error).message, code: -1 }
+    await writeReelProject(project, window, events, timing, track)
+    const raw = join(outDir, 'render.mp4')
+    const command = ['npx', '--yes', HYPERFRAMES, 'render', '--quality', 'delivery', '--workers', '1', '-o', raw]
+    const unit = `ba-events-instagram-reel-${process.pid}-${Date.now()}`
+    const scoped = process.env.BA_INSTAGRAM_RENDER_NO_SCOPE === '1'
+      ? command
+      : ['systemd-run', '--user', '--scope', '--collect', '--quiet', `--unit=${unit}`, '-p', 'MemoryMax=1000M', '-p', 'MemorySwapMax=0', '-p', 'RuntimeMaxSec=600', ...command]
+    let result: Awaited<ReturnType<Runner>>
+    try {
+      result = await runner(scoped, 620_000, project, mediaEnv())
+    } catch (error) {
+      result = { out: '', err: (error as Error).message, code: -1 }
+    }
+    if (result.code !== 0 || !existsSync(raw)) {
+      if (scoped !== command) await runner(['systemctl', '--user', 'stop', `${unit}.scope`], 30_000).catch(() => undefined)
+      throw new Error(`Rendering the Reel failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${(result.err || result.out).trim().slice(-500)}`)
+    }
+    const video = join(outDir, 'reel.mp4')
+    const cover = join(outDir, 'cover.jpg')
+    const remux = await media(['ffmpeg', '-v', 'error', '-y', '-i', raw, '-c', 'copy', '-movflags', '+faststart', video])
+    if (remux.code !== 0) throw new Error(`Remuxing the Reel failed: ${remux.err.trim().slice(-300)}`)
+    rmSync(raw, { force: true })
+    await checkReel(video, timing.total)
+    const holdMid = timing.cards[0]!.holdMid
+    const still = await media(['ffmpeg', '-v', 'error', '-y', '-ss', String(holdMid), '-i', video, '-frames:v', '1', '-q:v', '2', cover])
+    if (still.code !== 0) throw new Error(`Extracting the Reel cover failed: ${still.err.trim().slice(-300)}`)
+    return [video, cover]
+  } finally {
+    // The project holds the licensed audio excerpt; it never outlives the render, whatever happened.
+    rmSync(project, { recursive: true, force: true })
   }
-  if (result.code !== 0 || !existsSync(raw)) {
-    if (scoped !== command) await runner(['systemctl', '--user', 'stop', `${unit}.scope`], 30_000).catch(() => undefined)
-    throw new Error(`Rendering the Reel failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${(result.err || result.out).trim().slice(-500)}`)
-  }
-  const video = join(outDir, 'reel.mp4')
-  const cover = join(outDir, 'cover.jpg')
-  const remux = await media(['ffmpeg', '-v', 'error', '-y', '-i', raw, '-c', 'copy', '-movflags', '+faststart', video])
-  if (remux.code !== 0) throw new Error(`Remuxing the Reel failed: ${remux.err.trim().slice(-300)}`)
-  rmSync(raw, { force: true })
-  await checkReel(video, timing.total)
-  const holdMid = timing.cards[0]!.holdMid
-  const still = await media(['ffmpeg', '-v', 'error', '-y', '-ss', String(holdMid), '-i', video, '-frames:v', '1', '-q:v', '2', cover])
-  if (still.code !== 0) throw new Error(`Extracting the Reel cover failed: ${still.err.trim().slice(-300)}`)
-  rmSync(join(project, 'assets/music.wav'), { force: true })
-  return [video, cover]
 }
 
 /** Fail closed before anything is uploaded: 1080 × 1920 H.264 yuv420p at 30 fps with AAC audio, of the expected length. */

@@ -194,3 +194,29 @@ describe('Reel publishing', () => {
     expect(permalink).toBe(`https://www.instagram.com/p/${api.media[0]!.id}/`)
   })
 })
+
+describe('caption lookup after an unclear publish only adopts the same kind of post', () => {
+  const reel: PublishJob = { kind: 'reel', igUserId: '17841', caption: 'Seis planes', slides: [], video: { url: 'https://img.example/reel.mp4', coverUrl: 'https://img.example/cover.jpg' } }
+  const sameCaption: PublishJob = { ...carousel, caption: 'Seis planes' }
+
+  it('a Reel never adopts a carousel with the same caption', async () => {
+    const api = new FakeInstagram()
+    api.publishFault = 'before' // the Reel's media_publish is lost without posting
+    const { deps, saved } = harness(api)
+    await expect(publish(reel, emptyPublishState(reel), deps)).rejects.toThrow(/no response/)
+    await publish(sameCaption, emptyPublishState(sameCaption), harness(api).deps) // the carousel goes out meanwhile
+    await publish(reel, reload(saved), deps)
+    const kinds = api.published.map(media => media.media_product_type)
+    expect(kinds.sort()).toEqual(['FEED', 'REELS'])
+  })
+
+  it('a carousel never adopts a Reel with the same caption', async () => {
+    const api = new FakeInstagram()
+    api.publishFault = 'before'
+    const { deps, saved } = harness(api)
+    await expect(publish(sameCaption, emptyPublishState(sameCaption), deps)).rejects.toThrow(/no response/)
+    await publish(reel, emptyPublishState(reel), harness(api).deps)
+    await publish(sameCaption, reload(saved), deps)
+    expect(api.published.map(media => media.media_type).sort()).toEqual(['CAROUSEL_ALBUM', 'VIDEO'])
+  })
+})

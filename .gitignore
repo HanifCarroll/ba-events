@@ -60,3 +60,10 @@ test-results/
 # Generated fuzz corpora, failure inputs, and API test reports
 /tmp/fuzz/
 .hypothesis/
+
+# Reel music and renders: licensed audio must never be committed (the repo is public)
+*.flac
+*.wav
+*.mp3
+reel.mp4
+cover.jpg

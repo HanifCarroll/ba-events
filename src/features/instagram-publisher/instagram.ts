@@ -110,13 +110,18 @@ async function checkQuota(job: PublishJob, deps: PublishDeps) {
   if (usage >= total) throw new InstagramError(`publishing limit reached (${usage}/${total} in 24 hours)`, true)
 }
 
-/** A published carousel's or Reel's media id: the one recent post with exactly this caption, newer than the attempt. */
+/**
+ * A published carousel's or Reel's media id: the one recent post of the same kind with exactly this caption, newer
+ * than the attempt. The kind matters: a Reel often has the carousel's caption word for word.
+ */
 async function findCarousel(job: PublishJob, unit: PublishUnit, state: PublishState, deps: PublishDeps): Promise<string | null> {
   const since = Date.parse(unit.pendingSince!) - 2 * 60_000
-  const { data = [] } = await deps.api.get(`${job.igUserId}/media`, { fields: 'id,caption,timestamp', limit: '25' })
+  const { data = [] } = await deps.api.get(`${job.igUserId}/media`, { fields: 'id,caption,timestamp,media_type,media_product_type', limit: '25' })
   const known = new Set(state.units.map(other => other.mediaId).filter(Boolean))
-  const matches = (data as Array<{ id: string; caption?: string; timestamp: string }>)
-    .filter(media => !known.has(media.id) && Date.parse(media.timestamp) >= since && (media.caption ?? '') === (job.caption ?? ''))
+  const sameKind = (media: { media_type?: string; media_product_type?: string }) =>
+    job.kind === 'reel' ? media.media_product_type === 'REELS' : media.media_type === 'CAROUSEL_ALBUM'
+  const matches = (data as Array<{ id: string; caption?: string; timestamp: string; media_type?: string; media_product_type?: string }>)
+    .filter(media => !known.has(media.id) && sameKind(media) && Date.parse(media.timestamp) >= since && (media.caption ?? '') === (job.caption ?? ''))
   return matches.length === 1 ? matches[0]!.id : null
 }
 
@@ -180,6 +185,9 @@ async function publishUnit(job: PublishJob, unitIndex: number, state: PublishSta
     await deps.save(state)
   }
   if (unit.containerId) {
+    // Resuming a saved container (no unclear publish to reconcile): a ❌, a removed ✅, or the deadline stops here, before
+    // another long poll, so a container that never finishes can't keep the draft alive past them.
+    await deps.beforeWrite()
     const status = await waitFinished(unit.containerId, deps, job.kind)
     if (status === 'PUBLISHED') throw new InstagramError(`container ${unit.containerId} is already PUBLISHED; not retrying`, false)
     if (status !== 'FINISHED') { unit.containerId = null; if (unit.childIds) unit.childIds = unit.childIds.map(() => null); await deps.save(state) }

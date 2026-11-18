@@ -109,6 +109,16 @@ describe('Reel rendering', () => {
 
   const ffmpeg = (() => { try { return mediaBin('ffmpeg') } catch { return null } })()
 
+  it('removes the project when the excerpt itself fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reel-excerpt-'))
+    const chrome = join(dir, 'chrome/linux-1/chrome-headless-shell-linux64')
+    const { mkdirSync, existsSync } = await import('node:fs')
+    mkdirSync(chrome, { recursive: true })
+    writeFileSync(join(chrome, 'chrome-headless-shell'), '')
+    await expect(renderReel(window, events, timing, track, join(dir, 'out'), async () => ({ out: '', err: '', code: 0 }), join(dir, 'chrome'))).rejects.toThrow()
+    expect(existsSync(join(dir, 'out/project'))).toBe(false)
+  })
+
   // The excerpt runs before the render and needs ffmpeg; runners without it skip this test.
   it.skipIf(!ffmpeg)('renders under the 1000 MB scope with one worker and stops the scope on failure', async () => {
     const { spawnSync } = await import('node:child_process')
@@ -123,6 +133,8 @@ describe('Reel rendering', () => {
     const runner: Runner = async argv => { calls.push(argv); return { out: '', err: 'boom', code: argv[0] === 'systemd-run' ? 1 : 0 } }
     await expect(renderReel(window, events, timing, { ...track, path: music }, join(dir, 'out'), runner, join(dir, 'chrome')))
       .rejects.toThrow(/Rendering the Reel failed \(exit 1\)/)
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(join(dir, 'out/project'))).toBe(false) // the audio excerpt doesn't outlive a failed render
     expect(calls[0]).toEqual(expect.arrayContaining(['--scope', '--collect', '-p', 'MemoryMax=1000M', 'MemorySwapMax=0', 'RuntimeMaxSec=600', 'npx', '--yes', 'hyperframes@0.9.66', 'render', '--quality', 'delivery', '--workers', '1']))
     const unit = calls[0]!.find(arg => arg.startsWith('--unit='))!.slice('--unit='.length)
     expect(unit).toMatch(/^ba-events-instagram-reel-\d+-\d+$/)
