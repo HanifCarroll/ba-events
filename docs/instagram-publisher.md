@@ -49,7 +49,7 @@ Each failed attempt goes in the service log. Alerts go to #ba-eventos and put th
 | `draft/<id>/slack` | The outcome message fails to send three ticks in a row. |
 | `token` | Token refresh fails, the token file is invalid, or a dated token has fewer than 10 days left. |
 
-Publishing retries every tick. After six failures the draft is marked `failed` unless a `media_publish` result is still unclear, in which case the job keeps checking it. The alert streak resets when publishing pauses; the six-failure retry budget does not. When a preview misses its cutoff or a rebuild stops part-way, the job won't publish the draft. A successful retry closes the open alert with a ✅ line; if the cutoff ends the retries instead, the alert reports the missed post rather than claiming recovery.
+A draft's alert streak counts failed ticks across steps, so changing from a reaction read failure to a publish failure doesn't reset it. The first alert's thread follows the draft across steps, while a final publish failure gets a draft alert. Publishing retries every tick. After six publishing failures the draft is marked `failed` unless a `media_publish` result is still unclear, in which case the job keeps checking it. The alert streak resets when publishing pauses; the six-failure retry budget does not. When a preview misses its cutoff or a rebuild stops part-way, the job won't publish the draft. A successful retry closes the open alert with a ✅ line. If the draft ends skipped, held, or failed, the alert names that outcome rather than claiming recovery. The alert command has up to three minutes to raise or resolve an alert; the publisher does not queue alert delivery separately.
 
 ## Regenerate
 
@@ -95,7 +95,7 @@ Each container and media id is saved to the draft's state file before the next s
 
 ## Troubleshooting
 
-- **No preview or repeated tick failures:** run `journalctl --user -u ba-events-instagram.service -n 50`. The current streaks are in `~/.local/state/ba-events-instagram/tick-failures.json`, including failures before a draft file existed. A render timeout mentions low memory only if the job measured less than 600 MB available when the render failed.
+- **No preview or repeated tick failures:** run `journalctl --user -u ba-events-instagram.service -n 50`. The current streaks are in `~/.local/state/ba-events-instagram/tick-failures.json`, including failures before a draft file existed. If that file can't be read, the job logs the error, tries to move it aside as `tick-failures.json.bad-<timestamp>`, and starts with empty streaks. A render timeout mentions low memory only if the job measured less than 600 MB available when the render failed.
 - **Publishing or a Slack reply failed:** run `mise exec -- bun scripts/instagram-publisher.ts status` and read the draft JSON. Check the saved container IDs and `pendingSince` before taking any action on Instagram. A pending `notify` does not mean Instagram needs another attempt.
 - **Held or interrupted rebuild:** use `mise exec -- bun scripts/instagram-publisher.ts regenerate <draft id> --exclude <event id>` before the cutoff if publishing hasn't started. Omit `--exclude` if the picks don't need to change. After the cutoff, don't rebuild or manually retry the old draft.
 

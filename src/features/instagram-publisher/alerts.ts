@@ -1,10 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync, renameSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { PublishStop } from './approval.ts'
 import type { SkipReason } from './copy.ts'
 import { addDays, baLocal, englishDates, hhmm, WEEKDAYS_EN } from './format.ts'
-import { FORMATS, runWindow, TICK_MS, type FormatKey } from './formats.ts'
+import { draftId, FORMATS, runWindow, TICK_MS } from './formats.ts'
 import { InstagramError } from './instagram.ts'
 import type { Draft, Services } from './job.ts'
 import { writeJson } from './runtime.ts'
@@ -43,7 +43,8 @@ export function describeFailure(error: unknown): Failure {
     if (error instanceof Error && 'availableMemoryMb' in error && typeof error.availableMemoryMb === 'number' && error.availableMemoryMb < 600) {
       cause += ` The VPS was short on memory then (${error.availableMemoryMb} MB free).`
     }
-  } else if (render) cause = render[1] ? 'Building its video failed.' : 'Building its images failed.'
+  } else if (render?.[1] || /Remuxing the Reel failed|Extracting the Reel cover failed|The rendered Reel isn't the expected/.test(raw)) cause = 'Building its video failed.'
+  else if (render) cause = 'Building its images failed.'
   else if (/Slack .*failed/.test(raw)) cause = "Slack didn't accept the upload or message."
   else if (raw.includes('D1 read')) cause = 'Reading the catalog failed.'
   else if (raw.includes('R2 upload')) cause = 'Uploading the images for Instagram failed.'
@@ -61,26 +62,31 @@ export function tokenAlert(warning: string, now: Date) {
   return `⚠️ *The Instagram token needs attention*. ${TRIAGE}\n${text}`
 }
 
-export function publishAlert(draft: Draft, failure: Failure, now: Date, stateFile: string) {
+function publishAlert(draft: Draft, failure: TickFailure, now: Date, stateFile: string) {
   const total = draft.publish?.units.length ?? 0
   const out = draft.publish?.units.filter(unit => unit.mediaId || unit.published).length ?? 0
+  const pending = draft.publish?.units.some(unit => unit.pendingSince) ?? false
+  const needsLink = out > 0 && out === total
+  const { deadline } = runWindow(draft.format, draft.from)
+  const outcome = needsLink ? 'live without link' : out ? `${out}/${total} posted` : pending ? 'unclear' : 'not started'
+  const retryStage = draft.state === 'failed' ? 'gave up' : needsLink ? 'looking up link'
+    : nextTick(now) >= deadline ? 'last retry passed' : 'retrying'
+  const fingerprint = JSON.stringify([retryStage, outcome, pending, failure.cause])
+  const alert = (lines: string[]) => ({ text: lines.join('\n'), fingerprint })
   if (draft.state === 'failed') {
-    if (out && out < total) return partialAlert(draft, failure.cause, out, stateFile)
-    if (out) return [
+    if (out && out < total) return { text: partialAlert(draft, failure.cause, out, stateFile), fingerprint }
+    if (out) return alert([
       `⚠️ *The ${label(draft)} is on Instagram, but the publisher couldn't get its link*. ${TRIAGE}`,
       `${failure.cause} The publisher won't try again.`,
       codes(errorCode(failure.message), draft.id, `state ${homeRelative(stateFile)}`),
-    ].join('\n')
-    return [
+    ])
+    return alert([
       `🚨 *The ${label(draft)} didn't publish*: the publisher gave up after ${draft.publishFailures} tries at ${when(now, now)}. ${TRIAGE}`,
       `${failure.cause} Nothing went out on Instagram, and the publisher won't try again.`,
       codes(errorCode(failure.message), draft.id, `state ${homeRelative(stateFile)}`),
-    ].join('\n')
+    ])
   }
-  const n = draft.publishFailureStreak!
-  const { deadline } = runWindow(draft.format, draft.from)
-  const pending = draft.publish?.units.some(unit => unit.pendingSince)
-  const needsLink = out > 0 && out === total
+  const n = failure.count
   const verdict = needsLink ? `The ${label(draft)} is on Instagram, but the publisher hasn't found its link`
     : out ? `The ${label(draft)} has posted ${out} of ${total} frames so far`
     : pending ? `The publisher hasn't confirmed whether the ${label(draft)} went out`
@@ -89,16 +95,15 @@ export function publishAlert(draft: Draft, failure: Failure, now: Date, stateFil
     : nextTick(now) < deadline ? `It tries again at ${next(now)}. The last chance is ${when(deadline, now)}.`
     : pending ? `It checks again at ${next(now)} whether ${out ? 'another frame' : 'the post'} went out. It won't post anything new.`
     : `There is no retry before the ${when(deadline, now)} deadline.`
-  return [
-    `🚨 *${verdict}* (${n} tries since ${when(draft.firstPublishFailureAt ?? now, now)}). ${TRIAGE}`,
+  return alert([
+    `🚨 *${verdict}* (${n} tries since ${when(failure.firstFailedAt, now)}). ${TRIAGE}`,
     `${failure.cause} ${retry}`,
     codes(errorCode(failure.message), history(n), draft.id),
-  ].join('\n')
+  ])
 }
 
 export const tokenRecovered = (now: Date) => `✅ *The Instagram token is working again* at ${when(now, now)}.`
 
-export const publishAtRisk = (deadline: Date, now: Date) => earlier(deadline, now) < HOUR_MS
 export const publishRecovered = (draft: Draft, now: Date) =>
   `✅ *The ${label(draft)} is on Instagram* at ${when(now, now)}: ${draft.publish?.permalink}`
 
@@ -167,35 +172,97 @@ export function slackAlert(draft: Draft, failure: Failure, n: number, now: Date)
 export const slackRecovered = (item: Item, now: Date, threadTs: string | null) =>
   `✅ *The Slack ${threadTs ? 'reply' : 'message'} for the ${label(item)} went through* at ${when(now, now)}.`
 
-type TickFailure = Item & Failure & { count: number; firstFailedAt: string; lastFailedAt: string; hasPreview: boolean }
+type TickFailure = Item & Failure & {
+  count: number; firstFailedAt: string; lastFailedAt: string; hasPreview: boolean
+  route?: 'tick' | 'publish'
+}
 const qualifies = (failure: TickFailure) => failure.count >= ALERT_FAILURES || (!failure.hasPreview &&
   Date.parse(failure.lastFailedAt) - runWindow(failure.format, failure.from).draftAt.getTime() >= HOUR_MS)
+const onTickAlert = (failure: TickFailure) => failure.route === 'tick' || (!failure.route && qualifies(failure))
+
+function readStreaks(file: string, s: Services): Record<string, TickFailure> {
+  try {
+    const saved: Record<string, TickFailure> = JSON.parse(readFileSync(file, 'utf8'))
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved) || !Object.entries(saved).every(([id, item]) =>
+      item?.id === id && Object.hasOwn(FORMATS, item.format) && /^\d{4}-\d\d-\d\d$/.test(item.from) && id === draftId(item.format, item.from) &&
+      Number.isFinite(runWindow(item.format, item.from).draftAt.getTime()) && Number.isInteger(item.count) && item.count > 0 &&
+      Number.isFinite(Date.parse(item.firstFailedAt)) && Number.isFinite(Date.parse(item.lastFailedAt)) &&
+      typeof item.hasPreview === 'boolean' && typeof item.cause === 'string' && typeof item.message === 'string' &&
+      (item.route === undefined || item.route === 'tick' || item.route === 'publish'))) {
+      throw new Error('Invalid failure streaks')
+    }
+    return saved
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return {}
+    const badFile = `${file}.bad-${s.now().getTime()}`
+    s.log(`Ignoring unreadable ${file}: ${error}`)
+    try { renameSync(file, badFile) } catch (renameError) { s.log(`Could not move ${file} to ${badFile}: ${renameError}`) }
+    return {}
+  }
+}
+
+function tickAlertText(first: TickFailure, now: Date, rest: TickFailure[] = []) {
+  const problem = first.hasPreview ? `The Instagram publisher keeps failing on the ${label(first)}`
+    : `The ${name(first)} preview for ${dates(first)} hasn't reached Slack`
+  const retry = first.hasPreview ? `It tries again at ${next(now)}.`
+    : `The publisher tries again at ${next(now)}. The post is due ${when(runWindow(first.format, first.from).publishAt, now)}.`
+  return [
+    `🚨 *${problem}* (${first.count} tries since ${when(first.firstFailedAt, now)}). ${TRIAGE}`,
+    `${first.cause} ${retry}`,
+    ...rest.map(item => `Also failing: the ${label(item)} (${item.count} tries).`),
+    codes(errorCode(first.message), history(first.count), first.id),
+  ].join('\n')
+}
 
 /** One entry per failed item per tick. Replacing the snapshot clears streaks that didn't recur. */
 export class TickFailures {
   private readonly file: string
   private readonly previous: Record<string, TickFailure>
   private readonly current: Record<string, TickFailure> = {}
+  private readonly publishing = new Map<string, { draft: Draft; stateFile: string }>()
 
   constructor(private readonly s: Services) {
     this.file = join(s.stateDir, 'tick-failures.json')
-    this.previous = existsSync(this.file) ? JSON.parse(readFileSync(this.file, 'utf8')) : {}
+    this.previous = readStreaks(this.file, s)
   }
 
   last(id: string) { return this.previous[id] }
 
-  record(id: string, format: FormatKey, from: string, hasPreview: boolean, error: unknown) {
+  record({ id, format, from }: Item, hasPreview: boolean, error: unknown) {
     const lastFailedAt = this.s.now().toISOString()
     const prev = this.previous[id]
     this.s.log(`${id}: ${error instanceof Error ? error.message : String(error)}`)
     this.current[id] = { id, format, from, hasPreview, ...describeFailure(error), count: (prev?.count ?? 0) + 1,
-      firstFailedAt: prev?.firstFailedAt ?? lastFailedAt, lastFailedAt }
+      firstFailedAt: prev?.firstFailedAt ?? lastFailedAt, lastFailedAt,
+      route: prev && onTickAlert(prev) ? 'tick' : prev?.route }
+  }
+
+  recordPublish(draft: Draft, error: unknown, stateFile: string) {
+    this.record(draft, true, error)
+    this.publishing.set(draft.id, { draft, stateFile })
   }
 
   async report(loadDraft: (id: string) => Draft | null) {
     const now = this.s.now()
     const previous = Object.values(this.previous)
-    const qualifying = Object.values(this.current).filter(qualifies).sort((a, b) => a.firstFailedAt.localeCompare(b.firstFailedAt))
+    const qualifying: TickFailure[] = []
+    for (const item of Object.values(this.current)) {
+      const publish = this.publishing.get(item.id)
+      const gaveUp = publish?.draft.state === 'failed'
+      const atRisk = publish && earlier(runWindow(item.format, item.from).deadline, new Date(item.lastFailedAt)) < HOUR_MS
+      if (!item.route && !qualifies(item) && !gaveUp && !atRisk) continue
+      // Keep updates in the existing thread across steps; a terminal publishing failure has its own alert.
+      if (item.route === 'publish' || (publish && (item.route !== 'tick' || gaveUp))) {
+        item.route = 'publish'
+        const { text, fingerprint } = publish ? publishAlert(publish.draft, item, now, publish.stateFile)
+          : { text: tickAlertText(item, now), fingerprint: `advance: ${item.cause}` }
+        await this.s.alert(draftKey(item), draftTitle(item), text, fingerprint)
+      } else {
+        item.route = 'tick'
+        qualifying.push(item)
+      }
+    }
+    qualifying.sort((a, b) => a.firstFailedAt.localeCompare(b.firstFailedAt))
     // A render can keep failing until the window closes without ever creating a draft file.
     for (const item of previous) {
       if (!item.hasPreview && !this.current[item.id] && !loadDraft(item.id) && now >= runWindow(item.format, item.from).cutoff) {
@@ -205,31 +272,25 @@ export class TickFailures {
     const hasFailures = Object.keys(this.current).length > 0
     const [first, ...rest] = qualifying
     if (first) {
-      const problem = first.hasPreview ? `The Instagram publisher keeps failing on the ${label(first)}`
-        : `The ${name(first)} preview for ${dates(first)} hasn't reached Slack`
-      const retry = first.hasPreview ? `It tries again at ${next(now)}.`
-        : `The publisher tries again at ${next(now)}. The post is due ${when(runWindow(first.format, first.from).publishAt, now)}.`
-      const text = [
-        `🚨 *${problem}* (${first.count} tries since ${when(first.firstFailedAt, now)}). ${TRIAGE}`,
-        `${first.cause} ${retry}`,
-        ...rest.map(item => `Also failing: the ${label(item)} (${item.count} tries).`),
-        codes(errorCode(first.message), history(first.count), first.id),
-      ].join('\n')
       // The reading is evidence, not a new cause each time the free memory changes.
       const fingerprint = JSON.stringify(qualifying.map(item => [item.id, item.cause.replace(/ \(\d+ MB free\)/, '')]).sort())
-      await this.s.alert('tick', 'Instagram publisher', text, fingerprint)
-    } else if (previous.some(qualifies)) {
-      let missedCutoff = false
-      const outcomes = previous.filter(qualifies).sort((a, b) => a.firstFailedAt.localeCompare(b.firstFailedAt)).map(item => {
+      await this.s.alert('tick', 'Instagram publisher', tickAlertText(first, now, rest), fingerprint)
+    } else if (previous.some(onTickAlert)) {
+      let stopped = false
+      const outcomes = previous.filter(onTickAlert).sort((a, b) => a.firstFailedAt.localeCompare(b.firstFailedAt)).map(item => {
         const draft = loadDraft(item.id)
-        if (!item.hasPreview && draft?.slack.ts && draft.frames.length) return `the ${name(item)} preview for ${dates(item)} is in #ba-eventos`
-        if (!item.hasPreview && (!draft || draft.state === 'failed')) {
-          missedCutoff = true
-          return `the ${label(item)} didn't get a preview before cutoff`
+        const previewed = Boolean(draft?.slack.ts && draft.frames.length)
+        const outcome = draft?.state === 'skipped' ? 'was skipped' : draft?.state === 'held' ? 'is on hold'
+          : !item.hasPreview && (!draft || (draft.state === 'failed' && !previewed)) ? "didn't get a preview before cutoff"
+          : draft?.state === 'failed' ? "didn't publish" : null
+        if (outcome) {
+          stopped = true
+          return `the ${label(item)} ${outcome}`
         }
+        if (!item.hasPreview && previewed) return `the ${name(item)} preview for ${dates(item)} is in #ba-eventos`
         return `the ${label(item)} is moving again`
       })
-      const verdict = missedCutoff ? '⚠️ *Instagram publisher stopped retrying*' : '✅ *Instagram publisher recovered*'
+      const verdict = stopped ? '⚠️ *Instagram publisher stopped retrying*' : '✅ *Instagram publisher recovered*'
       const resolved = await this.s.resolveAlert('tick', `${verdict} at ${when(now, now)}: ${outcomes.join('; ')}.`)
       if (resolved === false && !hasFailures) return // Keep the named recovery for the next clean tick.
     } else if (!hasFailures) {

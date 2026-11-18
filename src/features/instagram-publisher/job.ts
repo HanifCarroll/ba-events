@@ -41,10 +41,8 @@ export interface Draft {
   approvedSeenAt: string | null
   r2Uploaded: string | null
   publish: PublishState | null
-  /** Total failures for the retry budget; the alert streak can reset while publishing is paused. */
+  /** Total failures for the publish retry budget, separate from the shared tick streak. */
   publishFailures: number
-  publishFailureStreak?: number
-  firstPublishFailureAt?: string
   /** A Slack message still to deliver for this draft's outcome. */
   notify: { text: string; threadTs: string | null; failures?: number } | null
   skipReason: string | null
@@ -328,17 +326,13 @@ export class Job {
       log: message => this.s.log(`${draft.id}: ${message}`),
       beforeWrite,
     })
-    await this.settle(draft, 'published', postedText(permalink), { publishFailures: 0, publishFailureStreak: undefined, firstPublishFailureAt: undefined })
+    await this.settle(draft, 'published', postedText(permalink), { publishFailures: 0 })
     return true
   }
 
   /** A stop before a write: wait for a withdrawn ✅, otherwise end the draft without creating anything more. */
   private async stopped(draft: Draft, stop: PublishStop, window: RunWindow) {
-    if (stop.kind === 'unapproved') {
-      this.s.log(`${draft.id}: ${stop.message}; waiting`)
-      this.clearPublishStreak(draft)
-      return
-    }
+    if (stop.kind === 'unapproved') { this.s.log(`${draft.id}: ${stop.message}; waiting`); return }
     const out = draft.publish?.units.filter(unit => unit.published || unit.mediaId).length ?? 0
     if (stop.kind === 'stale' && out === 0) {
       const { id, title, why, detail } = stop.stale!
@@ -357,14 +351,7 @@ export class Job {
     await this.skip(draft, reason)
   }
 
-  private clearPublishStreak(draft: Draft) {
-    if (!draft.publishFailureStreak) return
-    delete draft.publishFailureStreak
-    delete draft.firstPublishFailureAt
-    this.save(draft)
-  }
-
-  async advance(draft: Draft, previousFailure?: ReturnType<alerts.TickFailures['last']>) {
+  async advance(draft: Draft, failures: alerts.TickFailures) {
     const now = this.s.now()
     const window = runWindow(draft.format, draft.from)
     if (draft.state === 'rebuilding') {
@@ -374,18 +361,15 @@ export class Job {
     }
     if (draft.state === 'previewing' && now >= window.cutoff) {
       await this.settle(draft, 'failed', null, { note: 'The preview never reached Slack before the cutoff.' })
-      return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.previewExpired(draft, now, previousFailure))
+      return this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.previewExpired(draft, now, failures.last(draft.id)))
     }
     if (draft.state === 'previewing') await this.sendPreview(draft)
     if (draft.state === 'previewed') {
-      const reactions = readReactions(await this.s.slackReactions(draft.slack.ts!).catch(error => {
-        this.clearPublishStreak(draft)
-        throw error
-      }))
+      const reactions = readReactions(await this.s.slackReactions(draft.slack.ts!))
       if (reactions.approved && !draft.approvedSeenAt) { draft.approvedSeenAt = now.toISOString(); this.save(draft) }
       const decision = decide(window, reactions, draft.approvedSeenAt ? new Date(draft.approvedSeenAt) : null, this.s.config().auto[draft.format], now)
       if (decision.action === 'skip') return this.skip(draft, decision.reason)
-      if (decision.action === 'wait') return this.clearPublishStreak(draft)
+      if (decision.action === 'wait') return
     }
     if (draft.state !== 'previewed' && draft.state !== 'publishing') return
     let done: boolean
@@ -393,32 +377,19 @@ export class Job {
       done = await this.publishDraft(draft, window)
     } catch (error) {
       if (error instanceof PublishStop) return this.stopped(draft, error, window)
-      if (error instanceof StillProcessing) {
-        this.s.log(`${draft.id}: ${error.message}`)
-        this.clearPublishStreak(draft)
-        return
-      }
-      const failedAt = this.s.now()
-      const failure = alerts.describeFailure(error)
-      draft.firstPublishFailureAt ??= failedAt.toISOString()
-      draft.publishFailureStreak = (draft.publishFailureStreak ?? 0) + 1
+      if (error instanceof StillProcessing) { this.s.log(`${draft.id}: ${error.message}`); return }
       draft.publishFailures++
       draft.note = error instanceof Error ? error.message : String(error)
-      this.s.log(`${draft.id}: ${draft.note} (publish attempt ${draft.publishFailures})`)
       const pending = draft.publish?.units.some(unit => unit.pendingSince) ?? false
-      const gaveUp = draft.publishFailures >= MAX_PUBLISH_FAILURES && !pending
-      if (gaveUp) draft.state = 'failed'
+      if (draft.publishFailures >= MAX_PUBLISH_FAILURES && !pending) draft.state = 'failed'
       this.save(draft)
-      if (gaveUp || draft.publishFailureStreak >= alerts.ALERT_FAILURES || alerts.publishAtRisk(window.deadline, failedAt)) {
-        await this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.publishAlert(draft, failure, failedAt, this.draftFile(draft.id)),
-          `${gaveUp ? 'gave up' : failedAt >= window.deadline ? 'reconciling' : 'retrying'}: ${failure.cause}`)
-      }
+      failures.recordPublish(draft, error, this.draftFile(draft.id))
       return
     }
     if (done) await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishRecovered(draft, this.s.now()))
     else if (now >= window.deadline && draft.state === 'previewed') {
       await this.settle(draft, 'failed', null, { note: 'Not published: the Instagram token or the R2 setup was missing.' })
-    } else this.clearPublishStreak(draft)
+    }
   }
 
   /** Remove local frames of settled drafts after 14 days; the state files stay. */
@@ -442,17 +413,20 @@ export class Job {
         const id = draftId(format, from)
         if (this.loadDraft(id)) continue
         attempted.add(id)
-        try { await this.createDraft(format, from, [], 1) } catch (error) { failures.record(id, format, from, false, error) }
+        try { await this.createDraft(format, from, [], 1) } catch (error) {
+          // Advance retries a saved preview this tick. Only an unsuccessful retry counts toward the streak.
+          if (this.loadDraft(id)?.state === 'previewing') this.s.log(`${id}: ${error instanceof Error ? error.message : String(error)}`)
+          else failures.record({ id, format, from }, false, error)
+        }
       }
     }
     for (const draft of this.allDrafts()) {
-      // Creation already tried the preview (or the skip notice). Only advance a new draft if its preview went out.
-      if (attempted.has(draft.id) && draft.state !== 'previewed') continue
       try {
-        if (draft.notify) await this.deliver(draft)
-        if (!SETTLED.includes(draft.state)) await this.advance(draft, failures.last(draft.id))
+        // Creation already tried any skip notice, but a pending preview gets another chance.
+        if (draft.notify && !attempted.has(draft.id)) await this.deliver(draft)
+        if (!SETTLED.includes(draft.state)) await this.advance(draft, failures)
       } catch (error) {
-        failures.record(draft.id, draft.format, draft.from, Boolean(draft.slack.ts), error)
+        failures.record(draft, Boolean(draft.slack.ts), error)
       }
     }
     this.prune()

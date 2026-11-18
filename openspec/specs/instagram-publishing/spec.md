@@ -109,8 +109,8 @@ The job MUST log every failed attempt, persist failure streaks across ticks, and
 
 #### Scenario: Drafting, previewing, or advancing a draft fails
 
-- **WHEN** the same run fails for three consecutive ticks, or a failing run has no preview at least 60 minutes after its draft time
-- **THEN** the shared tick alert names the affected run and the next retry; repeats only update its thread when the qualifying runs or their causes change
+- **WHEN** the same run fails for three consecutive ticks, even in different steps, or a failing run has no preview at least 60 minutes after its draft time
+- **THEN** the alert names the affected run and the next retry. The shared tick alert only updates its thread when the qualifying runs or their causes change.
 
 #### Scenario: Publishing has failed
 
