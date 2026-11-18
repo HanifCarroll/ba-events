@@ -25,7 +25,11 @@ A post MUST show only events from the Instagram intake that are scheduled, have 
 - **THEN** the post includes at least one free event
 
 ### Requirement: The Este finde Reel shows the weekend's carousel picks as a video with rotating music
-The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:00 and published Friday 12:00, with Friday 18:00 as its cutoff and deadline. It MUST show 4 to 6 events picked by Este finde's rules at its own slot, without the Este finde draft's exclusions, hold each card still for max(3.0 s, 0.35 s a word, characters / 17), and cut on the track's beats.
+The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:00 and published Friday 12:00, with Friday 18:00 as its cutoff and deadline. It MUST show 4 to 6 events picked by Este finde's rules, without the Este finde draft's exclusions and without any event that would be over by its Friday 18:00 deadline, hold each card still for max(3.0 s, 0.35 s a word, characters / 17), and cut on the track's beats.
+
+#### Scenario: A Friday daytime event
+- **WHEN** an event ends by Friday 18:00, or starts by then and has no end time
+- **THEN** it is left out of the Reel (the carousel keeps it), and the next picks fill its place, so the Reel is never held at its slot or at a late ✅ for an event that is over
 
 #### Scenario: The Reel's caption
 - **WHEN** a Reel draft is built

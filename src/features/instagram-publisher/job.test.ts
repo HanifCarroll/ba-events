@@ -503,3 +503,29 @@ describe('Este finde Reel', () => {
     expect(w.alerts.at(-1)!.text).toContain('tracks.json is missing')
   })
 })
+
+describe('Este finde Reel: Friday daytime events', () => {
+  /** The carousel picks three Friday daytime events without an end time, as on 2026-11-20. */
+  function daytime() {
+    const w = new World()
+    w.catalog = [...w.catalog.slice(3), ...[12, 13, 14].map((hour, i) => ({ ...w.catalog[i]!, startsAt: baInstant('2026-11-20', hour).toISOString() }))]
+    return w
+  }
+
+  it('leaves them out, so neither the slot nor a late ✅ before the deadline is held', async () => {
+    for (const [hour, minute] of [[12, 0], [17, 50]] as const) {
+      const w = daytime()
+      w.catalog.push(...[4, 5, 6].map(n => ({ ...w.catalog[0]!, id: uuid(n + 10), venue: `Otra sala ${n}`, startsAt: baInstant('2026-11-21', 20 + (n % 3)).toISOString() })))
+      await w.job().tick()
+      expect(w.draft().events.map(event => event.id)).toEqual(expect.arrayContaining([uuid(1), uuid(2), uuid(3)]))
+      w.at('2026-11-19', 18, 5)
+      await w.job().tick()
+      const reel = w.reel()!
+      expect(reel.events.map(event => event.id).filter(id => [uuid(1), uuid(2), uuid(3)].includes(id))).toEqual([])
+      w.reelReactions = [{ name: 'white_check_mark', users: [HANIF] }]
+      w.at('2026-11-20', hour, minute)
+      await w.job().tick()
+      expect(w.reel()!.state).toBe('published')
+    }
+  })
+})

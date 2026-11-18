@@ -7,7 +7,7 @@ A VPS job drafts four recurring posts for @baeventos.app from the catalog, previ
 | Hoy | `hoy-YYYY-MM-DD` | story, 1080 × 1920 | today from 18:00, 2–4 | daily 11:00 | 17:00 | 17:00 | 19:00 |
 | Este finde | `finde-<Friday>` | carousel, 1080 × 1350 | Friday–Sunday, 4–6 | Wednesday 18:00 | Thursday 12:00 | Friday 18:00 | Friday 18:00 |
 | Gratis esta semana | `gratis-<Monday>` | carousel, 1080 × 1350 | Monday–Sunday, free, 5–8 | Sunday 18:00 | Monday 12:00 | Tuesday 20:00 | Tuesday 20:00 |
-| Este finde Reel | `reel-<Friday>` | reel, 1080 × 1920 MP4 with music | Friday–Sunday, 4–6, the carousel's picks | Thursday 18:00 | Friday 12:00 | Friday 18:00 | Friday 18:00 |
+| Este finde Reel | `reel-<Friday>` | reel, 1080 × 1920 MP4 with music | Friday–Sunday, 4–6, the carousel's selection minus events over by Friday 18:00 | Thursday 18:00 | Friday 12:00 | Friday 18:00 | Friday 18:00 |
 
 The approval cutoff is the last moment a ✅ counts. The deadline is the last moment any new Instagram write may start; after it the job only reconciles requests it already sent.
 
@@ -48,7 +48,7 @@ A failure raises the alert `ba-events/instagram/tick` or `ba-events/instagram/dr
 
 ## The Reel
 
-The Reel shows the Este finde selection again as a video: a cover card, one card per event, and a closing card, in the look Hanif approved (HyperFrames project v3, ported to `src/features/instagram-publisher/reel/project.ts`). Its picks use the Este finde rules at the Reel's own slot and leave out the finde draft's `--exclude` ids, so it shows the carousel's events minus anything over by Friday 12:00. Each card holds still for H = max(3.0 s, 0.35 s × words, characters / 17) after a 0.5 s entrance and before a 0.2 s exit, rounded up to whole beats of the track, so every cut lands on a beat. A Reel is about 37 s with 4 events and 48 s with 6.
+The Reel shows the Este finde selection again as a video: a cover card, one card per event, and a closing card, in the look Hanif approved (HyperFrames project v3, ported to `src/features/instagram-publisher/reel/project.ts`). Its picks use the Este finde rules, leave out the finde draft's `--exclude` ids, and leave out any event that would be over by the Reel's Friday 18:00 deadline (its end, or its start when it has no end), so the pre-publish check never holds it at the slot or at a late ✅. So it shows the carousel's selection minus Friday daytime events, with the next picks filling their places; a 12:00–20:00 exhibition stays, a 12:00 talk with no end time doesn't. Each card holds still for H = max(3.0 s, 0.35 s × words, characters / 17) after a 0.5 s entrance and before a 0.2 s exit, rounded up to whole beats of the track, so every cut lands on a beat. A Reel is about 37 s with 4 events and 48 s with 6.
 
 **Music.** The tracks live outside the repo, in the directory `reel.musicDir` in the config (default `~/.local/share/ba-events/reel-music`): one audio file per track and `tracks.json`, whose `tracks` entries have `id`, `title`, `artist`, `file`, `durationSec`, `bpm`, `startSec`, `credit`, `source`, and `license`. The Meta Sound Collection tracks may only be used in content on Meta's products and never distributed separately, and the repo is public, so never commit the files or anything made from them. `startSec` is a downbeat where the full arrangement plays, with enough music after it for the longest Reel (6 events with long titles, about 82–87 s) before the track ends or goes quiet. `bpm` comes from the kick, not from `hyperframes beats`, which can follow off-beats.
 
