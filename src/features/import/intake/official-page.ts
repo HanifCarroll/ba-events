@@ -11,6 +11,8 @@ const MAX_BYTES = 2_097_152
 const TIMEOUT_MS = 10_000
 const MAX_REDIRECTS = 3
 const MIN_EXCERPT = 8
+// A challenge page shows at most a line or two ("Verifying you are human…"); any event page with a name, date and venue is longer.
+const CHALLENGE_TEXT = 200
 
 /** Public HTTPS host names only: no IP literals, no single-label or local names. */
 export function publicPageUrl(value: string): boolean {
@@ -59,8 +61,11 @@ const nameText = (value: string) => ` ${normalizePageText(value).replace(/[^\p{L
 
 export function visibleText(html: string): string {
   const $ = load(html)
-  // React streaming segments (`<div hidden id="S:0">`) are moved into place by an inline `$RC` script, so a browser shows them.
-  $('[hidden]').filter((_, element) => /^S:\d+$/.test($(element).attr('id') ?? '')).removeAttr('hidden')
+  // React streaming segments (`<div hidden id="S:0">`) are shown by a browser only when the page calls React's reveal for them:
+  // `$RC("B:0","S:0")` (completed boundary) or `$RS("S:0","P:0")` (segment into a placeholder, as revamos and flashpass use).
+  const revealed = new Set([...html.matchAll(/\$RC\(\s*(["'])B:\d+\1\s*,\s*(["'])(S:\d+)\2\s*\)|\$RS\(\s*(["'])(S:\d+)\4\s*,\s*(["'])P:\d+\6\s*\)/g)]
+    .map(match => match[3] ?? match[5]))
+  $('div[hidden]').filter((_, element) => revealed.has($(element).attr('id') ?? '')).removeAttr('hidden')
   $('head, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
   $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') ?? '')).remove()
   // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
@@ -103,7 +108,9 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     try { decoder = new TextDecoder(charset ?? 'utf-8') } catch { decoder = new TextDecoder('utf-8') }
     const text = decoder.decode(bytes)
     const visible = /^text\/plain/i.test(type) ? text : visibleText(text)
-    if (!visible.trim() || /_Incapsula_Resource|<title>\s*Just a moment\.\.\.|cf[-_]chl/i.test(text)) {
+    // Imperva and Cloudflare inject these scripts into real pages too; only a near-empty page with one is a challenge.
+    const shown = visible.replace(/\s+/g, ' ').trim().length
+    if (!shown || shown < CHALLENGE_TEXT && /_Incapsula_Resource|<title>\s*Just a moment\.\.\.|cf[-_]chl/i.test(text)) {
       throw new Error('the site shows a bot check or an empty page to automated readers; cite another official page')
     }
     return visible

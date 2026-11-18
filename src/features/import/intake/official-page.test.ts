@@ -123,23 +123,31 @@ describe('official-page evidence', () => {
     await expect(readOfficialPage('https://www.teatro.example.org/obra', sites, fetcher)).rejects.toThrow('redirected to agenda.example.net')
   })
 
-  // Trimmed from revamos.com's event page (2026-11-18): Next.js streams the event into a hidden segment that $RC moves into place.
-  const STREAMED = `<html><body><div><template id="B:2"></template></div><div hidden id="other">OCULTO 27/11/2026</div>
+  // Trimmed from revamos.com's event page (2026-11-18): Next.js streams the event into hidden segment S:2, and `$RS` moves it
+  // into placeholder P:2. Flashpass has the same shape.
+  const STREAMED = `<html><body><nav>Revamos Eventos Productoras Ingresar</nav><template id="P:2"></template><div hidden id="other">OCULTO 27/11/2026</div>
     <template><p>PLANTILLA 27/11/2026</p></template>
     <div hidden id="S:2"><h1>PositHIVo 6.0 Kiki Ball - La Era Roja</h1><div><h6>19:00 - 27/11/2026</h6><h6>Maquinal - Anchorena 364 - Abasto</h6></div></div>
-    <script>$RC("B:2","S:2")</script></body></html>`
+    <script>$RS("S:2","P:2")</script></body></html>`
+  const kiki = (html: string) => Effect.runPromise(verifyOfficialPagesEffect(
+    [evidence('https://www.revamos.com/eventos/kiki-ball', '19:00 - 27/11/2026')],
+    { name: 'PositHIVo 6.0 Kiki Ball - La Era Roja', date: '2026-11-27', time: '19:00', sites: new Set(['revamos.com']) },
+    (url, allowed) => readOfficialPage(url, allowed, (async () => page(html)) as unknown as typeof fetch)))
 
-  it('reads React streaming segments as visible, but not other hidden elements or templates', async () => {
+  it('reads a React streaming segment the page reveals, but not other hidden elements or templates', async () => {
     const text = visibleText(STREAMED)
     expect(text).toContain('19:00 - 27/11/2026')
     expect(text).not.toContain('OCULTO')
     expect(text).not.toContain('PLANTILLA')
-    const fetcher = (async () => page(STREAMED)) as unknown as typeof fetch
-    const reasons = await Effect.runPromise(verifyOfficialPagesEffect(
-      [evidence('https://www.revamos.com/eventos/kiki-ball', '19:00 - 27/11/2026')],
-      { name: 'PositHIVo 6.0 Kiki Ball - La Era Roja', date: '2026-11-27', time: '19:00', sites: new Set(['revamos.com']) },
-      (url, allowed) => readOfficialPage(url, allowed, fetcher)))
-    expect(reasons).toEqual([])
+    expect(await kiki(STREAMED)).toEqual([])
+    // A completed boundary reveals its segment too, in either quote style and with spaces.
+    expect(visibleText(STREAMED.replace(`$RS("S:2","P:2")`, `$RC( 'B:0' , 'S:2' )`))).toContain('19:00 - 27/11/2026')
+  })
+
+  it('keeps a streaming segment hidden when the page never reveals it', async () => {
+    const unrevealed = STREAMED.replace(`<script>$RS("S:2","P:2")</script>`, `<script>$RC("B:1","S:1")</script>`)
+    expect(visibleText(unrevealed)).not.toContain('27/11/2026')
+    expect(await kiki(unrevealed)).toEqual(["Official page evidence must be an excerpt of the page's visible text: https://www.revamos.com/eventos/kiki-ball"])
   })
 
   it('names a bot check or an empty page as unreadable', async () => {
@@ -151,6 +159,14 @@ describe('official-page evidence', () => {
         facts, (url, allowed) => readOfficialPage(url, allowed, (async () => page(html)) as unknown as typeof fetch)))
       expect(reasons).toEqual(['Official page could not be read: https://www.plateanet.com/obra/1 (the site shows a bot check or an empty page to automated readers; cite another official page)'])
     }
+  })
+
+  it('reads a real listing page that carries an Incapsula script', async () => {
+    const listing = SHOWTIMES.replace('</head>', '<script src="/_Incapsula_Resource?SWJIYLWA=0"></script></head>')
+      .replace('</body>', '<p>Funciones de jueves a domingo. Duración: 80 minutos. Apto para todo público. Entradas en boletería y online. Elenco, dirección y equipo técnico sintéticos. Descuentos para jubilados y estudiantes con credencial.</p></body>')
+    const reasons = await Effect.runPromise(verifyOfficialPagesEffect([evidence('https://www.plateanet.com/obra/1', 'LUNES 23 NOVIEMBRE 21:00')],
+      facts, (url, allowed) => readOfficialPage(url, allowed, (async () => page(listing)) as unknown as typeof fetch)))
+    expect(reasons).toEqual([])
   })
 
   it('refuses non-HTML bodies, error statuses, and oversized pages', async () => {
