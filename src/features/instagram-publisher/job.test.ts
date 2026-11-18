@@ -446,8 +446,10 @@ describe('tick: approval and publishing', () => {
     w.at('2026-11-19', 12, 30)
     await w.job().tick()
     expect(w.ig.published).toHaveLength(1)
-    expect(w.alerts[1]).toMatchObject({ key: 'tick', text: expect.stringContaining('is on Instagram') })
-    expect(w.alerts[1]!.text).toContain('It tries again at 12:40 to find the link.')
+    const retry = w.alerts[1]
+    expect(retry?.key).toBe('tick')
+    expect(retry?.text).toContain('is on Instagram')
+    expect(retry?.text).toContain('It tries again at 12:40 to find the link.')
 
     for (const [hour, minute] of [[12, 40], [12, 50], [13, 0], [13, 10], [13, 20]]) {
       w.at('2026-11-19', hour, minute)
@@ -455,7 +457,9 @@ describe('tick: approval and publishing', () => {
     }
     expect(w.draft().state).toBe('failed')
     expect(w.ig.published).toHaveLength(1)
-    expect(w.alerts.at(-1)).toMatchObject({ key: 'draft/finde-2026-11-20', text: expect.stringContaining('is on Instagram') })
+    const terminal = w.alerts.at(-1)
+    expect(terminal?.key).toBe('draft/finde-2026-11-20')
+    expect(terminal?.text).toContain('is on Instagram')
     expect(w.recovery.find(reply => reply.key === 'tick')?.text).toBe("⚠️ *Instagram publisher stopped retrying* at 13:20: the Este finde carousel for Nov 20–22 is on Instagram, but the publisher couldn't get its link.")
   })
 
