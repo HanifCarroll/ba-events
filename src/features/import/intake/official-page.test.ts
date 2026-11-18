@@ -140,8 +140,28 @@ describe('official-page evidence', () => {
     expect(text).not.toContain('OCULTO')
     expect(text).not.toContain('PLANTILLA')
     expect(await kiki(STREAMED)).toEqual([])
-    // A completed boundary reveals its segment too, in either quote style and with spaces.
-    expect(visibleText(STREAMED.replace(`$RS("S:2","P:2")`, `$RC( 'B:0' , 'S:2' )`))).toContain('19:00 - 27/11/2026')
+  })
+
+  it('moves a completed boundary into place and drops its fallback', async () => {
+    const boundary = `<html><body><nav>Revamos Eventos Productoras Ingresar</nav><main><!--$?--><template id="B:0"></template><p>CARGANDO 01/01/2026</p><!--$--><i>anidado</i><!--/$--><!--/$--></main>
+      <div hidden id="S:0"><h1>PositHIVo 6.0 Kiki Ball - La Era Roja</h1><h6>19:00 - 27/11/2026</h6></div>
+      <script>$RC( 'B:0' , 'S:0' )</script></body></html>`
+    const text = visibleText(boundary)
+    expect(text).not.toContain('CARGANDO')
+    expect(text).not.toContain('anidado')
+    expect(await kiki(boundary)).toEqual([])
+    // Without the boundary the segment has nowhere to go and stays hidden.
+    expect(visibleText(boundary.replace('<template id="B:0"></template>', ''))).not.toContain('27/11/2026')
+  })
+
+  it('keeps a segment hidden when it is moved into a parent segment the page never reveals', async () => {
+    // Revamos' real shape: P:2 sits inside S:1, which only `$RC("B:1","S:1")` reveals.
+    const nested = `<html><body><nav>Revamos Eventos Productoras Ingresar</nav><!--$?--><template id="B:1"></template><p>CARGANDO</p><!--/$-->
+      <div hidden id="S:1"><template id="P:2"></template></div>
+      <div hidden id="S:2"><h1>PositHIVo 6.0 Kiki Ball - La Era Roja</h1><h6>19:00 - 27/11/2026</h6></div>
+      <script>$RS("S:2","P:2")</script></body></html>`
+    expect(await kiki(nested)).toEqual(["Official page evidence must be an excerpt of the page's visible text: https://www.revamos.com/eventos/kiki-ball"])
+    expect(await kiki(nested.replace('$RS("S:2","P:2")', '$RS("S:2","P:2");$RC("B:1","S:1")'))).toEqual([])
   })
 
   it('keeps a streaming segment hidden when the page never reveals it', async () => {
@@ -161,9 +181,9 @@ describe('official-page evidence', () => {
     }
   })
 
-  it('reads a real listing page that carries an Incapsula script', async () => {
+  it('reads a short real listing page that carries an Incapsula script', async () => {
     const listing = SHOWTIMES.replace('</head>', '<script src="/_Incapsula_Resource?SWJIYLWA=0"></script></head>')
-      .replace('</body>', '<p>Funciones de jueves a domingo. Duración: 80 minutos. Apto para todo público. Entradas en boletería y online. Elenco, dirección y equipo técnico sintéticos. Descuentos para jubilados y estudiantes con credencial.</p></body>')
+    expect(normalizePageText(visibleText(listing)).length).toBeLessThan(200)
     const reasons = await Effect.runPromise(verifyOfficialPagesEffect([evidence('https://www.plateanet.com/obra/1', 'LUNES 23 NOVIEMBRE 21:00')],
       facts, (url, allowed) => readOfficialPage(url, allowed, (async () => page(listing)) as unknown as typeof fetch)))
     expect(reasons).toEqual([])

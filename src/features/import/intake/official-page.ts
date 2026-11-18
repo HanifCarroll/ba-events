@@ -3,7 +3,7 @@
  * excerpt only when the page's visible text contains it. It runs where preview and commit run (the intake API Worker,
  * or the CLI in Supabase mode), never on the operator's word.
  */
-import { load } from 'cheerio/slim'
+import { load, type CheerioAPI } from 'cheerio/slim'
 import { Effect } from 'effect'
 import { isOfficialPage, validPublicUrl, type Evidence } from './schema.ts'
 
@@ -59,13 +59,39 @@ export const normalizePageText = (value: string) => value.normalize('NFD').repla
 /** For the name check only: punctuation is a space too, so "¡Forever Young!" is found as "forever young". */
 const nameText = (value: string) => ` ${normalizePageText(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `
 
+// React's inline reveal calls: `$RS("S:n","P:m")` moves a segment into a placeholder, `$RC("B:m","S:n")` into a boundary.
+const REVEAL = /\$RS\(\s*(["'])(S:\d+)\1\s*,\s*(["'])(P:\d+)\3\s*\)|\$RC\(\s*(["'])(B:\d+)\5\s*,\s*(["'])(S:\d+)\7\s*\)/g
+
+/**
+ * Replays the reveal calls of a streamed Next.js/React page in script order, moving each hidden segment where the browser
+ * puts it. A segment without a call or a destination stays hidden, and content moved into a still-hidden parent stays hidden.
+ */
+function revealStreamedSegments($: CheerioAPI) {
+  for (const script of $('script:not([src])').toArray()) {
+    for (const [, , placed, , placeholder, , boundary, , boundarySegment] of $(script).text().matchAll(REVEAL)) {
+      const segment = $(`div[hidden][id="${placed ?? boundarySegment}"]`).first()
+      const target = $(`[id="${placeholder ?? boundary}"]`).first()
+      if (!segment.length || !target.length) continue
+      if (placeholder) { target.replaceWith(segment.contents()); segment.remove(); continue }
+      // The boundary's fallback runs from its template to the matching `<!--/$-->`; nested boundaries open with `<!--$…-->`.
+      type Node = { type: string; data?: string; nextSibling: Node | null }
+      const fallback: Node[] = []; let node: Node | null = target[0] as unknown as Node; let depth = 0
+      for (; node && !(node.type === 'comment' && node.data === '/$' && depth === 0); node = node.nextSibling) {
+        if (node.type === 'comment') depth += node.data === '/$' ? -1 : /^\$[?!~]?$/.test(node.data ?? '') ? 1 : 0
+        fallback.push(node)
+      }
+      if (!node) continue
+      // Inserted before the template (an element): cheerio's `before` does nothing on a comment node.
+      target.before(segment.contents())
+      for (const item of fallback) $(item as never).remove()
+      segment.remove()
+    }
+  }
+}
+
 export function visibleText(html: string): string {
   const $ = load(html)
-  // React streaming segments (`<div hidden id="S:0">`) are shown by a browser only when the page calls React's reveal for them:
-  // `$RC("B:0","S:0")` (completed boundary) or `$RS("S:0","P:0")` (segment into a placeholder, as revamos and flashpass use).
-  const revealed = new Set([...html.matchAll(/\$RC\(\s*(["'])B:\d+\1\s*,\s*(["'])(S:\d+)\2\s*\)|\$RS\(\s*(["'])(S:\d+)\4\s*,\s*(["'])P:\d+\6\s*\)/g)]
-    .map(match => match[3] ?? match[5]))
-  $('div[hidden]').filter((_, element) => revealed.has($(element).attr('id') ?? '')).removeAttr('hidden')
+  revealStreamedSegments($)
   $('head, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
   $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') ?? '')).remove()
   // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
@@ -108,9 +134,10 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     try { decoder = new TextDecoder(charset ?? 'utf-8') } catch { decoder = new TextDecoder('utf-8') }
     const text = decoder.decode(bytes)
     const visible = /^text\/plain/i.test(type) ? text : visibleText(text)
-    // Imperva and Cloudflare inject these scripts into real pages too; only a near-empty page with one is a challenge.
+    // An empty page (Incapsula's stub) or a short Cloudflare challenge page. A protection script alone proves nothing:
+    // Imperva and Cloudflare inject theirs into real pages too.
     const shown = visible.replace(/\s+/g, ' ').trim().length
-    if (!shown || shown < CHALLENGE_TEXT && /_Incapsula_Resource|<title>\s*Just a moment\.\.\.|cf[-_]chl/i.test(text)) {
+    if (!shown || shown < CHALLENGE_TEXT && /<title>\s*Just a moment\.\.\.\s*<\/title>|cf[-_]chl/i.test(text)) {
       throw new Error('the site shows a bot check or an empty page to automated readers; cite another official page')
     }
     return visible
