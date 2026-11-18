@@ -289,6 +289,36 @@ describe.skipIf(bun)('the operator flow on D1', () => {
     expect(backlog).toMatchObject({ held: 1, groups: [{ venue_name: 'Synthetic Venue Club', candidates: [{ id: other }] }] })
   })
 
+  it('refuses a candidate whose venue_id or target_event_id is not in the catalog, naming the ID, and stores nothing', async () => {
+    await source()
+    const post = await observation((await run(store.reserveCollection())).id)
+    const missing = id(), candidate = id()
+    expect(await fails(submitCandidateEffect(store, candidateInput(candidate, post, missing))))
+      .toBe(`venue_id ${missing} is not a catalog venue; copy the ID from lookup`)
+    expect(await fails(submitCandidateEffect(store, candidateInput(candidate, post, await venue(), { intent: 'update', target_event_id: missing }))))
+      .toBe(`target_event_id ${missing} is not a catalog event; copy the ID from lookup`)
+    expect(await db.prepare('SELECT count(*) AS n FROM intake_candidates').first()).toEqual({ n: 0 })
+  })
+
+  it('names the IDs in preview reasons for a deleted venue and for evidence pointing at two events', async () => {
+    await source()
+    const post = await observation((await run(store.reserveCollection())).id)
+    const venueId = await venue()
+    const at = new Date(`${shiftDay(baToday(), 5)}T21:00:00-03:00`).toISOString()
+    const linked = id(), target = id(), candidate = id()
+    for (const event of [linked, target]) {
+      await db.prepare("INSERT INTO events (id, name, starts_at, venue_id, source) VALUES (?, 'Synthetic Jazz', ?, ?, 'luma')").bind(event, at, venueId).run()
+    }
+    await run(submitCandidateEffect(store, candidateInput(candidate, post, venueId, { intent: 'link', target_event_id: target })))
+    await db.prepare("INSERT INTO event_source_evidence (event_id, candidate_id, observation_id, revision) VALUES (?, ?, ?, 1)").bind(linked, candidate, post).run()
+    expect((await run(previewCandidateEffect(store, candidate))).reasons)
+      .toEqual([`Evidence points to multiple catalog events: ${linked}, ${target} (already linked: ${linked}; target_event_id: ${target})`])
+
+    await db.prepare('PRAGMA foreign_keys = OFF').run()
+    await db.prepare('DELETE FROM venues WHERE id = ?').bind(venueId).run()
+    expect((await run(previewCandidateEffect(store, candidate))).reasons).toContain(`Selected venue does not exist: ${venueId}`)
+  })
+
   it('previews a same-day event at the venue as a link and commits it without a new event or vector', async () => {
     await source()
     const runId = (await run(store.reserveCollection())).id

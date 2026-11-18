@@ -71,7 +71,8 @@ export function validateEvidence(candidate: Candidate, observations: Observation
 export function decideMatch(candidate: Candidate, catalog: CatalogMatch[], linkedIds: string[], reasons: string[]): MatchDecision {
   if (reasons.length) return { action: 'held', target: null, reasons }
   const identityIds = [...new Set([...linkedIds, ...(candidate.target_event_id ? [candidate.target_event_id] : [])])]
-  if (identityIds.length > 1) return { action: 'held', target: null, reasons: ['Evidence points to multiple catalog events'] }
+  if (identityIds.length > 1) return { action: 'held', target: null, reasons: [
+    `Evidence points to multiple catalog events: ${identityIds.join(', ')} (already linked: ${linkedIds.join(', ') || 'none'}; target_event_id: ${candidate.target_event_id ?? 'none'})`] }
   if (identityIds.length) {
     const target = catalog.find(event => event.id === identityIds[0])
     if (!target) return { action: 'held', target: null, reasons: ['Referenced event no longer exists'] }

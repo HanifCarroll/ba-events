@@ -31,7 +31,7 @@ Something that stops you is one of two kinds. Follow the runbook's "Blockers" se
 
 1. Run `preflight`. If setup is missing or disabled, don't collect; append a note saying what setup is required, and stop.
 2. Run `collect` to collect, or resume today's budgeted Apify run. While it answers `running`, wait in this session with `sleep` (a few minutes at a time) and run it again. Follow the runbook for a reservation without an Apify run ID.
-3. Append a note: the outcome, the run's charge, the month's spend against the cap, the coverage lines (dead, errored, uncovered, and at-ceiling accounts), and the `media` lists from the summary (`first_attempt_failed`, `retried_failed`, `expired`, and `deferred`, each with observation IDs and positions, plus any `media.retry.error`). Don't export or review anything.
+3. Append a note: the outcome, the run's charge, the month's spend against the cap, the coverage lines (dead, errored, uncovered, and at-ceiling accounts), and the `media` lists from the summary (`first_attempt_failed`, `retried_failed`, `expired`, and `deferred`, each with observation IDs and positions, and each failed entry's `reason`, plus any `media.retry.error`). Don't export or review anything.
 
 ## Phase: review
 
@@ -40,7 +40,7 @@ Something that stops you is one of two kinds. Follow the runbook's "Blockers" se
 3. Review each of them fully under the runbook's steps 3–8: read the caption, and open every image and carousel slide that could hold event information with the read tool, which shows you the image. Keep evidence-backed candidate revisions, resolve venues and catalog duplicates, preview, and commit only supported plans. Preserve stable event identities for cancellations and reschedules, and hold incomplete or conflicting facts.
 4. Record a review disposition for every observation you finish. An observation you take but can't finish, for example because its images failed to save, stays pending: append its ID to `$INTAKE_DEFERRED` (one ID per line, never rewrite the file) and name it in the note with the reason. Every observation you take must end up either reviewed or listed there. Missing images, by how today's collect note lists them:
    - `first_attempt_failed` or `deferred`: defer the observation; the next collect retries the image. No `FIX:`.
-   - `retried_failed`: defer it and add a `FIX:` line for it (see "Blockers").
+   - `retried_failed`: defer it and add a `FIX:` line for it (see "Blockers"), copying the entry's `reason` from the collect note into the line.
    - `expired`: nobody can recover the image, so don't defer for it and never write a `FIX:`. Review the observation from the caption and the images it has, name the unavailable slides in the review note, and hold any occurrence that depended on them.
 5. Append a note for this batch: what it published (name and date), corrected, linked, and held and why, how many it skipped as out of scope, and anything it deliberately left pending.
 

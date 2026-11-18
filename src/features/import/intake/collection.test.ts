@@ -48,7 +48,7 @@ describe('incremental Instagram collection', () => {
     const { db } = memoryDb()
     const result = await Effect.runPromise(retainPostsEffect(db, 'run', [{ ...post('8'), displayUrl: 'https://scontent.cdninstagram.com/v/a.jpg?oe=1' }],
       ['synthetic_venue'], 20, async () => { throw new Error('offline') }))
-    expect(result).toMatchObject({ failures: [], mediaFailed: [{ observation_id: 'obs-0', position: 0 }] })
+    expect(result).toMatchObject({ failures: [], mediaFailed: [{ observation_id: 'obs-0', position: 0, reason: 'offline' }] })
   })
 
   it('marks a re-fetched carousel seen even when its signed image URLs changed', async () => {
@@ -175,7 +175,7 @@ describe('retrying missing images of unreviewed observations', () => {
     const result = await Effect.runPromise(retryMissingMediaEffect(db, { now, cap: 2, skip: new Set(['today']),
       fetcher: async url => { fetched.push(url); if (url.includes('/a.jpg')) throw new Error('offline'); return image(url) } }))
     expect(fetched).toEqual([signed('a', later), signed('c', later)])
-    expect(result).toEqual({ attempted: 2, retained: 1, expired: [], failed: [{ observation_id: 'flaky', position: 0 }],
+    expect(result).toEqual({ attempted: 2, retained: 1, expired: [], failed: [{ observation_id: 'flaky', position: 0, reason: 'offline' }],
       deferred: [{ observation_id: 'big', position: 1 }, { observation_id: 'big', position: 2 }] })
   })
 
