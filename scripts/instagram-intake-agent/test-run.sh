@@ -46,7 +46,8 @@ case "$INTAKE_PHASE" in
     echo "## Intake on test" >>"$INTAKE_MEMORY"
     case "$scenario" in
       empty) : >"$INTAKE_REPORT" ;;
-      sentinel) echo "NOTHING TO REPORT" >"$INTAKE_REPORT" ;;
+      sentinel|sentinel-review-fails) echo "NOTHING TO REPORT" >"$INTAKE_REPORT" ;;
+      fix-single) printf 'FIX: one tool needs a fix\n' >"$INTAKE_FIXES"; echo 'Run went fine.' >"$INTAKE_REPORT" ;;
       fixes-reordered)
         printf '  FIX: barrio of venue f98ce6e3 is Balvanera, Almagro per Nominatim\nFIX: venue rejects Gallo 238 with "geocodes outside the city ()"; blocks 3 events  \n' >"$INTAKE_FIXES"
         printf 'Run went fine.\n' >"$INTAKE_REPORT" ;;
@@ -93,6 +94,10 @@ EOF
 shift 2 # --kill-after=120 <limit>
 exec "$@"
 EOF
+  cat >"$t/.local/bin/date" <<'EOF'
+#!/bin/bash
+if [ "$*" = '+%H:%M' ] && [ "${TZ:-}" = America/Argentina/Buenos_Aires ]; then echo 14:07; else exec /bin/date "$@"; fi
+EOF
   chmod +x "$t/.local/bin/"*
 }
 
@@ -132,11 +137,19 @@ check "backlog is noted for the report" grep -q 'After review: 40 observations p
 check "a batch that took nothing still exits 0 with its note" [ "$rc" -eq 0 ]
 rm -rf "$t"
 
+echo "# missing checkout tells Hanif the run didn't start"
+setup 0 report; rmdir "$t/checkout"; go
+check "exit 1" [ "$rc" -eq 1 ]
+check "missing-checkout headline" alerted "🚨 \\*BA Eventos intake didn't run\\* at 14:07: its checkout is missing on the Pro\\. {triage}$"
+check "checkout path last" grep -Fxq "$t/checkout" "$t/ssh-calls"
+rm -rf "$t"
+
 echo "# a failed review still reports and alerts"
 setup 40 review-fails; go
 check "report still runs" [ "$(phases)" = "collect review venues report " ]
 check "report posted" posted
-check "alert names the phase" alerted 'review 1 (exited with code 1)'
+check "failed-step headline" alerted '⚠️ \*BA Eventos intake had a failed step\*: reviewing posts\. {triage}$'
+check "raw phase and log path last" grep -q '^review 1 (exited with code 1) · log .* on the Pro$' "$t/ssh-calls"
 check "no resolve" eval '! resolved'
 check "exit 1" [ "$rc" -eq 1 ]
 rm -rf "$t"
@@ -144,7 +157,8 @@ rm -rf "$t"
 echo "# an empty report raises the alert"
 setup 0 empty; go
 check "no review when nothing pending" [ "$(phases)" = "collect venues report " ]
-check "alert raised" alerted 'without a report'
+check "missing-report headline" alerted '🚨 \*BA Eventos intake ended without a report\* at 14:07\. {triage}$'
+check "log path last" grep -q '^log .* on the Pro$' "$t/ssh-calls"
 check "nothing posted" eval '! posted'
 check "exit 1" [ "$rc" -eq 1 ]
 rm -rf "$t"
@@ -154,6 +168,13 @@ setup 10 sentinel; go
 check "nothing posted" eval '! posted'
 check "alert resolved" resolved
 check "exit 0" [ "$rc" -eq 0 ]
+rm -rf "$t"
+
+echo "# a failed step with the sentinel does not claim a report was posted"
+setup 10 sentinel-review-fails; go
+check "no Slack report" eval '! posted'
+check "headline still names reviewing" alerted '⚠️ \*BA Eventos intake had a failed step\*: reviewing posts\. {triage}$'
+check "no updates, with retry guidance" grep -Fxq "It had no updates to post. Posts it didn't finish stay pending, and tomorrow's 09:00 run picks them up." "$t/ssh-calls"
 rm -rf "$t"
 
 echo "# a failed pending count is a failure, not zero"
@@ -195,7 +216,9 @@ for p in collect review venues; do
   echo "# $p exits 0 without its completion note"
   setup 10 "no-done-$p"; go
   check "report still posted" posted
-  check "alert names $p" alerted "$p.*(no completion note)"
+  case "$p" in collect) label='collecting posts' ;; review) label='reviewing posts' ;; venues) label='the held-venue step' ;; esac
+  check "headline names $p in plain words" alerted "failed step\\*: $label\\. {triage}$"
+  check "alert keeps the raw reason" alerted "$p.*(no completion note)"
   check "no resolve" eval '! resolved'
   check "exit 1" [ "$rc" -eq 1 ]
   rm -rf "$t"
@@ -208,12 +231,19 @@ check "report posted" posted
 check "fixes key raised" fixes_raised
 check "alert lists both items as bullets" eval 'grep -q "^• FIX: venue rejects Gallo 238" "$t/ssh-calls" && grep -q "^• FIX: barrio of venue f98ce6e3" "$t/ssh-calls"'
 check "blank lines dropped" eval '! grep -q "^• *$" "$t/ssh-calls"'
-check "alert names the fixes file and asks for triage" grep -q 'fixes.md on the Pro. {triage}' "$t/ssh-calls"
+check "fix-list headline" grep -q '⚠️ \*BA Eventos intake queued 2 fixes for Hermes\*\. {triage}$' "$t/ssh-calls"
+check "fixes file is last" grep -q '^Fixes file: .*fixes.md on the Pro$' "$t/ssh-calls"
 check "every phase gets INTAKE_FIXES" [ "$(grep -c ' /.*/runs/.*\.fixes\.md$' "$t/pi-env")" -eq 4 ]
 check "failure key not raised, and resolved" eval '! alerted . && resolved'
 check "fixes key not resolved" eval '! fixes_resolved_quietly'
 check "fingerprint passed, and re-triage uses --auto" eval 'grep -q -- "--fingerprint [0-9a-f]\{16\})" "$t/ssh-calls" && grep -q "alert triage pro/ba-events-intake/fixes --auto" "$t/ssh-calls"'
 fp1=$(grep -o -- '--fingerprint [0-9a-f]*' "$t/ssh-calls")
+rm -rf "$t"
+
+echo "# a single fix uses the singular"
+setup 0 fix-single; go
+check "single-fix headline" grep -q '⚠️ \*BA Eventos intake queued 1 fix for Hermes\*\. {triage}$' "$t/ssh-calls"
+check "singular explanation" grep -Fxq "It's a tool bug or a catalog fact it couldn't change itself, and the events it blocks stay held until it's fixed." "$t/ssh-calls"
 rm -rf "$t"
 
 echo "# the fingerprint follows the items: same list in another order matches, a changed digit doesn't"
@@ -257,13 +287,16 @@ setup 10 report; touch "$t/vps-down"
 HOME="$t" INTAKE_CHECKOUT="$t/checkout" INTAKE_STATE="$t/state" INTAKE_POST_BACKOFF_SECONDS=1 INTAKE_POST_BUDGET_SECONDS=3 /bin/bash "$run" </dev/null >/dev/null 2>&1; rc=$?
 check "posting problems don't fail the run" [ "$rc" -eq 0 ]
 check "retried with backoff, then stopped at the budget" eval 'grep -q "retrying in 1s" "$t"/state/runs/*.log && ! grep -q "retrying in 4s" "$t"/state/runs/*.log && grep -q "delivery budget spent\|stay queued" "$t"/state/runs/*.log'
-check "report, fixes resolve, and resolve queued; nothing delivered" eval '[ "$(ls "$t/state/outbox" | grep -c .)" -eq 3 ] && [ ! -s "$t/ssh-calls" ]'
+check "report, delivery alert, and fixes resolve queued; nothing delivered" eval '[ "$(ls "$t/state/outbox" | grep -c .)" -eq 3 ] && [ ! -s "$t/ssh-calls" ]'
 check "queued report is the report file" eval 'grep -l "^slack$" "$t"/state/outbox/* | xargs grep -q "Run went fine"'
 rm -f "$t/vps-down"; : >"$t/pending"; echo sentinel >"$t/scenario"
 go
 check "second run exits 0" [ "$rc" -eq 0 ]
 check "queued report delivered first, marked delayed with its run" eval 'head -1 "$t/ssh-calls" | grep -q "slack_api.py.*Delayed: this is from the BA Eventos intake run of $(TZ=America/Argentina/Buenos_Aires date +%F).*Run went fine"'
-check "then the queued resolves in order, then this run's" eval 'sed -n 2p "$t/ssh-calls" | grep -q "alert resolve pro/ba-events-intake/fixes --quiet" && sed -n 3p "$t/ssh-calls" | grep -q "alert resolve pro/ba-events-intake <<<" && [ "$(grep -c "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls")" -eq 2 ]'
+check "queued alert keeps its headline on line one" eval 'grep "^~/.local/bin/alert raise pro/ba-events-intake " "$t/ssh-calls" | grep -q "<<< ⚠️ .*its report didn.t reach #ba-eventos.*{triage}$"'
+check "queued message names the next attempt, not a refusal" grep -Fxq 'The run finished. It saved the report to send at the next 09:00 run.' "$t/ssh-calls"
+check "delay notice stays on the last line" grep -Eq '^report .* on the Pro · Delayed from the .* intake run\.$' "$t/ssh-calls"
+check "clean run clears the replayed alert" eval '[ "$(grep -c "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls")" -eq 1 ] && grep -q "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls"'
 check "outbox empty" eval '[ -z "$(ls -A "$t/state/outbox" 2>/dev/null)" ]'
 rm -rf "$t"
 
@@ -280,7 +313,9 @@ echo "# a refused report is not retried or queued, and still fails the run"
 setup 10 report
 sed -i.bak 's/echo .{"ok": true, "ts": "1.2"}./echo "{\"ok\": false, \"error\": \"channel_not_found\"}"/' "$t/.local/bin/ssh"
 go
-check "exit 1 with the post alert" eval '[ "$rc" -eq 1 ] && alerted "couldn.t be posted"'
+check "exit 1 with the post alert" eval '[ "$rc" -eq 1 ] && alerted "report didn.t reach #ba-eventos"'
+check "undelivered-report headline" alerted '⚠️ \*BA Eventos intake ran, but its report didn.t reach #ba-eventos\*\. {triage}$'
+check "refusal does not promise retry" grep -Fxq "The run finished, but Slack refused the report, so it won't go out by itself." "$t/ssh-calls"
 check "nothing left to send; the refusal is kept in refused/" eval '[ -z "$(ls "$t/state/outbox" | grep -v "^refused$")" ] && [ "$(ls "$t/state/outbox/refused" | grep -c .)" -eq 1 ]'
 rm -rf "$t"
 
@@ -292,7 +327,7 @@ check "exit 0" [ "$rc" -eq 0 ]
 check "nothing sent while the old raise waits" [ ! -s "$t/ssh-calls" ]
 check "old raise first, then this run's report and resolves" eval '[ "$(ls "$t/state/outbox" | head -1)" = 20261116T120000Z-1-0001 ] && [ "$(ls "$t/state/outbox" | grep -c .)" -eq 4 ]'
 rm -f "$t/vps-down-for"; : >"$t/pending"; echo sentinel >"$t/scenario"; go
-check "the raise is delivered before any resolve" eval 'head -1 "$t/ssh-calls" | grep -q "alert raise pro/ba-events-intake .*Delayed" && sed -n 2p "$t/ssh-calls" | grep -q "Old failure" && [ "$(grep -n "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls" | head -1 | cut -d: -f1)" -gt 2 ]'
+check "the raise is delivered before any resolve" eval 'head -1 "$t/ssh-calls" | grep -q "alert raise pro/ba-events-intake .*Old failure.*Delayed" && [ "$(grep -n "alert resolve pro/ba-events-intake <<<" "$t/ssh-calls" | head -1 | cut -d: -f1)" -gt 1 ]'
 check "outbox drained" eval '[ -z "$(ls -A "$t/state/outbox" 2>/dev/null)" ]'
 rm -rf "$t"
 

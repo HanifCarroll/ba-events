@@ -47,7 +47,8 @@ deferred="$state/runs/$day.deferred" # observation IDs review sessions left pend
 touch "$state/memory.md" "$notes"
 : >"$deferred" # every run (and so every day) gives stuck observations one fresh attempt
 started=$(date +%s)
-failed="" # phases that failed, for the alert
+failed="" # phases and raw reasons, for the last line of the alert
+steps=""  # plain names, for the alert headline
 
 # No lock file: launchd never starts a job while its previous run is still going, and manual runs go through
 # `launchctl kickstart`. A lock left behind by a killed run would silently stop every later run.
@@ -88,8 +89,13 @@ deliver() { # deliver <item> [delayed]: one attempt; returns 255 when the VPS wa
   local kind from cmd body input out rc
   kind=$(sed -n 1p "$1"); from=$(sed -n 2p "$1"); cmd=$(sed -n 3p "$1"); body=$(tail -n +4 "$1")
   if [ -n "${2:-}" ] && [ -n "$body" ]; then
-    body="⏳ Delayed: this is from the BA Eventos intake run of ${from%% *}, which couldn't reach the VPS to send it.
+    if [ "$kind" = slack ]; then
+      body="⏳ Delayed: this is from the BA Eventos intake run of ${from%% *}, which couldn't reach the VPS to send it.
 $body"
+    else
+      # Keep the alert verdict first, including when this is a replay.
+      body="$body · Delayed from the ${from%% *} intake run."
+    fi
   fi
   input=$(mktemp)
   if [ "$kind" = slack ]; then
@@ -147,12 +153,9 @@ drain() { # drain [mine]: deliver queued messages strictly oldest first. Returns
   return 0
 }
 
-send() { # send slack|ssh <remote command> [text]: queue the message, then drain; 1 only when this message was refused
-  local rc
-  enqueue "$@" || { echo "could not queue a message in $outbox" >>"$log"; return 0; }
-  drain "$enqueued"; rc=$?
-  [ "$rc" -eq 1 ] && return 1
-  return 0
+send() { # send slack|ssh <remote command> [text]: 0 delivered, 1 refused, 2 queued, 3 could not queue
+  enqueue "$@" || { echo "could not queue a message in $outbox" >>"$log"; return 3; }
+  drain "$enqueued"
 }
 
 vps_alert() { # vps_alert raise|resolve [text]
@@ -168,26 +171,37 @@ fix_alert() { # raise pro/ba-events-intake/fixes with the fix list, or resolve i
   # A raise on a key that is still open only replies in its thread, so a changed list ("updated") queues triage again
   # with --auto, which respects triage's rate limits. The fingerprint hashes the sorted, trimmed items, so the same list
   # stays quiet across days and a change in any digit (a street number, an error code) still counts as a change.
-  local key="$alert_key/fixes" text fp
+  local key="$alert_key/fixes" text fp items count heading why rc
   if [ -z "$(tr -d '[:space:]' <"$fixes" 2>/dev/null)" ]; then
     if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert resolve $key" >>"$log"; return 0; fi
     send ssh "~/.local/bin/alert resolve $key --quiet" || true
     return 0
   fi
-  text="BA Eventos intake on the Pro hit problems it could not fix itself: tool bugs, or catalog facts it verified that its CLI can not change. The events they block stay held until they are fixed.
-$(sed -e '/^[[:space:]]*$/d' -e 's/^[[:space:]]*[-*][[:space:]]*//' -e 's/^/• /' "$fixes")
-Fixes file: $fixes on the Pro. {triage}"
+  items=$(sed -e '/^[[:space:]]*$/d' -e 's/^[[:space:]]*[-*][[:space:]]*//' -e 's/^/• /' "$fixes")
+  count=$(printf '%s\n' "$items" | grep -c '^• ')
+  if [ "$count" -eq 1 ]; then
+    heading="1 fix"
+    why="It's a tool bug or a catalog fact it couldn't change itself, and the events it blocks stay held until it's fixed."
+  else
+    heading="$count fixes"
+    why="They're tool bugs or catalog facts it couldn't change itself, and the events they block stay held until they're fixed."
+  fi
+  text="⚠️ *BA Eventos intake queued $heading for Hermes*. {triage}
+$why
+$items
+Fixes file: $fixes on the Pro"
   fp=$(python3 -I -c '
 import hashlib, sys
 items = sorted({l.strip() for l in open(sys.argv[1]) if l.strip()})
 print(hashlib.sha256("\n".join(items).encode()).hexdigest()[:16])' "$fixes") || fp=""
   if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: alert raise $key fingerprint=$fp $text" >>"$log"; return 0; fi
-  send ssh "out=\$(~/.local/bin/alert raise $key --title 'BA Eventos intake fixes' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events${fp:+ --fingerprint $fp}) && echo \"\$out\" && case \"\$out\" in *'\"action\": \"updated\"'*) ~/.local/bin/alert triage $key --auto ;; esac" "$text" ||
-    echo "fix alert failed" >>"$log"
+  send ssh "out=\$(~/.local/bin/alert raise $key --title 'BA Eventos intake fixes' --text-file /dev/stdin --workdir /home/hanif/projects/ba-events${fp:+ --fingerprint $fp}) && echo \"\$out\" && case \"\$out\" in *'\"action\": \"updated\"'*) ~/.local/bin/alert triage $key --auto ;; esac" "$text"
+  rc=$?
+  case "$rc" in 1|3) echo "fix alert failed" >>"$log" ;; esac
   return 0
 }
 
-slack_post() { # slack_post <file>: post the file's text to #ba-eventos as the Chipa bot; 1 only when Slack refused it
+slack_post() { # slack_post <file>: post the file's text to #ba-eventos as the Chipa bot; returns send's status
   if [ "${INTAKE_NO_POST:-}" = 1 ]; then echo "no-post: slack $(wc -c <"$1" | tr -d ' ') bytes" >>"$log"; return 0; fi
   send slack "$slack_cmd" "$(cat "$1")"
 }
@@ -197,9 +211,20 @@ minutes_left() { echo $(( total_min - ($(date +%s) - started) / 60 )); }
 note() { printf '[run.sh %s] %s\n' "$(date -u +%FT%TZ)" "$1" >>"$notes"; }
 
 fail() { # fail <phase> <why>: record a failure for the alert and for the report
+  local step
+  case "$1" in
+    collect) step="collecting posts" ;;
+    review|review\ *) step="reviewing posts" ;;
+    venues) step="the held-venue step" ;;
+    report) step="writing the report" ;;
+    *) step="$1" ;;
+  esac
+  steps="${steps:+$steps, }$step"
   failed="${failed:+$failed; }$1 ($2)"
   note "$1 failed: $2."
 }
+
+ba_time() { TZ=America/Argentina/Buenos_Aires date +%H:%M; }
 
 phase() { # phase <name> <minutes> [batch number]: one fresh Pi session; returns its exit code
   local name="$1" minutes="$2" label="$1${3:+ $3}" rc
@@ -251,7 +276,12 @@ if [ "${INTAKE_NO_POST:-}" != 1 ]; then
   drain
 fi
 echo "start $(date -u +%FT%TZ) model=$model thinking=$thinking total=${total_min}m session=${session_min}m batch=$batch max_batches=$max_batches" >>"$log"
-cd "$checkout" || { vps_alert raise "BA Eventos intake didn't run: the checkout $checkout is missing on the Pro. Next run tomorrow at 09:00."; exit 1; }
+cd "$checkout" || {
+  vps_alert raise "🚨 *BA Eventos intake didn't run* at $(ba_time): its checkout is missing on the Pro. {triage}
+Nothing was collected or published today. Tomorrow's 09:00 run fails the same way until the checkout is back.
+$checkout"
+  exit 1
+}
 printf '\n## run.sh: run started at %s\n' "$(date -u +%FT%TZ)" >>"$notes"
 rm -f "$fixes" # only this run's fixes are queued
 
@@ -296,19 +326,38 @@ phase report "$report_min"
 if [ -f "$report" ]; then body=$(tr -d '[:space:]' <"$report"); else body=""; fi
 echo "end $(date -u +%FT%TZ) batches=$batches report_bytes=$(wc -c <"$report" 2>/dev/null | tr -d ' ') failed=${failed:-none}" >>"$log"
 rc=0
+post_status=0
 if [ -z "$body" ]; then
-  vps_alert raise "BA Eventos intake on the Pro ended without a report.${failed:+ Failed: $failed.} Unfinished posts stay pending for tomorrow's 09:00 run. Log: $log on the Pro."
+  vps_alert raise "🚨 *BA Eventos intake ended without a report* at $(ba_time). {triage}
+Posts it didn't finish stay pending, and tomorrow's 09:00 run picks them up.
+${failed:+Failed: $failed · }log $log on the Pro"
   rc=1
 elif [ "$body" = "NOTHINGTOREPORT" ]; then
   echo "nothing to report" >>"$log"
-elif ! slack_post "$report"; then
-  vps_alert raise "BA Eventos intake ran, but its report couldn't be posted to #ba-eventos.${failed:+ Failed: $failed.} Report: $report on the Pro."
-  rc=1
+  report_outcome="It had no updates to post."
+else
+  slack_post "$report"; post_status=$?
+  case "$post_status" in
+    0) report_outcome="Its report was posted."
+       [ "${INTAKE_NO_POST:-}" != 1 ] || report_outcome="This was a dry run, so its report wasn't posted." ;;
+    1) report_outcome="The run finished, but Slack refused the report, so it won't go out by itself."; rc=1 ;;
+    2) report_outcome="The run finished. It saved the report to send at the next 09:00 run." ;;
+    3) report_outcome="The run finished, but it couldn't save the report for retry, so it won't go out by itself." ;;
+  esac
+  if [ "$post_status" -ne 0 ]; then
+    vps_alert raise "⚠️ *BA Eventos intake ran, but its report didn't reach #ba-eventos*. {triage}
+$report_outcome
+${failed:+Failed: $failed · }report $report on the Pro"
+  fi
 fi
 [ -n "$body" ] && fix_alert # without a report the fix list is unknown, so the fixes key is left as it is
 if [ "$rc" -eq 0 ] && [ -n "$failed" ]; then
-  vps_alert raise "BA Eventos intake on the Pro had a failed phase: $failed. The report was handled; unfinished posts stay pending for tomorrow's 09:00 run. Log: $log on the Pro."
+  if [ "$post_status" -eq 0 ]; then
+    vps_alert raise "⚠️ *BA Eventos intake had a failed step*: $steps. {triage}
+$report_outcome Posts it didn't finish stay pending, and tomorrow's 09:00 run picks them up.
+$failed · log $log on the Pro"
+  fi
   rc=1
 fi
-[ "$rc" -eq 0 ] && vps_alert resolve
+[ "$rc" -eq 0 ] && [ "$post_status" -eq 0 ] && vps_alert resolve
 exit "$rc"
