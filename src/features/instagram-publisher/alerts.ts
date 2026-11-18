@@ -62,13 +62,30 @@ export function tokenAlert(warning: string, now: Date) {
   return `⚠️ *The Instagram token needs attention*. ${TRIAGE}\n${text}`
 }
 
+function publication(draft?: Draft | null) {
+  const total = draft?.publish?.units.length ?? 0
+  const out = draft?.publish?.units.filter(unit => unit.mediaId || unit.published).length ?? 0
+  const pending = draft?.publish?.units.some(unit => unit.pendingSince) ?? false
+  const live = out > 0 && out === total
+  const needsLink = live && !draft?.publish?.permalink
+  const outcome = live ? 'is on Instagram' : out ? `posted ${out} of ${total} frames` : pending ? 'may already be on Instagram' : null
+  return { total, out, pending, live, needsLink, outcome }
+}
+
+type Publication = ReturnType<typeof publication>
+
+function publishRetry(item: Item, { needsLink, out, pending }: Publication, now: Date) {
+  const { deadline } = runWindow(item.format, item.from)
+  return needsLink ? `It tries again at ${next(now)} to find the link.`
+    : nextTick(now) < deadline ? `It tries again at ${next(now)}. The last chance is ${when(deadline, now)}.`
+    : pending ? `It checks again at ${next(now)} whether ${out ? 'another frame' : 'the post'} went out. It won't post anything new.`
+    : `There is no retry before the ${when(deadline, now)} deadline.`
+}
+
 function publishAlert(draft: Draft, failure: TickFailure, now: Date, stateFile: string) {
-  const total = draft.publish?.units.length ?? 0
-  const out = draft.publish?.units.filter(unit => unit.mediaId || unit.published).length ?? 0
-  const pending = draft.publish?.units.some(unit => unit.pendingSince) ?? false
-  const needsLink = out > 0 && out === total
+  const saved = publication(draft)
+  const { total, out, pending, live, needsLink, outcome } = saved
   const { deadline } = runWindow(draft.format, draft.from)
-  const outcome = needsLink ? 'live without link' : out ? `${out}/${total} posted` : pending ? 'unclear' : 'not started'
   const retryStage = draft.state === 'failed' ? 'gave up' : needsLink ? 'looking up link'
     : nextTick(now) >= deadline ? 'last retry passed' : 'retrying'
   const fingerprint = JSON.stringify([retryStage, outcome, pending, failure.cause])
@@ -87,17 +104,13 @@ function publishAlert(draft: Draft, failure: TickFailure, now: Date, stateFile: 
     ])
   }
   const n = failure.count
-  const verdict = needsLink ? `The ${label(draft)} is on Instagram, but the publisher hasn't found its link`
+  const verdict = live ? `The ${label(draft)} ${outcome}${needsLink ? ", but the publisher hasn't found its link" : ''}`
     : out ? `The ${label(draft)} has posted ${out} of ${total} frames so far`
     : pending ? `The publisher hasn't confirmed whether the ${label(draft)} went out`
     : `The ${label(draft)} hasn't published yet`
-  const retry = needsLink ? `It tries again at ${next(now)} to find the link.`
-    : nextTick(now) < deadline ? `It tries again at ${next(now)}. The last chance is ${when(deadline, now)}.`
-    : pending ? `It checks again at ${next(now)} whether ${out ? 'another frame' : 'the post'} went out. It won't post anything new.`
-    : `There is no retry before the ${when(deadline, now)} deadline.`
   return alert([
     `🚨 *${verdict}* (${n} tries since ${when(failure.firstFailedAt, now)}). ${TRIAGE}`,
-    `${failure.cause} ${retry}`,
+    `${failure.cause} ${publishRetry(draft, saved, now)}`,
     codes(errorCode(failure.message), history(n), draft.id),
   ])
 }
@@ -201,15 +214,26 @@ function readStreaks(file: string, s: Services): Record<string, TickFailure> {
   }
 }
 
-function tickAlertText(first: TickFailure, now: Date, rest: TickFailure[] = []) {
-  const problem = first.hasPreview ? `The Instagram publisher keeps failing on the ${label(first)}`
+type AlertedFailure = TickFailure & { publication: Publication }
+
+const tickOutcome = (saved: Publication) => saved.outcome &&
+  `${saved.outcome}${saved.needsLink ? ", but the publisher hasn't found its link" : ''}`
+
+function tickAlertText(first: AlertedFailure, now: Date, rest: AlertedFailure[] = []) {
+  const outcome = tickOutcome(first.publication)
+  const problem = outcome ? `The ${label(first)} ${outcome}`
+    : first.hasPreview ? `The Instagram publisher keeps failing on the ${label(first)}`
     : `The ${name(first)} preview for ${dates(first)} hasn't reached Slack`
-  const retry = first.hasPreview ? `It tries again at ${next(now)}.`
+  const retry = outcome ? publishRetry(first, first.publication, now)
+    : first.hasPreview ? `It tries again at ${next(now)}.`
     : `The publisher tries again at ${next(now)}. The post is due ${when(runWindow(first.format, first.from).publishAt, now)}.`
   return [
     `🚨 *${problem}* (${first.count} tries since ${when(first.firstFailedAt, now)}). ${TRIAGE}`,
     `${first.cause} ${retry}`,
-    ...rest.map(item => `Also failing: the ${label(item)} (${item.count} tries).`),
+    ...rest.map(item => {
+      const outcome = tickOutcome(item.publication)
+      return `Also failing: the ${label(item)}${outcome ? ` ${outcome}` : ''} (${item.count} tries).`
+    }),
     codes(errorCode(first.message), history(first.count), first.id),
   ].join('\n')
 }
@@ -245,7 +269,7 @@ export class TickFailures {
   async report(loadDraft: (id: string) => Draft | null) {
     const now = this.s.now()
     const previous = Object.values(this.previous)
-    const qualifying: TickFailure[] = []
+    const qualifying: AlertedFailure[] = []
     for (const item of Object.values(this.current)) {
       const publish = this.publishing.get(item.id)
       const gaveUp = publish?.draft.state === 'failed'
@@ -255,11 +279,11 @@ export class TickFailures {
       if (item.route === 'publish' || (publish && (item.route !== 'tick' || gaveUp))) {
         item.route = 'publish'
         const { text, fingerprint } = publish ? publishAlert(publish.draft, item, now, publish.stateFile)
-          : { text: tickAlertText(item, now), fingerprint: `advance: ${item.cause}` }
+          : { text: tickAlertText({ ...item, publication: publication(loadDraft(item.id)) }, now), fingerprint: `advance: ${item.cause}` }
         await this.s.alert(draftKey(item), draftTitle(item), text, fingerprint)
       } else {
         item.route = 'tick'
-        qualifying.push(item)
+        qualifying.push({ ...item, publication: publication(publish?.draft ?? loadDraft(item.id)) })
       }
     }
     qualifying.sort((a, b) => a.firstFailedAt.localeCompare(b.firstFailedAt))
@@ -273,13 +297,22 @@ export class TickFailures {
     const [first, ...rest] = qualifying
     if (first) {
       // The reading is evidence, not a new cause each time the free memory changes.
-      const fingerprint = JSON.stringify(qualifying.map(item => [item.id, item.cause.replace(/ \(\d+ MB free\)/, '')]).sort())
+      const fingerprint = JSON.stringify(qualifying.map(item => {
+        const outcome = tickOutcome(item.publication)
+        return [item.id, item.cause.replace(/ \(\d+ MB free\)/, ''), ...(outcome ? [outcome, item.publication.pending] : [])]
+      }).sort())
       await this.s.alert('tick', 'Instagram publisher', tickAlertText(first, now, rest), fingerprint)
     } else if (previous.some(onTickAlert)) {
       let stopped = false
       const outcomes = previous.filter(onTickAlert).sort((a, b) => a.firstFailedAt.localeCompare(b.firstFailedAt)).map(item => {
         const draft = loadDraft(item.id)
         const previewed = Boolean(draft?.slack.ts && draft.frames.length)
+        const saved = publication(draft)
+        if (saved.outcome) {
+          if (draft?.state === 'failed') stopped = true
+          const missingLink = draft?.state === 'failed' && saved.needsLink ? ", but the publisher couldn't get its link" : ''
+          return `the ${label(item)} ${saved.outcome}${missingLink}`
+        }
         const outcome = draft?.state === 'skipped' ? 'was skipped' : draft?.state === 'held' ? 'is on hold'
           : !item.hasPreview && (!draft || (draft.state === 'failed' && !previewed)) ? "didn't get a preview before cutoff"
           : draft?.state === 'failed' ? "didn't publish" : null
