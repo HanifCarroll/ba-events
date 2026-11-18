@@ -11,7 +11,9 @@ import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
 import { caption as captionFor, footerHandle, heldText, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, framesHtml } from './html.ts'
-import { emptyPublishState, footerTag, instagramApi, publish, type InstagramApi, type PublishState, type Slide } from './instagram.ts'
+import { StillProcessing, emptyPublishState, footerTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
+import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
+import { reelTiming, type ReelTiming } from './reel/project.ts'
 import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
 import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
@@ -29,7 +31,10 @@ export interface Draft {
   exclude: string[]
   events: PostEvent[]
   caption: string | null
+  /** Rendered files: the frames, or for a Reel the MP4 and its cover image. */
   frames: string[]
+  /** Reel only: the track this draft uses (kept by regenerate unless --track picks another). */
+  track?: DraftTrack | null
   framesHash: string
   slack: { fileIds: string[]; ts: string | null }
   approvedSeenAt: string | null
@@ -52,6 +57,8 @@ export interface Services {
   readCatalog(window: RunWindow): Promise<CatalogEvent[]>
   readEvents(ids: string[]): Promise<Map<string, EventNow>>
   render(html: string, outDir: string, height: number): Promise<string[]>
+  /** Returns [reel.mp4, cover.jpg]. */
+  renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string): Promise<string[]>
   slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>>
   slackShareFiles(files: Array<{ id: string; title: string }>, text: string): Promise<unknown>
   slackShareTs(fileId: string): Promise<string | null>
@@ -74,6 +81,7 @@ export const liveServices = (): Services => ({
   readCatalog: runtime.readCatalog,
   readEvents: runtime.readEvents,
   render: (html, outDir, height) => runtime.renderFrames(html, outDir, height),
+  renderReel: runtime.renderReel,
   slackUploadFiles: runtime.slackUploadFiles,
   slackShareFiles: runtime.slackShareFiles,
   slackShareTs: runtime.slackShareTs,
@@ -117,24 +125,42 @@ export class Job {
     return { fontsDir: join(this.s.repo, 'src/features/instagram-publisher/assets/fonts'), heroPhoto: join(this.s.repo, 'static/hero-rooftop-buenos-aires.jpg') }
   }
 
-  /** Read the catalog, pick the events, and render the frames when enough events qualify. */
-  async build(format: FormatKey, from: string, exclude: string[], outDir: string) {
+  /** The Reel track for a new draft: the one whose last published Reel is oldest, never-published tracks first. */
+  chooseTrack(): string {
+    const published = this.allDrafts().filter(draft => draft.format === 'reel' && draft.state === 'published' && draft.track)
+      .map(draft => ({ track: draft.track!.id, from: draft.from }))
+    return nextTrack(readTracks(this.s.config().reel.musicDir), published).id
+  }
+
+  /**
+   * Read the catalog, pick the events, and render when enough events qualify. A Reel also leaves out the finde
+   * draft's exclusions and needs its track (`trackId`), which must be measured and present, or the build fails.
+   */
+  async build(format: FormatKey, from: string, exclude: string[], outDir: string, trackId: string | null = null) {
     const window = runWindow(format, from)
-    const events = selectEvents(await this.s.readCatalog(window), format, window, exclude)
-    if (events.length < FORMATS[format].min) return { window, events, caption: null, frames: null }
-    const frames = await this.s.render(framesHtml(format, window, events, this.assets()), outDir, FRAME[FORMATS[format].kind].height)
-    return { window, events, caption: captionFor(format, events), frames }
+    const skip = format === 'reel' ? [...exclude, ...(this.loadDraft(draftId('finde', from))?.exclude ?? [])] : exclude
+    const events = selectEvents(await this.s.readCatalog(window), format, window, skip)
+    if (events.length < FORMATS[format].min) return { window, events, caption: null, frames: null, track: null, timing: null }
+    if (format === 'reel') {
+      const track = readyTrack(this.s.config().reel.musicDir, trackId!)
+      const timing = reelTiming(window, events, track.bpm)
+      const frames = await this.s.renderReel(window, events, timing, track, outDir)
+      const saved: DraftTrack = { id: track.id, title: track.title, artist: track.artist, credit: track.credit }
+      return { window, events, caption: captionFor(format, events, track.credit), frames, track: saved, timing }
+    }
+    const frames = await this.s.render(framesHtml(format, window, events, this.assets()), outDir, FRAME[FORMATS[format].kind as 'story' | 'carousel'].height)
+    return { window, events, caption: captionFor(format, events), frames, track: null, timing: null }
   }
 
   // Drafting and previewing
 
   /** Build revision `revision` of a draft into its own directory and preview it. Approval always starts empty. */
-  async createDraft(format: FormatKey, from: string, exclude: string[], revision: number): Promise<Draft> {
+  async createDraft(format: FormatKey, from: string, exclude: string[], revision: number, trackId: string | null = null): Promise<Draft> {
     const id = draftId(format, from)
     const dir = join(this.framesDir(id), `rev-${revision}`)
-    const built = await this.build(format, from, exclude, dir)
+    const built = await this.build(format, from, exclude, dir, format === 'reel' ? trackId ?? this.chooseTrack() : null)
     const draft: Draft = {
-      id, format, from, to: built.window.to, revision, state: 'previewing', exclude, events: built.events, caption: built.caption,
+      id, format, from, to: built.window.to, revision, state: 'previewing', exclude, events: built.events, caption: built.caption, track: built.track,
       frames: built.frames ?? [], framesHash: built.frames ? runtime.fileHash(built.frames) : '', slack: { fileIds: [], ts: null },
       approvedSeenAt: null, r2Uploaded: null, publish: null, publishFailures: 0, notify: null, skipReason: null, note: null, updatedAt: '',
     }
@@ -161,8 +187,9 @@ export class Job {
     }
     if (!draft.slack.ts) {
       this.verifyFrames(draft)
-      const text = slackPreview(draft.format, runWindow(draft.format, draft.from), draft.caption, this.s.config().auto[draft.format])
-      const files = await this.s.slackUploadFiles(draft.frames, draft.id)
+      const text = slackPreview(draft.format, runWindow(draft.format, draft.from), draft.caption, this.s.config().auto[draft.format], draft.track ?? undefined)
+      // A Reel's preview attaches the video only.
+      const files = await this.s.slackUploadFiles(draft.format === 'reel' ? draft.frames.slice(0, 1) : draft.frames, draft.id)
       // Saved before sharing: if the share's answer is lost, the next tick looks the message up instead of posting again.
       draft.slack.fileIds = files.map(file => file.id)
       this.save(draft)
@@ -254,20 +281,27 @@ export class Job {
     }
     if (!draft.publish) await beforeWrite()
     const prefix = `instagram/${draft.id}/${draft.framesHash}`
+    const kind = FORMATS[draft.format].kind
+    const names = kind === 'reel' ? ['reel.mp4', 'cover.jpg'] : draft.frames.map((_, index) => `frame-${index + 1}.jpg`)
     if (draft.r2Uploaded !== prefix) {
       this.verifyFrames(draft)
-      for (const [index, path] of draft.frames.entries()) await this.s.r2Put(config.r2.bucket, `${prefix}/frame-${index + 1}.jpg`, path)
+      for (const [index, path] of draft.frames.entries()) await this.s.r2Put(config.r2.bucket, `${prefix}/${names[index]}`, path)
       draft.r2Uploaded = prefix
       this.save(draft)
     }
-    const kind = FORMATS[draft.format].kind
-    const height = FRAME[kind].height
-    // Frame 1 is the cover and the last one the closing frame; the cards in between carry the tags.
-    const slides: Slide[] = draft.frames.map((_, index) => {
-      const event = index > 0 && index <= draft.events.length ? draft.events[index - 1]! : null
-      return { url: `${config.r2!.publicBaseUrl}/${prefix}/frame-${index + 1}.jpg`, tag: event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null }
-    })
-    const job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
+    const url = (name: string) => `${config.r2!.publicBaseUrl}/${prefix}/${name}`
+    let job: PublishJob
+    if (kind === 'reel') {
+      job = { kind, igUserId: token.token.ig_user_id, slides: [], caption: draft.caption, video: { url: url('reel.mp4'), coverUrl: url('cover.jpg') } }
+    } else {
+      const height = FRAME[kind].height
+      // Frame 1 is the cover and the last one the closing frame; the cards in between carry the tags.
+      const slides: Slide[] = draft.frames.map((_, index) => {
+        const event = index > 0 && index <= draft.events.length ? draft.events[index - 1]! : null
+        return { url: url(names[index]!), tag: event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null }
+      })
+      job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
+    }
     draft.publish ??= emptyPublishState(job)
     draft.state = 'publishing'
     this.save(draft)
@@ -314,7 +348,7 @@ export class Job {
     if (draft.state === 'rebuilding') {
       // A regenerate that didn't finish. Its approval is already cleared, so nothing can publish from it.
       await this.settle(draft, 'failed', null, { note: 'A regenerate did not finish; run it again.' })
-      const cmd = `bun scripts/instagram-publisher.ts regenerate ${draft.id}${draft.exclude.map(id => ` --exclude ${id}`).join('')}`
+      const cmd = `bun scripts/instagram-publisher.ts regenerate ${draft.id}${draft.exclude.map(id => ` --exclude ${id}`).join('')}${draft.track ? ` --track ${draft.track.id}` : ''}`
       const recover = now < window.cutoff ? `Run it again from ~/projects/ba-events: ${cmd}` : 'It is past its cutoff, so this run is lost; nothing was posted.'
       return this.s.alert(`draft/${draft.id}`, `Instagram ${draft.id}: regenerate didn't finish`,
         `Regenerating ${draft.id} (revision ${draft.revision}) stopped part-way, so the draft has no preview and can't publish. ${recover}`)
@@ -341,6 +375,7 @@ export class Job {
       if (done && (draft.state as DraftState) === 'published') await this.s.resolveAlert(`draft/${draft.id}`)
     } catch (error) {
       if (error instanceof PublishStop) return this.stopped(draft, error, window)
+      if (error instanceof StillProcessing) { this.s.log(`${draft.id}: ${error.message}`); return }
       draft.publishFailures++
       draft.note = (error as Error).message
       const pending = draft.publish?.units.some(unit => unit.pendingSince) ?? false
@@ -389,7 +424,7 @@ export class Job {
     }
   }
 
-  async regenerate(id: string, excludeIds: string[]): Promise<Draft> {
+  async regenerate(id: string, excludeIds: string[], trackId: string | null = null): Promise<Draft> {
     const { format, from } = parseDraftId(id)
     const old = this.loadDraft(id)
     if (!old) throw new Error(`No draft ${id}; see \`status\``)
@@ -398,19 +433,26 @@ export class Job {
     const exclude = [...new Set([...old.exclude, ...excludeIds])]
     const revision = (old.revision ?? 1) + 1
     // Approval is cleared and saved before any frame is touched, so a crash can't leave old approval on new frames.
-    this.save({ ...old, revision, state: 'rebuilding', exclude, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null })
-    const draft = await this.createDraft(format, from, exclude, revision)
-    if (draft.state === 'skipped') throw new Error(`Without ${excludeIds.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
+    if (trackId && format !== 'reel') throw new Error('--track only applies to a Reel')
+    // A Reel keeps its track unless --track names another (a skipped draft never got one, so it is chosen again).
+    const track = format === 'reel' ? trackId ?? old.track?.id ?? this.chooseTrack() : null
+    const ready = track ? readyTrack(this.s.config().reel.musicDir, track) : null
+    // The requested track is saved with the rebuilding state, so a crash's recovery command restores it.
+    const savedTrack = ready ? { id: ready.id, title: ready.title, artist: ready.artist, credit: ready.credit } : old.track
+    this.save({ ...old, revision, state: 'rebuilding', exclude, track: savedTrack, approvedSeenAt: null, slack: { fileIds: [], ts: null }, notify: null, r2Uploaded: null })
+    const draft = await this.createDraft(format, from, exclude, revision, track)
+    if (draft.state === 'skipped') throw new Error(`Without ${exclude.join(', ')} only ${draft.events.length} events qualify; the draft is skipped`)
     return draft
   }
 }
 
 // CLI entry points
 
-export async function dryRun(format: FormatKey, from: string, outDir: string) {
+export async function dryRun(format: FormatKey, from: string, outDir: string, trackId: string | null = null) {
   const job = new Job(liveServices())
   const work = join(outDir, '.render')
-  const built = await job.build(format, from, [], work)
+  const track = format === 'reel' ? trackId ?? job.chooseTrack() : null
+  const built = await job.build(format, from, [], work, track)
   mkdirSync(outDir, { recursive: true })
   const summary = built.events.map(event => `${event.id}  ${event.date} ${event.time}  ${event.title} · ${event.venue} (${event.barrio})${event.handle ? ` ${footerHandle(event)}` : ''}${event.price ? ` · ${event.price}` : ''}`)
   writeFileSync(join(outDir, 'events.txt'), `${summary.join('\n')}\n`)
@@ -421,18 +463,21 @@ export async function dryRun(format: FormatKey, from: string, outDir: string) {
     console.log(text)
     return
   }
-  built.frames.forEach((path, index) => copyFileSync(path, join(outDir, `${format === 'hoy' ? 'frame' : 'slide'}-${index + 1}.jpg`)))
+  const names = format === 'reel' ? ['reel.mp4', 'cover.jpg'] : built.frames.map((_, index) => `${format === 'hoy' ? 'frame' : 'slide'}-${index + 1}.jpg`)
+  built.frames.forEach((path, index) => copyFileSync(path, join(outDir, names[index]!)))
+  if (built.timing) writeFileSync(join(outDir, 'timing.json'), `${JSON.stringify({ track: built.track!.id, ...built.timing }, null, 2)}\n`)
   rmSync(work, { recursive: true, force: true })
   writeFileSync(join(outDir, 'caption.txt'), `${built.caption ?? 'Stories have no caption.'}\n`)
-  writeFileSync(join(outDir, 'slack.txt'), `${slackPreview(format, built.window, built.caption, runtime.readConfig().auto[format])}\n`)
-  console.log(`${built.frames.length} frames and the caption written to ${outDir}`)
+  writeFileSync(join(outDir, 'slack.txt'), `${slackPreview(format, built.window, built.caption, runtime.readConfig().auto[format], built.track ?? undefined)}\n`)
+  if (built.track) console.log(`Track: ${built.track.id} ("${built.track.title}" by ${built.track.artist}), ${built.timing!.total} s at ${built.timing!.bpm} BPM`)
+  console.log(`${names.join(', ')} and the caption written to ${outDir}`)
 }
 
 export const tick = () => runtime.withLock(() => new Job(liveServices()).tick())
 
-export async function regenerate(id: string, excludeIds: string[]) {
+export async function regenerate(id: string, excludeIds: string[], trackId: string | null = null) {
   await runtime.withLock(async () => {
-    const draft = await new Job(liveServices()).regenerate(id, excludeIds)
+    const draft = await new Job(liveServices()).regenerate(id, excludeIds, trackId)
     console.log(`${draft.id}: revision ${draft.revision} with ${draft.events.length} events, previewed again (${draft.slack.ts})`)
   })
 }

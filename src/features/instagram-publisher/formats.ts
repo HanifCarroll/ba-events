@@ -1,11 +1,11 @@
-/** The three approved formats: which days they cover, how many events they show, and when they draft and publish. */
+/** The approved formats: which days they cover, how many events they show, and when they draft and publish. */
 import { addDays, baInstant, weekdayOf } from './format.ts'
 
-export type FormatKey = 'hoy' | 'finde' | 'gratis'
+export type FormatKey = 'hoy' | 'finde' | 'gratis' | 'reel'
 
 export interface FormatSpec {
   key: FormatKey
-  kind: 'story' | 'carousel'
+  kind: 'story' | 'carousel' | 'reel'
   /** "Hoy story" etc., the name the Slack message uses. */
   slackName: string
   /** The weekday the run's first covered day falls on (null = every day). */
@@ -24,6 +24,8 @@ export const FORMATS: Record<FormatKey, FormatSpec> = {
   hoy: { key: 'hoy', kind: 'story', slackName: 'Hoy story', startWeekday: null, days: 1, max: 4, min: 2, freeOnly: false, fromHour: 18, wantsFree: true },
   finde: { key: 'finde', kind: 'carousel', slackName: 'Este finde carousel', startWeekday: 5, days: 3, max: 6, min: 4, freeOnly: false, fromHour: null, wantsFree: true },
   gratis: { key: 'gratis', kind: 'carousel', slackName: 'Gratis esta semana carousel', startWeekday: 1, days: 7, max: 8, min: 5, freeOnly: true, fromHour: null, wantsFree: false },
+  // The Reel uses Este finde's selection rules, evaluated at its own slot.
+  reel: { key: 'reel', kind: 'reel', slackName: 'Este finde Reel', startWeekday: 5, days: 3, max: 6, min: 4, freeOnly: false, fromHour: null, wantsFree: true },
 }
 
 export const isFormatKey = (value: string): value is FormatKey => value in FORMATS
@@ -51,13 +53,14 @@ export function runWindow(format: FormatKey, from: string): RunWindow {
     case 'hoy': return { from, to, draftAt: baInstant(from, 11), publishAt: baInstant(from, 17), cutoff: baInstant(from, 17), deadline: baInstant(from, 19) }
     case 'finde': return { from, to, draftAt: baInstant(addDays(from, -2), 18), publishAt: baInstant(addDays(from, -1), 12), cutoff: baInstant(from, 18), deadline: baInstant(from, 18) }
     case 'gratis': return { from, to, draftAt: baInstant(addDays(from, -1), 18), publishAt: baInstant(from, 12), cutoff: baInstant(addDays(from, 1), 20), deadline: baInstant(addDays(from, 1), 20) }
+    case 'reel': return { from, to, draftAt: baInstant(addDays(from, -1), 18), publishAt: baInstant(from, 12), cutoff: baInstant(from, 18), deadline: baInstant(from, 18) }
   }
 }
 
 export const draftId = (format: FormatKey, from: string) => `${format}-${from}`
 
 export function parseDraftId(id: string): { format: FormatKey; from: string } {
-  const match = /^(hoy|finde|gratis)-(\d{4}-\d{2}-\d{2})$/.exec(id)
+  const match = /^(hoy|finde|gratis|reel)-(\d{4}-\d{2}-\d{2})$/.exec(id)
   if (!match) throw new Error(`Not a draft id: ${id} (expected e.g. finde-2026-11-20)`)
   return { format: match[1] as FormatKey, from: match[2]! }
 }

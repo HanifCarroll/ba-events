@@ -71,8 +71,10 @@ export function qualifies(event: CatalogEvent, format: FormatKey, window: RunWin
   const spec = FORMATS[format]
   if (event.status !== 'scheduled' || event.timeTba || event.isAllDay || !event.venue || !event.barrio) return false
   if (placeholderTime(event)) return false
-  // Over by the time the post goes out (no end time: by its start).
-  if (Date.parse(event.endsAt ?? event.startsAt) < window.publishAt.getTime()) return false
+  // Over by the time the post goes out (no end time: by its start). A Reel may publish until its deadline, so its
+  // events must still be running or upcoming then, or the pre-publish check would hold it.
+  const over = Date.parse(event.endsAt ?? event.startsAt)
+  if (format === 'reel' ? over <= window.deadline.getTime() : over < window.publishAt.getTime()) return false
   if (spec.freeOnly && !event.isFree) return false
   const local = baLocal(event.startsAt)
   if (local.date < window.from || local.date > window.to) return false

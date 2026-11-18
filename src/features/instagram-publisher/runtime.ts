@@ -4,12 +4,14 @@
  */
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, extname, join, resolve } from 'node:path'
 import { addDays } from './format.ts'
 import type { FormatKey, RunWindow } from './formats.ts'
-import type { CatalogEvent } from './select.ts'
+import { writeExcerpt, type ReadyTrack } from './reel/music.ts'
+import { reelProject, type ReelTiming } from './reel/project.ts'
+import type { CatalogEvent, PostEvent } from './select.ts'
 
 const HOME = homedir()
 export const REPO = resolve(dirname(new URL(import.meta.url).pathname), '../../..')
@@ -25,9 +27,9 @@ export const SLACK_CHANNEL = 'C0CHBCSEV3R'
 export const sleep = (ms: number) => new Promise<void>(done => setTimeout(done, ms))
 
 /** Run a command with a time limit; resolves with its output and exit code (null when killed). */
-export function run(argv: string[], timeoutMs: number, cwd?: string): Promise<{ out: string; err: string; code: number | null }> {
+export function run(argv: string[], timeoutMs: number, cwd?: string, env?: NodeJS.ProcessEnv): Promise<{ out: string; err: string; code: number | null }> {
   return new Promise((done, fail) => {
-    const child = spawn(argv[0]!, argv.slice(1), { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(argv[0]!, argv.slice(1), { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     let err = ''
     child.stdout.on('data', chunk => { out += chunk })
@@ -58,15 +60,18 @@ export interface Config {
   auto: Record<FormatKey, boolean>
   /** R2 bucket and its public base URL (no trailing slash). Publishing is skipped until both are set. */
   r2: { bucket: string; publicBaseUrl: string } | null
+  /** The Reel's music directory (tracks.json and the audio files), outside the repo. */
+  reel: { musicDir: string }
 }
 
 export function readConfig(): Config {
   const raw = existsSync(CONFIG_FILE) ? JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) : {}
-  const auto = { hoy: raw.auto?.hoy === true, finde: raw.auto?.finde === true, gratis: raw.auto?.gratis === true }
+  const auto = { hoy: raw.auto?.hoy === true, finde: raw.auto?.finde === true, gratis: raw.auto?.gratis === true, reel: raw.auto?.reel === true }
   const r2 = typeof raw.r2?.bucket === 'string' && typeof raw.r2?.publicBaseUrl === 'string'
     ? { bucket: raw.r2.bucket, publicBaseUrl: raw.r2.publicBaseUrl.replace(/\/+$/, '') }
     : null
-  return { auto, r2 }
+  const musicDir = typeof raw.reel?.musicDir === 'string' ? raw.reel.musicDir.replace(/^~(?=\/)/, HOME) : join(HOME, '.local/share/ba-events/reel-music')
+  return { auto, r2, reel: { musicDir } }
 }
 
 // Lock: one tick or command at a time.
@@ -219,6 +224,119 @@ export async function renderFrames(html: string, outDir: string, height: number,
     .map(name => join(outDir, name))
 }
 
+// The Reel: HyperFrames 0.9.66 with its managed Chrome Headless Shell, in a memory-capped scope.
+
+export const HYPERFRAMES = 'hyperframes@0.9.66'
+
+/** ffmpeg and ffprobe: BA_INSTAGRAM_FFMPEG_DIR, else PATH, else the newest ~/.hermes/tools/ffmpeg-*\/bin. */
+export function mediaBin(name: 'ffmpeg' | 'ffprobe'): string {
+  const dirs = [process.env.BA_INSTAGRAM_FFMPEG_DIR, ...(process.env.PATH ?? '').split(delimiter)]
+  const tools = join(HOME, '.hermes/tools')
+  if (existsSync(tools)) dirs.push(...readdirSync(tools).filter(dir => dir.startsWith('ffmpeg-')).sort().reverse().map(dir => join(tools, dir, 'bin')))
+  for (const dir of dirs) if (dir && existsSync(join(dir, name))) return join(dir, name)
+  throw new Error(`No ${name} found; set BA_INSTAGRAM_FFMPEG_DIR to a directory with ffmpeg and ffprobe`)
+}
+
+const media = (argv: string[]) => run([mediaBin(argv[0] as 'ffmpeg' | 'ffprobe'), ...argv.slice(1)], 300_000)
+
+/** HyperFrames' own Chrome download. Rendering fails closed without it (Playwright's shell exits at once). */
+export function managedChrome(root = join(HOME, '.cache/hyperframes/chrome/chrome-headless-shell')): string {
+  const builds = existsSync(root) ? readdirSync(root).filter(name => name.startsWith('linux-')).sort().reverse() : []
+  for (const build of builds) {
+    const path = join(root, build, 'chrome-headless-shell-linux64/chrome-headless-shell')
+    if (existsSync(path)) return path
+  }
+  throw new Error(`HyperFrames' managed Chrome is missing from ${root}. Install it from ~/projects/ba-events with: npx --yes ${HYPERFRAMES} browser ensure (it needs an unzip on PATH; the VPS has none, so put a shim such as ~/.cache/hermes-handoffs/ba-reel-sample/shim first on PATH)`)
+}
+
+const mediaEnv = (): NodeJS.ProcessEnv => {
+  const ffmpeg = mediaBin('ffmpeg')
+  return {
+    ...process.env,
+    PATH: [dirname(ffmpeg), process.env.PATH].filter(Boolean).join(delimiter),
+    HYPERFRAMES_FFMPEG_PATH: ffmpeg,
+    HYPERFRAMES_FFPROBE_PATH: mediaBin('ffprobe'),
+    HYPERFRAMES_TELEMETRY_DISABLED: '1',
+    DO_NOT_TRACK: '1',
+  }
+}
+
+/** Write the HyperFrames project for a Reel into `dir`: compositions, fonts, the hero photo, noise, GSAP, and the music. */
+export async function writeReelProject(dir: string, window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack) {
+  rmSync(dir, { recursive: true, force: true })
+  for (const [path, text] of Object.entries(reelProject(window, events, timing))) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true })
+    writeFileSync(join(dir, path), text)
+  }
+  const assets = join(dir, 'assets')
+  mkdirSync(join(assets, 'fonts'), { recursive: true })
+  const fonts = join(REPO, 'src/features/instagram-publisher/assets/fonts')
+  for (const font of readdirSync(fonts)) copyFileSync(join(fonts, font), join(assets, 'fonts', font))
+  copyFileSync(join(REPO, 'static/hero-rooftop-buenos-aires.jpg'), join(assets, 'hero-rooftop-buenos-aires.jpg'))
+  copyFileSync(join(REPO, 'src/features/instagram-publisher/reel/assets/noise.png'), join(assets, 'noise.png'))
+  copyFileSync(join(REPO, 'node_modules/gsap/dist/gsap.min.js'), join(assets, 'gsap.min.js'))
+  await writeExcerpt(media, track.path, track.startSec, timing.total, join(assets, 'music.wav'))
+}
+
+/**
+ * Render a Reel to `<outDir>/reel.mp4` (+faststart) and `<outDir>/cover.jpg` (the cover card's hold frame). HyperFrames
+ * runs in a named transient scope (1000 MB, no swap, RuntimeMaxSec 600); a timeout or error stops the whole scope.
+ */
+export async function renderReel(window: RunWindow, events: PostEvent[], timing: ReelTiming, track: ReadyTrack, outDir: string, runner: Runner = run, chromeRoot?: string): Promise<string[]> {
+  managedChrome(chromeRoot)
+  rmSync(outDir, { recursive: true, force: true })
+  const project = join(outDir, 'project')
+  try {
+    await writeReelProject(project, window, events, timing, track)
+    const raw = join(outDir, 'render.mp4')
+    const command = ['npx', '--yes', HYPERFRAMES, 'render', '--quality', 'delivery', '--workers', '1', '-o', raw]
+    const unit = `ba-events-instagram-reel-${process.pid}-${Date.now()}`
+    const scoped = process.env.BA_INSTAGRAM_RENDER_NO_SCOPE === '1'
+      ? command
+      : ['systemd-run', '--user', '--scope', '--collect', '--quiet', `--unit=${unit}`, '-p', 'MemoryMax=1000M', '-p', 'MemorySwapMax=0', '-p', 'RuntimeMaxSec=600', ...command]
+    let result: Awaited<ReturnType<Runner>>
+    try {
+      result = await runner(scoped, 620_000, project, mediaEnv())
+    } catch (error) {
+      result = { out: '', err: (error as Error).message, code: -1 }
+    }
+    if (result.code !== 0 || !existsSync(raw)) {
+      if (scoped !== command) await runner(['systemctl', '--user', 'stop', `${unit}.scope`], 30_000).catch(() => undefined)
+      throw new Error(`Rendering the Reel failed (${result.code === null ? 'timed out' : `exit ${result.code}`}): ${(result.err || result.out).trim().slice(-500)}`)
+    }
+    const video = join(outDir, 'reel.mp4')
+    const cover = join(outDir, 'cover.jpg')
+    const remux = await media(['ffmpeg', '-v', 'error', '-y', '-i', raw, '-c', 'copy', '-movflags', '+faststart', video])
+    if (remux.code !== 0) throw new Error(`Remuxing the Reel failed: ${remux.err.trim().slice(-300)}`)
+    rmSync(raw, { force: true })
+    await checkReel(video, timing.total)
+    const holdMid = timing.cards[0]!.holdMid
+    const still = await media(['ffmpeg', '-v', 'error', '-y', '-ss', String(holdMid), '-i', video, '-frames:v', '1', '-q:v', '2', cover])
+    if (still.code !== 0) throw new Error(`Extracting the Reel cover failed: ${still.err.trim().slice(-300)}`)
+    return [video, cover]
+  } finally {
+    // The project holds the licensed audio excerpt and render.mp4 carries it too; neither outlives the render.
+    rmSync(project, { recursive: true, force: true })
+    rmSync(join(outDir, 'render.mp4'), { force: true })
+  }
+}
+
+/** Fail closed before anything is uploaded: 1080 × 1920 H.264 yuv420p at 30 fps with AAC audio, of the expected length. */
+export async function checkReel(video: string, total: number) {
+  const probe = await media(['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,pix_fmt,r_frame_rate:format=duration', '-of', 'json', video])
+  const info = JSON.parse(probe.out || '{}')
+  const v = info.streams?.find((stream: any) => stream.codec_type === 'video')
+  const a = info.streams?.find((stream: any) => stream.codec_type === 'audio')
+  const duration = Number(info.format?.duration)
+  const ok = v?.codec_name === 'h264' && v.width === 1080 && v.height === 1920 && v.pix_fmt === 'yuv420p' && v.r_frame_rate === '30/1'
+    && a?.codec_name === 'aac' && Math.abs(duration - total) < 0.2
+  if (!ok) throw new Error(`The rendered Reel isn't the expected 1080 × 1920 H.264/AAC at 30 fps, ${total} s: ${JSON.stringify(info).slice(0, 400)}`)
+}
+
+/** A listening copy of exactly the excerpt a Reel uses (MP3). */
+export const writeExcerptMp3 = (track: ReadyTrack, total: number, out: string) =>
+  writeExcerpt(media, track.path, track.startSec, total, out, ['-c:a', 'libmp3lame', '-b:a', '192k'])
+
 export const fileHash = (paths: string[]) => {
   const hash = createHash('sha256')
   for (const path of paths) hash.update(readFileSync(path))
@@ -243,14 +361,14 @@ export async function slack(method: string, args: Record<string, string>): Promi
   }
 }
 
-/** Upload the frames (not yet shared). Returns Slack's file ids and titles. */
+/** Upload the frames or the Reel's MP4 (not yet shared); the bytes go straight to Slack's upload URL. Returns file ids and titles. */
 export async function slackUploadFiles(frames: string[], draftId: string): Promise<Array<{ id: string; title: string }>> {
   const files: Array<{ id: string; title: string }> = []
   for (const [index, path] of frames.entries()) {
     const bytes = readFileSync(path)
-    const filename = `${draftId}-${index + 1}.jpg`
+    const filename = `${draftId}-${index + 1}${extname(path)}`
     const { upload_url: uploadUrl, file_id: id } = await slack('files.getUploadURLExternal', { filename, length: String(bytes.length) })
-    const response = await fetch(uploadUrl, { method: 'POST', body: bytes, signal: AbortSignal.timeout(60_000) })
+    const response = await fetch(uploadUrl, { method: 'POST', body: bytes, signal: AbortSignal.timeout(180_000) })
     if (!response.ok) throw new Error(`Slack file upload failed: HTTP ${response.status}`)
     files.push({ id, title: filename })
   }
@@ -282,14 +400,16 @@ export async function slackReactions(ts: string) {
 
 // R2, through the Cloudflare API with the same token file bin/ba-d1-read.sh reads.
 
+const CONTENT_TYPES: Record<string, string> = { '.jpg': 'image/jpeg', '.mp4': 'video/mp4' }
+
 export async function r2Put(bucket: string, key: string, path: string) {
   const token = readFileSync(CF_TOKEN_FILE, 'utf8').trim()
   const url = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/r2/buckets/${bucket}/objects/${key.split('/').map(encodeURIComponent).join('/')}`
   const response = await fetch(url, {
     method: 'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/jpeg' },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': CONTENT_TYPES[extname(key)] ?? 'application/octet-stream' },
     body: readFileSync(path),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(180_000),
   })
   if (!response.ok) throw new Error(`R2 upload of ${key} failed: HTTP ${response.status}`)
 }

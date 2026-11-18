@@ -11,6 +11,14 @@ import { Job, type Draft, type Services } from './job.ts'
 import type { Config } from './runtime.ts'
 import type { CatalogEvent } from './select.ts'
 
+/** A music directory with three synthetic tracks (the files only need to exist; the fake render never reads them). */
+function musicDir(tracks = [{ id: 'a', bpm: 90, startSec: 1 }, { id: 'b', bpm: 120, startSec: 2 }, { id: 'c', bpm: 100, startSec: 0 }]) {
+  const dir = mkdtempSync(join(tmpdir(), 'ig-music-'))
+  writeFileSync(join(dir, 'tracks.json'), JSON.stringify({ tracks: tracks.map(t => ({ title: `Track ${t.id}`, artist: 'Synth', file: `${t.id}.flac`, durationSec: 60, credit: null, ...t })) }))
+  for (const t of tracks) writeFileSync(join(dir, `${t.id}.flac`), 'synthetic')
+  return dir
+}
+
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
 /** Six qualifying weekend events (Friday 20 to Sunday 22, November 2026) at six venues. */
@@ -41,6 +49,8 @@ class World {
   catalog = weekend()
   statuses = new Map<string, string>()
   reactions: Array<{ name: string; users?: string[] }> = []
+  /** Reactions on the Reel's preview; `reactions` covers every other preview. */
+  reelReactions: Array<{ name: string; users?: string[] }> = []
   slackPosts: Array<{ text: string; threadTs?: string }> = []
   /** Fail this many Slack replies whose text starts with the prefix. */
   slackFails = 0
@@ -48,7 +58,9 @@ class World {
   alerts: Array<{ key: string; text: string }> = []
   resolved: string[] = []
   r2: string[] = []
-  config: Config = { auto: { hoy: false, finde: false, gratis: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' } }
+  music = musicDir()
+  config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
+  reelRenders: Array<{ track: string; total: number; events: string[] }> = []
   renderCount = 0
   nextTs = 1
 
@@ -69,6 +81,13 @@ class World {
         mkdirSync(outDir, { recursive: true })
         return Array.from({ length: 8 }, (_, i) => { const path = join(outDir, `frame-${i + 1}.jpg`); writeFileSync(path, `render ${this.renderCount} frame ${i + 1}`); return path })
       },
+      renderReel: async (_window, events, timing, track, outDir) => {
+        this.renderCount++
+        this.reelRenders.push({ track: track.id, total: timing.total, events: events.map(event => event.id) })
+        const { mkdirSync } = await import('node:fs')
+        mkdirSync(outDir, { recursive: true })
+        return ['reel.mp4', 'cover.jpg'].map(name => { const path = join(outDir, name); writeFileSync(path, `render ${this.renderCount} ${name}`); return path })
+      },
       slackUploadFiles: async (frames, id) => frames.map((_, i) => ({ id: `F${id}-${this.renderCount}-${i}`, title: `${id}-${i}` })),
       slackShareFiles: async (_files, text) => { this.slackPosts.push({ text }) },
       slackShareTs: async () => `${this.nextTs++}.0`,
@@ -77,7 +96,7 @@ class World {
         this.slackPosts.push({ text, threadTs })
         return { ts: `${this.nextTs++}.0` }
       },
-      slackReactions: async () => this.reactions,
+      slackReactions: async ts => ts === this.reel()?.slack.ts ? this.reelReactions : this.reactions,
       r2Put: async (_bucket, key) => { this.r2.push(key) },
       loadToken: async () => ({ state: 'ok', token: { access_token: 'T', ig_user_id: '17841', expires_at: '2027-01-01T00:00:00.000Z' }, warning: null }),
       instagram: () => this.ig,
@@ -93,6 +112,9 @@ class World {
   approve() { this.reactions = [{ name: 'white_check_mark', users: [HANIF] }] }
   reject() { this.reactions = [{ name: 'x', users: [HANIF] }] }
   draft(): Draft { return JSON.parse(readFileSync(join(this.dir, 'drafts', 'finde-2026-11-20.json'), 'utf8')) }
+  reel(id = 'reel-2026-11-20'): Draft | null {
+    try { return JSON.parse(readFileSync(join(this.dir, 'drafts', `${id}.json`), 'utf8')) } catch { return null }
+  }
   replies() { return this.slackPosts.filter(post => post.threadTs).map(post => post.text) }
 }
 
@@ -176,7 +198,8 @@ describe('tick: approval and publishing', () => {
     w.at('2026-11-20', 18)
     await w.job().tick()
     expect(w.ig.published).toHaveLength(0)
-    expect(w.replies()).toEqual(['Skipped: not published by 18:00'])
+    // The Reel, drafted Thursday with no ✅, is skipped at the same moment in its own thread.
+    expect(w.slackPosts.filter(post => post.threadTs === w.draft().slack.ts).map(post => post.text)).toEqual(['Skipped: not published by 18:00'])
   })
 
   it('a ✅ seen before the cutoff does not publish a day later', async () => {
@@ -339,5 +362,239 @@ describe('regenerate', () => {
     await w.job().tick()
     expect(w.r2).toEqual([])
     expect(w.ig.published).toHaveLength(0)
+  })
+})
+
+describe('Este finde Reel', () => {
+  /** Thursday 18:05: the Reel draft is previewed (the finde draft was made Wednesday). */
+  async function reelPreviewed(w = new World()) {
+    await w.job().tick()
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('previewed')
+    return w
+  }
+  const approveReel = (w: World) => { w.reelReactions = [{ name: 'white_check_mark', users: [HANIF] }] }
+
+  it('drafts Thursday 18:00 with the first never-published track and previews the video with the track named', async () => {
+    const w = await reelPreviewed()
+    const reel = w.reel()!
+    expect(reel.track).toMatchObject({ id: 'a', title: 'Track a', artist: 'Synth' })
+    expect(w.reelRenders).toHaveLength(1)
+    expect(reel.frames.map(path => path.split('/').pop())).toEqual(['reel.mp4', 'cover.jpg'])
+    const preview = w.slackPosts.find(post => post.text.startsWith('Instagram draft: Este finde Reel'))!
+    expect(preview.text).toContain('It goes out Friday at 12:00 once you react ✅.')
+    expect(preview.text.endsWith('\n\nMusic: "Track a" by Synth.')).toBe(true)
+    expect(reel.caption).toBe(w.draft().caption)
+  })
+
+  it('shows the carousel picks minus the finde exclusions', async () => {
+    const w = new World()
+    await w.job().tick()
+    w.at('2026-11-18', 19)
+    await w.job().regenerate('finde-2026-11-20', [uuid(2)])
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    expect(w.reel()!.events.map(event => event.id)).not.toContain(uuid(2))
+    expect(w.reel()!.events).toHaveLength(5)
+  })
+
+  it('skips with fewer than 4 events and never renders', async () => {
+    const w = new World()
+    w.catalog = w.catalog.slice(0, 3)
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('skipped')
+    expect(w.reelRenders).toHaveLength(0)
+    expect(w.slackPosts.map(post => post.text)).toContain('Instagram draft: Este finde Reel for November 20 to 22. Skipped: only 3 events qualified')
+  })
+
+  it('publishes at Friday 12:00 as a REELS container with the video and cover, after polling a slow container across ticks', async () => {
+    const w = await reelPreviewed()
+    approveReel(w)
+    w.ig.reelStatus = 'IN_PROGRESS'
+    w.at('2026-11-20', 12)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('publishing')
+    expect(w.reel()!.publishFailures).toBe(0)
+    expect(w.r2.filter(key => key.startsWith('instagram/reel-'))).toEqual([`instagram/reel-2026-11-20/${w.reel()!.framesHash}/reel.mp4`, `instagram/reel-2026-11-20/${w.reel()!.framesHash}/cover.jpg`])
+    const container = [...w.ig.containers.values()].find(c => c.params.media_type === 'REELS')!
+    expect(container.params).toEqual({
+      media_type: 'REELS',
+      video_url: `https://ig.example/instagram/reel-2026-11-20/${w.reel()!.framesHash}/reel.mp4`,
+      cover_url: `https://ig.example/instagram/reel-2026-11-20/${w.reel()!.framesHash}/cover.jpg`,
+      caption: w.reel()!.caption,
+      share_to_feed: 'true',
+    })
+    w.ig.finishReels()
+    w.at('2026-11-20', 12, 10)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('published')
+    expect(w.ig.calls.filter(call => call === 'POST 17841/media')).toHaveLength(1)
+    expect(w.ig.published.filter(media => w.ig.containers.get(media.container!)!.params.media_type === 'REELS')).toHaveLength(1)
+  })
+
+  it('publishes a late ✅ at once before Friday 18:00', async () => {
+    const w = await reelPreviewed()
+    w.at('2026-11-20', 15)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('previewed')
+    approveReel(w)
+    w.at('2026-11-20', 15, 10)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('published')
+  })
+
+  it('settles an unclear media_publish from the container instead of posting again', async () => {
+    const w = await reelPreviewed()
+    approveReel(w)
+    w.ig.publishFault = 'after'
+    w.at('2026-11-20', 12)
+    await w.job().tick()
+    expect(w.reel()!.publish!.units[0]!.pendingSince).not.toBeNull()
+    w.at('2026-11-20', 12, 10)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('published')
+    expect(w.ig.calls.filter(call => call === 'POST 17841/media_publish')).toHaveLength(1)
+  })
+
+  it('rotates to the track whose last published Reel is oldest, never-published first', async () => {
+    const w = new World()
+    const published = (from: string, track: string) => writeFileSync(join(w.dir, 'drafts', `reel-${from}.json`), JSON.stringify({ id: `reel-${from}`, format: 'reel', from, state: 'published', track: { id: track } }))
+    await w.job().tick()
+    published('2026-11-06', 'b')
+    published('2026-11-13', 'a')
+    expect(w.job().chooseTrack()).toBe('c')
+    published('2026-10-30', 'c')
+    expect(w.job().chooseTrack()).toBe('c')
+    published('2026-10-23', 'c')
+    published('2026-11-06', 'c')
+    expect(w.job().chooseTrack()).toBe('b')
+  })
+
+  it('regenerate keeps the track unless --track names another', async () => {
+    const w = await reelPreviewed()
+    w.at('2026-11-19', 19)
+    await w.job().regenerate('reel-2026-11-20', [uuid(3)])
+    expect(w.reel()!.track!.id).toBe('a')
+    expect(w.reel()!.events.map(event => event.id)).not.toContain(uuid(3))
+    await w.job().regenerate('reel-2026-11-20', [], 'b')
+    expect(w.reel()!.track!.id).toBe('b')
+    expect(w.reel()!.exclude).toEqual([uuid(3)])
+    expect(w.reelRenders.at(-1)!.track).toBe('b')
+  })
+
+  it('fails the draft with an alert, never a silent Reel, when its track is unmeasured or its file is missing', async () => {
+    const w = new World()
+    w.music = musicDir([{ id: 'x', bpm: null, startSec: null } as never])
+    w.config.reel.musicDir = w.music
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    expect(w.reel()).toBeNull()
+    expect(w.reelRenders).toHaveLength(0)
+    expect(w.alerts.find(alert => alert.key === 'tick')!.text).toContain('reel-2026-11-20: Reel track x has no bpm and startSec yet')
+    const { rmSync } = await import('node:fs')
+    w.config.reel.musicDir = w.music = musicDir()
+    rmSync(join(w.music, 'a.flac'))
+    await w.job().tick()
+    expect(w.alerts.at(-1)!.text).toContain('a.flac is missing')
+    w.config.reel.musicDir = '/nonexistent/reel-music'
+    await w.job().tick()
+    expect(w.alerts.at(-1)!.text).toContain('tracks.json is missing')
+  })
+})
+
+describe('Este finde Reel: Friday daytime events', () => {
+  /** The carousel picks three Friday daytime events without an end time, as on 2026-11-20. */
+  function daytime() {
+    const w = new World()
+    w.catalog = [...w.catalog.slice(3), ...[12, 13, 14].map((hour, i) => ({ ...w.catalog[i]!, startsAt: baInstant('2026-11-20', hour).toISOString() }))]
+    return w
+  }
+
+  it('leaves them out, so neither the slot nor a late ✅ before the deadline is held', async () => {
+    for (const [hour, minute] of [[12, 0], [17, 50]] as const) {
+      const w = daytime()
+      w.catalog.push(...[4, 5, 6].map(n => ({ ...w.catalog[0]!, id: uuid(n + 10), venue: `Otra sala ${n}`, startsAt: baInstant('2026-11-21', 20 + (n % 3)).toISOString() })))
+      await w.job().tick()
+      expect(w.draft().events.map(event => event.id)).toEqual(expect.arrayContaining([uuid(1), uuid(2), uuid(3)]))
+      w.at('2026-11-19', 18, 5)
+      await w.job().tick()
+      const reel = w.reel()!
+      expect(reel.events.map(event => event.id).filter(id => [uuid(1), uuid(2), uuid(3)].includes(id))).toEqual([])
+      w.reelReactions = [{ name: 'white_check_mark', users: [HANIF] }]
+      w.at('2026-11-20', hour, minute)
+      await w.job().tick()
+      expect(w.reel()!.state).toBe('published')
+    }
+  })
+})
+
+describe('Este finde Reel: a container that never finishes processing', () => {
+  async function stuck() {
+    const w = new World()
+    await w.job().tick()
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    w.reelReactions = [{ name: 'white_check_mark', users: [HANIF] }]
+    w.ig.reelStatus = 'IN_PROGRESS'
+    w.at('2026-11-20', 12)
+    await w.job().tick()
+    expect(w.reel()!.state).toBe('publishing')
+    expect(w.reel()!.publish!.units[0]!.containerId).not.toBeNull()
+    return w
+  }
+  const polls = (w: World) => w.ig.calls.filter(call => /^GET c\d+$/.test(call)).length
+
+  it('stops polling and skips on ❌', async () => {
+    const w = await stuck()
+    w.reelReactions = [{ name: 'x', users: [HANIF] }]
+    const before = polls(w)
+    w.at('2026-11-20', 12, 10)
+    await w.job().tick()
+    expect(polls(w)).toBe(before)
+    expect(w.reel()!.state).toBe('skipped')
+    expect(w.slackPosts.filter(post => post.threadTs === w.reel()!.slack.ts).map(post => post.text)).toEqual(['Skipped: you reacted ❌'])
+  })
+
+  it('pauses without polling while the ✅ is removed', async () => {
+    const w = await stuck()
+    w.reelReactions = []
+    const before = polls(w)
+    w.at('2026-11-20', 12, 10)
+    await w.job().tick()
+    expect(polls(w)).toBe(before)
+    expect(w.reel()!.state).toBe('publishing')
+  })
+
+  it('ends at the deadline with the "not published by" reply', async () => {
+    const w = await stuck()
+    const before = polls(w)
+    w.at('2026-11-20', 18)
+    await w.job().tick()
+    expect(polls(w)).toBe(before)
+    expect(w.reel()!.state).toBe('skipped')
+    expect(w.slackPosts.filter(post => post.threadTs === w.reel()!.slack.ts).map(post => post.text)).toEqual(['Skipped: not published by 18:00'])
+    expect(w.ig.published).toHaveLength(0)
+  })
+})
+
+describe('Este finde Reel: recovering a failed track-only regenerate', () => {
+  it('saves the requested track and names it in the recovery command', async () => {
+    const w = new World()
+    await w.job().tick()
+    w.at('2026-11-19', 18, 5)
+    await w.job().tick()
+    w.at('2026-11-19', 19)
+    const job = w.job()
+    const services = job.s as { renderReel: unknown }
+    services.renderReel = async () => { throw new Error('render crashed') }
+    await expect(job.regenerate('reel-2026-11-20', [], 'b')).rejects.toThrow(/render crashed/)
+    expect(w.reel()!.state).toBe('rebuilding')
+    expect(w.reel()!.track!.id).toBe('b')
+    w.at('2026-11-19', 19, 10)
+    await w.job().tick()
+    const alert = w.alerts.find(a => a.key === 'draft/reel-2026-11-20')!
+    expect(alert.text).toContain('regenerate reel-2026-11-20 --track b')
   })
 })

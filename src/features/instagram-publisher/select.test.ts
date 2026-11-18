@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { baInstant } from './format.ts'
 import { runWindow } from './formats.ts'
+import { qualifies } from './select.ts'
 import { accountIsVenue, selectEvents, stripVenueSuffix, toPostEvent, type CatalogEvent } from './select.ts'
 
 let seq = 0
@@ -134,5 +136,32 @@ describe('titles naming the venue after an @', () => {
     expect(stripVenueSuffix('Fiesta @ La Tangente', 'Niceto Club')).toBe('Fiesta @ La Tangente')
     expect(stripVenueSuffix('Hablemos de @usuario y más', 'Sala')).toBe('Hablemos de @usuario y más')
     expect(toPostEvent(event({ name: 'JOHNNY MARR @ C ART MEDIA', venue: 'C Art Media' })).title).toBe('Johnny Marr')
+  })
+})
+
+describe('the Reel: still running or upcoming at its Friday 18:00 deadline', () => {
+  const reel = runWindow('reel', '2026-11-20')
+  const at = (hour: number, minute = 0) => baInstant('2026-11-20', hour, minute).toISOString()
+
+  it('leaves out a no-end event that starts by 18:00 and keeps one starting after it', () => {
+    expect(qualifies(event({ startsAt: at(12) }), 'reel', reel)).toBe(false)
+    expect(qualifies(event({ startsAt: at(17, 59) }), 'reel', reel)).toBe(false)
+    expect(qualifies(event({ startsAt: at(18) }), 'reel', reel)).toBe(false)
+    expect(qualifies(event({ startsAt: at(18, 1) }), 'reel', reel)).toBe(true)
+  })
+
+  it('keeps an event that is still running at 18:00', () => {
+    expect(qualifies(event({ startsAt: at(12), endsAt: at(20) }), 'reel', reel)).toBe(true)
+    expect(qualifies(event({ startsAt: at(12), endsAt: at(18) }), 'reel', reel)).toBe(false)
+  })
+
+  it('leaves the carousel rule alone', () => {
+    expect(qualifies(event({ startsAt: at(12) }), 'finde', finde)).toBe(true)
+  })
+
+  it('fills the places with the next picks', () => {
+    const early = [12, 13, 14].map(hour => event({ startsAt: at(hour) }))
+    const late = [19, 20, 21, 22].map(hour => event({ startsAt: at(hour) }))
+    expect(selectEvents([...early, ...late], 'reel', reel).map(e => e.id)).toEqual(late.map(e => e.id))
   })
 })
