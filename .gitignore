@@ -66,4 +66,5 @@ test-results/
 *.wav
 *.mp3
 reel.mp4
+render.mp4
 cover.jpg

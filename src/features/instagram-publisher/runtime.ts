@@ -315,8 +315,9 @@ export async function renderReel(window: RunWindow, events: PostEvent[], timing:
     if (still.code !== 0) throw new Error(`Extracting the Reel cover failed: ${still.err.trim().slice(-300)}`)
     return [video, cover]
   } finally {
-    // The project holds the licensed audio excerpt; it never outlives the render, whatever happened.
+    // The project holds the licensed audio excerpt and render.mp4 carries it too; neither outlives the render.
     rmSync(project, { recursive: true, force: true })
+    rmSync(join(outDir, 'render.mp4'), { force: true })
   }
 }
 
