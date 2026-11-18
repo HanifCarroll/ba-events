@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { catalogSql, loadToken, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
+import { catalogSql, loadToken, mediaBin, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
 import { reelTiming } from './reel/project.ts'
 
 describe('catalog read', () => {
@@ -107,18 +107,18 @@ describe('Reel rendering', () => {
     expect(calls).toEqual([])
   })
 
-  it('renders under the 1000 MB scope with one worker and stops the scope on failure', async () => {
+  const ffmpeg = (() => { try { return mediaBin('ffmpeg') } catch { return null } })()
+
+  // The excerpt runs before the render and needs ffmpeg; runners without it skip this test.
+  it.skipIf(!ffmpeg)('renders under the 1000 MB scope with one worker and stops the scope on failure', async () => {
     const { spawnSync } = await import('node:child_process')
-    const { mediaBin } = await import('./runtime.ts')
-    let ffmpeg: string
-    try { ffmpeg = mediaBin('ffmpeg') } catch { return } // the excerpt needs ffmpeg; CI runners without it skip
     const dir = mkdtempSync(join(tmpdir(), 'reel-render-'))
     const chrome = join(dir, 'chrome/linux-1/chrome-headless-shell-linux64')
     const { mkdirSync } = await import('node:fs')
     mkdirSync(chrome, { recursive: true })
     writeFileSync(join(chrome, 'chrome-headless-shell'), '')
     const music = join(dir, 'tone.flac')
-    spawnSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=f=220:d=40:r=48000', music])
+    spawnSync(ffmpeg!, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=f=220:d=40:r=48000', music])
     const calls: string[][] = []
     const runner: Runner = async argv => { calls.push(argv); return { out: '', err: 'boom', code: argv[0] === 'systemd-run' ? 1 : 0 } }
     await expect(renderReel(window, events, timing, { ...track, path: music }, join(dir, 'out'), runner, join(dir, 'chrome')))
