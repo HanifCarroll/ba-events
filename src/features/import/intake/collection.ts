@@ -61,22 +61,38 @@ export function allowedInstagramMedia(value: string): boolean {
   } catch { return false }
 }
 
-/** Direct network adapter: no redirects, credentials, SVG or unbounded downloads. */
+/**
+ * Direct network adapter: no redirects, credentials, SVG or unbounded downloads. Its error message is the short reason
+ * `collect` reports for a failed image (`answered 403`, `timed out after 15 s`, `redirected`, ...).
+ */
 export async function fetchInstagramImage(url: string, fetcher: typeof fetch = fetch) {
   if (!allowedInstagramMedia(url)) throw new Error('Unsupported Instagram media origin')
-  const response = await fetcher(url, { redirect: 'error', signal: AbortSignal.timeout(15000), headers: { Accept: 'image/jpeg,image/png,image/webp' } })
-  if (!response.ok || !response.body || Number(response.headers.get('content-length')) > 10485760) throw new Error('Image download failed or exceeds limit')
+  let response: Response
+  try {
+    // Manual, not 'error', so a redirect is named; it is still never followed.
+    response = await fetcher(url, { redirect: 'manual', signal: AbortSignal.timeout(15000), headers: { Accept: 'image/jpeg,image/png,image/webp' } })
+  } catch (error) { throw new Error(downloadReason(error)) }
+  if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error('redirected') }
+  if (!response.ok || !response.body) { await response.body?.cancel(); throw new Error(`answered ${response.status}`) }
+  if (Number(response.headers.get('content-length')) > 10485760) { await response.body.cancel(); throw new Error('over 10 MB') }
   const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let length = 0
   try {
     for (;;) {
       const { done, value } = await reader.read(); if (done) break
-      length += value.byteLength; if (length > 10485760) throw new Error('Image exceeds limit')
+      length += value.byteLength; if (length > 10485760) throw new Error('over 10 MB')
       chunks.push(value)
     }
-  } finally { await reader.cancel().catch(() => {}) }
+  } catch (error) { throw new Error(downloadReason(error)) } finally { await reader.cancel().catch(() => {}) }
   const bytes = new Uint8Array(length); let offset = 0
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
-  return describeImage(bytes)
+  try { return await describeImage(bytes) } catch {
+    throw new Error(`not an image (${response.headers.get('content-type') ?? 'no content type'})`)
+  }
+}
+const downloadReason = (error: unknown) => {
+  if (error instanceof Error && error.name === 'TimeoutError') return 'timed out after 15 s'
+  const code = (error as { code?: unknown } | null)?.code
+  return `${error instanceof Error ? error.message : String(error)}${typeof code === 'string' ? ` (${code})` : ''}`
 }
 
 /** Evidence image identity from its bytes alone: JPEG, PNG or WebP by magic number, keyed by its sha256. */
@@ -103,7 +119,7 @@ export const RETAIN_CONCURRENCY = 6
 export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store: CollectionStore, runId: string, raw: unknown, usernames: string[], ceiling: number, fetcher: typeof fetchInstagramImage = fetchInstagramImage) {
   const posts = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Schema.Array(PostSchema))(raw), catch: () => fail('Apify dataset has an invalid shape') })
   let changed = 0; let unchanged = 0; const failures: string[] = []; const seen = new Set<string>(); const observationIds = new Set<string>()
-  const mediaFailed: MediaPosition[] = []
+  const mediaFailed: FailedMedia[] = []
   const coverage = sourceCoverage(posts, usernames, ceiling)
   if (coverage.dead_sources.length) failures.push(`Sources not found or restricted (consider disabling): ${coverage.dead_sources.map(s => s.username).join(', ')}`)
   if (coverage.errored_sources.length) failures.push(`Sources returned errors: ${coverage.errored_sources.map(s => `${s.username} (${s.reason})`).join(', ')}`)
@@ -136,12 +152,12 @@ export const retainPostsEffect = Effect.fn('intake.retainPosts')(function*(store
       observationId = observation.id
     }
     const saved = yield* store.mediaPositions(observationId)
-    const failed: MediaPosition[] = []
+    const failed: FailedMedia[] = []
     // A post's images stay sequential; RETAIN_CONCURRENCY posts at a time already bounds parallel downloads and uploads.
     for (let position = 0; position < urls.length; position++) {
       if (saved.includes(position)) continue
       const image = yield* Effect.result(retainImageEffect(store, observationId, position, urls[position], fetcher))
-      if (image._tag === 'Failure') failed.push({ observation_id: observationId, position })
+      if (image._tag === 'Failure') failed.push({ observation_id: observationId, position, reason: image.failure.message })
     }
     return { observationId, fresh, failed }
   }), { concurrency: RETAIN_CONCURRENCY })
@@ -165,11 +181,12 @@ export const MEDIA_RETRY_CAP = 20
 export const MEDIA_RETRY_DEADLINE_MS = 4 * 60_000
 
 export type MediaPosition = { observation_id: string; position: number }
+export type FailedMedia = MediaPosition & { reason: string }
 /**
  * `failed`: positions that failed on an earlier collect and failed again on this retry, the only image problem worth a fix.
  * `expired`: positions whose stored URL expired (or is unreadable); nobody can recover them. `deferred`: left by the cap.
  */
-type MediaRetry = { attempted: number; retained: number; failed: MediaPosition[]; expired: Array<MediaPosition & { expired_at: string | null }>;
+type MediaRetry = { attempted: number; retained: number; failed: FailedMedia[]; expired: Array<MediaPosition & { expired_at: string | null }>;
   deferred: MediaPosition[]; error?: string }
 
 /**
@@ -218,7 +235,7 @@ const retryPositionsEffect = Effect.fn('intake.retryMissingMedia')(function*(sto
       result.attempted++
       // Only the download is caught: a storage failure ends the pass, and the outer boundary names it in `error`.
       const image = yield* Effect.result(importTry('intake.image', () => fetcher(url)))
-      if (image._tag === 'Failure') { result.failed.push(item); continue }
+      if (image._tag === 'Failure') { result.failed.push({ ...item, reason: image.failure.message }); continue }
       yield* store.retainImage(observation.id, position, image.success)
       result.retained++
     }

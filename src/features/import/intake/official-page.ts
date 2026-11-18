@@ -59,6 +59,8 @@ const nameText = (value: string) => ` ${normalizePageText(value).replace(/[^\p{L
 
 export function visibleText(html: string): string {
   const $ = load(html)
+  // React streaming segments (`<div hidden id="S:0">`) are moved into place by an inline `$RC` script, so a browser shows them.
+  $('[hidden]').filter((_, element) => /^S:\d+$/.test($(element).attr('id') ?? '')).removeAttr('hidden')
   $('head, script, style, noscript, template, svg, iframe, [hidden], [aria-hidden="true"]').remove()
   $('[style]').filter((_, element) => /display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') ?? '')).remove()
   // A space at every element boundary: <span>LUNES</span><span>23</span> reads "LUNES 23", never "LUNES23".
@@ -100,7 +102,11 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     let decoder: TextDecoder
     try { decoder = new TextDecoder(charset ?? 'utf-8') } catch { decoder = new TextDecoder('utf-8') }
     const text = decoder.decode(bytes)
-    return /^text\/plain/i.test(type) ? text : visibleText(text)
+    const visible = /^text\/plain/i.test(type) ? text : visibleText(text)
+    if (!visible.trim() || /_Incapsula_Resource|<title>\s*Just a moment\.\.\.|cf[-_]chl/i.test(text)) {
+      throw new Error('the site shows a bot check or an empty page to automated readers; cite another official page')
+    }
+    return visible
   }
 }
 export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<string>

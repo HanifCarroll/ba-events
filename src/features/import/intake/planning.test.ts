@@ -80,14 +80,24 @@ describe('retained Instagram media boundary', () => {
   })
   it('bounds downloaded bytes and checks the image itself', async () => {
     const url = 'https://scontent.cdninstagram.com/synthetic.jpg'
-    const html = (async () => new Response('<html>not an image</html>')) as typeof fetch
-    await expect(fetchInstagramImage(url, html)).rejects.toThrow('Unsupported image bytes')
+    const html = (async () => new Response('<html>not an image</html>', { headers: { 'content-type': 'text/html' } })) as typeof fetch
+    await expect(fetchInstagramImage(url, html)).rejects.toThrow('not an image (text/html)')
     const oversized = (async () => new Response('image', { headers: { 'content-length': '10485761' } })) as typeof fetch
-    await expect(fetchInstagramImage(url, oversized)).rejects.toThrow('exceeds limit')
+    await expect(fetchInstagramImage(url, oversized)).rejects.toThrow('over 10 MB')
     const jpeg = (async (_input: unknown, init: RequestInit | undefined) => {
-      expect(init?.redirect).toBe('error')
+      expect(init?.redirect).toBe('manual')
       return new Response(new Uint8Array([255,216,255,0]))
     }) as typeof fetch
     expect((await fetchInstagramImage(url, jpeg)).object_key).toMatch(/^[a-f0-9]{64}\.jpg$/)
+  })
+  it('names why a download failed, and never follows a redirect', async () => {
+    const url = 'https://scontent.cdninstagram.com/synthetic.jpg'
+    const answer = (response: Response) => (async () => response) as unknown as typeof fetch
+    await expect(fetchInstagramImage(url, answer(new Response('no', { status: 403 })))).rejects.toThrow('answered 403')
+    await expect(fetchInstagramImage(url, answer(new Response(null, { status: 302, headers: { location: 'https://evil.test/x' } })))).rejects.toThrow('redirected')
+    const timeout = (async () => { throw new DOMException('The operation timed out.', 'TimeoutError') }) as unknown as typeof fetch
+    await expect(fetchInstagramImage(url, timeout)).rejects.toThrow('timed out after 15 s')
+    const refused = (async () => { throw Object.assign(new Error('Unable to connect'), { code: 'ConnectionRefused' }) }) as unknown as typeof fetch
+    await expect(fetchInstagramImage(url, refused)).rejects.toThrow('Unable to connect (ConnectionRefused)')
   })
 })

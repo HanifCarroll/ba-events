@@ -17,6 +17,13 @@ export const submitCandidateEffect = Effect.fn('intake.submit')(function*(store:
   const candidate = yield* Effect.try({ try: () => decodeCandidate(input),
     catch: () => new ImportOperationError({ operation: 'intake.input', message: 'Invalid candidate; see the candidate schema' }) })
   const { expected_revision, ...payload } = candidate
+  // A mistyped ID would otherwise surface later as a preview reason that reads like a tool bug.
+  const unknown = (field: string, id: string, kind: string) =>
+    new ImportOperationError({ operation: 'intake.input', message: `${field} ${id} is not a catalog ${kind}; copy the ID from lookup` })
+  if (candidate.venue_id && !(yield* store.venue(candidate.venue_id))) return yield* unknown('venue_id', candidate.venue_id, 'venue')
+  if (candidate.target_event_id && !(yield* store.eventsByIds([candidate.target_event_id])).length) {
+    return yield* unknown('target_event_id', candidate.target_event_id, 'event')
+  }
   return yield* store.submitCandidate(candidate.id, expected_revision, payload)
 })
 
@@ -50,7 +57,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   let venueName = candidate.venue_name
   if (candidate.venue_id) {
     const venue = yield* store.venue(candidate.venue_id)
-    if (!venue) reasons.push('Selected venue does not exist')
+    if (!venue) reasons.push(`Selected venue does not exist: ${candidate.venue_id}`)
     else {
       venueName = venue.name
       if (!venue.neighborhood) reasons.push('Venue location in Buenos Aires must be confirmed')

@@ -123,6 +123,36 @@ describe('official-page evidence', () => {
     await expect(readOfficialPage('https://www.teatro.example.org/obra', sites, fetcher)).rejects.toThrow('redirected to agenda.example.net')
   })
 
+  // Trimmed from revamos.com's event page (2026-11-18): Next.js streams the event into a hidden segment that $RC moves into place.
+  const STREAMED = `<html><body><div><template id="B:2"></template></div><div hidden id="other">OCULTO 27/11/2026</div>
+    <template><p>PLANTILLA 27/11/2026</p></template>
+    <div hidden id="S:2"><h1>PositHIVo 6.0 Kiki Ball - La Era Roja</h1><div><h6>19:00 - 27/11/2026</h6><h6>Maquinal - Anchorena 364 - Abasto</h6></div></div>
+    <script>$RC("B:2","S:2")</script></body></html>`
+
+  it('reads React streaming segments as visible, but not other hidden elements or templates', async () => {
+    const text = visibleText(STREAMED)
+    expect(text).toContain('19:00 - 27/11/2026')
+    expect(text).not.toContain('OCULTO')
+    expect(text).not.toContain('PLANTILLA')
+    const fetcher = (async () => page(STREAMED)) as unknown as typeof fetch
+    const reasons = await Effect.runPromise(verifyOfficialPagesEffect(
+      [evidence('https://www.revamos.com/eventos/kiki-ball', '19:00 - 27/11/2026')],
+      { name: 'PositHIVo 6.0 Kiki Ball - La Era Roja', date: '2026-11-27', time: '19:00', sites: new Set(['revamos.com']) },
+      (url, allowed) => readOfficialPage(url, allowed, fetcher)))
+    expect(reasons).toEqual([])
+  })
+
+  it('names a bot check or an empty page as unreadable', async () => {
+    // Trimmed from plateanet.com (2026-11-18): Incapsula answers automated readers with this stub.
+    const incapsula = '<html><head><META NAME="robots" CONTENT="noindex,nofollow"><script src="/_Incapsula_Resource?SWJIYLWA=0"></script><body></body></html>'
+    const cloudflare = '<html><head><title>Just a moment...</title></head><body><p>Verificando 23 noviembre</p><script>window._cf_chl_opt = {}</script></body></html>'
+    for (const html of [incapsula, cloudflare, '<html><body> </body></html>']) {
+      const reasons = await Effect.runPromise(verifyOfficialPagesEffect([evidence('https://www.plateanet.com/obra/1', 'LUNES 23 NOVIEMBRE 21:00')],
+        facts, (url, allowed) => readOfficialPage(url, allowed, (async () => page(html)) as unknown as typeof fetch)))
+      expect(reasons).toEqual(['Official page could not be read: https://www.plateanet.com/obra/1 (the site shows a bot check or an empty page to automated readers; cite another official page)'])
+    }
+  })
+
   it('refuses non-HTML bodies, error statuses, and oversized pages', async () => {
     const answer = (response: Response) => (async () => response) as unknown as typeof fetch
     await expect(readOfficialPage('https://a.example.org/', new Set(['example.org']), answer(page('x', { headers: { 'content-type': 'application/pdf' } })))).rejects.toThrow('not an HTML page')
