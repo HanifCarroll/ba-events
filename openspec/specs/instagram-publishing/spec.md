@@ -97,11 +97,35 @@ The job MUST save each container and media id before the next step, check `conte
 
 #### Scenario: Slack fails after a publish
 - **WHEN** the post went out but the "Posted:" reply fails
-- **THEN** the draft stays published, the reply is retried on later ticks, and the alert says the post went out
+- **THEN** the draft stays published, the reply is retried on later ticks, and only after three consecutive failed ticks does the alert say the post went out but the Slack reply did not
 
 #### Scenario: The post is published
 - **WHEN** publishing finishes
 - **THEN** the preview's thread gets "Posted: {permalink}"
+
+### Requirement: Alerts report persistent failures and missed deadlines
+
+The job MUST log every failed attempt, persist failure streaks across ticks, and use plain language, Buenos Aires times, and a final diagnostic line for technical details.
+
+#### Scenario: Drafting, previewing, or advancing a draft fails
+
+- **WHEN** the same run fails for three consecutive ticks, or a failing run has no preview at least 60 minutes after its draft time
+- **THEN** the shared tick alert names the affected run and the next retry; repeats only update its thread when the qualifying runs or their causes change
+
+#### Scenario: Publishing has failed
+
+- **WHEN** publishing fails three consecutive ticks, fails with less than 60 minutes until the deadline, or reaches its retry limit
+- **THEN** the draft alert says whether the job will retry, check an unclear publish, or stop
+
+#### Scenario: The job can't retry
+
+- **WHEN** a draft is held, publishing stops part-way, a rebuild doesn't finish, or a preview misses its cutoff
+- **THEN** the job alerts immediately with the outcome and does not retry the stopped step automatically
+
+#### Scenario: A retry succeeds
+
+- **WHEN** an open tick, publishing, or Slack reply alert is no longer failing because the job succeeded
+- **THEN** the job closes the alert with a one-line recovery message that names the outcome
 
 ### Requirement: The job never writes the catalog and never exposes secrets
 The job MUST read D1 only through read-only SELECT statements, MUST NOT print the Instagram, Slack, or Cloudflare tokens or pass them in any process's arguments, and MUST NOT publish when the Instagram token file is missing.
