@@ -9,6 +9,9 @@ export class FakeInstagram implements InstagramApi {
   /** 'after': post, then throw as if the response was lost. 'before': throw without posting. */
   publishFault: 'after' | 'before' | null = null
   quotaUsage = 0
+  /** Status a new REELS container reports until `finishReels()` (video processing). */
+  reelStatus = 'FINISHED'
+  finishReels() { for (const c of this.containers.values()) if (c.params.media_type === 'REELS' && c.status === 'IN_PROGRESS') c.status = 'FINISHED' }
   clock = Date.parse('2026-11-19T15:00:00.000Z')
 
   /** Someone else (Hanif, by hand) posts a story on the account. */
@@ -33,7 +36,7 @@ export class FakeInstagram implements InstagramApi {
     this.calls.push(`POST ${path}`)
     if (path.endsWith('/media')) {
       const id = `c${this.next++}`
-      this.containers.set(id, { status: 'FINISHED', params })
+      this.containers.set(id, { status: params.media_type === 'REELS' ? this.reelStatus : 'FINISHED', params })
       return { id }
     }
     if (path.endsWith('/media_publish')) {

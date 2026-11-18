@@ -57,11 +57,16 @@ export interface PublishUnit {
 export interface PublishState { units: PublishUnit[]; permalink: string | null }
 
 export interface PublishJob {
-  kind: 'story' | 'carousel'
+  kind: 'story' | 'carousel' | 'reel'
   igUserId: string
   slides: Slide[]
   caption: string | null
+  /** Reel only: the MP4 and its cover image. */
+  video?: { url: string; coverUrl: string }
 }
+
+/** A Reel container still processing after this tick's polling budget; later ticks carry on. Not a failure. */
+export class StillProcessing extends Error {}
 
 export interface PublishDeps {
   api: InstagramApi
@@ -77,20 +82,24 @@ export interface PublishDeps {
 export const emptyPublishState = (job: PublishJob): PublishState => ({
   units: job.kind === 'carousel'
     ? [{ childIds: job.slides.map(() => null), containerId: null, mediaId: null, pendingSince: null }]
-    : job.slides.map(() => ({ containerId: null, mediaId: null, pendingSince: null })),
+    : job.kind === 'reel'
+      ? [{ containerId: null, mediaId: null, pendingSince: null }]
+      : job.slides.map(() => ({ containerId: null, mediaId: null, pendingSince: null })),
   permalink: null,
 })
 
 const tagsParam = (slide: Slide, story: boolean): Record<string, string> =>
   slide.tag ? { user_tags: JSON.stringify([story ? { username: slide.tag.username } : slide.tag]) } : {}
 
-async function waitFinished(id: string, deps: PublishDeps): Promise<'FINISHED' | 'PUBLISHED' | 'EXPIRED' | 'ERROR'> {
+async function waitFinished(id: string, deps: PublishDeps, kind: PublishJob['kind'] = 'carousel'): Promise<'FINISHED' | 'PUBLISHED' | 'EXPIRED' | 'ERROR'> {
   // Meta suggests polling once a minute for up to 5 minutes; images are usually ready at once, so start faster.
   for (let attempt = 0; attempt < 12; attempt++) {
     const { status_code: status } = await deps.api.get(id, { fields: 'status_code' })
     if (status === 'FINISHED' || status === 'PUBLISHED' || status === 'EXPIRED' || status === 'ERROR') return status
     await deps.sleep(attempt < 4 ? 5_000 : 30_000)
   }
+  // A video can take longer than one tick's polling; the saved container is polled again next tick.
+  if (kind === 'reel') throw new StillProcessing(`Reel container ${id} is still processing; checking again next tick`)
   throw new InstagramError(`container ${id} did not finish in time`, false)
 }
 
@@ -101,7 +110,7 @@ async function checkQuota(job: PublishJob, deps: PublishDeps) {
   if (usage >= total) throw new InstagramError(`publishing limit reached (${usage}/${total} in 24 hours)`, true)
 }
 
-/** A published carousel's media id: the one recent post with exactly this caption, newer than the attempt. */
+/** A published carousel's or Reel's media id: the one recent post with exactly this caption, newer than the attempt. */
 async function findCarousel(job: PublishJob, unit: PublishUnit, state: PublishState, deps: PublishDeps): Promise<string | null> {
   const since = Date.parse(unit.pendingSince!) - 2 * 60_000
   const { data = [] } = await deps.api.get(`${job.igUserId}/media`, { fields: 'id,caption,timestamp', limit: '25' })
@@ -113,6 +122,13 @@ async function findCarousel(job: PublishJob, unit: PublishUnit, state: PublishSt
 
 async function createContainer(job: PublishJob, unitIndex: number, state: PublishState, deps: PublishDeps): Promise<string> {
   const unit = state.units[unitIndex]!
+  if (job.kind === 'reel') {
+    await deps.beforeWrite()
+    const { id } = await deps.api.post(`${job.igUserId}/media`, {
+      media_type: 'REELS', video_url: job.video!.url, cover_url: job.video!.coverUrl, caption: job.caption ?? '', share_to_feed: 'true',
+    })
+    return id
+  }
   if (job.kind === 'story') {
     const slide = job.slides[unitIndex]!
     await deps.beforeWrite()
@@ -143,14 +159,14 @@ async function publishUnit(job: PublishJob, unitIndex: number, state: PublishSta
     const status = unit.containerId ? (await deps.api.get(unit.containerId, { fields: 'status_code' })).status_code : null
     if (status === 'PUBLISHED') {
       unit.published = true
-      unit.mediaId = job.kind === 'carousel' ? await findCarousel(job, unit, state, deps) : null
+      unit.mediaId = job.kind !== 'story' ? await findCarousel(job, unit, state, deps) : null
       deps.log(`unit ${unitIndex + 1}: container ${unit.containerId} reads PUBLISHED after the unclear attempt at ${unit.pendingSince}`)
       unit.pendingSince = null
       await deps.save(state)
       return
     }
-    if (status === 'FINISHED' && job.kind === 'carousel') {
-      // Belt and braces for a carousel: its exact caption among posts since the attempt means it did go out.
+    if (status === 'FINISHED' && job.kind !== 'story') {
+      // Belt and braces for a carousel or Reel: its exact caption among posts since the attempt means it did go out.
       const found = await findCarousel(job, unit, state, deps)
       if (found) { unit.mediaId = found; unit.published = true; unit.pendingSince = null; await deps.save(state); return }
     }
@@ -164,14 +180,14 @@ async function publishUnit(job: PublishJob, unitIndex: number, state: PublishSta
     await deps.save(state)
   }
   if (unit.containerId) {
-    const status = await waitFinished(unit.containerId, deps)
+    const status = await waitFinished(unit.containerId, deps, job.kind)
     if (status === 'PUBLISHED') throw new InstagramError(`container ${unit.containerId} is already PUBLISHED; not retrying`, false)
     if (status !== 'FINISHED') { unit.containerId = null; if (unit.childIds) unit.childIds = unit.childIds.map(() => null); await deps.save(state) }
   }
   if (!unit.containerId) {
     unit.containerId = await createContainer(job, unitIndex, state, deps)
     await deps.save(state)
-    const status = await waitFinished(unit.containerId, deps)
+    const status = await waitFinished(unit.containerId, deps, job.kind)
     if (status !== 'FINISHED') { unit.containerId = null; await deps.save(state); throw new InstagramError(`container is ${status}`, true) }
   }
   await checkQuota(job, deps)

@@ -17,22 +17,46 @@ A post MUST show only events from the Instagram intake that are scheduled, have 
 - **THEN** the caption line names the venue and ends "Vía @{handle}.", and the card footer reads "Vía @{handle}"
 
 #### Scenario: Too few events qualify
-- **WHEN** fewer events qualify than the format's minimum (Hoy 2, Este finde 4, Gratis 5)
+- **WHEN** fewer events qualify than the format's minimum (Hoy 2, Este finde 4, Gratis 5, Este finde Reel 4)
 - **THEN** the run is skipped and a new top-level message in #ba-eventos says "Skipped: only {n} events qualified"
 
 #### Scenario: A free event qualifies for Hoy or Este finde
 - **WHEN** at least one free event qualifies
 - **THEN** the post includes at least one free event
 
+### Requirement: The Este finde Reel shows the weekend's carousel picks as a video with rotating music
+The Reel MUST be one 1080 × 1920 H.264/AAC MP4 at 30 fps, drafted Thursday 18:00 and published Friday 12:00, with Friday 18:00 as its cutoff and deadline. It MUST show 4 to 6 events picked by Este finde's rules at its own slot, without the Este finde draft's exclusions, hold each card still for max(3.0 s, 0.35 s a word, characters / 17), and cut on the track's beats.
+
+#### Scenario: The Reel's caption
+- **WHEN** a Reel draft is built
+- **THEN** its caption is the Este finde carousel's caption, with the track's credit line after "Más planes en baeventos.com (link en la bio)." when the track has one
+
+#### Scenario: Choosing the track
+- **WHEN** a Reel draft is created
+- **THEN** it uses the track in the music directory whose last published Reel is oldest, tracks never published first in `tracks.json` order, and saves that track in the draft
+- **AND** `regenerate` keeps the track unless given `--track <id>`
+
+#### Scenario: The track can't be used
+- **WHEN** the music directory or the track's file is missing, or the track has no `bpm` and `startSec`, or the excerpt would run past the end of the track
+- **THEN** the draft fails with an alert and no Reel without music is made
+
+#### Scenario: The video is still processing
+- **WHEN** the Reel's container hasn't finished processing within a tick's polling time
+- **THEN** the draft stays publishing, nothing new is created, and later ticks poll the same container
+
+#### Scenario: The rendering environment is incomplete
+- **WHEN** HyperFrames' managed Chrome is missing
+- **THEN** the draft fails with an alert that names the install command
+
 ### Requirement: Every draft is approved in Slack before it is published
-Each draft MUST go to #ba-eventos as a new top-level message with every frame attached. Only Hanif's ✅ and ❌ reactions count; thread replies do not.
+Each draft MUST go to #ba-eventos as a new top-level message with every frame attached (for a Reel, the video, and a last line naming the track). Only Hanif's ✅ and ❌ reactions count; thread replies do not.
 
 #### Scenario: Hanif reacts ❌
 - **WHEN** Hanif's ❌ is on the preview before the post goes out
 - **THEN** the draft is skipped, even in auto mode, and the thread gets "Skipped: you reacted ❌"
 
 #### Scenario: No ✅ by the cutoff
-- **WHEN** there is no ✅ by 17:00 for Hoy, Friday 18:00 for Este finde, or Tuesday 20:00 for Gratis, and auto mode is off
+- **WHEN** there is no ✅ by 17:00 for Hoy, Friday 18:00 for Este finde and the Reel, or Tuesday 20:00 for Gratis, and auto mode is off
 - **THEN** the draft is skipped and the thread gets "Skipped: no ✅ by {HH:MM}"
 
 #### Scenario: Approval changes after publishing has started
@@ -40,7 +64,7 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **THEN** no further Instagram write is made: ❌ skips the draft, a removed ✅ pauses it
 
 #### Scenario: Past the deadline
-- **WHEN** the deadline has passed (Hoy 19:00, a carousel's cutoff)
+- **WHEN** the deadline has passed (Hoy 19:00, a carousel's or the Reel's cutoff)
 - **THEN** the job creates and publishes no new media and only reconciles requests it already sent
 
 #### Scenario: A selected event is cancelled before publishing
@@ -51,8 +75,8 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **WHEN** at the first write of a publishing attempt a selected event has ended, or has started and has no end time
 - **THEN** the draft is held and the thread gets "Held: {title} has already happened. Ask Hermes to regenerate it."
 
-#### Scenario: Late ✅ on a carousel
-- **WHEN** a carousel's ✅ arrives after its slot but before its cutoff
+#### Scenario: Late ✅ on a carousel or the Reel
+- **WHEN** a carousel's or the Reel's ✅ arrives after its slot but before its cutoff
 - **THEN** it publishes at once
 
 #### Scenario: Auto mode

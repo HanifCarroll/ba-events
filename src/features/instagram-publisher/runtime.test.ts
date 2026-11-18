@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { runWindow } from './formats.ts'
-import { catalogSql, loadToken, renderFrames, toCatalogEvent, type Runner } from './runtime.ts'
+import { catalogSql, loadToken, renderFrames, renderReel, toCatalogEvent, type Runner } from './runtime.ts'
+import { reelTiming } from './reel/project.ts'
 
 describe('catalog read', () => {
   it('is one read-only SELECT over the run window, intake events only', () => {
@@ -90,4 +91,41 @@ describe('rendering', () => {
     await renderFrames('<html></html>', mkdtempSync(join(tmpdir(), 'ig-render-')), 1350, runner)
     expect(calls).toHaveLength(1)
   })
+})
+
+describe('Reel rendering', () => {
+  const events = [1, 2, 3, 4].map(n => ({ id: `${n}`, date: '2026-11-21', startsAt: '', title: 'T', time: '21:00', description: null, venue: `V${n}`, barrio: 'B', price: null, handle: null, via: false }))
+  const window = { from: '2026-11-20', to: '2026-11-22' } as never
+  const timing = reelTiming(window, events, 120)
+  const track = { id: 't', title: 't', artist: 'a', file: 'x.flac', durationSec: 40, bpm: 120, startSec: 0, credit: null, path: '/nonexistent/x.flac' }
+
+  it('fails, naming the install command, when HyperFrames\' managed Chrome is missing', async () => {
+    const calls: string[][] = []
+    const runner: Runner = async argv => { calls.push(argv); return { out: '', err: '', code: 0 } }
+    await expect(renderReel(window, events, timing, track, mkdtempSync(join(tmpdir(), 'reel-')), runner, '/nonexistent/chrome'))
+      .rejects.toThrow(/managed Chrome is missing.*npx --yes hyperframes@0\.9\.66 browser ensure/)
+    expect(calls).toEqual([])
+  })
+
+  it('renders under the 1000 MB scope with one worker and stops the scope on failure', async () => {
+    const { spawnSync } = await import('node:child_process')
+    const { mediaBin } = await import('./runtime.ts')
+    let ffmpeg: string
+    try { ffmpeg = mediaBin('ffmpeg') } catch { return } // the excerpt needs ffmpeg; CI runners without it skip
+    const dir = mkdtempSync(join(tmpdir(), 'reel-render-'))
+    const chrome = join(dir, 'chrome/linux-1/chrome-headless-shell-linux64')
+    const { mkdirSync } = await import('node:fs')
+    mkdirSync(chrome, { recursive: true })
+    writeFileSync(join(chrome, 'chrome-headless-shell'), '')
+    const music = join(dir, 'tone.flac')
+    spawnSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=f=220:d=40:r=48000', music])
+    const calls: string[][] = []
+    const runner: Runner = async argv => { calls.push(argv); return { out: '', err: 'boom', code: argv[0] === 'systemd-run' ? 1 : 0 } }
+    await expect(renderReel(window, events, timing, { ...track, path: music }, join(dir, 'out'), runner, join(dir, 'chrome')))
+      .rejects.toThrow(/Rendering the Reel failed \(exit 1\)/)
+    expect(calls[0]).toEqual(expect.arrayContaining(['--scope', '--collect', '-p', 'MemoryMax=1000M', 'MemorySwapMax=0', 'RuntimeMaxSec=600', 'npx', '--yes', 'hyperframes@0.9.66', 'render', '--quality', 'delivery', '--workers', '1']))
+    const unit = calls[0]!.find(arg => arg.startsWith('--unit='))!.slice('--unit='.length)
+    expect(unit).toMatch(/^ba-events-instagram-reel-\d+-\d+$/)
+    expect(calls[1]).toEqual(['systemctl', '--user', 'stop', `${unit}.scope`])
+  }, 60_000)
 })

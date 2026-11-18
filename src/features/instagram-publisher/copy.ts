@@ -10,6 +10,12 @@ export const CLOSING = {
   footer: 'Link en la bio',
 } as const
 
+/** The Reel's own words (copy.md section 4); its closing card reuses CLOSING's headline, button, and footer. */
+export const REEL = {
+  brand: 'BA Eventos',
+  headline: ['Este finde', 'en Buenos Aires'],
+} as const
+
 export const HOY_CLOSING = {
   headline: 'Más planes para hoy',
   body: 'Buscá por día, barrio o presupuesto en baeventos.com. Gratis y sin registrarte.',
@@ -29,6 +35,7 @@ export function cover(format: FormatKey, window: RunWindow, count: number): Cove
     }
     case 'finde': return { kicker: dateRange(window.from, window.to), headline: ['Este finde', 'en Buenos Aires'], body: `${n} planes independientes para elegir.`, english: null }
     case 'gratis': return { kicker: dateRange(window.from, window.to), headline: ['Gratis', 'esta semana'], body: `${n} planes gratis en Buenos Aires para elegir.`, english: null }
+    case 'reel': throw new Error('The Reel has no frame cover; see reel/project.ts')
   }
 }
 
@@ -45,23 +52,26 @@ export function eventLine(format: FormatKey, event: PostEvent): string {
   return `${weekdayDay(event.date)}, ${event.time}. ${event.title} en ${where}${price}${via}`
 }
 
-/** The post caption, or null for a story (stories have no caption). */
-export function caption(format: FormatKey, events: PostEvent[]): string | null {
+/** The post caption, or null for a story (stories have no caption). A Reel's is Este finde's, plus its track's credit line. */
+export function caption(format: FormatKey, events: PostEvent[], credit: string | null = null): string | null {
   if (format === 'hoy') return null
   const n = events.length
   const lines = events.map(event => eventLine(format, event)).join('\n\n')
-  const [intro, english] = format === 'finde'
+  const more = `Más planes en baeventos.com (link en la bio).${format === 'reel' && credit ? `\n\n${credit}` : ''}`
+  const [intro, english] = format !== 'gratis'
     ? [`${numberWord(n, 'es')} planes independientes para este finde en Buenos Aires:`, `${numberWord(n, 'en')} independent events this weekend in Buenos Aires. More at baeventos.com.`]
     : [`${numberWord(n, 'es')} planes gratis esta semana en Buenos Aires:`, `${numberWord(n, 'en')} free events this week in Buenos Aires. More at baeventos.com.`]
-  return `${intro}\n\n${lines}\n\nMás planes en baeventos.com (link en la bio).\n\n${english}`
+  return `${intro}\n\n${lines}\n\n${more}\n\n${english}`
 }
 
-export function slackPreview(format: FormatKey, window: RunWindow, captionText: string | null, auto: boolean): string {
+/** `track` names the Reel's music: the message ends with `Music: "{title}" by {artist}.` */
+export function slackPreview(format: FormatKey, window: RunWindow, captionText: string | null, auto: boolean, track?: { title: string; artist: string }): string {
   const at = baLocal(window.publishAt)
   const when = `${WEEKDAYS_EN[at.weekday]} at ${hhmm(at)}`
   // copy.md's line says "once you react ✅", which is untrue in auto mode, so auto mode says what actually happens.
   const gate = auto ? `It goes out ${when} unless you react ❌.` : `It goes out ${when} once you react ✅. React ❌ to skip it.`
-  return `Instagram draft: ${FORMATS[format].slackName} for ${englishDates(window.from, window.to)}. ${gate}\n\n${captionText ?? 'Stories have no caption.'}`
+  const music = track ? `\n\nMusic: "${track.title}" by ${track.artist}.` : ''
+  return `Instagram draft: ${FORMATS[format].slackName} for ${englishDates(window.from, window.to)}. ${gate}\n\n${captionText ?? 'Stories have no caption.'}${music}`
 }
 
 export type SkipReason = { kind: 'rejected' } | { kind: 'no-approval'; by: Date } | { kind: 'late'; by: Date } | { kind: 'too-few'; count: number }

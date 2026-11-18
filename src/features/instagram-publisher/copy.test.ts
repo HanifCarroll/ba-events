@@ -1,7 +1,7 @@
 /** Golden tests: the live weekend post (templates ba-p2) and copy.md's templates, filled in. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CLOSING, HOY_CLOSING, caption, cardKicker, cover, eventLine, footerHandle, heldText, skipText, slackPreview, tooFewText } from './copy.ts'
+import { CLOSING, HOY_CLOSING, REEL, caption, cardKicker, cover, eventLine, footerHandle, heldText, skipText, slackPreview, tooFewText } from './copy.ts'
 import { baInstant } from './format.ts'
 import { runWindow } from './formats.ts'
 import type { PostEvent } from './select.ts'
@@ -120,10 +120,27 @@ describe('copy.md', () => {
       'esta semana', 'Más planes en baeventos.com (link en la bio).', 'independent events this weekend in Buenos Aires. More at baeventos.com.',
       'free events this week in Buenos Aires. More at baeventos.com.', 'planes independientes para elegir.', 'planes gratis en Buenos Aires para elegir.',
       'planes para esta noche.', 'Stories have no caption.', 'once you react ✅. React ❌ to skip it.', '"you reacted ❌"', 'Deslizá →',
-      'Hoy story', 'Este finde carousel', 'Gratis esta semana carousel', 'Posted: {permalink}',
+      'Hoy story', 'Este finde carousel', 'Gratis esta semana carousel', '"Este finde Reel"', 'Posted: {permalink}', REEL.brand, ...REEL.headline,
+      'Music: "{title}" by {artist}.', 'Kicker: "{Weekday} {d} · {time}"',
       '"{Weekday} {d}, {time}. {Title} en {Venue}, {Barrio}. {Price}. Vía @{handle}."', '"Vía @{handle}" instead of "@{handle}"']) {
       expect(copyMd).toContain(text)
     }
     expect(eventLine('finde', weekend[0]!)).toMatch(/^\{?Viernes 20, 21:00\. /)
+  })
+})
+
+describe('Este finde Reel', () => {
+  const window = runWindow('reel', '2026-11-20')
+
+  it('uses the carousel caption word for word, with a credit line after "Más planes" when the track has one', () => {
+    expect(caption('reel', weekend)).toBe(caption('finde', weekend))
+    const credited = caption('reel', weekend, 'Música: "Intención" de Sapajou (auboutdufil.com), CC BY 3.0.')!
+    expect(credited).toBe(caption('finde', weekend)!.replace('Más planes en baeventos.com (link en la bio).\n\n',
+      'Más planes en baeventos.com (link en la bio).\n\nMúsica: "Intención" de Sapajou (auboutdufil.com), CC BY 3.0.\n\n'))
+  })
+
+  it('previews with the Reel name, Friday 12:00, and the track line last', () => {
+    expect(slackPreview('reel', window, 'CAPTION', false, { title: 'Intención', artist: 'Sapajou' })).toBe(
+      'Instagram draft: Este finde Reel for November 20 to 22. It goes out Friday at 12:00 once you react ✅. React ❌ to skip it.\n\nCAPTION\n\nMusic: "Intención" by Sapajou.')
   })
 })

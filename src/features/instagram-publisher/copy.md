@@ -113,6 +113,32 @@ Más planes en baeventos.com (link en la bio).
 
 Each event line reads "{Weekday} {d}, {time}. {Title} en @{handle}, {Barrio}." The price is left out, because every event in the post is free.
 
+## 4. Este finde Reel (a Reel every Friday, 1080 × 1920 video)
+
+The Reel shows the same events as that weekend's Este finde carousel.
+
+**Cover card**
+- Brand mark: "BA Eventos"
+- Kicker: "{date range Friday to Sunday}"
+- Headline, on two lines: "Este finde" and "en Buenos Aires"
+
+**One card per event**
+- Brand mark: "BA Eventos"
+- Kicker: "{Weekday} {d} · {time}"
+- Title
+- Venue name
+- Barrio and price pill on one line
+
+**Closing card**
+- Brand mark: "BA Eventos"
+- Headline: "Encontrá más planes"
+- Button: "baeventos.com"
+- Footer: "Link en la bio"
+
+The event cards have no description line, no handle, and no "baeventos.com" footer. The caption carries the handles.
+
+**Caption:** the Este finde carousel's caption, word for word. When the Reel's track has a credit line, the credit goes on its own line after "Más planes en baeventos.com (link en la bio).", with a blank line before it. Of the current tracks, only "Intención" by Sapajou (CC BY 3.0) needs a credit.
+
 ## Slack preview message (in English, for Hanif)
 
 The message goes to #ba-eventos as a new top-level message, with every frame or slide attached in order:
@@ -123,7 +149,13 @@ Instagram draft: {Format name} for {dates}. It goes out {Weekday} at {HH:MM} onc
 {caption, or "Stories have no caption." for Hoy}
 ```
 
-Use these format names in the message: "Hoy story", "Este finde carousel", and "Gratis esta semana carousel".
+Use these format names in the message: "Hoy story", "Este finde carousel", "Gratis esta semana carousel", and "Este finde Reel".
+
+A Reel's preview attaches the video instead of frames, and its message ends with a line naming the track:
+
+```
+Music: "{title}" by {artist}.
+```
 
 Once the post is published, reply in that message's thread with "Posted: {permalink}". If a draft is skipped, reply with "Skipped: {reason}". Use one of these reasons:
 - "you reacted ❌"
