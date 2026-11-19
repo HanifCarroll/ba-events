@@ -39,6 +39,19 @@ export const Square: Story = { args: { imageUrl: '/fixtures/poster-square.svg', 
 export const MissingDimensions: Story = { args: { imageWidth: null, imageHeight: null } };
 export const ExplicitContainerRatio: Story = { args: { aspectRatio: '1 / 1' } };
 
+export const CroppedFlyer: Story = {
+	args: { imageUrl: '/fixtures/poster-landscape.svg', imageWidth: null, imageHeight: null, crop: true },
+	play: async ({ canvasElement }) => {
+		const image = canvasElement.querySelector('img')!;
+		await image.decode();
+		expect(getComputedStyle(image).objectFit).toBe('cover');
+		expect(image.getAttribute('width')).toBe('320');
+		expect(image.getAttribute('height')).toBe('400');
+		const { width, height } = image.getBoundingClientRect();
+		expect(width / height).toBeCloseTo(4 / 5, 2);
+	}
+};
+
 export const SmallOriginal: Story = {
 	args: {
 		imageUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#244143"/></svg>')}`,

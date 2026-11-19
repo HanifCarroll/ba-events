@@ -69,6 +69,20 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 - **THEN** the chat receives the first four event IDs in the displayed view, or fewer if fewer cards are shown, including displayed date fallbacks and no IDs for an empty view
 - **AND** an unchanged Ask prompt still identifies its specific event
 
+### Requirement: The homepage header surfaces agenda flyers
+The homepage SHALL show three or four linked flyers in the desktop header photo slot when enough events qualify, and SHALL give the headline the full header width when the collage is unavailable or hidden below the medium breakpoint. The collage SHALL NOT change when a visitor switches agenda filters.
+
+#### Scenario: Selecting current flyers
+- **WHEN** the homepage has enough eligible events after the first five cards of the default agenda
+- **THEN** the collage uses only remaining, in-scope events with non-empty artwork, with at most one flyer per known venue
+- **AND** it prefers the This Weekend window and, within each date tier, known portrait artwork with a width-to-height ratio at most 0.9, with deterministic ordering for a given Buenos Aires day and eligible set
+- **AND** it fills from the rest of the default agenda only if fewer than three weekend flyers qualify, and omits the collage entirely if fewer than three total qualify
+
+#### Scenario: A visitor uses the desktop collage
+- **WHEN** the desktop collage is visible
+- **THEN** its overlapping 4:5 flyers crop artwork to fill the frame, and link to event details with the event titles as accessible names
+- **AND** hovering or keyboard-focusing a flyer straightens it and raises it above overlapping flyers, with a visible keyboard focus outline and no animation for reduced motion
+
 ### Requirement: Homepage reassurance focuses on guest access
 The homepage SHALL state that the service is free to use and no sign-up is needed in the active locale. Its reassurance line SHALL NOT include the English-or-Spanish language claim.
 

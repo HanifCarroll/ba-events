@@ -66,6 +66,10 @@ function occurrenceEnd(event: HomeAgendaEvent): number {
   return Number.isFinite(explicitEnd) ? explicitEnd : start + HOME_EVENT_DEFAULT_DURATION_MS
 }
 
+function overlaps(event: HomeAgendaEvent, start: number, end: string): boolean {
+  return event.starts_at < end && occurrenceEnd(event) > start
+}
+
 function currentWindow(agenda: HomeAgenda, now: number): HomeWindow {
   return now < Date.parse(agenda.window.tomorrow) ? agenda.window : homeWindow(new Date(now))
 }
@@ -110,7 +114,7 @@ export function selectHomeView(agenda: HomeAgenda, filter: HomeFilter | null, no
   if (filter === 'hoy' || filter === 'finde') {
     const start = Date.parse(filter === 'hoy' ? window.start : window.weekendStart)
     const end = filter === 'hoy' ? window.tomorrow : window.weekendEnd
-    const matches = week.filter((event) => event.starts_at < end && occurrenceEnd(event) > start)
+    const matches = week.filter((event) => overlaps(event, start, end))
     return matches.length
       ? { events: groupOccurrences(matches, now), empty: null }
       : { events: groupOccurrences(remaining.filter((event) => event.starts_at >= end), now).slice(0, HOME_FALLBACK_LIMIT), empty: filter }
@@ -120,6 +124,43 @@ export function selectHomeView(agenda: HomeAgenda, filter: HomeFilter | null, no
     ? !event.payWhatYouCan && (event.is_free || event.price === 0)
     : event.music)
   return { events: groupOccurrences(matches, now), empty: matches.length ? null : filter }
+}
+
+function flyerRank(day: string, id: string): number {
+  let hash = 2166136261
+  for (const char of `${day}:${id}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
+  return hash >>> 0
+}
+
+export function selectHomeCollage(agenda: HomeAgenda, now = agenda.asOf): HomeAgendaCardEvent[] {
+  const { day, weekendStart, weekendEnd } = currentWindow(agenda, now)
+  const weekendStartMs = Date.parse(weekendStart)
+  const candidates = selectHomeView(agenda, null, now).events.slice(5)
+    .filter(event => event.image_url.trim())
+    .map(event => {
+      const { id, image_width: width, image_height: height } = event
+      return {
+        event,
+        weekend: overlaps(event, weekendStartMs, weekendEnd),
+        portrait: width != null && height != null && width > 0 && height > 0 && width / height <= 0.9,
+        rank: flyerRank(day, id),
+      }
+    })
+    .sort((a, b) => Number(b.portrait) - Number(a.portrait) || a.rank - b.rank)
+
+  const selected: HomeAgendaCardEvent[] = []
+  const venues = new Set<string>()
+  function fill(weekendOnly: boolean) {
+    for (const { event, weekend } of candidates) {
+      if (selected.length === 4) break
+      if (weekend !== weekendOnly || (event.venue_id && venues.has(event.venue_id))) continue
+      selected.push(event)
+      if (event.venue_id) venues.add(event.venue_id)
+    }
+  }
+  fill(true)
+  if (selected.length < 3) fill(false)
+  return selected.length >= 3 ? selected : []
 }
 
 export function toCompactHomeCard(event: HomeAgendaEvent): HomeEventCard {
