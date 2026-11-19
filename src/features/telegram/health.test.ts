@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   TELEGRAM_RECENT_ERROR_AGE_MS,
-  TELEGRAM_STALE_FAILURE_AGE_MS,
   countStaleTelegramFailures,
   parseTelegramWebhookInfo,
   runTelegramHealthCheck,
@@ -35,23 +34,16 @@ describe('Telegram health check', () => {
     }, 0, now)).toEqual({ healthy: false, reason: 'recent_webhook_error' })
   })
 
-  it('distinguishes stale failed rows from recent ones and surfaces DB errors', async () => {
-    const cutoff = new Date(now.getTime() - TELEGRAM_STALE_FAILURE_AGE_MS).toISOString()
-    const staleQuery = { select: vi.fn(() => ({ eq: vi.fn(() => ({ lt: vi.fn().mockResolvedValue({ count: 2, error: null }) })) })) }
-    const recentQuery = { select: vi.fn(() => ({ eq: vi.fn(() => ({ lt: vi.fn().mockResolvedValue({ count: 0, error: null }) })) })) }
-    await expect(countStaleTelegramFailures({ from: vi.fn(() => staleQuery) } as never, now)).resolves.toBe(2)
-    await expect(countStaleTelegramFailures({ from: vi.fn(() => recentQuery) } as never, now)).resolves.toBe(0)
-    expect(staleQuery.select).toHaveBeenCalledWith('update_id', { count: 'exact', head: true })
+  it('surfaces database errors and reports stale failures', async () => {
+    const prepare = () => { throw new Error('db down') }
+    await expect(countStaleTelegramFailures({ prepare } as never, now)).rejects.toThrow('Failed to read stale Telegram updates')
     expect(telegramHealthDecision(webhook, 1, now)).toEqual({ healthy: false, reason: 'stale_failed_updates' })
-    const errorQuery = { select: vi.fn(() => ({ eq: vi.fn(() => ({ lt: vi.fn().mockResolvedValue({ count: null, error: new Error('db down') }) })) })) }
-    await expect(countStaleTelegramFailures({ from: vi.fn(() => errorQuery) } as never, now)).rejects.toThrow('Failed to read stale Telegram updates')
-    expect(cutoff).toContain('2026-08-25')
   })
 
   it('throws on unhealthy state while logging only bounded status', async () => {
     await expect(runTelegramHealthCheck(
       { getWebhookInfo: vi.fn().mockResolvedValue({ ...webhook, pending_update_count: 101, last_error_message: 'private content' }) },
-      { from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ lt: vi.fn().mockResolvedValue({ count: 0, error: null }) })) })) })) } as never,
+      { prepare: () => ({ bind: () => ({ first: async () => ({ n: 0 }) }) }) } as never,
       now,
     )).rejects.toThrow('pending_backlog')
   })

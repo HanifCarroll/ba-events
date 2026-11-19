@@ -1,6 +1,6 @@
 /**
  * The chat-turn RPCs ported to D1 batches, on Miniflare D1 with the real migrations. Covers the cases of
- * supabase/tests/chat-turn-completion.sql, races for each port, and one cross-user test per user-owned table.
+ * the claim and turn invariants, races, and cross-user isolation for user-owned tables.
  */
 import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'

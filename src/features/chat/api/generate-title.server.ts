@@ -12,8 +12,7 @@ import {
   getFallbackConversationTitle,
   normalizeConversationTitle,
 } from '#features/chat/lib/title.ts'
-import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
-import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import { requireD1 } from '#shared/lib/db/d1-binding.server.ts'
 import { updateConversation } from './chat-d1.server.ts'
 
 /**
@@ -67,41 +66,11 @@ export async function generateAndSaveTitle(
   event: RequestEvent,
   data: { conversationId: string; firstMessage: string }
 ) {
-  const db = boundD1()
-  if (db) {
-    const userId = event.locals?.user?.id
-    if (!userId) throw new Error('Not authenticated')
-    const { title } = await generateTitle({ firstMessage: data.firstMessage })
-    // Don't throw: title generation worked, only saving failed.
-    await updateConversation(db, userId, data.conversationId, { title })
-      .catch((error) => console.error('[generateAndSaveTitle] Error updating conversation:', error))
-    return { title }
-  }
-
-  const supabase = createSupabaseServerClient(event)
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    throw new Error('Not authenticated')
-  }
-
-  // Generate the title
+  const userId = event.locals?.user?.id
+  if (!userId) throw new Error('Not authenticated')
   const { title } = await generateTitle({ firstMessage: data.firstMessage })
-
-  // Update the conversation
-  const { error } = await supabase
-    .from('conversations')
-    .update({ title, updated_at: new Date().toISOString() })
-    .eq('id', data.conversationId)
-    .eq('user_id', user.id)
-
-  if (error) {
-    console.error('[generateAndSaveTitle] Error updating conversation:', error)
-    // Don't throw - title generation worked, just saving failed
-  }
-
+  // Don't throw: title generation worked, only saving failed.
+  await updateConversation(requireD1(), userId, data.conversationId, { title })
+    .catch((error) => console.error('[generateAndSaveTitle] Error updating conversation:', error))
   return { title }
 }

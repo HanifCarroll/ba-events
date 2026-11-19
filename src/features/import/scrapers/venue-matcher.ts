@@ -3,8 +3,7 @@
  *
  * Matches venue names from external sources to existing venues in the database.
  * Uses a three-tier approach: exact match, fuzzy match, no match.
- * Reads through the catalog store: on Supabase that needs migration 20261116180000_venue_name_matching.sql (`venues_named`,
- * and `find_similar_venue` fixed); on D1 it compares `venueNameKey` and the pg_trgm port in TypeScript.
+ * The catalog store compares `venueNameKey` and trigram similarity in TypeScript.
  */
 
 import { Data, Effect } from 'effect'
@@ -33,7 +32,7 @@ const matchError = (cause: { operation: string; message: string; cause?: unknown
 })
 
 /**
- * Every venue whose `venueNameKey` equals this name's, with its event count (`venues_named` on Supabase). No `ilike`, so
+ * Every venue whose `venueNameKey` equals this name's, with its event count. No `ilike`, so
  * `%` and `_` in a name are plain characters. A failed lookup is an error, never "no venue".
  */
 export function findSameNameVenuesEffect(

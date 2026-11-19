@@ -6,7 +6,6 @@
  * count keep the shape the Trigger.dev job wrote.
  */
 import type { CatalogStore } from '#features/import/core/catalog-store.ts'
-import { pruneAcquisitionCache } from '#features/import/acquisition/cache.ts'
 import { countEventsNeedingEnrichment } from '#features/import/core/event-enrichment.ts'
 import {
   finalizeScrapeRun,
@@ -25,7 +24,6 @@ export async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> 
 
 /** Create the audit row after closing any earlier run that never finalized. */
 export async function openScrapeRun(catalog: CatalogStore, workflowRunId: string, scheduledTime: string | null): Promise<{ id: string; metadata: unknown; startedAt: string }> {
-  await pruneAcquisitionCache().catch(() => console.warn('[daily-scrape] Cache retention unavailable'))
   const startedAt = new Date().toISOString()
   try {
     const reconciled = await timed('stale-run reconciliation', () => reconcileStaleScrapeRuns(catalog, new Date(startedAt)))

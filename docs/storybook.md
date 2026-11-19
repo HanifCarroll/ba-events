@@ -18,7 +18,7 @@ Use the globe toolbar to select **Español** or **English**, and the viewport to
 
 ## Isolation
 
-`.storybook/main.ts` aliases auth, saved-event requests, analytics, and speech recognition to Storybook-only mocks. Navigation and page state use Storybook's SvelteKit mocks. No Supabase credentials or AI requests are needed. Dictation is deliberately unsupported in the fixture browser environment. Mocks reset before each story; signed-in stories explicitly opt into a synthetic user. The mocks apply only to Storybook.
+`.storybook/main.ts` aliases auth, saved-event requests, analytics, and speech recognition to Storybook-only mocks. Navigation and page state use Storybook's SvelteKit mocks. No database credentials or AI requests are needed. Dictation is deliberately unsupported in the fixture browser environment. Mocks reset before each story; signed-in stories explicitly opt into a synthetic user. The mocks apply only to Storybook.
 
 Historical operation-receipt stories exercise compatibility rendering for old saved messages. They do not imply that the current concierge exposes save/unsave tools.
 

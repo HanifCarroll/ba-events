@@ -39,7 +39,7 @@ Storybook runs on port 6006 with fixture data. See [exploring the code](docs/get
 | --- | --- |
 | Web app | SvelteKit 3 RC, Svelte 5, TypeScript, Tailwind CSS |
 | Concierge | Vercel AI SDK, DeepSeek generation, OpenAI embeddings, optional Voyage reranking |
-| Data and identity | Supabase Postgres, pgvector, Auth, row-level security |
+| Data and identity | Cloudflare D1, Vectorize, R2, Better Auth |
 | Delivery | Cloudflare Workers, Durable Objects, Workflows |
 | Imports | Cloudflare Workflows, source adapters, Cloudflare Browser Rendering |
 | Quality | Vitest, Bun tests, Storybook, frozen search and concierge evaluations |

@@ -17,7 +17,6 @@ logs/
 .pi-tasks/
 .context/compound-engineering/
 .mcp.json
-supabase/.temp/
 
 # OS
 .DS_Store

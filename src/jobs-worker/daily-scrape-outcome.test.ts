@@ -1,6 +1,5 @@
+import type { CatalogStore, ScrapeRunPatch } from '#features/import/core/catalog-store.ts'
 import { describe, expect, it, vi } from 'vitest'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { supabaseCatalog } from '#features/import/core/catalog-store.ts'
 import { catalogImportProvenance, CATALOG_IMPORT_VERSION } from '#features/import/core/enrichment-provenance.ts'
 import {
   mapBatchRunsToResults,
@@ -139,24 +138,19 @@ describe('determineScrapeRunStatus', () => {
 
 describe('finalizeScrapeRun', () => {
   function fakeFinalizeClient() {
-    const updates: Array<Record<string, unknown>> = []
-    const eq = vi.fn(() => Promise.resolve({ error: null }))
-    const update = vi.fn((payload: Record<string, unknown>) => {
-      updates.push(payload)
-      return { eq }
-    })
-    const from = vi.fn(() => ({ update }))
-    return { client: supabaseCatalog({ from } as unknown as SupabaseClient), updates, eq }
+    const updates: ScrapeRunPatch[] = []
+    const updateScrapeRun = vi.fn<CatalogStore['updateScrapeRun']>(async (_, patch) => { updates.push(patch) })
+    return { client: { updateScrapeRun } as unknown as CatalogStore, updates, updateScrapeRun }
   }
 
   it('writes status completed, completed_at and stats for a fully-successful run', async () => {
-    const { client, updates, eq } = fakeFinalizeClient()
+    const { client, updates, updateScrapeRun } = fakeFinalizeClient()
     const results = resultsFor([true, true])
     results[0].catalogProvenance = catalogImportProvenance('2026-10-01T10:00:00.000Z')
 
     await finalizeScrapeRun(client, 'run-1', { scheduled: true }, results, true, 4, 37)
 
-    expect(eq).toHaveBeenCalledWith('id', 'run-1')
+    expect(updateScrapeRun).toHaveBeenCalledWith('run-1', expect.any(Object))
     const payload = updates[0]
     expect(payload.status).toBe('completed')
     expect(payload.completed_at).toBeTruthy()
@@ -182,73 +176,27 @@ describe('finalizeScrapeRun', () => {
     expect(updates[0].metadata).toMatchObject({ enrichment: { eligible: 0 } })
   })
 
-  it('throws when the update returns an error', async () => {
-    const eq = vi.fn(() => Promise.resolve({ error: { message: 'db constraint violated' } }))
-    const update = vi.fn(() => ({ eq }))
-    const client = supabaseCatalog({ from: vi.fn(() => ({ update })) } as unknown as SupabaseClient)
-
-    await expect(
-      finalizeScrapeRun(client, 'run-4', null, resultsFor([true]), false, 0, 0)
-    ).rejects.toThrow('Failed to finalize scrape run: db constraint violated')
-  })
-
   it('throws when the update rejects', async () => {
-    const eq = vi.fn(() => Promise.reject(new Error('db down')))
-    const update = vi.fn(() => ({ eq }))
-    const client = supabaseCatalog({ from: vi.fn(() => ({ update })) } as unknown as SupabaseClient)
-
-    await expect(
-      finalizeScrapeRun(client, 'run-3', null, resultsFor([true]), false, 0, 0)
-    ).rejects.toThrow('db down')
+    const client = { updateScrapeRun: async () => { throw new Error('db down') } } as unknown as CatalogStore
+    await expect(finalizeScrapeRun(client, 'run-3', null, resultsFor([true]), false, 0, 0)).rejects.toThrow('db down')
   })
 })
 
 describe('reconcileStaleScrapeRuns', () => {
-  function fakeReconciliationClient(
-    data: Array<{ id: string }> = [],
-    error: { message: string } | null = null
-  ) {
-    const updates: Array<Record<string, unknown>> = []
-    const select = vi.fn(() => Promise.resolve({ data, error }))
-    const lt = vi.fn(() => ({ select }))
-    const eq = vi.fn(() => ({ lt }))
-    const update = vi.fn((payload: Record<string, unknown>) => {
-      updates.push(payload)
-      return { eq }
-    })
-    const from = vi.fn(() => ({ update }))
-
-    return { client: supabaseCatalog({ from } as unknown as SupabaseClient), updates, eq, lt }
-  }
-
-  it('marks only runs older than two hours as failed', async () => {
-    const { client, updates, eq, lt } = fakeReconciliationClient([
-      { id: 'stale-1' },
-      { id: 'stale-2' },
-    ])
-    const now = new Date('2026-08-19T12:00:00.000Z')
-
-    await expect(reconcileStaleScrapeRuns(client, now)).resolves.toBe(2)
-
-    expect(eq).toHaveBeenCalledWith('status', 'running')
-    expect(lt).toHaveBeenCalledWith('started_at', '2026-08-19T10:00:00.000Z')
-    expect(updates[0]).toEqual({
-      status: 'failed',
-      completed_at: '2026-08-19T12:00:00.000Z',
+  it('marks runs older than two hours as failed', async () => {
+    const failStaleScrapeRuns = vi.fn<CatalogStore['failStaleScrapeRuns']>(async () => 2)
+    const client = { failStaleScrapeRuns } as unknown as CatalogStore
+    await expect(reconcileStaleScrapeRuns(client, new Date('2026-08-19T12:00:00.000Z'))).resolves.toBe(2)
+    expect(failStaleScrapeRuns).toHaveBeenCalledWith('2026-08-19T10:00:00.000Z', {
+      status: 'failed', completed_at: '2026-08-19T12:00:00.000Z',
       error_message: 'Run did not finalize before the two-hour stale cutoff',
-      error_details: {
-        reason: 'stale_running_run',
-        reconciledAt: '2026-08-19T12:00:00.000Z',
-      },
+      error_details: { reason: 'stale_running_run', reconciledAt: '2026-08-19T12:00:00.000Z' },
     })
   })
 
   it('throws when reconciliation fails', async () => {
-    const { client } = fakeReconciliationClient([], { message: 'db unavailable' })
-
-    await expect(reconcileStaleScrapeRuns(client)).rejects.toThrow(
-      'Failed to reconcile stale scrape runs: db unavailable'
-    )
+    const client = { failStaleScrapeRuns: async () => { throw new Error('db unavailable') } } as unknown as CatalogStore
+    await expect(reconcileStaleScrapeRuns(client)).rejects.toThrow('db unavailable')
   })
 })
 
@@ -284,29 +232,13 @@ describe('shouldChainNextBatch', () => {
 
 describe('recordEnrichmentAudit', () => {
   function fakeAuditClient(existingMetadata: unknown = null) {
-    const updates: Array<Record<string, unknown>> = []
-    const maybeSingle = vi.fn(() =>
-      Promise.resolve({ data: existingMetadata === null ? null : { metadata: existingMetadata }, error: null })
-    )
-    const eqSelect = vi.fn(() => ({ maybeSingle }))
-    const select = vi.fn(() => ({ eq: eqSelect }))
-
-    const eqUpdate = vi.fn(() => Promise.resolve({ error: null }))
-    const update = vi.fn((payload: Record<string, unknown>) => {
-      updates.push(payload)
-      return { eq: eqUpdate }
-    })
-
-    const from = vi.fn((table: string) => ({
-      select,
-      update,
-    }))
-
-    return { client: supabaseCatalog({ from } as unknown as SupabaseClient), updates, eqUpdate }
+    const updates: ScrapeRunPatch[] = []
+    const updateScrapeRun = vi.fn<CatalogStore['updateScrapeRun']>(async (_, patch) => { updates.push(patch) })
+    return { client: { scrapeRunMetadata: async () => existingMetadata, updateScrapeRun } as unknown as CatalogStore, updates, updateScrapeRun }
   }
 
   it('merges the chain counts into the parent\'s eligible and updates columns', async () => {
-    const { client, updates, eqUpdate } = fakeAuditClient({ eligible: 100 })
+    const { client, updates, updateScrapeRun } = fakeAuditClient({ eligible: 100 })
 
     await recordEnrichmentAudit(client, 'run-1', {
       eligible: 100,
@@ -324,7 +256,7 @@ describe('recordEnrichmentAudit', () => {
         enrichment: { eligible: 100, enriched: 90, failed: 3, remaining: 7 },
       },
     })
-    expect(eqUpdate).toHaveBeenCalledWith('id', 'run-1')
+    expect(updateScrapeRun).toHaveBeenCalledWith('run-1', expect.any(Object))
   })
 
   it('writes a fresh enrichment object when no metadata exists yet', async () => {
@@ -340,12 +272,7 @@ describe('recordEnrichmentAudit', () => {
   })
 
   it('does not throw when the read fails (best-effort audit)', async () => {
-    const maybeSingle = vi.fn(() =>
-      Promise.resolve({ data: null, error: { message: 'read failed' } })
-    )
-    const eqSelect = vi.fn(() => ({ maybeSingle }))
-    const select = vi.fn(() => ({ eq: eqSelect }))
-    const client = supabaseCatalog({ from: vi.fn(() => ({ select })) } as unknown as SupabaseClient)
+    const client = { scrapeRunMetadata: async () => { throw new Error('read failed') } } as unknown as CatalogStore
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await expect(

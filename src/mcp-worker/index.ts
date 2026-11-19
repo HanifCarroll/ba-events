@@ -128,7 +128,7 @@ export function createWorkerHandler(deps?: Pick<McpDeps, 'search' | 'get' | 'too
     const url = new URL(request.url)
     if (url.pathname === '/health') return Response.json({ status: 'ok' }, { headers: { 'Cache-Control': 'no-store' } })
     if (url.pathname !== '/mcp') return new Response('Not Found', { status: 404 })
-    // D1 and Vectorize when this Worker binds them (staging), Supabase otherwise.
+    // Register this Worker's D1 and Vectorize bindings for the catalog reads.
     useCloudflareBindings(env)
     const length = Number(request.headers.get('Content-Length') ?? 0)
     if (length > MAX_REQUEST_BYTES) return new Response('Request too large', { status: 413 })

@@ -1,5 +1,5 @@
 /**
- * The intake on real Miniflare D1: the cases of supabase/tests/instagram-intake.sql for the ported RPCs, plus the
+ * The intake on real Miniflare D1: transactional intake operations and the
  * operator flow (submit, preview, commit, venue, held) through `d1Intake`. Grants to anon/authenticated are not ported:
  * D1 has no roles, and the intake API's bearer token replaces them (intake-api.test.ts).
  */

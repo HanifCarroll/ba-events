@@ -7,15 +7,12 @@
  * the server has no record of their chat.
  *
  * This is a debug aid, not a feature: it must never fail the chat response.
- * Every error is swallowed and logged with `logger.warn`. The table has no RLS
- * policies, so only the service-role client can read or write it. When the Worker
- * binds D1 (staging until the cutover), the same rows go to D1 instead.
+ * Every error is swallowed and logged with `logger.warn`. This table is never exposed by a public API.
  */
 
 import { Data, Effect } from 'effect'
-import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { logger } from '#shared/lib/logger.ts'
-import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import { requireD1 } from '#shared/lib/db/d1-binding.server.ts'
 
 import type { UIMessage } from 'ai'
 import type { MessageExecutionStep } from '#shared/lib/types.ts'
@@ -102,55 +99,18 @@ export function upsertGuestChatDebugEffect(input: {
 }): Effect.Effect<void, never> {
   if (!input.conversationId) return Effect.succeed(undefined)
 
-  const db = boundD1()
-  if (db) {
-    const now = new Date().toISOString()
-    return Effect.match(Effect.tryPromise({
-      try: () => db.prepare(`INSERT INTO guest_chat_debug (conversation_id, locale, ip, messages, last_user_text, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (conversation_id) DO UPDATE SET locale = excluded.locale, ip = excluded.ip,
-          messages = excluded.messages, last_user_text = excluded.last_user_text, updated_at = excluded.updated_at`)
-        .bind(input.conversationId, input.locale, input.ip, JSON.stringify(input.messages ?? []), input.lastUserText, now, now).run(),
-      catch: (cause) => guestDebugFailure('Failed to persist guest chat debug row', cause),
-    }), {
-      onFailure: (error) => logger.warn('[guest-debug] Failed to persist guest chat debug row', {
-        conversationId: input.conversationId,
-        error: error.cause instanceof Error ? error.cause.message : String(error.cause ?? error),
-      }),
-      onSuccess: () => undefined,
-    })
-  }
-  const program = Effect.gen(function* () {
-    const client = getSupabaseServiceRoleClient()
-    const { error } = yield* Effect.tryPromise({
-      try: () => client.from('guest_chat_debug').upsert(
-      {
-        conversation_id: input.conversationId,
-        locale: input.locale,
-        ip: input.ip,
-        messages: input.messages,
-        last_user_text: input.lastUserText,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'conversation_id' }
-      ),
-      catch: (cause) => guestDebugFailure('Failed to persist guest chat debug row', cause),
-    })
-
-    if (error) {
-      logger.warn('[guest-debug] Failed to persist guest chat debug row', {
-        conversationId: input.conversationId,
-        error: error.message,
-      })
-    }
-  })
-  return Effect.match(program, {
-    onFailure: (error) => {
-      const cause = error.cause
-    logger.warn('[guest-debug] Failed to persist guest chat debug row', {
+  const now = new Date().toISOString()
+  return Effect.match(Effect.tryPromise({
+    try: () => requireD1().prepare(`INSERT INTO guest_chat_debug (conversation_id, locale, ip, messages, last_user_text, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (conversation_id) DO UPDATE SET locale = excluded.locale, ip = excluded.ip,
+        messages = excluded.messages, last_user_text = excluded.last_user_text, updated_at = excluded.updated_at`)
+      .bind(input.conversationId, input.locale, input.ip, JSON.stringify(input.messages ?? []), input.lastUserText, now, now).run(),
+    catch: (cause) => guestDebugFailure('Failed to persist guest chat debug row', cause),
+  }), {
+    onFailure: (error) => logger.warn('[guest-debug] Failed to persist guest chat debug row', {
       conversationId: input.conversationId,
-      error: cause instanceof Error ? cause.message : String(cause ?? error),
-    })
-    },
+      error: error.cause instanceof Error ? error.cause.message : String(error.cause ?? error),
+    }),
     onSuccess: () => undefined,
   })
 }
@@ -173,23 +133,15 @@ export function upsertGuestChatDebug(input: {
  */
 const REQUEST_LIFECYCLE_TIMEOUT_MS = 1500
 
-function runWithTimeout(run: () => Promise<unknown>): Promise<void> {
-  const { promise, resolve, reject } = Promise.withResolvers<void>()
-  const timeoutId = setTimeout(
-    () => reject(new Error('Guest request lifecycle write timed out')),
-    REQUEST_LIFECYCLE_TIMEOUT_MS
-  )
-  run().then(
-    () => {
-      clearTimeout(timeoutId)
-      resolve()
-    },
-    (error: unknown) => {
-      clearTimeout(timeoutId)
-      reject(error)
-    }
-  )
-  return promise
+async function runWithTimeout(run: () => Promise<unknown>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([run(), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Guest request lifecycle write timed out')), REQUEST_LIFECYCLE_TIMEOUT_MS)
+    })])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
@@ -205,22 +157,9 @@ export function recordGuestRequestStartedEffect(input: {
 
   const program = Effect.tryPromise({
     try: () => {
-      const db = boundD1()
-      if (db) {
-        const now = new Date().toISOString()
-        return runWithTimeout(() => db.prepare(`INSERT INTO guest_request_lifecycle (request_id, conversation_id, status, started_at)
-          VALUES (?, ?, 'started', ?)`).bind(input.requestId, input.conversationId, now).run())
-      }
-      const client = getSupabaseServiceRoleClient()
-      return runWithTimeout(async () => {
-        const { error } = await client.from('guest_request_lifecycle').insert({
-        request_id: input.requestId,
-        conversation_id: input.conversationId,
-        status: 'started',
-        started_at: new Date().toISOString(),
-        })
-        if (error) throw error
-      })
+      const now = new Date().toISOString()
+      return runWithTimeout(() => requireD1().prepare(`INSERT INTO guest_request_lifecycle (request_id, conversation_id, status, started_at)
+        VALUES (?, ?, 'started', ?)`).bind(input.requestId, input.conversationId, now).run())
     },
     catch: (cause) => guestDebugFailure('Failed to record guest request start', cause),
   })
@@ -253,36 +192,13 @@ export function recordGuestRequestTerminalEffect(input: {
 
   const program = Effect.tryPromise({
     try: () => {
-      const db = boundD1()
-      if (db) {
-        // As below: an existing row keeps its started_at, and a terminal-only row gets the column default.
-        return runWithTimeout(() => db.prepare(`INSERT INTO guest_request_lifecycle
-            (request_id, conversation_id, status, ended_at, error_type, provider_request_id) VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT (request_id) DO UPDATE SET conversation_id = excluded.conversation_id, status = excluded.status,
-            ended_at = excluded.ended_at, error_type = excluded.error_type, provider_request_id = excluded.provider_request_id`)
-          .bind(input.requestId, input.conversationId, input.status, new Date().toISOString(), input.errorType ?? null,
-            input.providerRequestId ?? null).run())
-      }
-      const client = getSupabaseServiceRoleClient()
-      return runWithTimeout(async () => {
-      // `started_at` is intentionally omitted: on conflict the original start
-      // time is preserved, and on insert the column's `DEFAULT now()` supplies
-      // a defensible timestamp for the terminal-only row.
-      const { error } = await client
-        .from('guest_request_lifecycle')
-        .upsert(
-          {
-            request_id: input.requestId,
-            conversation_id: input.conversationId,
-            status: input.status,
-            ended_at: new Date().toISOString(),
-            error_type: input.errorType ?? null,
-            provider_request_id: input.providerRequestId ?? null,
-          },
-          { onConflict: 'request_id' }
-        )
-      if (error) throw error
-      })
+      // Existing rows keep their started_at; terminal-only rows get the column default.
+      return runWithTimeout(() => requireD1().prepare(`INSERT INTO guest_request_lifecycle
+          (request_id, conversation_id, status, ended_at, error_type, provider_request_id) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (request_id) DO UPDATE SET conversation_id = excluded.conversation_id, status = excluded.status,
+          ended_at = excluded.ended_at, error_type = excluded.error_type, provider_request_id = excluded.provider_request_id`)
+        .bind(input.requestId, input.conversationId, input.status, new Date().toISOString(), input.errorType ?? null,
+          input.providerRequestId ?? null).run())
     },
     catch: (cause) => guestDebugFailure('Failed to record guest request terminal state', cause),
   })

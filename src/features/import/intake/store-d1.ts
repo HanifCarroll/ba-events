@@ -1,9 +1,8 @@
 /**
  * The intake store on D1, R2 and Vectorize (store.ts has the port). It runs only where an env binds `DB`: the intake
- * API on `baeventos-jobs` (staging until the cutover, delivery PR 08) and the D1 tests.
+ * API on `baeventos-jobs` and the D1 tests.
  *
- * The 4 intake RPCs are ported from plpgsql (supabase/migrations/20261025205334_instagram_intake.sql and
- * 20261114190000_instagram_wider_watchlist.sql). Each write is one `db.batch()`, which D1 runs as one transaction and
+ * Each intake write is one `db.batch()`, which D1 runs as one transaction and
  * serializes with every other write, so the Postgres advisory locks and `FOR UPDATE` have nothing left to guard. Checks
  * that must hold when the batch commits are `batchAssert` statements inside it, with the Postgres error messages. A
  * commit runs inside `intakeCommitBatch`, which sets `write_context` so the protection trigger lets it change protected
@@ -45,7 +44,7 @@ const d1 = <A>(operation: string, run: () => Promise<A>) => importTry(operation,
 const BOOLEANS = ['enabled', 'publishing_enabled', 'collection_enabled', 'is_all_day', 'is_free', 'location_hidden', 'location_tba',
   'description_unavailable', 'time_tba']
 const JSON_COLUMNS = ['input', 'media_urls', 'payload', 'evidence', 'reasons', 'receipt', 'categories', 'facets', 'enrichment_provenance', 'fields']
-/** A D1 row as Postgres returned it through PostgREST: 0/1 as booleans and JSON text parsed. */
+/** Decodes integer booleans and JSON text from D1 rows. */
 export function decodeRow<T = Row>(row: Row): T {
   const out: Row = { ...row }
   for (const key of BOOLEANS) if (typeof out[key] === 'number') out[key] = out[key] === 1

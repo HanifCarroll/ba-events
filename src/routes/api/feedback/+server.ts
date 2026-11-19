@@ -1,9 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit'
 import { Schema } from 'effect'
 import { checkApiRateLimit, RATE_LIMIT_RETRY_SECONDS } from '#features/auth/api/rate-limit.server.ts'
-import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
-import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
-import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import { requireD1 } from '#shared/lib/db/d1-binding.server.ts'
 import { feedbackAlertConfig, sendFeedbackAlert, type FeedbackMailer } from '#shared/lib/feedback/alert.server.ts'
 
 const MAX_FEEDBACK_LENGTH = 2000
@@ -42,25 +40,12 @@ export const POST: RequestHandler = async (event) => {
     return json({ error: `Feedback must be between 1 and ${MAX_FEEDBACK_LENGTH} characters.` }, { status: 400 })
   }
 
-  const db = boundD1()
-  let error: { code?: string } | null
-  if (db) {
-    // The signed-in user comes from the session hook; the id is never taken from the request body.
-    error = await db.prepare('INSERT INTO product_feedback (id, user_id, message) VALUES (?, ?, ?)')
+  try {
+    // The signed-in user comes from the session hook, not the request body.
+    await requireD1().prepare('INSERT INTO product_feedback (id, user_id, message) VALUES (?, ?, ?)')
       .bind(crypto.randomUUID(), event.locals.user?.id ?? null, message).run()
-      .then(() => null, () => ({ code: 'd1' }))
-  } else {
-    const supabase = createSupabaseServerClient(event)
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    ;({ error } = await getSupabaseServiceRoleClient()
-      .from('product_feedback')
-      .insert({ message, user_id: user?.id ?? null }))
-  }
-
-  if (error) {
-    console.error('[feedback] failed to store submission:', error.code)
+  } catch {
+    console.error('[feedback] failed to store submission')
     return json({ error: 'Unable to send feedback right now.' }, { status: 500 })
   }
 

@@ -1,8 +1,4 @@
-/**
- * The Cloudflare backend seam (DECISIONS.md): a Worker uses D1 only when its env binds the `DB` D1 database. Production
- * configs get that binding only at the cutover, so until then every caller that finds no database keeps using Supabase.
- * Later PRs add repositories that take the database this returns.
- */
+/** D1 binding detection and atomic write preconditions. */
 import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types'
 
 /** The D1 database bound as `DB` in a Worker env or SvelteKit `platform.env`, or null when there is none. */

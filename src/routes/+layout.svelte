@@ -5,7 +5,6 @@
 	import { browser, dev } from '$app/env'
 	import { PUBLIC_POSTHOG_KEY, PUBLIC_POSTHOG_HOST } from '$app/env/public'
 	import { initAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
-	import { setAuthBackend } from '#features/auth/api/client.ts'
 	import { getLocale } from '#paraglide/runtime.js'
 	import * as m from '#paraglide/messages.js'
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
@@ -23,7 +22,7 @@
 
 	// One-time init: `data` only seeds the initial SSR session state; the
 	// auth-context listener keeps it current afterwards.
-	untrack(() => { setAuthBackend(data.authBackend); initAuthContext(data) })
+	untrack(() => initAuthContext(data))
 
 	// The legacy ChatProvider wrapped the whole tree at the root so ChatContainer
 	// (and its descendants) could read/write shared conversation state across
@@ -126,7 +125,7 @@
 			if (!posthogClient) return
 
 			if (user) {
-				// Keep PostHog pseudonymous: Supabase remains the system of record for email.
+				// Keep PostHog pseudonymous: account email stays in the identity store.
 				posthogClient.identify(user.id, {
 					locale: getLocale(),
 					is_admin: isAdmin

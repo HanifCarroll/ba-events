@@ -3,7 +3,7 @@ import type { Locale } from '#shared/lib/types.ts'
 
 /**
  * The magic-link email, sent through the Worker's Cloudflare Email Sending (`send_email`) binding `EMAIL`. The HTML
- * follows docs/supabase-magic-link-email-template.html, in Spanish or English by the sign-in page's locale.
+ * uses Spanish or English by the sign-in page's locale.
  */
 export const MAGIC_LINK_FROM = { name: 'BA Eventos', email: 'accounts@baeventos.com' }
 

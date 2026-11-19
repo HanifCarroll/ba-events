@@ -5,20 +5,16 @@
  * Usage:
  *   bun scripts/guest-chat-debug.ts <conversationId>
  *
- * Reads through the service-role client (SUPABASE_URL +
- * SUPABASE_SERVICE_ROLE_KEY from .env). Prints updated_at, locale,
- * last_user_text, and each message role + text. Exits 1 if not found.
+ * Reads D1 through bin/ba-d1-read.sh. Output contains private chat content.
  */
 
-import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
+import { readD1, type ReadD1 } from './read-d1.ts'
 
 interface GuestChatDebugRow {
   conversation_id: string
   locale: string | null
-  ip: string | null
-  messages: unknown
+  messages: string
   last_user_text: string | null
-  created_at: string
   updated_at: string
 }
 
@@ -53,37 +49,29 @@ function extractVisibleText(message: DebugMessage): string {
   return ''
 }
 
-async function main(): Promise<void> {
-  const conversationId = process.argv[2]
-  if (!conversationId) {
-    console.error('Usage: bun scripts/guest-chat-debug.ts <conversationId>')
-    process.exit(1)
-  }
+export async function readGuestChat(read: ReadD1, conversationId: string) {
+  const [row] = await read<GuestChatDebugRow>(
+    'SELECT conversation_id, locale, messages, last_user_text, updated_at FROM guest_chat_debug WHERE conversation_id = ?',
+    [conversationId],
+  )
+  if (!row) return null
+  const messages: unknown = JSON.parse(row.messages)
+  return { ...row, messages: Array.isArray(messages) ? messages as DebugMessage[] : [] }
+}
 
-  const client = getSupabaseServiceRoleClient()
-  const { data, error } = await client
-    .from('guest_chat_debug')
-    .select('*')
-    .eq('conversation_id', conversationId)
-    .maybeSingle()
+async function main() {
+  const args = process.argv.slice(2)
+  const conversationId = args.find(arg => arg !== '--staging')
+  if (!conversationId) throw new Error('Usage: bun scripts/guest-chat-debug.ts <conversationId> [--staging]')
+  const row = await readGuestChat(readD1(args.includes('--staging')), conversationId)
+  if (!row) throw new Error('No guest chat debug record found for that conversation id')
 
-  if (error) {
-    console.error(`Failed to look up guest chat: ${error.message}`)
-    process.exit(1)
-  }
-
-  if (!data) {
-    console.error(`No guest chat debug record found for conversation id: ${conversationId}`)
-    process.exit(1)
-  }
-
-  const row = data as GuestChatDebugRow
   console.log(`conversation_id: ${row.conversation_id}`)
   console.log(`updated_at: ${row.updated_at}`)
   console.log(`locale: ${row.locale ?? '(none)'}`)
   console.log(`last_user_text: ${row.last_user_text ?? '(none)'}`)
 
-  const messages = Array.isArray(row.messages) ? (row.messages as DebugMessage[]) : []
+  const { messages } = row
   console.log(`messages (${messages.length}):`)
   for (const message of messages) {
     const role = message.role ?? '(unknown)'
@@ -109,7 +97,7 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error('Failed:', error instanceof Error ? error.message : String(error))
+if (import.meta.main) main().catch((error) => {
+  console.error('Guest chat lookup failed:', error instanceof Error && !('cmd' in error) ? error.message : 'check D1 read access')
   process.exit(1)
 })

@@ -3,12 +3,11 @@ import { createTelegramClient, TelegramApiError } from '#features/telegram/clien
 import { defaultTelegramTurnDependencies, processTelegramTurnEffect, telegramTurnLayer } from '#features/telegram/turn.ts'
 import { parseTelegramTaskPayload, type TelegramTaskPayload } from '#features/telegram/task-payload.ts'
 import { handleTelegramWebhookEffect } from '#features/telegram/webhook.server.ts'
-import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
 import { isReadOnly } from '#shared/lib/db/read-only.ts'
 import { purgeTelegramRetentionEffect } from '#features/telegram/retention.ts'
 import { runTelegramHealthCheckEffect } from '#features/telegram/health.ts'
 import { createInboxLifecycle } from './inbox-lifecycle.ts'
-import { boundD1, useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
+import { requireD1, useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
 import { useCloudflareBindings } from '#shared/lib/db/search-bindings.server.ts'
 
 /** Records the env's D1 (and Vectorize) bindings for chat storage and for the shared search readers alike. */
@@ -43,16 +42,11 @@ type Env = {
   TELEGRAM_BOT_TOKEN: string
   TELEGRAM_WEBHOOK_SECRET: string
   TELEGRAM_ID_HASH_SECRET: string
-  SUPABASE_URL: string
-  SUPABASE_ANON_KEY: string
-  SUPABASE_SERVICE_ROLE_KEY: string
   DEEPSEEK_API_KEY: string
   OPENAI_API_KEY: string
   VOYAGE_API_KEY: string
   TELEGRAM_INBOX: DurableObjectNamespaceLike
-  /** Staging only until the cutover: with a D1 `DB` binding every read and write goes to D1 instead of Supabase. */
   DB?: unknown
-  /** Staging only until the cutover, with `DB`: the event index that search reads. */
   VECTORIZE?: unknown
   /** '1' during the D1 cutover window: no writes (read-only.ts). */
   DB_READ_ONLY?: string
@@ -178,8 +172,7 @@ export default {
   async scheduled(controller: ScheduledControllerLike, env: Env, ctx: ExecutionContextLike): Promise<void> {
     useBackend(env)
     if (isReadOnly(env)) return
-    const d1 = boundD1()
-    const store = d1 ? { d1 } : getSupabaseServiceRoleClient()
+    const store = requireD1()
     const job = controller.cron === '0 * * * *'
       ? Effect.runPromise(runTelegramHealthCheckEffect(createTelegramClient({ token: env.TELEGRAM_BOT_TOKEN }), store))
       : Effect.runPromise(purgeTelegramRetentionEffect(store))

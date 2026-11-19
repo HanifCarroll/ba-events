@@ -1,14 +1,4 @@
-/**
- * Event search on D1 and Vectorize: the Cloudflare side of the reads `search_events` makes. `client.server.ts` calls
- * these only when the Worker binds `DB` (search-bindings.server.ts), so production keeps its Supabase RPCs until the
- * cutover.
- *
- * - Lexical search is FTS5 over `events_fts` (migration 0002), ranked by bm25, in place of
- *   `lexical_match_events_with_venues` (ts_rank_cd over websearch_to_tsquery).
- * - Semantic search asks Vectorize for the 100 nearest vectors among scheduled events in the date window, then applies
- *   the rest of the filters in D1, in place of `match_events_with_venues_filtered`.
- * - List filters reach SQL as one JSON array each, read with `json_each(?)`, so no query nears D1's 100-bind limit.
- */
+/** Catalog and search queries on D1 (FTS5) and Vectorize. */
 import { Schema } from 'effect'
 import type { D1Database, VectorizeIndex } from '@cloudflare/workers-types'
 import type { ChatEventPayload, EventFilters, Venue } from '../types.ts'
@@ -30,7 +20,7 @@ export const FROM_EVENTS = 'events e LEFT JOIN venues v ON v.id = e.venue_id'
 
 const text = Schema.NullOr(Schema.String)
 const integer = Schema.NullOr(Schema.Number)
-/** A row of EVENT_COLUMNS as D1 returns it, decoded to the shape Supabase's search RPCs return. */
+/** A row of EVENT_COLUMNS as D1 returns it, before decoding the public search projection. */
 const EventRow = Schema.Struct({
   id: Schema.String, name: Schema.String,
   description_es: text, description_en: text, description_display_es: text, description_display_en: text,
@@ -46,7 +36,7 @@ const EventRow = Schema.Struct({
   facets: Schema.fromJsonString(Schema.Unknown),
 })
 const decodeEvent = Schema.decodeUnknownSync(EventRow)
-/** Decodes one EVENT_COLUMNS row to the shape Supabase's events_with_venues returns. */
+/** Decodes one EVENT_COLUMNS row to the public event projection. */
 export const toPayload = (row: unknown) => decodeEvent(row) as unknown as ChatEventPayload
 
 const iso = (value: string) => new Date(value).toISOString()
@@ -55,9 +45,9 @@ const list = (values: readonly string[] | undefined) => (values && values.length
 type Where = { sql: string[]; values: unknown[] }
 
 /**
- * The SQL for `filters`, as the Supabase reads apply them. The search RPCs let an unpriced event through a price cap
+ * Lexical and semantic searches let an unpriced event through a price cap
  * (`priceCap: 'or-null'`); the filter-only reads compare the price itself, so an unpriced event fails (`'strict'`).
- * Avoided genres are excluded here only where Postgres excluded them in SQL.
+ * The filter-only list applies avoided genres after decoding its bounded result.
  */
 function filterSql(filters: EventFilters, options: { priceCap: 'or-null' | 'strict'; avoidGenres: boolean }): Where {
   const where: Where = { sql: ["e.scope = 'in'"], values: [] }
@@ -92,7 +82,7 @@ export const LEXICAL_RANK_POOL = 1000
  * them, by `ts_rank_cd` over the same text (`tsRankCd`), then by start. FTS5 finds and filters the matches; the rank
  * is computed here because FTS5 has no ts_rank_cd.
  */
-export async function lexicalEventSearchD1(db: D1Database, query: string, filters: EventFilters, matchCount: number): Promise<ChatEventPayload[]> {
+export async function lexicalEventSearchD1(db: D1Database, query: string, filters: EventFilters, matchCount: number, signal?: AbortSignal): Promise<ChatEventPayload[]> {
   const match = websearchToFts5(query)
   if (!match) return []
   const where = filterSql(filters, { priceCap: 'or-null', avoidGenres: true })
@@ -102,6 +92,7 @@ export async function lexicalEventSearchD1(db: D1Database, query: string, filter
     WHERE events_fts MATCH ? AND e.status = 'scheduled'${and(where)}
     ORDER BY bm25(events_fts) LIMIT ?`).bind(match, ...where.values, LEXICAL_RANK_POOL)
     .all<{ id: string; starts_at: string; text: string }>()
+  signal?.throwIfAborted()
   // Postgres' rank is a float4, so equal ranks there are equal here too and fall to the start time.
   const ranked = matches.map(row => ({ ...row, rank: Math.fround(tsRankCd(row.text, query)) }))
     .sort((a, b) => b.rank - a.rank || a.starts_at.localeCompare(b.starts_at) || a.id.localeCompare(b.id))
@@ -138,7 +129,7 @@ const cosine = (a: ArrayLike<number>, b: ArrayLike<number>) => {
  * ties that pgvector didn't.
  */
 export async function semanticEventSearchD1(db: D1Database, vectorize: VectorizeIndex, embedding: number[],
-  filters: EventFilters, matchCount: number): Promise<ChatEventPayload[]> {
+  filters: EventFilters, matchCount: number, signal?: AbortSignal): Promise<ChatEventPayload[]> {
   const startsAt: Record<string, number> = {}
   if (filters.startsAfter) startsAt.$gte = Date.parse(filters.startsAfter)
   if (filters.startsBefore) startsAt.$lte = Date.parse(filters.startsBefore)
@@ -148,11 +139,13 @@ export async function semanticEventSearchD1(db: D1Database, vectorize: Vectorize
     returnMetadata: 'none',
     filter: { status: 'scheduled', ...(Object.keys(startsAt).length ? { starts_at: startsAt } : {}) },
   })
+  signal?.throwIfAborted()
   if (matches.length === 0) return []
   const where = filterSql(filters, { priceCap: 'or-null', avoidGenres: true })
   const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
     WHERE e.id IN (SELECT value FROM json_each(?)) AND e.status = 'scheduled'${and(where)}`)
     .bind(JSON.stringify(matches.map(match => match.id)), ...where.values).all()
+  signal?.throwIfAborted()
   const events = results.map(toPayload)
   const batches: string[][] = []
   for (let index = 0; index < events.length; index += VECTORIZE_GET_BATCH) {

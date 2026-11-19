@@ -338,7 +338,7 @@ export type UserRole = 'admin' | 'user'
 export type Locale = 'es' | 'en'
 
 // User profile from profiles table
-/** The signed-in account as the app sees it, from Supabase Auth or Better Auth. */
+/** The signed-in account as the app sees it, from Better Auth. */
 export interface AuthUser {
   id: string
   email?: string

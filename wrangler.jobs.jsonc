@@ -20,7 +20,8 @@
     { "binding": "DAILY_SCRAPE", "name": "baeventos-daily-scrape", "class_name": "DailyScrapeWorkflow" },
     { "binding": "GUEST_RETENTION", "name": "baeventos-guest-retention", "class_name": "GuestRetentionWorkflow" },
     { "binding": "ENRICHMENT_CATCHUP", "name": "baeventos-enrichment-catchup", "class_name": "EnrichmentCatchupWorkflow" },
-    { "binding": "SOURCE_CHECK", "name": "baeventos-source-check", "class_name": "SourceCheckWorkflow" }
+    { "binding": "SOURCE_CHECK", "name": "baeventos-source-check", "class_name": "SourceCheckWorkflow" },
+    { "binding": "CATALOG_TASK", "name": "baeventos-catalog-task", "class_name": "CatalogTaskWorkflow" }
   ],
   // D1 cutover (docs/ops/d1-cutover.md): the catalog, crons and intake API on D1, Vectorize and R2.
   "d1_databases": [{ "binding": "DB", "database_name": "baeventos-production", "database_id": "bda62412-f0b7-40f1-b12a-1fe2aa4c787f", "migrations_dir": "migrations" }],

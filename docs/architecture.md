@@ -5,7 +5,7 @@ BA Eventos keeps catalog ingestion, recommendation reasoning, and user-facing de
 ```mermaid
 flowchart LR
   Sources[Event sources] --> Jobs[Jobs Worker: import and enrichment Workflows]
-  Jobs --> DB[(Supabase Postgres and pgvector)]
+  Jobs --> DB[(D1 and Vectorize)]
   Web[SvelteKit web app] --> Agent[Shared concierge and read tools]
   Telegram[Telegram Worker] --> Agent
   Agent --> DB
@@ -29,7 +29,7 @@ flowchart LR
 | `src/telegram-worker/` | Telegram webhook and inbox handling |
 | `src/mcp-worker/` | Public event-discovery MCP interface |
 | `src/shared/` | Database clients, AI providers, security helpers, shared types and UI |
-| `supabase/` | Historical schema, migrations, SQL checks, and seed examples |
+| `migrations/` | D1 schema, triggers, and search indexes |
 | `evals/` | Deterministic fixtures and opt-in provider-backed evaluations |
 | `.storybook/` | Isolated UI fixture environment |
 | `openspec/specs/` | Expected behavior and channel contracts |
@@ -38,7 +38,7 @@ flowchart LR
 
 The concierge consumes untrusted user text and catalog content. It can call read tools; the server constructs cards and links from validated results. Model prose still needs quality evaluation. See [chat trust boundary](chat-trust-boundary.md) and [canonical response](canonical-response.md).
 
-User saves and account operations have separate authenticated boundaries. Supabase service-role access is server-only. The public MCP surface must expose catalog data without leaking user conversations or internal records.
+User saves and account operations have separate authenticated boundaries. The server scopes each D1 read or write to the authenticated user. The public MCP surface must expose catalog data without leaking user conversations or internal records.
 
 Cloudflare runs the web, Telegram, MCP, durable-delivery, and jobs Workers. Each keeps its own secrets; see [deployment](deployment.md).
 

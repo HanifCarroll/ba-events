@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import type { RequestEvent } from '@sveltejs/kit'
+import type { ChatTurnBootstrapInput } from '../../src/features/chat/api/turn-authority.ts'
 import { runSchemathesis } from './schemathesis.mjs'
 import { handleTelegramWebhook } from '../../src/features/telegram/webhook.server.ts'
 import { openTelegramEnvelope } from '../../src/features/telegram/envelope.server.ts'
@@ -7,8 +8,10 @@ import { parseTelegramPlaintextPayload } from '../../src/features/telegram/task-
 import { parseTelegramUpdate, parseTelegramText } from '../../src/features/telegram/update.ts'
 import { chatDeliveryFixture } from '../support/chat-delivery-fixture.ts'
 
-// All credentials and sessions here are fixtures. The Supabase transport is
-// local; it checks RPC mapping but does not stand in for production SQL/RLS tests.
+import { freshD1 } from '../support/d1.ts'
+import { useD1Binding } from '../../src/shared/lib/db/d1-binding.server.ts'
+
+// All credentials, sessions, and persisted rows here are synthetic.
 process.env.ADMIN_API_KEY = 'fuzz-only-local-api-key'
 const events = await import('../../src/routes/api/events/+server')
 const bootstrap = await import('../../src/routes/api/chat/bootstrap/+server')
@@ -17,22 +20,14 @@ const ownerId = '10000000-0000-4000-8000-000000000001'
 let successfulBootstraps = 0, telegramDispatches = 0, authorizedDelivery = 0, rejectedDelivery = 0
 
 await runSchemathesis(async (origin: string) => {
-  let rpcCalls = 0
-  const rpc = Bun.serve({ hostname: '127.0.0.1', port: 0, async fetch(request) {
-    assert.equal(new URL(request.url).pathname, '/rest/v1/rpc/bootstrap_chat_turn')
-    const input = await request.json() as Record<string, unknown>
-    assert.deepEqual(Object.keys(input).sort(), ['p_assistant_client_message_id', 'p_content', 'p_conversation_id', 'p_locale', 'p_turn_id', 'p_user_client_message_id'])
-    assert.equal(typeof input.p_content, 'string')
-    assert.ok((input.p_content as string).trim().length > 0)
-    rpcCalls++
-    return Response.json({ id: input.p_turn_id, conversation_id: input.p_conversation_id,
-      user_message_id: input.p_user_client_message_id, assistant_message_id: null,
-      user_client_message_id: input.p_user_client_message_id, assistant_client_message_id: input.p_assistant_client_message_id,
-      content: input.p_content, locale: input.p_locale, status: 'pending', claim_id: null,
-      claimed_until: null, attempt_count: 0, last_error: null })
-  } })
-  process.env.SUPABASE_URL = `http://127.0.0.1:${rpc.port}`
-  process.env.SUPABASE_ANON_KEY = 'synthetic-anon-key'
+  const { db, dispose } = await freshD1()
+  await db.prepare('INSERT INTO profiles (id, email) VALUES (?, ?)').bind(ownerId, 'owner@example.test').run()
+  let writes = 0
+  const bootstrappedTurns = new Map<string, string>()
+  useD1Binding({ DB: { prepare: db.prepare.bind(db), batch: (...args: Parameters<typeof db.batch>) => {
+    writes++
+    return db.batch(...args)
+  } } })
   const application = {
     async handle(request: Request) {
       const url = new URL(request.url)
@@ -44,17 +39,25 @@ await runSchemathesis(async (origin: string) => {
         if (request.method === 'POST') return events.POST(event)
       }
       if (url.pathname === '/api/chat/bootstrap' && request.method === 'POST') {
-        const before = rpcCalls
-        const input = await request.clone().json().catch(() => null) as { turnId: string } | null
+        const before = writes
+        const input = await request.clone().json().catch(() => null) as ChatTurnBootstrapInput | null
         const response = await bootstrap.POST(event)
         if (response.status === 200) {
-          assert.ok(user)
-          assert.equal(rpcCalls, before + 1)
+          assert.ok(user && input)
           const { turn } = await response.clone().json() as { turn: { content: string; id: string } }
-          assert.equal(turn.id, input?.turnId)
+          // A replay of the same submission returns its original durable turn ID.
+          const submission = JSON.stringify([user.id, input.conversationId, input.userClientMessageId])
+          assert.equal(turn.id, bootstrappedTurns.get(submission) ?? input.turnId)
           assert.ok(turn.content.trim())
+          assert.deepEqual(await db.prepare(`SELECT c.user_id, m.content, t.conversation_id, t.user_client_message_id, t.assistant_client_message_id
+            FROM chat_turns t JOIN conversations c ON c.id = t.conversation_id JOIN messages m ON m.id = t.user_message_id
+            WHERE t.id = ?`).bind(turn.id).first(), {
+            user_id: ownerId, content: turn.content, conversation_id: input.conversationId,
+            user_client_message_id: input.userClientMessageId, assistant_client_message_id: input.assistantClientMessageId,
+          })
+          bootstrappedTurns.set(submission, turn.id)
           successfulBootstraps++
-        } else assert.equal(rpcCalls, before, 'Rejected bootstrap must not persist')
+        } else if (response.status === 400 || response.status === 401) assert.equal(writes, before, 'Invalid bootstrap must not write to D1')
         return response
       }
       if (url.pathname === '/api/telegram' && request.method === 'POST') {
@@ -115,8 +118,8 @@ await runSchemathesis(async (origin: string) => {
       }
       return new Response(null, { status: 404 })
     },
-    close() {
-      rpc.stop(true)
+    async close() {
+      await dispose()
       assert.ok(successfulBootstraps > 0, 'Must exercise successful authenticated chat bootstrap')
       assert.ok(telegramDispatches > 0, 'Must exercise successful Telegram dispatch')
       assert.ok(authorizedDelivery > 0 && rejectedDelivery > 0, 'Must exercise delivery ownership acceptance and rejection')
@@ -126,6 +129,25 @@ await runSchemathesis(async (origin: string) => {
   // Fixed probes ensure exact-payload replay and each rejection oracle run even
   // when generated JSON uses a different whitespace representation.
   try {
+    const submission = {
+      conversationId: 'f0000000-0000-4000-8000-000000000001',
+      turnId: 'f0000000-0000-4000-8000-000000000002',
+      userClientMessageId: 'f0000000-0000-4000-8000-000000000003',
+      assistantClientMessageId: 'f0000000-0000-4000-8000-000000000004',
+      content: 'Synthetic tango tonight', locale: 'es',
+    }
+    for (const { body, status } of [
+      { body: { locale: submission.locale, assistantClientMessageId: submission.assistantClientMessageId, extra: true }, status: 400 },
+      { body: submission, status: 200 },
+      { body: { ...submission, turnId: 'f0000000-0000-4000-8000-000000000005', extra: true }, status: 200 },
+    ]) {
+      const response = await application.handle(new Request(`${origin}/api/chat/bootstrap`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'x-test-session': 'owner', 'content-type': 'application/json' },
+      }))
+      assert.equal(response.status, status)
+      if (status === 200) assert.equal((await response.json()).turn.id, submission.turnId)
+      else await response.body?.cancel()
+    }
     for (const probe of [
       { session: 'owner', token: 'a'.repeat(64), body: '{"message":"Synthetic question"}', status: 200 },
       { session: 'anonymous', token: 'a'.repeat(64), body: '{"message":"Synthetic question"}', status: 409 },
@@ -140,7 +162,7 @@ await runSchemathesis(async (origin: string) => {
       await response.body?.cancel()
     }
   } catch (error) {
-    rpc.stop(true)
+    await dispose()
     throw error
   }
   return application

@@ -17,11 +17,11 @@ outside the agent.
 
 ```bash
 bun test evals/concierge/deterministic.test.ts
-bun run eval:concierge       # requires explicit live credentials
+bun run eval:concierge --staging       # requires explicit live credentials
 ```
 
-Live evaluation needs the existing DeepSeek, Supabase, embedding, and optional
-Voyage environment variables. Never run it accidentally or commit secrets.
+Live evaluation needs the existing DeepSeek, embedding, and optional
+Voyage environment variables, plus [Node 24 and staging bindings](development.md#search-configuration). Never run it accidentally or commit secrets.
 
 The multi-turn suite uses a frozen event corpus and Buenos Aires clock with
 production preparation/orchestration and controlled reads. It needs a model key
@@ -47,7 +47,7 @@ beginner tango class. Preserve these diagnostics for source-grounded grading;
 do not infer a missing-inventory result or tune the prompt to a perfect score.
 
 ```bash
-VOYAGE_API_KEY= bun evals/search/relevance/capture.ts --queries evals/search/relevance/holdout-2026-10.ts --out results/evals/retrieval-refresh-2026-10/capture.json
+VOYAGE_API_KEY= node --env-file-if-exists=.env evals/search/relevance/capture.ts --staging --queries evals/search/relevance/holdout-2026-10.ts --out results/evals/retrieval-refresh-2026-10/capture.json
 ```
 
 The private `measurements.json` separates 396 candidate observations, 251

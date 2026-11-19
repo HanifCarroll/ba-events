@@ -2,9 +2,8 @@ import { redirect } from '@sveltejs/kit'
 import { Data, Effect } from 'effect'
 import type { RequestEvent } from '@sveltejs/kit'
 import type { AuthUser, Profile } from '#shared/lib/types.ts'
-import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
-import { betterAuthStatus, betterAuthUser, platformEnv } from './better-auth.server.ts'
+import { betterAuthUser, platformEnv } from './better-auth.server.ts'
 import { d1UserStore } from './user-store.server.ts'
 
 export type { AuthUser }
@@ -41,38 +40,12 @@ function betterAuthSessionEffect(event: RequestEvent) {
 	})
 }
 
-function supabaseSessionEffect(event: RequestEvent) {
-	return Effect.gen(function* () {
-		const supabase = createSupabaseServerClient(event)
-		const {
-			data: { user },
-			error
-		} = yield* Effect.tryPromise({
-			try: () => supabase.auth.getUser(),
-			catch: (cause) => new SessionLookupError({ message: 'Failed to read authenticated user', cause }),
-		})
-		if (error || !user) return null
-
-		const profileResult = yield* Effect.match(
-			Effect.tryPromise({
-				try: () => supabase.from('profiles').select('*').eq('id', user.id).single(),
-				catch: () => new SessionLookupError({ message: 'Failed to read profile' }),
-			}),
-			{ onFailure: () => null, onSuccess: ({ data }) => data },
-		)
-		return sessionOf({ id: user.id, email: user.email }, profileResult as Profile | null)
-	})
-}
-
 /**
  * Get the current authenticated user with their profile.
  * Returns null if not authenticated.
  */
 export function getSessionUserEffect(event: RequestEvent): Effect.Effect<SessionUser | null, never> {
-	const status = betterAuthStatus(event)
-	if (status === 'unconfigured') return Effect.succeed(null)
-	const program = status === 'ready' ? betterAuthSessionEffect(event) : supabaseSessionEffect(event)
-	return Effect.match(program, {
+	return Effect.match(betterAuthSessionEffect(event), {
 		onFailure: () => null,
 		onSuccess: (session) => session,
 	})

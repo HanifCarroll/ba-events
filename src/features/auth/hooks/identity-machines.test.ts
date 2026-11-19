@@ -3,7 +3,7 @@ import { createActor, SimulatedClock, waitFor, type Actor, type AnyActorLogic } 
 import type { AuthUser as User } from '#shared/lib/types.ts'
 import type { Profile } from '#shared/lib/types.ts'
 import { createAuthMachine } from './auth.machine.ts'
-import { createSignInMachine, createAuthCallbackMachine } from './sign-in.machine.ts'
+import { createSignInMachine } from './sign-in.machine.ts'
 import { createAccountDeletionMachine, createProfileFormMachine } from './profile.machine.ts'
 
 const actors: Actor<AnyActorLogic>[] = []
@@ -156,25 +156,6 @@ describe('sign-in machines', () => {
 		expect(actor.getSnapshot().context.email).toBe('synthetic@example.com')
 		actor.send({ type: 'RESET' })
 		expect(actor.getSnapshot().matches('editing')).toBe(true)
-	})
-	it('does not redirect a callback whose owner has unmounted', async () => {
-		const exchange = deferred<void>()
-		let redirects = 0
-		const actor = own(
-			createActor(
-				createAuthCallbackMachine({
-					exchange: () => exchange.promise,
-					redirect: () => {
-						redirects++
-					}
-				})
-			)
-		)
-		actor.send({ type: 'VERIFY', tokenHash: 'synthetic-token' })
-		actor.stop()
-		exchange.resolve()
-		await settle()
-		expect(redirects).toBe(0)
 	})
 })
 

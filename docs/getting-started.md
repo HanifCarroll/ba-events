@@ -14,8 +14,6 @@ bun run cloudflare:ci
 `cloudflare:ci` generates translations, runs the Bun and Vitest suites, checks Svelte/TypeScript and Effect diagnostics, and checks whitespace. These checks use synthetic fixtures and do not require a real `.env` file. To compile the app without connecting to providers, use placeholder public settings:
 
 ```sh
-PUBLIC_SUPABASE_URL=https://example.supabase.co \
-PUBLIC_SUPABASE_ANON_KEY=example-anon-key \
 PUBLIC_POSTHOG_KEY= \
 PUBLIC_POSTHOG_HOST=https://us.i.posthog.com \
 bun run build

@@ -1,5 +1,7 @@
 # D1 cutover runbook
 
+This records the completed cutover. The commands below describe the cutover branch, not the current checkout. For current operations, see [D1 operator commands](../d1.md#operator-commands), [staging evals](../development.md#search-configuration), and [service retirement](#8-afterwards).
+
 This is the one-time move of production from Supabase to D1, Vectorize, and R2. Hermes runs it on a weekday from 01:00 to 02:00 Buenos Aires time. That window is clear of the 03:00 reconcile, the 06:00 scrape, and the 09:00 intake. It follows the plan's cutover steps 1 to 7. The switch is the cutover PR: it binds D1 (`DB`), Vectorize (`VECTORIZE`), and R2 in every production wrangler config. A Worker with those bindings runs on Cloudflare, and a Worker without them runs on Supabase. The PR is held, and Hermes merges it only inside the window, after the copy into production passes `verify`. Production therefore never runs against an empty database.
 
 Run every command from a clean checkout of the cutover branch on the Pro, which has the Wrangler login and the copy tool's Node. Put a `timeout` on long commands. Use `node` for the copy tool, because Wrangler's remote proxy hangs under Bun 1.3.14. Never print `.env`, tokens, or user emails.
@@ -221,5 +223,13 @@ Supabase stays as it was: nothing in the window writes to it after the export.
 
 ## 8. Afterwards
 
-- After 48 clean hours, queue `09-remove-supabase`.
+This runbook records the cutover; commands that call retired tools are historical. For current maintenance, use the [D1 operator commands](../d1.md#operator-commands).
+
+- After 48 clean hours, queue `09-remove-supabase`. That change removes code only. To recover the exact 71 SQL migrations and retired copy tooling for Hermes's archive, use the pre-removal commit:
+
+  ```sh
+  git archive --format=tar 7c7d37f6ef563f9539e9bf66a80255d44480109e supabase/migrations scripts/d1-migrate
+  ```
+
+  This is a source archive only. It does not back up any rows, auth data, or Storage objects.
 - Before deleting Supabase, wait for 30 days without a rollback, a Time Travel restore drill on staging, and a final JSONL and Storage archive in a private R2 bucket. Then Hermes pauses the project for 7 days, deletes it, and removes the Supabase secrets, the `PUBLIC_SUPABASE_*` variables, and the Supabase callback in Google.

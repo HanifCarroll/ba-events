@@ -1,14 +1,9 @@
-/**
- * The public catalog reads on D1: the home feed, the event page, MCP `get_event`, the artwork lookup, venue details,
- * event facts, and `GET /api/events`. `client.server.ts` calls these only when the Worker binds `DB`
- * (search-bindings.server.ts), so production keeps its Supabase reads until the cutover. Rows are decoded with the
- * search reads' `toPayload`, so they have the shape Supabase's `events_with_venues` returns.
- */
+/** Public catalog reads on D1: home, event, artwork, venue, event facts, and the events API. */
 import type { D1Database } from '@cloudflare/workers-types'
 import type { ChatEventPayload, Venue } from '../types.ts'
 import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
 
-/** Statuses the public may see, as in the Supabase reads' `.in('status', ['scheduled', 'past'])`. */
+/** Events visible to the public. */
 const DISPLAYABLE = `e.status IN ('scheduled', 'past')`
 
 /** One event with its venue, or null. `displayableOnly` keeps it to scheduled and past events. */

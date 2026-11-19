@@ -5,12 +5,9 @@
  * Used by all import sources to flag already-imported events.
  * Enhanced to support field-by-field diff comparison.
  *
- * IMPORTANT: When using from Trigger.dev jobs, pass the service role client
- * to ensure visibility of all events (bypasses RLS).
  */
 
 import { Effect } from 'effect'
-import { getSupabase, type SupabaseClient } from '#shared/lib/db/client.server.ts'
 import type { EventInsert } from '#shared/lib/types.ts'
 import type { ImportSource } from '../adapters/types.ts'
 import { importTry, type ImportOperationError } from '../core/effect-utils.ts'
@@ -73,60 +70,6 @@ export interface ExistingEventData {
 }
 
 /**
- * Check which external IDs already exist in the database for a given source
- *
- * @param externalIds - Array of external IDs to check
- * @param source - The import source (passline, eventbrite, etc.)
- * @param client - Optional Supabase client (use the service role client in scheduled jobs)
- * @returns Set of external IDs that already exist
- */
-export function checkDuplicateEventsEffect(
-  externalIds: string[],
-  source: ImportSource,
-  client?: SupabaseClient
-): Effect.Effect<Set<string>, ImportOperationError> {
-  if (externalIds.length === 0) return Effect.succeed(new Set<string>())
-
-  const db = client ?? getSupabase()
-  return importTry('duplicate-detection.lookup', () => db
-    .from('events')
-    .select('external_id')
-    .eq('source', source)
-    .in('external_id', externalIds)
-  ).pipe(
-    Effect.map(({ data: existingEvents }) => {
-      const existingIds = new Set<string>()
-      if (existingEvents) {
-        for (const event of existingEvents) {
-          if (event.external_id) {
-            existingIds.add(event.external_id)
-          }
-        }
-      }
-
-      if (existingIds.size > 0) {
-        console.log(`[duplicate-detection] Found ${existingIds.size} already imported ${source} events`)
-      }
-
-      return existingIds
-    })
-  )
-}
-
-/** Promise compatibility adapter for scripts and existing callers. */
-export async function checkDuplicateEvents(
-  externalIds: string[],
-  source: ImportSource,
-  client?: SupabaseClient
-): Promise<Set<string>> {
-  return Effect.runPromise(
-    Effect.catchEager(checkDuplicateEventsEffect(externalIds, source, client), () =>
-      Effect.succeed(new Set<string>())
-    )
-  )
-}
-
-/**
  * Extract external IDs from an array of preview events
  * Handles both single EventInsert and EventInsert[] transforms
  */
@@ -156,7 +99,7 @@ export function extractExternalIds<T>(
  *
  * @param externalIds - Array of external IDs to check
  * @param source - The import source
- * @param catalog - The catalog store (Supabase or D1)
+ * @param catalog - The catalog store
  * @returns Map of external_id -> existing event data
  */
 export function checkDuplicateEventsWithDataEffect(

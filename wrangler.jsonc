@@ -31,8 +31,7 @@
   // Cloudflare Email Sending for feedback alerts (src/shared/lib/feedback/alert.server.ts).
   // Feedback alerts (alerts@) and Better Auth magic links (accounts@, src/features/auth/api/magic-link-email.server.ts).
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["alerts@baeventos.com", "accounts@baeventos.com"] }],
-  // D1 cutover (docs/ops/d1-cutover.md): these bindings switch the Worker from Supabase to D1, Vectorize and R2.
-  // Hermes replaces the database_id placeholder with the id of `baeventos-production`; CI refuses to deploy it as is.
+  // D1 cutover (docs/ops/d1-cutover.md): the web Worker uses D1, Vectorize, and R2.
   "d1_databases": [{ "binding": "DB", "database_name": "baeventos-production", "database_id": "bda62412-f0b7-40f1-b12a-1fe2aa4c787f", "migrations_dir": "migrations" }],
   "vectorize": [{ "binding": "VECTORIZE", "index_name": "baeventos-events" }],
   "r2_buckets": [{ "binding": "ARTWORK", "bucket_name": "baeventos-artwork" }],

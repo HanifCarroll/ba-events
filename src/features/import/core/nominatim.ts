@@ -458,29 +458,3 @@ export async function lookupBusinessAtAddress(
 ): Promise<{ name: string | null; neighborhood: Neighborhood | null; fullAddress: string | null }> {
   return Effect.runPromise(lookupBusinessAtAddressEffect(address))
 }
-
-/**
- * Try to find an existing venue by address (checking the address field).
- */
-export async function findVenueByAddress(
-  client: unknown, // SupabaseClient - using unknown to avoid circular import
-  address: string
-): Promise<{ id: string; name: string } | null> {
-  // Normalize address for comparison
-  const normalizedAddress = address.trim().toLowerCase()
-
-  // Query venues where address contains this string
-  const supabase = client as { from: (table: string) => unknown }
-  const { data, error } = await (supabase.from('venues') as {
-    select: (cols: string) => { ilike: (col: string, val: string) => { limit: (n: number) => Promise<{ data: Array<{ id: string; name: string; address: string }> | null; error: unknown }> } }
-  })
-    .select('id, name, address')
-    .ilike('address', `%${normalizedAddress}%`)
-    .limit(1)
-
-  if (error || !data || data.length === 0) {
-    return null
-  }
-
-  return { id: data[0].id, name: data[0].name }
-}

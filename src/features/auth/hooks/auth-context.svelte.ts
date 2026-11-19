@@ -2,7 +2,7 @@ import { createContext } from 'svelte'
 import { browser } from '$app/env'
 import { createActor } from 'xstate'
 import type { AuthUser, Profile } from '#shared/lib/types.ts'
-import { getSupabaseBrowserClient, fetchProfile, usesBetterAuth } from '#features/auth/api/client.ts'
+import { fetchProfile } from '#features/auth/api/client.ts'
 import { createAuthMachine, type AuthSeed } from './auth.machine.ts'
 import { watchBetterAuthSession } from './better-auth-session-sync.ts'
 
@@ -54,20 +54,14 @@ export function initAuthContext(initial?: AuthSeed | null): AuthContextValue {
 	if (!browserAuthState) {
 		browserAuthState = new AuthState(initial ?? {})
 		const state = browserAuthState
-		if (usesBetterAuth()) {
-			// Better Auth has no onAuthStateChange: re-read the session when the tab returns and after this tab signs out.
-			watchBetterAuthSession({
-				target: window,
-				visibilityTarget: document,
-				isVisible: () => document.visibilityState === 'visible',
-				currentUserId: () => state.user?.id ?? null,
-				apply: (user) => { state.user = user },
-			})
-		} else {
-			getSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
-				state.user = session?.user ?? null
-			})
-		}
+		// Better Auth has no onAuthStateChange: re-read the session when the tab returns and after this tab signs out.
+		watchBetterAuthSession({
+			target: window,
+			visibilityTarget: document,
+			isVisible: () => document.visibilityState === 'visible',
+			currentUserId: () => state.user?.id ?? null,
+			apply: (user) => { state.user = user },
+		})
 	} else {
 		browserAuthState.seed(initial ?? {})
 	}

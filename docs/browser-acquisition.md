@@ -6,7 +6,7 @@ Meetup reads one page per day for 14 days, and every requested day must succeed.
 
 Each source opens one browser session, reuses it for the run, and closes it when its step ends (`src/jobs-worker/browser.ts`). Sessions are rotated after 32 page reads or eight minutes. There is no paid fallback provider: a Browser Rendering failure fails that source's step, which retries.
 
-Anonymous source observations are kept in the private `source-acquisitions` Supabase Storage bucket. The bucket contains no API keys, cookies, auth headers, or user data. A completed observation is reused when its Workflow step retries; failed reads are not cached. Successful protected details can also be reused by a same-day catch-up run, with a Buenos Aires date partition. A new daily catalog read is always fresh. Meetup detail HTTP requests revalidate ETag/Last-Modified and reuse a body only on 304; 200 replaces it. Missing validators cause a full fresh GET. Successfully stored event descriptions retain the existing translate-only reuse policy, not an asserted daily refresh of every historical detail page.
+Only anonymous source observations enter the bounded, per-isolate TTL cache. It contains no API keys, cookies, auth headers, or user data. Retries and same-day catch-up runs reuse successful observations only on a warm isolate; a fresh isolate refetches. Failed reads are not cached. A new daily catalog read is always fresh. Meetup detail HTTP requests revalidate ETag/Last-Modified and reuse a body only on 304; 200 replaces it. Missing validators cause a full fresh GET. Successfully stored event descriptions retain the existing translate-only reuse policy, not an asserted daily refresh of every historical detail page.
 
 Memory holds at most 256 entries. Retry entries expire after 48 hours and HTTP validator entries after seven days. The daily run removes expired bucket objects older than seven days in bounded batches. Storage errors degrade reuse with a warning rather than deferring discovery.
 
@@ -22,7 +22,7 @@ The read-only command also reports the latest daily chain's measured enrichment 
 
 ## Checking sources without writing
 
-`baeventos-source-check` is an unscheduled Workflow that reads each source's catalog and returns the event count and three sample names. It makes no database, model, or embedding calls and does not need the Supabase secrets. Payload `{"days": N}` (1 to 14, default 1) sets the Meetup window.
+`baeventos-source-check` is an unscheduled Workflow that reads each source's catalog and returns the event count and three sample names. It makes no database, model, or embedding calls. Payload `{"days": N}` (1 to 14, default 1) sets the Meetup window.
 
 ```sh
 bunx wrangler workflows trigger baeventos-source-check '{"days":14}' --config wrangler.jobs.jsonc

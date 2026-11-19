@@ -24,11 +24,11 @@ The job reads these GitHub repository settings:
 | --- | --- | --- |
 | Secret | `CLOUDFLARE_API_TOKEN` | Wrangler deploys and D1 migrations. It must be allowed to deploy all five Workers, their Workflows and the jobs Worker's Browser Rendering binding, update the `baeventos.com` routes, and edit D1, Vectorize, and R2 (the bindings below). |
 | Secret | `CLOUDFLARE_ACCOUNT_ID` | Wrangler account. |
-| Variable | `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, `PUBLIC_POSTHOG_KEY`, `PUBLIC_POSTHOG_HOST` | Public values compiled into the web build. |
+| Variable | `PUBLIC_POSTHOG_KEY`, `PUBLIC_POSTHOG_HOST` | Public values compiled into the web build. |
 
 ## Data bindings
 
-Since the D1 cutover, production stores its data on Cloudflare. A Worker with these bindings uses them; a Worker without them still falls back to Supabase until PR 09 removes that code.
+Since the D1 cutover, production stores its data on Cloudflare. Each Worker needs the bindings for its own data paths. Missing bindings never select another backend.
 
 | Worker | Bindings |
 | --- | --- |
@@ -61,9 +61,9 @@ Each Worker keeps its runtime variables and secrets in its own Cloudflare Settin
 | `baeventos-enrichment-catchup` | `0 13 * * *` | 10:00 | Retry failed enrichment once and drain the pending backlog |
 | `baeventos-source-check` | none | | Manual no-write catalog read of each source |
 
-Two more crons run in `scheduled()` itself (`CRON_TASKS`): `mark-past-events` hourly (`0 * * * *`) and the Vectorize reconcile at 03:00 Buenos Aires (`0 6 * * *`). They work only when the Worker binds D1; since the cutover they replace Supabase's pg_cron job, which stops mattering once Supabase is no longer read. That makes five crons, the most a Worker may have. See [D1](d1.md#catalog).
+Two more crons run in `scheduled()` itself (`CRON_TASKS`): `mark-past-events` hourly (`0 * * * *`) and the Vectorize reconcile at 03:00 Buenos Aires (`0 6 * * *`). Both require D1 and Vectorize. That makes five crons, the most a Worker may have. See [D1](d1.md#catalog).
 
-Every step retries twice more with exponential backoff from one second (Trigger.dev's old three attempts) and keeps the old per-task time budget as its timeout. Secrets: `INTAKE_API_TOKEN` (the intake API, see [Instagram intake](instagram-intake.md)), `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (the private acquisition cache, until PR 09), `DEEPSEEK_API_KEY` (categorization, description extraction, translation, and facets), and `OPENAI_API_KEY` (embeddings). They reach shared code through `process.env` (`nodejs_compat_populate_process_env`). Run a job by hand with `bunx wrangler workflows trigger <workflow> --config wrangler.jobs.jsonc`, and read it with `bunx wrangler workflows instances describe <workflow> latest --config wrangler.jobs.jsonc`.
+Every step retries twice more with exponential backoff from one second (Trigger.dev's old three attempts) and keeps the old per-task time budget as its timeout. Secrets: `INTAKE_API_TOKEN` (the intake API, see [Instagram intake](instagram-intake.md)), `DEEPSEEK_API_KEY` (categorization, description extraction, translation, and facets), and `OPENAI_API_KEY` (embeddings). They reach shared code through `process.env` (`nodejs_compat_populate_process_env`). Run a job by hand with `bunx wrangler workflows trigger <workflow> --config wrangler.jobs.jsonc`, and read it with `bunx wrangler workflows instances describe <workflow> latest --config wrangler.jobs.jsonc`.
 
 ## Local checks
 

@@ -10,7 +10,7 @@
  */
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
 import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument, generateEmbedding } from '#shared/lib/ai/embeddings.ts'
-import { syncVectorMetadata, vectorMetadata, type VectorRow } from '#features/import/core/catalog-store-d1.ts'
+import { d1Catalog, syncVectorMetadata, vectorMetadata, type VectorRow } from '#features/import/core/catalog-store-d1.ts'
 import type { EventFacets } from '#shared/lib/search-facets.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
 import { boundVectorize } from '#features/import/core/catalog-store-for.ts'
@@ -47,6 +47,19 @@ interface StaleRow extends VectorRow {
   venue_name: string | null
   venue_neighborhood: string | null
   search_document: string | null
+  embedding_version: number
+}
+
+const EMBEDDING_FIELDS = `id, status, starts_at, name, description_es, description_en, categories, facets,
+  price, is_free, venue_name, venue_neighborhood, search_document, embedding_version`
+const STALE_DOCUMENT = "status = 'scheduled' AND (embedding_version < ? OR search_document IS NULL)"
+
+function sourceForEmbedding(row: StaleRow) {
+  return {
+    name: row.name, description_es: row.description_es, description_en: row.description_en,
+    categories: JSON.parse(row.categories) as string[], facets: JSON.parse(row.facets) as EventFacets,
+    price: row.price, is_free: row.is_free === 1, venue_name: row.venue_name, venue_neighborhood: row.venue_neighborhood,
+  }
 }
 
 export interface ReconcileOptions {
@@ -81,19 +94,13 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
 
   // 1. reembed-stale: scheduled events whose document is from an older version or missing. Document, version and vector
   //    are written together, so the three always agree.
-  const { results: stale } = await db.prepare(`SELECT id, status, starts_at, name, description_es, description_en, categories, facets,
-      price, is_free, venue_name, venue_neighborhood, search_document
-    FROM events_with_venues WHERE status = 'scheduled' AND (embedding_version < ? OR search_document IS NULL)
-    ORDER BY starts_at, id`).bind(CURRENT_EMBEDDING_VERSION).all<StaleRow>()
+  const { results: stale } = await db.prepare(`SELECT ${EMBEDDING_FIELDS} FROM events_with_venues
+    WHERE ${STALE_DOCUMENT} ORDER BY starts_at, id`).bind(CURRENT_EMBEDDING_VERSION).all<StaleRow>()
   const reembedded = new Set<string>()
   for (const row of stale) {
     if (budget <= 0) { result.deferred++; continue }
     budget--
-    const { embedding, searchDocument } = await embed({
-      name: row.name, description_es: row.description_es, description_en: row.description_en,
-      categories: JSON.parse(row.categories) as string[], facets: JSON.parse(row.facets) as EventFacets,
-      price: row.price, is_free: row.is_free === 1, venue_name: row.venue_name, venue_neighborhood: row.venue_neighborhood,
-    })
+    const { embedding, searchDocument } = await embed(sourceForEmbedding(row))
     // Queued in the same transaction, so a failed upsert below is picked up by step 2 tomorrow.
     await db.batch([
       db.prepare('UPDATE events SET search_document = ?, embedding_version = ? WHERE id = ?').bind(searchDocument, CURRENT_EMBEDDING_VERSION, row.id),
@@ -145,10 +152,58 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
   return result
 }
 
-/**
- * The D1-only crons: `mark-past-events` hourly and the nightly Vectorize reconcile. Postgres runs the first with pg_cron
- * and pgvector needs no reconcile, so without a D1 binding (production until the cutover) they do nothing.
- */
+export const EMBEDDING_TASK_LIMIT = 200
+
+/** Manual backfill. The nightly reconcile still checks metadata and retries queued writes on its own schedule. */
+export async function runEmbeddingTask(
+  task: 'populate-embeddings' | 'reembed-stale', db: D1Database, vectors: Vectorize, limit: number,
+  { embed = embedEventWithDocument, embedText = generateEmbedding }: Pick<ReconcileOptions, 'embed' | 'embedText'> = {},
+) {
+  const catalog = d1Catalog(db, vectors)
+  const result = { checked: 0, updated: 0, blocked: 0, more: false }
+  async function repair(row: StaleRow, rebuild: boolean) {
+    if (!rebuild && row.search_document) {
+      await vectors.upsert([{ id: row.id, values: await embedText(row.search_document), metadata: vectorMetadata(row) }])
+      result.updated++
+      return
+    }
+    const { embedding, searchDocument } = await embed(sourceForEmbedding(row))
+    await catalog.updateEvent(row.id, { embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION })
+    const stored = await db.prepare('SELECT search_document, embedding_version FROM events WHERE id = ?').bind(row.id)
+      .first<Pick<StaleRow, 'search_document' | 'embedding_version'>>()
+    if (stored?.search_document === searchDocument && stored.embedding_version === CURRENT_EMBEDDING_VERSION) result.updated++
+    else result.blocked++
+  }
+
+  if (task === 'reembed-stale') {
+    const { results } = await db.prepare(`SELECT ${EMBEDDING_FIELDS} FROM events_with_venues
+      WHERE ${STALE_DOCUMENT} ORDER BY starts_at, id LIMIT ?`).bind(CURRENT_EMBEDDING_VERSION, limit + 1).all<StaleRow>()
+    result.more = results.length > limit
+    for (const row of results.slice(0, limit)) {
+      result.checked++
+      await repair(row, true)
+    }
+    return result
+  }
+
+  // D1 has no vector column. Check actual index membership in small pages, including older events.
+  let after = ''
+  for (;;) {
+    const { results } = await db.prepare(`SELECT ${EMBEDDING_FIELDS} FROM events_with_venues
+      WHERE id > ? ORDER BY id LIMIT 20`).bind(after).all<StaleRow>()
+    if (!results.length) return result
+    const found = new Set((await vectors.getByIds(results.map(row => row.id))).map(vector => vector.id))
+    result.checked += results.length
+    for (const row of results) {
+      if (found.has(row.id)) continue
+      if (result.updated + result.blocked >= limit) return { ...result, more: true }
+      await repair(row, false)
+    }
+    after = results[results.length - 1].id
+  }
+}
+
+/** Hourly expiration and nightly Vectorize reconciliation. */
 export async function runCatalogTask(task: (typeof CRON_TASKS)[keyof typeof CRON_TASKS], env: CatalogEnv): Promise<unknown> {
   const db = boundD1Database(env)
   if (!db) return { skipped: 'no D1 binding' }

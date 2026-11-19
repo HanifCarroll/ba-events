@@ -14,7 +14,6 @@ import {
   getEventWithVenue,
   getHappeningSoonEvents,
   getVenueById,
-  createEvent,
 } from './client.server.ts'
 import { createWorkerHandler } from '../../../mcp-worker/index.ts'
 
@@ -171,7 +170,4 @@ describe('public event reads on D1', () => {
     expect(await getEventsWithVenues(1)).toHaveLength(1)
   })
 
-  it('POST /api/events refuses on D1 instead of writing Supabase', async () => {
-    await expect(createEvent({ name: 'x', starts_at: inDays(1), source: 'api' })).rejects.toThrow('not available on D1')
-  })
 })

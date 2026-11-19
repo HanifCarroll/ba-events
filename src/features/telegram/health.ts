@@ -1,4 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { Data, Effect, Schema } from 'effect'
 import { logger } from '#shared/lib/logger.ts'
 import type { D1Database } from '@cloudflare/workers-types'
@@ -49,34 +48,26 @@ export function telegramHealthDecision(webhookInfo: unknown, staleFailedUpdates:
 }
 
 export function countStaleTelegramFailuresEffect(
-  client: SupabaseClient | { d1: D1Database },
+  client: D1Database,
   now = new Date(),
 ): Effect.Effect<number, TelegramHealthError> {
   return Effect.gen(function* () {
     const cutoff = new Date(now.getTime() - TELEGRAM_STALE_FAILURE_AGE_MS).toISOString()
-    if ('d1' in client) {
-      return yield* Effect.tryPromise({
-        try: () => countStaleFailures(client.d1, cutoff),
-        catch: (cause) => new TelegramHealthError({ message: 'Failed to read stale Telegram updates', cause }),
-      })
-    }
-    const { count, error } = yield* Effect.tryPromise({
-      try: () => client.from('telegram_updates').select('update_id', { count: 'exact', head: true }).eq('status', 'failed').lt('updated_at', cutoff),
+    return yield* Effect.tryPromise({
+      try: () => countStaleFailures(client, cutoff),
       catch: (cause) => new TelegramHealthError({ message: 'Failed to read stale Telegram updates', cause }),
     })
-    if (error) return yield* Effect.fail(new TelegramHealthError({ message: 'Failed to read stale Telegram updates' }))
-    return count ?? 0
   })
 }
 
-export function countStaleTelegramFailures(client: SupabaseClient | { d1: D1Database }, now = new Date()) {
+export function countStaleTelegramFailures(client: D1Database, now = new Date()) {
   return Effect.runPromise(countStaleTelegramFailuresEffect(client, now))
 }
 
 /** Effect-native health program; scheduled callback remains the platform edge. */
 export function runTelegramHealthCheckEffect(
   telegram: { getWebhookInfo: () => Promise<unknown> },
-  client: SupabaseClient | { d1: D1Database },
+  client: D1Database,
   now = new Date(),
 ): Effect.Effect<void, TelegramHealthError> {
   return Effect.gen(function* () {
@@ -92,6 +83,6 @@ export function runTelegramHealthCheckEffect(
   })
 }
 
-export function runTelegramHealthCheck(telegram: { getWebhookInfo: () => Promise<unknown> }, client: SupabaseClient | { d1: D1Database }, now = new Date()) {
+export function runTelegramHealthCheck(telegram: { getWebhookInfo: () => Promise<unknown> }, client: D1Database, now = new Date()) {
   return Effect.runPromise(runTelegramHealthCheckEffect(telegram, client, now))
 }

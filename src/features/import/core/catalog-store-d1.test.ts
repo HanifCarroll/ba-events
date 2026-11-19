@@ -30,14 +30,10 @@ const store = () => { const fake = fakeVectorize(); return { catalog: d1Catalog(
 const eventId = async (externalId: string) => (await db.prepare('SELECT id FROM events WHERE external_id = ?').bind(externalId).first<string>('id'))!
 
 describe('catalogStoreFor', () => {
-	it('stays on Supabase without a DB binding, and refuses D1 without its Vectorize index', () => {
-		let made = 0
-		const supabase = () => { made++; return { from: () => null } as never }
-		expect(catalogStoreFor({}, supabase)).toBeTruthy()
-		expect(made).toBe(1)
-		expect(() => catalogStoreFor({ DB: db }, supabase)).toThrow('VECTORIZE')
-		expect(catalogStoreFor({ DB: db, VECTORIZE: fakeVectorize().index }, supabase)).toBeTruthy()
-		expect(made).toBe(1)
+	it('refuses a missing DB or a missing Vectorize binding', () => {
+		expect(() => catalogStoreFor({})).toThrow('Missing DB binding')
+		expect(() => catalogStoreFor({ DB: db })).toThrow('VECTORIZE')
+		expect(catalogStoreFor({ DB: db, VECTORIZE: fakeVectorize().index })).toBeTruthy()
 	})
 })
 
@@ -117,7 +113,7 @@ describe('events and their vectors', () => {
 })
 
 describe('enrichment state', () => {
-	it('selects and counts pending rows the way the Supabase query does', async () => {
+	it('selects and counts pending rows using the enrichment filters', async () => {
 		const { catalog } = store()
 		const rows = [
 			event({ name: 'pending', enrichment_status: 'pending' }),

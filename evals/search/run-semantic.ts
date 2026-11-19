@@ -7,10 +7,11 @@
  * isolated: if `eval:search` (hybrid) dips but `eval:search:semantic` holds,
  * the regression is in the lexical/fusion layer, not the embeddings.
  *
- * Usage: bun evals/search/run-semantic.ts
+ * Usage: bun run eval:search:semantic --staging
  */
 import { semanticEventSearch } from '#shared/lib/db/client.server.ts'
 import { mapWithConcurrency } from '../lib/checks.ts'
+import { openStagingCatalog } from '../lib/staging-catalog.ts'
 import { GOLDEN_QUERIES } from './golden.ts'
 
 const K = 5
@@ -24,6 +25,7 @@ interface QueryResult {
   topNames: string[]
 }
 
+await using staging = await openStagingCatalog(process.argv[2])
 console.log(`Running ${GOLDEN_QUERIES.length} golden queries (semantic-only, recall@${K})...`)
 const results = await mapWithConcurrency(GOLDEN_QUERIES, 4, async (q): Promise<QueryResult> => {
   const events = await semanticEventSearch(q.query, {}, K)

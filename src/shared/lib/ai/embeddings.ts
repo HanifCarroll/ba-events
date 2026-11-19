@@ -1,6 +1,5 @@
 import { embed } from 'ai'
 import { createHash } from 'crypto'
-import { getSupabase } from '#shared/lib/db/client.server.ts'
 import type { Event, EventWithVenue, Neighborhood } from '../types.ts'
 import { embeddingModel } from './providers.ts'
 import type { EventFacets } from '#shared/lib/search-facets.ts'
@@ -213,31 +212,4 @@ export async function embedEventWithDocument(
   const searchDocument = buildSearchDocument(event)
   const embedding = await generateEmbedding(searchDocument)
   return { embedding, searchDocument }
-}
-
-// Update embedding for a single event. Writes embedding + search_document +
-// embedding_version in the same update so the document and version can never
-// drift out of sync with the vector.
-export async function updateEventEmbedding(eventId: string): Promise<void> {
-  const { data: event, error } = await getSupabase()
-    .from('events_with_venues')
-    .select('*')
-    .eq('id', eventId)
-    .single()
-
-  if (error) throw error
-
-  const text = buildSearchDocument(event as EventWithVenue)
-  const embedding = await generateEmbedding(text)
-
-  const { error: updateError } = await getSupabase()
-    .from('events')
-    .update({
-      embedding,
-      search_document: text,
-      embedding_version: CURRENT_EMBEDDING_VERSION,
-    })
-    .eq('id', eventId)
-
-  if (updateError) throw updateError
 }

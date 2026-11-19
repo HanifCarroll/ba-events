@@ -2,10 +2,10 @@
 /**
  * Golden set for semantic search eval.
  *
- * Labeled against scheduled events in the dev DB on 2026-08-14 (see
- * inspect-events.ts to dump current data). Events expire, so this set goes
- * stale — refresh labels when the suite starts failing for data reasons
- * rather than retrieval reasons.
+ * Labeled against scheduled events in the dev DB on 2026-08-14.
+ * When labels expire, use Node 24 to inspect the current staging catalog:
+ *   node evals/search/inspect-events.ts --staging
+ * Refresh labels when the suite starts failing for data reasons rather than retrieval reasons.
  *
  * Keep labels tight (1–3 IDs): recall@5 is found/labeled, so listing every
  * recurring date of the same series makes a correct top-5 look like a miss.

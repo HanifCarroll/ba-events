@@ -1,3 +1,4 @@
+import type { CatalogStore, EnrichmentRow, EventWrite } from './catalog-store.ts'
 /**
  * Unit tests for the enrichment facets-only backfill path and terminal
  * `skipped` handling.
@@ -18,7 +19,6 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import type { SupabaseClient } from '@supabase/supabase-js'
 
 vi.mock('#shared/lib/ai/embeddings.ts', () => ({
   embedEventWithDocument: vi.fn(),
@@ -30,61 +30,24 @@ vi.mock('#features/import/adapters/enrichment/registry.ts', () => ({
 }))
 
 import { Effect } from 'effect'
-import { enrichSingleEvent, countEventsNeedingEnrichment, getEventsNeedingEnrichment, enrichEventsEffect, getEventsNeedingEnrichmentEffect } from './event-enrichment.ts'
+import { enrichSingleEvent, enrichEventsEffect, getEventsNeedingEnrichmentEffect } from './event-enrichment.ts'
 import { embedEventWithDocument, CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { getEnrichmentAdapter } from '#features/import/adapters/enrichment/registry.ts'
 import { HttpError } from '#shared/lib/errors.ts'
-import { supabaseCatalog } from './catalog-store.ts'
 import { ENRICHMENT_VERSION, type EnrichmentStageRecord } from './enrichment-provenance.ts'
 
 const embedEventWithDocumentMock = embedEventWithDocument as unknown as Mock
 const getEnrichmentAdapterMock = getEnrichmentAdapter as unknown as Mock
 
-/** Minimal fake Supabase client that records the update calls it receives. */
 function makeClient() {
-  const updates: Array<{ table: string; data: unknown }> = []
-  const client = {
-    updates,
-    from: (table: string) => ({
-      update: vi.fn((data: unknown) => {
-        updates.push({ table, data })
-        return { eq: vi.fn().mockResolvedValue({ error: null }) }
-      }),
-    }),
-  }
-  return client
+  const updates: Array<{ id: string; data: EventWrite }> = []
+  const catalog = { updateEvent: async (id, data) => { updates.push({ id, data }) } } satisfies Partial<CatalogStore>
+  return { catalog: catalog as unknown as CatalogStore, updates }
 }
 
-/** A stub that never touches the real (or module-mocked) extract-facets code. */
 function makeExtractFacetsMock() {
   return vi.fn()
 }
-
-/**
- * Recorder fake for the Supabase query-builder chain: every chained method
- * returns the builder and records its args, and the builder is awaitable at
- * the end (resolves to the supplied `result`).
- */
-function makeQueryClient(result: unknown) {
-  const calls: Array<{ method: string; args: unknown[] }> = []
-  const builder: Record<string, unknown> = {
-    then: (resolve: (v: unknown) => void) => resolve(result),
-  }
-  for (const method of ['select', 'in', 'neq', 'gte', 'not', 'eq', 'limit', 'order']) {
-    builder[method] = (...args: unknown[]) => {
-      calls.push({ method, args })
-      return builder
-    }
-  }
-  const from = (table: string) => {
-    calls.push({ method: 'from', args: [table] })
-    return builder
-  }
-  return { client: supabaseCatalog({ from } as unknown as SupabaseClient), calls }
-}
-
-const queryArgsFor = (calls: Array<{ method: string; args: unknown[] }>, method: string) =>
-  calls.filter((c) => c.method === method).map((c) => c.args)
 
 describe('enrichSingleEvent facets-only path', () => {
   beforeEach(() => {
@@ -106,7 +69,7 @@ describe('enrichSingleEvent facets-only path', () => {
     const client: ReturnType<typeof makeClient> = makeClient()
 
     const result = await enrichSingleEvent(
-      supabaseCatalog(client as never),
+      client.catalog,
       {
         id: 'evt-1',
         name: 'Noche de Jazz',
@@ -152,7 +115,7 @@ describe('enrichSingleEvent facets-only path', () => {
     const client: ReturnType<typeof makeClient> = makeClient()
 
     const result = await enrichSingleEvent(
-      supabaseCatalog(client as never),
+      client.catalog,
       {
         id: 'evt-3',
         name: 'Milonga sin señales',
@@ -183,21 +146,13 @@ describe('enrichSingleEvent facets-only path', () => {
 })
 
 describe('imported pending rows leave the enrichment queue', () => {
-  /** In-memory `events` table: selection honours the status filter, updates apply by id. */
-  function eventsTable(rows: Array<Record<string, unknown>>) {
-    const client = {
-      from: () => {
-        let statuses: unknown[] = []
-        const builder: Record<string, unknown> = {
-          then: (resolve: (value: unknown) => void) => resolve({ data: rows.filter(row => statuses.includes(row.enrichment_status)).map(row => ({ ...row })), error: null }),
-          update: (data: Record<string, unknown>) => ({ eq: async (_: string, id: string) => { Object.assign(rows.find(row => row.id === id)!, data); return { error: null } } }),
-          in: (column: string, values: unknown[]) => { if (column === 'enrichment_status') statuses = values; return builder },
-        }
-        for (const method of ['select', 'neq', 'gte', 'not', 'eq', 'limit', 'order']) builder[method] = () => builder
-        return builder
-      },
-    }
-    return supabaseCatalog(client as unknown as SupabaseClient)
+  function eventsTable(rows: EnrichmentRow[]): CatalogStore {
+    const catalog = {
+      eventsNeedingEnrichment: async ({ statuses = ['pending', 'failed'] }) => rows.filter(row =>
+        statuses.some(status => status === row.enrichment_status)).map(row => ({ ...row })),
+      updateEvent: async (id, data) => { Object.assign(rows.find(row => row.id === id)!, data) },
+    } satisfies Partial<CatalogStore>
+    return catalog as unknown as CatalogStore
   }
 
   it('completes an imported row (embedding + Spanish description) once, then reselection and a retried batch spend nothing', async () => {
@@ -206,9 +161,9 @@ describe('imported pending rows leave the enrichment queue', () => {
     getEnrichmentAdapterMock.mockReset()
     const extractFacets = vi.fn(async () => ({ genres: ['jazz'] }))
     const buildPresentationFields = vi.fn(async () => ({ description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null }))
-    const rows: Array<Record<string, unknown>> = [{
+    const rows: EnrichmentRow[] = [{
       id: 'imported', name: 'Jazz', link: 'https://example.com/jazz', source: 'meetup',
-      description_es: 'Jazz en vivo.', description_en: 'Live jazz.', embedding: [0.1], enrichment_status: 'pending',
+      description_es: 'Jazz en vivo.', description_en: 'Live jazz.', enrichment_status: 'pending',
     }]
     const client = eventsTable(rows)
     const batch = () => Effect.runPromise(Effect.gen(function* () {
@@ -232,9 +187,9 @@ describe('imported pending rows leave the enrichment queue', () => {
     getEnrichmentAdapterMock.mockReset()
     const extractFacets = vi.fn(async () => ({ genres: ['tango'] }))
     const buildPresentationFields = vi.fn(async () => ({ description_display_es: 'Tango.', description_display_en: 'Tango.', description_summary_es: null, description_summary_en: null }))
-    const rows: Array<Record<string, unknown>> = [{
+    const rows: EnrichmentRow[] = [{
       id: 'ba-tourism-1', name: 'Tango', link: 'https://example.com/tango', source: 'ba-tourism',
-      description_es: 'Tango en la plaza.', description_en: null, embedding: [0.1], enrichment_status: 'pending',
+      description_es: 'Tango en la plaza.', description_en: null, enrichment_status: 'pending',
     }]
     const client = eventsTable(rows)
     const batch = (statuses: Array<'pending' | 'failed'>, translate: (text: string) => Promise<string | null>) =>
@@ -270,7 +225,7 @@ describe('enrichSingleEvent source provenance', () => {
       return { description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null }
     })
     const client = makeClient()
-    const running = enrichSingleEvent(supabaseCatalog(client as never), {
+    const running = enrichSingleEvent(client.catalog, {
       id: 'ordered', name: 'Synthetic Jazz', link: 'https://example.com/jazz', source: 'meetup',
       description_es: 'Jazz.', description_en: 'Jazz.',
     }, { extractFacets: async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] }), buildPresentationFields })
@@ -300,7 +255,7 @@ describe('enrichSingleEvent source provenance', () => {
       description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null,
     })
     const client = makeClient()
-    const result = await enrichSingleEvent(supabaseCatalog(client as never), {
+    const result = await enrichSingleEvent(client.catalog, {
       id: 'failed-embedding', name: 'Synthetic Jazz', link: 'https://example.com/jazz', source: 'meetup',
       description_es: 'Jazz.', description_en: 'Jazz.',
     }, { extractFacets: async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] }), buildPresentationFields })
@@ -323,7 +278,7 @@ describe('enrichSingleEvent source provenance', () => {
     })
     for (const stored of [false, true]) {
       const client = makeClient()
-      const result = await enrichSingleEvent(supabaseCatalog(client as never), {
+      const result = await enrichSingleEvent(client.catalog, {
         id: 'provenance', name: 'Jazz', link: 'https://example.com/jazz', source: 'meetup',
         ...(stored ? { description_es: 'Jazz en vivo.', description_en: 'Live jazz.' } : {}),
       }, {
@@ -358,7 +313,7 @@ describe('enrichSingleEvent terminal skipped handling', () => {
     })
     const client: ReturnType<typeof makeClient> = makeClient()
 
-    const result = await enrichSingleEvent(supabaseCatalog(client as never), {
+    const result = await enrichSingleEvent(client.catalog, {
       id: 'evt-4',
       name: 'Evento Passline',
       link: 'https://www.passline.com/evento/1',
@@ -383,7 +338,7 @@ describe('enrichSingleEvent terminal skipped handling', () => {
     })
     const client: ReturnType<typeof makeClient> = makeClient()
 
-    const result = await enrichSingleEvent(supabaseCatalog(client as never), {
+    const result = await enrichSingleEvent(client.catalog, {
       id: 'evt-5',
       name: 'Evento muerto',
       link: 'https://example.com/gone',
@@ -399,90 +354,6 @@ describe('enrichSingleEvent terminal skipped handling', () => {
   })
 })
 
-describe('countEventsNeedingEnrichment', () => {
-  it('returns the exact count', async () => {
-    const { client } = makeQueryClient({ count: 42 })
-    await expect(countEventsNeedingEnrichment(client)).resolves.toBe(42)
-  })
-
-  it('scopes to createdAfter via created_at >= when provided', async () => {
-    const { client, calls } = makeQueryClient({ count: 0 })
-    await countEventsNeedingEnrichment(client, { createdAfter: '2026-08-18T09:00:00.000Z' })
-
-    expect(queryArgsFor(calls, 'gte')).toContainEqual(['created_at', '2026-08-18T09:00:00.000Z'])
-  })
-
-  it('filters by source via eq when provided', async () => {
-    const { client, calls } = makeQueryClient({ count: 0 })
-    await countEventsNeedingEnrichment(client, { source: 'eventbrite' })
-
-    expect(queryArgsFor(calls, 'eq')).toContainEqual(['source', 'eventbrite'])
-  })
-
-  it('excludes the retired sources from selection and counts', async () => {
-    for (const read of [countEventsNeedingEnrichment, getEventsNeedingEnrichment]) {
-      const { client, calls } = makeQueryClient({ data: [], count: 0, error: null })
-      await read(client)
-      expect(queryArgsFor(calls, 'not')).toContainEqual(['source', 'in', '(passline,eventbrite,venti)'])
-    }
-  })
-
-  it('applies the shared eligibility filters', async () => {
-    const { client, calls } = makeQueryClient({ count: 0 })
-    await countEventsNeedingEnrichment(client)
-
-    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending', 'failed']])
-    expect(queryArgsFor(calls, 'neq')).toContainEqual(['status', 'canceled'])
-    expect(queryArgsFor(calls, 'neq')).toContainEqual(['status', 'past'])
-    expect(queryArgsFor(calls, 'not')).toContainEqual(['link', 'is', null])
-    expect(queryArgsFor(calls, 'gte').some((a) => a[0] === 'starts_at')).toBe(true)
-  })
-
-  it('counts only pending when statuses: ["pending"] (failed rows excluded)', async () => {
-    const { client, calls } = makeQueryClient({ count: 0 })
-    await countEventsNeedingEnrichment(client, { statuses: ['pending'] })
-
-    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending']])
-  })
-
-  it('returns 0 on error instead of throwing', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { client } = makeQueryClient({ error: { message: 'down' } })
-    await expect(countEventsNeedingEnrichment(client)).resolves.toBe(0)
-  })
-})
-
-describe('getEventsNeedingEnrichment failure-loop guard', () => {
-  it('selects pending + failed by default (catch-up/remaining path)', async () => {
-    const { client, calls } = makeQueryClient({ data: [], error: null })
-    await getEventsNeedingEnrichment(client)
-
-    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending', 'failed']])
-  })
-
-  it('selects pending only when statuses: ["pending"], so failed rows are not re-selected', async () => {
-    const { client, calls } = makeQueryClient({ data: [], error: null })
-    await getEventsNeedingEnrichment(client, { statuses: ['pending'] })
-
-    expect(queryArgsFor(calls, 'in')).toContainEqual(['enrichment_status', ['pending']])
-    expect(queryArgsFor(calls, 'in')).not.toContainEqual(['enrichment_status', ['pending', 'failed']])
-  })
-
-  it('orders oldest-first and limits the batch so later pending rows progress', async () => {
-    const { client, calls } = makeQueryClient({ data: [], error: null })
-    await getEventsNeedingEnrichment(client, { limit: 100, statuses: ['pending'] })
-
-    expect(queryArgsFor(calls, 'order')).toContainEqual(['starts_at', { ascending: true }])
-    expect(queryArgsFor(calls, 'limit')).toContainEqual([100])
-  })
-
-  it('returns rows unchanged (no client-side filtering)', async () => {
-    const rows = [{ id: 'evt-1', name: 'A' }]
-    const { client } = makeQueryClient({ data: rows, error: null })
-    await expect(getEventsNeedingEnrichment(client)).resolves.toEqual(rows)
-  })
-})
-
 describe('enrichSingleEvent hidden locations', () => {
   const facets = async () => ({ eventType: [], genres: [], activities: [], vibes: [], audience: [], setting: [] })
   const presentation = async () => ({ description_display_es: 'Jazz.', description_display_en: 'Jazz.', description_summary_es: null, description_summary_en: null })
@@ -492,19 +363,12 @@ describe('enrichSingleEvent hidden locations', () => {
     const updates: Array<Record<string, unknown>> = []
     const venueLookups: string[] = []
     const venue = { id: 'venue-existing', name: 'Sala Sintética', neighborhood: 'Retiro', address: 'Av. Ficticia 1234' }
-    const builder: Record<string, unknown> = {}
-    for (const method of ['select', 'ilike', 'eq', 'limit']) builder[method] = () => builder
-    builder.single = async () => ({ data: venue, error: null })
-    builder.maybeSingle = async () => ({ data: venue, error: null })
     const client = {
-      from: (table: string) => table === 'venues'
-        ? (venueLookups.push(table), builder)
-        : { update: (data: Record<string, unknown>) => { updates.push(data); Object.assign(row, data); return { eq: async () => ({ error: null }) } } },
-      rpc: async (name: string) => name === 'venues_named'
-        ? (venueLookups.push(name), { data: [{ venue, event_count: 0 }], error: null })
-        : { data: [], error: null },
-    }
-    return { client: supabaseCatalog(client as unknown as SupabaseClient), row, updates, venueLookups }
+      updateEvent: async (_id: string, data: EventWrite) => { updates.push(data); Object.assign(row, data) },
+      venuesNamed: async () => { venueLookups.push('named'); return [{ ...venue, event_count: 0 }] },
+      venueNameAndNeighborhood: async () => { venueLookups.push('by-id'); return venue },
+    } as unknown as CatalogStore
+    return { client, row, updates, venueLookups }
   }
   // Bilingual adapter output skips language detection; `english: null` is what a failed translation leaves.
   const adapter = (location_hidden: boolean | undefined, { spanish = 'Jazz en vivo.' as string | null, english = 'Live jazz.' as string | null } = {}) => getEnrichmentAdapterMock.mockReturnValue({

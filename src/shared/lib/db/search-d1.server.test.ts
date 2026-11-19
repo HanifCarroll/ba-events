@@ -121,7 +121,7 @@ describe('lexicalEventSearchD1', () => {
     expect(await lexicalEventSearchD1(db, '-tango', {}, 10)).toEqual([])
   })
 
-  it('returns scheduled events only, with the same fields the Supabase RPC returns', async () => {
+  it('returns scheduled events only, with the public search payload fields', async () => {
     const venueId = await venue('Bebop Club', { neighborhood: 'Palermo', address: 'Uriarte 1658' })
     await event('Jazz pasado', { status: 'past' })
     const live = await event('Jazz hoy', { venue_id: venueId, categories: ['music'], price: 5000, facets: { genres: ['jazz'] } })
@@ -243,7 +243,7 @@ describe('semanticEventSearchD1', () => {
 })
 
 describe('filter-only reads', () => {
-  it('match the Supabase reads: strict price cap, status, counts, and the furthest date', async () => {
+  it('apply strict price cap, status, counts, and the furthest date', async () => {
     await event('Gratis', { is_free: true, starts_at: '2026-12-01T22:00:00Z' })
     const priced = await event('Barato', { price: 1000, starts_at: '2026-12-02T22:00:00Z' })
     await event('Sin precio', { starts_at: '2026-12-03T22:00:00Z', facets: { genres: ['rock'] } })
@@ -311,9 +311,9 @@ describe('filter-only reads', () => {
 })
 
 describe('the backend seam', () => {
-  it('keeps search on Supabase until the env binds DB, then uses D1 and Vectorize', async () => {
+  it('requires DB and requires Vectorize for semantic search', async () => {
     useCloudflareBindings({})
-    expect(cloudflareSearchBackend()).toBeNull()
+    expect(cloudflareSearchBackend).toThrow('Missing DB binding')
 
     const live = await event('Peña folklórica', { search_document: 'Peña folklórica con empanadas' })
     const { index } = fakeVectorize([{ id: live, values: [1, 0], status: 'scheduled', starts_at: '2026-12-01T22:00:00Z' }])
@@ -339,7 +339,6 @@ describe('venue similarity on D1', () => {
     expect(mostSimilarVenue([], 'x')).toBeNull()
   })
 
-  // The cases of supabase/tests/instagram-intake-venues.sql.
   it('intake_similar_venues: same-name aliases, bands, no truncation, unrelated names', async () => {
     const sala = await venue('Sala Sintética', { address: 'Av. Ficticia 1234', neighborhood: 'Almagro' })
     await venue('SALA SINTÉTICA')
@@ -350,4 +349,16 @@ describe('venue similarity on D1', () => {
     expect((await intakeSimilarVenuesD1(db, 'Sala Sintética')).length).toBeGreaterThanOrEqual(9)
     expect(await intakeSimilarVenuesD1(db, 'Teatro Distinto')).toEqual([])
   })
+})
+
+
+it('does not follow an aborted Vectorize result with a SQL read', async () => {
+  const controller = new AbortController()
+  const prepare = vi.fn()
+  const index = { query: async () => {
+    controller.abort('canceled')
+    return { matches: [{ id: 'synthetic' }] }
+  } }
+  await expect(semanticEventSearchD1({ prepare } as never, index as never, [1], {}, 5, controller.signal)).rejects.toBe('canceled')
+  expect(prepare).not.toHaveBeenCalled()
 })

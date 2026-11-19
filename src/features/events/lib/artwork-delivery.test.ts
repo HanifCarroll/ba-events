@@ -11,11 +11,11 @@ const SOURCE_IMAGES = [
 
 describe('bounded artwork delivery', () => {
   it('allows only the configured project and retained public artwork paths', () => {
-    const origin = 'https://synthetic.supabase.co'
+    const origin = 'https://artwork.example.test'
     const path = `/storage/v1/object/public/event-artwork/${'a'.repeat(64)}.jpg`
     expect(isArtworkOriginAllowed(origin + path, origin)).toBe(true)
     expect(isArtworkOriginAllowed(origin + path)).toBe(false)
-    expect(isArtworkOriginAllowed('https://other.supabase.co' + path, origin)).toBe(false)
+    expect(isArtworkOriginAllowed('https://other.example.test' + path, origin)).toBe(false)
     expect(isArtworkOriginAllowed(origin + path + '?redirect=1', origin)).toBe(false)
     expect(isArtworkOriginAllowed(origin + '/storage/v1/object/public/instagram-evidence/private.jpg', origin)).toBe(false)
   })

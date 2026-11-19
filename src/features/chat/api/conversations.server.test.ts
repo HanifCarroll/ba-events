@@ -1,142 +1,45 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createConversation, getConversation } from './conversations.server.ts'
-import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
+import type { D1Database } from '@cloudflare/workers-types'
+import type { RequestEvent } from '@sveltejs/kit'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { freshD1 } from '../../../../tests/support/d1.ts'
+import { useD1Binding } from '#shared/lib/db/d1-binding.server.ts'
+import { createConversation, getConversation, listConversations } from './conversations.server.ts'
 
-vi.mock('#shared/lib/db/server-client.server.ts', () => ({
-  createSupabaseServerClient: vi.fn(),
-}))
+let db: D1Database
+let dispose: () => Promise<void>
+beforeAll(async () => {
+  ({ db, dispose } = await freshD1())
+  await db.exec("INSERT INTO profiles (id, email) VALUES ('alice', 'alice@example.test'), ('bob', 'bob@example.test')")
+}, 60_000)
+afterAll(async () => { await dispose() })
+beforeEach(() => useD1Binding({ DB: db }))
+afterEach(() => useD1Binding(undefined))
 
-const authenticatedUserId = 'user-1'
-const user = { id: authenticatedUserId } as never
+const event = (id?: string, signal?: AbortSignal) => ({ locals: { user: id ? { id } : null },
+  request: new Request('https://example.test', { signal }) }) as RequestEvent
 
-function requestEvent() {
-  const conversations = {
-    abortSignal: (_signal: AbortSignal) => conversations,
-    select: () => conversations,
-    eq: () => conversations,
-    is: () => conversations,
-    single: async () => ({
-      data: { id: 'conversation-1', user_id: 'user-1' },
-      error: null,
-    }),
-  }
-  const messages = {
-    abortSignal: (_signal: AbortSignal) => messages,
-    select: () => messages,
-    eq: () => messages,
-    order: () => messages,
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(resolve({ data: [], error: null })),
-  }
-  const event = {
-    locals: { user },
-    cookies: {} as never,
-  } as never
-  vi.mocked(createSupabaseServerClient).mockReturnValue({
-    auth: { getUser: vi.fn(() => { throw new Error('duplicate auth lookup') }) },
-    from: (table: string) => (table === 'conversations' ? conversations : messages),
-  } as never)
-  return event
-}
-
-describe('createConversation idempotency', () => {
-	function createEvent(insertResult: { data: unknown; error: unknown }, existingResult?: unknown) {
-		const makeQuery = (result: unknown) => {
-			const query = {
-				select: () => query,
-				eq: () => query,
-				is: () => query,
-				insert: () => query,
-				single: async () => result,
-				maybeSingle: async () => ({
-					data: existingResult && (existingResult as { user_id?: string }).user_id === authenticatedUserId
-						? existingResult
-						: null,
-					error: null
-				})
-			}
-			return query
-		}
-		const event = { locals: { user }, cookies: {} as never } as never
-		vi.mocked(createSupabaseServerClient).mockReturnValue({
-			auth: { getUser: vi.fn(async () => ({ data: { user }, error: null })) },
-			from: () => makeQuery(insertResult)
-		} as never)
-		return event
-	}
-
-	beforeEach(() => vi.clearAllMocks())
-
-	it('rejects malformed client conversation IDs before database access', async () => {
-		await expect(
-			createConversation(createEvent({ data: null, error: null }), { id: 'not-a-uuid' })
-		).rejects.toThrow('Failed to create conversation')
-		expect(createSupabaseServerClient).not.toHaveBeenCalled()
-	})
-
-	it('returns the exact existing conversation on a same-owner retry', async () => {
-		const existing = {
-			id: '00000000-0000-4000-8000-000000000001',
-			user_id: authenticatedUserId
-		}
-		await expect(
-			createConversation(
-				createEvent({ data: null, error: { code: '23505' } }, existing),
-				{ id: existing.id }
-			)
-		).resolves.toEqual(existing)
-	})
-
-	it('does not reveal or claim a UUID owned by another user', async () => {
-		await expect(
-			createConversation(
-				createEvent({ data: null, error: { code: '23505' } }),
-				{ id: '00000000-0000-4000-8000-000000000001', user_id: 'other-user' }
-			)
-		).rejects.toThrow('Failed to create conversation')
-	})
-})
-
-describe('getConversation on the signed-in chat route', () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it('cancels its history read before starting another database request', async () => {
-    const controller = new AbortController()
-    let received: AbortSignal | undefined
-    let started: () => void = () => {}
-    const ready = new Promise<void>((resolve) => { started = resolve })
-    const conversationQuery = {
-      select: () => conversationQuery,
-      eq: () => conversationQuery,
-      is: () => conversationQuery,
-      abortSignal: (signal: AbortSignal) => { received = signal; return conversationQuery },
-      single: () => { started(); return new Promise<never>(() => {}) },
-    }
-    let messageReads = 0
-    vi.mocked(createSupabaseServerClient).mockReturnValue({
-      from: (table: string) => {
-        if (table !== 'conversations') messageReads++
-        return conversationQuery
-      },
-    } as never)
-    const event = { locals: { user }, request: new Request('https://app.example.test', { signal: controller.signal }) } as never
-    const running = getConversation(event, { id: 'conversation-1' })
-    const outcome = running.then(() => false, () => true)
-    await ready
-    controller.abort()
-    expect(await outcome).toBe(true)
-    expect(received?.aborted).toBe(true)
-    expect(messageReads).toBe(0)
+describe('conversation request boundary', () => {
+  it('validates invalid client ids before contacting D1', async () => {
+    const prepare = vi.fn()
+    useD1Binding({ DB: { prepare, batch: vi.fn() } })
+    await expect(createConversation(event('alice'), { id: 'not-a-uuid' })).rejects.toThrow('Failed to create conversation')
+    expect(prepare).not.toHaveBeenCalled()
   })
 
-  it('uses the authenticated request local without another auth lookup', async () => {
-    const event = requestEvent()
+  it('replays a client id only for the session user', async () => {
+    const id = crypto.randomUUID()
+    const created = await createConversation(event('alice'), { id, title: 'First title' })
+    expect(await createConversation(event('alice'), { id, title: 'Retry' })).toEqual(created)
+    await expect(createConversation(event('bob'), { id })).rejects.toThrow('Failed to create conversation')
+    expect(await getConversation(event('bob'), { id })).toBeNull()
+    expect(await listConversations(event())).toEqual({ conversations: [], total: 0 })
+    expect(await getConversation(event('alice'), { id })).toMatchObject({ id, title: 'First title', messages: [] })
+  })
 
-    await expect(getConversation(event, { id: 'conversation-1' })).resolves.toMatchObject({
-      id: 'conversation-1',
-      messages: [],
-    })
-
-    expect(createSupabaseServerClient(event).auth.getUser).not.toHaveBeenCalled()
+  it('does not dispatch a history read for a canceled request', async () => {
+    const batch = vi.fn()
+    useD1Binding({ DB: { prepare: vi.fn(), batch } })
+    await expect(getConversation(event('alice', AbortSignal.abort()), { id: 'c' })).rejects.toBeDefined()
+    expect(batch).not.toHaveBeenCalled()
   })
 })
