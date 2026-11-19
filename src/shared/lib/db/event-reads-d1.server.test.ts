@@ -70,15 +70,16 @@ async function linkIntakeEvidence(eventIds: string[]) {
 }
 
 describe('public event reads on D1', () => {
-  it('home feed: only scheduled, visible, intake-linked events 12 hours out, soonest first', async () => {
+  it('home feed: only scheduled, visible, intake-linked events with artwork 12 hours out, soonest first', async () => {
     const bar = await venue('Bar Sintético', { neighborhood: 'Palermo' })
-    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5), image_url: null })
+    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5) })
+    const noArtwork = await event('Sin imagen', { venue_id: bar, starts_at: inDays(2), image_url: null })
     const sooner = await event('Jazz temprano', { venue_id: bar, starts_at: inDays(1) })
     const imminent = await event('Empieza ya', { venue_id: bar, starts_at: inDays(0.25) })
     const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
     const canceled = await event('Cancelado', { venue_id: bar, status: 'canceled' })
     await event('Sin vínculo de intake', { venue_id: bar })
-    await linkIntakeEvidence([later, sooner, imminent, hidden, canceled])
+    await linkIntakeEvidence([later, sooner, noArtwork, imminent, hidden, canceled])
 
     const cards = await getHappeningSoonEvents(4)
     expect(cards.map(card => card.id)).toEqual([sooner, later])
