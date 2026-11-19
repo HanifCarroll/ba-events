@@ -49,6 +49,10 @@ Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous 
 - **AND** when several venues share that name it reuses the one at the event's own street and number; a same-name venue at another street and number is never reused, and the event gets a new venue instead
 - **AND** without a numbered address on the event, or among copies with no numbered address, it reuses the copy the duplicate merge keeps (numbered address and barrio, then most events, then oldest)
 
+#### Scenario: A source venue name retains a trailing address separator
+- **WHEN** import or intake receives a venue name ending in a dash or hyphen
+- **THEN** it removes the trailing separator before matching or creating the venue and keeps any dashes within the name
+
 #### Scenario: A venue lookup fails
 - **WHEN** the same-name or similar-name lookup returns an error
 - **THEN** settlement leaves the event without a venue rather than creating a possible duplicate
@@ -115,8 +119,9 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 - **THEN** the event row and its vector are written, and the vector's metadata matches the row's status and start
 
 #### Scenario: An event passes its end
-- **WHEN** the hourly task finds a scheduled event that ended, a timed event that started more than 4 hours ago, or a date-only event that started more than 28 hours ago
+- **WHEN** the hourly task finds a timed event whose explicit end passed, or, without an explicit end, a timed event more than 4 hours after its start or a date-only event more than 28 hours after its start
 - **THEN** the event becomes `past` and its vector's status follows
+- **AND** a date-only event with an explicit end becomes `past` only after that end has passed and its Buenos Aires start day is over
 
 #### Scenario: Vectorize drifts from D1
 - **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row

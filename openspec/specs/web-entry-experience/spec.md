@@ -37,12 +37,23 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 #### Scenario: A visitor filters the agenda
 - **WHEN** the visitor selects Today, This weekend, Free, or Music
 - **THEN** the grid shows respectively the current local date, the current or next Friday–Sunday intersected with the weekly window, confirmed free admission, or a concert or live-music facet
+- **AND** date filters include any remaining occurrence whose interval overlaps the selected dates, even if it starts before them and has not started yet
 - **AND** pay-what-you-can evidence in an intake price note, or “a la gorra” in the title or Spanish description, takes precedence over a free flag or zero price; the card says “A la gorra” and does not appear in Gratis
+
+#### Scenario: An occurrence ends while the agenda is open
+- **WHEN** the homepage renders on the server or the clock advances in the browser
+- **THEN** the agenda omits timed occurrences at their explicit end, or three hours after their start if no end is known
+- **AND** all-day and time-TBA events remain through their Buenos Aires start day, and ongoing multi-day events with a later explicit end remain eligible
+
+#### Scenario: A venue offers several time slots on the same day
+- **WHEN** remaining timed occurrences share a normalized title, a known venue, and a Buenos Aires start date
+- **THEN** they appear on one card listing distinct remaining times in order and linking to the next upcoming occurrence, or the first remaining one if no later slot remains
+- **AND** time-TBA and all-day occurrences stay on separate cards, as do occurrences at a different venue or on a different local date
 
 #### Scenario: A filter has no matches
 - **WHEN** the selected filter has no matches
 - **THEN** the grid shows its localized empty message
-- **AND** only the date filters may show up to four later events, after the selected date range, beneath that message
+- **AND** only the date filters may show up to four later cards, after the selected date range, beneath that message
 - **AND** a failed feed or empty unfiltered agenda shows the localized agenda error rather than a blank section
 
 #### Scenario: A visitor uses an agenda card
@@ -50,7 +61,7 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 - **THEN** its title, local date and time state, venue and neighborhood when known, and price state appear as real text
 - **AND** the card links to event details and can prefill the composer with the existing event prompt
 - **AND** glossary triggers appear on the matched words in the title or metadata, without adding another line, and work by pointer, touch, and keyboard; terms that appear only in the description do not add a trigger, and Escape dismisses an open definition even while hovered
-- **AND** below 640 CSS pixels the grid has two columns, with titles clamped to three lines until a clipped glossary trigger needs keyboard focus; the date, venue, neighborhood, and price can wrap without being clipped
+- **AND** the grid has two columns below 640 CSS pixels, three from 640, four from 1024, and five from 1440; titles are clamped to three lines on mobile and two from 640 pixels until a clipped glossary trigger needs keyboard focus; the date, venue, neighborhood, and price can wrap without being clipped
 - **AND** when an original post is available, its link and the composer action can stack when space runs out; desktop action labels do not wrap within an action
 
 #### Scenario: A visitor starts a chat from the agenda

@@ -1,17 +1,16 @@
 <script lang="ts">
 	import * as m from '#paraglide/messages.js'
-	import { HOME_FILTERS, parseHomeFilter, selectHomeView, type HomeAgenda, type HomeAgendaEvent } from '../lib/home-feed.ts'
+	import { HOME_FILTERS, type HomeAgendaEvent, type HomeFilter, type HomeView } from '../lib/home-feed.ts'
 	import HomeAgendaCard from './HomeAgendaCard.svelte'
 
-	let { agenda, url, onFilter, onAsk }: {
-		agenda: HomeAgenda | null
+	let { view, filter, url, onFilter, onAsk }: {
+		view: HomeView
+		filter: HomeFilter | null
 		url: URL
 		onFilter: (href: string) => void
 		onAsk: (event: HomeAgendaEvent) => void
 	} = $props()
 
-	const filter = $derived(parseHomeFilter(url.searchParams.get('f')))
-	const view = $derived(agenda ? selectHomeView(agenda, filter) : { events: [], empty: 'feed' } as const)
 	const labels = { hoy: m.landing_today, finde: m.home_filter_weekend, gratis: m.event_free, musica: m.home_filter_music }
 	const emptyCopy = { feed: m.home_empty_feed, hoy: m.home_empty_today, finde: m.home_empty_weekend, gratis: m.home_empty_free, musica: m.home_empty_category }
 
@@ -46,7 +45,7 @@
 		{view.empty ? emptyCopy[view.empty]() : ''}
 	</p>
 	{#if view.events.length}
-		<div class="grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-7 lg:grid-cols-3 lg:gap-x-8 lg:gap-y-10">
+		<div class="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-x-5 sm:gap-y-7 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-10 min-[90rem]:grid-cols-5">
 			{#each view.events as event, index (event.id)}
 				<HomeAgendaCard {event} {index} {onAsk} />
 			{/each}

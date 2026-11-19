@@ -4,6 +4,7 @@ import { createVenueSchema } from '#shared/lib/schemas.ts'
 import type { Neighborhood } from '#shared/lib/types.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
 import { mapNominatimNeighborhood, searchNominatimEffect, type NominatimResult, type NominatimSearchOptions } from '../core/nominatim.ts'
+import { trimVenueName } from '../core/venue-identity.ts'
 import { REVIEW_QUEUE_THRESHOLD, areaOnlyVenueName, isGarbageVenueName, isPlaceholderVenue } from '../core/venue-settlement.ts'
 import { validPublicUrl } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
@@ -65,9 +66,9 @@ export function decodeVenueRequest(input: unknown): VenueRequest {
  */
 export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(store: IntakeStore, request: VenueRequest,
   { geocode, cityLookup }: { geocode: Geocode; cityLookup?: CityLookup } = { geocode: nominatim, cityLookup: lookupUsig }) {
-  const name = request.name.trim(), address = request.address.trim()
+  const name = trimVenueName(request.name), address = request.address.trim()
   // A barrio-named place passes: the address below must carry a house number. A city or postal code never does.
-  if (isGarbageVenueName(name) || areaOnlyVenueName(name) === 'city' || isPlaceholderVenue(name) || isPlaceholderVenue(address)) {
+  if (!name || isGarbageVenueName(name) || areaOnlyVenueName(name) === 'city' || isPlaceholderVenue(name) || isPlaceholderVenue(address)) {
     return { outcome: 'rejected', reasons: ['Name or address is a placeholder, not a physical venue'] } satisfies VenueOutcome
   }
   const key = addressKey(address)

@@ -13,8 +13,10 @@ describe('homepage event discovery', () => {
   it('returns the same weekly agenda for ordinary SSR and filtered URLs', async () => {
     const { load } = await import('./(chat)/+page.server.ts')
     for (const path of ['/', '/?f=hoy']) {
-      const request = { ...event(), url: new URL(path, 'https://example.test') }
-      await expect(load(request as unknown as Parameters<typeof load>[0])).resolves.toEqual({ homeAgenda: { window: homeWindow(new Date()), events } })
+      const request = { ...event(), url: new URL(path, 'https://example.test'), depends() {} }
+      await expect(load(request as unknown as Parameters<typeof load>[0])).resolves.toEqual({
+        homeAgenda: { window: homeWindow(new Date()), events, asOf: expect.any(Number) },
+      })
     }
   })
 

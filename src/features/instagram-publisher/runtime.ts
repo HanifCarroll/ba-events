@@ -58,20 +58,22 @@ export function writeJson(path: string, value: unknown) {
 export interface Config {
   /** Per-format auto mode: publish at the slot unless Hanif reacted ❌. Off by default. */
   auto: Record<FormatKey, boolean>
+  /** Hoy can use Business Suite when enabled. Off by default. */
+  linkStickers: { hoy: boolean }
   /** R2 bucket and its public base URL (no trailing slash). Publishing is skipped until both are set. */
   r2: { bucket: string; publicBaseUrl: string } | null
   /** The Reel's music directory (tracks.json and the audio files), outside the repo. */
   reel: { musicDir: string }
 }
 
-export function readConfig(): Config {
-  const raw = existsSync(CONFIG_FILE) ? JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) : {}
+export function readConfig(path = CONFIG_FILE): Config {
+  const raw = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
   const auto = { hoy: raw.auto?.hoy === true, finde: raw.auto?.finde === true, gratis: raw.auto?.gratis === true, reel: raw.auto?.reel === true }
-  const r2 = typeof raw.r2?.bucket === 'string' && typeof raw.r2?.publicBaseUrl === 'string'
-    ? { bucket: raw.r2.bucket, publicBaseUrl: raw.r2.publicBaseUrl.replace(/\/+$/, '') }
-    : null
+  const bucket = typeof raw.r2?.bucket === 'string' ? raw.r2.bucket.trim() : ''
+  const publicBaseUrl = typeof raw.r2?.publicBaseUrl === 'string' ? raw.r2.publicBaseUrl.trim().replace(/\/+$/, '') : ''
+  const r2 = bucket && publicBaseUrl ? { bucket, publicBaseUrl } : null
   const musicDir = typeof raw.reel?.musicDir === 'string' ? raw.reel.musicDir.replace(/^~(?=\/)/, HOME) : join(HOME, '.local/share/ba-events/reel-music')
-  return { auto, r2, reel: { musicDir } }
+  return { auto, linkStickers: { hoy: raw.linkStickers?.hoy === true }, r2, reel: { musicDir } }
 }
 
 // Lock: one tick or command at a time.
@@ -210,7 +212,7 @@ export async function renderFrames(html: string, outDir: string, height: number,
   const htmlFile = join(outDir, 'frames.html')
   writeFileSync(htmlFile, html)
   const entry = join(REPO, 'scripts/instagram-publisher.ts')
-  const command = [process.execPath, entry, 'render-frames', htmlFile, outDir, String(height)]
+  const command = [process.execPath, ...process.execArgv, entry, 'render-frames', htmlFile, outDir, String(height)]
   const unit = `ba-events-instagram-render-${process.pid}-${Date.now()}`
   const scoped = process.env.BA_INSTAGRAM_RENDER_NO_SCOPE === '1'
     ? command

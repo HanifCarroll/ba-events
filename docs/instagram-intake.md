@@ -63,6 +63,8 @@ BA Eventos lists independent culture. Mainstream large-venue shows are out of sc
 
 Club and party nights are also out of scope: DJ-centered parties, boliche nights, fiestas, and after-office nights. Skip those occurrences regardless of the venue or the account that posted them, and record `out of scope: party night` for a fully out-of-scope party post. A small-room live show by independent artists belongs regardless of genre; a DJ before or after a concert doesn't make it a party. For a verified correction to an existing party listing, use the same update rules as for an existing mainstream listing.
 
+Commercial theatre is also out of scope (Hanif, 2026-11-19): runs by commercial producers, usually with TV or star casts, in the Corrientes-area commercial houses such as Multiteatro Comafi, Teatro Liceo, Paseo La Plaza, Teatro Metropolitan, Lola Membrives, Teatro Astral, and El Nacional. Skip those occurrences and record `out of scope: commercial theatre` for a fully out-of-scope post. Independent and public theatre (the Complejo Teatral, the Cervantes, independent rooms) stays in scope, and the same update rules as for an existing mainstream listing apply.
+
 The venue or the artist's fame alone doesn't decide it: an independently organized cultural event at Tecnópolis, a city venue, or a mid-size theatre, or a touring jazz or folk artist at a small club, stays in scope. Hold the candidate, and record why in the run's notes, only when it's genuinely unclear. Small and mid-size independent rooms, cultural centers, jazz clubs, peñas, independent theatres, and public institutions (museums, the city's cultural centers, and university halls) stay in scope. This rule doesn't remove events already in the catalog.
 
 ## Held venues

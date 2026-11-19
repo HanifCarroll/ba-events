@@ -33,8 +33,8 @@ describe('shared homepage agenda cache', () => {
     await readHomeFeed({ cache, now: () => midnight - 1 })
     await readHomeFeed({ cache, now: () => midnight })
     expect(cache.match.mock.calls.map(([key]) => key)).toEqual([
-      'https://baeventos.com/__cache/home-agenda-scope-1/2026-11-18',
-      'https://baeventos.com/__cache/home-agenda-scope-1/2026-11-19',
+      'https://baeventos.com/__cache/home-agenda-slots-1/2026-11-18',
+      'https://baeventos.com/__cache/home-agenda-slots-1/2026-11-19',
     ])
   })
 

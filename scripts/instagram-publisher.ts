@@ -1,17 +1,18 @@
 /**
  * BA Eventos Instagram publisher (VPS). Drafts the Hoy, Este finde, Gratis, and Este finde Reel posts from the catalog, previews them
- * in Slack #ba-eventos, and publishes approved drafts through the Instagram API. See docs/instagram-publisher.md.
+ * in Slack #ba-eventos, and publishes approved drafts. See docs/instagram-publisher.md.
  *
  *   tick                                             do whatever is due (the systemd timer runs this every 10 minutes)
  *   dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>]   render a real draft; no Slack, R2, or Instagram
+ *   stickers-dry-run <hoy draft id> --out <dir>       capture every Instagram preview and discard without sharing
  *   regenerate <draft id> [--exclude <event id> ...] [--track <id>]  rebuild a draft (a Reel may switch track) and preview it again
  *   status                                           list the drafts, their state, and their times
  */
 import { isFormatKey } from '../src/features/instagram-publisher/formats.ts'
-import { dryRun, regenerate, status, tick } from '../src/features/instagram-publisher/job.ts'
+import { dryRun, regenerate, status, stickersDryRun, tick } from '../src/features/instagram-publisher/job.ts'
 import { renderFramesInProcess } from '../src/features/instagram-publisher/runtime.ts'
 
-const USAGE = 'usage: instagram-publisher.ts tick | status | dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] | regenerate <draft id> [--exclude <event id> ...] [--track <id>]'
+const USAGE = 'usage: instagram-publisher.ts tick | status | dry-run <hoy|finde|gratis|reel> --date <YYYY-MM-DD> --out <dir> [--track <id>] | regenerate <draft id> [--exclude <event id> ...] [--track <id>] | stickers-dry-run <hoy draft id> --out <dir>'
 
 function flags(args: string[], name: string): string[] {
   const values: string[] = []
@@ -31,6 +32,12 @@ async function main(argv: string[]) {
       const [track] = flags(args, 'track')
       if (!format || !isFormatKey(format) || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !out) throw new Error(USAGE)
       return dryRun(format, date, out, track ?? null)
+    }
+    case 'stickers-dry-run': {
+      const [id] = args
+      const [out] = flags(args, 'out')
+      if (!id || !out) throw new Error(USAGE)
+      return stickersDryRun(id, out)
     }
     case 'regenerate': {
       const [id] = args
