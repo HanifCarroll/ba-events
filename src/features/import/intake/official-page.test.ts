@@ -101,6 +101,20 @@ describe('official-page evidence', () => {
     await expect(readOfficialPage('https://teatro.example.org/sneaky', sites, fetcher)).rejects.toThrow('not a public HTTPS page')
   })
 
+  it('reports a seller waiting room without ever requesting it', async () => {
+    const url = 'https://www.passline.com/eventos-plano/obra'
+    const fetches: string[] = []
+    const fetcher = (async (requested: string) => {
+      fetches.push(requested)
+      return new Response(null, { status: 302, headers: { location: 'https://passline.queue-it.net/?c=passline' } })
+    }) as typeof fetch
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(url, 'LUNES 23 NOVIEMBRE 21:00')], facts,
+      (target, allowed) => readOfficialPage(target, allowed, fetcher)))).toEqual([
+      `Official page could not be read: ${url} (the page sits behind a waiting room; cite another official page)`,
+    ])
+    expect(fetches).toEqual([url])
+  })
+
   it('counts only the venue\'s site, sites cited posts link to, the post-backed ticket site, and known ticket sellers', () => {
     const allowed = officialSites({ website: 'teatropicadero.com.ar', ticketUrl: 'https://entradas.sala.com.ar/x',
       captions: ['Info en www.organizador.org.ar/obra y https://linktr.ee/sala, también https://www.instagram.com/sala'] })
@@ -108,6 +122,15 @@ describe('official-page evidence', () => {
     for (const site of ['teatropicadero.com.ar', 'sala.com.ar', 'organizador.org.ar', 'plateanet.com', 'alternativateatral.com']) expect(allowed.has(site), site).toBe(true)
     for (const site of ['linktr.ee', 'instagram.com', 'example.org']) expect(allowed.has(site), site).toBe(false)
     expect(officialSites({ website: 'https://www.facebook.com/sala' }).has('facebook.com')).toBe(false)
+  })
+
+  it('reads a scheme-less ticket domain next to caption punctuation, but only if cited', () => {
+    const source = { website: 'https://sala.example.org' }
+    expect(officialSites({ ...source, captions: ['Link en la bio'] }).has('entradas-sinteticas.net')).toBe(false)
+    for (const ending of ['', '.', ',', '!', '…']) {
+      expect(officialSites({ ...source, captions: [`Entradas en www.entradas-sinteticas.net${ending} Link en la bio`] })
+        .has('entradas-sinteticas.net'), ending).toBe(true)
+    }
   })
 
   it('refuses a page or a redirect off the allowed sites, and social or wrapper hosts even when a venue links them', async () => {
@@ -168,6 +191,53 @@ describe('official-page evidence', () => {
     const unrevealed = STREAMED.replace(`<script>$RS("S:2","P:2")</script>`, `<script>$RC("B:1","S:1")</script>`)
     expect(visibleText(unrevealed)).not.toContain('27/11/2026')
     expect(await kiki(unrevealed)).toEqual(["Official page evidence must be an excerpt of the page's visible text: https://www.revamos.com/eventos/kiki-ball"])
+  })
+
+  it('reads only El Camarín’s URL-selected date from the current Fanz event, not other JSON or hidden text', async () => {
+    const times = [
+      { id: 16, start: '2026-11-22T01:00:00.000Z', end: '2026-11-22T02:15:00.000Z' },
+      { id: 17, start: '2026-11-29T01:00:00.000Z', end: '2026-11-29T02:15:00.000Z' },
+    ]
+    const data = {
+      page: '/event/[eventId]', query: { eventId: '42', eventDateId: '17' },
+      props: { pageProps: { event: { id: 42, isExternal: false, isFinished: false, timezone: 'America/Buenos_Aires',
+        Dates: times, description: 'OCULTO 28/11/2026' },
+        related: [{ id: 17, name: 'OTRA OBRA 28/11/2026' }] } },
+    }
+    const fixture = `<h1>Forever Sintético</h1><p hidden>OCULTO 22:00</p>
+      <script type="application/json" id="__NEXT_DATA__">${JSON.stringify(data)}</script>`
+    const url = 'https://www.elcamarindelasmusas.com/event/42?eventDateId=17'
+    const excerpt = 'Empieza el sáb 28 de nov 2026 22:00 - 23:15 hs'
+    const allowed = new Set(['elcamarindelasmusas.com'])
+    const fetcher = (async () => page(fixture)) as typeof fetch
+    const read = await readOfficialPage(url, allowed, fetcher)
+    expect(read).toEqual({ visible: expect.stringContaining('Forever Sintético'),
+      selected: { date: '2026-11-28', time: '22:00', text: excerpt } })
+    expect(JSON.stringify(read)).not.toMatch(/sáb 21|OCULTO|OTRA OBRA/)
+    const early = (async () => page(fixture.replaceAll('2026-11-29T0', '2026-12-05T0'))) as typeof fetch
+    expect(await readOfficialPage(url, allowed, early)).toMatchObject({
+      selected: { date: '2026-12-04', text: 'Empieza el vie 04 de dic 2026 22:00 - 23:15 hs' },
+    })
+    const verify = (time: string, date = '2026-11-28', quote = excerpt, fields?: Array<'date' | 'time' | 'venue'>) => Effect.runPromise(
+      verifyOfficialPagesEffect([evidence(url, quote, fields)], { ...facts, date, time, sites: allowed },
+        (target, sites) => readOfficialPage(target, sites, fetcher)))
+    expect(await verify('22:00')).toEqual([])
+    for (const time of ['23:15', '22:15']) {
+      expect(await verify(time)).toEqual([`Official page excerpt does not state the performance start time ${time}: ${url}`])
+    }
+    expect(await verify('23:15', '2026-11-28', '23:15 hs', ['time']))
+      .toEqual([`Official page excerpt does not state the performance start time 23:15: ${url}`])
+    expect(await verify('22:00', '2026-12-28')).toEqual([`Official page excerpt does not state the selected performance date 2026-12-28: ${url}`])
+    expect(await verify('22:00', '2026-11-21', '22:00 - 23:15 hs', ['time']))
+      .toEqual([`Official page excerpt does not state the selected performance date 2026-11-21: ${url}`])
+    expect(await verify('22:00', '2026-11-28', excerpt, ['venue']))
+      .toEqual([`The selected performance excerpt can only support date and time: ${url}`])
+    for (const unsupported of [url.replace('17', '16'), url.replace('/42', '/99'), `${url}&eventDateId=16`, url.split('?')[0],
+      url.replace('elcamarindelasmusas.com', 'teatro.example.org')]) {
+      expect(typeof await readOfficialPage(unsupported, officialSites({ website: unsupported }), fetcher), unsupported).toBe('string')
+    }
+    const finished = (async () => page(fixture.replace('"isFinished":false', '"isFinished":true'))) as typeof fetch
+    expect(typeof await readOfficialPage(url, allowed, finished)).toBe('string')
   })
 
   it('names a bot check or an empty page as unreadable', async () => {

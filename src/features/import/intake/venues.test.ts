@@ -3,7 +3,8 @@ import { Effect } from 'effect'
 import type { IntakeStore, VenueRow } from './store.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
 import type { NominatimResult } from '../core/nominatim.ts'
-import { addressKey, decodeVenueRequest, type Geocode, groupHeldByVenue, resolveIntakeVenueEffect, type VenueRequest } from './venues.ts'
+import { decodeVenueRequest, type Geocode, groupHeldByVenue, resolveIntakeVenueEffect, type VenueRequest } from './venues.ts'
+import { addressKey } from './venue-address.ts'
 
 function fakeDb(venues: VenueRow[], options: { similar?: Record<string, number>; failReads?: boolean } = {}) {
   const inserts: Array<{ table: string; row: Record<string, unknown> }> = []
@@ -40,7 +41,7 @@ const request = (overrides: Partial<VenueRequest> = {}): VenueRequest => decodeV
   name: 'Sala Sintética', address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro',
   evidence: [{ url: 'https://example.org/sala', confirms: 'name, address and barrio on the official site' }], ...overrides })
 const run = (db: IntakeStore, input: VenueRequest, geocode: Geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro')) =>
-  Effect.runPromise(resolveIntakeVenueEffect(db, input, geocode))
+  Effect.runPromise(resolveIntakeVenueEffect(db, input, { geocode }))
 
 describe('intake venue resolution', () => {
   afterEach(() => { vi.unstubAllGlobals() })
@@ -57,6 +58,11 @@ describe('intake venue resolution', () => {
       '1530 Corrientes, Buenos Aires, Cdad. Autónoma de Buenos Aires, C1071']) expect(addressKey(variant)).toBe('corrientes 1530')
     expect(addressKey('Pje. 3 de Febrero Nº 1378 - CABA')).toBe('3 de febrero 1378')
     expect(addressKey('Av. Corrientes 1530 piso 2')).toBe('corrientes 1530')
+    expect(addressKey('Av.Sarmiento 2715')).not.toBe(addressKey('Sarmiento 2715'))
+    for (const spelling of ['Av.Sarmiento 2715', 'Avenida Presidente Sarmiento 2715']) {
+      expect(addressKey('Av. Sarmiento 2715')).toBe(addressKey(spelling))
+    }
+    expect(addressKey('Av. Roque Sáenz Peña 943')).toBe(addressKey('Diagonal Norte 943'))
   })
   it('rejects a name that is only a city or postal code', async () => {
     const { db, inserts } = fakeDb([])
@@ -248,6 +254,77 @@ describe('intake venue resolution', () => {
       .toMatchObject({ outcome: 'created', venue: { neighborhood: 'Palermo' }, warnings: [] })
     expect(fetch.mock.calls.map(call => new URL(call[0]).searchParams.get('viewbox'))).toEqual([null, '-58.5315,-34.5265,-58.3350,-34.7056'])
   })
+  describe('numbered CABA addresses and USIG fallback', () => {
+    function providers(osm: NominatimResult['address'], normalized: unknown[] = [], barrio = '') {
+      const fetch = vi.fn(async (raw: string) => {
+        const url = new URL(raw)
+        if (url.hostname === 'nominatim.openstreetmap.org') return Response.json([{ lat: '0', lon: '0', display_name: 'synthetic', address: osm }])
+        if (url.hostname === 'servicios.usig.buenosaires.gob.ar' && url.pathname === '/normalizar') {
+          return Response.json({ direccionesNormalizadas: normalized })
+        }
+        if (url.hostname === 'ws.usig.buenosaires.gob.ar' && url.pathname === '/datos_utiles') return Response.json({ barrio })
+        throw new Error(`Unexpected geocoder ${raw}`)
+      })
+      vi.stubGlobal('fetch', fetch)
+      return () => fetch.mock.calls.map(([url]) => new URL(url))
+    }
+    const inCaba = { state: 'Ciudad Autónoma de Buenos Aires', country_code: 'ar' }
+    const province = { state: 'Buenos Aires', country_code: 'ar' }
+    const usig = (nombre_calle: string, altura: number, cod_partido = 'caba') => ({ nombre_calle, altura, cod_partido })
+    const resolve = (address: string, neighborhood: VenueRequest['neighborhood'] = null) => {
+      const { db, inserts } = fakeDb([])
+      return { result: Effect.runPromise(resolveIntakeVenueEffect(db, request({ address, neighborhood }))), inserts }
+    }
+
+    it.each([
+      ['Av. Sarmiento 2715', { ...province, road: 'Avenida 58', house_number: '2715' }, 'SARMIENTO AV.', 2715, 'Palermo', 'Palermo'],
+      ['Av. Roque Sáenz Peña 943', { ...province, road: 'Avenida Roque Sáenz Peña', house_number: '943' },
+        'SAENZ PEÑA, ROQUE, PRES. DIAGONAL NORTE AV.', 943, 'San Nicolas', 'San Nicolás'],
+      ['Av. Rivadavia 1499', { ...province, road: 'Rivadavia', postcode: '1499' }, 'RIVADAVIA AV.', 1499, 'San Nicolas', 'San Nicolás'],
+    ] as const)('recovers %s only with a matching CABA street and height', async (address, osm, street, number, reported, neighborhood) => {
+      const urls = providers(osm, [usig(street, number, 'brandsen'), usig(street, number)], reported)
+      const { result, inserts } = resolve(address)
+      expect(await result).toMatchObject({ outcome: 'created', venue: { address, neighborhood }, warnings: [] })
+      expect(inserts[1].row.notes).toContain('"neighborhood_method":"usig"')
+      const [normalized, area] = urls().slice(-2)
+      expect(normalized.searchParams.get('direccion')).toBe(address)
+      expect([...area.searchParams]).toEqual([['calle', street], ['altura', String(number)]])
+    })
+
+    it.each([
+      ['Sarmiento 2715', 'Sarmiento', '2715', 'Balvanera'],
+      ['Diagonal Norte 943', 'Avenida Presidente Roque Sáenz Peña', '943', 'San Nicolás'],
+      ['Av. Raúl Scalabrini Ortiz 343', 'Avenida Raúl Scalabrini Ortiz', '343', 'Villa Crespo'],
+      ['Chacabuco 875', 'Chacabuco', '875', 'San Telmo'],
+    ])('keeps an exact city result for %s without consulting USIG', async (address, road, house_number, suburb) => {
+      const urls = providers({ ...inCaba, road, house_number, suburb })
+      expect(await resolve(address).result).toMatchObject({ outcome: 'created', venue: { neighborhood: suburb }, warnings: [] })
+      expect(urls().map(url => url.hostname)).toEqual(['nominatim.openstreetmap.org'])
+    })
+
+    it.each([
+      ['Av. Maipú 1200, Vicente López', 'Avenida Maipú', undefined],
+      ['Av. Roque Sáenz Peña 943, Brandsen', 'Avenida Roque Sáenz Peña', '943'],
+    ])('never swaps an explicitly qualified suburb for a CABA namesake: %s', async (address, road, house_number) => {
+      const urls = providers({ ...province, road, house_number })
+      const { result, inserts } = resolve(address, 'San Nicolás')
+      expect(await result).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city')] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().every(url => url.searchParams.get('q') === `${address} Buenos Aires Argentina`)).toBe(true)
+    })
+
+    it('rejects a fuzzy street, a different height, and a province result even with a stated barrio', async () => {
+      const canonical = 'SAENZ PEÑA, ROQUE, PRES. DIAGONAL NORTE AV.'
+      const urls = providers({ ...province, road: 'Avenida Roque Sáenz Peña', house_number: '943' }, [
+        usig('OTRA AV.', 943), usig(canonical, 944), usig(canonical, 943, 'brandsen'),
+      ], 'San Nicolás')
+      const { result, inserts } = resolve('Av. Roque Sáenz Peña 943', 'San Nicolás')
+      expect(await result).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city')] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().map(url => url.pathname)).toEqual(['/search', '/normalizar'])
+    })
+  })
+
   it('rejects an exact suburban street and number even when a city street of the same name exists', async () => {
     const geocode = vi.fn((_query: string, options?: { cityBias?: boolean }) => (options?.cityBias
       ? geocoded('Ciudad Autónoma de Buenos Aires', 'Recoleta', 'Avenida Santa Fe', '1234')
@@ -256,6 +333,16 @@ describe('intake venue resolution', () => {
     expect(await run(db, request({ address: 'Av. Santa Fe 1234', neighborhood: null }), geocode))
       .toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city of Buenos Aires')] })
     expect(geocode).toHaveBeenCalledTimes(1)
+    expect(inserts).toHaveLength(0)
+  })
+  it('rejects an exact suburban result on the biased retry before looking for a CABA namesake', async () => {
+    const geocode: Geocode = (_query, options) => geocoded('Buenos Aires', 'Martínez', 'Avenida Santa Fe', options?.cityBias ? '1234' : '')()
+    const cityLookup = vi.fn(() => Effect.succeed('Recoleta' as const))
+    const { db, inserts } = fakeDb([])
+    const result = await Effect.runPromise(resolveIntakeVenueEffect(db, request({ address: 'Av. Santa Fe 1234', neighborhood: null }),
+      { geocode, cityLookup }))
+    expect(result).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city')] })
+    expect(cityLookup).not.toHaveBeenCalled()
     expect(inserts).toHaveLength(0)
   })
   it('rejects an address the city-biased search still places outside the city, as with a supplied locality', async () => {
