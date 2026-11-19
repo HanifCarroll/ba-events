@@ -35,15 +35,15 @@ async function venue(name: string, fields: { neighborhood?: string; address?: st
 }
 
 type EventFields = Partial<{ search_document: string | null; description_es: string; starts_at: string; ends_at: string;
-  status: string; venue_id: string; categories: string[]; price: number; is_free: boolean; min_age: number; facets: object }>
+  status: string; venue_id: string; categories: string[]; price: number; is_free: boolean; min_age: number; facets: object; scope: 'in' | 'out' | null }>
 async function event(name: string, fields: EventFields = {}) {
   const eventId = id()
   await db.prepare(`INSERT INTO events (id, name, search_document, description_es, starts_at, ends_at, status, venue_id,
-    categories, price, is_free, min_age, facets, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'luma')`).bind(
+    categories, price, is_free, min_age, facets, source, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', ?)`).bind(
     eventId, name, fields.search_document === undefined ? name : fields.search_document, fields.description_es ?? null,
     at(fields.starts_at ?? '2026-12-01T22:00:00Z'), fields.ends_at ? at(fields.ends_at) : null, fields.status ?? 'scheduled',
     fields.venue_id ?? null, JSON.stringify(fields.categories ?? []), fields.price ?? null, fields.is_free ? 1 : 0,
-    fields.min_age ?? null, JSON.stringify(fields.facets ?? {})).run()
+    fields.min_age ?? null, JSON.stringify(fields.facets ?? {}), fields.scope === undefined ? 'in' : fields.scope).run()
   return eventId
 }
 
@@ -51,6 +51,22 @@ const ids = (rows: Array<{ id: string }>) => rows.map(row => row.id)
 
 beforeEach(async () => {
   await db.batch([db.prepare('DELETE FROM events'), db.prepare('DELETE FROM venues')])
+})
+
+it('leaves out-of-scope and unjudged events out of all discovery results and coverage', async () => {
+  const inScope = await event('Agenda sintética', { starts_at: '2026-12-01T20:00:00Z' })
+  const out = await event('Agenda sintética', { starts_at: '2026-12-01T19:00:00Z', scope: 'out' })
+  const unjudged = await event('Agenda sintética', { starts_at: '2026-12-01T21:00:00Z', scope: null })
+  const { index, getByIds } = fakeVectorize([out, unjudged, inScope].map(id => ({
+    id, values: [1, 0], status: 'scheduled', starts_at: '2026-12-01T20:00:00Z',
+  })))
+  expect(ids(await lexicalEventSearchD1(db, 'agenda', {}, 1))).toEqual([inScope])
+  expect(ids(await semanticEventSearchD1(db, index, [1, 0], {}, 3))).toEqual([inScope])
+  expect(getByIds).toHaveBeenCalledWith([inScope])
+  expect(ids(await searchEventsWithFiltersD1(db, {}, 1))).toEqual([inScope])
+  expect(await countEventsWithFiltersD1(db, {})).toBe(1)
+  expect(ids(await getEventsHappeningNowD1(db, new Date('2026-12-01T22:00:00Z')))).toEqual([inScope])
+  expect(await getFurthestEventDateD1(db)).toBe('2026-12-01T20:00:00.000Z')
 })
 
 describe('events_fts', () => {
@@ -63,7 +79,7 @@ describe('events_fts', () => {
     expect(ids(await lexicalEventSearchD1(db, 'salsa', {}, 10))).toEqual([tango])
 
     // An update that leaves the indexed text alone keeps the row findable.
-    await db.prepare(`UPDATE events SET price = 100 WHERE id = ?`).bind(tango).run()
+    await db.prepare(`UPDATE events SET image_width = 100 WHERE id = ?`).bind(tango).run()
     expect(ids(await lexicalEventSearchD1(db, 'salsa', {}, 10))).toEqual([tango])
 
     await db.prepare('DELETE FROM events WHERE id = ?').bind(tango).run()

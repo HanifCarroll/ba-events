@@ -95,6 +95,13 @@ The reads behind `search_events` MUST run on Supabase unless the Worker binds th
 - **WHEN** a request names a venue in different case from the catalog, such as "casa gómez" for "CASA GÓMEZ"
 - **THEN** the venue resolves on D1 as it does with Postgres' ilike, and the search keeps it as a hard constraint
 
+### Requirement: Discover only in-scope events
+D1 search SHALL constrain lexical, semantic, filter-only, happening-now, count, and catalog coverage reads to `events.scope = 'in'` across chat, Telegram, and MCP. Vectorize does not carry scope; D1 filters the returned IDs.
+
+#### Scenario: Vectorize returns an out-of-scope or unjudged event
+- **WHEN** a vector candidate resolves to an event with scope `out` or NULL
+- **THEN** it is omitted from the result regardless of its rank
+
 ### Requirement: Emit deterministic search evidence
 
 `search_events` MUST return metadata describing the retrieval mode, displayed count, event ids, zero-result state, and coverage (`searchedFrom`/`searchedTo` or exact `searchedWindows`, `totalMatches`, returned count, and maximum event date). Ranking and diversity MUST preserve deterministic fallback/order behavior when hosted reranking is unavailable, and the result MUST be built from the canonicalized, bounded search path.

@@ -60,7 +60,7 @@ type Where = { sql: string[]; values: unknown[] }
  * Avoided genres are excluded here only where Postgres excluded them in SQL.
  */
 function filterSql(filters: EventFilters, options: { priceCap: 'or-null' | 'strict'; avoidGenres: boolean }): Where {
-  const where: Where = { sql: [], values: [] }
+  const where: Where = { sql: ["e.scope = 'in'"], values: [] }
   const add = (sql: string, ...values: unknown[]) => { where.sql.push(sql); where.values.push(...values) }
   if (filters.startsAfter) add('e.starts_at >= ?', iso(filters.startsAfter))
   if (filters.startsBefore) add('e.starts_at <= ?', iso(filters.startsBefore))
@@ -107,7 +107,8 @@ export async function lexicalEventSearchD1(db: D1Database, query: string, filter
     .sort((a, b) => b.rank - a.rank || a.starts_at.localeCompare(b.starts_at) || a.id.localeCompare(b.id))
     .slice(0, matchCount)
   if (ranked.length === 0) return []
-  const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS} WHERE e.id IN (SELECT value FROM json_each(?))`)
+  const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
+    WHERE e.id IN (SELECT value FROM json_each(?)) AND e.status = 'scheduled' AND e.scope = 'in'`)
     .bind(JSON.stringify(ranked.map(row => row.id))).all()
   const events = new Map(results.map(row => { const event = toPayload(row); return [event.id, event] }))
   return ranked.flatMap(row => {
@@ -185,9 +186,9 @@ export async function countEventsWithFiltersD1(db: D1Database, filters: EventFil
   return row?.count ?? 0
 }
 
-/** `getFurthestEventDate`: the latest start of any scheduled event. */
+/** `getFurthestEventDate`: the latest start of any in-scope scheduled event. */
 export async function getFurthestEventDateD1(db: D1Database): Promise<string | null> {
-  const row = await db.prepare(`SELECT max(starts_at) AS starts_at FROM events WHERE status = 'scheduled'`).first<{ starts_at: string | null }>()
+  const row = await db.prepare(`SELECT max(starts_at) AS starts_at FROM events WHERE status = 'scheduled' AND scope = 'in'`).first<{ starts_at: string | null }>()
   return row?.starts_at ?? null
 }
 
@@ -195,7 +196,7 @@ export async function getFurthestEventDateD1(db: D1Database): Promise<string | n
 export async function getEventsHappeningNowD1(db: D1Database, now = new Date()): Promise<ChatEventPayload[]> {
   const at = now.toISOString()
   const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
-    WHERE e.status = 'scheduled' AND e.starts_at <= ? AND (e.ends_at IS NULL OR e.ends_at >= ?) ORDER BY e.starts_at`)
+    WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.starts_at <= ? AND (e.ends_at IS NULL OR e.ends_at >= ?) ORDER BY e.starts_at`)
     .bind(at, at).all()
   return results.map(toPayload)
 }

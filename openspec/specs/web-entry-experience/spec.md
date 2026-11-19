@@ -30,6 +30,13 @@ The homepage SHALL state that the service is free to use and no sign-up is neede
 - **WHEN** the homepage renders in English or Spanish
 - **THEN** the hero and closing reassurance lines state that the service is free and registration is unnecessary without listing chat languages
 
+### Requirement: The homepage feed shows only in-scope events
+The D1 homepage feed SHALL omit out-of-scope and unjudged events before applying its result limit. It SHALL NOT change direct event detail URL behavior.
+
+#### Scenario: The next events are a party and an unjudged show
+- **WHEN** both are otherwise eligible for the homepage feed
+- **THEN** neither consumes a slot in the feed
+
 ### Requirement: Card artwork preserves complete posters with a subtle background
 Event artwork SHALL preserve the full image without cropping inside a softly tinted container. The container SHALL remain visually quieter than the card content when artwork dimensions leave unused space.
 
