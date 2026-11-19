@@ -88,12 +88,13 @@ function revealStreamedSegments($: CheerioAPI) {
   }
 }
 
-type SelectedPerformance = { text: string; date: string; time: string }
-type PageRead = string | { visible: string; selected: SelectedPerformance }
+type SelectedPerformance = { text: string; date: string; time: string; title: string }
+type PageRead = string | { visible: string; selected: SelectedPerformance | null }
+const camarinPerformanceUrl = (url: URL) => /^(?:www\.)?elcamarindelasmusas\.com$/.test(url.hostname) &&
+  url.pathname.startsWith('/event/') && url.searchParams.has('eventDateId')
 
 /** Fanz renders El Camarín's selected performance in the browser, from the matching event and date IDs. */
 function selectedCamarinPerformance($: CheerioAPI, url: URL): SelectedPerformance | null {
-  if (!/^(?:www\.)?elcamarindelasmusas\.com$/.test(url.hostname)) return null
   const eventId = /^\/event\/(\d+)\/?$/.exec(url.pathname)?.[1]
   const [dateId, ...otherDates] = url.searchParams.getAll('eventDateId')
   if (!eventId || !dateId || !/^\d+$/.test(dateId) || otherDates.length) return null
@@ -101,7 +102,7 @@ function selectedCamarinPerformance($: CheerioAPI, url: URL): SelectedPerformanc
     const data = JSON.parse($('script#__NEXT_DATA__[type="application/json"]:not([src])').text())
     const event = data?.props?.pageProps?.event
     if (data?.page !== '/event/[eventId]' || data.query?.eventId !== eventId || data.query?.eventDateId !== dateId ||
-        event?.id !== Number(eventId) || event.isExternal !== false || event.isFinished !== false || !Array.isArray(event.Dates) ||
+        event?.id !== Number(eventId) || typeof event.title !== 'string' || !event.title.trim() || event.isExternal !== false || !Array.isArray(event.Dates) ||
         !['America/Buenos_Aires', 'America/Argentina/Buenos_Aires'].includes(event.timezone)) return null
     const dates: Array<{ id?: unknown; start?: unknown; end?: unknown }> = event.Dates
     const matches = dates.filter(date => date?.id === Number(dateId))
@@ -109,13 +110,13 @@ function selectedCamarinPerformance($: CheerioAPI, url: URL): SelectedPerformanc
     const [{ start, end }] = matches
     const iso = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) &&
       new Date(value).toISOString() === value
-    if (!iso(start) || !iso(end) || end < start) return null
+    if (!iso(start) || !iso(end) || end < start || Date.parse(start) <= Date.now()) return null
     const format = (value: string, pattern: string) => formatInTimeZone(value, 'America/Argentina/Buenos_Aires', pattern, { locale: es })
     const date = format(start, 'yyyy-MM-dd')
     // shortcut: only render the observed same-day range; add other formats once verified in the browser.
     if (date !== format(end, 'yyyy-MM-dd')) return null
-    return { date, time: format(start, 'HH:mm'), text: `Empieza el ${format(start, "EEE dd 'de' MMM yyyy HH:mm")} - ${format(end, 'HH:mm')} hs` }
-  } catch { return null } // Missing or changed page data leaves the existing visible text as the only evidence.
+    return { date, title: event.title, time: format(start, 'HH:mm'), text: `Empieza el ${format(start, "EEE dd 'de' MMM yyyy HH:mm")} - ${format(end, 'HH:mm')} hs` }
+  } catch { return null } // Missing or changed page data cannot verify the selected date or time.
 }
 
 export function visibleText(html: string): string { return visibleDom(load(html)) }
@@ -166,7 +167,9 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     try { decoder = new TextDecoder(charset ?? 'utf-8') } catch { decoder = new TextDecoder('utf-8') }
     const text = decoder.decode(bytes)
     const $ = /^text\/plain/i.test(type) ? null : load(text)
-    const selected = $ && selectedCamarinPerformance($, new URL(current))
+    const source = new URL(current)
+    const camarin = camarinPerformanceUrl(source)
+    const selected = $ && camarin ? selectedCamarinPerformance($, source) : null
     const visible = $ ? visibleDom($) : text
     // An empty page (Incapsula's stub) or a short Cloudflare challenge page. A protection script alone proves nothing:
     // Imperva and Cloudflare inject theirs into real pages too.
@@ -174,7 +177,7 @@ export async function readOfficialPage(url: string, sites: ReadonlySet<string>, 
     if (!shown || shown < CHALLENGE_TEXT && /<title>\s*Just a moment\.\.\.\s*<\/title>|cf[-_]chl/i.test(text)) {
       throw new Error('the site shows a bot check or an empty page to automated readers; cite another official page')
     }
-    return selected ? { visible, selected } : visible
+    return camarin ? { visible, selected } : visible
   }
 }
 export type ReadPage = (url: string, sites: ReadonlySet<string>) => Promise<PageRead>
@@ -233,11 +236,14 @@ export const verifyOfficialPagesEffect = (evidence: readonly Evidence[], facts: 
         reasons.push(`Official page excerpt does not state the performance start time ${facts.time}: ${page.url}`)
         continue
       }
-    } else if (!quoted.test(normalizePageText(visible))) {
-      reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
+      if (nameText(selected.title) !== nameText(facts.name)) reasons.push(`Official page selected performance is not for "${facts.name}": ${page.url}`)
       continue
     }
-    if (!nameText(visible).includes(nameText(facts.name))) reasons.push(`Official page does not name "${facts.name}": ${page.url}`)
+    if ((typeof text.value !== 'string' || camarinPerformanceUrl(new URL(page.url))) && page.fields.some(field => field === 'date' || field === 'time')) {
+      reasons.push(`Official page date or time evidence must quote the selected future performance: ${page.url}`)
+    } else if (!quoted.test(normalizePageText(visible))) {
+      reasons.push(`Official page evidence must be an excerpt of the page's visible text: ${page.url}`)
+    } else if (!nameText(visible).includes(nameText(facts.name))) reasons.push(`Official page does not name "${facts.name}": ${page.url}`)
   }
   return reasons
 })

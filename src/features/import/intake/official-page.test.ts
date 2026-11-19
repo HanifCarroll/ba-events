@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
 import { normalizePageText, officialSites, publicPageUrl, readOfficialPage, siteOf, verifyOfficialPagesEffect, visibleText } from './official-page.ts'
 
@@ -16,6 +16,8 @@ const SHOWTIMES = `<html><head><title>Sala Sintética</title><script>var s = "LU
 const evidence = (url: string, excerpt: string, fields: Array<'date' | 'time' | 'venue'> = ['date', 'time']) => ({ kind: 'official_page' as const, url, fields, excerpt })
 
 describe('official-page evidence', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
   it('accepts only public HTTPS host names', () => {
     expect(publicPageUrl('https://www.teatro-sintetico.com.ar/obra/x/')).toBe(true)
     for (const url of ['http://teatro.example.org/', 'https://127.0.0.1/', 'https://10.0.0.8/', 'https://[::1]/', 'https://printer.local/',
@@ -193,26 +195,36 @@ describe('official-page evidence', () => {
     expect(await kiki(unrevealed)).toEqual(["Official page evidence must be an excerpt of the page's visible text: https://www.revamos.com/eventos/kiki-ball"])
   })
 
-  it('reads only El Camarín’s URL-selected date from the current Fanz event, not other JSON or hidden text', async () => {
-    const times = [
+  const CAMARIN_URL = 'https://www.elcamarindelasmusas.com/event/42?eventDateId=17'
+  const CAMARIN_SITES = new Set(['elcamarindelasmusas.com'])
+  const CAMARIN_EXCERPT = 'Empieza el sáb 28 de nov 2026 22:00 - 23:15 hs'
+  function camarinPage(id = '17', title = facts.name, extra = '') {
+    const dates = [
       { id: 16, start: '2026-11-22T01:00:00.000Z', end: '2026-11-22T02:15:00.000Z' },
       { id: 17, start: '2026-11-29T01:00:00.000Z', end: '2026-11-29T02:15:00.000Z' },
     ]
     const data = {
-      page: '/event/[eventId]', query: { eventId: '42', eventDateId: '17' },
-      props: { pageProps: { event: { id: 42, isExternal: false, isFinished: false, timezone: 'America/Buenos_Aires',
-        Dates: times, description: 'OCULTO 28/11/2026' },
+      page: '/event/[eventId]', query: { eventId: '42', eventDateId: id },
+      props: { pageProps: { event: { id: 42, title, isExternal: false, isFinished: false, timezone: 'America/Buenos_Aires',
+        Dates: dates, description: 'OCULTO 28/11/2026' },
         related: [{ id: 17, name: 'OTRA OBRA 28/11/2026' }] } },
     }
-    const fixture = `<h1>Forever Sintético</h1><p hidden>OCULTO 22:00</p>
+    return `<h1>${title}</h1><p hidden>OCULTO 22:00</p>${extra}
       <script type="application/json" id="__NEXT_DATA__">${JSON.stringify(data)}</script>`
-    const url = 'https://www.elcamarindelasmusas.com/event/42?eventDateId=17'
-    const excerpt = 'Empieza el sáb 28 de nov 2026 22:00 - 23:15 hs'
-    const allowed = new Set(['elcamarindelasmusas.com'])
+  }
+  const camarinRead = (fixture: string) => (url: string, sites: ReadonlySet<string>) =>
+    readOfficialPage(url, sites, (async () => page(fixture)) as typeof fetch)
+
+  it('reads only El Camarín’s URL-selected date from the current Fanz event, not other JSON or hidden text', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const fixture = camarinPage()
+    const url = CAMARIN_URL
+    const excerpt = CAMARIN_EXCERPT
+    const allowed = CAMARIN_SITES
     const fetcher = (async () => page(fixture)) as typeof fetch
     const read = await readOfficialPage(url, allowed, fetcher)
     expect(read).toEqual({ visible: expect.stringContaining('Forever Sintético'),
-      selected: { date: '2026-11-28', time: '22:00', text: excerpt } })
+      selected: { date: '2026-11-28', time: '22:00', text: excerpt, title: facts.name } })
     expect(JSON.stringify(read)).not.toMatch(/sáb 21|OCULTO|OTRA OBRA/)
     const early = (async () => page(fixture.replaceAll('2026-11-29T0', '2026-12-05T0'))) as typeof fetch
     expect(await readOfficialPage(url, allowed, early)).toMatchObject({
@@ -232,12 +244,41 @@ describe('official-page evidence', () => {
       .toEqual([`Official page excerpt does not state the selected performance date 2026-11-21: ${url}`])
     expect(await verify('22:00', '2026-11-28', excerpt, ['venue']))
       .toEqual([`The selected performance excerpt can only support date and time: ${url}`])
-    for (const unsupported of [url.replace('17', '16'), url.replace('/42', '/99'), `${url}&eventDateId=16`, url.split('?')[0],
-      url.replace('elcamarindelasmusas.com', 'teatro.example.org')]) {
-      expect(typeof await readOfficialPage(unsupported, officialSites({ website: unsupported }), fetcher), unsupported).toBe('string')
+    for (const unsupported of [url.replace('17', '16'), url.replace('/42', '/99'), `${url}&eventDateId=16`]) {
+      expect(await readOfficialPage(unsupported, allowed, fetcher), unsupported).toMatchObject({ selected: null })
     }
-    const finished = (async () => page(fixture.replace('"isFinished":false', '"isFinished":true'))) as typeof fetch
-    expect(typeof await readOfficialPage(url, allowed, finished)).toBe('string')
+    for (const generic of [url.split('?')[0], url.replace('elcamarindelasmusas.com', 'teatro.example.org')]) {
+      expect(typeof await readOfficialPage(generic, officialSites({ website: generic }), fetcher), generic).toBe('string')
+    }
+  })
+
+  it('does not let ordinary El Camarín page text stand in for the selected performance', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const quote = 'viernes 27 de noviembre 20:30'
+    const read = camarinRead(camarinPage('17', facts.name, `<p>${quote}</p>`))
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, quote)],
+      { ...facts, date: '2026-12-27', time: '20:30', sites: CAMARIN_SITES }, read)))
+      .toEqual([`Official page date or time evidence must quote the selected future performance: ${CAMARIN_URL}`])
+  })
+
+  it('binds the selected performance to its own title, not another show appearing on the page', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-20T12:00:00Z'))
+    const read = camarinRead(camarinPage('17', 'Otra Obra Sintética', '<aside>También en cartel: Forever Sintético</aside>'))
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(CAMARIN_URL, CAMARIN_EXCERPT)],
+      { ...facts, date: '2026-11-28', time: '22:00', sites: CAMARIN_SITES }, read)))
+      .toEqual([`Official page selected performance is not for "${facts.name}": ${CAMARIN_URL}`])
+  })
+
+  it('does not synthesize a past performance while the same event still has a future one', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-23T12:00:00Z'))
+    const pastUrl = CAMARIN_URL.replace('17', '16')
+    const pastExcerpt = 'Empieza el sáb 21 de nov 2026 22:00 - 23:15 hs'
+    const past = camarinRead(camarinPage('16', facts.name, `<p>${pastExcerpt}</p>`))
+    expect(await past(pastUrl, CAMARIN_SITES)).toMatchObject({ selected: null })
+    expect(await Effect.runPromise(verifyOfficialPagesEffect([evidence(pastUrl, pastExcerpt)],
+      { ...facts, date: '2026-11-21', time: '22:00', sites: CAMARIN_SITES }, past)))
+      .toEqual([`Official page date or time evidence must quote the selected future performance: ${pastUrl}`])
+    expect(await camarinRead(camarinPage())(CAMARIN_URL, CAMARIN_SITES)).toMatchObject({ selected: { text: CAMARIN_EXCERPT } })
   })
 
   it('names a bot check or an empty page as unreadable', async () => {

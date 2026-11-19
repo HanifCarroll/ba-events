@@ -46,18 +46,19 @@ const run = (db: IntakeStore, input: VenueRequest, geocode: Geocode = geocoded('
 describe('intake venue resolution', () => {
   afterEach(() => { vi.unstubAllGlobals() })
   it('normalizes street prefixes and suffixes into one address key', () => {
-    expect(addressKey('Av. Ficticia 1234, CABA')).toBe('ficticia 1234')
-    expect(addressKey('Avenida Ficticia 1234')).toBe('ficticia 1234')
+    expect(addressKey('Av. Ficticia 1234, CABA')).toBe('avenida ficticia 1234')
+    expect(addressKey('Avenida Ficticia 1234')).toBe('avenida ficticia 1234')
     expect(addressKey('Ficticia sin número')).toBeNull()
     expect(addressKey('3 de Febrero 1378')).toBe('3 de febrero 1378')
-    expect(addressKey('Av. 9 de Julio 1000')).toBe('9 de julio 1000')
+    expect(addressKey('Av. 9 de Julio 1000')).toBe('avenida 9 de julio 1000')
     for (const street of ['3 de Febrero', 'Av. 9 de Julio', '25 de Mayo, CABA', '1378', 'Av. 9 de Julio - CABA']) expect(addressKey(street)).toBeNull()
     for (const variant of ['Av. Corrientes 1530 - CABA', 'Av. Corrientes N° 1530', 'Avenida Corrientes Nº 1530, C.A.B.A.',
-      'Corrientes nro. 1530, C1043AAB', 'Avda. Corrientes n. 1530, Ciudad de Buenos Aires', 'CORRIENTES 1530 Buenos Aires, Argentina',
-      'Corrientes 1530, Ciudad Autónoma de Buenos Aires', '1530 Avenida Corrientes, San Nicolás, CABA, C1042',
-      '1530 Corrientes, Buenos Aires, Cdad. Autónoma de Buenos Aires, C1071']) expect(addressKey(variant)).toBe('corrientes 1530')
+      'Av. Corrientes nro. 1530, C1043AAB', 'Avda. Corrientes n. 1530, Ciudad de Buenos Aires', 'AV. CORRIENTES 1530 Buenos Aires, Argentina',
+      'Av. Corrientes 1530, Ciudad Autónoma de Buenos Aires', '1530 Avenida Corrientes, San Nicolás, CABA, C1042',
+      '1530 Av. Corrientes, Buenos Aires, Cdad. Autónoma de Buenos Aires, C1071']) expect(addressKey(variant)).toBe('avenida corrientes 1530')
+    expect(addressKey('Corrientes 1530')).toBe('corrientes 1530')
     expect(addressKey('Pje. 3 de Febrero Nº 1378 - CABA')).toBe('3 de febrero 1378')
-    expect(addressKey('Av. Corrientes 1530 piso 2')).toBe('corrientes 1530')
+    expect(addressKey('Av. Corrientes 1530 piso 2')).toBe('avenida corrientes 1530')
     expect(addressKey('Av.Sarmiento 2715')).not.toBe(addressKey('Sarmiento 2715'))
     for (const spelling of ['Av.Sarmiento 2715', 'Avenida Presidente Sarmiento 2715']) {
       expect(addressKey('Av. Sarmiento 2715')).toBe(addressKey(spelling))
@@ -80,7 +81,8 @@ describe('intake venue resolution', () => {
     expect(await run(db, request({ address: '3 de Febrero' }))).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('house number')] })
     expect(await run(db, request({ address: 'Av. 9 de Julio' }))).toMatchObject({ outcome: 'rejected' })
     expect(inserts).toHaveLength(0)
-    expect(await run(db, request({ address: '3 de Febrero 1378' }))).toMatchObject({ outcome: 'created' })
+    expect(await run(db, request({ address: '3 de Febrero 1378' }), geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro', '3 de Febrero', '1378')))
+      .toMatchObject({ outcome: 'created' })
   })
   it('requires evidence with public HTTPS URLs and rejects unknown fields', () => {
     expect(() => request({ evidence: [] })).toThrow()
@@ -99,7 +101,7 @@ describe('intake venue resolution', () => {
     expect(inserts.filter(item => item.table === 'venues')).toHaveLength(1)
   })
   it('reuses one venue whose name differs only by accents, case and spacing', async () => {
-    const { db, inserts } = fakeDb([{ id: 'v1', name: 'SALA  sintetica', address: 'Ficticia 1234', neighborhood: 'Almagro' }])
+    const { db, inserts } = fakeDb([{ id: 'v1', name: 'SALA  sintetica', address: 'Avenida Ficticia 1234', neighborhood: 'Almagro' }])
     expect(await run(db, request())).toMatchObject({ outcome: 'existing', venue: { id: 'v1' } })
     expect(inserts).toHaveLength(0)
   })
@@ -156,11 +158,11 @@ describe('intake venue resolution', () => {
       const sameName = fakeDb([{ id: id(3), name: 'MUSEO SINTETICO  SAAVEDRA', address: 'Lejana 99', neighborhood: 'Boedo' }])
       expect(await run(sameName.db, request({ ...museum, distinct_from: [{ venue_id: id(3), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
       // Also similar by name, but at the same street and number: never overridable.
-      const sameAddress = fakeDb([{ id: id(4), name: 'Saavedra', address: 'Ficticia 1234', neighborhood: 'Saavedra' }])
+      const sameAddress = fakeDb([{ id: id(4), name: 'Saavedra', address: 'Av. Ficticia 1234', neighborhood: 'Saavedra' }])
       expect(await run(sameAddress.db, request({ ...museum, distinct_from: [{ venue_id: id(4), reason: why }] }))).toMatchObject({ outcome: 'ambiguous' })
-      for (const variant of ['Av. Corrientes 1530 - CABA', 'Av. Corrientes N° 1530', 'Corrientes nro. 1530, C1043AAB', 'Avenida Corrientes Nº 1530, C.A.B.A.', '1530 Avenida Corrientes, CABA, C1042']) {
+      for (const variant of ['Av. Corrientes 1530 - CABA', 'Av. Corrientes N° 1530', 'Av. Corrientes nro. 1530, C1043AAB', 'Avenida Corrientes Nº 1530, C.A.B.A.', '1530 Avenida Corrientes, CABA, C1042']) {
         const messy = fakeDb([{ id: id(7), name: 'Saavedra', address: variant, neighborhood: null }])
-        expect(await run(messy.db, request({ ...museum, address: 'Corrientes 1530', distinct_from: [{ venue_id: id(7), reason: why }] })))
+        expect(await run(messy.db, request({ ...museum, address: 'Av. Corrientes 1530', distinct_from: [{ venue_id: id(7), reason: why }] })))
           .toMatchObject({ outcome: 'ambiguous', candidates: [{ id: id(7) }] })
         expect(messy.inserts).toHaveLength(0)
       }
@@ -190,15 +192,16 @@ describe('intake venue resolution', () => {
     expect(await run(fixed.db, ask(), sanTelmo)).toMatchObject({ outcome: 'existing', match: 'same name' })
 
     // The geocoder disagrees, can't confirm the number, or is down: nothing changes.
-    for (const geocode of [geocoded('Ciudad Autónoma de Buenos Aires', 'Monserrat', 'Defensa', '1179'),
-      geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', ''), () => Effect.fail('timeout')]) {
+    const cases = [[geocoded('Ciudad Autónoma de Buenos Aires', 'Monserrat', 'Defensa', '1179'), 'ambiguous'],
+      [geocoded('Ciudad Autónoma de Buenos Aires', 'San Telmo', 'Defensa', ''), 'rejected'], [() => Effect.fail('timeout'), 'rejected']] as const
+    for (const [geocode, outcome] of cases) {
       const held = cambalache()
-      expect(await run(held.db, ask(), geocode as Geocode)).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'cs' }] })
+      expect(await run(held.db, ask(), geocode)).toMatchObject({ outcome })
       expect(held.venues[0].neighborhood).toBe('Almagro')
       expect(held.inserts).toHaveLength(0)
     }
     // Only an official barrio in `suburb` confirms: an Abasto neighbourhood (aliased to Balvanera elsewhere) never corrects Almagro.
-    const abasto = fakeDb([{ id: 'ab', name: 'Sala Abasto', address: 'Corrientes 3200', neighborhood: 'Almagro' }])
+    const abasto = fakeDb([{ id: 'ab', name: 'Sala Abasto', address: 'Avenida Corrientes 3200', neighborhood: 'Almagro' }])
     const abastoGeocode = () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic', address: { road: 'Avenida Corrientes', house_number: '3200',
       neighbourhood: 'Abasto', suburb: 'Almagro', state: 'Ciudad Autónoma de Buenos Aires', country_code: 'ar' } } as NominatimResult)
     expect(await run(abasto.db, request({ name: 'Sala Abasto', address: 'Av. Corrientes 3200', neighborhood: 'Balvanera' }), abastoGeocode))
@@ -255,12 +258,12 @@ describe('intake venue resolution', () => {
     expect(fetch.mock.calls.map(call => new URL(call[0]).searchParams.get('viewbox'))).toEqual([null, '-58.5315,-34.5265,-58.3350,-34.7056'])
   })
   describe('numbered CABA addresses and USIG fallback', () => {
-    function providers(osm: NominatimResult['address'], normalized: unknown[] = [], barrio = '') {
+    function providers(osm: NominatimResult['address'], normalized: unknown[] | (() => Response) = [], barrio = '') {
       const fetch = vi.fn(async (raw: string) => {
         const url = new URL(raw)
         if (url.hostname === 'nominatim.openstreetmap.org') return Response.json([{ lat: '0', lon: '0', display_name: 'synthetic', address: osm }])
         if (url.hostname === 'servicios.usig.buenosaires.gob.ar' && url.pathname === '/normalizar') {
-          return Response.json({ direccionesNormalizadas: normalized })
+          return typeof normalized === 'function' ? normalized() : Response.json({ direccionesNormalizadas: normalized })
         }
         if (url.hostname === 'ws.usig.buenosaires.gob.ar' && url.pathname === '/datos_utiles') return Response.json({ barrio })
         throw new Error(`Unexpected geocoder ${raw}`)
@@ -270,16 +273,82 @@ describe('intake venue resolution', () => {
     }
     const inCaba = { state: 'Ciudad Autónoma de Buenos Aires', country_code: 'ar' }
     const province = { state: 'Buenos Aires', country_code: 'ar' }
-    const usig = (nombre_calle: string, altura: number, cod_partido = 'caba') => ({ nombre_calle, altura, cod_partido })
-    const resolve = (address: string, neighborhood: VenueRequest['neighborhood'] = null) => {
+    const usig = (nombre_calle: string, altura: number, cod_partido = 'caba', cod_calle = 101) => ({ nombre_calle, altura, cod_partido, cod_calle })
+    const resolve = (address: string, neighborhood: VenueRequest['neighborhood'] = null, confirms?: string) => {
       const { db, inserts } = fakeDb([])
-      return { result: Effect.runPromise(resolveIntakeVenueEffect(db, request({ address, neighborhood }))), inserts }
+      const evidence = confirms ? [{ url: 'https://example.org/sala', confirms }] : undefined
+      return { result: Effect.runPromise(resolveIntakeVenueEffect(db, request({ address, neighborhood, ...(evidence && { evidence }) }))), inserts }
     }
+    const brandsen = { ...province, road: 'Avenida Roque Sáenz Peña', house_number: '943', town: 'Brandsen' }
+    const diagonal = 'SAENZ PEÑA, ROQUE, PRES. DIAGONAL NORTE AV.'
+    const otherRoad = { ...province, road: 'Avenida 58', house_number: '2715' }
+
+    it('holds the exact Brandsen namesake without CABA in the address or evidence', async () => {
+      const urls = providers(brandsen, [usig(diagonal, 943)], 'San Nicolas')
+      const { result, inserts } = resolve('Av. Roque Sáenz Peña 943', 'San Nicolás')
+      expect(await result).toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringContaining('Brandsen')] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().map(url => url.pathname)).toEqual(['/search'])
+    })
+
+    it.each([
+      ['Av. Roque Sáenz Peña 943, CABA', undefined],
+      ['Av. Roque Sáenz Peña 943, Capital Federal', undefined],
+      ['Av. Roque Sáenz Peña 943, Ciudad de Buenos Aires', undefined],
+      ['Av. Roque Sáenz Peña 943, San Nicolás', undefined],
+      ['Av. Roque Sáenz Peña 943', 'Sala en el barrio de San Nicolás'],
+    ] as const)('can confirm %s when the address or evidence identifies the city', async (address, evidence) => {
+      const urls = providers(brandsen, [usig(diagonal, 943)], 'San Nicolas')
+      expect(await resolve(address, null, evidence).result).toMatchObject({ outcome: 'created', venue: { address, neighborhood: 'San Nicolás' } })
+      expect(urls()[1].searchParams.get('direccion')).toBe('Av. Roque Sáenz Peña 943, CABA')
+    })
+
+    it('does not replace an explicit Provincia locality even if other evidence says CABA', async () => {
+      const urls = providers(brandsen, [usig(diagonal, 943)], 'San Nicolas')
+      const { result, inserts } = resolve('Av. Roque Sáenz Peña 943, Brandsen', null, 'Sala en CABA')
+      expect(await result).toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringContaining('Brandsen')] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().map(url => url.pathname)).toEqual(['/search'])
+    })
+
+    it('does not confirm an avenue with a same-named plain street', async () => {
+      const urls = providers({ ...inCaba, road: 'Maipú', house_number: '1200', suburb: 'Retiro' }, [usig('MAIPU', 1200)], 'Retiro')
+      const { result, inserts } = resolve('Av. Maipú 1200', 'Retiro')
+      expect(await result).toMatchObject({ outcome: 'rejected' })
+      expect(inserts).toHaveLength(0)
+      expect(urls().map(url => url.pathname)).toEqual(['/search', '/search', '/normalizar'])
+    })
+
+    it('holds when USIG returns multiple distinct CABA street codes for the same key', async () => {
+      const urls = providers(otherRoad, [usig('SARMIENTO AV.', 2715), usig('SARMIENTO AV.', 2715, 'caba', 102)], 'Palermo')
+      const { result, inserts } = resolve('Av. Sarmiento 2715', 'Palermo')
+      expect(await result).toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringContaining('more than one CABA street')] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().at(-1)?.pathname).toBe('/normalizar')
+    })
+
+    it.each([
+      ['timeout', () => { throw new DOMException('timed out', 'TimeoutError') }],
+      ['HTTP error', () => new Response(null, { status: 503 })],
+      ['bad JSON', () => new Response('not JSON')],
+      ['oversized JSON', () => Response.json({ direccionesNormalizadas: [usig('SARMIENTO AV.', 2715)], padding: 'x'.repeat(256 * 1024) })],
+    ] as const)('does not write on USIG %s without an exact Nominatim match', async (_name, response) => {
+      const urls = providers({ ...inCaba, road: 'Avenida Presidente Sarmiento', suburb: 'Palermo' }, response, 'Palermo')
+      const { result, inserts } = resolve('Av. Sarmiento 2715', 'Palermo')
+      expect(await result).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('could not confirm')] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().at(-1)?.pathname).toBe('/normalizar')
+    })
+
+    it('holds without writing when the stated barrio conflicts with USIG', async () => {
+      providers(otherRoad, [usig('SARMIENTO AV.', 2715)], 'Palermo')
+      const { result, inserts } = resolve('Av. Sarmiento 2715', 'Balvanera')
+      expect(await result).toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringMatching(/Palermo.*Balvanera/)] })
+      expect(inserts).toHaveLength(0)
+    })
 
     it.each([
       ['Av. Sarmiento 2715', { ...province, road: 'Avenida 58', house_number: '2715' }, 'SARMIENTO AV.', 2715, 'Palermo', 'Palermo'],
-      ['Av. Roque Sáenz Peña 943', { ...province, road: 'Avenida Roque Sáenz Peña', house_number: '943' },
-        'SAENZ PEÑA, ROQUE, PRES. DIAGONAL NORTE AV.', 943, 'San Nicolas', 'San Nicolás'],
       ['Av. Rivadavia 1499', { ...province, road: 'Rivadavia', postcode: '1499' }, 'RIVADAVIA AV.', 1499, 'San Nicolas', 'San Nicolás'],
     ] as const)('recovers %s only with a matching CABA street and height', async (address, osm, street, number, reported, neighborhood) => {
       const urls = providers(osm, [usig(street, number, 'brandsen'), usig(street, number)], reported)
@@ -304,7 +373,6 @@ describe('intake venue resolution', () => {
 
     it.each([
       ['Av. Maipú 1200, Vicente López', 'Avenida Maipú', undefined],
-      ['Av. Roque Sáenz Peña 943, Brandsen', 'Avenida Roque Sáenz Peña', '943'],
     ])('never swaps an explicitly qualified suburb for a CABA namesake: %s', async (address, road, house_number) => {
       const urls = providers({ ...province, road, house_number })
       const { result, inserts } = resolve(address, 'San Nicolás')
@@ -318,30 +386,30 @@ describe('intake venue resolution', () => {
       const urls = providers({ ...province, road: 'Avenida Roque Sáenz Peña', house_number: '943' }, [
         usig('OTRA AV.', 943), usig(canonical, 944), usig(canonical, 943, 'brandsen'),
       ], 'San Nicolás')
-      const { result, inserts } = resolve('Av. Roque Sáenz Peña 943', 'San Nicolás')
+      const { result, inserts } = resolve('Av. Roque Sáenz Peña 943, CABA', 'San Nicolás')
       expect(await result).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city')] })
       expect(inserts).toHaveLength(0)
       expect(urls().map(url => url.pathname)).toEqual(['/search', '/normalizar'])
     })
   })
 
-  it('rejects an exact suburban street and number even when a city street of the same name exists', async () => {
+  it('holds an exact suburban street and number even when a city street of the same name exists', async () => {
     const geocode = vi.fn((_query: string, options?: { cityBias?: boolean }) => (options?.cityBias
       ? geocoded('Ciudad Autónoma de Buenos Aires', 'Recoleta', 'Avenida Santa Fe', '1234')
       : geocoded('Buenos Aires', 'Martínez', 'Avenida Santa Fe', '1234'))())
     const { db, inserts } = fakeDb([])
     expect(await run(db, request({ address: 'Av. Santa Fe 1234', neighborhood: null }), geocode))
-      .toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city of Buenos Aires')] })
+      .toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringContaining('outside the city of Buenos Aires')] })
     expect(geocode).toHaveBeenCalledTimes(1)
     expect(inserts).toHaveLength(0)
   })
-  it('rejects an exact suburban result on the biased retry before looking for a CABA namesake', async () => {
+  it('holds an exact suburban result on the biased retry before looking for a CABA namesake', async () => {
     const geocode: Geocode = (_query, options) => geocoded('Buenos Aires', 'Martínez', 'Avenida Santa Fe', options?.cityBias ? '1234' : '')()
     const cityLookup = vi.fn(() => Effect.succeed('Recoleta' as const))
     const { db, inserts } = fakeDb([])
     const result = await Effect.runPromise(resolveIntakeVenueEffect(db, request({ address: 'Av. Santa Fe 1234', neighborhood: null }),
       { geocode, cityLookup }))
-    expect(result).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('outside the city')] })
+    expect(result).toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringContaining('outside the city')] })
     expect(cityLookup).not.toHaveBeenCalled()
     expect(inserts).toHaveLength(0)
   })
@@ -355,15 +423,18 @@ describe('intake venue resolution', () => {
   it('does not treat a city street without the requested house number as confirmation', async () => {
     const geocode = vi.fn((_query: string, options?: { cityBias?: boolean }) => (options?.cityBias
       ? geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro', 'Avenida Ficticia', '') : () => Effect.succeed(null))())
-    expect(await run(fakeDb([]).db, request({ neighborhood: null }), geocode)).toMatchObject({ outcome: 'rejected', reasons: ['Neighborhood not found; supply it from an authoritative source'] })
-    expect(await run(fakeDb([]).db, request(), geocode)).toMatchObject({ outcome: 'created', venue: { neighborhood: 'Almagro' },
-      warnings: ['Geocoder did not find the address; city not confirmed'] })
+    const { db, inserts } = fakeDb([])
+    for (const neighborhood of [null, 'Almagro']) {
+      expect(await run(db, request({ neighborhood }), geocode)).toMatchObject({ outcome: 'rejected', reasons: [expect.stringContaining('could not confirm')] })
+    }
+    expect(inserts).toHaveLength(0)
     expect(geocode).toHaveBeenCalledTimes(4)
   })
-  it('keeps the stated barrio with a warning when the geocoder is down or disagrees', async () => {
-    const down = await run(fakeDb([]).db, request(), () => Effect.fail(new Error('timeout')))
-    expect(down).toMatchObject({ outcome: 'created', warnings: [expect.stringContaining('Geocoder unavailable')] })
-    const other = await run(fakeDb([]).db, request(), geocoded('Ciudad Autónoma de Buenos Aires', 'Boedo'))
+  it('rejects a geocoder outage but keeps the stated barrio when an exact Nominatim match disagrees', async () => {
+    const { db, inserts } = fakeDb([])
+    expect(await run(db, request(), () => Effect.fail('timeout'))).toMatchObject({ outcome: 'rejected' })
+    expect(inserts).toHaveLength(0)
+    const other = await run(db, request(), geocoded('Ciudad Autónoma de Buenos Aires', 'Boedo'))
     expect(other).toMatchObject({ outcome: 'created', venue: { neighborhood: 'Almagro' }, warnings: [expect.stringContaining('Boedo')] })
   })
   it('fails on a database outage instead of creating a possible duplicate', async () => {
