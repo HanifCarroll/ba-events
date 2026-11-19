@@ -71,17 +71,19 @@
 			<time datetime={event.starts_at} class="block font-mono text-xs text-[#d0ff36] sm:text-sm">
 				{formatShortDate(event.starts_at)}{#if event.time_tba}{' · '}{m.concierge_time_tba()}{:else if !event.is_all_day}{' · '}{formatTime(event.starts_at)}{/if}
 			</time>
-			<h2 class="relative text-lg leading-tight font-semibold group-has-[a:hover]:underline">{@render glossaryText(event.name, 'title')}</h2>
-			<p class="relative text-sm text-[#ccccd4]">{@render glossaryText(`${venue} · ${price}`, 'meta')}</p>
+			<div class="relative">
+				<h2 class="line-clamp-3 text-base leading-tight font-semibold has-[:focus-visible]:line-clamp-none sm:line-clamp-none sm:text-lg group-has-[a:hover]:underline">{@render glossaryText(event.name, 'title')}</h2>
+			</div>
+			<p class="relative text-xs text-[#ccccd4] sm:text-sm">{@render glossaryText(`${venue} · ${price}`, 'meta')}</p>
 		</div>
 	</div>
-	<div class="mt-auto flex flex-wrap items-center gap-x-4 pt-1 font-mono text-xs lg:flex-nowrap">
+	<div class="mt-auto flex flex-wrap items-center gap-x-3 pt-1 text-xs sm:font-mono">
 		{#if event.sourceUrl}
-			<a href={event.sourceUrl} class="inline-flex min-h-10 items-center gap-1 text-[#ccccd4] underline underline-offset-4 hover:text-white lg:min-h-12">
-				{m.home_original_post()} <ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" />
+			<a href={event.sourceUrl} class="inline-flex min-h-8 max-w-full items-center gap-1 text-[#ccccd4] underline underline-offset-4 hover:text-white sm:min-h-10 sm:whitespace-nowrap">
+				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> {m.home_original_post()}
 			</a>
 		{/if}
-		<button type="button" onclick={() => onAsk(event)} class="inline-flex min-h-10 items-center gap-1 text-left text-[#d0ff36] hover:underline lg:min-h-12">
+		<button type="button" onclick={() => onAsk(event)} class="inline-flex min-h-8 max-w-full items-center gap-1 text-left text-[#d0ff36] hover:underline sm:min-h-10 sm:whitespace-nowrap">
 			<MessageCircle class="size-3.5 shrink-0" aria-hidden="true" /> {m.home_ask_event()}
 		</button>
 	</div>

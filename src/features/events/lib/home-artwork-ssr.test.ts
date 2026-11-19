@@ -24,6 +24,7 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
   it('puts responsive artwork, titles, and event links in HTML before hydration', () => {
     const { body } = render(HomeAgenda, { props: { agenda: { window, events }, url: new URL('https://example.test/'), onAsk() {}, onFilter() {} } })
     expect(body.match(/<source /g)).toHaveLength(4)
+    expect(body).toContain('calc((100vw - 44px) / 2)')
     expect(body).toContain('/api/event-artwork/')
     expect(body).toContain(`href="/events/${events[0].id}"`)
     expect(body).toContain('href="https://www.instagram.com/p/synthetic/"')

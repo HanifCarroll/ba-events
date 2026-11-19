@@ -28,11 +28,14 @@ describe('shared homepage agenda cache', () => {
     expect(cache.put).toHaveBeenCalledOnce()
   })
 
-  it('starts a new cache key exactly when the Buenos Aires day rolls over', async () => {
+  it('uses an agenda-only cache key and changes it at Buenos Aires midnight', async () => {
     const cache = cachedAt(midnight - 2_000)
     await readHomeFeed({ cache, now: () => midnight - 1 })
     await readHomeFeed({ cache, now: () => midnight })
-    expect(cache.match.mock.calls.map(([key]) => key.split('/').at(-1))).toEqual(['2026-11-18', '2026-11-19'])
+    expect(cache.match.mock.calls.map(([key]) => key)).toEqual([
+      'https://baeventos.com/__cache/home-agenda-scope-1/2026-11-18',
+      'https://baeventos.com/__cache/home-agenda-scope-1/2026-11-19',
+    ])
   })
 
   it('awaits a cold or expired read for SSR', async () => {

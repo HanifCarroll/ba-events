@@ -46,7 +46,7 @@
 		{view.empty ? emptyCopy[view.empty]() : ''}
 	</p>
 	{#if view.events.length}
-		<div class="grid grid-cols-1 gap-x-5 gap-y-7 sm:grid-cols-2 lg:grid-cols-3 lg:gap-x-8 lg:gap-y-10">
+		<div class="grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-7 lg:grid-cols-3 lg:gap-x-8 lg:gap-y-10">
 			{#each view.events as event, index (event.id)}
 				<HomeAgendaCard {event} {index} {onAsk} />
 			{/each}
