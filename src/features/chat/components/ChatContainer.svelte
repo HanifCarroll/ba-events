@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { HomeEventCard, HomeEventFeed } from '#features/events/lib/home-feed.ts'
+	import type { HomeAgenda } from '#features/events/lib/home-feed.ts'
 	import { untrack } from 'svelte'
 	import { useMachine } from '@xstate/svelte'
 	import { createAsyncLogic } from 'xstate'
@@ -67,7 +67,7 @@
 	let {
 		conversationId = null as string | null,
 		onConversationChange = undefined as ((id: string) => Promise<void>) | undefined,
-		happeningSoonEvents = undefined as HomeEventFeed | undefined,
+		homeAgenda = null,
 		preloadedConversation = null as ConversationWithMessages | null,
 		pendingTurns = [] as Array<{
 			id: string
@@ -80,7 +80,7 @@
 	}: {
 		conversationId?: string | null
 		onConversationChange?: (id: string) => Promise<void>
-		happeningSoonEvents?: HomeEventFeed
+		homeAgenda?: HomeAgenda | null
 		preloadedConversation?: ConversationWithMessages | null
 		pendingTurns?: Array<{
 			id: string
@@ -92,16 +92,6 @@
 		showLanding?: boolean
 	} = $props()
 
-	// Resolve streamed cards for first-turn context without blocking sending a message.
-	let streamedHomeEvents = $state.raw<HomeEventCard[]>([])
-	const resolvedHomeEvents = $derived(Array.isArray(happeningSoonEvents) ? happeningSoonEvents : streamedHomeEvents)
-	$effect(() => {
-		const feed = happeningSoonEvents
-		if (!feed || Array.isArray(feed)) return
-		let active = true
-		void feed.then((events) => { if (active) streamedHomeEvents = events })
-		return () => { active = false }
-	})
 
 	const auth = useAuthContext()
 	const userId = $derived(auth.user?.id ?? null)
@@ -361,7 +351,7 @@
 		const startedAt = Date.now()
 		const hasHistory = chat.messages.length > 0
 		const homeEventIds = !chat.messages.some((message) => message.role === 'assistant')
-			? options?.happeningSoonEventIds ?? resolvedHomeEvents.slice(0, 4).map((event) => event.id)
+			? options?.happeningSoonEventIds
 			: undefined
 		activeTurn = turn
 		progressiveResponse = null
@@ -498,7 +488,7 @@
 				locale: turn.locale,
 				retry,
 				...(options?.eventId ? { happeningSoonEventId: options.eventId } : {}),
-				...(homeEventIds?.length ? { happeningSoonEventIds: homeEventIds } : {})
+				...(homeEventIds !== undefined ? { happeningSoonEventIds: homeEventIds } : {})
 			}
 			const metadata = { createdAt: new Date().toISOString() }
 			activeDelivery = delivery
@@ -847,7 +837,7 @@
 		{:else if showLanding}
 			<SuggestedPrompts
 				onSelectPrompt={handleSendMessage}
-				happeningSoonEvents={happeningSoonEvents}
+				{homeAgenda}
 			/>
 		{/if}
 	</div>

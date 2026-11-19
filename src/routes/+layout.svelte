@@ -8,6 +8,7 @@
 	import { getLocale } from '#paraglide/runtime.js'
 	import * as m from '#paraglide/messages.js'
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
+	import { parseHomeFilter } from '#features/events/lib/home-feed.ts'
 	import { initializeGoogleAnalytics, isAnalyticsEnabled } from '#shared/lib/analytics.ts'
 	import { redactReplayNetworkRequest } from '#shared/lib/replay-network.ts'
 	import MainLayout from '#shared/ui/MainLayout.svelte'
@@ -168,6 +169,8 @@
 		? { title: m.landing_meta_title(), description: m.landing_meta_description() }
 		: SEO[locale])
 	const siteUrl = getSiteUrl()
+	const homeFilter = $derived(isLandingPage && parseHomeFilter((page.shallow?.url ?? page.url).searchParams.get('f')))
+	const canonicalUrl = $derived(homeFilter ? `${siteUrl}/?f=${homeFilter}` : siteUrl)
 	const ogImageUrl = `${siteUrl}/og-image-2026.jpg`
 	const ogLocale = locale === 'es' ? 'es_AR' : 'en_US'
 	const ogAlternateLocale = locale === 'es' ? 'en_US' : 'es_AR'
@@ -220,7 +223,7 @@
 </script>
 
 <svelte:head>
-	<meta name="theme-color" content="#fafaf8" />
+	<meta name="theme-color" content={isLandingPage ? '#101012' : '#fafaf8'} />
 	<link rel="manifest" href="/manifest.json" />
 
 	{#if !isEventPage && !isMcpPage}
@@ -236,7 +239,7 @@
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
 		<meta property="og:image:alt" content={ogImageAlt} />
-		<meta property="og:url" content={siteUrl} />
+		<meta property="og:url" content={canonicalUrl} />
 		<meta property="og:locale" content={ogLocale} />
 		<meta property="og:locale:alternate" content={ogAlternateLocale} />
 
@@ -246,7 +249,7 @@
 		<meta name="twitter:image" content={ogImageUrl} />
 		<meta name="twitter:image:alt" content={ogImageAlt} />
 
-		<link rel="canonical" href={siteUrl} />
+		<link rel="canonical" href={canonicalUrl} />
 
 		{@html '<script type="application/ld+json">' + webAppSchema + '<' + '/script>'}
 	{/if}
@@ -258,11 +261,6 @@
 	</div>
 {:else}
 	<div class="relative h-full">
-		{#if isLandingPage}
-			<div
-				class="fixed inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-accent/[0.03] pointer-events-none z-0"
-			></div>
-		{/if}
 		<MainLayout backgroundInert={!!selectedEvent}>
 			{@render children()}
 		</MainLayout>

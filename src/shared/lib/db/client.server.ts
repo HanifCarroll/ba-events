@@ -1,5 +1,3 @@
-import { addHours } from 'date-fns'
-
 import type {
   EventWithVenue,
   EventStatus,
@@ -25,10 +23,10 @@ import {
   eventByIdD1,
   eventsByIdsD1,
   eventsByStartD1,
-  happeningSoonD1,
+  homeAgendaD1,
   venueByIdD1,
 } from './event-reads-d1.server.ts'
-import type { HomeEventCard } from '#features/events/lib/home-feed.ts'
+import type { HomeWindow } from '#features/events/lib/home-feed.ts'
 
 const boundCatalogD1 = () => cloudflareSearchBackend().db
 
@@ -79,12 +77,8 @@ export async function getEventsWithVenues(limit = 50) {
   return (await eventsByStartD1(boundCatalogD1(), limit)).map(row => pickColumns<EventWithVenue>(row, EVENT_ADMIN_COLUMNS))
 }
 
-/** Next scheduled intake-linked events for the temporary homepage strip. */
-const HOME_CARD_COLUMNS = 'id, name, starts_at, time_tba, image_url, image_width, image_height, venue_name, venue_neighborhood, price, is_free'
-
-export async function getHappeningSoonEvents(limit = 4): Promise<HomeEventCard[]> {
-  const earliestStartUTC = addHours(new Date(), 12).toISOString()
-  return (await happeningSoonD1(boundCatalogD1(), earliestStartUTC, limit)).map(row => pickColumns<HomeEventCard>(row, HOME_CARD_COLUMNS))
+export async function getHomeAgendaEvents(window: HomeWindow) {
+  return homeAgendaD1(boundCatalogD1(), window)
 }
 
 /** Catalog-mediated image lookup: callers cannot supply upstream URLs. */

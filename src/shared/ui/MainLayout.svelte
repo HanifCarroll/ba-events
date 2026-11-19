@@ -13,6 +13,7 @@
 		Send
 	} from 'lucide-svelte';
 	import { Button } from '#shared/ui/button/index.ts';
+	import BrandLogo from '#shared/ui/BrandLogo.svelte';
 	import SkipLink from '#shared/ui/SkipLink.svelte';
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts';
 	import { signOut } from '#features/auth/api/auth.remote.ts';
@@ -157,7 +158,7 @@
 			{#if mobileMenuOpen}<X class="h-5 w-5" />{:else}<Menu class="h-5 w-5" />{/if}
 		</Button>
 		<a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-			<span class="text-base font-semibold tracking-tight">BA Eventos</span>
+			<BrandLogo />
 		</a>
 	</header>
 
@@ -243,9 +244,7 @@
 		<!-- Sidebar header -->
 		<div class="h-20 flex items-center px-5 shrink-0">
 			<a href="/" class="hover:opacity-80 transition-opacity">
-				<span class="text-base font-semibold tracking-tight text-foreground whitespace-nowrap">
-					BA Eventos
-				</span>
+				<BrandLogo />
 			</a>
 		</div>
 

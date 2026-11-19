@@ -1,37 +1,37 @@
-import { Effect } from 'effect'
-import { getHappeningSoonEventsForGridEffect } from './crud.server.ts'
-import { HOME_FEED_FRESH_SECONDS, HOME_FEED_STALE_SECONDS, type HomeEventCard } from '../lib/home-feed.ts'
+import { getHomeAgendaEvents } from '#shared/lib/db/client.server.ts'
+import { HOME_FEED_FRESH_SECONDS, HOME_FEED_STALE_SECONDS, homeWindow, type HomeAgenda, type HomeAgendaEvent, type HomeWindow } from '../lib/home-feed.ts'
 import type { PublicCache } from './platform-cache.ts'
 
-const CACHE_KEY = 'https://baeventos.com/__cache/home-feed-scope-1'
-type Entry = { events: HomeEventCard[]; storedAt: number }
-type Options = { cache?: PublicCache; retain?: (task: Promise<unknown>) => void; now?: () => number; load?: () => Promise<HomeEventCard[]> }
+const CACHE_PREFIX = 'https://baeventos.com/__cache/home-agenda-scope-1'
+type Entry = { events: HomeAgendaEvent[]; storedAt: number }
+type Options = { cache?: PublicCache; retain?: (task: Promise<unknown>) => void; now?: () => number; load?: (window: HomeWindow) => Promise<HomeAgendaEvent[]> }
 
-/** Cache API adapter. A miss is returned as a nested promise so SSR can stream the row. */
-export async function readHomeFeed(options: Options = {}): Promise<{ events: HomeEventCard[] } | { pending: Promise<HomeEventCard[]> }> {
+/** Cold reads wait for the result so the selected view is present in server HTML. */
+export async function readHomeFeed(options: Options = {}): Promise<HomeAgenda> {
   const now = options.now ?? Date.now
+  const window = homeWindow(new Date(now()))
+  const key = `${CACHE_PREFIX}/${window.day}`
   const cache = options.cache
   const refresh = async () => {
-    const events = await (options.load?.() ?? Effect.runPromise(getHappeningSoonEventsForGridEffect()))
+    const events = await (options.load ?? getHomeAgendaEvents)(window)
     if (cache) {
       const response = Response.json({ events, storedAt: now() } satisfies Entry, {
         headers: { 'Cache-Control': `public, max-age=${HOME_FEED_FRESH_SECONDS + HOME_FEED_STALE_SECONDS}` },
       })
-      await cache.put(CACHE_KEY, response).catch(() => {})
+      await cache.put(key, response).catch(() => {})
     }
-    return events
+    return { window, events }
   }
-  const cached = await cache?.match(CACHE_KEY).catch(() => undefined)
-  if (cached) {
-    const entry = await cached.json() as Entry
+  const cached = await cache?.match(key).catch(() => undefined)
+  const entry = await cached?.json().catch(() => undefined) as Entry | undefined
+  if (entry && Array.isArray(entry.events)) {
     const age = (now() - entry.storedAt) / 1000
     if (age < HOME_FEED_FRESH_SECONDS + HOME_FEED_STALE_SECONDS) {
-      if (age >= HOME_FEED_FRESH_SECONDS) options.retain?.(refresh().catch(() => []))
-      return { events: entry.events }
+      if (age >= HOME_FEED_FRESH_SECONDS) options.retain?.(refresh().catch(() => {}))
+      return { window, events: entry.events }
     }
   }
-  // Catch before exposing a streamed promise: a failed feed must not reject the page.
-  return { pending: refresh().catch(() => []) }
+  return refresh()
 }
 
 export function homeFeedOptions(platform: App.Platform | undefined): Options {

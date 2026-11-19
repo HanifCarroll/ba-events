@@ -23,12 +23,47 @@ The homepage SHALL use the active locale for the independent-culture title, desc
 - **WHEN** the homepage renders in English or Spanish
 - **THEN** the Instagram link and language switch are available in the navigation
 
+### Requirement: Web branding uses the BA Eventos ticket mark
+The homepage and app navigation SHALL show the ticket wordmark as a home link with the accessible name “BA Eventos”. Browser tab, Apple touch, and installable app icons SHALL use the matching ticket mark.
+
+#### Scenario: A visitor opens or installs the website
+- **WHEN** the website renders at mobile or desktop widths
+- **THEN** the wordmark links home and its name is available without relying on the image loading
+- **AND** the browser tab and installed app use the ticket mark
+
+### Requirement: The homepage leads with the current agenda
+The homepage SHALL render the event grid before the chat composer and follow links. Filters SHALL use linkable `?f=` URLs that render the same view on a direct request; client-side filter changes SHALL reuse the loaded agenda.
+
+#### Scenario: A visitor filters the agenda
+- **WHEN** the visitor selects Today, This weekend, Free, or Music
+- **THEN** the grid shows respectively the current local date, the current or next Friday–Sunday intersected with the weekly window, confirmed free admission, or a concert or live-music facet
+- **AND** pay-what-you-can evidence in an intake price note, or “a la gorra” in the title or Spanish description, takes precedence over a free flag or zero price; the card says “A la gorra” and does not appear in Gratis
+
+#### Scenario: A filter has no matches
+- **WHEN** the selected filter has no matches
+- **THEN** the grid shows its localized empty message
+- **AND** only the date filters may show up to four later events, after the selected date range, beneath that message
+- **AND** a failed feed or empty unfiltered agenda shows the localized agenda error rather than a blank section
+
+#### Scenario: A visitor uses an agenda card
+- **WHEN** an event appears on the grid
+- **THEN** its title, local date and time state, venue and neighborhood when known, and price state appear as real text
+- **AND** the card links to event details and can prefill the composer with the existing event prompt
+- **AND** glossary triggers appear on the matched words in the title or metadata, without adding another line, and work by pointer, touch, and keyboard; terms that appear only in the description do not add a trigger, and Escape dismisses an open definition even while hovered
+- **AND** below 640 CSS pixels the grid has two columns, with titles clamped to three lines until a clipped glossary trigger needs keyboard focus; the date, venue, neighborhood, and price can wrap without being clipped
+- **AND** when an original post is available, its link and the composer action can stack when space runs out; desktop action labels do not wrap within an action
+
+#### Scenario: A visitor starts a chat from the agenda
+- **WHEN** the visitor sends a first message from the homepage
+- **THEN** the chat receives the first four event IDs in the displayed view, or fewer if fewer cards are shown, including displayed date fallbacks and no IDs for an empty view
+- **AND** an unchanged Ask prompt still identifies its specific event
+
 ### Requirement: Homepage reassurance focuses on guest access
 The homepage SHALL state that the service is free to use and no sign-up is needed in the active locale. Its reassurance line SHALL NOT include the English-or-Spanish language claim.
 
 #### Scenario: Visitor opens the homepage
 - **WHEN** the homepage renders in English or Spanish
-- **THEN** the hero and closing reassurance lines state that the service is free and registration is unnecessary without listing chat languages
+- **THEN** the reassurance line states that the service is free and registration is unnecessary without listing chat languages
 
 ### Requirement: The homepage feed shows only in-scope events
 The D1 homepage feed SHALL omit out-of-scope and unjudged events before applying its result limit. It SHALL NOT change direct event detail URL behavior.
@@ -43,6 +78,7 @@ Event artwork SHALL preserve the full image without cropping inside a softly tin
 #### Scenario: Poster has a different aspect ratio from the card
 - **WHEN** a portrait or landscape poster appears in a card
 - **THEN** the full poster remains visible and unused image space uses a subtle background
+- **AND** the homepage agenda uses a 4:5 frame for portrait, square, and landscape flyers
 
 ### Requirement: Telegram navigation preserves icon alignment
 The desktop sidebar and mobile menu SHALL align the Telegram icon with the other primary navigation icons using the same horizontal padding and icon size. The Telegram icon SHALL retain its size when its label wraps.
@@ -61,11 +97,11 @@ The desktop chat sidebar and mobile menu SHALL display a localized Privacy link 
 - **AND** activating the mobile link closes the menu and opens the privacy policy
 
 ### Requirement: The MCP entry addresses AI assistant users
-The homepage link to MCP setup SHALL address people using AI assistants without implying that building software is required, and SHALL retain the public beta label.
+The homepage link to MCP setup SHALL address people using AI assistants without implying that building software is required, and SHALL NOT include a beta label.
 
 #### Scenario: Visitor reads the MCP setup link
 - **WHEN** the homepage renders in English or Spanish
-- **THEN** the link invites AI assistant users to connect BA Eventos and identifies the integration as public beta
+- **THEN** the link invites AI assistant users to connect BA Eventos without a beta label
 
 ### Requirement: MCP setup includes Claude and ChatGPT instructions
 The MCP setup page SHALL provide localized Claude web and desktop connector instructions followed by ChatGPT web plugin instructions. Both SHALL use the public endpoint without BA Eventos sign-in and link to their official setup guides. The page SHALL NOT claim verification in a client unless the project has verified it.
@@ -98,6 +134,6 @@ The PWA installation prompt and pull-to-refresh gesture SHALL each have explicit
 
 ## Verification
 - Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
-- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify both reassurance lines, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions.
+- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify the reassurance line, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions.
 - Static check: `bun run paraglide:compile && bun run check`
 - Specification validation: `bunx @fission-ai/openspec validate --specs --json`

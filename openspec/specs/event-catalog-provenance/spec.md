@@ -55,21 +55,31 @@ Event detail and summaries SHALL distinguish BA Eventos pages, original event so
 - **WHEN** source presentation is built
 - **THEN** the link remains identified as external source evidence rather than BA Eventos-authored fact
 
-### Requirement: Homepage cards are discovered early without delaying the hero
-The homepage SHALL render a fresh shared cache of at most four compact public cards in server HTML. A cold cache SHALL stream the feed independently of the hero. Cached cards SHALL be fresh for 60 seconds and MAY be served for a further 300 seconds while a retained background refresh runs. Failed refreshes MUST NOT be cached as successful empty feeds. Browser/CDN cache policy MUST NOT extend the feed's intended freshness to the zone's four-hour browser TTL.
+### Requirement: The homepage reads the in-scope agenda from a shared cache
+The homepage SHALL load scheduled events with `events.scope = 'in'`, from the start of the current Buenos Aires date through the next six local dates, soonest first. Events SHALL have a non-empty catalog image URL. An intake link or description SHALL NOT be required. The query MAY also load the first four in-scope scheduled events after this window for labeled date-filter fallbacks. Hidden or unconfirmed venue data SHALL NOT be exposed. The view SHALL render in server HTML even on a cache miss.
 
-#### Scenario: Upcoming events include records without intake provenance
-- **WHEN** the homepage strip or its feed loads
-- **THEN** it shows at most four scheduled events starting at least 12 hours out, soonest first
-- **AND** only events linked to intake source evidence and not marked location-hidden qualify
+#### Scenario: An event awaits classification or is out of scope
+- **WHEN** an event has NULL or `'out'` scope
+- **THEN** it appears in neither the weekly agenda nor the date-filter fallback
 
-#### Scenario: Homepage shared cache is warm
-- **WHEN** a homepage request reaches a fresh cache
-- **THEN** card artwork is discoverable in server HTML without a client events API waterfall
+#### Scenario: An otherwise eligible event lacks artwork
+- **WHEN** its catalog image URL is NULL or empty
+- **THEN** it appears in neither the weekly agenda nor the date-filter fallback
 
-#### Scenario: Homepage shared cache is cold
-- **WHEN** no usable cached feed exists
-- **THEN** the hero can render before the database read completes, with reserved loading geometry for the event row
+#### Scenario: A new Buenos Aires date begins
+- **WHEN** the seven-day window rolls over
+- **THEN** the server SHALL use a cache key for the new local date
+- **AND** within that date, cached cards are fresh for 60 seconds and MAY be served for a further 300 seconds while a retained background refresh runs
+- **AND** a failed refresh MUST NOT be cached as a successful empty feed
+
+#### Scenario: An agenda card has linked evidence
+- **WHEN** an event has a valid stored Instagram post URL linked through intake evidence
+- **THEN** its card offers that original post as a secondary link, not a ticket action
+
+#### Scenario: A client uses the legacy compact feed
+- **WHEN** the client requests `/api/events/happening-soon`
+- **THEN** the endpoint retains the compact public fields and four-card limit, from the same scoped weekly feed, starting at least 12 hours out
+- **AND** its browser/CDN policy does not extend the intended browser freshness to the zone's four-hour minimum
 
 ### Requirement: Event artwork is bounded and responsive across sources
 Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog-mediated responsive WebP delivery path. BA Tourism records without source images SHALL retain their existing missing-image presentation. Transformations SHALL preserve aspect ratio, avoid upscaling, use fixed 320/640/1280-pixel variants, and retain original-image fallback on unavailable transformations or quota exhaustion. The first two homepage cards SHALL load eagerly, only the first SHALL have high fetch priority, and farther cards SHALL remain lazy.
@@ -140,6 +150,7 @@ The D1 catalog SHALL judge events individually for an independent and public cul
 - `src/features/events/lib/event-summary.test.ts`
 - `src/routes/home-loading.test.ts`
 - `src/features/events/api/home-feed.server.test.ts`
+- `src/features/events/lib/home-agenda.test.ts`
 - `src/features/events/api/artwork.server.test.ts`
 - `src/features/events/lib/artwork-delivery.test.ts`
 - `src/shared/lib/db/event-reads-d1.server.test.ts`

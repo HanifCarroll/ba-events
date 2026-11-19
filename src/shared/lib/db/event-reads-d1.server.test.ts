@@ -12,10 +12,11 @@ import {
   getEventFactsByIds,
   getEventsWithVenues,
   getEventWithVenue,
-  getHappeningSoonEvents,
+  getHomeAgendaEvents,
   getVenueById,
 } from './client.server.ts'
 import { createWorkerHandler } from '../../../mcp-worker/index.ts'
+import { homeWindow, selectHomeView } from '#features/events/lib/home-feed.ts'
 
 let db: D1Database
 let dispose: () => Promise<void>
@@ -40,17 +41,19 @@ async function venue(name: string, fields: { neighborhood?: string; address?: st
 }
 
 type EventFields = Partial<{ starts_at: string; status: string; venue_id: string | null; image_url: string | null;
-  description_summary_es: string | null; location_tba: boolean; location_hidden: boolean; categories: string[]; scope: 'in' | 'out' | null }>
+  description_es: string; description_summary_es: string | null; location_tba: boolean; location_hidden: boolean; categories: string[];
+  price: number | null; is_free: boolean; facets: Record<string, unknown>; scope: 'in' | 'out' | null }>
 async function event(name: string, fields: EventFields = {}) {
   const eventId = id()
   await db.prepare(`INSERT INTO events (id, name, starts_at, status, venue_id, image_url, image_width, image_height,
-      description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document, scope)
-    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, 1, NULL, '{"genres":["jazz"]}', 'luma', 'secreto', ?)`).bind(
+      description_es, description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document, scope)
+    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', 'secreto', ?)`).bind(
     eventId, name, fields.starts_at ?? inDays(2), fields.status ?? 'scheduled', fields.venue_id ?? null,
     fields.image_url === undefined ? 'https://images.lumacdn.com/uploads/a.png' : fields.image_url,
+    fields.description_es ?? null,
     fields.description_summary_es === undefined ? 'Una noche de jazz' : fields.description_summary_es,
     fields.location_tba ? 1 : 0, fields.location_hidden ? 1 : 0, JSON.stringify(fields.categories ?? ['music']),
-    fields.scope === undefined ? 'in' : fields.scope).run()
+    fields.is_free === false ? 0 : 1, fields.price ?? null, JSON.stringify(fields.facets ?? { genres: ['jazz'] }), fields.scope ?? null).run()
   return eventId
 }
 
@@ -58,45 +61,71 @@ beforeEach(async () => {
   await db.batch([db.prepare('DELETE FROM event_source_evidence'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM venues')])
 })
 
-async function linkIntakeEvidence(eventIds: string[]) {
+async function linkIntakeEvidence(eventIds: string[], intent: 'create' | 'link' = 'create') {
   await db.batch([
     db.prepare("INSERT OR IGNORE INTO instagram_sources (username, authority, qualification) VALUES ('fixture', 'venue', 'synthetic')"),
     db.prepare("INSERT OR IGNORE INTO intake_runs (id, local_date, reserved_usd, input) VALUES ('run', '2026-11-01', 1, '{}')"),
     db.prepare(`INSERT OR IGNORE INTO intake_observations (id, run_id, post_id, source_username, post_url, caption, content_hash)
       VALUES ('post', 'run', 'post', 'fixture', 'https://www.instagram.com/p/fixture/', 'Synthetic post', ?)`).bind('0'.repeat(64)),
     db.prepare("INSERT OR IGNORE INTO intake_candidates (id, revision, payload) VALUES ('candidate', 1, '{}')"),
+    db.prepare("INSERT OR IGNORE INTO intake_candidate_revisions (candidate_id, revision, payload) VALUES ('candidate', 1, ?)")
+      .bind(JSON.stringify({ intent, price_kind: 'conditional', price_note: 'A la gorra' })),
     ...eventIds.map(eventId => db.prepare("INSERT INTO event_source_evidence VALUES (?, 'candidate', 'post', 1)").bind(eventId)),
   ])
 }
 
 describe('public event reads on D1', () => {
-  it('home feed: only scheduled, visible, in-scope, intake-linked events with artwork 12 hours out, soonest first', async () => {
-    const bar = await venue('Bar Sintético', { neighborhood: 'Palermo' })
-    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5) })
-    const noArtwork = await event('Sin imagen', { venue_id: bar, starts_at: inDays(2), image_url: null })
-    const sooner = await event('Jazz temprano', { venue_id: bar, starts_at: inDays(1) })
-    const imminent = await event('Empieza ya', { venue_id: bar, starts_at: inDays(0.25) })
-    const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
-    const canceled = await event('Cancelado', { venue_id: bar, status: 'canceled' })
-    await event('Sin vínculo de intake', { venue_id: bar })
-    const party = await event('Fiesta', { venue_id: bar, starts_at: inDays(0.75) })
-    const unjudged = await event('Sin clasificar', { venue_id: bar, starts_at: inDays(0.75), scope: null })
-    const qualifying = [later, sooner, noArtwork, imminent, hidden, canceled]
-    await linkIntakeEvidence([...qualifying, party, unjudged])
+  it('home agenda: only scheduled, in-scope events with artwork in the local week and at most four later', async () => {
+    const window = homeWindow(new Date('2026-11-19T08:00:00.000Z'))
+    const bar = await venue('Bar Sintético', { neighborhood: 'Palermo', address: 'Calle Falsa 123' })
+    const older = await event('Ayer en Buenos Aires', { starts_at: '2026-11-19T02:59:59.999Z' })
+    const first = await event('Empieza hoy a medianoche', { starts_at: window.start })
+    const missingImage = await event('Sin foto', { starts_at: window.start, image_url: null })
+    const emptyImage = await event('Foto vacía', { starts_at: window.start, image_url: '' })
+    const laterMissingImage = await event('Sin foto después de la semana', { starts_at: window.end, image_url: null })
+    const linked = await event('Jazz a la gorra', { venue_id: bar, starts_at: window.tomorrow, is_free: false, facets: { eventType: ['concert'] } })
+    const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true, starts_at: '2026-11-21T20:00:00.000Z' })
+    const unconfirmed = await event('Lugar por confirmar', { venue_id: bar, location_tba: true, starts_at: '2026-11-22T20:00:00.000Z' })
+    const canceled = await event('Cancelado', { status: 'canceled', starts_at: window.start })
+    const out = await event('Fuera de alcance', { starts_at: window.start })
+    await event('Sin clasificar', { starts_at: window.start })
+    const tail = []
+    for (let day = 26; day <= 30; day++) {
+      tail.push(await event(`Próximo ${day}`, { starts_at: `2026-11-${day}T03:00:00.000Z` }))
+    }
+    await linkIntakeEvidence([linked, out])
     await db.batch([
-      db.prepare("UPDATE events SET scope = 'in' WHERE id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(qualifying)),
-      db.prepare("UPDATE events SET scope = 'out' WHERE id = ?").bind(party),
+      ...[older, first, linked, hidden, unconfirmed, canceled, missingImage, emptyImage, laterMissingImage, ...tail].map(eventId =>
+        db.prepare("UPDATE events SET scope = 'in' WHERE id = ?").bind(eventId)),
+      db.prepare("UPDATE events SET scope = 'out' WHERE id = ?").bind(out),
     ])
-    expect((await getEventWithVenue(party)).id).toBe(party)
 
-    const cards = await getHappeningSoonEvents(4)
-    expect(cards.map(card => card.id)).toEqual([sooner, later])
-    expect(cards[0]).toEqual({
-      id: sooner, name: 'Jazz temprano', starts_at: expect.any(String), time_tba: false,
-      image_url: 'https://images.lumacdn.com/uploads/a.png', image_width: 800, image_height: 600,
-      venue_name: 'Bar Sintético', venue_neighborhood: 'Palermo', price: null, is_free: true,
-    })
-    expect(await getHappeningSoonEvents(1)).toHaveLength(1)
+    const cards = await getHomeAgendaEvents(window)
+    expect(cards.map(card => card.id)).toEqual([first, linked, hidden, unconfirmed, ...tail.slice(0, 4)])
+    expect(cards[0]).toMatchObject({ image_url: 'https://images.lumacdn.com/uploads/a.png', sourceUrl: null, music: false, payWhatYouCan: false })
+    expect(cards[1]).toMatchObject({ sourceUrl: 'https://www.instagram.com/p/fixture/', price: null, is_free: false,
+      payWhatYouCan: true, music: true, venue_name: 'Bar Sintético', venue_neighborhood: 'Palermo' })
+    expect(cards[1]).not.toHaveProperty('venue_address')
+    expect(cards[2]).toMatchObject({ location_hidden: true, venue_name: null, venue_neighborhood: null })
+    expect(cards[3]).toMatchObject({ location_tba: true, venue_name: null, venue_neighborhood: null })
+  })
+
+  it('keeps pay-what-you-can events out of Gratis when D1 also marks them free', async () => {
+    const window = homeWindow(new Date('2026-11-19T08:00:00.000Z'))
+    const fields = { starts_at: window.start, scope: 'in', is_free: true } as const
+    const fromNote = await event('Dúo de cuerdas', { ...fields, price: 0 })
+    const fromTitle = await event('Cuarteto — Á LA GÓRRA', fields)
+    const fromDescription = await event('Taller de grabado', { ...fields, description_es: 'Entrada a la go\u0301rra.' })
+    const free = await event('Muestra gratuita', fields)
+    await linkIntakeEvidence([fromNote], 'link')
+    await db.prepare("UPDATE events SET scope = 'in' WHERE id = ?").bind(fromNote).run()
+
+    const events = await getHomeAgendaEvents(window)
+    expect(events.map(({ id, is_free, payWhatYouCan }) => [id, is_free, payWhatYouCan])).toEqual([
+      [fromNote, true, true], [fromTitle, true, true], [fromDescription, true, true], [free, true, false],
+    ])
+    expect(events[2]).not.toHaveProperty('description_es')
+    expect(selectHomeView({ window, events }, 'gratis').events.map(({ id }) => id)).toEqual([free])
   })
 
   it('event page and chat tools: any status, decoded like events_with_venues, missing ids throw', async () => {
