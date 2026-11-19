@@ -16,6 +16,13 @@ Event detail time ranges SHALL show the end date when it differs from the start 
 - **WHEN** start and end timestamps fall on different UTC dates but the same Buenos Aires date
 - **THEN** the end remains time-only in the active locale
 
+### Requirement: The homepage introduces independent culture
+The homepage SHALL use the active locale for the independent-culture title, description, headline, and subtitles. It SHALL link to BA Eventos on Instagram in both desktop and mobile navigation and SHALL NOT present an invented example conversation.
+
+#### Scenario: Visitor opens the homepage on a phone
+- **WHEN** the homepage renders in English or Spanish
+- **THEN** the Instagram link and language switch are available in the navigation
+
 ### Requirement: Homepage reassurance focuses on guest access
 The homepage SHALL state that the service is free to use and no sign-up is needed in the active locale. Its reassurance line SHALL NOT include the English-or-Spanish language claim.
 

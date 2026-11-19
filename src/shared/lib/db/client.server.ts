@@ -161,49 +161,14 @@ export async function getEventsWithVenues(limit = 50) {
   return data as EventWithVenue[]
 }
 
-/**
- * Next upcoming events for the home "Happening soon" grid.
- * Chat columns only (no embedding), soonest first, capped at `limit`.
- *
- * Only events with complete, actionable info make the grid: a real start
- * time (date + time), an actual location (venue name, neighborhood, or
- * address — not TBA), a description, and a photo. Events lacking any of
- * these are excluded so every card shows where the event happens, what it
- * is, and what it looks like.
- *
- * Floor is now + 12 hours, rolling. Daytime events can appear if they
- * start at least 12 hours out; a night already in progress does not.
- */
+/** Next scheduled intake-linked events for the temporary homepage strip. */
 const HOME_CARD_COLUMNS = 'id, name, starts_at, time_tba, image_url, image_width, image_height, venue_name, venue_neighborhood, price, is_free'
 
 export async function getHappeningSoonEvents(limit = 4): Promise<HomeEventCard[]> {
   const earliestStartUTC = addHours(new Date(), 12).toISOString()
   const d1 = boundCatalogD1()
-  if (d1) return (await happeningSoonD1(d1, earliestStartUTC, limit)).map(row => pickColumns<HomeEventCard>(row, HOME_CARD_COLUMNS))
-
-  const { data, error } = await getSupabase()
-    .from('events_with_venues')
-    .select(HOME_CARD_COLUMNS)
-    .eq('status', 'scheduled')
-    .gte('starts_at', earliestStartUTC)
-    .eq('location_tba', false)
-    .eq('description_unavailable', false)
-    // Every card must have a photo.
-    .not('image_url', 'is', null)
-    .neq('image_url', '')
-    // Must have BOTH a location (any of name/neighborhood/address) AND a
-    // description (any locale/summary/display). Two .or() groups keep the
-    // clauses ANDed — a single .or() would accept venue-only or desc-only.
-    .or('venue_name.not.is.null,venue_neighborhood.not.is.null,venue_address.not.is.null')
-    .or(
-      'description_summary_es.not.is.null,description_summary_en.not.is.null,' +
-        'description_display_es.not.is.null,description_display_en.not.is.null'
-    )
-    .order('starts_at', { ascending: true })
-    .limit(limit)
-
-  if (error) throw error
-  return data as HomeEventCard[]
+  if (!d1) throw new Error('Homepage intake feed requires the D1 catalog')
+  return (await happeningSoonD1(d1, earliestStartUTC, limit)).map(row => pickColumns<HomeEventCard>(row, HOME_CARD_COLUMNS))
 }
 
 /** Catalog-mediated image lookup: callers cannot supply upstream URLs. */

@@ -55,21 +55,30 @@ async function event(name: string, fields: EventFields = {}) {
 }
 
 beforeEach(async () => {
-  await db.batch([db.prepare('DELETE FROM events'), db.prepare('DELETE FROM venues')])
+  await db.batch([db.prepare('DELETE FROM event_source_evidence'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM venues')])
 })
 
+async function linkIntakeEvidence(eventIds: string[]) {
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO instagram_sources (username, authority, qualification) VALUES ('fixture', 'venue', 'synthetic')"),
+    db.prepare("INSERT OR IGNORE INTO intake_runs (id, local_date, reserved_usd, input) VALUES ('run', '2026-11-01', 1, '{}')"),
+    db.prepare(`INSERT OR IGNORE INTO intake_observations (id, run_id, post_id, source_username, post_url, caption, content_hash)
+      VALUES ('post', 'run', 'post', 'fixture', 'https://www.instagram.com/p/fixture/', 'Synthetic post', ?)`).bind('0'.repeat(64)),
+    db.prepare("INSERT OR IGNORE INTO intake_candidates (id, revision, payload) VALUES ('candidate', 1, '{}')"),
+    ...eventIds.map(eventId => db.prepare("INSERT INTO event_source_evidence VALUES (?, 'candidate', 'post', 1)").bind(eventId)),
+  ])
+}
+
 describe('public event reads on D1', () => {
-  it('home feed: complete scheduled events 12 hours out, soonest first, with only the card columns', async () => {
+  it('home feed: only scheduled, visible, intake-linked events 12 hours out, soonest first', async () => {
     const bar = await venue('Bar Sintético', { neighborhood: 'Palermo' })
-    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5) })
+    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5), image_url: null })
     const sooner = await event('Jazz temprano', { venue_id: bar, starts_at: inDays(1) })
-    await event('Empieza ya', { venue_id: bar, starts_at: inDays(0.25) })
-    await event('Sin foto', { venue_id: bar, image_url: null })
-    await event('Foto vacía', { venue_id: bar, image_url: '' })
-    await event('Sin lugar', { venue_id: null })
-    await event('Lugar a confirmar', { venue_id: bar, location_tba: true })
-    await event('Sin descripción', { venue_id: bar, description_summary_es: null })
-    await event('Cancelado', { venue_id: bar, status: 'canceled' })
+    const imminent = await event('Empieza ya', { venue_id: bar, starts_at: inDays(0.25) })
+    const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
+    const canceled = await event('Cancelado', { venue_id: bar, status: 'canceled' })
+    await event('Sin vínculo de intake', { venue_id: bar })
+    await linkIntakeEvidence([later, sooner, imminent, hidden, canceled])
 
     const cards = await getHappeningSoonEvents(4)
     expect(cards.map(card => card.id)).toEqual([sooner, later])
