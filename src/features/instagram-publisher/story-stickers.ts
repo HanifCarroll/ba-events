@@ -35,7 +35,9 @@ export function exactMentionOption(options: string[], username: string): number 
   return matches.length === 1 ? matches[0] : undefined
 }
 
-export interface StoryShareAttempt { at: string; frameCount: number; beforeIds: string[]; skippedMentions?: string[] }
+export interface StoryShareAttempt {
+  at: string; frameCount: number; beforeIds: string[]; skippedMentions?: string[]; evidenceDir?: string
+}
 
 export async function liveStories(api: InstagramApi, userId: string): Promise<Array<{ id: string; timestamp: string }>> {
   const { data } = await api.get(`${userId}/stories`, { fields: 'id,timestamp', limit: '100' })
@@ -55,12 +57,25 @@ export function confirmsStory(attempt: StoryShareAttempt, stories: Awaited<Retur
   return newIds.size === attempt.frameCount
 }
 
-export interface StickerFailure { step: string; signIn: boolean }
+export interface StickerFailure { step: string; signIn: boolean; evidenceDir?: string }
 
 export class StoryComposerError extends Error implements StickerFailure {
-  constructor(readonly step: string, readonly signIn = false) {
-    super(signIn ? 'Meta Business Suite needs a Facebook sign-in on the Pro.' : `Could not ${step}.`)
+  constructor(readonly step: string, readonly signIn = false, readonly evidenceDir?: string, readonly retryable = false) {
+    const message = signIn ? 'Meta Business Suite needs a Facebook sign-in on the Pro.' : `Could not ${step}.`
+    super(evidenceDir ? `${message} Composer evidence: ${evidenceDir}` : message)
   }
 }
 
-export type ComposeStory = (frames: StickerFrame[], action: { beforeShare(signal: AbortSignal, skippedMentions: string[]): Promise<void> } | { previewDir: string }) => Promise<string[]>
+export async function retryComposerOnce<T>(run: () => Promise<T>, cap: AbortSignal): Promise<T> {
+  try { return await run() }
+  catch (error) {
+    if (!(error instanceof StoryComposerError) || !error.retryable || cap.aborted) throw error
+    console.warn(`${error.message} Trying a fresh composer before Share.`)
+    return run()
+  }
+}
+
+export type ComposeStory = (frames: StickerFrame[], action: {
+  evidenceDir: string
+  beforeShare(signal: AbortSignal, skippedMentions: string[]): Promise<void>
+} | { previewDir: string }) => Promise<string[]>

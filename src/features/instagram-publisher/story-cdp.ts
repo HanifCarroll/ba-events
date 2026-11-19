@@ -34,6 +34,10 @@ type Handler = { resolve(value: unknown): void; reject(error: Error): void }
 type Message = { id?: number; method?: string; result?: unknown; params?: unknown; error?: { message: string } }
 type Evaluation = { result: { value?: unknown }; exceptionDetails?: { exception?: { description?: string }; text: string } }
 
+export class StoryCDPTimeout extends Error {
+  constructor(readonly method: string) { super(`${method} timed out.`) }
+}
+
 /** A single socket: the browser root for target lifecycle, or one owned tab for page commands. */
 export class StoryCDP {
   private nextId = 0
@@ -83,13 +87,15 @@ export class StoryCDP {
   private wait<K, T>(map: Map<K, Handler>, key: K, method: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout>
     return new Promise<T>((resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(`${method} timed out.`)), STEP_MS)
+      timer = setTimeout(() => reject(new StoryCDPTimeout(method)), STEP_MS)
       map.set(key, { resolve: value => resolve(value as T), reject })
     }).finally(() => {
       clearTimeout(timer)
       map.delete(key)
     })
   }
+
+  get connected() { return this.socket.readyState === WebSocket.OPEN }
 
   close() { this.socket.close() }
 
@@ -153,8 +159,9 @@ export async function openStoryTab(endpoint: () => Promise<string> = storyBrowse
     finally { root.close() }
     const url = new URL(`/devtools/page/${targetId}`, httpBase(address))
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    tab = await StoryCDP.connect(url.href)
-    return { tab, targetId, close }
+    const reconnect = () => StoryCDP.connect(url.href)
+    tab = await reconnect()
+    return { tab, targetId, close, reconnect }
   } catch (error) {
     await close()
     throw error

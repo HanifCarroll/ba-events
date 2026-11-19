@@ -115,7 +115,12 @@ With `linkStickers.hoy` enabled and no Graph API publish underway for the draft,
 
 #### Scenario: Preview without publishing
 - **WHEN** the operator runs `stickers-dry-run` for a saved Hoy draft
-- **THEN** the job captures each frame's Instagram preview and discards the composer without sharing, scheduling, or writing draft state.
+- **THEN** the job captures each frame's Instagram preview and confirms the composer was discarded without sharing, scheduling, or writing draft state.
+
+#### Scenario: A composer step fails
+- **WHEN** a Business Suite composer step fails in a dry run or a live attempt
+- **THEN** the job records the failing step and last known page URL without query parameters in the run's evidence directory, captures a screenshot if the owned tab is reachable, and includes the evidence path in the error and any composer alert
+- **AND** on a DevTools command timeout, it may try one fresh composer within the same flow deadline, only before entering the final Share checks.
 
 ### Requirement: Graph API publishing is idempotent
 The job MUST save each container and media id before the next step, check `content_publishing_limit` before `media_publish`, and check that container's status after an unclear `media_publish` result before any retry.

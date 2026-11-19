@@ -326,6 +326,17 @@ export class Job {
     return false
   }
 
+  private recordComposerFailure(draft: Draft, error: StoryComposerError) {
+    this.s.log(`${draft.id}: ${error.message}`)
+    if (draft.storyShare) {
+      if (!error.evidenceDir) return
+      draft.storyShare.evidenceDir = error.evidenceDir
+    } else {
+      draft.stickerFallback = { signIn: error.signIn, step: error.step, evidenceDir: error.evidenceDir }
+    }
+    this.save(draft)
+  }
+
   /** Returns true only when the draft is published. A pending Business Suite Share takes precedence over all gates. */
   private async publishDraft(draft: Draft, window: RunWindow): Promise<boolean> {
     if (draft.storyShare) return this.reconcileStory(draft, window)
@@ -346,7 +357,7 @@ export class Job {
       this.verifyFrames(draft)
       const frames = stickerFrames(draft.frames, draft.events)
       try {
-        await this.s.composeStory(frames, { beforeShare: async (signal, skippedMentions) => {
+        await this.s.composeStory(frames, { evidenceDir: this.framesDir(draft.id), beforeShare: async (signal, skippedMentions) => {
           const api = this.s.instagram(token.token.access_token)
           const before = await liveStories(api, token.token.ig_user_id).catch(() => {
             throw new StoryComposerError('read existing Instagram Stories before sharing')
@@ -363,11 +374,7 @@ export class Job {
         } })
       } catch (error) {
         if (!(error instanceof StoryComposerError)) throw error
-        this.s.log(`${draft.id}: ${error.message}`)
-        if (!draft.storyShare) {
-          draft.stickerFallback = { signIn: error.signIn, step: error.step }
-          this.save(draft)
-        }
+        this.recordComposerFailure(draft, error)
       }
       if (draft.storyShare) return this.reconcileStory(draft, window, true)
       if (!draft.stickerFallback) throw new Error('The composer returned without recording a Share attempt.')
