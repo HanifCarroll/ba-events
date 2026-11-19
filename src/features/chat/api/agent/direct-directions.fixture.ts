@@ -1,4 +1,5 @@
 /** Real SDK transport, deterministic source reads, no network. */
+import { writeSync } from 'node:fs'
 import { orchestrate, runToolLoop } from './orchestrate.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
 
@@ -45,7 +46,8 @@ const result = await orchestrate({
       venue_neighborhood: 'Palermo', price: null, is_free: true } as unknown as ChatEventPayload] } },
   },
 })
-console.log(JSON.stringify({ calls, directionReads, detailReads, text: result.canonical.text, kind: result.canonical.kind,
+// The parent reads the final line from a pipe; forced exit can drop a buffered log.
+writeSync(1, `${JSON.stringify({ calls, directionReads, detailReads, text: result.canonical.text, kind: result.canonical.kind,
   eventId: result.canonical.directions?.eventId, fallback: result.canonical.provenance.fallbackUsed,
-  reads: result.reads.map(read => ({ tool: read.toolName, success: read.success })) }))
+  reads: result.reads.map(read => ({ tool: read.toolName, success: read.success })) })}\n`)
 process.exit(0)
