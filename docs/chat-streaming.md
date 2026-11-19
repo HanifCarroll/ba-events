@@ -128,9 +128,11 @@ the final checkpoint. `ChatRecoveryAdmin` is a binding-only operator entrypoint
 for inspecting and resetting the dogfood attempt; the Worker has no public
 execution or reset endpoint.
 `bun run chat:dogfood` builds the production app and tests its real UI with live
-DeepSeek and event search, including refresh while previews are visible.
-Screenshots and results go outside the repository under
-`/tmp/ba-events-chat-dogfood` (override with `CHAT_DOGFOOD_EVIDENCE_DIR`).
-Chrome and configured AI/database credentials are required for live dogfood.
+DeepSeek, including refresh while previews are visible. It uses a local D1
+database for guest admission and a synthetic event catalog with a Vectorize
+stand-in, not a hosted index or live user data. Screenshots and results go outside
+the repository under `/tmp/ba-events-chat-dogfood` (override with
+`CHAT_DOGFOOD_EVIDENCE_DIR`). Live dogfood requires Chrome and DeepSeek and
+OpenAI keys, not database credentials.
 The pinned workerd development dependency supports the production compatibility
 date; the older runtime bundled inside Wrangler does not.

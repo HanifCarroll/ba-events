@@ -1,35 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { RETAIN_CONCURRENCY, retainPostsEffect, retryMissingMediaEffect, signedUrlExpiry, sourceCoverage } from './collection.ts'
-import { supabaseIntake } from './store-supabase.ts'
 import type { CollectionStore } from './store.ts'
 import { ImportOperationError } from '../core/effect-utils.ts'
 
-/** In-memory intake_observations/intake_media with only the query shapes retainPostsEffect uses. */
 function memoryDb() {
-  const seen: unknown[] = []
-  const observations: Array<{ id: string; run_id: string; post_id: string; content_hash: string; source_username: string }> = []
-  const table = (name: string) => {
-    let op = 'select'; let row: Record<string, string> = {}; const filters: Record<string, unknown> = {}
-    const chain: Record<string, unknown> = {
-      select: () => chain, order: () => chain, limit: () => chain, single: () => chain,
-      eq: (key: string, value: unknown) => { filters[key] = value; return chain },
-      update: (value: { last_seen_at: string }) => { op = 'update'; seen.push(value.last_seen_at); return chain },
-      upsert: (value: Record<string, string>) => { op = 'upsert'; row = value; return chain },
-      then: (resolve: (value: unknown) => void) => {
-        if (name === 'intake_media') return resolve({ data: [], error: null })
-        if (op === 'update') { seen.push(filters.id); return resolve({ data: { id: filters.id }, error: null }) }
-        if (op === 'upsert') {
-          const saved = { id: `obs-${observations.length}`, run_id: row.run_id, post_id: row.post_id, content_hash: row.content_hash, source_username: row.source_username }
-          observations.push(saved); return resolve({ data: saved, error: null })
-        }
-        return resolve({ data: observations.filter(item => item.post_id === filters.post_id).slice(-1), error: null })
-      },
-    }
-    return chain
-  }
-  return { db: supabaseIntake({ from: table } as unknown as SupabaseClient), observations, seen }
+  const seen: string[] = []
+  const observations: Array<Parameters<CollectionStore['upsertObservation']>[0] & { id: string }> = []
+  const db = {
+    latestObservation: postId => Effect.succeed(observations.findLast(item => item.post_id === postId) ?? null),
+    touchObservation: id => Effect.sync(() => { seen.push(id) }),
+    upsertObservation: row => Effect.sync(() => {
+      const saved = { ...row, id: `obs-${observations.length}` }
+      observations.push(saved)
+      return saved
+    }),
+    mediaPositions: () => Effect.succeed([]),
+  } satisfies Partial<CollectionStore>
+  return { db: db as unknown as CollectionStore, observations, seen }
 }
 const post = (id: string, owner = 'synthetic_venue') => ({ id, shortCode: `sc${id}`, ownerUsername: owner, caption: `Synthetic ${id}`, timestamp: '2026-11-12T12:00:00Z' })
 const noItems = (name: string) => ({ url: `https://www.instagram.com/${name}`, inputUrl: `https://www.instagram.com/${name}`, error: 'no_items', errorDescription: 'Empty or private data for provided input' })
@@ -60,7 +48,7 @@ describe('incremental Instagram collection', () => {
     const second = await Effect.runPromise(retainPostsEffect(db, 'run-2', [carousel('second')], ['synthetic_venue'], 20, async () => { throw new Error('offline') }))
     expect(second).toMatchObject({ changed: 0, unchanged: 1 })
     expect(observations).toHaveLength(1)
-    expect(seen).toEqual([expect.any(String), 'obs-0'])
+    expect(seen).toEqual(['obs-0'])
   })
 
   it('skips billed error rows without failing and names dead, quiet and uncovered sources', async () => {
@@ -181,7 +169,7 @@ describe('retrying missing images of unreviewed observations', () => {
 
   it('ends the pass on a storage failure, names it, and downloads nothing after it', async () => {
     const { db } = mediaDb([{ id: 'first', media_urls: [signed('a', later), signed('b', later)] }, { id: 'second', media_urls: [signed('c', later)] }], [])
-    const store = { ...db, retainImage: () => Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'Intake API answered 503' })) } as CollectionStore
+    const store = { ...db, retainImage: () => Effect.fail(new ImportOperationError({ operation: 'intake.store-image', message: 'Intake API answered 503' })) } as unknown as CollectionStore
     const fetched: string[] = []
     const result = await Effect.runPromise(retryMissingMediaEffect(store, { now, fetcher: async url => { fetched.push(url); return image(url) } }))
     expect(fetched).toEqual([signed('a', later)])

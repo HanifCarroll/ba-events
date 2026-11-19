@@ -1,7 +1,4 @@
-/**
- * The operator commands that read or write the intake store, shared by `scripts/instagram-intake.ts` (on Supabase) and
- * the intake API (on D1), so both give the same output. Inputs are untrusted: each is decoded strictly here.
- */
+/** Validates and runs operator commands for the jobs Worker intake API. */
 import { Effect, Schema } from 'effect'
 import { ImportOperationError } from '../core/effect-utils.ts'
 import { SourceSchema } from './schema.ts'

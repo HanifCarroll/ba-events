@@ -14,7 +14,7 @@ This is an independently maintained project; response times are not guaranteed. 
 
 ## Credentials and data
 
-The repository is public for code inspection. Access to the hosted infrastructure, credentials, and user data remains restricted to authorized maintainers. Use synthetic fixtures for review and testing. Never commit credentials or expose a Supabase service-role key through a `PUBLIC_` variable.
+The repository is public for code inspection. Access to the hosted infrastructure, credentials, and user data remains restricted to authorized maintainers. Use synthetic fixtures for review and testing. Never commit credentials or expose a server-only credential through a `PUBLIC_` variable.
 
 If a real credential is committed, revoke or rotate it first, assess access, and coordinate removal from Git history and GitHub surfaces. Deleting it in a later commit alone does not remove the exposure. Automated secret scanning helps detect mistakes; it is not a security guarantee.
 

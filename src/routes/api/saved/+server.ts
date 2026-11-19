@@ -5,8 +5,6 @@ import { getSessionUser } from '#features/auth/api/session.server.ts'
 import { d1UserStore, MAX_MEMBERSHIP_IDS } from '#features/auth/api/user-store.server.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
 
-// The signed-in user's saved events on a Worker that binds D1 (the staging Worker until the cutover). Without D1 this
-// route doesn't exist: production's browser keeps reading and writing saved events through Supabase with RLS.
 // The user always comes from the session. A request may name the user it expects (`expectedUserId` in the query or
 // body); if the session now belongs to someone else it gets 409 and changes nothing.
 //   GET  /api/saved                  → { events }  newest first

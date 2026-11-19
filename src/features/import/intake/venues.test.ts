@@ -1,51 +1,37 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { IntakeStore, VenueRow } from './store.ts'
+import { ImportOperationError } from '../core/effect-utils.ts'
 import type { NominatimResult } from '../core/nominatim.ts'
-import { supabaseIntake } from './store-supabase.ts'
 import { addressKey, decodeVenueRequest, type Geocode, groupHeldByVenue, resolveIntakeVenueEffect, type VenueRequest } from './venues.ts'
 
-type Row = { id: string; name: string; address: string | null; neighborhood: string | null }
-/** A synthetic venues table behind the few query shapes the matcher and resolver use. */
-function fakeDb(venues: Row[], options: { similar?: Record<string, number>; failReads?: boolean } = {}) {
+function fakeDb(venues: VenueRow[], options: { similar?: Record<string, number>; failReads?: boolean } = {}) {
   const inserts: Array<{ table: string; row: Record<string, unknown> }> = []
-  const from = (table: string) => {
-    const filters: Array<(row: Row) => boolean> = []
-    let pending: Record<string, unknown> | null = null
-    let patch: Partial<Row> | null = null
-    const builder: Record<string, unknown> = {
-      update: (values: Partial<Row>) => { patch = values; return builder },
-      is: (column: keyof Row, value: null) => { filters.push(row => row[column] === value); return builder },
-      select: () => builder, limit: () => builder, order: () => builder, range: () => builder,
-      ilike: (column: 'name' | 'address', pattern: string) => {
-        const needle = pattern.replaceAll('%', '').toLowerCase()
-        filters.push(row => pattern.startsWith('%') ? !!row[column]?.toLowerCase().includes(needle) : row[column]?.toLowerCase() === needle)
-        return builder
-      },
-      eq: (column: 'id', value: string) => { filters.push(row => row[column] === value); return builder },
-      insert: (row: Record<string, unknown>) => { pending = row; return builder },
-      single: () => {
-        if (pending) {
-          const row = table === 'venues' ? { id: `venue-${venues.length + 1}`, ...pending } as Row : { id: 'log', ...pending }
-          inserts.push({ table, row: pending }); if (table === 'venues') venues.push(row as Row)
-          return Promise.resolve({ data: row, error: null })
-        }
-        const found = venues.filter(row => filters.every(filter => filter(row)))[0]
-        return Promise.resolve(found ? { data: found, error: null } : { data: null, error: { message: 'no rows' } })
-      },
-      then: (resolve: (value: unknown) => void) => patch
-        ? resolve({ data: venues.filter(row => filters.every(filter => filter(row))).map(row => Object.assign(row, patch)), error: null })
-        : resolve(options.failReads
-        ? { data: null, error: { message: 'database unavailable' } }
-        : { data: venues.filter(row => filters.every(filter => filter(row))), error: null }),
-    }
-    return builder
-  }
-  // Stands in for intake_similar_venues: every row at or above the threshold, no limit; case-insensitive equality scores 1, other scores come from the test.
-  const rpc = (_name: string, args: { p_name: string }) => Promise.resolve(options.failReads ? { data: null, error: { message: 'database unavailable' } } : {
-    data: venues.map(row => ({ ...row, similarity: row.name.toLowerCase() === args.p_name.toLowerCase() ? 1 : options.similar?.[row.id] ?? 0 }))
-      .filter(row => row.similarity >= 0.6).sort((a, b) => b.similarity - a.similarity), error: null })
-  return { db: supabaseIntake({ from, rpc } as unknown as SupabaseClient), inserts, venues }
+  const outage = () => Effect.fail(new ImportOperationError({ operation: 'venue-test', message: 'database unavailable' }))
+  const db = {
+    allVenues: () => options.failReads ? outage() : Effect.succeed(venues.map(row => ({ ...row }))),
+    similarVenues: (name, threshold) => options.failReads ? outage() : Effect.succeed(venues.map(row => ({ ...row,
+      similarity: row.name.toLowerCase() === name.toLowerCase() ? 1 : options.similar?.[row.id] ?? 0,
+    })).filter(row => row.similarity >= threshold).sort((a, b) => b.similarity - a.similarity)),
+    completeVenue: (id, fill) => Effect.sync(() => {
+      const row = venues.find(row => row.id === id)
+      if (!row || Object.keys(fill).some(key => row[key as keyof typeof fill] !== null)) return []
+      return [Object.assign(row, fill)]
+    }),
+    correctVenueNeighborhood: (id, from, to) => Effect.sync(() => {
+      const row = venues.find(row => row.id === id && row.neighborhood === from)
+      return row ? [Object.assign(row, { neighborhood: to })] : []
+    }),
+    venueRow: id => Effect.sync(() => venues.find(row => row.id === id)!),
+    createVenue: input => Effect.sync(() => {
+      inserts.push({ table: 'venues', row: input })
+      const row = { id: `venue-${venues.length + 1}`, address: null, neighborhood: null, ...input }
+      venues.push(row)
+      return row
+    }),
+    recordVenueEvidence: row => Effect.sync(() => { inserts.push({ table: 'venue_review_queue', row }) }),
+  } satisfies Partial<IntakeStore>
+  return { db: db as unknown as IntakeStore, inserts, venues }
 }
 // By default the synthetic geocoder finds the request's own street and number (Av. Ficticia 1234).
 const geocoded = (state: string, suburb?: string, road = 'Avenida Ficticia', house_number = '1234') => () => Effect.succeed({
@@ -53,7 +39,7 @@ const geocoded = (state: string, suburb?: string, road = 'Avenida Ficticia', hou
 const request = (overrides: Partial<VenueRequest> = {}): VenueRequest => decodeVenueRequest({
   name: 'Sala Sintética', address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro',
   evidence: [{ url: 'https://example.org/sala', confirms: 'name, address and barrio on the official site' }], ...overrides })
-const run = (db: ReturnType<typeof supabaseIntake>, input: VenueRequest, geocode: Geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro')) =>
+const run = (db: IntakeStore, input: VenueRequest, geocode: Geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro')) =>
   Effect.runPromise(resolveIntakeVenueEffect(db, input, geocode))
 
 describe('intake venue resolution', () => {

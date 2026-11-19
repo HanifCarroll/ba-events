@@ -6,6 +6,7 @@ import { CONCIERGE_CASES } from './cases.ts'
 import { scoreCase } from './score.ts'
 import { currentDateInBuenosAires } from '#features/chat/api/agent/search-context.ts'
 import { REPLY_LANGUAGE_VERSION } from './language.ts'
+import { openStagingCatalog } from '../lib/staging-catalog.ts'
 
 interface EvalInput {
   caseId: string
@@ -22,11 +23,12 @@ function findCase(caseId: string) {
 
 async function main() {
   if (!langfuseConfigured()) throw new Error('Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY before running live evals')
-  // Experiments require a real tracer even if ordinary production tracing is disabled.
-  if (!await initializeLangfuse()) throw new Error('Langfuse tracing must be enabled for experiments')
-  const filter = process.argv[2]
+  const filter = process.argv[3]
   const cases = filter ? CONCIERGE_CASES.filter((item) => item.id === filter) : CONCIERGE_CASES
   if (!cases.length) throw new Error(`Unknown concierge case: ${filter}`)
+  await using staging = await openStagingCatalog(process.argv[2])
+  // Experiments require a real tracer even if ordinary production tracing is disabled.
+  if (!await initializeLangfuse()) throw new Error('Langfuse tracing must be enabled for experiments')
   const currentDateInBA = process.env.EVAL_DATE_IN_BA ?? currentDateInBuenosAires()
   const langfuse = new LangfuseClient()
   const data: ExperimentItem<EvalInput>[] = cases.map((item) => ({
@@ -43,7 +45,7 @@ async function main() {
       replyLanguageVersion: REPLY_LANGUAGE_VERSION,
       release: process.env.LANGFUSE_RELEASE ?? 'local',
       currentDateInBA,
-      corpus: 'live-database',
+      corpus: 'staging-d1',
     },
     task: async ({ input: rawInput }) => {
       const input = rawInput as EvalInput | undefined

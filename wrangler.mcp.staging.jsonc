@@ -1,8 +1,7 @@
 // Staging only: the public MCP Worker as `baeventos-mcp-staging` on workers.dev, reading the `-staging` D1 and
 // Vectorize index (DECISIONS.md), so `search_events` can be checked end to end before the cutover. CI never deploys it;
 // deploy by hand with `bunx wrangler deploy --config wrangler.mcp.staging.jsonc`. Secrets: OPENAI_API_KEY (query
-// embeddings) and, optionally, VOYAGE_API_KEY (rerank). It has no Supabase secrets, so `get_event`, which still reads
-// Supabase until delivery PR 04, fails here. It must never bind a production resource.
+// embeddings) and, optionally, VOYAGE_API_KEY (rerank). It must never bind a production resource.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baeventos-mcp-staging",

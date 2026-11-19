@@ -2,7 +2,7 @@
 import type { RequestEvent } from '@sveltejs/kit'
 
 Object.assign(process.env, { ADMIN_API_KEY: 'test-only-key', NODE_ENV: 'production',
-  SUPABASE_URL: '', SUPABASE_SERVICE_ROLE_KEY: '', LANGFUSE_TRACING_ENABLED: 'false' })
+  LANGFUSE_TRACING_ENABLED: 'false' })
 let networkCalls = 0
 let downstream = 0
 globalThis.fetch = async () => { networkCalls++; throw new Error('External requests disabled') }

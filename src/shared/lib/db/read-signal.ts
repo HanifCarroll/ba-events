@@ -1,9 +1,7 @@
-/** Keep cancellation on the actual PostgREST request, before its lazy execution. */
-export function withReadSignal<T extends { abortSignal(signal: AbortSignal): unknown }>(
-  query: T,
-  signal?: AbortSignal,
-): T {
+/** D1 cannot cancel in-flight SQL; don't start it or consume its result after cancellation. */
+export async function withReadSignal<T>(read: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   signal?.throwIfAborted()
-  if (signal) query.abortSignal(signal)
-  return query
+  const result = await read()
+  signal?.throwIfAborted()
+  return result
 }

@@ -152,26 +152,16 @@ describe('Telegram inbox on a DB-bound Worker', () => {
     await dispose()
   })
 
-  it('the alarm points the shared search readers at D1, never Supabase', async () => {
+  it('the alarm supplies the D1 binding to the shared search readers', async () => {
     await db.prepare("INSERT INTO venues (id, name) VALUES ('00000000-0000-4000-8000-0000000000aa', 'Teatro Colón')").run()
-    // Start where search would use Supabase, as in a fresh isolate.
     useCloudflareBindings(undefined)
     useD1Binding(undefined)
-    const original = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_ANON_KEY }
-    // Without these a Supabase read throws for missing configuration, so the test can never reach a real project.
-    delete process.env.SUPABASE_URL
-    delete process.env.SUPABASE_ANON_KEY
     let found: string[] = []
-    try {
-      const inbox = new TelegramInbox({ storage: storage() }, { DB: db } as never, async () => {
-        found = (await searchVenuesByName('colón')).map((venue) => venue.name)
-      })
-      await enqueue(inbox, '77')
-      await inbox.alarm()
-    } finally {
-      if (original.url === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = original.url
-      if (original.key === undefined) delete process.env.SUPABASE_ANON_KEY; else process.env.SUPABASE_ANON_KEY = original.key
-    }
+    const inbox = new TelegramInbox({ storage: storage() }, { DB: db } as never, async () => {
+      found = (await searchVenuesByName('colón')).map((venue) => venue.name)
+    })
+    await enqueue(inbox, '77')
+    await inbox.alarm()
     expect(found).toEqual(['Teatro Colón'])
   })
 })

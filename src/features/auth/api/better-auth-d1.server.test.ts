@@ -2,8 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { D1Database } from '@cloudflare/workers-types'
 import type { RequestEvent } from '@sveltejs/kit'
 import { freshD1 } from '../../../../tests/support/d1.ts'
-import { importUsers, checkUsers, userRows } from '../../../../scripts/d1-migrate/users.ts'
-import { createBetterAuth, type BetterAuthEnv } from './better-auth.server.ts'
+import { betterAuthFor, createBetterAuth, type BetterAuthEnv } from './better-auth.server.ts'
 import { magicLinkEmail, MAGIC_LINK_FROM } from './magic-link-email.server.ts'
 import { getSessionUser } from './session.server.ts'
 import { deleteAccountEffect } from './server.server.ts'
@@ -35,7 +34,7 @@ beforeEach(async () => {
 		db.prepare('DELETE FROM users'), db.prepare('DELETE FROM profiles'), db.prepare('DELETE FROM events'),
 		db.prepare('DELETE FROM verification_tokens'), db.prepare('DELETE FROM auth_rate_limits'),
 	])
-	// Supabase's copy: two profiles with their saved events, as load.ts writes them before the user import.
+	// Seed existing accounts with preserved IDs and references.
 	await db.batch([
 		db.prepare(`INSERT INTO profiles (id, email, role) VALUES (?, 'alice@example.test', 'admin'), (?, 'bob@example.test', 'user')`).bind(ALICE, BOB),
 		...[[EVENT, 'scheduled'], [OTHER_EVENT, 'scheduled'], [DRAFT_EVENT, 'pending_review']].map(([id, status]) =>
@@ -43,7 +42,12 @@ beforeEach(async () => {
 		db.prepare(`INSERT INTO saved_events (id, user_id, event_id) VALUES (?, ?, ?)`).bind(crypto.randomUUID(), ALICE, EVENT),
 		db.prepare(`INSERT INTO conversations (id, user_id) VALUES (?, ?)`).bind(crypto.randomUUID(), ALICE),
 	])
-	await importUsers(db, [{ id: ALICE, email: 'Alice@Example.test', email_verified: true }, { id: BOB, email: 'bob@example.test', email_verified: true }])
+	await db.batch([
+		...[[ALICE, 'alice@example.test'], [BOB, 'bob@example.test']].flatMap(([id, email]) => [
+			db.prepare('INSERT INTO users (id, name, email, email_verified) VALUES (?, ?, ?, 1)').bind(id, email, email),
+			db.prepare("INSERT INTO accounts (id, user_id, account_id, provider_id, issuer, created_at, updated_at) VALUES (?, ?, ?, 'email', 'local:email', ?, ?)").bind(crypto.randomUUID(), id, id, new Date(0).toISOString(), new Date(0).toISOString()),
+		]),
+	])
 })
 
 const auth = () => createBetterAuth(ORIGIN, env)
@@ -86,7 +90,7 @@ describe('magic link', () => {
 		expect(reused.headers.get('location')).toContain('error=INVALID_TOKEN')
 	})
 
-	it('signs an imported user in under their Supabase id, with their profile and admin role', async () => {
+	it('signs an imported user in under their preserved id, with their profile and admin role', async () => {
 		const cookie = await signInByEmail('alice@example.test')
 		const session = await getSessionUser(requestEvent(cookie))
 		expect(session).toMatchObject({ user: { id: ALICE, email: 'alice@example.test' }, isAdmin: true, profile: { id: ALICE, role: 'admin' } })
@@ -109,6 +113,13 @@ describe('magic link', () => {
 })
 
 describe('session', () => {
+	it('fails closed without a D1 binding', async () => {
+		const cookie = await signInByEmail('alice@example.test')
+		const event = { ...requestEvent(cookie), platform: undefined }
+		expect(betterAuthFor(event)).toBeNull()
+		expect(await getSessionUser(event)).toBeNull()
+	})
+
 	it('is signed out without a cookie, with a forged cookie, and when AUTH_SECRET is missing', async () => {
 		expect(await getSessionUser(requestEvent(''))).toBeNull()
 		expect(await getSessionUser(requestEvent('__Secure-baeventos.session_token=forged.value'))).toBeNull()
@@ -257,25 +268,6 @@ describe('/api/saved', () => {
 		const bob = await signInByEmail('bob@example.test')
 		expect((await call('POST', bob, { body: {} })).status).toBe(400)
 		expect((await call('POST', bob, { body: { eventId: DRAFT_EVENT } })).status).toBe(404)
-	})
-})
-
-describe('user import', () => {
-	it('keeps every Supabase id, gives each user one email account, and leaves their rows attached', async () => {
-		expect(await checkUsers(db, [{ id: ALICE, email: 'alice@example.test' }, { id: BOB, email: 'bob@example.test' }])).toEqual([])
-		expect(await db.prepare('SELECT email FROM users WHERE id = ?').bind(ALICE).first('email')).toBe('alice@example.test')
-		// Re-running replaces the auth rows without touching profiles or their saved events.
-		await signInByEmail('bob@example.test')
-		await importUsers(db, [{ id: ALICE, email: 'alice@example.test' }, { id: BOB, email: 'bob@example.test' }])
-		expect(await db.prepare('SELECT count(*) AS n FROM sessions').first<number>('n')).toBe(0)
-		expect(await db.prepare('SELECT count(*) AS n FROM accounts').first<number>('n')).toBe(2)
-		expect(await d1UserStore(db).savedMembership(ALICE, [EVENT])).toEqual(new Set([EVENT]))
-		expect(await checkUsers(db, [{ id: ALICE, email: 'alice@example.test' }])).toEqual(['D1 has 2 users, the export 1'])
-	})
-
-	it('refuses, writing nothing, a user without an email or a profile', () => {
-		expect(() => userRows([{ id: ALICE, email: null }], new Set([ALICE]))).toThrow(/has no email/)
-		expect(() => userRows([{ id: 'stranger', email: 'x@example.test' }], new Set([ALICE]))).toThrow(/has no profile/)
 	})
 })
 

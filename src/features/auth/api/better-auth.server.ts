@@ -1,10 +1,4 @@
-/**
- * Better Auth on D1: magic links and Google, for a Worker that binds `DB` (the staging Worker until the cutover,
- * delivery PR 08). Production binds no D1, so `betterAuthFor` returns null there and sign-in stays on Supabase.
- *
- * Copied from Casamo's identity-access/lib/better.server.ts, without its OAuth provider, invites and carry-over. One
- * instance per request: building it is cheap and does no I/O, so no request's I/O is ever shared through an isolate.
- */
+/** Better Auth on D1 with Cloudflare Email Sending. */
 import { betterAuth } from 'better-auth'
 import { parseSetCookieHeader, toCookieOptions } from 'better-auth/cookies'
 import { magicLink } from 'better-auth/plugins'
@@ -91,17 +85,12 @@ type AuthEvent = Pick<RequestEvent, 'platform' | 'url'>
 /** The Worker env SvelteKit's adapter exposes; undefined under `vite dev` without a platform proxy. */
 export const platformEnv = (event: Pick<RequestEvent, 'platform'>) => (event.platform as { env?: unknown } | undefined)?.env
 
-/** Why a request gets no Better Auth: Supabase is the backend (no D1), or D1 is bound but the secret is missing. */
-export function betterAuthStatus(event: AuthEvent): 'supabase' | 'unconfigured' | 'ready' {
+/** This request's Better Auth, or null when a required binding is missing. */
+export function betterAuthFor(event: AuthEvent) {
 	const env = platformEnv(event) as Partial<BetterAuthEnv> | undefined
-	if (!boundD1Database(env)) return 'supabase'
-	return env?.AUTH_SECRET ? 'ready' : 'unconfigured'
-}
-
-/** This request's Better Auth, or null when the Worker uses Supabase or lacks AUTH_SECRET (fail closed). */
-export function betterAuthFor(event: AuthEvent): BetterAuth | null {
-	if (betterAuthStatus(event) !== 'ready') return null
-	return createBetterAuth(event.url.origin, platformEnv(event) as BetterAuthEnv)
+	const db = boundD1Database(env)
+	if (!db || !env?.AUTH_SECRET) return null
+	return createBetterAuth(event.url.origin, { ...env, DB: db, AUTH_SECRET: env.AUTH_SECRET })
 }
 
 type CookieEvent = AuthEvent & Pick<RequestEvent, 'request' | 'cookies'>

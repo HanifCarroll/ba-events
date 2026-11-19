@@ -1,8 +1,5 @@
 import { createHash } from 'crypto'
-import { Schema } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSupabaseServiceRoleClient } from '#shared/lib/db/service.server.ts'
-import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
+import { requireD1 } from '#shared/lib/db/d1-binding.server.ts'
 import { checkRateLimitD1 } from '#shared/lib/db/rate-limit-d1.server.ts'
 
 // Rate limit configuration for chat/general use
@@ -12,14 +9,6 @@ export const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
 // Rate limit configuration for external API
 export const API_RATE_LIMIT_REQUESTS = 10
 export const API_RATE_LIMIT_WINDOW_MS = 60 * 1000
-
-const counter = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-const rateLimitResultSchema = Schema.Struct({
-	success: Schema.Boolean,
-	remaining: counter,
-	reset: counter,
-	request_count: counter,
-})
 
 export class RateLimitUnavailableError extends Error {
 	override name = 'RateLimitUnavailableError'
@@ -47,62 +36,36 @@ async function checkScopedRateLimit(
 	identifier: string,
 	maxRequests: number,
 	windowMs: number,
-	providedClient?: SupabaseClient,
 ): Promise<{
 	success: boolean
 	remaining: number
 	reset: number
 }> {
+	let timer: ReturnType<typeof setTimeout> | undefined
 	try {
 		const windowSeconds = Math.max(1, Math.ceil(windowMs / 1000))
-		const db = providedClient ? null : boundD1()
-		if (db) {
-			// Same 3-second ceiling as the Supabase call: a stalled database blocks the request instead of allowing it.
-			const result = await Promise.race([
-				checkRateLimitD1(db, scope, hashIdentifier(scope, identifier), maxRequests, windowSeconds),
-				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), RATE_LIMIT_TIMEOUT_MS)),
-			])
-			return { success: result.success, remaining: result.remaining, reset: result.reset }
-		}
-		const client = providedClient ?? getSupabaseServiceRoleClient()
-		const { data, error } = await client
-			.rpc('check_rate_limit', {
-				p_scope: scope,
-				p_identifier_hash: hashIdentifier(scope, identifier),
-				p_max_requests: maxRequests,
-				p_window_seconds: windowSeconds
-			})
-			.abortSignal(AbortSignal.timeout(RATE_LIMIT_TIMEOUT_MS))
-			.single()
-
-		if (error) {
-			throw error
-		}
-
-		const decoded = Schema.decodeUnknownResult(rateLimitResultSchema)(data)
-		if (decoded._tag !== 'Success') throw new RateLimitUnavailableError()
-		const result = decoded.success
-
-		return {
-			success: result.success,
-			remaining: result.remaining,
-			reset: result.reset
-		}
+		const { success, remaining, reset } = await Promise.race([
+			checkRateLimitD1(requireD1(), scope, hashIdentifier(scope, identifier), maxRequests, windowSeconds),
+			new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), RATE_LIMIT_TIMEOUT_MS) }),
+		])
+		return { success, remaining, reset }
 	} catch {
 		warnRateLimitOnce(`[rate-limit] Rate limit unavailable for scope "${scope}". Blocking requests.`)
 		throw new RateLimitUnavailableError()
+	} finally {
+		clearTimeout(timer)
 	}
 }
 
-export async function checkRateLimit(ip: string, client?: SupabaseClient): Promise<{
+export async function checkRateLimit(ip: string): Promise<{
 	success: boolean
 	remaining: number
 	reset: number
 }> {
-	return checkScopedRateLimit('chat', ip || 'unknown-ip', RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_MS, client)
+	return checkScopedRateLimit('chat', ip || 'unknown-ip', RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_MS)
 }
 
-export async function checkApiRateLimit(ip: string, client?: SupabaseClient): Promise<{
+export async function checkApiRateLimit(ip: string): Promise<{
 	success: boolean
 	remaining: number
 	reset: number
@@ -112,6 +75,5 @@ export async function checkApiRateLimit(ip: string, client?: SupabaseClient): Pr
 		ip || 'unknown-ip',
 		API_RATE_LIMIT_REQUESTS,
 		API_RATE_LIMIT_WINDOW_MS,
-		client,
 	)
 }

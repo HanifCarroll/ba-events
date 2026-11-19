@@ -1,6 +1,6 @@
 /**
  * Turns a search box query into an FTS5 MATCH expression with the meaning Postgres' `websearch_to_tsquery` gives it,
- * which lexical search used on Supabase:
+ * which the lexical query syntax follows:
  *
  * - Words are ANDed: `tango class` needs both.
  * - `"tango class"` is a phrase. An unclosed quote runs to the end.

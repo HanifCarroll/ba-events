@@ -25,7 +25,7 @@ Only a valid active claim SHALL complete or fail a running turn. Expired running
 - **AND** replay of an already completed turn by its completing claim returns the existing result without changing it
 
 ### Requirement: Authenticated turns are owned and atomic on either backend
-On Supabase the turn RPCs and row-level security enforce this. On D1 (production since the cutover) each turn operation SHALL run as one `db.batch()` transaction whose preconditions abort the whole batch, and every read and write SHALL be filtered by the signed-in user's id. Bootstrap SHALL create the conversation, user message, and pending turn together. Completion SHALL store the assistant message and complete the turn together, or neither.
+Each D1 turn operation SHALL run as one `db.batch()` transaction whose preconditions abort the whole batch, and every read and write SHALL be filtered by the signed-in user's id. Bootstrap SHALL create the conversation, user message, and pending turn together. Completion SHALL store the assistant message and complete the turn together, or neither.
 
 #### Scenario: Writes are frozen for the cutover
 - **WHEN** the web Worker has `DB_READ_ONLY` set to `1`
@@ -322,7 +322,6 @@ The browser SDK SHALL mask declared sensitive query names, strip captured URL fr
 bunx vitest run src/features/chat/api/turns.server.test.ts src/features/chat/api/turn-authority.test.ts src/features/chat/api/chat-durability.test.ts src/features/chat/lib/canonical.test.ts src/features/chat/lib/turn-lifecycle.test.ts src/shared/lib/db/guest-conversations.test.ts
 ```
 
-Run `supabase/tests/chat-turn-completion.sql` with `psql -v ON_ERROR_STOP=1 -f supabase/tests/chat-turn-completion.sql` against an empty disposable PostgreSQL database. It exercises the completion migration, invalid claims, rollback and idempotent replay without accessing production.
 
 Run `bun scripts/check-chat-lifecycle-browser.mjs` with Chrome installed for component-level submission, retry, completed replay, history ownership and cancellation checks. The harness compiles the real chat component and uses the real SDK and guest store, with stubbed auth/server responses and child UI. All network requests are intercepted; no development server or production access is needed.
 

@@ -40,7 +40,7 @@
 				{
 					title: 'Service providers',
 					body: [
-						'We use service providers to run BA Eventos: Supabase for authentication, stored account data, and Telegram pilot conversations; Cloudflare Workers for the Telegram webhook, encrypted background processing, and feedback alert emails; Google for optional sign-in and limited analytics; DeepSeek and OpenAI for AI processing; and PostHog for limited product analytics. These providers may process data outside Argentina under their own terms and privacy policies.'
+						'We use service providers to run BA Eventos: Cloudflare for authentication, stored account data, Telegram pilot conversations, the Telegram webhook, encrypted background processing, and feedback alert emails; Google for optional sign-in and limited analytics; DeepSeek and OpenAI for AI processing; and PostHog for limited product analytics. These providers may process data outside Argentina under their own terms and privacy policies.'
 					]
 				},
 				{
@@ -95,7 +95,7 @@
 				{
 					title: 'Proveedores',
 					body: [
-						'Usamos proveedores para operar BA Eventos: Supabase para autenticación, datos de cuenta y conversaciones del piloto de Telegram; Cloudflare Workers para el webhook de Telegram, el procesamiento cifrado en segundo plano y los correos de alerta de comentarios; Google para el acceso opcional y analítica limitada; DeepSeek y OpenAI para procesamiento con IA; y PostHog para analítica limitada. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
+						'Usamos proveedores para operar BA Eventos: Cloudflare para autenticación, datos de cuenta, conversaciones del piloto de Telegram, el webhook de Telegram, el procesamiento cifrado en segundo plano y los correos de alerta de comentarios; Google para el acceso opcional y analítica limitada; DeepSeek y OpenAI para procesamiento con IA; y PostHog para analítica limitada. Estos proveedores pueden procesar datos fuera de Argentina según sus propios términos y políticas de privacidad.'
 					]
 				},
 				{

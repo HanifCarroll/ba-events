@@ -1,16 +1,13 @@
 /** Operator boundary. All publishing goes through revision-checked intake plans. */
 import { Effect } from 'effect'
-import { createClient } from '@supabase/supabase-js'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { collectInstagramEffect, type ApifyRequest } from '../src/features/import/intake/collection.ts'
 import { intakeApi, remoteCollection, type IntakeApi } from '../src/features/import/intake/client.ts'
-import { decodeReview, decodeSource, lookupEffect, pendingEffect, preflightEffect, publicReceipt } from '../src/features/import/intake/operations.ts'
-import { submitCandidateEffect, previewCandidateEffect, commitPlanEffect } from '../src/features/import/intake/service.ts'
-import { supabaseIntake } from '../src/features/import/intake/store-supabase.ts'
-import { decodeVenueRequest, heldBacklogEffect, resolveIntakeVenueEffect } from '../src/features/import/intake/venues.ts'
+import { decodeReview, decodeSource } from '../src/features/import/intake/operations.ts'
+import { decodeVenueRequest } from '../src/features/import/intake/venues.ts'
 const HELP = `Instagram event intake
   preflight                    Read configuration readiness; no paid or catalog writes
   sources                      List the qualified watchlist
@@ -29,12 +26,6 @@ const HELP = `Instagram event intake
 
 Read docs/instagram-intake.md before operating. No schema, deployment or budget-changing commands are exposed.`
 
-function client() {
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Server database configuration is missing')
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
-}
 // CLI authentication stays in the existing Apify keychain. No token is put on the command line.
 const apify: ApifyRequest = async (method, path, params, body) => {
   const args = [process.env.APIFY_CLI_PATH ?? 'apify', 'api', method, path]
@@ -51,11 +42,9 @@ const apify: ApifyRequest = async (method, path, params, body) => {
   return JSON.parse(stdout)
 }
 
-/** The intake API when both are set (D1, after the cutover); otherwise Supabase with the service key, as before. */
-function api(): IntakeApi | null {
+function api(): IntakeApi {
   const url = process.env.INTAKE_API_URL, token = process.env.INTAKE_API_TOKEN
-  if (!url && !token) return null
-  if (!url || !token) throw new Error('Set both INTAKE_API_URL and INTAKE_API_TOKEN, or neither')
+  if (!url || !token) throw new Error('Set both INTAKE_API_URL and INTAKE_API_TOKEN')
   return intakeApi(url, token)
 }
 const readJson = async (path: string) => JSON.parse(await readFile(path, 'utf8')) as unknown
@@ -109,35 +98,7 @@ async function viaApi(remote: IntakeApi, command: string, input: string | undefi
 export async function main(args: string[]) {
   const [command, input] = args
   if (!command || command === '--help') { console.log(HELP); return }
-  const remote = api()
-  if (remote) { console.log(JSON.stringify(await viaApi(remote, command, input), null, 2)); return }
-  const db = client()
-  const store = supabaseIntake(db, process.env.SUPABASE_URL!)
-  const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
-  let result: unknown
-  switch (command) {
-    case 'preflight': result = await run(preflightEffect(store, { embedding: !!process.env.OPENAI_API_KEY, presentation: !!process.env.DEEPSEEK_API_KEY })); break
-    case 'sources': result = await run(store.sources()); break
-    case 'source': result = await run(decodeSource(await readJson(input)).pipe(Effect.flatMap(source => store.upsertSource(source)))); break
-    case 'collect': result = await run(collectInstagramEffect(store, apify)); break
-    case 'pending': result = await run(pendingEffect(store)); break
-    case 'export': result = await exportPending(await run(pendingEffect(store)), key => run(store.evidenceBytes(key))); break
-    case 'candidates': result = await run(store.candidates()); break
-    case 'held': result = await run(heldBacklogEffect(store)); break
-    case 'venue': {
-      let request
-      try { request = decodeVenueRequest(await readJson(input)) }
-      catch (error) { throw new Error(`Invalid venue request: ${error instanceof Error ? error.message : 'see docs/instagram-intake.md'}`) }
-      result = await run(resolveIntakeVenueEffect(store, request)); break
-    }
-    case 'lookup': result = await run(lookupEffect(store, input)); break
-    case 'submit': result = await run(submitCandidateEffect(store, await readJson(input))); break
-    case 'preview': result = await run(previewCandidateEffect(store, input)); break
-    case 'commit': result = publicReceipt(await run(commitPlanEffect(store, input))); break
-    case 'review': result = await run(decodeReview(await readJson(input)).pipe(Effect.flatMap(review => store.reviewObservation(review.observation_id, review.note)))); break
-    default: throw new Error('Unknown command. Use --help')
-  }
-  console.log(JSON.stringify(result, null, 2))
+  console.log(JSON.stringify(await viaApi(api(), command, input), null, 2))
 }
 
 if (import.meta.main) main(process.argv.slice(2)).catch(error => {

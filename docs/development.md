@@ -15,7 +15,7 @@ bunx tsc --noEmit
 
 `bun run test` is the authoritative full Vitest suite. Its `pretest` hook compiles Paraglide automatically. `bun test` discovers every `*.test.ts`, including `evals/concierge/deterministic.test.ts`, and runs the unit suites without Vitest-specific module mocks. Compile Paraglide once before invoking Bun's native runner directly; CI performs that as an explicit step. Both runners are supported from a clean checkout.
 
-Unit tests do not require real Supabase credentials. Supabase clients are initialized lazily, and orchestration uses dependency-injected pure helpers.
+Unit tests do not require real provider credentials. Orchestration tests use synthetic repository fixtures.
 
 Tests of D1 SQL run against a fresh in-memory Miniflare D1 with `migrations/` applied (`freshD1()` in `tests/support/d1.ts`). See [D1 baseline](d1.md).
 
@@ -27,11 +27,28 @@ For a chat URL, extract the conversation ID from `/chat/<conversationId>` and in
 bun scripts/guest-chat-debug.ts <conversationId>
 ```
 
-The service-role database read is the primary diagnostic record. A rendered page or screenshot alone does not establish the stored conversation or execution trace. If there is no guest record, inspect the authenticated `conversations` record with the existing Supabase service-role client. Diagnostic database access is read-only; credentials stay out of output.
+The D1 read is the primary diagnostic record. A rendered page or screenshot alone does not establish the stored conversation or execution trace. If there is no guest record, inspect the authenticated `conversations` record with the [read-only D1 helper](d1.md#operator-commands). Keep credentials and transcripts out of shared output.
 
 ## Search configuration
 
 `VOYAGE_API_KEY` is the optional Voyage AI hosted reranker key for `search_events` stage 2. Without it, search falls back to retrieval order. Other environment variables are documented in [the example environment](../.env.example).
+
+Live catalog evals require Node 24, a Wrangler login with staging access, and the relevant provider keys in the environment or `.env`. Wrangler's remote bindings do not work under Bun 1.3.14, so the package scripts start Node. Compile Paraglide first on a clean checkout.
+
+```sh
+bun run eval:search --staging
+bun run eval:search:semantic --staging
+bun run eval:concierge --staging [case-id]
+bun run eval:concierge:langfuse --staging [case-id]
+```
+
+These runs use only staging D1 and Vectorize for catalog reads. The golden search IDs expire; compare scores only with a staging corpus containing the labeled events. Keep these runs out of contributor checks.
+
+To refresh expired golden labels, inspect the first 60 scheduled events in staging with Node 24. This command uses the Wrangler login but makes no model or embedding calls.
+
+```sh
+node evals/search/inspect-events.ts --staging
+```
 
 ## Contracts and architecture
 

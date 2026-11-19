@@ -1,10 +1,8 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { NAME_FOLD_FROM, NAME_FOLD_TO, keeperOrder, pickVenue, venueNameKey, type VenueCopy } from './venue-identity.ts'
+import { keeperOrder, pickVenue, venueNameKey, type VenueCopy } from './venue-identity.ts'
+import type { CatalogStore } from './catalog-store.ts'
 import { matchVenueEffect } from '../scrapers/venue-matcher.ts'
-import { supabaseCatalog } from './catalog-store.ts'
 
 describe('venueNameKey', () => {
   it('folds case, accents, doubled and non-breaking spaces, punctuation, and city suffixes', () => {
@@ -28,11 +26,6 @@ describe('venueNameKey', () => {
     expect(venueNameKey('---')).toBe('')
   })
 
-  it('uses the same fold table as public.venue_name_key', () => {
-    expect([...NAME_FOLD_FROM]).toHaveLength([...NAME_FOLD_TO].length)
-    const sql = readFileSync(new URL('../../../../supabase/migrations/20261116180000_venue_name_matching.sql', import.meta.url), 'utf8')
-    expect(sql).toContain(`'${NAME_FOLD_FROM.replace('\u00a0', '')}' || chr(160), '${NAME_FOLD_TO}'`)
-  })
 })
 
 const copy = (id: string, extra: Partial<VenueCopy> = {}): VenueCopy =>
@@ -65,19 +58,17 @@ describe('keeper and pick rules', () => {
 
 describe('matchVenueEffect', () => {
   const sala = { id: 'sala', name: 'Sala  Sintética', address: 'Calle Norte 100', neighborhood: 'Palermo', created_at: '2026-01-01T00:00:00Z' }
-  const client = (rpc: (name: string, args: Record<string, unknown>) => { data: unknown; error: unknown }) =>
-    supabaseCatalog(({ rpc: async (name: string, args: Record<string, unknown>) => rpc(name, args) }) as unknown as SupabaseClient)
-
-  it('returns the fuzzy match once find_similar_venue answers', async () => {
-    const db = client((name, args) => name === 'find_similar_venue'
-      ? { data: [{ id: 'sala', name: 'Sala  Sintética', similarity: 0.9 }], error: null }
-      : { data: venueNameKey(String(args.p_name)) === 'sala sintetica' ? [{ venue: sala, event_count: 4 }] : [], error: null })
+  it('returns the fuzzy match once the catalog lookup answers', async () => {
+    const db = {
+      similarVenue: async () => ({ id: 'sala', name: sala.name, similarity: 0.9 }),
+      venuesNamed: async (name: string) => venueNameKey(name) === 'sala sintetica' ? [{ ...sala, event_count: 4 }] : [],
+    } as unknown as CatalogStore
     expect(await Effect.runPromise(matchVenueEffect('Sala Sintetica Bar', 0.6, db)))
       .toMatchObject({ matchType: 'fuzzy', confidence: 0.9, venue: { id: 'sala' } })
   })
 
   it('fails instead of reporting no match when a lookup errors', async () => {
-    const db = client(() => ({ data: null, error: { message: 'structure of query does not match function result type' } }))
-    await expect(Effect.runPromise(matchVenueEffect('Sala Sintética', 0.6, db))).rejects.toThrow('structure of query')
+    const db = { venuesNamed: async () => { throw new Error('database unavailable') } } as unknown as CatalogStore
+    await expect(Effect.runPromise(matchVenueEffect('Sala Sintética', 0.6, db))).rejects.toThrow('database unavailable')
   })
 })

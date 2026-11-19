@@ -1,9 +1,4 @@
-/**
- * The signed-in user's own rows on D1: profile, saved events, and account deletion. Callers pass the user id from the
- * server session (never from the request body), and every statement filters by it, because D1 has no row-level
- * security. Only a Worker that binds `DB` uses this (the staging Worker until the cutover); production keeps its
- * Supabase paths, where RLS does this job.
- */
+/** Profile, saved events, and account deletion scoped to the user ID from the server session. */
 import type { D1Database } from '@cloudflare/workers-types'
 import { Schema } from 'effect'
 import type { Locale, Profile, SavedEventWithDetails } from '#shared/lib/types.ts'

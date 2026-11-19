@@ -10,7 +10,6 @@ import { baDate, candidateStart, decideMatch, validateEvidence, normalizeTitle, 
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
-export { publicArtworkUrl } from './store-supabase.ts'
 const failure = (message: string) => new ImportOperationError({ operation: 'intake', message })
 
 export const submitCandidateEffect = Effect.fn('intake.submit')(function*(store: IntakeStore, input: unknown) {

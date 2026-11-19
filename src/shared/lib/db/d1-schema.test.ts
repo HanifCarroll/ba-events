@@ -1,7 +1,4 @@
-/**
- * The D1 baseline (migrations/0001_baseline.sql) on real Miniflare D1: the schema, constraint and trigger parts of the
- * Postgres tests in supabase/tests/. Cases that test SQL functions wait for the PRs that port them; docs/d1.md lists them.
- */
+/** Executes the schema constraints, triggers, and projections against Miniflare D1. */
 import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { freshD1 } from '../../../../tests/support/d1.ts'
@@ -46,7 +43,7 @@ async function protectedEvent(fields: Record<string, unknown> = {}) {
 	return eventId
 }
 
-describe('hidden location (supabase/tests/hidden-location.sql)', () => {
+describe('hidden location', () => {
 	it('never keeps a venue on an event whose address is hidden', async () => {
 		const v = await venue('Sala Sintética Oculta')
 		const e = await event({ venue_id: v, location_hidden: 1 })
@@ -72,7 +69,7 @@ describe('hidden location (supabase/tests/hidden-location.sql)', () => {
 	})
 })
 
-describe('intake protection trigger (supabase/tests/instagram-intake.sql)', () => {
+describe('intake protection trigger', () => {
 	it('silently reverts a platform overwrite of corrected facts, with the search fields that go with them', async () => {
 		const e = await protectedEvent({ starts_at: '2026-12-02T00:00:00.000Z' })
 		await db.prepare("UPDATE events SET starts_at = '2026-11-21T00:00:00.000Z', status = 'scheduled', name = 'Stale platform name', search_document = 'Stale', embedding_version = 1, link = 'https://example.org/new' WHERE id = ?").bind(e).run()
@@ -190,7 +187,7 @@ describe('type map', () => {
 	})
 })
 
-describe('intake schema (supabase/tests/instagram-intake.sql, instagram-intake-venues.sql)', () => {
+describe('intake schema', () => {
 	it('starts with one policy row, collection and publishing off, the wider watchlist limits, and caps max_sources at 500', async () => {
 		expect(await db.prepare('SELECT * FROM intake_policy').all()).toMatchObject({ results: [{ id: 1, publishing_enabled: 0, collection_enabled: 0,
 			max_sources: 200, posts_per_source: 20, run_cap_usd: 1.5, monthly_cap_usd: 18, actor_build: '0.0.679', data_detail_level: 'detailedData' }] })
@@ -237,7 +234,7 @@ describe('intake schema (supabase/tests/instagram-intake.sql, instagram-intake-v
 	})
 })
 
-describe('chat schema (supabase/tests/chat-turn-completion.sql)', () => {
+describe('chat schema', () => {
 	async function conversation(userId: string | null = null) {
 		const conversationId = id()
 		if (userId) await db.prepare("INSERT OR IGNORE INTO profiles (id, email) VALUES (?, 'chat@example.test')").bind(userId).run()

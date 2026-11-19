@@ -6,7 +6,7 @@ export const SESSION_CHANGED_EVENT = 'baeventos:session-changed'
 type SessionPayload = { user?: { id?: unknown; email?: unknown } | null } | null
 
 /**
- * Better Auth has no browser client that pushes session changes the way Supabase's `onAuthStateChange` does. This
+ * This
  * re-reads `/api/auth/get-session` when the tab regains focus or becomes visible (a magic link opened in another tab,
  * a sign-out elsewhere) and after this tab signs out, and reports the account only when it changed. Returns a stop
  * function.

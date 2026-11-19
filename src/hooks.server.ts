@@ -25,9 +25,8 @@ export const handleCanonicalOrigin: Handle = ({ event, resolve }) => {
 	return Response.redirect(destination, method === 'GET' || method === 'HEAD' ? 301 : 308);
 };
 
-// (a) Session handle — load the authenticated user and their profile (Supabase Auth, or Better Auth on a Worker
-// that binds D1) and expose them via `event.locals`.
-const handleSupabase: Handle = async ({ event, resolve }) => {
+// Load the authenticated user and profile once for the request.
+const handleSession: Handle = async ({ event, resolve }) => {
   // These public media/feed endpoints never read account data or refresh a session.
   if (event.url.pathname === '/api/events/happening-soon' || event.url.pathname.startsWith('/api/event-artwork/')) {
     event.locals.user = null;
@@ -85,7 +84,7 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 	);
 
 // (d) Cloudflare backend — search, chat, guests, feedback, and the rate limiter use D1 (and search Vectorize) when the
-// Worker binds them (the staging Worker), Supabase otherwise.
+// Workers register the bindings used by shared repositories.
 const handleCloudflareBackend: Handle = ({ event, resolve }) => {
 	const env = (event.platform as { env?: unknown } | undefined)?.env;
 	useCloudflareBindings(env);
@@ -102,4 +101,4 @@ export const handleReadOnly: Handle = ({ event, resolve }) => {
 	return readOnlyResponse(env, event.request.method, pathname, !!event.locals.user) ?? resolve(event);
 };
 
-export const handle = sequence(handleCanonicalOrigin, handleCloudflareBackend, handleSupabase, handleReadOnly, handleLocaleSync, handleParaglide);
+export const handle = sequence(handleCanonicalOrigin, handleCloudflareBackend, handleSession, handleReadOnly, handleLocaleSync, handleParaglide);

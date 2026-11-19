@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Read-only query against a BA Eventos D1 over the Cloudflare API (copied from Casamo's prod-d1-read.sh).
-# Usage: bin/ba-d1-read.sh [--staging] "SELECT ..."
+# Usage: bin/ba-d1-read.sh [--staging] "SELECT ..." ['["bound value"]']
 # Refuses anything that could write: production data is only ever read from here. Writes are reviewed .sql files run
 # with `wrangler d1 execute baeventos-production --remote --file` (docs/ops/d1-cutover.md).
 # Token: $BA_D1_TOKEN_FILE (default ~/.config/ba-events/cloudflare-deploy-token, mode 600; needs D1 Read). Never printed.
@@ -21,6 +21,8 @@ id=$(auth | curl -sS --max-time 30 -K - -G --data-urlencode "name=$db" "$api" |
   python3 -I -c 'import json,sys; d=json.load(sys.stdin); r=[x["uuid"] for x in d.get("result") or [] if x["name"]==sys.argv[1]]; print(r[0] if r else "")' "$db")
 [ -n "$id" ] || { echo "no D1 named $db (or the token can't read D1)" >&2; exit 1; }
 body=$(mktemp); trap 'rm -f "$body"' EXIT
-python3 -I -c 'import json,sys; print(json.dumps({"sql": sys.argv[1]}))' "$sql" > "$body"
+python3 -I -c 'import json,sys; p=json.loads(sys.argv[2]); assert isinstance(p,list); print(json.dumps({"sql": sys.argv[1], "params": p}))' "$sql" "${2:-[]}" > "$body"
 auth | curl -sS --max-time 60 -K - -X POST -H 'Content-Type: application/json' --data @"$body" "$api/$id/query" |
-  python3 -I -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d["result"][0]["results"] if d.get("success") else d.get("errors"), indent=1))'
+  python3 -I -c 'import json,sys; d=json.load(sys.stdin); r=d.get("result") or [];
+if not d.get("success") or len(r) != 1 or not r[0].get("success"): sys.exit("D1 query failed")
+print(json.dumps(r[0]["results"], indent=1))'

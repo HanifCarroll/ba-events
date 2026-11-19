@@ -1,7 +1,4 @@
-/**
- * Telegram's `telegram_updates` claims, retention, and health on D1 (delivery PR 05). Same rules as the Supabase
- * statements in delivery.server.ts, retention.ts, and health.ts. The table is service-only: no user ever reads it.
- */
+/** Telegram delivery claims, retention, and health on D1. The table is server-only. */
 import type { D1Database } from '@cloudflare/workers-types'
 
 type ClaimRow = { status: string; attempt_count: number; identity_hash: string | null; envelope_key: string | null }

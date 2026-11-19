@@ -1,35 +1,34 @@
-/** Read-only check of the latest 30 daily runs. No provider/model calls or database writes. */
-import { getSupabaseServiceRoleClient } from '../src/shared/lib/db/service.server.ts'
+/** Read-only daily scrape and inventory check. No provider calls. */
 import { buildSourceHealthReport, measuredCount } from '../src/jobs-worker/source-health.ts'
+import { readD1, type ReadD1 } from './read-d1.ts'
 
-async function main() {
-  const client = getSupabaseServiceRoleClient()
-  const { data, error } = await client.from('scrape_runs')
-    .select('status, completed_at, metadata')
-    .eq('source', 'all')
-    .order('started_at', { ascending: false })
-    .limit(30)
-  if (error) throw new Error('Could not read daily scrape history')
-  const checkedAt = new Date()
-  const base = () => client.from('events').select('id', { count: 'exact', head: true })
-    .eq('status', 'scheduled').gte('starts_at', checkedAt.toISOString())
-  const inventoryReads = await Promise.all([
-    base(),
-    base().is('description_es', null).is('description_en', null),
-    base().eq('description_unavailable', true),
-    base().eq('enrichment_status', 'failed'),
-  ])
-  const inventory = Object.fromEntries(['scheduledUpcoming', 'bothDescriptionsNull', 'descriptionUnavailable', 'enrichmentFailed'].map((key, index) => {
-    const read = inventoryReads[index]!
-    return [key, read.error ? null : measuredCount(read.count)]
-  }))
-  const report = { ...buildSourceHealthReport(data ?? [], checkedAt), inventory }
+export async function sourceHealth(read: ReadD1, checkedAt = new Date()) {
+  const history = await read<{ status: string; completed_at: string | null; metadata: string | null }>(
+    "SELECT status, completed_at, metadata FROM scrape_runs WHERE source = 'all' ORDER BY started_at DESC LIMIT 30",
+  )
+  const [counts] = await read<Record<string, unknown>>(`SELECT count(*) AS scheduledUpcoming,
+    count(*) FILTER (WHERE description_es IS NULL AND description_en IS NULL) AS bothDescriptionsNull,
+    count(*) FILTER (WHERE description_unavailable = 1) AS descriptionUnavailable,
+    count(*) FILTER (WHERE enrichment_status = 'failed') AS enrichmentFailed
+    FROM events WHERE status = 'scheduled' AND starts_at >= ?`, [checkedAt.toISOString()]).catch(() => [])
+  const inventory = {
+    scheduledUpcoming: measuredCount(counts?.scheduledUpcoming),
+    bothDescriptionsNull: measuredCount(counts?.bothDescriptionsNull),
+    descriptionUnavailable: measuredCount(counts?.descriptionUnavailable),
+    enrichmentFailed: measuredCount(counts?.enrichmentFailed),
+  }
+  const report = { ...buildSourceHealthReport(history.map(row => ({ ...row, metadata: JSON.parse(row.metadata ?? 'null') })), checkedAt), inventory }
   if ((inventory.enrichmentFailed ?? 0) > 0) report.needsAttention = true
-  console.log(JSON.stringify(report, null, 2))
-  if (report.needsAttention || report.sources.some(source => source.state === 'unknown') || Object.values(inventory).some(value => value === null)) process.exitCode = 1
+  return report
 }
 
-main().catch(() => {
-  console.error('Source health check unavailable. Check database access and service-role environment configuration.')
-  process.exitCode = 1
-})
+if (import.meta.main) {
+  try {
+    const report = await sourceHealth(readD1(process.argv.includes('--staging')))
+    console.log(JSON.stringify(report, null, 2))
+    if (report.needsAttention || report.sources.some(source => source.state === 'unknown') || Object.values(report.inventory).some(value => value === null)) process.exitCode = 1
+  } catch {
+    console.error('Source health check unavailable. Check D1 read access and BA_D1_TOKEN_FILE.')
+    process.exitCode = 1
+  }
+}

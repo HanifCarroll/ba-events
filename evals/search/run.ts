@@ -15,10 +15,11 @@
  * Suite fails if hit rate < 70% or mean recall@5 < 0.5 — retrieval is
  * probabilistic, so individual misses are reported but don't fail the run.
  *
- * Usage: bun evals/search/run.ts
+ * Usage: bun run eval:search --staging
  */
 import { hybridEventSearch } from '#shared/lib/db/client.server.ts'
 import { mapWithConcurrency } from '../lib/checks.ts'
+import { openStagingCatalog } from '../lib/staging-catalog.ts'
 import { GOLDEN_QUERIES } from './golden.ts'
 
 const K = 5
@@ -32,6 +33,7 @@ interface QueryResult {
   topNames: string[]
 }
 
+await using staging = await openStagingCatalog(process.argv[2])
 console.log(`Running ${GOLDEN_QUERIES.length} golden queries (recall@${K})...`)
 const results = await mapWithConcurrency(GOLDEN_QUERIES, 4, async (q): Promise<QueryResult> => {
   const events = await hybridEventSearch(q.query, {}, K)

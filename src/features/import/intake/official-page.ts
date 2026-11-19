@@ -1,8 +1,4 @@
-/**
- * Official-page evidence: the intake fetches the venue's, organizer's or ticket seller's page itself and accepts an
- * excerpt only when the page's visible text contains it. It runs where preview and commit run (the intake API Worker,
- * or the CLI in Supabase mode), never on the operator's word.
- */
+/** Preview and commit verify evidence against the official page fetched by the jobs Worker. */
 import { load, type CheerioAPI } from 'cheerio/slim'
 import { Effect } from 'effect'
 import { isOfficialPage, validPublicUrl, type Evidence } from './schema.ts'

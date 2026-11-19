@@ -1,6 +1,5 @@
 // Staging only: `baeventos-jobs-staging`, the jobs Worker on the staging D1 and Vectorize index (DECISIONS.md). CI never
-// deploys it; deploy by hand with `bunx wrangler deploy --config wrangler.jobs.staging.jsonc`. It has no Supabase
-// secrets, so every job runs on D1 and the acquisition cache stays in memory (it can't reach production Storage).
+// deploys it; deploy by hand with `bunx wrangler deploy --config wrangler.jobs.staging.jsonc`. Every job uses staging bindings. The acquisition cache stays in memory.
 // Secrets: OPENAI_API_KEY and DEEPSEEK_API_KEY. No daily-scrape cron: trigger a run by hand with
 // `bunx wrangler workflows trigger baeventos-daily-scrape-staging --config wrangler.jobs.staging.jsonc`, and a catalog
 // task with `bunx wrangler workflows trigger baeventos-catalog-task-staging '{"task":"reconcile-vectors"}' --config ...`.

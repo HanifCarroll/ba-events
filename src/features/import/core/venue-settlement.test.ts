@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CatalogStore, VenueReviewWrite } from './catalog-store.ts'
 import { areaOnlyVenueName, getVenueIdFromResults, settleVenue, settleVenues, venueSettlementKey } from './venue-settlement.ts'
 import { venueNameKey } from './venue-identity.ts'
-import { supabaseCatalog } from './catalog-store.ts'
 
 describe('areaOnlyVenueName', () => {
   it('sorts a city, region, or postal code from a barrio', () => {
@@ -20,35 +19,26 @@ describe('areaOnlyVenueName', () => {
   })
 })
 
-/**
- * In-memory `venues` table for the calls settlement makes: `venues_named` (same name key), `find_similar_venue`
- * (scores from `similar`), inserts, and review-queue inserts.
- */
 function venuesTable(
   seed: Array<{ id: string; name: string; address: string | null; neighborhood?: string | null; created_at?: string; events?: number }> = [],
   similar: Record<string, { name: string; similarity: number }> = {},
 ) {
-  const rows = seed.map((row) => ({ neighborhood: null, created_at: '2026-01-01T00:00:00Z', events: 0, ...row }))
-  const queued: Array<Record<string, unknown>> = []
+  const defaults = { neighborhood: null, created_at: '2026-01-01T00:00:00Z', events: 0 }
+  const rows = seed.map(row => ({ ...defaults, ...row }))
+  const queued: VenueReviewWrite[] = []
   let created = 0
   const client = {
-    from: (table: string) => table === 'venue_review_queue'
-      ? { insert: async (row: Record<string, unknown>) => { queued.push(row); return { error: null } } }
-      : { insert: (row: { name: string; address: string | null; neighborhood: string | null }) => ({ select: () => ({ single: async () => {
-          const venue = { id: `created-${++created}`, name: row.name, address: row.address, neighborhood: row.neighborhood, created_at: '2026-11-16T00:00:00Z', events: 0 }
-          rows.push(venue)
-          return { data: venue, error: null }
-        } }) }) },
-    rpc: async (name: string, args: Record<string, unknown>) => {
-      if (name === 'venues_named') {
-        return { data: rows.filter((row) => venueNameKey(row.name) === venueNameKey(String(args.p_name)))
-          .map(({ events, ...venue }) => ({ venue, event_count: events })), error: null }
-      }
-      const hit = similar[String(args.search_name)]
-      return { data: hit ? [{ id: 'unused', ...hit }] : [], error: null }
+    venuesNamed: async (name: string) => rows.filter(row => venueNameKey(row.name) === venueNameKey(name))
+      .map(({ events, ...venue }) => ({ ...venue, event_count: events })),
+    similarVenue: async (name: string) => similar[name] ? { id: 'unused', ...similar[name] } : null,
+    createVenue: async (input: Parameters<CatalogStore['createVenue']>[0]) => {
+      const venue = { ...defaults, ...input, id: `created-${++created}` }
+      rows.push(venue)
+      return venue
     },
+    queueVenueReview: async (row: VenueReviewWrite) => { queued.push(row) },
   }
-  return { client: supabaseCatalog(client as unknown as SupabaseClient), raw: client, rows, queued }
+  return { client: client as unknown as CatalogStore, rows, queued }
 }
 
 describe('settleVenue with an area-only name', () => {
@@ -182,8 +172,8 @@ describe('settleVenue with duplicate and lookalike catalog names', () => {
   })
 
   it('leaves the event unlinked when the venue lookup fails, rather than creating a duplicate', async () => {
-    const { client, raw, rows } = venuesTable([{ id: 'sala', name: 'Sala Sintética', address: null }])
-    ;(raw as unknown as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'function venues_named does not exist' } })
+    const { client, rows } = venuesTable([{ id: 'sala', name: 'Sala Sintética', address: null }])
+    client.venuesNamed = async () => { throw new Error('database unavailable') }
     expect(await settleVenue(client, { name: 'Sala Sintética' }, { source: 'luma' })).toMatchObject({ venueId: null, action: 'skipped' })
     expect(rows).toHaveLength(1)
   })

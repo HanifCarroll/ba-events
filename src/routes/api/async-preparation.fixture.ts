@@ -13,7 +13,6 @@ const turnId = '10000000-0000-4000-8000-000000000001'
 const attemptId = '20000000-0000-4000-8000-000000000001'
 mock.module('#shared/lib/db/client.server.ts', () => ({
   getEventFactsByIds: async () => { started.push('pin'); await gate; return [] },
-  createEvent: async (data: unknown) => { writes.push(data); return { id: turnId } },
   getEventsWithVenues: async () => [],
 }))
 mock.module('#features/auth/api/rate-limit.server.ts', () => ({
@@ -22,11 +21,10 @@ mock.module('#features/auth/api/rate-limit.server.ts', () => ({
   RATE_LIMIT_RETRY_SECONDS: 30, RATE_LIMIT_REQUESTS: 10,
 }))
 mock.module('#shared/lib/ai/embeddings.ts', () => ({
-  CURRENT_EMBEDDING_VERSION: 2,
-  embedEventWithDocument: async () => { started.push('embedding'); await gate; return { embedding: [0.1], searchDocument: 'Synthetic Jazz' } },
+  embedEventWithDocument: async () => { throw new Error('Disabled event creation must not call an embedding provider') },
 }))
 mock.module('#features/events/lib/description-presentation.server.ts', () => ({
-  buildDescriptionPresentationFields: async () => { started.push('presentation'); await gate; return { description_display_es: 'Jazz.' } },
+  buildDescriptionPresentationFields: async () => { throw new Error('Disabled event creation must not call a presentation provider') },
 }))
 let running: Promise<Response>
 if (mode === 'events') {
@@ -65,17 +63,14 @@ if (mode === 'events') {
 }
 try {
   await new Promise(resolve => setTimeout(resolve, 0))
-  assert.deepEqual(started, mode === 'events' ? ['embedding', 'presentation'] : ['pin', 'history'])
+  assert.deepEqual(started, mode === 'events' ? [] : ['pin', 'history'])
   assert.equal(writes.length, 0)
 } finally { release() }
 const response = await running
 if (mode === 'events') {
-  assert.equal(response.status, 201)
-  assert.equal(writes.length, 1)
-  const written = writes[0] as Record<string, unknown>
-  assert.deepEqual(written.embedding, [0.1])
-  assert.equal(written.search_document, 'Synthetic Jazz')
-  assert.equal(written.description_display_es, 'Jazz.')
+  assert.equal(response.status, 500)
+  assert.match(await response.text(), /Creating events through the API is not available on D1/)
+  assert.equal(writes.length, 0)
 } else {
   assert.match(await response.text(), /Chat turn unavailable/)
   assert.deepEqual(writes, ['failed'])

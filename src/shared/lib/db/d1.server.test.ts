@@ -11,8 +11,7 @@ afterAll(async () => { await dispose() })
 describe('boundD1Database', () => {
 	it('returns the DB binding when the env has one, and null otherwise', () => {
 		expect(boundD1Database({ DB: db })).toBe(db)
-		// Production envs today: no DB binding, so callers stay on Supabase.
-		expect(boundD1Database({ SUPABASE_URL: 'https://example.supabase.co' })).toBeNull()
+		expect(boundD1Database({})).toBeNull()
 		expect(boundD1Database(undefined)).toBeNull()
 		expect(boundD1Database({ DB: 'not a database' })).toBeNull()
 	})

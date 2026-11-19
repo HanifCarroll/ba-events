@@ -4,7 +4,7 @@
  *
  * Mirrors src/routes/api/chat/+server.ts: bounded DATA history + rehydrated
  * state -> ToolLoopAgent read loop -> canonical response, running against the
- * real DeepSeek model and dev database with an anonymous user context.
+ * real DeepSeek model and staging catalog with an anonymous user context.
  */
 import { generateId } from 'ai'
 import { runSharedChatTurn, type SharedChatTurnInput, type SharedChatTurnDependencies } from '#features/chat/api/agent/shared-turn.server.ts'

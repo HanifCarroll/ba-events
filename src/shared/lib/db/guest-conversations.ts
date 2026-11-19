@@ -10,7 +10,7 @@ import type {
 /**
  * Client-side persistence for guest (not signed-in) conversations.
  *
- * Signed-in conversations live in Supabase and are resolved server-side.
+ * Signed-in conversations live in D1 and are resolved server-side.
  * Guests have no server record, so their chats are stored in IndexedDB and
  * keyed by a client-generated id that travels in the URL (`/chat/:id`).
  * That makes a guest chat URL resolvable on the same browser (reload,

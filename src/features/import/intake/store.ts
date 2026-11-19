@@ -1,9 +1,4 @@
-/**
- * The intake's persistence port. `supabaseIntake` (store-supabase.ts) is today's production path; `d1Intake`
- * (store-d1.ts) runs on D1, R2 and Vectorize behind the `baeventos-jobs` intake API, and only where an env binds `DB`
- * (staging until the cutover, delivery PR 08). `remoteCollection` (client.ts) is the collection subset over that API, so
- * `collect` can keep its Apify calls and image downloads on the operator's Mac.
- */
+/** Intake persistence via the jobs Worker; the CLI drives collection over the authenticated intake API. */
 import type { Effect } from 'effect'
 import type { EventInsert } from '#shared/lib/types.ts'
 import type { ImportOperationError } from '../core/effect-utils.ts'

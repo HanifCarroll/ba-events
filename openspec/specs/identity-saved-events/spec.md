@@ -13,7 +13,7 @@ Authenticated operations MUST derive the active user from the server session. Cl
 - **THEN** the operation remains scoped to the authenticated session or is denied
 
 ### Requirement: Saved membership is user scoped
-Save, unsave, list, and membership reads MUST affect only the authenticated user's records and MUST require a displayable event. On a Worker that binds D1 they MUST run on the server (`/api/saved` for the browser), which filters every read and write by the session user, because D1 has no row-level security; without D1 the browser's Supabase calls stay, under row-level security. A request that names an expected user other than the session user MUST be refused with 409 and change nothing.
+Save, unsave, list, and membership reads MUST affect only the authenticated user's records and MUST require a displayable event. They MUST run on the server (`/api/saved` for the browser), which scopes each D1 read and write to the session user. A request that names an expected user other than the session user MUST be refused with 409 and change nothing.
 
 #### Scenario: Another user's saved rows
 - **WHEN** user B lists, checks, saves, or unsaves an event user A saved
@@ -39,7 +39,7 @@ The concierge MAY read saved membership and show the appropriate heart control, 
 - **THEN** chat returns event detail guidance and leaves membership unchanged
 
 ### Requirement: Sign-in follows the Worker's backend
-A Worker without a D1 binding MUST sign people in through Supabase Auth. A Worker that binds D1 MUST sign people in through Better Auth with a one-time magic link, sent from a `baeventos.com` address in the sign-in page's language, and with Google, and MUST sign nobody in when its auth secret is missing. A Google sign-in MUST join an existing account only when Google reports the email verified; an unverified Google email MUST NOT be linked or signed in. A tab MUST pick up a sign-in or sign-out from another tab when it is next focused or shown. Admin access MUST come from `profiles.role`. While the Worker's `DB_READ_ONLY` is `1`, sign-in and sign-out MUST keep working and every other account write (saving, profile changes, deletion) MUST answer 503 and change nothing.
+The Worker MUST sign people in through Better Auth with a one-time magic link, sent from a `baeventos.com` address in the sign-in page's language, and with Google, and MUST sign nobody in when `DB` or `AUTH_SECRET` is missing. A Google sign-in MUST join an existing account only when Google reports the email verified; an unverified Google email MUST NOT be linked or signed in. A tab MUST pick up a sign-in or sign-out from another tab when it is next focused or shown. Admin access MUST come from `profiles.role`. While the Worker's `DB_READ_ONLY` is `1`, sign-in and sign-out MUST keep working and every other account write (saving, profile changes, deletion) MUST answer 503 and change nothing.
 
 #### Scenario: Magic link used twice
 - **WHEN** a magic link that already signed someone in is opened again
@@ -54,8 +54,8 @@ A Worker without a D1 binding MUST sign people in through Supabase Auth. A Worke
 - **THEN** no user, account, or session is created
 
 #### Scenario: Imported user signs in
-- **WHEN** a user copied from Supabase signs in on D1
-- **THEN** their session carries their Supabase user id, so their profile, saved events, preferences, and conversations are theirs
+- **WHEN** a user whose account was migrated signs in
+- **THEN** their session carries their original user id, so their profile, saved events, preferences, and conversations are theirs
 
 ### Requirement: Account deletion is session scoped
 Account deletion MUST require the authenticated account and MUST NOT trust a mismatched client user identifier.
@@ -126,7 +126,6 @@ Sign-in, callback verification, profile saves, and account deletion MUST have ex
 - `src/routes/api/auth/[...path]/+server.ts`
 - `src/routes/api/saved/+server.ts`
 - `migrations/0004_better_auth.sql`
-- `scripts/d1-migrate/users.ts`
 - `src/features/chat/api/user-tools.server.ts`
 - `src/features/chat/api/tools/list-saved-events.ts`
 - `src/routes/saved/+page.server.ts`
@@ -137,7 +136,6 @@ Sign-in, callback verification, profile saves, and account deletion MUST have ex
 
 ### Deterministic tests
 - `src/features/auth/api/better-auth-d1.server.test.ts` (magic link, Google linking, sessions, cross-user checks, `/api/saved`, and the user import on Miniflare D1)
-- `src/features/auth/api/supabase-boundary.test.ts` (without D1, every account path stays on Supabase)
 - `src/features/auth/hooks/better-auth-session-sync.test.ts` (another tab's sign-in and sign-out, and account deletion clearing the state)
 - `src/features/auth/hooks/identity-machines.test.ts`
 - `src/features/auth/hooks/account-deletion.test.ts`

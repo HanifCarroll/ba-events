@@ -185,12 +185,13 @@ export function d1Catalog(db: D1Database, vectors: Vectorize): CatalogStore {
   async function syncEventVector(id: string, patch: EventWrite): Promise<void> {
     const embedding = patch.embedding
     if (!embedding?.length && patch.status === undefined && patch.starts_at === undefined) return
-    const row = await db.prepare('SELECT id, status, starts_at, search_document FROM events WHERE id = ?').bind(id)
-      .first<VectorRow & { search_document: string | null }>()
+    const row = await db.prepare('SELECT id, status, starts_at, search_document, embedding_version FROM events WHERE id = ?').bind(id)
+      .first<VectorRow & { search_document: string | null; embedding_version: number }>()
     if (!row) return
     // Intake protection restores the old search_document when it reverts a protected fact, and the old embedding with
     // it (Postgres restored the embedding column too). Only a document that stuck gets the new vector.
-    if (embedding?.length && (patch.search_document === undefined || row.search_document === patch.search_document)) {
+    if (embedding?.length && (patch.search_document === undefined || row.search_document === patch.search_document)
+      && (patch.embedding_version === undefined || row.embedding_version === patch.embedding_version)) {
       await vectors.upsert([{ id, values: embedding, metadata: vectorMetadata(row) }])
     } else {
       await syncVectorMetadata(vectors, [row])

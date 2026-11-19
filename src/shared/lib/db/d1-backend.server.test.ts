@@ -1,8 +1,3 @@
-/**
- * The D1 paths of the rate limiter, guest diagnostics, guest retention, Telegram delivery, and /api/feedback, on
- * Miniflare D1 through the same `useD1Binding` seam the staging Workers use. Without the binding these functions keep
- * calling Supabase (their own tests cover that path).
- */
 import type { D1Database } from '@cloudflare/workers-types'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { freshD1 } from '../../../../tests/support/d1.ts'
@@ -24,7 +19,6 @@ let db: D1Database
 let dispose: () => Promise<void>
 beforeAll(async () => { ({ db, dispose } = await freshD1()) }, 60_000)
 afterAll(async () => { await dispose() })
-// Every test runs with D1 bound. Never test the unbound path here: Vitest loads .env, so it would reach production Supabase.
 beforeEach(() => useD1Binding({ DB: db }))
 afterEach(() => useD1Binding(undefined))
 
@@ -108,7 +102,7 @@ describe('guest lifecycle and debug rows on D1', () => {
 			db.prepare("INSERT INTO guest_request_lifecycle (request_id, status, started_at) VALUES ('old', 'started', ?), ('new', 'started', ?)").bind(old, new Date().toISOString()),
 			db.prepare("INSERT INTO guest_chat_debug (conversation_id, updated_at) VALUES ('old', ?)").bind(old),
 		])
-		expect(await purgeGuestLifecycleRetention({ d1: db })).toEqual({ purged: 2 })
+		expect(await purgeGuestLifecycleRetention(db)).toEqual({ purged: 2 })
 		expect(await count('guest_request_lifecycle')).toBe(1)
 	})
 })
@@ -154,9 +148,9 @@ describe('Telegram on D1', () => {
 			db.prepare("INSERT INTO telegram_updates (update_id, conversation_id, status, identity_hash, envelope_key, received_at, updated_at) VALUES (3001, 't-old', 'failed', ?, ?, ?, ?)")
 				.bind(identity, `${'A'.repeat(43)}=`, old, old),
 		])
-		expect(await countStaleTelegramFailures({ d1: db })).toBe(1)
-		expect(await purgeTelegramRetention({ d1: db })).toEqual({ conversations: 1, updates: 1 })
-		expect(await countStaleTelegramFailures({ d1: db })).toBe(0)
+		expect(await countStaleTelegramFailures(db)).toBe(1)
+		expect(await purgeTelegramRetention(db)).toEqual({ conversations: 1, updates: 1 })
+		expect(await countStaleTelegramFailures(db)).toBe(0)
 	})
 })
 

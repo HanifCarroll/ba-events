@@ -14,6 +14,9 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
  const { POST: stopDelivery } = await import(`${root}/src/routes/api/chat/[turnId]/stop/+server.ts`);
  const { POST: executeDelivery } = await import(`${root}/src/routes/api/chat/execute/+server.ts`);
  const { ChatEventDecoder, eventData } = await import(`${root}/src/features/chat/lib/delivery-protocol.ts`);
+ const { openDogfoodCatalog } = await import('./dogfood-chat-catalog.ts');
+ const { useD1Binding } = await import(`${root}/src/shared/lib/db/d1-binding.server.ts`);
+ const { useCloudflareBindings } = await import(`${root}/src/shared/lib/db/search-bindings.server.ts`);
  const secret = crypto.randomUUID() + crypto.randomUUID();
  const { workflowRequest } = await import(`${root}/src/chat-delivery-worker/recovery.ts`);
  const { saveChatDeliveryCheckpoint, getChatDeliveryCheckpoint, beginChatDeliveryCommit } = await import(`${root}/src/features/chat/api/delivery.server.ts`);
@@ -22,14 +25,15 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
  export default { fetch(request,env){const name=new URL(request.url).searchParams.get('name')??(request.headers.get('x-chat-turn')+':'+request.headers.get('x-chat-attempt'));return env.CHAT_DELIVERY.get(env.CHAT_DELIVERY.idFromName(name)).fetch(request)} };`);
  const bundle = await Bun.build({ entrypoints: [entry], target: 'browser', format: 'esm', minify: true, external: ['cloudflare:workers'] });
  assert.equal(bundle.success, true, JSON.stringify(bundle.logs));
- let mf; let production; let executions = 0; let commitCalls = 0; let holdCommitOnce = false; let releaseHeldCommit; let mode = 'fixture'; let release; let cutNext = false; let resumes = [];
+ let mf; let catalog; let production; let executions = 0; let commitCalls = 0; let holdCommitOnce = false; let releaseHeldCommit; let mode = 'fixture'; let release; let cutNext = false; let resumes = [];
  const observed = [];
  const namespace = { idFromName: name => name, get: () => ({ async fetch(request) {
   return mf.dispatchFetch(request.url, { method: request.method, headers: request.headers,
    ...(!['GET', 'HEAD'].includes(request.method) ? { body: await request.text() } : {}) });
  } }) };
+ const platform = () => ({ env: { ...catalog.env, CHAT_DELIVERY: namespace, CHAT_DELIVERY_SECRET: secret } });
  const event = request => ({ request, url: new URL(request.url), params: {},
-  platform: { env: { CHAT_DELIVERY: namespace, CHAT_DELIVERY_SECRET: secret } },
+  platform: platform(),
   cookies: { getAll: () => [], get: () => undefined, set: () => {} }, locals: {},
   getClientAddress: () => '127.0.0.1', isDataRequest: false, isSubRequest: false });
  async function execution(request) {
@@ -94,7 +98,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   if (headers.has('origin')) headers.set('origin', 'https://baeventos.com');
   return production.respond(new Request(url, { method: request.method, headers, signal: request.signal,
    ...(!['GET', 'HEAD'].includes(request.method) ? { body: await request.text() } : {}) }), {
-   platform: { env: { CHAT_DELIVERY: namespace, CHAT_DELIVERY_SECRET: secret } }, getClientAddress: () => '127.0.0.1',
+   platform: platform(), getClientAddress: () => '127.0.0.1',
   });
  }
  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, idleTimeout: 120, async fetch(request) {
@@ -127,6 +131,8 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
  page.setDefaultTimeout(15_000);
  const url = `http://127.0.0.1:${server.port}/`;
  try {
+  catalog = await openDogfoodCatalog();
+  useD1Binding(catalog.env); useCloudflareBindings(catalog.env);
   await mf.ready; await page.goto(url); assert.equal(await page.title(), 'Chat delivery dogfood');
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   await page.getByText('Server-validated preview', { exact: true }).waitFor();
@@ -225,9 +231,9 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
   console.log('PASS recommendation cards appear before prose without placeholder text; completed framing survives reload');
   mode = 'fixture';
   if (live) {
-   assert.ok(process.env.DEEPSEEK_API_KEY && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY, 'Live dogfood needs configured model and database credentials');
+   assert.ok(process.env.DEEPSEEK_API_KEY && process.env.OPENAI_API_KEY, 'Live dogfood needs model and embedding credentials');
    mode = 'live'; observed.length = 0;
-   await page.evaluate(async () => { window.startNew(); sessionStorage.removeItem('browser-conversation'); await window.loadConversation(null); window.dogfoodPrompt = 'Qué eventos hay esta semana en Buenos Aires?' });
+   await page.evaluate(async () => { window.startNew(); sessionStorage.removeItem('browser-conversation'); await window.loadConversation(null); window.dogfoodPrompt = '¿Qué eventos hay en los próximos 7 días en Buenos Aires?' });
    const liveStarted = Date.now(); await page.getByRole('button', { name: 'Start', exact: true }).click();
    await page.waitForFunction(() => document.querySelectorAll('[data-event-id]').length > 0, { timeout: 90_000 });
    const previewAt = Date.now();
@@ -242,7 +248,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
    const evidence = resolve(process.env.CHAT_DOGFOOD_EVIDENCE_DIR ?? '/tmp/ba-events-chat-dogfood'); await mkdir(evidence, { recursive: true });
    await page.screenshot({ path: `${evidence}/desktop.png`, fullPage: true });
    await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: `${evidence}/mobile.png`, fullPage: true });
-   await Bun.write(`${evidence}/result.json`, JSON.stringify({ environment: 'Compiled ChatContainer + real SDK/IndexedDB + workerd SQLite DO + live DeepSeek/search; child rendering stubs',
+   await Bun.write(`${evidence}/result.json`, JSON.stringify({ environment: 'Compiled ChatContainer + real SDK/IndexedDB + workerd SQLite DO + live model + local synthetic D1 catalog; child rendering stubs',
     conversationId: stored.conversation.id, firstCardsMs: previewAt - liveStarted, finalMs: completed.time - liveStarted,
     previewLeadMs: completed.time - firstPreview.time, cards: completed.ids.length, canonicalResponses: 1, fallbackUsed: false, browserErrors: errors }, null, 2));
    console.log(`PASS live model/search dogfood: ${completed.ids.length} server-derived cards appeared ${completed.time - firstPreview.time}ms before final commit; exactly one canonical response. Evidence: ${evidence}`);
@@ -255,7 +261,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
     const appPage = await appContext.newPage(); const appErrors = [];
     appPage.on('pageerror', error => appErrors.push(String(error))); appPage.setDefaultTimeout(20_000);
     try {
-     await appPage.goto(url); await appPage.getByRole('textbox').first().fill('Qué eventos hay esta semana en Buenos Aires?');
+     await appPage.goto(url); await appPage.getByRole('textbox').first().fill('¿Qué eventos hay en los próximos 7 días en Buenos Aires?');
      const before = executions; await appPage.getByRole('textbox').first().press('Enter');
      for (let i = 0; !observed.some(item => item.type === 'data-progress' && item.ids?.length) && i < 900; i++) await new Promise(resolve => setTimeout(resolve, 100));
      const preview = observed.find(item => item.type === 'data-progress' && item.ids?.length); assert.ok(preview, 'Live production build must produce event previews');
@@ -269,7 +275,7 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
      assert.deepEqual(appErrors, []);
      await appPage.screenshot({ path: `${evidence}/production-desktop.png`, fullPage: true });
      await appPage.setViewportSize({ width: 390, height: 844 }); await appPage.screenshot({ path: `${evidence}/production-mobile.png`, fullPage: true });
-     await Bun.write(`${evidence}/production-result.json`, JSON.stringify({ environment: 'Actual production SvelteKit build, real UI, real SDK/IndexedDB, workerd SQLite delivery, live DeepSeek/search', previewLeadMs: observed.find(item => item.type === 'data-response').time - preview.time,
+     await Bun.write(`${evidence}/production-result.json`, JSON.stringify({ environment: 'Actual production SvelteKit build, real UI, real SDK/IndexedDB, workerd SQLite delivery, live model + local synthetic D1 catalog', previewLeadMs: observed.find(item => item.type === 'data-response').time - preview.time,
       executions: executions - before, canonicalResponses: 1, fallbackUsed: false, browserErrors: appErrors }, null, 2));
      console.log('PASS actual production UI dogfood: live event previews, page refresh reconnect, single execution, completed cards and desktop/mobile screenshots');
     } catch (error) {
@@ -280,5 +286,9 @@ export async function dogfoodChatDelivery({ browser, script, temp, root, live })
    }
   }
   assert.deepEqual(errors, []);
- } finally { await context.close(); server.stop(true); await mf.dispose() }
+ } finally {
+  useD1Binding(null); useCloudflareBindings(null);
+  await context.close(); server.stop(true);
+  await Promise.all([mf.dispose(), catalog?.dispose()]);
+ }
 }

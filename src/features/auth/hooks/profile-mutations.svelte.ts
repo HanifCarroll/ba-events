@@ -11,7 +11,7 @@ import { getAuthState } from './auth-context.svelte.ts'
 import { createAccountDeletionController } from './account-deletion.ts'
 
 /**
- * Update the current user's display name in Supabase, then re-fetch the profile
+ * Update the current user's display name on the server, then re-fetch the profile
  * to reflect it in the shared auth state. Replaces the legacy React Query
  * `useUpdateDisplayName` mutation (profile-query invalidation is superseded by a
  * direct refetch + state update).

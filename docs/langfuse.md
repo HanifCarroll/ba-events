@@ -68,13 +68,14 @@ revisit retention when the owner changes that policy.
 ## Evaluation
 
 ```sh
-bun run eval:concierge                         # existing local report
-bun run eval:concierge:langfuse                 # Langfuse experiment, all cases
-bun run eval:concierge:langfuse scope-capital-of-france # one exact case ID
+bun run eval:concierge --staging                         # local report
+bun run eval:concierge:langfuse --staging                 # Langfuse experiment, all cases
+bun run eval:concierge:langfuse --staging scope-capital-of-france # one exact case ID
 ```
 
-Both live commands call the shared production turn preparation and the real
-model/tools/database. They reuse the same version-controlled cases and graders.
+Both live commands call the shared production turn preparation, use real
+models and tools, and read the [staging catalog](development.md#search-configuration).
+They reuse the same version-controlled cases and graders.
 They are opt-in and never run as part of the ordinary unit suites. Model calls
 incur the provider's usual cost. Langfuse's experiment runner handles concurrent
 execution, scores, traces and comparisons; task/evaluator failures and failed

@@ -6,18 +6,18 @@ Two layers verify the ToolLoopAgent concierge:
    `bun test`. It uses the injected agent runner and covers follow-ups,
    ambiguity, tool chaining, refs, grounding, pins, empty results, and shared
    web/Telegram history.
-2. **Live** — `run.ts`, explicitly invoked against DeepSeek and the dev database.
+2. **Live** — `run.ts`, explicitly invoked against DeepSeek and the staging catalog. See [development setup](../../docs/development.md#search-configuration).
 
 ```bash
 bun test evals/concierge/deterministic.test.ts
-bun run eval:concierge       # requires live credentials
+bun run eval:concierge --staging       # requires live credentials
 ```
 
 The live runner calls the shared production turn preparation with the installed DeepSeek model and
 scores tool reads, limits, locale, zero chat mutations, and canonical card
 provenance. It must not be run accidentally.
 
-`bun run eval:concierge:langfuse` publishes the same cases and graders as a
+`bun run eval:concierge:langfuse --staging` publishes the same cases and graders as a
 Langfuse experiment. See [Langfuse setup](../../docs/langfuse.md) for credentials,
 context support, trace contents and reproducibility limits. Existing tests and
 the local report remain available.
@@ -32,7 +32,7 @@ bun run eval:concierge:multi --case ordinal-details-directions-en --trials 3 --l
 
 This suite calls the real production concierge and model, with all five external
 read executors and prior-event rehydration replaced by the version-controlled
-synthetic corpus in `frozen-corpus.ts`. No Supabase, embeddings, hosted reranker,
+synthetic corpus in `frozen-corpus.ts`. No database, embeddings, hosted reranker,
 or live event data is used. The nine synthetic events are not real listings.
 Search reuses production intent/date canonicalization and final diversity or
 surprise ranking, with deterministic fixture venue resolution and preference

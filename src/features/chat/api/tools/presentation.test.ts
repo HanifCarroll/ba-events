@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { createClient } from '@supabase/supabase-js'
-import { getEventFactsByIds } from '#shared/lib/db/client.server.ts'
 import type { EventWithVenue } from '#shared/lib/types.ts'
 import { createGetDirectionsTool } from './get-directions.ts'
 import { ensureChatEventPayload, formatEventForClaude, formatEventDetailsForClaude, formatSavedEventsForClaude } from './utils.ts'
@@ -61,22 +59,5 @@ describe('concierge source presentation', () => {
       address: 'Private street 123, Palermo', eventId: event.id, venueId: event.venue_id,
       mapsUrl: 'https://www.google.com/maps/dir/?api=1&destination=Source%20venue%2C%20Private%20street%20123%2C%20Palermo%2C%20Buenos%20Aires%2C%20Argentina',
     } })
-  })
-
-  it('omits venue capabilities from hidden/TBA pinned and follow-up facts at the database boundary', async () => {
-    let requested: URL | undefined
-    const rows = [
-      { id: 'hidden', name: 'Hidden event', venue_id: 'secret', venue_name: 'Venue', status: 'scheduled', location_hidden: true, location_tba: false },
-      { id: 'tba', name: 'TBA event', venue_id: 'unverified', venue_name: 'Venue', status: 'scheduled', location_hidden: false, location_tba: true },
-      { id: 'public', name: 'Public event', venue_id: 'known', venue_name: 'Venue', status: 'scheduled', location_hidden: false, location_tba: false },
-    ]
-    const client = createClient('https://database.example.test', 'test-only-key', {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { fetch: async (url) => { requested = new URL(String(url)); return Response.json(rows) } },
-    })
-    const facts = await getEventFactsByIds(rows.map(row => row.id), undefined, client)
-    expect(requested?.searchParams.get('select')).toContain('location_hidden,location_tba')
-    expect(facts.map(fact => fact.venue_id)).toEqual([null, null, 'known'])
-    expect(facts[0]).toEqual({ id: 'hidden', name: 'Hidden event', venue_id: null, venue_name: 'Venue', status: 'scheduled' })
   })
 })

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { freshD1 } from '../../tests/support/d1.ts'
 import { fakeVectorize } from '../../tests/support/vectorize.ts'
 import { CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
-import { markPastEvents, reconcileCatalog, runCatalogTask } from './catalog-maintenance.ts'
+import { markPastEvents, reconcileCatalog, runCatalogTask, runEmbeddingTask } from './catalog-maintenance.ts'
 import { d1Catalog } from '#features/import/core/catalog-store-d1.ts'
 
 let db: D1Database
@@ -116,8 +116,41 @@ describe('reconcileCatalog (nightly reembed-stale and Vectorize check)', () => {
 })
 
 describe('runCatalogTask', () => {
-  it('does nothing without a D1 binding, as in production until the cutover', async () => {
+  it('does nothing without a D1 binding', async () => {
     await expect(runCatalogTask('mark-past-events', {} as never)).resolves.toEqual({ skipped: 'no D1 binding' })
     await expect(runCatalogTask('reconcile-vectors', {} as never)).resolves.toEqual({ skipped: 'no D1 binding' })
+  })
+})
+
+
+describe('manual embedding repair', () => {
+  const startsAt = '2030-02-01T23:00:00.000Z'
+  it('checks actual index membership and restores a missing past vector without replacing a present one', async () => {
+    const { index, vectors } = fakeVectorize()
+    await insert('missing', { starts_at: startsAt, status: 'past' })
+    await insert('present', { starts_at: startsAt, search_document: null })
+    await index.upsert([{ id: 'present', values: [0.1] }])
+    const embedText = vi.fn(async () => [0.7])
+    expect(await runEmbeddingTask('populate-embeddings', db, index, 1, { embedText }))
+      .toEqual({ checked: 2, updated: 1, blocked: 0, more: false })
+    expect(embedText).toHaveBeenCalledTimes(1)
+    expect(embedText).toHaveBeenCalledWith('doc missing')
+    expect(vectors.get('missing')).toMatchObject({ values: [0.7], metadata: { status: 'past', starts_at: Date.parse(startsAt) } })
+    expect(vectors.get('present')?.values).toEqual([0.1])
+  })
+
+  it('limits stale repairs in start/id order and queues a failed Vectorize write', async () => {
+    const { index, failUpserts } = fakeVectorize()
+    await insert('later-id', { starts_at: startsAt, search_document: null })
+    await insert('earlier-id', { starts_at: startsAt, embedding_version: 1 })
+    await insert('other-status', { starts_at: hoursAgo(1), status: 'canceled', embedding_version: 1 })
+    const embed = vi.fn(async (event: { name: string }) => ({ embedding: [0.8], searchDocument: `rebuilt ${event.name}` }))
+    expect(await runEmbeddingTask('reembed-stale', db, index, 1, { embed }))
+      .toEqual({ checked: 1, updated: 1, blocked: 0, more: true })
+    expect(embed.mock.calls[0]?.[0].name).toBe('earlier-id')
+    failUpserts(1)
+    await expect(runEmbeddingTask('reembed-stale', db, index, 1, { embed })).rejects.toThrow('injected')
+    expect(await db.prepare('SELECT event_id FROM vector_sync').first('event_id')).toBe('later-id')
+    expect(await db.prepare("SELECT search_document FROM events WHERE id = 'later-id'").first('search_document')).toBe('rebuilt later-id')
   })
 })

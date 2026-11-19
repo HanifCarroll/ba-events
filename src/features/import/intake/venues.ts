@@ -75,7 +75,7 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(stor
   // Strict reads: a database outage must fail here rather than look like "no match" and create a duplicate.
   const venues = yield* store.allVenues()
   const similar = yield* store.similarVenues(name, REVIEW_QUEUE_THRESHOLD)
-  // PostgREST caps responses at 1000 rows; a full page could be truncated, so don't decide on it.
+  // Refuse an unusually large set of lookalikes rather than taking a partial match.
   if (similar.length >= 1000) return yield* failure('Too many similar venue names to check; use a more specific name')
   const candidates = new Map<string, VenueRow & { why: string }>()
   const blocking = new Set<string>() // same name or same address: `distinct_from` can never override these

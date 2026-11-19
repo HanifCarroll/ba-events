@@ -1,9 +1,8 @@
 import type { RequestEvent } from '@sveltejs/kit'
 import { Data, Effect } from 'effect'
-import { createSupabaseServerClient } from '#shared/lib/db/server-client.server.ts'
 import { boundD1 } from '#shared/lib/db/d1-binding.server.ts'
 import * as d1 from './chat-d1.server.ts'
-import type { CanonicalChatResponse, Message } from '#shared/lib/types.ts'
+import type { CanonicalChatResponse } from '#shared/lib/types.ts'
 
 export type ChatTurn = {
   id: string
@@ -27,22 +26,15 @@ export function effectiveTurnStatus(turn: ChatTurn, now = Date.now()): ChatTurn[
 		: turn.status
 }
 
-function client(event: RequestEvent) { return createSupabaseServerClient(event) }
-
 class ChatTurnPersistenceError extends Data.TaggedError('ChatTurnPersistenceError')<{
   readonly message: string
 }> {}
 
 const turnFailure = (message: string) => new ChatTurnPersistenceError({ message })
 
-function rpcResult<T>(value: T | T[] | null): T | null {
-  return (Array.isArray(value) ? value[0] : value) as T | null
-}
-
-/** The D1 path when the Worker binds `DB`: the signed-in user's id scopes every statement (no RLS on D1). */
 function onD1<A>(event: RequestEvent, fallback: string, work: (db: NonNullable<ReturnType<typeof boundD1>>, userId: string) => Promise<A>) {
   const db = boundD1()
-  if (!db) return null
+  if (!db) return Effect.fail(turnFailure(fallback))
   const userId = event.locals?.user?.id
   if (!userId) return Effect.fail(turnFailure('Not authenticated'))
   return Effect.tryPromise({
@@ -56,22 +48,7 @@ export function bootstrapChatTurnEffect(event: RequestEvent, input: {
   conversationId: string; turnId: string; userClientMessageId: string
   assistantClientMessageId: string; content: string; locale: 'en' | 'es'
 }) {
-  const onCloudflare = onD1(event, 'Failed to bootstrap chat turn', (db, userId) => d1.bootstrapTurn(db, userId, input))
-  if (onCloudflare) return onCloudflare
-  return Effect.gen(function* () {
-    const { data, error } = yield* Effect.tryPromise({
-      try: () => client(event).rpc('bootstrap_chat_turn', {
-        p_conversation_id: input.conversationId, p_turn_id: input.turnId,
-        p_user_client_message_id: input.userClientMessageId,
-        p_assistant_client_message_id: input.assistantClientMessageId,
-        p_content: input.content, p_locale: input.locale
-      }),
-      catch: () => turnFailure('Failed to bootstrap chat turn'),
-    })
-    const turn = rpcResult<ChatTurn>(data)
-    if (error || !turn) return yield* Effect.fail(turnFailure(error?.message ?? 'Failed to bootstrap chat turn'))
-    return turn
-  })
+  return onD1(event, 'Failed to bootstrap chat turn', (db, userId) => d1.bootstrapTurn(db, userId, input))
 }
 
 /** Promise compatibility adapter for SvelteKit and existing callers. */
@@ -84,19 +61,7 @@ export function bootstrapChatTurn(event: RequestEvent, input: {
 
 /** Effect-native turn claim program. */
 export function claimChatTurnEffect(event: RequestEvent, turnId: string, claimId: string, retry = false) {
-  const onCloudflare = onD1(event, 'Failed to claim chat turn', (db, userId) => d1.claimTurn(db, userId, turnId, claimId, retry))
-  if (onCloudflare) return onCloudflare
-  return Effect.gen(function* () {
-    const { data, error } = yield* Effect.tryPromise({
-      try: () => client(event).rpc('claim_chat_turn', {
-        p_turn_id: turnId, p_claim_id: claimId, p_retry: retry
-      }),
-      catch: () => turnFailure('Failed to claim chat turn'),
-    })
-    const turn = rpcResult<ChatTurn>(data)
-    if (error || !turn) return yield* Effect.fail(turnFailure(error?.message ?? 'Failed to claim chat turn'))
-    return turn
-  })
+  return onD1(event, 'Failed to claim chat turn', (db, userId) => d1.claimTurn(db, userId, turnId, claimId, retry))
 }
 
 export function claimChatTurn(event: RequestEvent, turnId: string, claimId: string, retry = false) {
@@ -108,22 +73,7 @@ export function completeChatTurnEffect(event: RequestEvent, input: {
   turnId: string; claimId: string; assistantClientMessageId: string; content: string
   attachedData: Record<string, unknown>; executionTrace: unknown[]
 }) {
-  const onCloudflare = onD1(event, 'Failed to complete chat turn', (db, userId) => d1.completeTurn(db, userId, input))
-  if (onCloudflare) return onCloudflare
-  return Effect.gen(function* () {
-    const { data, error } = yield* Effect.tryPromise({
-      try: () => client(event).rpc('complete_chat_turn', {
-        p_turn_id: input.turnId, p_claim_id: input.claimId,
-        p_assistant_client_message_id: input.assistantClientMessageId,
-        p_content: input.content, p_attached_data: input.attachedData,
-        p_execution_trace: input.executionTrace
-      }),
-      catch: () => turnFailure('Failed to complete chat turn'),
-    })
-    const turn = rpcResult<ChatTurn>(data)
-    if (error || !turn) return yield* Effect.fail(turnFailure(error?.message ?? 'Failed to complete chat turn'))
-    return turn
-  })
+  return onD1(event, 'Failed to complete chat turn', (db, userId) => d1.completeTurn(db, userId, input))
 }
 
 export function completeChatTurn(event: RequestEvent, input: {
@@ -135,18 +85,8 @@ export function completeChatTurn(event: RequestEvent, input: {
 
 /** Effect-native turn failure/update program. */
 export function failChatTurnEffect(event: RequestEvent, turnId: string, claimId: string) {
-  const onCloudflare = onD1(event, 'Failed to update chat turn',
+  return onD1(event, 'Failed to update chat turn',
     async (db, userId) => { await d1.failTurn(db, userId, turnId, claimId, 'execution_failed') })
-  if (onCloudflare) return Effect.mapError(onCloudflare, () => turnFailure('Failed to update chat turn'))
-  return Effect.gen(function* () {
-    const { error } = yield* Effect.tryPromise({
-      try: () => client(event).rpc('fail_chat_turn', {
-        p_turn_id: turnId, p_claim_id: claimId, p_error_code: 'execution_failed'
-      }),
-      catch: () => turnFailure('Failed to update chat turn'),
-    })
-    if (error) return yield* Effect.fail(turnFailure('Failed to update chat turn'))
-  })
 }
 
 export function failChatTurn(event: RequestEvent, turnId: string, claimId: string) {
@@ -156,22 +96,13 @@ export function failChatTurn(event: RequestEvent, turnId: string, claimId: strin
 /** Effect-native assistant lookup; a missing assistant remains a nullable result. */
 export function getTurnAssistantEffect(event: RequestEvent, turn: ChatTurn) {
   if (!turn.assistant_message_id) return Effect.succeed(null)
-  const onCloudflare = onD1(event, 'Failed to load assistant message', async (db, userId) => ({
-    data: await d1.getTurnAssistantMessage(db, userId, turn) as unknown, error: null as unknown,
-  }))
   return Effect.match(
-    onCloudflare ?? Effect.tryPromise({
-      try: async (): Promise<{ data: unknown; error: unknown }> => client(event).from('messages').select('*')
-        .eq('id', turn.assistant_message_id).eq('conversation_id', turn.conversation_id).single(),
-      catch: () => turnFailure('Failed to load assistant message'),
-    }),
+    onD1(event, 'Failed to load assistant message', (db, userId) => d1.getTurnAssistantMessage(db, userId, turn)),
     {
       onFailure: () => null,
-      onSuccess: ({ data, error }) => {
-        if (error || !data) return null
-        const message = data as Message
-        const canonical = (message.attached_data as { canonical?: CanonicalChatResponse } | null)?.canonical
-        return canonical ? { id: message.id, canonical } : null
+      onSuccess: (message) => {
+        const canonical = (message?.attached_data as { canonical?: CanonicalChatResponse } | null)?.canonical
+        return message && canonical ? { id: message.id, canonical } : null
       },
     },
   )
@@ -183,23 +114,13 @@ export function getTurnAssistant(event: RequestEvent, turn: ChatTurn) {
 
 /** Effect-native ordered turn lookup. */
 export function getConversationTurnsEffect(event: RequestEvent, conversationId: string) {
-  const onCloudflare = onD1(event, 'Failed to load chat turns', async (db, userId) => ({
-    data: await d1.listTurns(db, userId, conversationId), error: null,
-  }))
-  return Effect.gen(function* () {
-    const { data, error } = yield* (onCloudflare ?? Effect.tryPromise({
-      try: () => client(event).from('chat_turns').select('*')
-        .eq('conversation_id', conversationId).order('created_at', { ascending: true }),
-      catch: () => turnFailure('Failed to load chat turns'),
-    }))
-    if (error) return yield* Effect.fail(turnFailure('Failed to load chat turns'))
-    const turns = (data ?? []) as ChatTurn[]
-    return turns.map((turn) =>
-      effectiveTurnStatus(turn) !== turn.status
-        ? { ...turn, status: effectiveTurnStatus(turn) }
-        : turn
-    )
-  })
+  return Effect.map(
+    onD1(event, 'Failed to load chat turns', (db, userId) => d1.listTurns(db, userId, conversationId)),
+    (turns) => turns.map(turn => {
+      const status = effectiveTurnStatus(turn)
+      return status === turn.status ? turn : { ...turn, status }
+    }),
+  )
 }
 
 export function getConversationTurns(event: RequestEvent, conversationId: string) {

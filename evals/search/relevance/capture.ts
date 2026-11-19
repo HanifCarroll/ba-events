@@ -11,8 +11,8 @@
  * no network, no env keys at replay time.
  *
  * Usage:
- *   bun evals/search/relevance/capture.ts
- *   bun evals/search/relevance/capture.ts --queries ./my-queries.ts --out ./capture-holdout.json
+ *   node --env-file-if-exists=.env evals/search/relevance/capture.ts --staging
+ *   node --env-file-if-exists=.env evals/search/relevance/capture.ts --staging --queries ./my-queries.ts --out ./capture-holdout.json
  *
  * The --queries module must export exactly one of `LIVE_QUERIES` or
  * `HOLDOUT_QUERIES` (an array of the LiveQuery shape).
@@ -36,6 +36,7 @@ import { rerankEvents } from '#shared/lib/search/rerank.ts'
 import { getNowInBA } from '#features/chat/api/tools/utils.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
 import type { CaptureFile, FrozenEvent, FrozenQuery, FrozenVoyage } from './frozen-variants.ts'
+import { openStagingCatalog } from '../../lib/staging-catalog.ts'
 
 const DEFAULT_QUERIES_PATH = new URL('./live-queries.ts', import.meta.url).pathname
 const DEFAULT_OUT_PATH = new URL('./capture-latest.json', import.meta.url).pathname
@@ -159,6 +160,7 @@ const statusCounts = new Map<string, number>()
 
 let nextAllowedAt = 0
 
+await using staging = await openStagingCatalog(process.argv[2])
 for (let i = 0; i < QUERIES.length; i++) {
   const q = QUERIES[i]
   const input = { query: q.query, ...(q.toolInput ?? {}) }

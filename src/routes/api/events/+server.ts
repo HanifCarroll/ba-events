@@ -2,21 +2,15 @@
  * Public Events API
  *
  * GET  /api/events — list events (admin API key, cached).
- * POST /api/events — create an event (admin API key, embedding + presentation).
+ * POST /api/events — legacy admin endpoint; event creation is unavailable.
  */
 
 import type { RequestEvent } from '@sveltejs/kit'
 import { Schema, SchemaIssue } from 'effect'
-import { createEvent, getEventsWithVenues } from '#shared/lib/db/client.server.ts'
-import {
-  embedEventWithDocument,
-  CURRENT_EMBEDDING_VERSION,
-} from '#shared/lib/ai/embeddings.ts'
-import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
+import { getEventsWithVenues } from '#shared/lib/db/client.server.ts'
 import { checkApiRateLimit, RATE_LIMIT_RETRY_SECONDS } from '#features/auth/api/rate-limit.server.ts'
-import { apiSuccess, apiList, apiError, CachePresets, withCache } from '#shared/lib/api-response.ts'
+import { apiList, apiError, CachePresets, withCache } from '#shared/lib/api-response.ts'
 import { CATEGORIES, EVENT_STATUSES } from '#shared/lib/types.ts'
-import type { EventInsert } from '#shared/lib/types.ts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const isoDate = (requiredMessage: string, invalidMessage: string) => Schema.String.pipe(
@@ -214,49 +208,7 @@ export const POST = async (event: RequestEvent): Promise<Response> => {
       )
     }
 
-    const validated = parseResult.success
-
-    // Build event data
-    const eventData: EventInsert = {
-      name: validated.name,
-      description_es: validated.description_es ?? null,
-      description_en: validated.description_en ?? null,
-      starts_at: validated.starts_at,
-      ends_at: validated.ends_at ?? null,
-      is_all_day: validated.is_all_day ?? false,
-      venue_id: validated.venue_id ?? null,
-      categories: validated.categories ? [...validated.categories] : [],
-      price: validated.price ?? null,
-      is_free: validated.is_free ?? false,
-      image_url: validated.image_url ?? null,
-      link: validated.link ?? null,
-      ticket_url: validated.ticket_url ?? null,
-      source: validated.source ?? 'api',
-      status: validated.status ?? 'scheduled',
-    }
-
-    // Generate embedding + search document together (they must not drift)
-    const [{ embedding, searchDocument }, presentationFields] = await Promise.all([
-      embedEventWithDocument(eventData),
-      buildDescriptionPresentationFields({
-        description_es: eventData.description_es,
-        description_en: eventData.description_en,
-      }),
-    ])
-
-    // Create the event
-    const event = await createEvent({
-      ...eventData,
-      ...presentationFields,
-      embedding,
-      search_document: searchDocument,
-      embedding_version: CURRENT_EMBEDDING_VERSION,
-    })
-
-    return Response.json(
-      apiSuccess(event),
-      { status: 201, headers: CachePresets.noStore }
-    )
+    return Response.json(apiError('Creating events through the API is not available on D1', 'CREATE_ERROR'), { status: 500 })
   } catch (error) {
     console.error('Create event error:', error)
     return Response.json(

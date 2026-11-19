@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 describe('independent request preparation', () => {
   for (const mode of ['events', 'chat']) {
-    it(`overlaps ${mode} preparation without bypassing the persistence gate`, async () => {
+    it(mode === 'chat' ? 'overlaps chat preparation without bypassing the persistence gate' : 'refuses event creation without calling providers', async () => {
       const { stdout } = await promisify(execFile)('bun', [fileURLToPath(new URL('./async-preparation.fixture.ts', import.meta.url)), mode], {
         timeout: 5000, env: { PATH: process.env.PATH, ADMIN_API_KEY: 'fixture', AI_API_KEY: 'fixture', LANGFUSE_TRACING_ENABLED: 'false' },
       })
