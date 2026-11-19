@@ -23,6 +23,14 @@ The homepage SHALL use the active locale for the independent-culture title, desc
 - **WHEN** the homepage renders in English or Spanish
 - **THEN** the Instagram link and language switch are available in the navigation
 
+### Requirement: Web branding uses the BA Eventos ticket mark
+The homepage and app navigation SHALL show the ticket wordmark as a home link with the accessible name “BA Eventos”. Browser tab, Apple touch, and installable app icons SHALL use the matching ticket mark.
+
+#### Scenario: A visitor opens or installs the website
+- **WHEN** the website renders at mobile or desktop widths
+- **THEN** the wordmark links home and its name is available without relying on the image loading
+- **AND** the browser tab and installed app use the ticket mark
+
 ### Requirement: The homepage leads with the current agenda
 The homepage SHALL render the event grid before the chat composer and follow links. Filters SHALL use linkable `?f=` URLs that render the same view on a direct request; client-side filter changes SHALL reuse the loaded agenda.
 

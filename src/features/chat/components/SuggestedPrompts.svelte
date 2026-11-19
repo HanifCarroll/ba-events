@@ -125,7 +125,7 @@
 <div class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
 	<header class="mx-auto max-w-[90rem] px-4 pt-3 pb-5 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
 		<nav class="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label={m.landing_nav_label()}>
-			<a href="/" class="inline-flex min-h-10 items-center font-mono text-lg font-bold tracking-tight sm:text-xl">
+			<a href="/" class="inline-flex min-h-10 items-center">
 				<BrandLogo />
 			</a>
 			<LanguageSwitcher compact />

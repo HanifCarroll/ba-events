@@ -158,7 +158,7 @@
 			{#if mobileMenuOpen}<X class="h-5 w-5" />{:else}<Menu class="h-5 w-5" />{/if}
 		</Button>
 		<a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-			<BrandLogo class="text-base font-semibold tracking-tight" />
+			<BrandLogo />
 		</a>
 	</header>
 
@@ -244,7 +244,7 @@
 		<!-- Sidebar header -->
 		<div class="h-20 flex items-center px-5 shrink-0">
 			<a href="/" class="hover:opacity-80 transition-opacity">
-				<BrandLogo class="text-base font-semibold tracking-tight text-foreground whitespace-nowrap" />
+				<BrandLogo />
 			</a>
 		</div>
 

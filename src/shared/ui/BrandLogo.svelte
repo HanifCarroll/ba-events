@@ -1,5 +1,1 @@
-<script lang="ts">
-	let { class: className = '' }: { class?: string } = $props()
-</script>
-
-<span class={className}>BA Eventos</span>
+<img src="/logo.svg" alt="BA Eventos" width="900" height="198" class="block h-7 w-auto lg:h-9" />
