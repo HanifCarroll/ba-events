@@ -1,6 +1,7 @@
 /** Public catalog reads on D1: home, event, artwork, venue, event facts, and the events API. */
 import type { D1Database } from '@cloudflare/workers-types'
 import type { ChatEventPayload, Venue } from '../types.ts'
+import { normalizeText } from '../utils/normalize-text.ts'
 import { HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
 import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
 
@@ -27,12 +28,14 @@ export async function eventsByStartD1(db: D1Database, limit: number): Promise<Ch
   return results.map(toPayload)
 }
 
-const PAY_WHAT_YOU_CAN = /\ba la gorra\b|contribuci[oó]n consciente|a voluntad|pag[aá] lo que (quieras|puedas)/i
+const A_LA_GORRA = /\ba la gorra\b/
+const PAY_WHAT_YOU_CAN = /\b(?:a la gorra|contribucion consciente|a voluntad|paga lo que (?:quieras|puedas))\b/
 const INSTAGRAM_POST = /^https:\/\/www\.instagram\.com\/(?:p|reel)\/[\w-]+\/?$/i
 
 type AgendaRow = Omit<HomeAgendaEvent, 'is_free' | 'time_tba' | 'is_all_day' | 'location_hidden' | 'location_tba' | 'music' | 'payWhatYouCan' | 'sourceUrl'> & {
   is_free: number; time_tba: number; is_all_day: number; location_hidden: number | null; location_tba: number; music: number
   priceNote: string | null
+  description_es: string | null
   sourceUrl: string | null
 }
 
@@ -49,7 +52,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
         ORDER BY e.starts_at, e.id LIMIT ?
       )
     )
-    SELECT e.id, e.name, e.starts_at, e.time_tba, e.is_all_day, e.image_url, e.image_width, e.image_height,
+    SELECT e.id, e.name, e.description_es, e.starts_at, e.time_tba, e.is_all_day, e.image_url, e.image_width, e.image_height,
       CASE WHEN coalesce(e.location_hidden, 0) = 0 AND NOT e.location_tba THEN v.name END AS venue_name,
       CASE WHEN coalesce(e.location_hidden, 0) = 0 AND NOT e.location_tba THEN v.neighborhood END AS venue_neighborhood,
       e.location_hidden, e.location_tba, e.price, e.is_free,
@@ -59,17 +62,18 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
         WHERE x.event_id = e.id ORDER BY o.observed_at DESC, o.id DESC LIMIT 1) AS sourceUrl,
       (SELECT json_extract(r.payload, '$.price_note') FROM event_source_evidence x
         JOIN intake_candidate_revisions r ON r.candidate_id = x.candidate_id AND r.revision = x.revision
-        WHERE x.event_id = e.id AND e.price IS NULL AND NOT e.is_free
-          AND json_extract(r.payload, '$.intent') IN ('create', 'update') AND json_extract(r.payload, '$.price_kind') = 'conditional'
+        WHERE x.event_id = e.id AND json_extract(r.payload, '$.intent') IN ('create', 'update')
+          AND (json_extract(r.payload, '$.price_kind') <> 'unknown' OR json_extract(r.payload, '$.price_note') IS NOT NULL)
         ORDER BY r.created_at DESC, r.candidate_id, r.revision DESC LIMIT 1) AS priceNote
     FROM selected JOIN events e ON e.id = selected.id LEFT JOIN venues v ON v.id = e.venue_id
     ORDER BY e.starts_at, e.id
   `).bind(window.start, window.end, window.end, HOME_FALLBACK_LIMIT).all<AgendaRow>()
 
-  return results.map(({ is_free, time_tba, is_all_day, location_hidden, location_tba, music, priceNote, sourceUrl, ...card }) => ({
+  return results.map(({ is_free, time_tba, is_all_day, location_hidden, location_tba, music, priceNote, description_es, sourceUrl, ...card }) => ({
     ...card, is_free: is_free === 1, time_tba: time_tba === 1, is_all_day: is_all_day === 1,
     location_hidden: location_hidden === 1, location_tba: location_tba === 1, music: music === 1,
-    payWhatYouCan: typeof priceNote === 'string' && PAY_WHAT_YOU_CAN.test(priceNote),
+    payWhatYouCan: A_LA_GORRA.test(normalizeText(card.name)) || A_LA_GORRA.test(normalizeText(description_es ?? '')) ||
+      (typeof priceNote === 'string' && PAY_WHAT_YOU_CAN.test(normalizeText(priceNote))),
     sourceUrl: sourceUrl && INSTAGRAM_POST.test(sourceUrl) ? sourceUrl : null,
   }))
 }

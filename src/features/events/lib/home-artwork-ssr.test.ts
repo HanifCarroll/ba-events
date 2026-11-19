@@ -9,7 +9,7 @@ const events = Array.from({ length: 4 }, (_, index) => agendaEvent(
   `00000000-0000-4000-8000-00000000000${index}`, index < 3 ? '2026-11-19T18:00:00.000Z' : '2026-11-20T18:00:00.000Z', {
     name: index === 0 ? 'Jam sintética' : `Evento sintético ${index}`,
     image_url: `https://imagenes.passline.com/eventos/${index}.jpg`,
-    price: 5000, payWhatYouCan: index === 1, sourceUrl: index === 0 ? 'https://www.instagram.com/p/synthetic/' : null,
+    price: 5000, is_free: index === 1, payWhatYouCan: index === 1, sourceUrl: index === 0 ? 'https://www.instagram.com/p/synthetic/' : null,
   },
 ))
 

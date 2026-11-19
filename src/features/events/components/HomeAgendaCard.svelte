@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArrowUpRight, MessageCircle } from 'lucide-svelte'
+	import { on } from 'svelte/events'
 	import * as m from '#paraglide/messages.js'
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
 	import { formatPrice } from '#features/chat/lib/messages.ts'
@@ -9,6 +10,19 @@
 
 	let { event, index, onAsk }: { event: HomeAgendaEvent; index: number; onAsk: (event: HomeAgendaEvent) => void } = $props()
 	let expanded = $state<string | null>(null)
+	let hovered = $state<string | null>(null)
+	const visibleTooltip = $derived(hovered ?? expanded)
+
+	function dismissTooltip(event: KeyboardEvent) {
+		if (event.key !== 'Escape') return
+		expanded = null
+		hovered = null
+	}
+
+	$effect(() => {
+		if (visibleTooltip) return on(window, 'keydown', dismissTooltip)
+	})
+
 	const price = $derived(event.payWhatYouCan ? m.home_price_pay_what_you_can() : formatPrice(event.price, event.is_free))
 	const venue = $derived(event.location_hidden ? m.event_location_hidden() :
 		[event.venue_name, event.venue_neighborhood].filter(Boolean).join(' · ') || m.concierge_location_tba())
@@ -39,15 +53,18 @@
 	{@const { parts, rest } = glossaryParts(text)}
 	{#each parts as { before, word, index, explain } (index)}
 		{@const id = `gloss-${event.id}-${field}-${index}`}
-		{before}<span class="glossary" data-expanded={expanded === id ? '' : undefined}><button
+		{before}<span
+			role="group"
+			onpointerenter={(event) => { if (event.pointerType === 'mouse') hovered = id }}
+			onpointerleave={() => { if (hovered === id) hovered = null }}
+		><button
 			type="button"
 			class="relative z-10 inline cursor-help text-left underline decoration-dotted underline-offset-4"
-			aria-expanded={expanded === id}
+			aria-expanded={visibleTooltip === id}
 			aria-controls={id}
 			aria-describedby={id}
 			onclick={() => { expanded = expanded === id ? null : id }}
-			onkeydown={(event) => { if (event.key === 'Escape') expanded = null }}
-		>{word}</button><span {id} role="tooltip" class="explanation absolute inset-x-0 top-full z-20 border-l-2 border-[#d0ff36] bg-[#28282f] px-3 py-2 text-sm font-normal text-[#eeeeef]">{explain()}</span></span>
+		>{word}</button><span {id} role="tooltip" hidden={visibleTooltip !== id} class="absolute inset-x-0 top-full z-20 border-l-2 border-[#d0ff36] bg-[#28282f] px-3 py-2 text-sm font-normal text-[#eeeeef]">{explain()}</span></span>
 	{/each}{rest}
 {/snippet}
 
@@ -88,10 +105,3 @@
 		</button>
 	</div>
 </article>
-
-<style>
-	.glossary:not([data-expanded]) .explanation { display: none; }
-	@media (hover: hover) {
-		.glossary:not([data-expanded]):hover .explanation { display: block; }
-	}
-</style>

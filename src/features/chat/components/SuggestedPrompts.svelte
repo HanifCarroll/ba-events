@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
-	import type { HomeAgenda as Agenda, HomeAgendaEvent } from '#features/events/lib/home-feed.ts'
+	import { parseHomeFilter, selectHomeView, type HomeAgenda as Agenda, type HomeAgendaEvent } from '#features/events/lib/home-feed.ts'
 	import HomeAgenda from '#features/events/components/HomeAgenda.svelte'
 	import BrandLogo from '#shared/ui/BrandLogo.svelte'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
@@ -28,7 +28,7 @@
 		onSelectPrompt,
 		homeAgenda = null
 	}: {
-		onSelectPrompt: (prompt: string, options?: { eventId?: string }) => void
+		onSelectPrompt: (prompt: string, options: { eventId?: string; happeningSoonEventIds: string[] }) => void
 		homeAgenda?: Agenda | null
 	} = $props()
 
@@ -71,11 +71,19 @@
 		}
 	}
 
+	function sendPrompt(prompt: string, eventId?: string) {
+		const filter = parseHomeFilter(url.searchParams.get('f'))
+		const happeningSoonEventIds = homeAgenda
+			? selectHomeView(homeAgenda, filter).events.slice(0, 4).map(({ id }) => id)
+			: []
+		onSelectPrompt(prompt, { eventId, happeningSoonEventIds })
+	}
+
 	function submitQuery() {
 		const prompt = landingQuery.trim()
 		if (prompt) {
 			speech.cancel()
-			onSelectPrompt(prompt, promptedEvent?.prompt === prompt ? { eventId: promptedEvent.id } : undefined)
+			sendPrompt(prompt, promptedEvent?.prompt === prompt ? promptedEvent.id : undefined)
 		}
 	}
 
@@ -250,21 +258,21 @@
 			<div class="mt-6 flex flex-wrap justify-center gap-3">
 				<button
 					type="button"
-					onclick={() => onSelectPrompt(m.landing_prompt_today())}
+					onclick={() => sendPrompt(m.landing_prompt_today())}
 					class="flex min-h-11 items-center gap-2 rounded-full border border-white/70 px-4 py-2 text-sm font-medium hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
 				>
 					<CalendarDays class="size-4" aria-hidden="true" />{m.landing_today()}
 				</button>
 				<button
 					type="button"
-					onclick={() => onSelectPrompt(m.landing_prompt_free_weekend())}
+					onclick={() => sendPrompt(m.landing_prompt_free_weekend())}
 					class="flex min-h-11 items-center gap-2 rounded-full border border-white/70 px-4 py-2 text-sm font-medium hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
 				>
 					<Ticket class="size-4" aria-hidden="true" />{m.landing_free_weekend()}
 				</button>
 				<button
 					type="button"
-					onclick={() => onSelectPrompt(m.context_prompt_surprise())}
+					onclick={() => sendPrompt(m.context_prompt_surprise())}
 					class="flex min-h-11 items-center gap-2 rounded-full border border-white/70 px-4 py-2 text-sm font-medium hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
 				>
 					<Sparkles class="size-4" aria-hidden="true" />{m.home_surprise_label()}

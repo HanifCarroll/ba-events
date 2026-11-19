@@ -37,7 +37,7 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 #### Scenario: A visitor filters the agenda
 - **WHEN** the visitor selects Today, This weekend, Free, or Music
 - **THEN** the grid shows respectively the current local date, the current or next Friday–Sunday intersected with the weekly window, confirmed free admission, or a concert or live-music facet
-- **AND** pay-what-you-can admission is distinct from free
+- **AND** pay-what-you-can evidence in an intake price note, or “a la gorra” in the title or Spanish description, takes precedence over a free flag or zero price; the card says “A la gorra” and does not appear in Gratis
 
 #### Scenario: A filter has no matches
 - **WHEN** the selected filter has no matches
@@ -49,9 +49,14 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 - **WHEN** an event appears on the grid
 - **THEN** its title, local date and time state, venue and neighborhood when known, and price state appear as real text
 - **AND** the card links to event details and can prefill the composer with the existing event prompt
-- **AND** glossary triggers appear on the matched words in the title or metadata, without adding another line, and work by pointer, touch, and keyboard; terms that appear only in the description do not add a trigger
+- **AND** glossary triggers appear on the matched words in the title or metadata, without adding another line, and work by pointer, touch, and keyboard; terms that appear only in the description do not add a trigger, and Escape dismisses an open definition even while hovered
 - **AND** below 640 CSS pixels the grid has two columns, with titles clamped to three lines until a clipped glossary trigger needs keyboard focus; the date, venue, neighborhood, and price can wrap without being clipped
 - **AND** when an original post is available, its link and the composer action can stack when space runs out; desktop action labels do not wrap within an action
+
+#### Scenario: A visitor starts a chat from the agenda
+- **WHEN** the visitor sends a first message from the homepage
+- **THEN** the chat receives the first four event IDs in the displayed view, or fewer if fewer cards are shown, including displayed date fallbacks and no IDs for an empty view
+- **AND** an unchanged Ask prompt still identifies its specific event
 
 ### Requirement: Homepage reassurance focuses on guest access
 The homepage SHALL state that the service is free to use and no sign-up is needed in the active locale. Its reassurance line SHALL NOT include the English-or-Spanish language claim.

@@ -351,7 +351,7 @@
 		const startedAt = Date.now()
 		const hasHistory = chat.messages.length > 0
 		const homeEventIds = !chat.messages.some((message) => message.role === 'assistant')
-			? options?.happeningSoonEventIds ?? homeAgenda?.events.filter((event) => event.starts_at < homeAgenda.window.end).slice(0, 4).map((event) => event.id)
+			? options?.happeningSoonEventIds
 			: undefined
 		activeTurn = turn
 		progressiveResponse = null
@@ -488,7 +488,7 @@
 				locale: turn.locale,
 				retry,
 				...(options?.eventId ? { happeningSoonEventId: options.eventId } : {}),
-				...(homeEventIds?.length ? { happeningSoonEventIds: homeEventIds } : {})
+				...(homeEventIds !== undefined ? { happeningSoonEventIds: homeEventIds } : {})
 			}
 			const metadata = { createdAt: new Date().toISOString() }
 			activeDelivery = delivery
