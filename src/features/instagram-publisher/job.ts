@@ -261,7 +261,7 @@ export class Job {
 
   /**
    * Throws a 'stale' stop when any selected event, read fresh from D1, is no longer scheduled or is already over at the
-   * current time (ended, or started when it has no end).
+   * current time (ended, or started when it has no end), or no longer marked in scope.
    */
   private async checkEvents(draft: Draft) {
     const current = await this.s.readEvents(draft.events.map(event => event.id))
@@ -274,6 +274,9 @@ export class Job {
       }
       if (fresh.status !== 'scheduled') {
         throw new PublishStop('stale', `${event.title} is ${fresh.status}`, { id: event.id, title: event.title, why: 'cancelled', detail: `is ${fresh.status}` })
+      }
+      if (!fresh.inScope) {
+        throw new PublishStop('stale', `${event.title} is no longer marked in scope`, { id: event.id, title: event.title, why: 'scope', detail: 'is not marked in scope' })
       }
     }
   }

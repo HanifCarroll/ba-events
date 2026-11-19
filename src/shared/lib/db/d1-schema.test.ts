@@ -113,6 +113,24 @@ describe('intake protection trigger (supabase/tests/instagram-intake.sql)', () =
 	})
 })
 
+describe('event scope columns', () => {
+	it('accepts a judgment without changing intake-protected facts or the event revision', async () => {
+		const eventId = await protectedEvent({ status: 'scheduled', updated_at: '2026-01-01T00:00:00.000Z' })
+		await db.prepare("UPDATE events SET scope = 'in', scope_reason = 'It is live jazz.', scope_judged_at = ?, scope_version = 'test' WHERE id = ?")
+			.bind(iso(), eventId).run()
+		expect(await read(eventId)).toMatchObject({ scope: 'in', scope_reason: 'It is live jazz.', status: 'scheduled',
+			name: 'Synthetic Jazz', search_document: 'Synthetic Jazz', embedding_version: 2, updated_at: '2026-01-01T00:00:00.000Z' })
+		expect(await db.prepare('SELECT count(*) FROM write_context').first('count(*)')).toBe(0)
+		await db.batch(intakeCommitBatch(db, [db.prepare("UPDATE events SET name = 'New title' WHERE id = ?").bind(eventId)]))
+		expect(await read(eventId)).toMatchObject({ name: 'New title', scope: null, scope_reason: null, scope_judged_at: null, scope_version: null })
+	})
+
+	it('rejects invalid scope and noncanonical judgment timestamps', async () => {
+		await expect(event({ scope: 'maybe' })).rejects.toThrow(/CHECK/)
+		await expect(event({ scope_judged_at: '2026-11-21T00:00:00Z' })).rejects.toThrow(/CHECK/)
+	})
+})
+
 describe('updated_at triggers', () => {
 	it.each(['venues', 'events', 'user_preferences', 'import_blocklist', 'venue_review_queue', 'conversations'])('%s stamps every update', async (table) => {
 		const rowId = id()

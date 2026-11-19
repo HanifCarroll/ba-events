@@ -41,16 +41,17 @@ async function venue(name: string, fields: { neighborhood?: string; address?: st
 }
 
 type EventFields = Partial<{ starts_at: string; status: string; venue_id: string | null; image_url: string | null;
-  description_summary_es: string | null; location_tba: boolean; location_hidden: boolean; categories: string[] }>
+  description_summary_es: string | null; location_tba: boolean; location_hidden: boolean; categories: string[]; scope: 'in' | 'out' | null }>
 async function event(name: string, fields: EventFields = {}) {
   const eventId = id()
   await db.prepare(`INSERT INTO events (id, name, starts_at, status, venue_id, image_url, image_width, image_height,
-      description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document)
-    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, 1, NULL, '{"genres":["jazz"]}', 'luma', 'secreto')`).bind(
+      description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document, scope)
+    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, 1, NULL, '{"genres":["jazz"]}', 'luma', 'secreto', ?)`).bind(
     eventId, name, fields.starts_at ?? inDays(2), fields.status ?? 'scheduled', fields.venue_id ?? null,
     fields.image_url === undefined ? 'https://images.lumacdn.com/uploads/a.png' : fields.image_url,
     fields.description_summary_es === undefined ? 'Una noche de jazz' : fields.description_summary_es,
-    fields.location_tba ? 1 : 0, fields.location_hidden ? 1 : 0, JSON.stringify(fields.categories ?? ['music'])).run()
+    fields.location_tba ? 1 : 0, fields.location_hidden ? 1 : 0, JSON.stringify(fields.categories ?? ['music']),
+    fields.scope === undefined ? 'in' : fields.scope).run()
   return eventId
 }
 
@@ -70,7 +71,7 @@ async function linkIntakeEvidence(eventIds: string[]) {
 }
 
 describe('public event reads on D1', () => {
-  it('home feed: only scheduled, visible, intake-linked events 12 hours out, soonest first', async () => {
+  it('home feed: only scheduled, visible, in-scope, intake-linked events 12 hours out, soonest first', async () => {
     const bar = await venue('Bar Sintético', { neighborhood: 'Palermo' })
     const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5), image_url: null })
     const sooner = await event('Jazz temprano', { venue_id: bar, starts_at: inDays(1) })
@@ -78,7 +79,15 @@ describe('public event reads on D1', () => {
     const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
     const canceled = await event('Cancelado', { venue_id: bar, status: 'canceled' })
     await event('Sin vínculo de intake', { venue_id: bar })
-    await linkIntakeEvidence([later, sooner, imminent, hidden, canceled])
+    const party = await event('Fiesta', { venue_id: bar, starts_at: inDays(0.75) })
+    const unjudged = await event('Sin clasificar', { venue_id: bar, starts_at: inDays(0.75), scope: null })
+    const qualifying = [later, sooner, imminent, hidden, canceled]
+    await linkIntakeEvidence([...qualifying, party, unjudged])
+    await db.batch([
+      db.prepare("UPDATE events SET scope = 'in' WHERE id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(qualifying)),
+      db.prepare("UPDATE events SET scope = 'out' WHERE id = ?").bind(party),
+    ])
+    expect((await getEventWithVenue(party)).id).toBe(party)
 
     const cards = await getHappeningSoonEvents(4)
     expect(cards.map(card => card.id)).toEqual([sooner, later])
@@ -103,7 +112,7 @@ describe('public event reads on D1', () => {
   })
 
   it('MCP get_event: displayable events only, with the public columns', async () => {
-    const live = await event('Público')
+    const live = await event('Público', { scope: 'out' })
     const hidden = await event('Cancelado', { status: 'canceled' })
     const record = await getDisplayableEventById(live)
     expect(record).toMatchObject({ id: live, name: 'Público', status: 'scheduled', is_free: true })

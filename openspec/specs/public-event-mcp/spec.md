@@ -19,6 +19,13 @@ Tool inputs MUST pass strict bounded schemas. Output MUST be constructed by the 
 - **WHEN** its public DTO is created
 - **THEN** the venue address field is omitted
 
+### Requirement: Search does not list out-of-scope or unjudged events
+`search_events` SHALL use the catalog discovery scope filter. A known ID can still be resolved by `get_event` if it meets the existing displayability rule.
+
+#### Scenario: A caller searches for a known out-of-scope event
+- **WHEN** the event matches a search but is not marked `in`
+- **THEN** `search_events` omits it without changing the direct lookup contract
+
 ### Requirement: Detail returns displayable events only
 `get_event` MUST return only a currently displayable event. Missing, invalid, or non-displayable ids SHALL use the bounded not-available response.
 

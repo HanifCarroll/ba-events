@@ -2,7 +2,7 @@ import { readFileSync, renameSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { PublishStop } from './approval.ts'
-import type { SkipReason } from './copy.ts'
+import { heldEventReason, type SkipReason } from './copy.ts'
 import { addDays, baLocal, englishDates, hhmm, WEEKDAYS_EN } from './format.ts'
 import { draftId, FORMATS, runWindow, TICK_MS } from './formats.ts'
 import { InstagramError } from './instagram.ts'
@@ -130,7 +130,7 @@ export function heldAlert(draft: Draft, event: NonNullable<PublishStop['stale']>
   const hasUploads = draft.publish?.units.some(unit => unit.containerId || unit.childIds?.some(Boolean))
   const cutoff = runWindow(draft.format, draft.from).cutoff
   return [
-    `⚠️ *The ${label(draft)} is on hold*: ${event.title.replace(/\s+/g, ' ')} ${event.why === 'over' ? 'has already happened' : 'was cancelled'}. ${TRIAGE}`,
+    `⚠️ *The ${label(draft)} is on hold*: ${event.title.replace(/\s+/g, ' ')} ${heldEventReason[event.why]}. ${TRIAGE}`,
     hasUploads ? "Nothing was posted, but Instagram already holds its uploads, so it can't be rebuilt automatically."
       : draft.publish ? "Nothing was posted, but publishing already started, so it can't be rebuilt automatically."
       : now >= cutoff ? "Nothing went out on Instagram. It's too late to approve a new preview."

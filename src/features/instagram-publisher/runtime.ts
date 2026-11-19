@@ -107,7 +107,7 @@ export function catalogSql(window: RunWindow): string {
   EXISTS (SELECT 1 FROM event_source_evidence x JOIN intake_candidates c ON c.id = x.candidate_id
     WHERE x.event_id = e.id AND json_extract(c.payload, '$.intent') <> 'link' AND json_extract(c.payload, '$.time') IS NULL) AS intake_time_unknown
 FROM events e JOIN venues v ON v.id = e.venue_id
-WHERE e.status = 'scheduled' AND e.starts_at >= '${start}' AND e.starts_at < '${end}' AND coalesce(e.location_hidden, 0) = 0
+WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.starts_at >= '${start}' AND e.starts_at < '${end}' AND coalesce(e.location_hidden, 0) = 0
   AND EXISTS (SELECT 1 FROM event_source_evidence x WHERE x.event_id = e.id)
 ORDER BY e.starts_at`
 }
@@ -140,17 +140,17 @@ async function d1Read(sql: string): Promise<unknown> {
   return JSON.parse(out)
 }
 
-export interface EventNow { status: string; startsAt: string | null; endsAt: string | null }
+export interface EventNow { status: string; startsAt: string | null; endsAt: string | null; inScope: boolean }
 
 /** Each id's current status and times (status 'missing' when the row is gone). Ids are UUIDs; anything else is refused. */
 export async function readEvents(ids: string[]): Promise<Map<string, EventNow>> {
   if (ids.some(id => !/^[0-9a-f-]{36}$/.test(id))) throw new Error('Refusing to query non-UUID event ids')
-  const rows = await d1Read(`SELECT id, status, starts_at, ends_at FROM events WHERE id IN (${ids.map(id => `'${id}'`).join(', ')})`)
+  const rows = await d1Read(`SELECT id, status, starts_at, ends_at, scope FROM events WHERE id IN (${ids.map(id => `'${id}'`).join(', ')})`)
   if (!Array.isArray(rows) || rows.some(row => typeof row?.id !== 'string' || typeof row?.status !== 'string' || typeof row?.starts_at !== 'string')) {
     throw new Error(`D1 read returned an error: ${JSON.stringify(rows).slice(0, 300)}`)
   }
-  const events = new Map<string, EventNow>(ids.map(id => [id, { status: 'missing', startsAt: null, endsAt: null }]))
-  for (const row of rows) events.set(row.id, { status: row.status, startsAt: row.starts_at, endsAt: row.ends_at ?? null })
+  const events = new Map<string, EventNow>(ids.map(id => [id, { status: 'missing', startsAt: null, endsAt: null, inScope: false }]))
+  for (const row of rows) events.set(row.id, { status: row.status, startsAt: row.starts_at, endsAt: row.ends_at ?? null, inScope: row.scope === 'in' })
   return events
 }
 

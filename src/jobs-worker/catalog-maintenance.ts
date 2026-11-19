@@ -15,6 +15,7 @@ import type { EventFacets } from '#shared/lib/search-facets.ts'
 import { boundD1Database } from '#shared/lib/db/d1.server.ts'
 import { boundVectorize } from '#features/import/core/catalog-store-for.ts'
 import type { CatalogEnv } from '#features/import/core/catalog-store.ts'
+import { judgeScheduledScope } from '#features/events/scope/catalog.ts'
 import type { CRON_TASKS } from './schedule.ts'
 
 const HOUR = 3_600_000
@@ -153,7 +154,14 @@ export async function runCatalogTask(task: (typeof CRON_TASKS)[keyof typeof CRON
   if (!db) return { skipped: 'no D1 binding' }
   const vectors = boundVectorize(env)
   if (!vectors) throw new Error('The DB binding needs a VECTORIZE binding too')
-  const result = task === 'mark-past-events' ? await markPastEvents(db, vectors) : await reconcileCatalog(db, vectors)
+  if (task === 'mark-past-events') {
+    const past = await markPastEvents(db, vectors)
+    console.log('[mark-past-events]', past)
+    const scope = await judgeScheduledScope(db)
+    console.log('[event-scope]', scope)
+    return { ...past, scope }
+  }
+  const result = await reconcileCatalog(db, vectors)
   console.log(`[${task}]`, result)
   return result
 }

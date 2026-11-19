@@ -101,6 +101,22 @@ Passline, Venti, Meetup, Eventbrite, and Luma artwork SHALL use the same catalog
 - **WHEN** no-upscale delivery returns fewer physical pixels than the requested variant and candidate selection changes
 - **THEN** artwork in a reserved aspect-ratio frame retains its rendered size independently of density-corrected natural dimensions, remains uncropped, and caps candidate descriptors to known source widths without duplicate variants
 
+### Requirement: Public discovery lists only in-scope events
+The D1 catalog SHALL judge events individually for an independent and public culture agenda, regardless of source, ticketing platform, or genre. `events.scope` is `'in'`, `'out'`, or NULL; public lists show only `'in'`. This applies to the homepage feed, chat, Telegram, MCP search, and Instagram publishing. Direct event URLs retain their existing detail rules regardless of scope.
+
+#### Scenario: The same genre appears in a live show and a party
+- **WHEN** independent artists play a small-room trap or metal concert and another listing advertises a club DJ party
+- **THEN** the concert can be in scope and the party is out, regardless of who posted either event
+
+#### Scenario: A judgment is missing or no longer current
+- **WHEN** a scheduled event is new or its classification facts change
+- **THEN** the hourly catalog task attempts a bounded batch of judgments without a new cron
+- **AND** an invalid or failed model response never makes an event public, while an ambiguous event is judged out with an `unclear:` reason
+
+#### Scenario: An operator rehearses the backfill
+- **WHEN** the operator requests a dry run for scheduled events starting today or later in Buenos Aires
+- **THEN** the command reports the judgments without writing them; applying judgments is explicit and rerunning skips current judgments
+
 ## Verification
 
 ### Implementation anchors

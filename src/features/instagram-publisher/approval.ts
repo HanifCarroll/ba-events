@@ -30,7 +30,7 @@ export class PublishStop extends Error {
     readonly kind: 'rejected' | 'unapproved' | 'deadline' | 'stale',
     message: string,
     /** For 'stale': the event and why it no longer belongs in the post. */
-    readonly stale?: { id: string; title: string; why: 'cancelled' | 'over'; detail: string },
+    readonly stale?: { id: string; title: string; why: 'cancelled' | 'over' | 'scope'; detail: string },
   ) { super(message) }
 }
 
