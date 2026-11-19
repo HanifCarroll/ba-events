@@ -6,8 +6,9 @@
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
-	import { homeWindow, nextHomeViewChange, parseHomeFilter, selectHomeView, type HomeAgenda as Agenda, type HomeAgendaEvent, type HomeView } from '#features/events/lib/home-feed.ts'
+	import { homeWindow, nextHomeViewChange, parseHomeFilter, selectHomeCollage, selectHomeView, type HomeAgenda as Agenda, type HomeAgendaEvent, type HomeView } from '#features/events/lib/home-feed.ts'
 	import HomeAgenda from '#features/events/components/HomeAgenda.svelte'
+	import HomeFlyerCollage from '#features/events/components/HomeFlyerCollage.svelte'
 	import BrandLogo from '#shared/ui/BrandLogo.svelte'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
 	import InstallApp from '#shared/ui/InstallApp.svelte'
@@ -41,6 +42,7 @@
 	let requestedDay: string | null = null
 	const now = $derived(Math.max(homeAgenda?.asOf ?? 0, browserNow ?? 0))
 	const view: HomeView = $derived(homeAgenda ? selectHomeView(homeAgenda, filter, now) : { events: [], empty: 'feed' })
+	const flyers = $derived(homeAgenda ? selectHomeCollage(homeAgenda, now) : [])
 	const instagram = 'https://www.instagram.com/baeventos.app/'
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
@@ -217,15 +219,15 @@
 			</div>
 		</nav>
 
-		<div class="mt-3 grid items-stretch gap-8 md:grid-cols-[minmax(0,1fr)_minmax(9rem,21%)]">
+		<div class={['mt-3 grid items-stretch gap-8', flyers.length && 'md:grid-cols-[minmax(0,1fr)_minmax(9rem,21%)]']}>
 			<div class="min-w-0">
-				<h1 class="max-w-[28ch] font-display text-4xl leading-[1.02] font-semibold tracking-tight md:text-5xl lg:text-6xl">
+				<h1 class={['max-w-[28ch] font-display text-4xl leading-[1.02] font-semibold tracking-tight md:text-5xl lg:text-6xl', !flyers.length && 'md:max-w-none']}>
 					{m.landing_title()}
 				</h1>
 				<p class="mt-2 max-w-3xl text-sm text-[#d5d5db] sm:text-base">{m.landing_subtitle()}</p>
 				<p class="mt-1 max-w-3xl text-sm text-[#d5d5db] sm:text-base">{m.landing_subtitle_second()}</p>
 			</div>
-			<div aria-hidden="true" class="header-photo hidden rounded-sm md:block"></div>
+			{#if flyers.length}<HomeFlyerCollage {flyers} />{/if}
 		</div>
 	</header>
 
@@ -345,10 +347,6 @@
 </div>
 
 <style>
-	.header-photo {
-		background: #101012 url('/home-header.jpg') center 45% / cover no-repeat;
-	}
-
 	.home :global(:focus-visible) {
 		outline: 2px solid #d0ff36;
 		outline-offset: 3px;
