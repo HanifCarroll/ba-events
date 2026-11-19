@@ -7,6 +7,7 @@
 	import { initAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { setAuthBackend } from '#features/auth/api/client.ts'
 	import { getLocale } from '#paraglide/runtime.js'
+	import * as m from '#paraglide/messages.js'
 	import { getSiteUrl } from '#shared/lib/utils/url.ts'
 	import { initializeGoogleAnalytics, isAnalyticsEnabled } from '#shared/lib/analytics.ts'
 	import { redactReplayNetworkRequest } from '#shared/lib/replay-network.ts'
@@ -162,8 +163,11 @@
 		}
 	}
 
+	const isLandingPage = $derived(page.url.pathname === '/')
 	const locale = getLocale() as AppLocale
-	const seo = SEO[locale]
+	const seo = $derived(isLandingPage
+		? { title: m.landing_meta_title(), description: m.landing_meta_description() }
+		: SEO[locale])
 	const siteUrl = getSiteUrl()
 	const ogImageUrl = `${siteUrl}/og-image-2026.jpg`
 	const ogLocale = locale === 'es' ? 'es_AR' : 'en_US'
@@ -173,7 +177,7 @@
 			? 'Un mercado, una función y un concierto al aire libre en Buenos Aires'
 			: 'A market, a performance, and an outdoor concert in Buenos Aires'
 
-	const webAppSchema = JSON.stringify({
+	const webAppSchema = $derived(JSON.stringify({
 		'@context': 'https://schema.org',
 		'@type': 'WebApplication',
 		name: 'BA Eventos',
@@ -192,14 +196,13 @@
 			name: 'BA Eventos',
 			url: siteUrl
 		}
-	}).replace(/</g, '\\u003c')
+	}).replace(/</g, '\\u003c'))
 
 	// Pages that should not have the main sidebar (auth pages only).
 	const EXCLUDED_ROUTES = ['/login', '/auth/callback']
 	const isExcludedPage = $derived(
 		EXCLUDED_ROUTES.some((route) => page.url.pathname.startsWith(route))
 	)
-	const isLandingPage = $derived(page.url.pathname === '/')
 	const isEventPage = $derived(page.url.pathname.startsWith('/events/'))
 	const isMcpPage = $derived(page.url.pathname === '/mcp')
 	const eventId = $derived(page.url.searchParams.get('event'))

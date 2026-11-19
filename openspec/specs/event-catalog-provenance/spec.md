@@ -58,6 +58,11 @@ Event detail and summaries SHALL distinguish BA Eventos pages, original event so
 ### Requirement: Homepage cards are discovered early without delaying the hero
 The homepage SHALL render a fresh shared cache of at most four compact public cards in server HTML. A cold cache SHALL stream the feed independently of the hero. Cached cards SHALL be fresh for 60 seconds and MAY be served for a further 300 seconds while a retained background refresh runs. Failed refreshes MUST NOT be cached as successful empty feeds. Browser/CDN cache policy MUST NOT extend the feed's intended freshness to the zone's four-hour browser TTL.
 
+#### Scenario: Upcoming events include records without intake provenance
+- **WHEN** the homepage strip or its feed loads
+- **THEN** it shows at most four scheduled events starting at least 12 hours out, soonest first
+- **AND** only events linked to intake source evidence and not marked location-hidden qualify
+
 #### Scenario: Homepage shared cache is warm
 - **WHEN** a homepage request reaches a fresh cache
 - **THEN** card artwork is discoverable in server HTML without a client events API waterfall
