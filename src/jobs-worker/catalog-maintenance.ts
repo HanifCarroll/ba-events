@@ -11,10 +11,10 @@
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { BA_TIMEZONE } from '#shared/lib/constants.ts'
-import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument, generateEmbedding } from '#shared/lib/ai/embeddings.ts'
+import { buildSearchDocument, CURRENT_EMBEDDING_VERSION, embedEventWithDocument, generateEmbedding } from '#shared/lib/ai/embeddings.ts'
 import { d1Catalog, syncVectorMetadata, vectorMetadata, type VectorRow } from '#features/import/core/catalog-store-d1.ts'
 import type { EventFacets } from '#shared/lib/search-facets.ts'
-import { boundD1Database } from '#shared/lib/db/d1.server.ts'
+import { boundD1Database, intakeCommitBatch } from '#shared/lib/db/d1.server.ts'
 import { boundVectorize } from '#features/import/core/catalog-store-for.ts'
 import type { CatalogEnv } from '#features/import/core/catalog-store.ts'
 import { judgeScheduledScope } from '#features/events/scope/catalog.ts'
@@ -55,15 +55,17 @@ interface StaleRow extends VectorRow {
   embedding_version: number
 }
 
-const EMBEDDING_FIELDS = `id, status, starts_at, name, description_es, description_en, categories, facets,
-  price, is_free, venue_name, venue_neighborhood, search_document, embedding_version`
+const SEARCH_INPUTS = ['name', 'description_es', 'description_en', 'categories', 'facets',
+  'price', 'is_free', 'venue_name', 'venue_neighborhood'] as const
+const EMBEDDING_FIELDS = `id, status, starts_at, ${SEARCH_INPUTS.join(', ')}, search_document, embedding_version`
 const STALE_DOCUMENT = "status = 'scheduled' AND (embedding_version < ? OR search_document IS NULL)"
 
 function sourceForEmbedding(row: StaleRow) {
   return {
     name: row.name, description_es: row.description_es, description_en: row.description_en,
     categories: JSON.parse(row.categories) as string[], facets: JSON.parse(row.facets) as EventFacets,
-    price: row.price, is_free: row.is_free === 1, venue_name: row.venue_name, venue_neighborhood: row.venue_neighborhood,
+    price: row.price, is_free: row.is_free === 1 || row.price !== null ? row.is_free === 1 : undefined,
+    venue_name: row.venue_name, venue_neighborhood: row.venue_neighborhood,
   }
 }
 
@@ -82,7 +84,7 @@ export interface ReconcileResult {
   restored: number
   metadataUpdated: number
   checked: number
-  /** Events left for the next night because `maxEmbeds` ran out. */
+  /** Events left for the next night because `maxEmbeds` ran out or the rebuild inputs changed. */
   deferred: number
 }
 
@@ -97,28 +99,38 @@ export async function reconcileCatalog(db: D1Database, vectors: Vectorize, optio
   const embedText = options.embedText ?? generateEmbedding
   const result: ReconcileResult = { reembedded: 0, resynced: 0, restored: 0, metadataUpdated: 0, checked: 0, deferred: 0 }
 
-  // 1. reembed-stale: scheduled events whose document is from an older version or missing. Document, version and vector
-  //    are written together, so the three always agree.
-  const { results: stale } = await db.prepare(`SELECT ${EMBEDDING_FIELDS} FROM events_with_venues
-    WHERE ${STALE_DOCUMENT} ORDER BY starts_at, id`).bind(CURRENT_EMBEDDING_VERSION).all<StaleRow>()
+  // 1. An update that reused the stored document (such as artwork-only intake) may have retained stale text even
+  //    at the current version. Compare those documents without a provider call until an actual mismatch is found.
+  const { results: candidates } = await db.prepare(`SELECT ${EMBEDDING_FIELDS} FROM events_with_venues e
+    WHERE (${STALE_DOCUMENT}) OR (e.status = 'scheduled' AND e.embedding_version = ? AND EXISTS (
+      SELECT 1 FROM event_intake_protection p JOIN intake_plans i ON i.id = p.plan_id
+      WHERE p.event_id = e.id AND i.action = 'update' AND json_extract(i.payload, '$.embedding') IS NULL))
+    ORDER BY starts_at, id`).bind(CURRENT_EMBEDDING_VERSION, CURRENT_EMBEDDING_VERSION).all<StaleRow>()
   const reembedded = new Set<string>()
-  for (const row of stale) {
+  for (const row of candidates) {
+    const input = sourceForEmbedding(row)
+    if (row.embedding_version >= CURRENT_EMBEDDING_VERSION && row.search_document === buildSearchDocument(input)) continue
     if (budget <= 0) { result.deferred++; continue }
     budget--
-    const { embedding, searchDocument } = await embed(sourceForEmbedding(row))
-    // Queued in the same transaction, so a failed upsert below is picked up by step 2 tomorrow.
-    await db.batch([
-      db.prepare('UPDATE events SET search_document = ?, embedding_version = ? WHERE id = ?').bind(searchDocument, CURRENT_EMBEDDING_VERSION, row.id),
-      db.prepare('INSERT OR REPLACE INTO vector_sync (event_id) VALUES (?)').bind(row.id),
-    ])
-    // Intake protection can revert the document; only a document that stuck gets the new vector.
-    const stored = await db.prepare('SELECT status, starts_at, search_document FROM events WHERE id = ?').bind(row.id).first<VectorRow & { search_document: string | null }>()
-    if (stored?.search_document === searchDocument) {
-      await vectors.upsert([{ id: row.id, values: embedding, metadata: vectorMetadata(stored) }])
-      reembedded.add(row.id)
-      result.reembedded++
-    }
-    await db.prepare('DELETE FROM vector_sync WHERE event_id = ?').bind(row.id).run()
+    const { embedding, searchDocument } = await embed(input)
+    // Only this derived-field write uses the intake bypass. Check the same accepted facts (including venue text)
+    // in the batch so a provider call that overlapped an edit cannot replace the new listing's search text.
+    const [, updated] = await db.batch<VectorRow>(intakeCommitBatch(db, [
+      db.prepare(`UPDATE events SET search_document = ?, embedding_version = ? WHERE id = ? AND status = 'scheduled'
+        AND embedding_version IS ? AND search_document IS ?
+        AND EXISTS (SELECT 1 FROM events_with_venues v WHERE v.id = events.id AND ${SEARCH_INPUTS.map(key => `v.${key} IS ?`).join(' AND ')})
+        RETURNING id, status, starts_at`)
+        .bind(searchDocument, CURRENT_EMBEDDING_VERSION, row.id, row.embedding_version, row.search_document, ...SEARCH_INPUTS.map(key => row[key])),
+      db.prepare('INSERT OR REPLACE INTO vector_sync (event_id) SELECT ? WHERE changes() > 0').bind(row.id),
+    ]))
+    const stored = updated?.results[0]
+    if (!stored) { result.deferred++; continue }
+    await vectors.upsert([{ id: row.id, values: embedding, metadata: vectorMetadata(stored) }])
+    reembedded.add(row.id)
+    result.reembedded++
+    await db.prepare(`DELETE FROM vector_sync WHERE event_id = ? AND EXISTS (
+      SELECT 1 FROM events WHERE id = ? AND search_document IS ? AND embedding_version = ?)`)
+      .bind(row.id, row.id, searchDocument, CURRENT_EMBEDDING_VERSION).run()
   }
 
   // 2. Events whose vector write failed after D1 committed: embed the stored document, so the vector matches the row

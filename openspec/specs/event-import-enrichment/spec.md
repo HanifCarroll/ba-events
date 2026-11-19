@@ -126,6 +126,7 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 #### Scenario: Vectorize drifts from D1
 - **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row
 - **THEN** it re-embeds the document, restores the vector, or rewrites the metadata, within a bounded number of embedding calls per night
+- **AND** a stale or missing search document can be rebuilt from current intake-accepted facts without making those facts writable by importers
 
 ### Requirement: Catch-up retries are bounded per scheduled chain
 The scheduled catch-up SHALL include retryable `failed` events in its first batch, then select only `pending` events in chained batches. A failed event MUST be attempted at most once per scheduled catch-up chain and remain eligible for a later scheduled run.
@@ -262,7 +263,7 @@ The agent SHALL submit validated structured candidates with supporting observati
 #### Scenario: A date, time or address appears only on an official page
 - **WHEN** a candidate cites `{ kind: 'official_page', url, excerpt }` evidence for a field the post doesn't state
 - **THEN** preview and commit each fetch the URL themselves (public HTTPS hosts only, no cookies, bounded size and time) and accept it only when the page's visible text contains the excerpt after whitespace-, case- and accent-insensitive normalization
-- **AND** the equivalently normalized page text contains the event name as whole words, or the equivalently normalized page title matches it; the comparison folds case, accents, punctuation, and `+`/`-`/`y` separators, and a name mismatch cites the page title if available
+- **AND** the excerpt belongs to the same listing as the name; an ordinary ticket page must identify the show by its matching primary heading or title, or by a matching name in the block containing the excerpt. A recommendation or sidebar mention does not count. Name matching folds case, accents, punctuation, and `+`/`-`/`y` separators, and a name mismatch cites the page title if available
 - **AND** on El Camarín de las Musas's Fanz event page with an explicit `eventDateId`, date and time evidence must quote the selected same-day performance's date-picker line and match its own event title, full local date, and start time; ordinary page text cannot substitute for that line, and a performance that has already started does not produce one
 - **AND** a scheme-less `www.` domain in a cited caption counts as a linked site even with trailing sentence punctuation; an unmentioned domain does not
 - **AND** a redirect to a Queue-it waiting room is not fetched and tells the operator to cite another official page

@@ -107,8 +107,11 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     const embedding = plan.payload.embedding ?? (vectorMetadataChanged(previous, plan.payload)
       ? (await vectors.getByIds([plan.event_id]))[0]?.values : undefined)
     if (!embedding) return
-    const event = await db.prepare('SELECT status, starts_at FROM events WHERE id = ?').bind(plan.event_id).first<{ status: string; starts_at: string }>()
-    if (!event) return
+    const event = await db.prepare('SELECT status, starts_at, search_document, embedding_version FROM events WHERE id = ?').bind(plan.event_id)
+      .first<{ status: string; starts_at: string; search_document: string | null; embedding_version: number }>()
+    // A nightly rebuild can supersede a still-current intake receipt's prepared embedding.
+    if (!event || plan.payload.embedding && (event.search_document !== plan.payload.search_document ||
+      event.embedding_version !== (plan.payload.embedding_version ?? 1))) return
     await vectors.upsert([{ id: plan.event_id, values: embedding, metadata: { status: event.status, starts_at: Date.parse(event.starts_at) } }])
     // A metadata-only refresh may have reused a stale vector. Leave any pending embedding repair queued.
     if (plan.payload.embedding) await db.prepare('DELETE FROM vector_sync WHERE event_id = ?').bind(plan.event_id).run()
@@ -429,7 +432,8 @@ export function d1Intake({ db, evidence, artwork, vectors }: IntakeBindings, sit
     replayReceipt: plan => d1('intake.commit', async () => {
       // Repair the vector only while this plan is still the event's accepted state: every create or update commit points
       // the protection row at itself, so a later correction makes an older plan's embedding stale.
-      const current = await db.prepare('SELECT 1 FROM event_intake_protection WHERE event_id = ? AND plan_id = ?').bind(plan.event_id, plan.id).first()
+      const current = await db.prepare(`SELECT 1 FROM event_intake_protection p JOIN vector_sync q ON q.event_id = p.event_id
+        WHERE p.event_id = ? AND p.plan_id = ?`).bind(plan.event_id, plan.id).first()
       if (current) await upsertVector(plan, (plan.receipt!.previous_event as Row | null) ?? null)
       return plan.receipt!
     }),
