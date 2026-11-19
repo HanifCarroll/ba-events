@@ -1,7 +1,7 @@
 # Instagram Publishing Specification
 
 ## Purpose
-Define how the VPS job drafts the recurring @baeventos.app posts from the catalog, gets Hanif's approval in Slack, and publishes through the Instagram API without ever posting twice. The words come from `src/features/instagram-publisher/copy.md`.
+Define how the VPS job drafts the recurring @baeventos.app posts from the catalog, gets Hanif's approval in Slack, and publishes without ever posting twice. The words come from `src/features/instagram-publisher/copy.md`.
 
 ## Requirements
 
@@ -91,8 +91,34 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 - **WHEN** a format's auto mode is on
 - **THEN** the preview is still posted and the post goes out at its slot unless Hanif reacted ❌
 
-### Requirement: Publishing is idempotent
-The job MUST save each container and media id before the next step, check `content_publishing_limit` before `media_publish`, and after an unclear `media_publish` result list the account's recent media before any retry.
+### Requirement: Hoy can publish with Instagram link stickers
+
+With `linkStickers.hoy` enabled and no Graph API publish underway for the draft, the job MUST use Business Suite's Share now for Instagram only. Every frame MUST have an Instagram link sticker that leaves the artwork's text clear. The cover links to `https://baeventos.com` with “Ver la agenda”, each event frame to `https://baeventos.com/events/<event id>` with “Ver evento”, and the closing frame to `https://baeventos.com` with “Buscar planes”. If the composer does not support custom text, use its default. The job MUST re-check reactions, deadline, and event validity before Share and never use Business Suite scheduling.
+
+#### Scenario: R2 is not configured
+- **WHEN** the R2 bucket name or public base URL is missing or blank after trimming
+- **THEN** it starts no new publish via Business Suite or Graph, even when link stickers are enabled
+- **AND** it still reconciles a saved Share attempt without publishing again
+
+#### Scenario: An event has a venue or curator handle
+- **WHEN** the Graph route would tag an event frame's account
+- **THEN** the Business Suite route adds an Instagram Mention sticker for that same username without covering the link sticker or other artwork text
+- **AND** if the results list does not open or show an exact username match within five seconds, it skips only that mention and lists it in the outcome note
+
+#### Scenario: The composer is unavailable before Share
+- **WHEN** the browser flow fails before a Share attempt, including if Meta requires sign-in
+- **THEN** the job discards the composer and uses the Graph API subject to the same publishing gates. If it publishes, it alerts that the Story went out without links and says what needs attention.
+
+#### Scenario: Share was attempted but its outcome is unclear
+- **WHEN** the job records a Share attempt with its time and frame count before dispatching the click
+- **THEN** no tick may Share again or fall back. The job reads the account's Stories for the expected number of new frames since the attempt, even if approval changes or the flag turns off. If it cannot confirm the full count by the deadline, it holds the draft and alerts Hermes to check the account's Stories.
+
+#### Scenario: Preview without publishing
+- **WHEN** the operator runs `stickers-dry-run` for a saved Hoy draft
+- **THEN** the job captures each frame's Instagram preview and discards the composer without sharing, scheduling, or writing draft state.
+
+### Requirement: Graph API publishing is idempotent
+The job MUST save each container and media id before the next step, check `content_publishing_limit` before `media_publish`, and check that container's status after an unclear `media_publish` result before any retry.
 
 #### Scenario: media_publish times out after Instagram posted
 - **WHEN** the response to `media_publish` is lost

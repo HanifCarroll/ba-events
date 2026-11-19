@@ -43,7 +43,7 @@ export function cover(format: FormatKey, window: RunWindow, count: number): Cove
 export const cardKicker = (format: FormatKey, event: PostEvent) => `${format === 'hoy' ? 'Hoy' : weekdayDay(event.date)} · ${event.time}`
 
 /** The card footer's tag text: "@handle", or "Vía @handle" when the handle isn't the venue's own account. */
-export const footerHandle = (event: PostEvent) => event.handle ? `${event.via ? 'Vía ' : ''}@${event.handle}` : ''
+export const footerHandle = (event: Pick<PostEvent, 'handle' | 'via'>) => event.handle ? `${event.via ? 'Vía ' : ''}@${event.handle}` : ''
 
 export function eventLine(format: FormatKey, event: PostEvent): string {
   const where = `${event.handle && !event.via ? `@${event.handle}` : event.venue}, ${event.barrio}.`
@@ -95,3 +95,4 @@ export function tooFewText(format: FormatKey, window: RunWindow, count: number):
 }
 
 export const postedText = (permalink: string) => `Posted: ${permalink}`
+export const skippedMentionsText = (handles: string[]) => `Skipped Instagram mentions (no exact username match): ${Array.from(new Set(handles), handle => `@${handle}`).join(', ')}.`

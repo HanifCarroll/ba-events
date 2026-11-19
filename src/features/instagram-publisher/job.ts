@@ -9,15 +9,16 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { join } from 'node:path'
 import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
 import * as alerts from './alerts.ts'
-import { caption as captionFor, footerHandle, heldText, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, framesHtml } from './html.ts'
-import { StillProcessing, emptyPublishState, footerTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
+import { PROFILE_URL, StillProcessing, emptyPublishState, eventFrameTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
 import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
 import { reelTiming, type ReelTiming } from './reel/project.ts'
 import * as runtime from './runtime.ts'
 import type { Config, EventNow, TokenCheck } from './runtime.ts'
 import { selectEvents, type CatalogEvent, type PostEvent } from './select.ts'
+import { confirmsStory, liveStories, stickerFrames, StoryComposerError, type ComposeStory, type StickerFailure, type StoryShareAttempt } from './story-stickers.ts'
 
 export type DraftState = 'previewing' | 'previewed' | 'publishing' | 'published' | 'skipped' | 'failed' | 'held' | 'rebuilding'
 
@@ -41,6 +42,10 @@ export interface Draft {
   approvedSeenAt: string | null
   r2Uploaded: string | null
   publish: PublishState | null
+  /** Saved before the Business Suite Share click. Its presence permanently forbids another write. */
+  storyShare?: StoryShareAttempt
+  /** A pre-Share browser failure fixes this draft on the Graph route, including retries. */
+  stickerFallback?: StickerFailure
   /** Total failures for the publish retry budget, separate from the shared tick streak. */
   publishFailures: number
   /** A Slack message still to deliver for this draft's outcome. */
@@ -69,6 +74,7 @@ export interface Services {
   r2Put(bucket: string, key: string, path: string): Promise<void>
   loadToken(now: Date): Promise<TokenCheck>
   instagram(accessToken: string): InstagramApi
+  composeStory: ComposeStory
   alert(key: string, title: string, text: string, fingerprint?: string): Promise<void>
   resolveAlert(key: string, text?: string): Promise<boolean | void>
   sleep(ms: number): Promise<void>
@@ -92,6 +98,7 @@ export const liveServices = (): Services => ({
   r2Put: runtime.r2Put,
   loadToken: now => runtime.loadToken(now),
   instagram: token => instagramApi(token),
+  composeStory: async (...args) => (await import('./story-composer.ts')).composeStory(...args),
   alert: runtime.alert,
   resolveAlert: runtime.resolveAlert,
   sleep: runtime.sleep,
@@ -212,6 +219,14 @@ export class Job {
     }
   }
 
+  async previewStickers(id: string, outDir: string) {
+    if (parseDraftId(id).format !== 'hoy') throw new Error('Sticker previews are only available for Hoy drafts.')
+    const draft = this.loadDraft(id)
+    if (!draft || draft.format !== 'hoy') throw new Error(`No Hoy draft ${id}; see \`status\``)
+    this.verifyFrames(draft)
+    return this.s.composeStory(stickerFrames(draft.frames, draft.events), { previewDir: outDir })
+  }
+
   // Outcomes and notifications
 
   /** Record an outcome and its Slack message together, then try to deliver it. */
@@ -281,8 +296,39 @@ export class Job {
     }
   }
 
-  /** Returns false when publishing had to be skipped for missing setup (token or R2). */
+  private async reconcileStory(draft: Draft, window: RunWindow, poll = false): Promise<boolean> {
+    const attempt = draft.storyShare!
+    const skippedNote = attempt.skippedMentions?.length ? skippedMentionsText(attempt.skippedMentions) : null
+    let failure: string | undefined
+    for (let check = 0; check < (poll ? 5 : 1); check++) {
+      let confirmed = false
+      try {
+        const token = await this.s.loadToken(this.s.now())
+        if (token.state === 'missing') throw new Error('The Instagram token file is missing.')
+        confirmed = confirmsStory(attempt, await liveStories(this.s.instagram(token.token.access_token), token.token.ig_user_id))
+      } catch (error) {
+        if (this.s.now() < window.deadline) throw error
+        failure = alerts.describeFailure(error).message
+      }
+      if (confirmed) {
+        await this.settle(draft, 'published', [postedText(PROFILE_URL), skippedNote].filter(Boolean).join('\n'), { publishFailures: 0, note: skippedNote })
+        return true
+      }
+      if (this.s.now() >= window.deadline) {
+        const note = ['Business Suite Share was attempted; check @baeventos.app Stories.', skippedNote].filter(Boolean).join('\n')
+        await this.settle(draft, 'held', `Held: ${note}`, { note })
+        await this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.storyUnconfirmed(draft, this.s.now(), failure))
+        return false
+      }
+      if (poll && check < 4) await this.s.sleep(15_000)
+    }
+    this.s.log(`${draft.id}: checking again next tick whether the Story went out; not sharing again`)
+    return false
+  }
+
+  /** Returns true only when the draft is published. A pending Business Suite Share takes precedence over all gates. */
   private async publishDraft(draft: Draft, window: RunWindow): Promise<boolean> {
+    if (draft.storyShare) return this.reconcileStory(draft, window)
     const config = this.s.config()
     const token = await this.s.loadToken(this.s.now())
     if (token.state === 'missing') { this.s.log(`${draft.id}: no Instagram token file; skipping publishing`); return false }
@@ -294,6 +340,38 @@ export class Job {
     const beforeWrite = async () => {
       checkWrite(window, readReactions(await this.s.slackReactions(draft.slack.ts!)), auto, this.s.now())
       if (!eventsChecked) { await this.checkEvents(draft); eventsChecked = true }
+    }
+    if (draft.format === 'hoy' && config.linkStickers.hoy && !draft.publish && !draft.stickerFallback) {
+      await beforeWrite()
+      this.verifyFrames(draft)
+      const frames = stickerFrames(draft.frames, draft.events)
+      try {
+        await this.s.composeStory(frames, { beforeShare: async (signal, skippedMentions) => {
+          const api = this.s.instagram(token.token.access_token)
+          const before = await liveStories(api, token.token.ig_user_id).catch(() => {
+            throw new StoryComposerError('read existing Instagram Stories before sharing')
+          })
+          eventsChecked = false // Editing takes time; use the fresh catalog and Slack decisions just before Share.
+          await beforeWrite()
+          // If D1 took us across the deadline, do not start a new write.
+          const now = this.s.now()
+          if (now >= window.deadline) throw new PublishStop('deadline', 'The publishing deadline passed')
+          if (signal.aborted) throw new StoryComposerError('finish the Business Suite flow within six minutes')
+          draft.storyShare = { at: now.toISOString(), frameCount: frames.length, beforeIds: before.map(story => story.id), skippedMentions }
+          draft.state = 'publishing'
+          this.save(draft)
+        } })
+      } catch (error) {
+        if (!(error instanceof StoryComposerError)) throw error
+        this.s.log(`${draft.id}: ${error.message}`)
+        if (!draft.storyShare) {
+          draft.stickerFallback = { signIn: error.signIn, step: error.step }
+          this.save(draft)
+        }
+      }
+      if (draft.storyShare) return this.reconcileStory(draft, window, true)
+      if (!draft.stickerFallback) throw new Error('The composer returned without recording a Share attempt.')
+      eventsChecked = false // The Graph fallback has its own first-write check.
     }
     if (!draft.publish) await beforeWrite()
     const prefix = `instagram/${draft.id}/${draft.framesHash}`
@@ -311,11 +389,7 @@ export class Job {
       job = { kind, igUserId: token.token.ig_user_id, slides: [], caption: draft.caption, video: { url: url('reel.mp4'), coverUrl: url('cover.jpg') } }
     } else {
       const height = FRAME[kind].height
-      // Frame 1 is the cover and the last one the closing frame; the cards in between carry the tags.
-      const slides: Slide[] = draft.frames.map((_, index) => {
-        const event = index > 0 && index <= draft.events.length ? draft.events[index - 1]! : null
-        return { url: url(names[index]!), tag: event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null }
-      })
+      const slides: Slide[] = draft.frames.map((_, index) => ({ url: url(names[index]!), tag: eventFrameTag(draft.events, index, height) }))
       job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
     }
     draft.publish ??= emptyPublishState(job)
@@ -383,14 +457,16 @@ export class Job {
       if (error instanceof StillProcessing) { this.s.log(`${draft.id}: ${error.message}`); return }
       draft.publishFailures++
       draft.note = error instanceof Error ? error.message : String(error)
-      const pending = draft.publish?.units.some(unit => unit.pendingSince) ?? false
+      const pending = draft.storyShare || draft.publish?.units.some(unit => unit.pendingSince)
       if (draft.publishFailures >= MAX_PUBLISH_FAILURES && !pending) draft.state = 'failed'
       this.save(draft)
       failures.recordPublish(draft, error, this.draftFile(draft.id))
       return
     }
-    if (done) await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishRecovered(draft, this.s.now()))
-    else if (now >= window.deadline && draft.state === 'previewed') {
+    if (done) {
+      await this.s.resolveAlert(alerts.draftKey(draft), alerts.publishRecovered(draft, this.s.now()))
+      if (draft.stickerFallback) await this.s.alert(`${alerts.draftKey(draft)}/stickers`, alerts.draftTitle(draft), alerts.stickersFallback(draft, draft.stickerFallback))
+    } else if (now >= window.deadline && draft.state === 'previewed') {
       await this.settle(draft, 'failed', null, { note: 'Not published: the Instagram token or the R2 setup was missing.' })
     }
   }
@@ -441,7 +517,7 @@ export class Job {
     const { format, from } = parseDraftId(id)
     const old = this.loadDraft(id)
     if (!old) throw new Error(`No draft ${id}; see \`status\``)
-    if (old.publish || ['publishing', 'published'].includes(old.state)) throw new Error(`${id} has started publishing; it can't be rebuilt`)
+    if (old.storyShare || old.publish || ['publishing', 'published'].includes(old.state)) throw new Error(`${id} has started publishing; it can't be rebuilt`)
     if (this.s.now() >= runWindow(format, from).cutoff) throw new Error(`${id} is past its cutoff`)
     const exclude = [...new Set([...old.exclude, ...excludeIds])]
     const revision = (old.revision ?? 1) + 1
@@ -488,6 +564,13 @@ export async function dryRun(format: FormatKey, from: string, outDir: string, tr
 
 export const tick = () => runtime.withLock(() => new Job(liveServices()).tick())
 
+export async function stickersDryRun(id: string, outDir: string) {
+  const job = new Job(liveServices())
+  const skipped = await runtime.withLock(() => job.previewStickers(id, outDir))
+  console.log(`Instagram preview screenshots saved to ${outDir}; composer discarded without sharing.`)
+  if (skipped.length) console.log(skippedMentionsText(skipped))
+}
+
 export async function regenerate(id: string, excludeIds: string[], trackId: string | null = null) {
   await runtime.withLock(async () => {
     const draft = await new Job(liveServices()).regenerate(id, excludeIds, trackId)
@@ -501,7 +584,7 @@ export function status() {
   const fmt = (date: Date) => date.toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 16)
   for (const draft of drafts) {
     const window = runWindow(draft.format, draft.from)
-    const extra = draft.state === 'published' ? draft.publish?.permalink : draft.skipReason ?? draft.note
+    const extra = draft.state === 'published' ? draft.publish?.permalink ?? PROFILE_URL : draft.skipReason ?? draft.note
     console.log([draft.id.padEnd(18), `r${draft.revision ?? 1}`, draft.state.padEnd(10), `draft ${fmt(window.draftAt)}`, `publish ${fmt(window.publishAt)}`,
       `deadline ${fmt(window.deadline)}`, `${draft.events.length} events`, draft.notify ? 'Slack reply pending' : '', extra ?? ''].join('  ').trimEnd())
   }

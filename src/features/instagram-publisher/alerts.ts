@@ -5,9 +5,10 @@ import type { PublishStop } from './approval.ts'
 import { heldEventReason, type SkipReason } from './copy.ts'
 import { addDays, baLocal, englishDates, hhmm, WEEKDAYS_EN } from './format.ts'
 import { draftId, FORMATS, runWindow, TICK_MS } from './formats.ts'
-import { InstagramError } from './instagram.ts'
+import { InstagramError, PROFILE_URL } from './instagram.ts'
 import type { Draft, Services } from './job.ts'
 import { writeJson } from './runtime.ts'
+import type { StickerFailure } from './story-stickers.ts'
 
 const HOUR_MS = 60 * 60_000
 export const ALERT_FAILURES = 3
@@ -63,21 +64,22 @@ export function tokenAlert(warning: string, now: Date) {
 }
 
 function publication(draft?: Draft | null) {
-  const total = draft?.publish?.units.length ?? 0
-  const out = draft?.publish?.units.filter(unit => unit.mediaId || unit.published).length ?? 0
-  const pending = draft?.publish?.units.some(unit => unit.pendingSince) ?? false
+  const total = draft?.storyShare?.frameCount ?? draft?.publish?.units.length ?? 0
+  const browserPending = Boolean(draft?.storyShare && draft.state === 'publishing')
+  const out = draft?.storyShare && draft.state === 'published' ? total : draft?.publish?.units.filter(unit => unit.mediaId || unit.published).length ?? 0
+  const pending = browserPending || (draft?.publish?.units.some(unit => unit.pendingSince) ?? false)
   const live = out > 0 && out === total
-  const needsLink = live && !draft?.publish?.permalink
+  const needsLink = live && !draft?.storyShare && !draft?.publish?.permalink
   const outcome = live ? 'is on Instagram' : out ? `posted ${out} of ${total} frames` : pending ? 'may already be on Instagram' : null
-  return { total, out, pending, live, needsLink, outcome }
+  return { total, out, pending, browserPending, live, needsLink, outcome }
 }
 
 type Publication = ReturnType<typeof publication>
 
-function publishRetry(item: Item, { needsLink, out, pending }: Publication, now: Date) {
+function publishRetry(item: Item, { needsLink, out, pending, browserPending }: Publication, now: Date) {
   const { deadline } = runWindow(item.format, item.from)
   return needsLink ? `It tries again at ${next(now)} to find the link.`
-    : nextTick(now) < deadline ? `It tries again at ${next(now)}. The last chance is ${when(deadline, now)}.`
+    : !browserPending && nextTick(now) < deadline ? `It tries again at ${next(now)}. The last chance is ${when(deadline, now)}.`
     : pending ? `It checks again at ${next(now)} whether ${out ? 'another frame' : 'the post'} went out. It won't post anything new.`
     : `There is no retry before the ${when(deadline, now)} deadline.`
 }
@@ -118,7 +120,25 @@ function publishAlert(draft: Draft, failure: TickFailure, now: Date, stateFile: 
 export const tokenRecovered = (now: Date) => `✅ *The Instagram token is working again* at ${when(now, now)}.`
 
 export const publishRecovered = (draft: Draft, now: Date) =>
-  `✅ *The ${label(draft)} is on Instagram* at ${when(now, now)}: ${draft.publish?.permalink}`
+  `✅ *The ${label(draft)} is on Instagram* at ${when(now, now)}: ${draft.publish?.permalink ?? PROFILE_URL}`
+
+export function stickersFallback(draft: Draft, failure: StickerFailure) {
+  return [
+    `⚠️ *The ${label(draft)} went out on Instagram without tappable links*. ${TRIAGE}`,
+    failure.signIn ? 'Hermes needs to sign Facebook in again in the Pro agent browser.'
+      : `The publisher could not ${failure.step}. Hermes should check Business Suite before the next Hoy Story.`,
+    codes(draft.id, failure.signIn ? 'Business Suite sign-in required' : undefined),
+  ].join('\n')
+}
+
+export function storyUnconfirmed(draft: Draft, now: Date, error?: string) {
+  const { deadline } = runWindow(draft.format, draft.from)
+  return [
+    `🚨 *The ${label(draft)} is on hold*: the publisher couldn't confirm all its frames by ${when(deadline, now)}. ${TRIAGE}`,
+    `Hermes needs to check @baeventos.app Stories. The publisher won't share it again.`,
+    codes(draft.id, `Expected ${draft.storyShare!.frameCount} new frames`, error && errorCode(error)),
+  ].join('\n')
+}
 
 export function publishSkipped(draft: Draft, reason: Exclude<SkipReason, { kind: 'too-few' }>, now: Date) {
   const why = reason.kind === 'late' ? `its deadline passed at ${when(reason.by, now)}`

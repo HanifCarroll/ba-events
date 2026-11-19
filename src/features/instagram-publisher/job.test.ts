@@ -11,6 +11,7 @@ import type { RunWindow } from './formats.ts'
 import { Job, type Draft, type Services } from './job.ts'
 import type { Config } from './runtime.ts'
 import type { CatalogEvent } from './select.ts'
+import { StoryComposerError, type ComposeStory } from './story-stickers.ts'
 
 /** A music directory with three synthetic tracks (the files only need to exist; the fake render never reads them). */
 function musicDir(tracks = [{ id: 'a', bpm: 90, startSec: 1 }, { id: 'b', bpm: 120, startSec: 2 }, { id: 'c', bpm: 100, startSec: 0 }]) {
@@ -64,7 +65,8 @@ class World {
   recovery: Array<{ key: string; text: string }> = []
   r2: string[] = []
   music = musicDir()
-  config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
+  config: Config = { auto: { hoy: false, finde: false, gratis: false, reel: false }, linkStickers: { hoy: false }, r2: { bucket: 'b', publicBaseUrl: 'https://ig.example' }, reel: { musicDir: this.music } }
+  composeStory: ComposeStory = async () => { throw new Error('Unexpected call to the browser') }
   reelRenders: Array<{ track: string; total: number; events: string[] }> = []
   renderError: Error | null = null
   tokenWarning: string | null = null
@@ -108,6 +110,7 @@ class World {
       r2Put: async (_bucket, key) => { this.r2.push(key) },
       loadToken: async () => ({ state: 'ok', token: { access_token: 'T', ig_user_id: '17841', expires_at: '2027-01-01T00:00:00.000Z' }, warning: this.tokenWarning }),
       instagram: () => this.ig,
+      composeStory: (...args) => this.composeStory(...args),
       alert: async (key, _title, text, fingerprint) => {
         const headline = text.split('\n').slice(0, 2).join('\n')
         expect(headline).not.toMatch(/journalctl|\/home\/|bun scripts|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
@@ -539,6 +542,158 @@ describe('tick: approval and publishing', () => {
     await w.job().tick()
     expect(w.ig.published).toHaveLength(0)
     expect(w.draft().state).not.toBe('published')
+  })
+})
+
+describe('Hoy link stickers', () => {
+  const date = '2026-11-20'
+  async function hoy(enabled = true) {
+    const w = new World()
+    w.config.linkStickers.hoy = enabled
+    w.at(date, 11)
+    const job = w.job()
+    const render = job.s.render
+    job.s.render = async (...args) => (await render(...args)).slice(0, 4)
+    const draft = await job.createDraft('hoy', date, [], 1)
+    w.at(date, 17)
+    w.approve()
+    const load = () => w.job().loadDraft(draft.id)!
+    const advance = async () => {
+      const fresh = w.job() // Re-read state like a new tick, not the in-memory draft.
+      await fresh.advance(load(), new TickFailures(fresh.s))
+    }
+    return { w, load, advance }
+  }
+
+  it('keeps Hoy on the Graph API when the flag is off', async () => {
+    const { w, load, advance } = await hoy(false)
+    await advance()
+    expect(w.ig.published).toHaveLength(4)
+    expect(load().state).toBe('published')
+    expect(load().storyShare).toBeUndefined()
+  })
+
+  it('keeps the sticker-enabled publisher preview-only with no R2 configuration', async () => {
+    const { w, load, advance } = await hoy()
+    w.config.r2 = null
+    let opened = false
+    w.composeStory = async () => { opened = true; return [] }
+    await advance()
+    expect(opened).toBe(false)
+    expect(load().state).toBe('previewed')
+    expect(w.ig.calls).toEqual([])
+  })
+
+  it('falls back before Share, says why, and reports that the Story went out without links', async () => {
+    const { w, load, advance } = await hoy()
+    w.composeStory = async () => { throw new StoryComposerError('open the Business Suite story composer', true) }
+    // Leave one unclear Graph write and confirm it resumes via Graph next tick, never through the browser.
+    w.ig.publishFault = 'after'
+    await advance()
+    expect(w.ig.published).toHaveLength(1)
+    expect(w.alerts).toEqual([])
+    w.composeStory = async () => { throw new Error('Must not return to the composer') }
+    await advance()
+    expect(w.ig.published).toHaveLength(4)
+    expect(load().state).toBe('published')
+    expect(load().storyShare).toBeUndefined()
+    expect(w.alerts[0]?.text).toContain('went out on Instagram without tappable links')
+    expect(w.alerts[0]?.text).toContain('Hermes needs to sign Facebook in again in the Pro agent browser.')
+  })
+
+  it.each(['removed approval', 'rejection', 'deadline', 'cancelled event'])('re-checks %s after composing and does not fall back', async changed => {
+    const { w, load, advance } = await hoy()
+    w.composeStory = async (_frames, action) => {
+      if (!('beforeShare' in action)) throw new Error('Expected Share callback')
+      if (changed === 'removed approval') w.reactions = []
+      if (changed === 'rejection') w.reject()
+      if (changed === 'deadline') w.at(date, 19)
+      if (changed === 'cancelled event') w.statuses.set(load().events[0]!.id, 'canceled')
+      await action.beforeShare(new AbortController().signal, [])
+      throw new Error('Must not allow Share')
+    }
+    await advance()
+    const draft = load()
+    expect(draft.storyShare).toBeUndefined()
+    expect(draft.stickerFallback).toBeUndefined()
+    expect(draft.state).toBe(changed === 'removed approval' ? 'previewed' : changed === 'cancelled event' ? 'held' : 'skipped')
+    expect(w.ig.calls.some(call => call.startsWith('POST'))).toBe(false)
+    expect(w.r2).toEqual([])
+  })
+
+  it('persists the attempt before Share, then only reads Graph after an unclear result even if the setting turns off and approval changes', async () => {
+    const { w, load, advance } = await hoy()
+    w.ig.postStoryByHand() // Existing Story in the same second; must not count it.
+    let clicks = 0
+    w.composeStory = async (_frames, action) => {
+      if (!('beforeShare' in action)) throw new Error('Expected Share callback')
+      await action.beforeShare(new AbortController().signal, ['sala1'])
+      expect(load().storyShare).toEqual({ at: w.clock.toISOString(), frameCount: 4, beforeIds: ['m1'], skippedMentions: ['sala1'] })
+      clicks++
+      for (let i = 0; i < 3; i++) w.ig.postStoryByHand()
+      throw new StoryComposerError('read the Share result')
+    }
+    await advance()
+    expect(load().state).toBe('publishing')
+    w.config.linkStickers.hoy = false
+    w.config.r2 = null
+    w.reject()
+    w.ig.postStoryByHand() // The last browser frame now appears on Graph.
+    w.at(date, 19)
+    await advance()
+    expect(load().state).toBe('published')
+    const note = 'Skipped Instagram mentions (no exact username match): @sala1.'
+    expect(load().note).toBe(note)
+    expect(w.replies()).toContain(`Posted: https://www.instagram.com/baeventos.app/\n${note}`)
+    expect(clicks).toBe(1)
+    expect(w.r2).toEqual([])
+    expect(new Set(w.ig.calls)).toEqual(new Set(['GET 17841/stories']))
+  })
+
+  it('holds an unconfirmed Share at the deadline, including when Graph is unavailable', async () => {
+    const { w, load, advance } = await hoy()
+    w.composeStory = async (_frames, action) => {
+      if (!('beforeShare' in action)) throw new Error('Expected Share callback')
+      await action.beforeShare(new AbortController().signal, [])
+      w.ig.postStoryByHand()
+      return []
+    }
+    await advance()
+    w.ig.get = async () => { throw new Error('Graph unavailable') }
+    w.at(date, 19)
+    await advance()
+    expect(load().state).toBe('held')
+    expect(w.alerts[0]?.text).toContain('Hermes needs to check @baeventos.app Stories.')
+    await expect(w.job().regenerate(load().id, [])).rejects.toThrow("can't be rebuilt")
+    expect(w.r2).toEqual([])
+    expect(w.ig.published).toEqual([])
+  })
+
+  it('falls back without recording a Share if the composer expires during the final checks', async () => {
+    const { w, load, advance } = await hoy()
+    w.composeStory = async (_frames, action) => {
+      if (!('beforeShare' in action)) throw new Error('Expected Share callback')
+      await action.beforeShare(AbortSignal.abort(), [])
+      throw new Error('Must not allow Share')
+    }
+    await advance()
+    expect(load().storyShare).toBeUndefined()
+    expect(w.ig.published).toHaveLength(4)
+  })
+
+  it('uses a preview-only action for the dry run and leaves state untouched', async () => {
+    const { w, load } = await hoy(false)
+    const draft = load()
+    let previews = 0
+    w.composeStory = async (frames, action) => {
+      expect(action).toEqual({ previewDir: '/test/previews' })
+      previews += frames.length
+      return ['sala1']
+    }
+    expect(await w.job().previewStickers(draft.id, '/test/previews')).toEqual(['sala1'])
+    expect(previews).toBe(4)
+    expect(load()).toEqual(draft)
+    expect(w.ig.calls).toEqual([])
   })
 })
 
