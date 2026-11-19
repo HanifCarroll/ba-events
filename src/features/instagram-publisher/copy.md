@@ -35,7 +35,6 @@ Hermes wrote this text and Hanif's rules apply to it. Commit it word for word. C
 - Kicker: "{Weekday} {d} de {mes}"
 - Headline: "Hoy en Buenos Aires"
 - Body: "{N} planes para esta noche."
-- Small English line: "Tonight in Buenos Aires: {N_en} independent events."
 - Footer: "baeventos.com"
 
 **One frame per event**
