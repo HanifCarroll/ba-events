@@ -4,9 +4,9 @@ import { EMPTY_FACETS, type EventFacets } from '#shared/lib/search-facets.ts'
 import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument } from '#shared/lib/ai/embeddings.ts'
 import { buildDescriptionPresentationFields } from '#features/events/lib/description-presentation.server.ts'
 import { importTry, ImportOperationError } from '../core/effect-utils.ts'
-import { decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
+import { candidateError, decodeCandidate, isOfficialPage, type Candidate } from './schema.ts'
 import { officialSites, verifyOfficialPagesEffect, type ReadPage } from './official-page.ts'
-import { baDate, candidateStart, decideMatch, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
+import { baDate, candidateStart, decideMatch, descriptionChanged, searchInputsChanged, validateEvidence, normalizeTitle, type CatalogMatch, type Observation } from './planning.ts'
 import type { IntakePlanRow, IntakeStore } from './store.ts'
 
 export type IntakePlan = IntakePlanRow
@@ -14,7 +14,7 @@ const failure = (message: string) => new ImportOperationError({ operation: 'inta
 
 export const submitCandidateEffect = Effect.fn('intake.submit')(function*(store: IntakeStore, input: unknown) {
   const candidate = yield* Effect.try({ try: () => decodeCandidate(input),
-    catch: () => new ImportOperationError({ operation: 'intake.input', message: 'Invalid candidate; see the candidate schema' }) })
+    catch: error => new ImportOperationError({ operation: 'intake.input', message: candidateError(error, input) }) })
   const { expected_revision, ...payload } = candidate
   // A mistyped ID would otherwise surface later as a preview reason that reads like a tool bug.
   const unknown = (field: string, id: string, kind: string) =>
@@ -76,6 +76,10 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     for (const target of targets) if (!catalog.some(event => event.id === target.id)) catalog.push(target)
   }
   const decision = decideMatch(candidate, catalog as unknown as CatalogMatch[], linkedIds, reasons)
+  const artworkNote = candidate.artwork_note?.trim() || null
+  if (decision.action !== 'link' && candidate.intent !== 'link' && !candidate.artwork_media_id && !artworkNote) {
+    decision.action = 'held'; decision.reasons.push('Select retained artwork or give a reason in artwork_note')
+  }
   if (decision.action === 'update' && !observations.some(post => post.authority === 'venue' || post.authority === 'organizer')) {
     decision.action = 'held'; decision.reasons.push('Corrections need organizer or venue evidence')
   }
@@ -87,7 +91,7 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     name: candidate.name, starts_at: decision.action === 'held' ? `${candidate.date}T00:00:00-03:00` : candidateStart(candidate),
     time_tba: candidate.time === null, venue_id: candidate.venue_id,
     description_es: description ?? old?.description_es as string | null ?? null,
-    description_en: candidate.description_en ?? (description ? null : old?.description_en as string | null ?? null),
+    description_en: candidate.description_en ?? (description && description !== old?.description_es ? null : old?.description_en as string | null ?? null),
     categories: [...candidate.categories],
     facets: (old?.facets ?? EMPTY_FACETS) as EventFacets,
     price: candidate.price_kind === 'fixed' ? candidate.price_ars : candidate.price_kind === 'free' ? 0 :
@@ -102,8 +106,17 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
     description_unavailable: !description && !old?.description_es,
     enrichment_status: description || old?.description_es ? 'completed' : 'skipped',
   }
-  payload.ends_at = old && new Date(String(old.starts_at)).getTime() === new Date(payload.starts_at).getTime() ? old.ends_at as string | null : null
+  if (decision.action === 'update' && old && Boolean(old.time_tba) === payload.time_tba &&
+    Math.floor(Date.parse(String(old.starts_at)) / 60_000) === Math.floor(Date.parse(payload.starts_at) / 60_000)) {
+    // Candidate times have only minute precision, so resubmitting the same time does not round the stored timestamp.
+    payload.starts_at = String(old.starts_at)
+  }
+  payload.ends_at = old && Date.parse(String(old.starts_at)) === Date.parse(payload.starts_at) ? old.ends_at as string | null : null
   if (decision.action === 'update' && old) {
+    if (!descriptionChanged(old, payload)) Object.assign(payload, storedPresentation(old), {
+      description_unavailable: old.description_unavailable, enrichment_status: old.enrichment_status,
+    })
+    if (!searchInputsChanged(old, payload)) Object.assign(payload, storedSearch(old))
     const changes: string[] = []
     if (old.status !== payload.status) changes.push('status')
     if (new Date(String(old.starts_at)).getTime() !== new Date(payload.starts_at).getTime()) changes.push('date', ...(candidate.time ? ['time'] : []))
@@ -118,7 +131,8 @@ export const previewCandidateEffect = Effect.fn('intake.preview')(function*(stor
   const plan = yield* store.insertPlan({
     candidate_id: id, revision: row.revision, action: decision.action,
     event_id: eventId, expected_event_updated_at: decision.target?.updated_at ?? null,
-    payload, artwork_media_id: candidate.artwork_media_id, evidence: candidate.evidence, reasons: [...new Set(decision.reasons)],
+    payload, artwork_media_id: candidate.artwork_media_id, artwork_note: artworkNote,
+    evidence: candidate.evidence, reasons: [...new Set(decision.reasons)],
   })
   return { ...plan, venue_name: venueName } as IntakePlan & { venue_name: string | null }
 })
@@ -139,6 +153,17 @@ const planFacts = (plan: IntakePlanRow) => {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(start)
   return { name: plan.payload.name, date: baDate(start.toISOString()), time }
 }
+
+const storedPresentation = (event: Record<string, unknown>) => ({
+  description_display_es: event.description_display_es as string | null,
+  description_display_en: event.description_display_en as string | null,
+  description_summary_es: event.description_summary_es as string | null,
+  description_summary_en: event.description_summary_en as string | null,
+})
+const storedSearch = (event: Record<string, unknown>) => ({
+  search_document: event.search_document as string | null,
+  embedding_version: event.embedding_version as number,
+})
 
 type Publishers = {
   embed: typeof embedEventWithDocument;
@@ -161,17 +186,25 @@ export const commitPlanEffect = Effect.fn('intake.commit')(function*(store: Inta
     if (pages.length) return yield* failure(pages.join('; '))
   }
   if (plan.action !== 'link' && !plan.payload.embedding) {
-    const venue = yield* store.eventVenue(plan.payload.venue_id)
-    const [{ embedding, searchDocument }, presentation] = yield* Effect.all([
-      importTry('intake.embedding', () => publishers.embed({ ...plan.payload,
-        is_free: plan.payload.is_free || plan.payload.price != null ? plan.payload.is_free : undefined,
-        venue_name: venue.name, venue_neighborhood: venue.neighborhood })),
-      importTry('intake.presentation', () => publishers.presentation(plan.payload)),
+    const [previous] = plan.action === 'update' ? yield* store.eventsByIds([plan.event_id]) : []
+    const rebuildSearch = !previous || searchInputsChanged(previous, plan.payload)
+    const rebuildPresentation = !previous || descriptionChanged(previous, plan.payload)
+    const [search, presentation] = yield* Effect.all([
+      rebuildSearch ? Effect.gen(function* () {
+        const venue = yield* store.eventVenue(plan.payload.venue_id)
+        return yield* importTry('intake.embedding', () => publishers.embed({ ...plan.payload,
+          is_free: plan.payload.is_free || plan.payload.price != null ? plan.payload.is_free : undefined,
+          venue_name: venue.name, venue_neighborhood: venue.neighborhood }))
+      }) : Effect.succeed(null),
+      rebuildPresentation ? importTry('intake.presentation', () => publishers.presentation(plan.payload))
+        : Effect.succeed(storedPresentation(previous!)),
     ], { concurrency: 2 })
-    if (!embedding || embedding.length !== 1536 || !embedding.every(Number.isFinite)) return yield* failure('A valid embedding is required before publishing')
-    yield* store.preparePlan(id, {
-      ...plan.payload, ...presentation, embedding, search_document: searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION,
-    })
+    if (search && (!search.embedding || search.embedding.length !== 1536 || !search.embedding.every(Number.isFinite))) {
+      return yield* failure('A valid embedding is required before publishing')
+    }
+    yield* store.preparePlan(id, { ...plan.payload, ...presentation, ...(search
+      ? { embedding: search.embedding!, search_document: search.searchDocument, embedding_version: CURRENT_EMBEDDING_VERSION }
+      : storedSearch(previous!)) })
   }
   if (plan.action !== 'link' && plan.artwork_media_id) {
     const media = yield* store.artworkMedia(plan.artwork_media_id)

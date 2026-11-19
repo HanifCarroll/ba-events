@@ -123,6 +123,16 @@ The D1 catalog SHALL judge events individually for an independent and public cul
 - **THEN** the hourly catalog task attempts a bounded batch of judgments without a new cron
 - **AND** an invalid or failed model response never makes an event public, while an ambiguous event is judged out with an `unclear:` reason
 
+#### Scenario: A catalog venue name is edited
+- **WHEN** a venue's new name has the same normalized key used by venue matching and its neighborhood is unchanged
+- **THEN** events retain their existing scope judgments
+- **AND** a different normalized key or neighborhood clears the linked judgments without changing event revisions
+
+#### Scenario: A batch includes recently cleared judgments
+- **WHEN** the hourly task selects events whose judgments were cleared in the last two hours
+- **THEN** it judges those rows ahead of other pending judgments, newest clear first
+- **AND** the operator backfill retains its stable start-time and ID order
+
 #### Scenario: An operator rehearses the backfill
 - **WHEN** the operator requests a dry run for scheduled events starting today or later in Buenos Aires
 - **THEN** the command reports the judgments without writing them; applying judgments is explicit and rerunning skips current judgments

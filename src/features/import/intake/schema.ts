@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Schema, SchemaIssue } from 'effect'
 import { CATEGORIES } from '#shared/lib/types.ts'
 
 const text = (max: number) => Schema.String.pipe(Schema.check(Schema.isMaxLength(max)))
@@ -45,6 +45,7 @@ export const CandidateSchema = Schema.Struct({
   price_note: Schema.NullOr(text(1000)),
   ticket_url: Schema.NullOr(text(2048)),
   artwork_media_id: Schema.NullOr(uuid),
+  artwork_note: Schema.optional(text(300)),
   evidence: Schema.Array(EvidenceSchema).pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(50))),
   issues: Schema.Array(nonempty(1000)).pipe(Schema.check(Schema.isMaxLength(30))),
   notes: text(4000),
@@ -62,6 +63,25 @@ export type Source = typeof SourceSchema.Type
 
 export function decodeCandidate(input: unknown): Candidate {
   return Schema.decodeUnknownSync(CandidateSchema, { onExcessProperty: 'error' })(input)
+}
+
+const candidateIssues = SchemaIssue.makeFormatterStandardSchemaV1()
+export function candidateError(error: unknown, input: unknown): string {
+  if (!Schema.isSchemaError(error)) return 'Invalid candidate; see the candidate schema'
+  const issues = candidateIssues(error.issue).issues.flatMap(({ path = [], message }) => {
+    const keys = path.map(segment => typeof segment === 'object' ? segment.key : segment)
+    const at = (parts: readonly PropertyKey[]) => parts.reduce<unknown>((value, key) => value && typeof value === 'object' && Object.hasOwn(value, key)
+      ? (value as Record<PropertyKey, unknown>)[key] : undefined, input)
+    // For official pages, `kind` is valid even when the post branch of the evidence union rejects it.
+    if (keys[0] === 'evidence' && keys[2] === 'kind' && message === 'Expected no excess property' && at(keys) === 'official_page') return []
+    const field = keys.map((key, index) => typeof key === 'number' ? `[${key}]` : `${index ? '.' : ''}${String(key)}`).join('')
+    const options = /^Expected ((?:"[^"\n]+" \| )*"[^"\n]+")$/.exec(message)?.[1]
+    const actual = options ? at(keys) : undefined
+    const detail = options ? `expected one of ${options.replaceAll('"', '').replaceAll(' | ', ', ')}${
+      typeof actual === 'string' ? `; got ${JSON.stringify(actual.slice(0, 80))}` : ''}` : message
+    return [field ? `${field}: ${detail}` : detail]
+  })
+  return `Invalid candidate: ${issues.join('; ')}`
 }
 
 export function validPublicUrl(value: string): boolean {

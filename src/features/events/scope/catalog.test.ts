@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { D1Database } from '@cloudflare/workers-types'
+import { NAME_FOLD_FROM, venueNameKey } from '#features/import/core/venue-identity.ts'
 import { freshD1 } from '../../../../tests/support/d1.ts'
 import { catalogSql } from '#features/instagram-publisher/runtime.ts'
 import { runWindow } from '#features/instagram-publisher/formats.ts'
@@ -102,6 +103,37 @@ describe('D1 scope judgments', () => {
     expect(await stored('event')).toMatchObject({ scope: 'in' })
     await db.prepare("UPDATE venues SET neighborhood = 'Boedo' WHERE id = 'v'").run()
     expect(await stored('event')).toMatchObject({ scope: null, scope_reason: null, scope_judged_at: null })
+  })
+
+  it('keeps judgments for venue renames with the same matching key and clears real renames without changing event revisions', async () => {
+    const original = `Sala ${NAME_FOLD_FROM.slice(0, -3)} Del Río - Buenos Aires —`
+    await db.prepare("INSERT INTO venues (id, name) VALUES ('v', ?)").bind(original).run()
+    await insertEvent('event', 'v')
+    await judgeScheduledScope(db, now, fakeModel)
+    const judgment = await stored('event')
+    const revision = () => db.prepare("SELECT updated_at FROM events WHERE id = 'event'").first('updated_at')
+    const updatedAt = await revision()
+    const rename = (name: string) => db.prepare("UPDATE venues SET name = ? WHERE id = 'v'").bind(name).run()
+    const key = venueNameKey(original)
+    for (const name of [original.normalize('NFD'), `${key.toUpperCase().replaceAll(' ', '._\u00a0')}  —–`, `${key} – CABA - Argentina`]) {
+      expect(venueNameKey(name)).toBe(key)
+      await rename(name)
+      expect(await stored('event')).toEqual(judgment)
+    }
+    await rename(`${key} Sala Dos`)
+    expect(await stored('event')).toMatchObject({ scope: null, scope_reason: null, scope_version: null, scope_judged_at: null })
+    expect(await revision()).toBe(updatedAt)
+  })
+
+  it('prioritizes a recently cleared judgment over new imports and earlier starts, without changing the backfill order', async () => {
+    await db.prepare("INSERT INTO venues (id, name) VALUES ('v', 'Sala Ficticia')").run()
+    await insertEvent('cleared', 'v', '2026-11-22T01:00:00.000Z')
+    await db.prepare("UPDATE events SET scope = 'in', updated_at = '2026-11-18T00:00:00.000Z' WHERE id = 'cleared'").run()
+    await db.prepare("UPDATE venues SET name = 'Otra Sala' WHERE id = 'v'").run()
+    await insertEvent('other')
+    const recentSince = new Date(Date.now() - 7_200_000).toISOString()
+    expect((await readScopePage(db, scopeDayStart(now), 1, { recentSince })).map(row => row.id)).toEqual(['cleared'])
+    expect((await readScopePage(db, scopeDayStart(now), 1)).map(row => row.id)).toEqual(['other'])
   })
 
   it('filters the Instagram catalog selection before ranking, even with intake evidence for every event', async () => {
