@@ -17,7 +17,7 @@ describe('homepage agenda views', () => {
 
   it('matches only dates in the weekly window, including late-night local events', () => {
     const today = agendaEvent('Monday night', '2026-11-24T02:45:00.000Z')
-    const beforeWeekend = agendaEvent('Thursday night', '2026-11-27T02:59:59.999Z')
+    const beforeWeekend = agendaEvent('Thursday night', '2026-11-27T02:59:59.999Z', { ends_at: friday })
     const first = agendaEvent('Friday', friday)
     const last = agendaEvent('Sunday night', '2026-11-30T02:59:59.999Z')
     const tail = agendaEvent('Next Monday', weekEnd)
@@ -26,6 +26,16 @@ describe('homepage agenda views', () => {
     expect(selectHomeView(agenda, 'hoy')).toEqual({ events: [today], empty: null })
     expect(selectHomeView(agenda, 'finde')).toEqual({ events: [first, last], empty: null })
     expect(parseHomeFilter('teatro')).toBeNull()
+  })
+
+  it('shows a Thursday-to-Saturday exhibition in Finde on Wednesday', () => {
+    const asOf = Date.parse('2026-11-25T16:00:00.000Z')
+    const window = homeWindow(new Date(asOf))
+    const exhibition = agendaEvent('Exhibition', '2026-11-26T17:00:00.000Z', { ends_at: '2026-11-28T22:00:00.000Z' })
+    const overnight = agendaEvent('Late Thursday', '2026-11-27T02:00:00.000Z')
+    expect(selectHomeView({ window, asOf, events: [exhibition, overnight] }, 'finde')).toEqual({
+      events: [exhibition, overnight], empty: null,
+    })
   })
 
   it('shows a labeled fallback only after an empty date filter, never before it', () => {
@@ -81,6 +91,19 @@ describe('homepage agenda views', () => {
     expect(today[0].slotStarts).toEqual([events[1].starts_at, events[2].starts_at, events[5].starts_at])
     expect(selectHomeView(agenda, null).events.map(({ id }) => id)).toEqual(['next', 'another venue', 'local tomorrow'])
     expect(selectHomeView(agenda, 'hoy', Date.parse(events[2].starts_at)).events.map(({ id }) => id)).toEqual(['another venue', 'late'])
+  })
+
+  it('keeps date-only occurrences separate and links a timed group to a displayed slot', () => {
+    const asOf = Date.parse('2026-11-18T12:00:00.000Z')
+    const window = homeWindow(new Date(asOf))
+    const shared = { name: 'Visita guiada', venue_id: 'casa' }
+    const tba = agendaEvent('tba', window.tomorrow, { ...shared, time_tba: true })
+    const allDay = agendaEvent('all-day', window.tomorrow, { ...shared, is_all_day: true })
+    const first = agendaEvent('first', '2026-11-19T18:00:00.000Z', shared)
+    const second = agendaEvent('second', '2026-11-19T20:00:00.000Z', shared)
+    expect(selectHomeView({ window, asOf, events: [tba, allDay, first, second] }, null).events).toEqual([
+      tba, allDay, { ...first, slotStarts: [first.starts_at, second.starts_at] },
+    ])
   })
 
   it('limits date fallback to four cards rather than four occurrences', () => {

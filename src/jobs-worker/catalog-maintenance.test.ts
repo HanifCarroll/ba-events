@@ -5,6 +5,8 @@ import { fakeVectorize } from '../../tests/support/vectorize.ts'
 import { CURRENT_EMBEDDING_VERSION } from '#shared/lib/ai/embeddings.ts'
 import { markPastEvents, reconcileCatalog, runCatalogTask, runEmbeddingTask } from './catalog-maintenance.ts'
 import { d1Catalog } from '#features/import/core/catalog-store-d1.ts'
+import { homeAgendaD1 } from '#shared/lib/db/event-reads-d1.server.ts'
+import { homeWindow, selectHomeView } from '#features/events/lib/home-feed.ts'
 
 let db: D1Database
 let dispose: () => Promise<void>
@@ -40,6 +42,33 @@ describe('markPastEvents (pg_cron mark-past-events, PR #38)', () => {
     expect(await status('canceled')).toBe('canceled')
     expect(vectors.get('timed-old')).toMatchObject({ values: [0.1], metadata: { status: 'past' } })
     expect(await markPastEvents(db, index, NOW)).toEqual({ marked: 0, vectorsUpdated: 0 })
+  })
+
+  it('keeps date-only events scheduled and in the D1 agenda until Buenos Aires midnight', async () => {
+    const { index } = fakeVectorize()
+    const early = {
+      starts_at: '2030-01-10T03:00:00.000Z', ends_at: '2030-01-11T01:00:00.000Z',
+      scope: 'in', image_url: 'https://images.lumacdn.com/uploads/synthetic.png',
+    }
+    await insert('all-day', { ...early, is_all_day: 1 })
+    await insert('tba', { ...early, time_tba: 1 })
+    await insert('timed', early)
+    await insert('exhibition', { ...early, is_all_day: 1, ends_at: '2030-01-11T19:00:00.000Z' })
+    const todayIds = async (now: Date) => {
+      const window = homeWindow(now)
+      const events = await homeAgendaD1(db, window)
+      return selectHomeView({ window, events, asOf: now.getTime() }, 'hoy').events.map(({ id }) => id)
+    }
+    const late = new Date('2030-01-11T02:00:00.000Z') // 23:00 in Buenos Aires
+    expect(await markPastEvents(db, index, late)).toMatchObject({ marked: 1 })
+    expect(await status('timed')).toBe('past')
+    expect(await todayIds(late)).toEqual(['all-day', 'exhibition', 'tba'])
+
+    const midnight = new Date('2030-01-11T03:00:00.000Z')
+    expect(await markPastEvents(db, index, midnight)).toMatchObject({ marked: 2 })
+    expect(await status('all-day')).toBe('past')
+    expect(await status('tba')).toBe('past')
+    expect(await todayIds(midnight)).toEqual(['exhibition'])
   })
 })
 

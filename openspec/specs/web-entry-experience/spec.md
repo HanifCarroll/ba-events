@@ -37,6 +37,7 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 #### Scenario: A visitor filters the agenda
 - **WHEN** the visitor selects Today, This weekend, Free, or Music
 - **THEN** the grid shows respectively the current local date, the current or next Friday–Sunday intersected with the weekly window, confirmed free admission, or a concert or live-music facet
+- **AND** date filters include any remaining occurrence whose interval overlaps the selected dates, even if it starts before them and has not started yet
 - **AND** pay-what-you-can evidence in an intake price note, or “a la gorra” in the title or Spanish description, takes precedence over a free flag or zero price; the card says “A la gorra” and does not appear in Gratis
 
 #### Scenario: An occurrence ends while the agenda is open
@@ -45,9 +46,9 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 - **AND** all-day and time-TBA events remain through their Buenos Aires start day, and ongoing multi-day events with a later explicit end remain eligible
 
 #### Scenario: A venue offers several time slots on the same day
-- **WHEN** remaining occurrences share a normalized title, a known venue, and a Buenos Aires start date
+- **WHEN** remaining timed occurrences share a normalized title, a known venue, and a Buenos Aires start date
 - **THEN** they appear on one card listing distinct remaining times in order and linking to the next upcoming occurrence, or the first remaining one if no later slot remains
-- **AND** neither a different venue nor a different local date gets folded into that card
+- **AND** time-TBA and all-day occurrences stay on separate cards, as do occurrences at a different venue or on a different local date
 
 #### Scenario: A filter has no matches
 - **WHEN** the selected filter has no matches

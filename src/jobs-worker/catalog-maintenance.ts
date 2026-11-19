@@ -2,13 +2,15 @@
  * Catalog upkeep that Postgres did for us and D1 doesn't, run by `baeventos-jobs` crons only when the env binds D1.
  *
  * - `markPastEvents` (hourly) is the pg_cron job `mark-past-events` from 20261114210000: a scheduled or pending-review
- *   event becomes `past` once it has ended, 4 hours after it starts when it has no end, or 28 hours after its midnight
- *   start when it is date-only (time TBA or all-day). The vector's `status` metadata follows.
+ *   event becomes `past` once it has ended, but date-only events stay through their Buenos Aires start day.
+ *   Without an end, the fallbacks are 4 hours for timed events and 28 hours for date-only events. The vector follows.
  * - `reconcileCatalog` (nightly) is `scripts/reembed-stale.ts` on D1 plus a Vectorize check: it re-embeds scheduled
  *   events whose search document is stale or missing, re-embeds events left in `vector_sync` by a failed Vectorize
  *   write, puts back missing vectors, and rewrites vector metadata that no longer matches the row.
  */
 import type { D1Database, Vectorize } from '@cloudflare/workers-types'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { BA_TIMEZONE } from '#shared/lib/constants.ts'
 import { CURRENT_EMBEDDING_VERSION, embedEventWithDocument, generateEmbedding } from '#shared/lib/ai/embeddings.ts'
 import { d1Catalog, syncVectorMetadata, vectorMetadata, type VectorRow } from '#features/import/core/catalog-store-d1.ts'
 import type { EventFacets } from '#shared/lib/search-facets.ts'
@@ -19,15 +21,18 @@ import { judgeScheduledScope } from '#features/events/scope/catalog.ts'
 import type { CRON_TASKS } from './schedule.ts'
 
 const HOUR = 3_600_000
+const DATE_ONLY = '(time_tba = 1 OR coalesce(is_all_day, 0) = 1)'
 
 export async function markPastEvents(db: D1Database, vectors: Vectorize, now = new Date()): Promise<{ marked: number; vectorsUpdated: number }> {
   const iso = (ms: number) => new Date(ms).toISOString()
+  const today = formatInTimeZone(now, BA_TIMEZONE, 'yyyy-MM-dd')
+  const midnight = fromZonedTime(`${today}T00:00:00`, BA_TIMEZONE).toISOString()
   const { results } = await db.prepare(`UPDATE events SET status = 'past'
     WHERE status IN ('scheduled', 'pending_review') AND (
-      ends_at < ?1
-      OR (ends_at IS NULL AND NOT (time_tba = 1 OR coalesce(is_all_day, 0) = 1) AND starts_at < ?2)
-      OR (ends_at IS NULL AND (time_tba = 1 OR coalesce(is_all_day, 0) = 1) AND starts_at < ?3))
-    RETURNING id`).bind(iso(now.getTime()), iso(now.getTime() - 4 * HOUR), iso(now.getTime() - 28 * HOUR)).all<{ id: string }>()
+      (ends_at < ?1 AND (NOT ${DATE_ONLY} OR starts_at < ?4))
+      OR (ends_at IS NULL AND NOT ${DATE_ONLY} AND starts_at < ?2)
+      OR (ends_at IS NULL AND ${DATE_ONLY} AND starts_at < ?3))
+    RETURNING id`).bind(now.toISOString(), iso(now.getTime() - 4 * HOUR), iso(now.getTime() - 28 * HOUR), midnight).all<{ id: string }>()
   if (!results.length) return { marked: 0, vectorsUpdated: 0 }
   // RETURNING shows the row before the intake-protection trigger, which can keep a protected pending_review status.
   const { results: rows } = await db.prepare('SELECT id, status, starts_at FROM events WHERE id IN (SELECT value FROM json_each(?))')

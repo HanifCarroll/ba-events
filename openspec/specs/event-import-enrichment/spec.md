@@ -119,8 +119,9 @@ Imports, venue settlement, the venue review queue, enrichment, the blocklist, an
 - **THEN** the event row and its vector are written, and the vector's metadata matches the row's status and start
 
 #### Scenario: An event passes its end
-- **WHEN** the hourly task finds a scheduled event that ended, a timed event that started more than 4 hours ago, or a date-only event that started more than 28 hours ago
+- **WHEN** the hourly task finds a timed event whose explicit end passed, or, without an explicit end, a timed event more than 4 hours after its start or a date-only event more than 28 hours after its start
 - **THEN** the event becomes `past` and its vector's status follows
+- **AND** a date-only event with an explicit end becomes `past` only after that end has passed and its Buenos Aires start day is over
 
 #### Scenario: Vectorize drifts from D1
 - **WHEN** the nightly reconcile finds a stale search document, a live event without a vector, or vector metadata that differs from the row

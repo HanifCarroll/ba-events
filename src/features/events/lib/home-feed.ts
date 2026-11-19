@@ -85,7 +85,9 @@ function groupOccurrences(events: HomeAgendaEvent[], now: number): HomeAgendaCar
   const groups = new Map<string, HomeAgendaEvent[]>()
   for (const event of events) {
     const title = normalizeText(event.name)
-    const key = event.venue_id && title ? JSON.stringify([event.venue_id, title, localDay(event.starts_at)]) : event.id
+    const key = event.venue_id && title && !event.time_tba && !event.is_all_day
+      ? JSON.stringify([event.venue_id, title, localDay(event.starts_at)])
+      : event.id
     const existing = groups.get(key)
     if (existing) existing.push(event)
     else groups.set(key, [event])
@@ -93,8 +95,8 @@ function groupOccurrences(events: HomeAgendaEvent[], now: number): HomeAgendaCar
   return [...groups.values()].map((group): HomeAgendaCardEvent => {
     if (group.length === 1) return group[0]
     const event = group.find((slot) => Date.parse(slot.starts_at) > now) ?? group[0]
-    const slotStarts = [...new Set(group.filter((slot) => !slot.is_all_day && !slot.time_tba).map((slot) => slot.starts_at))]
-    return slotStarts.length ? { ...event, slotStarts } : event
+    const slotStarts = [...new Set(group.map((slot) => slot.starts_at))]
+    return { ...event, slotStarts }
   }).sort((a, b) => a.starts_at.localeCompare(b.starts_at))
 }
 
@@ -106,10 +108,9 @@ export function selectHomeView(agenda: HomeAgenda, filter: HomeFilter | null, no
   if (!agenda.events.length) return { events: [], empty: 'feed' }
 
   if (filter === 'hoy' || filter === 'finde') {
-    const start = filter === 'hoy' ? window.start : window.weekendStart
+    const start = Date.parse(filter === 'hoy' ? window.start : window.weekendStart)
     const end = filter === 'hoy' ? window.tomorrow : window.weekendEnd
-    const matches = week.filter((event) => event.starts_at < end && (event.starts_at >= start ||
-      (Date.parse(event.starts_at) <= now && occurrenceEnd(event) > Date.parse(start))))
+    const matches = week.filter((event) => event.starts_at < end && occurrenceEnd(event) > start)
     return matches.length
       ? { events: groupOccurrences(matches, now), empty: null }
       : { events: groupOccurrences(remaining.filter((event) => event.starts_at >= end), now).slice(0, HOME_FALLBACK_LIMIT), empty: filter }
