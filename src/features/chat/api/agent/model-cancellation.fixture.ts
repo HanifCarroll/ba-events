@@ -1,12 +1,14 @@
 /** Isolated, no-network fixture for the real AI SDK production model leaf. */
+import { writeFileSync } from 'node:fs'
 import { orchestrate, runToolLoop } from './orchestrate.ts'
 import { captureModelUsage } from '../../../../../evals/concierge/conversation-runner.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
 
-const streaming = process.argv[2] === 'stream'
-const contextBudget = process.argv[2] === 'context-budget'
-const usageProbe = process.argv[2] === 'usage'
-const thinkingProbe = process.argv[2] === 'thinking'
+const [, , output, mode, thinking] = process.argv
+const streaming = mode === 'stream'
+const contextBudget = mode === 'context-budget'
+const usageProbe = mode === 'usage'
+const thinkingProbe = mode === 'thinking'
 let wireThinking: unknown
 let wireEffort: unknown
 const controller = new AbortController()
@@ -56,21 +58,19 @@ if (contextBudget) {
         venue_neighborhood: null, price: null, is_free: false } as ChatEventPayload] }
     } },
   })
-  console.log(JSON.stringify({ calls, maxOutputTokens, businessReads, eventIds: result.canonical.events.map(event => event.id), fallbackUsed: result.canonical.provenance.fallbackUsed }))
-  process.exit(0)
-}
-if (usageProbe || thinkingProbe) {
+  writeFileSync(output, JSON.stringify({ calls, maxOutputTokens, businessReads, eventIds: result.canonical.events.map(event => event.id), fallbackUsed: result.canonical.provenance.fallbackUsed }))
+} else if (usageProbe || thinkingProbe) {
   const run = await runToolLoop({ instructions: 'Answer briefly.', messages: [{ role: 'user', content: 'Hello' }], tools: {} },
-    thinkingProbe && process.argv[3] === 'disabled' ? { thinking: 'disabled' } : thinkingProbe && process.argv[3] === 'low' ? { reasoningEffort: 'low' } : {})
-  console.log(JSON.stringify(thinkingProbe ? { wireThinking, wireEffort, configuration: run.configuration, maxOutputTokens, calls } : captureModelUsage(run)))
-  process.exit(0)
+    thinkingProbe && thinking === 'disabled' ? { thinking: 'disabled' } : thinkingProbe && thinking === 'low' ? { reasoningEffort: 'low' } : {})
+  writeFileSync(output, JSON.stringify(thinkingProbe ? { wireThinking, wireEffort, configuration: run.configuration, maxOutputTokens, calls } : captureModelUsage(run)))
+} else {
+  const running = runToolLoop({
+    instructions: 'Answer briefly.', messages: [{ role: 'user', content: 'Hello' }],
+    tools: {}, abortSignal: controller.signal,
+    ...(streaming ? { onText: () => {} } : {}),
+  })
+  const outcome = running.then(() => ({ rejected: false }), () => ({ rejected: true }))
+  await Promise.race([ready, outcome.then(() => { throw new Error('Model settled before the HTTP cancellation probe') })])
+  controller.abort()
+  writeFileSync(output, JSON.stringify({ ...(await outcome), aborted: received?.aborted === true, calls, bodyAborted }))
 }
-const running = runToolLoop({
-  instructions: 'Answer briefly.', messages: [{ role: 'user', content: 'Hello' }],
-  tools: {}, abortSignal: controller.signal,
-  ...(streaming ? { onText: () => {} } : {}),
-})
-const outcome = running.then(() => ({ rejected: false }), () => ({ rejected: true }))
-await Promise.race([ready, outcome.then(() => { throw new Error('Model settled before the HTTP cancellation probe') })])
-controller.abort()
-console.log(JSON.stringify({ ...(await outcome), aborted: received?.aborted === true, calls, bodyAborted }))

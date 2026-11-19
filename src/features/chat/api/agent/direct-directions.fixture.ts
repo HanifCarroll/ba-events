@@ -1,12 +1,10 @@
-/** Real SDK transport, deterministic source reads, no network. Runs every mode and locale in one process,
- * because a cold Bun start per case took longer than the test timeout on CI. */
-import { writeSync } from 'node:fs'
+/** Real SDK transport, deterministic source reads, no network. */
+import { writeFileSync } from 'node:fs'
 import { orchestrate, runToolLoop } from './orchestrate.ts'
 import type { ChatEventPayload } from '#shared/lib/types.ts'
 
 const eventId = '11111111-1111-4111-8111-111111111111'
 const venueId = '22222222-2222-4222-8222-222222222222'
-const modes = ['complete', 'default', 'continue', 'details-first', 'failed', 'ambiguous']
 
 async function runCase(mode: string, locale: 'en' | 'es') {
   let calls = 0, directionReads = 0, detailReads = 0
@@ -18,14 +16,14 @@ async function runCase(mode: string, locale: 'en' | 'es') {
       ? toolCall('ask_clarification', { key: 'which_event', reason: 'Multiple possible events' })
       : mode === 'details-first' && calls === 1
         ? toolCall('get_event_details', { eventRef: 'pinned_event', purpose: 'details' })
-      : mode === 'details-first' && calls === 2
-        ? toolCall('get_directions', { eventRef: 'pinned_event', completeAnswer: true })
-      : calls === 1
-        ? toolCall('get_directions', { eventRef: 'pinned_event', ...(mode === 'default' ? {} : { completeAnswer: mode !== 'continue' }) })
-        : mode === 'continue' && calls === 2
-          ? toolCall('get_event_details', { eventRef: 'pinned_event', purpose: 'details' })
-          : mode === 'failed' && calls === 2
-            ? toolCall('get_directions', { venueRef: 'pinned_venue', completeAnswer: true }) : null
+        : mode === 'details-first' && calls === 2
+          ? toolCall('get_directions', { eventRef: 'pinned_event', completeAnswer: true })
+          : calls === 1
+            ? toolCall('get_directions', { eventRef: 'pinned_event', ...(mode === 'default' ? {} : { completeAnswer: mode !== 'continue' }) })
+            : mode === 'continue' && calls === 2
+              ? toolCall('get_event_details', { eventRef: 'pinned_event', purpose: 'details' })
+              : mode === 'failed' && calls === 2
+                ? toolCall('get_directions', { venueRef: 'pinned_venue', completeAnswer: true }) : null
     const message = { role: 'assistant', content: call ? null : 'The source describes live jazz.', ...(call ? { tool_calls: [call] } : {}) }
     if (body.stream) throw new Error('This fixture exercises non-streaming SDK execution')
     return Response.json({ id: `response-${calls}`, object: 'chat.completion', created: 1, model: 'deepseek-flash',
@@ -48,11 +46,12 @@ async function runCase(mode: string, locale: 'en' | 'es') {
         venue_neighborhood: 'Palermo', price: null, is_free: true } as unknown as ChatEventPayload] } },
     },
   })
-  // The parent reads one line per case from a pipe; forced exit can drop a buffered log.
-  writeSync(1, `${JSON.stringify({ mode, locale, calls, directionReads, detailReads, text: result.canonical.text, kind: result.canonical.kind,
+  return { calls, directionReads, detailReads, text: result.canonical.text, kind: result.canonical.kind,
     eventId: result.canonical.directions?.eventId, fallback: result.canonical.provenance.fallbackUsed,
-    reads: result.reads.map(read => ({ tool: read.toolName, success: read.success })) })}\n`)
+    reads: result.reads.map(read => ({ tool: read.toolName, success: read.success })) }
 }
 
-for (const mode of modes) for (const locale of ['en', 'es'] as const) await runCase(mode, locale)
-process.exit(0)
+const cases: Array<[string, 'en' | 'es']> = JSON.parse(process.argv[3])
+const results: Record<string, Awaited<ReturnType<typeof runCase>>> = {}
+for (const [mode, locale] of cases) results[`${mode}/${locale}`] = await runCase(mode, locale)
+writeFileSync(process.argv[2], JSON.stringify(results))
