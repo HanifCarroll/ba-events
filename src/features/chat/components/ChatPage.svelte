@@ -4,7 +4,7 @@
 	import ChatContainer from './ChatContainer.svelte'
 	import { getChatConversationId } from '#features/chat/lib/chat-navigation.ts'
 	import type { ConversationWithMessages } from '#shared/lib/types.ts'
-	import type { HomeEventFeed } from '#features/events/lib/home-feed.ts'
+	import type { HomeAgenda } from '#features/events/lib/home-feed.ts'
 
 	const isMarketingLanding = $derived(page.url.pathname === '/')
 
@@ -17,15 +17,12 @@
 		getChatConversationId(page.url.pathname, page.params.conversationId as string | undefined)
 	)
 
-	// The home route provides cached cards immediately or streams a cache miss; the
-	// /chat/:id route preloads the signed-in conversation. Guests get
-	// `conversation: null` from the server (their chats live in IndexedDB).
+	// Guests read conversations from IndexedDB; the homepage only preloads the agenda.
 	const data = $derived(page.data as {
-		happeningSoonEvents?: HomeEventFeed
+		homeAgenda?: HomeAgenda | null
 		conversation?: ConversationWithMessages | null
 		turns?: Array<{ id: string; status: string; content: string; user_client_message_id: string; assistant_client_message_id: string }>
 	})
-	const happeningSoon = $derived(data.happeningSoonEvents ?? [])
 	const preloadedConversation = $derived(data.conversation ?? null)
 	const turns = $derived(data.turns ?? [])
 
@@ -37,7 +34,7 @@
 <div class="h-full flex flex-col">
 	<ChatContainer
 		conversationId={conversationId}
-		happeningSoonEvents={happeningSoon}
+		homeAgenda={data.homeAgenda}
 		preloadedConversation={preloadedConversation}
 		pendingTurns={turns}
 		showLanding={isMarketingLanding}

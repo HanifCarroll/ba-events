@@ -1,49 +1,51 @@
 import { describe, expect, it, vi } from 'vitest'
+import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
 import { readHomeFeed } from './home-feed.server.ts'
-import type { HomeEventCard } from '../lib/home-feed.ts'
 
-const events = [{ id: 'one' }] as HomeEventCard[]
+const midnight = Date.parse('2026-11-19T03:00:00.000Z')
+const events = [agendaEvent('one', '2026-11-19T22:00:00.000Z')]
 function cachedAt(storedAt: number) {
-  return { match: vi.fn(async () => Response.json({ events, storedAt })), put: vi.fn(async () => {}) } as unknown as Cache
+  return {
+    match: vi.fn(async (_key: string) => Response.json({ events, storedAt })),
+    put: vi.fn(async (_key: string, _response: Response) => {}),
+  }
 }
 
-describe('shared homepage cards cache', () => {
+describe('shared homepage agenda cache', () => {
   it('serves a fresh cache hit without starting a database read', async () => {
     const load = vi.fn(async () => [])
-    expect(await readHomeFeed({ cache: cachedAt(0), now: () => 59_000, load })).toEqual({ events })
+    expect(await readHomeFeed({ cache: cachedAt(midnight), now: () => midnight + 59_000, load })).toMatchObject({ events })
     expect(load).not.toHaveBeenCalled()
   })
 
   it('serves stale cards immediately and retains one refresh', async () => {
-    const cache = cachedAt(0)
+    const cache = cachedAt(midnight)
     const load = vi.fn(async () => events)
     const tasks: Promise<unknown>[] = []
-    expect(await readHomeFeed({ cache, now: () => 60_000, load, retain: (task) => { tasks.push(task) } })).toEqual({ events })
+    expect(await readHomeFeed({ cache, now: () => midnight + 60_000, load, retain: (task) => { tasks.push(task) } })).toMatchObject({ events })
     await Promise.all(tasks)
     expect(load).toHaveBeenCalledOnce()
     expect(cache.put).toHaveBeenCalledOnce()
   })
 
-  it('returns a cold read as a nested promise before the database completes', async () => {
-    let finish!: (cards: HomeEventCard[]) => void
-    const pending = new Promise<HomeEventCard[]>((resolve) => { finish = resolve })
-    const feed = await readHomeFeed({ load: () => pending })
-    expect('pending' in feed).toBe(true)
-    finish(events)
-    if ('pending' in feed) expect(await feed.pending).toEqual(events)
+  it('starts a new cache key exactly when the Buenos Aires day rolls over', async () => {
+    const cache = cachedAt(midnight - 2_000)
+    await readHomeFeed({ cache, now: () => midnight - 1 })
+    await readHomeFeed({ cache, now: () => midnight })
+    expect(cache.match.mock.calls.map(([key]) => key.split('/').at(-1))).toEqual(['2026-11-18', '2026-11-19'])
   })
 
-  it('expires stale entries and exposes the read as a nested promise', async () => {
-    const feed = await readHomeFeed({ cache: cachedAt(0), now: () => 360_000, load: async () => events })
-    expect('pending' in feed).toBe(true)
-    if ('pending' in feed) expect(await feed.pending).toEqual(events)
+  it('awaits a cold or expired read for SSR', async () => {
+    const load = vi.fn(async () => events)
+    for (const cache of [undefined, cachedAt(midnight)]) {
+      expect(await readHomeFeed({ cache, now: () => midnight + 360_000, load })).toMatchObject({ events })
+    }
+    expect(load).toHaveBeenCalledTimes(2)
   })
 
-  it('does not cache a failed database read as a successful empty list', async () => {
-    const cache = { match: vi.fn(async () => undefined), put: vi.fn() } as unknown as Cache
-    const feed = await readHomeFeed({ cache, load: async () => { throw new Error('offline') } })
-    if (!('pending' in feed)) throw new Error('Expected streamed miss')
-    expect(await feed.pending).toEqual([])
+  it('does not cache a failed read as a successful empty feed', async () => {
+    const cache = { match: vi.fn(async () => undefined), put: vi.fn() }
+    await expect(readHomeFeed({ cache, load: async () => { throw new Error('offline') } })).rejects.toThrow('offline')
     expect(cache.put).not.toHaveBeenCalled()
   })
 })

@@ -1,6 +1,7 @@
 /** Public catalog reads on D1: home, event, artwork, venue, event facts, and the events API. */
 import type { D1Database } from '@cloudflare/workers-types'
 import type { ChatEventPayload, Venue } from '../types.ts'
+import { HOME_FALLBACK_LIMIT, type HomeAgendaEvent, type HomeWindow } from '#features/events/lib/home-feed.ts'
 import { EVENT_COLUMNS, FROM_EVENTS, toPayload } from './search-d1.server.ts'
 
 /** Events visible to the public. */
@@ -26,14 +27,49 @@ export async function eventsByStartD1(db: D1Database, limit: number): Promise<Ch
   return results.map(toPayload)
 }
 
-/** Scheduled, in-scope intake-linked events that have artwork, from `earliestStart` on, soonest first. */
-export async function happeningSoonD1(db: D1Database, earliestStart: string, limit: number): Promise<ChatEventPayload[]> {
-  const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
-    WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.starts_at >= ? AND coalesce(e.location_hidden, 0) = 0
-      AND e.image_url IS NOT NULL AND e.image_url <> ''
-      AND EXISTS (SELECT 1 FROM event_source_evidence x WHERE x.event_id = e.id)
-    ORDER BY e.starts_at, e.id LIMIT ?`).bind(new Date(earliestStart).toISOString(), limit).all()
-  return results.map(toPayload)
+const PAY_WHAT_YOU_CAN = /\ba la gorra\b|contribuci[oó]n consciente|a voluntad|pag[aá] lo que (quieras|puedas)/i
+const INSTAGRAM_POST = /^https:\/\/www\.instagram\.com\/(?:p|reel)\/[\w-]+\/?$/i
+
+type AgendaRow = Omit<HomeAgendaEvent, 'is_free' | 'time_tba' | 'is_all_day' | 'location_hidden' | 'location_tba' | 'music' | 'payWhatYouCan' | 'sourceUrl'> & {
+  is_free: number; time_tba: number; is_all_day: number; location_hidden: number | null; location_tba: number; music: number
+  priceNote: string | null
+  sourceUrl: string | null
+}
+
+/** The whole local week plus a short tail for date filters with no matches. */
+export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<HomeAgendaEvent[]> {
+  const { results } = await db.prepare(`
+    WITH selected AS (
+      SELECT id FROM events WHERE scope = 'in' AND status = 'scheduled' AND starts_at >= ? AND starts_at < ?
+      UNION ALL
+      SELECT id FROM (
+        SELECT id FROM events WHERE scope = 'in' AND status = 'scheduled' AND starts_at >= ?
+        ORDER BY starts_at, id LIMIT ?
+      )
+    )
+    SELECT e.id, e.name, e.starts_at, e.time_tba, e.is_all_day, e.image_url, e.image_width, e.image_height,
+      CASE WHEN coalesce(e.location_hidden, 0) = 0 AND NOT e.location_tba THEN v.name END AS venue_name,
+      CASE WHEN coalesce(e.location_hidden, 0) = 0 AND NOT e.location_tba THEN v.neighborhood END AS venue_neighborhood,
+      e.location_hidden, e.location_tba, e.price, e.is_free,
+      (EXISTS (SELECT 1 FROM json_each(e.facets, '$.eventType') WHERE value = 'concert')
+        OR EXISTS (SELECT 1 FROM json_each(e.facets, '$.activities') WHERE value = 'live-music')) AS music,
+      (SELECT o.post_url FROM event_source_evidence x JOIN intake_observations o ON o.id = x.observation_id
+        WHERE x.event_id = e.id ORDER BY o.observed_at DESC, o.id DESC LIMIT 1) AS sourceUrl,
+      (SELECT json_extract(r.payload, '$.price_note') FROM event_source_evidence x
+        JOIN intake_candidate_revisions r ON r.candidate_id = x.candidate_id AND r.revision = x.revision
+        WHERE x.event_id = e.id AND e.price IS NULL AND NOT e.is_free
+          AND json_extract(r.payload, '$.intent') IN ('create', 'update') AND json_extract(r.payload, '$.price_kind') = 'conditional'
+        ORDER BY r.created_at DESC, r.candidate_id, r.revision DESC LIMIT 1) AS priceNote
+    FROM selected JOIN events e ON e.id = selected.id LEFT JOIN venues v ON v.id = e.venue_id
+    ORDER BY e.starts_at, e.id
+  `).bind(window.start, window.end, window.end, HOME_FALLBACK_LIMIT).all<AgendaRow>()
+
+  return results.map(({ is_free, time_tba, is_all_day, location_hidden, location_tba, music, priceNote, sourceUrl, ...card }) => ({
+    ...card, is_free: is_free === 1, time_tba: time_tba === 1, is_all_day: is_all_day === 1,
+    location_hidden: location_hidden === 1, location_tba: location_tba === 1, music: music === 1,
+    payWhatYouCan: typeof priceNote === 'string' && PAY_WHAT_YOU_CAN.test(priceNote),
+    sourceUrl: sourceUrl && INSTAGRAM_POST.test(sourceUrl) ? sourceUrl : null,
+  }))
 }
 
 /** A displayable event's `image_url`, for the artwork route; null when there is no such event. */

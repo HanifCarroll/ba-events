@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
 	import { gsap } from 'gsap'
-	import { ArrowUp, CalendarDays, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
+	import { CalendarDays, Camera, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
-	import type { HomeEventFeed } from '#features/events/lib/home-feed.ts'
+	import type { HomeAgenda as Agenda, HomeAgendaEvent } from '#features/events/lib/home-feed.ts'
+	import HomeAgenda from '#features/events/components/HomeAgenda.svelte'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
 	import InstallApp from '#shared/ui/InstallApp.svelte'
 	import {
@@ -19,20 +20,22 @@
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { signOut } from '#features/auth/api/auth.remote.ts'
 	import { goto } from '$app/navigation'
+	import { page } from '$app/state'
 	import { track } from '#shared/lib/analytics.ts'
-	import HappeningSoonEvents from './HappeningSoonEvents.svelte'
 
 	let {
 		onSelectPrompt,
-		happeningSoonEvents = []
+		homeAgenda = null
 	}: {
 		onSelectPrompt: (prompt: string, options?: { eventId?: string }) => void
-		happeningSoonEvents?: HomeEventFeed
+		homeAgenda?: Agenda | null
 	} = $props()
 
 	const auth = useAuthContext()
 	let landingQuery = $state('')
-	let landingPage = $state<HTMLDivElement | null>(null)
+	let promptedEvent: { id: string; prompt: string } | null = null
+	const url = $derived(new URL((page.shallow?.url ?? page.url).href))
+	const instagram = 'https://www.instagram.com/baeventos.app/'
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
 	const speech = useSpeech({
@@ -71,7 +74,7 @@
 		const prompt = landingQuery.trim()
 		if (prompt) {
 			speech.cancel()
-			onSelectPrompt(prompt)
+			onSelectPrompt(prompt, promptedEvent?.prompt === prompt ? { eventId: promptedEvent.id } : undefined)
 		}
 	}
 
@@ -88,90 +91,51 @@
 		landingInput.style.height = `${landingInput.scrollHeight}px`
 	}
 
-	function startAsking() {
-		landingPage?.scrollTo({ top: 0, behavior: 'smooth' })
+	function askAbout(event: HomeAgendaEvent) {
+		const prompt = m.home_happening_soon_prompt({ name: event.name })
+		promptedEvent = { id: event.id, prompt }
+		speech.cancel()
+		landingQuery = prompt
+		landingInput?.focus({ preventScroll: true })
+		landingInput?.scrollIntoView({ block: 'center' })
+		requestAnimationFrame(resizeLandingInput)
 	}
 
 	onMount(() => {
-		const root = landingPage
-		if (!root) return
-		landingInput?.focus({ preventScroll: true })
-
-		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-		const context = gsap.context(() => {
-			const prompts = [
-				m.landing_placeholder(),
-				m.landing_placeholder_2(),
-				m.landing_placeholder_3(),
-				m.landing_placeholder_4(),
-				m.landing_placeholder_5()
-			]
-			const input = landingInput
-
-			if (reduceMotion) {
-				input?.setAttribute('placeholder', prompts[0])
-				return
+		const input = landingInput
+		if (!input || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+		const prompts = [m.landing_placeholder(), m.landing_placeholder_2(), m.landing_placeholder_3(),
+			m.landing_placeholder_4(), m.landing_placeholder_5()]
+		const progress = { value: 0 }
+		const typewriter = gsap.timeline({ repeat: -1, defaults: { ease: 'none' } })
+		for (const prompt of prompts) {
+			const setPlaceholder = () => {
+				input.setAttribute('placeholder', prompt.slice(0, Math.round(progress.value * prompt.length)))
 			}
-
-			if (input) {
-				const progress = { value: 0 }
-				const typewriter = gsap.timeline({ repeat: -1, defaults: { ease: 'none' } })
-				const setPlaceholder = (text: string) => {
-					input.setAttribute('placeholder', text.slice(0, Math.round(progress.value * text.length)))
-				}
-
-				for (const prompt of prompts) {
-					typewriter.to({}, { duration: 2 })
-					typewriter.to(progress, {
-						value: 1,
-						duration: prompt.length * 0.045,
-						onUpdate: () => setPlaceholder(prompt)
-					})
-					typewriter.to({}, { duration: 3 })
-					typewriter.to(progress, {
-						value: 0,
-						duration: prompt.length * 0.045,
-						onUpdate: () => setPlaceholder(prompt)
-					})
-				}
-			}
-
-		}, root)
-
-		return () => context.revert()
+			typewriter.to({}, { duration: 2 })
+			typewriter.to(progress, { value: 1, duration: prompt.length * 0.045, onUpdate: setPlaceholder })
+			typewriter.to({}, { duration: 3 })
+			typewriter.to(progress, { value: 0, duration: prompt.length * 0.045, onUpdate: setPlaceholder })
+		}
+		return () => { typewriter.kill() }
 	})
 </script>
 
-<div bind:this={landingPage} class="h-full overflow-y-auto scroll-smooth bg-background text-foreground">
-	<section class="relative isolate min-h-[760px] overflow-hidden text-white sm:min-h-[680px]">
-		<img
-			src="/hero-rooftop-buenos-aires.jpg"
-			alt=""
-			class="absolute inset-0 -z-20 h-full w-full object-cover"
-		/>
-		<div class="absolute inset-0 -z-10 bg-[#0b1235]/55" aria-hidden="true"></div>
-		<div
-			class="absolute inset-0 -z-10 bg-gradient-to-b from-[#0b1235]/25 via-[#111533]/20 to-[#080b1c]/85"
-			aria-hidden="true"
-		></div>
-
-		<nav
-			data-hero-motion="nav"
-			class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-5 sm:px-10"
-			aria-label={m.landing_nav_label()}
-		>
-			<a href="/" class="flex items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
+<div class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
+	<header class="mx-auto max-w-[90rem] px-4 pt-3 pb-5 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
+		<nav class="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label={m.landing_nav_label()}>
+			<a href="/" class="inline-flex min-h-10 items-center font-mono text-lg font-bold tracking-tight sm:text-xl">
 				BA Eventos
 			</a>
-			<div class="flex flex-wrap items-center gap-2 text-xs font-medium sm:gap-4 sm:text-sm">
+			<LanguageSwitcher compact />
+			<div class="flex flex-wrap items-center gap-2 text-xs font-medium sm:ml-auto sm:gap-4 sm:text-sm">
 				<a
-					href="https://www.instagram.com/baeventos.app/"
+					href={instagram}
 					target="_blank"
 					rel="noopener noreferrer"
 					aria-label={m.landing_instagram_aria()}
 					class="rounded px-1 py-2 hover:text-indigo-200 focus-visible:ring-2 focus-visible:ring-white"
 				>{m.landing_instagram()}</a>
-				<LanguageSwitcher compact />
 				<InstallApp compact class="border border-white/60 px-2.5 py-2 text-white hover:bg-white/10 sm:px-3" />
 				{#if auth.user}
 					<DropdownMenu>
@@ -221,13 +185,24 @@
 			</div>
 		</nav>
 
-		<div data-hero-motion="content" class="mx-auto flex max-w-4xl flex-col items-center px-5 pb-16 pt-16 text-center sm:pt-24">
-			<h1 class="font-display max-w-[680px] text-5xl leading-[0.98] tracking-tight sm:text-7xl">
-				{m.landing_title()}
-			</h1>
-			<p class="mt-6 max-w-2xl text-base text-white/90 sm:text-lg">
-				{m.landing_subtitle()}<br />{m.landing_subtitle_second()}
-			</p>
+		<div class="mt-3 grid items-stretch gap-8 md:grid-cols-[minmax(0,1fr)_minmax(9rem,21%)]">
+			<div class="min-w-0">
+				<h1 class="max-w-[28ch] font-display text-4xl leading-[1.02] font-semibold tracking-tight md:text-5xl lg:text-6xl">
+					{m.landing_title()}
+				</h1>
+				<p class="mt-2 max-w-3xl text-sm text-[#d5d5db] sm:text-base">{m.landing_subtitle()}</p>
+				<p class="mt-1 max-w-3xl text-sm text-[#d5d5db] sm:text-base">{m.landing_subtitle_second()}</p>
+			</div>
+			<div aria-hidden="true" class="header-photo hidden rounded-sm md:block"></div>
+		</div>
+	</header>
+
+	<HomeAgenda agenda={homeAgenda} {url} onAsk={askAbout} onFilter={(href) => { void goto(href, { shallow: true }) }} />
+
+	<section class="border-y border-[#3b3b42] bg-[#19191d] px-4 py-12 text-center sm:px-8 sm:py-16" aria-labelledby="home-chat-heading">
+		<div class="mx-auto flex max-w-3xl flex-col items-center">
+			<h2 id="home-chat-heading" class="font-display text-3xl font-semibold sm:text-4xl">{m.home_chat_heading()}</h2>
+			<p class="mt-3 max-w-lg text-[#d5d5db]">{m.home_chat_body()}</p>
 			<form
 				onsubmit={(event) => {
 					event.preventDefault()
@@ -271,7 +246,7 @@
 					</button>
 				</div>
 			</form>
-			<div data-hero-motion="actions" class="mt-6 flex flex-wrap justify-center gap-3">
+			<div class="mt-6 flex flex-wrap justify-center gap-3">
 				<button
 					type="button"
 					onclick={() => onSelectPrompt(m.landing_prompt_today())}
@@ -294,74 +269,60 @@
 					<Sparkles class="size-4" aria-hidden="true" />{m.home_surprise_label()}
 				</button>
 			</div>
-			<p data-hero-motion="reassurance" class="mt-7 text-sm text-white/80">{m.landing_reassurance()}</p>
+			<p class="mt-6 text-sm text-[#d5d5db]">{m.landing_reassurance()}</p>
+		</div>
+	</section>
+
+	<section class="mx-auto max-w-[90rem] px-4 py-10 sm:px-8 lg:px-12" aria-labelledby="home-follow-heading">
+		<h2 id="home-follow-heading" class="font-display text-3xl font-semibold">{m.home_follow_heading()}</h2>
+		<div class="mt-3 flex flex-wrap gap-x-8 gap-y-2">
+			<a
+				href={instagram}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="inline-flex min-h-11 items-center gap-2 text-sm text-[#d0ff36] hover:underline"
+			>
+				<Camera class="size-4 shrink-0" aria-hidden="true" />
+				<span>{m.home_follow_instagram()}</span>
+				<span class="sr-only">{m.landing_instagram_aria()}</span>
+			</a>
 			<a
 				href="https://t.me/BAEventosBot?start=website"
 				target="_blank"
 				rel="noopener noreferrer"
 				onclick={() => track('telegram:link_clicked', { source: 'homepage' })}
-				class="mt-3 inline-flex min-h-11 flex-col items-center justify-center gap-0.5 text-sm text-white/80 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+				class="inline-flex min-h-11 flex-col justify-center gap-0.5 text-sm text-[#d0ff36] hover:underline"
 			>
 				<span class="inline-flex items-center gap-2 font-medium">
 					<Send class="size-4" aria-hidden="true" />
 					{m.telegram_use_bot()}
 				</span>
-				<span class="text-xs text-white/60">{m.telegram_start_description()}</span>
+				<span class="text-xs text-[#d5d5db]">{m.telegram_start_description()}</span>
 				<span class="sr-only">{m.telegram_external_link()}</span>
 			</a>
 		</div>
 	</section>
 
-	<div class="mx-auto max-w-7xl px-5 py-12 sm:px-10 sm:py-16">
-		<HappeningSoonEvents onSelectPrompt={onSelectPrompt} initialEvents={happeningSoonEvents} />
-
-		<section class="flex flex-col items-center py-12 text-center">
-			<button
-				type="button"
-				onclick={startAsking}
-				class="flex min-h-12 items-center gap-3 rounded-xl bg-primary px-10 py-3 font-semibold text-primary-foreground shadow-lg hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				{m.landing_cta()} <ArrowUp class="size-4" aria-hidden="true" />
-			</button>
-			<p class="mt-5 text-sm text-muted-foreground">{m.landing_reassurance()}</p>
-			<a
-				href="/mcp"
-				onclick={() => track('mcp:signpost_clicked', { source: 'homepage' })}
-				class="mt-8 inline-flex min-h-11 items-center text-sm text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				{m.mcp_signpost()}
-			</a>
-		</section>
-	</div>
+	<footer class="mx-auto max-w-[90rem] border-t border-[#3b3b42] px-4 py-4 sm:px-8 lg:px-12">
+		<a
+			href="/mcp"
+			onclick={() => track('mcp:signpost_clicked', { source: 'homepage' })}
+			class="inline-flex min-h-11 items-center text-sm text-[#d5d5db] underline underline-offset-4 hover:text-white"
+		>{m.mcp_signpost()}</a>
+	</footer>
 </div>
 
 <style>
-	@keyframes hero-enter {
-		from {
-			opacity: 0;
-			transform: translateY(18px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
+	.header-photo {
+		background: #101012 url('/home-header.jpg') center 45% / cover no-repeat;
 	}
 
-	@media (prefers-reduced-motion: no-preference) {
-		[data-hero-motion] {
-			animation: hero-enter 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
-		}
+	.home :global(:focus-visible) {
+		outline: 2px solid #d0ff36;
+		outline-offset: 3px;
+	}
 
-		[data-hero-motion='content'] {
-			animation-delay: 100ms;
-		}
-
-		[data-hero-motion='actions'] {
-			animation-delay: 200ms;
-		}
-
-		[data-hero-motion='reassurance'] {
-			animation-delay: 300ms;
-		}
+	.home :global(form :focus-visible) {
+		outline-color: #4b35a3;
 	}
 </style>
