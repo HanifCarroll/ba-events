@@ -6,12 +6,13 @@ export const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu,
 // Exact barrio names only: the importers' partial matching would turn "Villa" into Villa Crespo.
 export const barrio = (given: string) => NEIGHBORHOODS.find(item => fold(item) === fold(given.trim())) ?? null
 
+const AVENUE_SUFFIX = /\s+av\.(?=\s+\d)/i
+
 /** Keep the avenue type distinct from a plain street, except for the known Diagonal Norte alias. */
 export function addressKey(address: string | null | undefined): string | null {
   if (!address) return null
-  const suffix = /\s+av\.(?=\s+\d)/i
-  const avenue = /^(?:\d+\s+)?(?:av(?:da)?\.|(?:av(?:da)?|avenida)\s)/i.test(address.trim()) || suffix.test(address)
-  const key = catalogAddressKey(address.replace(suffix, ''))
+  const avenue = /^(?:\d+\s+)?(?:av(?:da)?\.|(?:av(?:da)?|avenida)\s)/i.test(address.trim()) || AVENUE_SUFFIX.test(address)
+  const key = catalogAddressKey(address.replace(AVENUE_SUFFIX, ''))
   if (!key) return null
   if (/^diagonal norte \d+$/.test(key) || avenue && /^(?:(?:presidente )?roque saenz pena|saenz pena roque pres diagonal norte) \d+$/.test(key)) {
     return `avenida diagonal norte ${key.split(' ').at(-1)}`
@@ -21,7 +22,7 @@ export function addressKey(address: string | null | undefined): string | null {
 
 /** Catalog spellings often omit Av., but Sarmiento and Avenida Sarmiento are separate streets. */
 export const duplicateAddressKey = (address: string | null, strictKey: string | null) =>
-  /^avenida sarmiento \d+$/.test(strictKey ?? '') ? strictKey : catalogAddressKey(address)
+  /^avenida sarmiento \d+$/.test(strictKey ?? '') ? strictKey : catalogAddressKey(address?.replace(AVENUE_SUFFIX, ''))
 
 const words = (text: string) => fold(text).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 const cityLabel = 'caba|c a b a|capital federal|(?:ciudad|cdad)(?: autonoma)? de buenos aires'

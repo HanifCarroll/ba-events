@@ -238,6 +238,8 @@ describe('intake venue resolution', () => {
   it.each([
     ['Corrientes 3781', 'Av. Corrientes 3781'],
     ['Av. Corrientes 3781', 'Corrientes 3781'],
+    ['Rivadavia Av. 4732', 'Rivadavia 4732'],
+    ['Rivadavia 4732', 'Rivadavia Av. 4732'],
     ['Av. Roque Sáenz Peña 943', 'Roque Sáenz Peña 943'],
     ['Av. Roque Sáenz Peña 943', 'Diagonal Norte 943'],
   ])('holds a different name at %s when the catalog has %s', async (address, stored) => {
@@ -249,9 +251,9 @@ describe('intake venue resolution', () => {
       .toMatchObject({ outcome: 'ambiguous', candidates: [{ id, why: 'same address' }] })
     expect(inserts).toHaveLength(0)
   })
-  it('does not flag plain Sarmiento and Avenida Sarmiento as the same catalog address', async () => {
+  it.each(['Av. Sarmiento 2715', 'Sarmiento Av. 2715'])('does not flag %s and plain Sarmiento as the same catalog address', async address => {
     const { db } = fakeDb([{ id: 'v1', name: 'Centro Cultural Ficticio', address: 'Sarmiento 2715', neighborhood: 'Balvanera' }])
-    expect(await run(db, request({ address: 'Av. Sarmiento 2715', neighborhood: 'Palermo' }),
+    expect(await run(db, request({ address, neighborhood: 'Palermo' }),
       geocoded('Ciudad Autónoma de Buenos Aires', 'Palermo', 'Avenida Presidente Sarmiento', '2715')))
       .toMatchObject({ outcome: 'created', venue: { neighborhood: 'Palermo' } })
   })
