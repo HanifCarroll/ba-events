@@ -1,6 +1,7 @@
-import { createOpenAI } from '@ai-sdk/openai'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { decodeScopeJudgments, judgeScopeBatch, precheckScope, requestScopeJudgments, SCOPE_MODEL } from './judge.ts'
+import { decodeScopeJudgments, judgeScopeBatch, precheckScope, SCOPE_MODEL } from './judge.ts'
 
 const inScope = { scope: 'in', reason: 'It is a small-room live show.' }
 const unclear = { scope: 'out', reason: 'unclear: The listing does not say what takes place.' }
@@ -31,17 +32,14 @@ describe('scope judgment', () => {
     expect(() => decodeScopeJudgments({ judgments: [valid, valid] }, 2)).toThrow()
   })
 
-  it('requests native strict JSON with no reasoning, tools, or storage', async () => {
-    const transport = vi.fn<typeof fetch>(async (_url, init) => {
-      const body = JSON.parse(String(init?.body))
-      expect(body).toMatchObject({ model: SCOPE_MODEL, response_format: { type: 'json_schema', json_schema: { strict: true } },
-        reasoning_effort: 'none', store: false })
-      expect(body).not.toHaveProperty('tools')
-      return Response.json({ id: 'test', object: 'chat.completion', created: 1, model: SCOPE_MODEL, choices: [{ index: 0,
-        message: { role: 'assistant', content: JSON.stringify({ judgments: [{ index: 0, ...inScope }] }) }, finish_reason: 'stop' }] })
-    })
-    const model = createOpenAI({ apiKey: 'synthetic', fetch: transport }).chat(SCOPE_MODEL)
-    expect(await judgeScopeBatch([{ name: 'Metal en vivo' }], requestScopeJudgments(model))).toEqual([inScope])
-    expect(transport).toHaveBeenCalledTimes(1)
+  it('requests native strict JSON with no reasoning, tools, or storage', () => {
+    // Bun's module mocks can leak between suites; verify the real SDK in a fresh process.
+    const fixture = fileURLToPath(new URL('./judge-wire.fixture.ts', import.meta.url))
+    const { body, calls, judgments } = JSON.parse(execFileSync('bun', ['--no-env-file', fixture], { encoding: 'utf8', timeout: 4000 }))
+    expect(body).toMatchObject({ model: SCOPE_MODEL, response_format: { type: 'json_schema', json_schema: { strict: true } },
+      reasoning_effort: 'none', store: false })
+    expect(body).not.toHaveProperty('tools')
+    expect(judgments).toEqual([inScope])
+    expect(calls).toBe(1)
   })
 })
