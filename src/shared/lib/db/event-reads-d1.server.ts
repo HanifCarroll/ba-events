@@ -26,17 +26,11 @@ export async function eventsByStartD1(db: D1Database, limit: number): Promise<Ch
   return results.map(toPayload)
 }
 
-/**
- * `getHappeningSoonEvents`: scheduled events from `earliestStart` on with a photo, a location, and a description,
- * soonest first.
- */
+/** Scheduled intake-linked events from `earliestStart` on, soonest first. */
 export async function happeningSoonD1(db: D1Database, earliestStart: string, limit: number): Promise<ChatEventPayload[]> {
   const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
-    WHERE e.status = 'scheduled' AND e.starts_at >= ? AND e.location_tba = 0 AND e.description_unavailable = 0
-      AND e.image_url IS NOT NULL AND e.image_url != ''
-      AND (v.name IS NOT NULL OR v.neighborhood IS NOT NULL OR v.address IS NOT NULL)
-      AND (e.description_summary_es IS NOT NULL OR e.description_summary_en IS NOT NULL
-        OR e.description_display_es IS NOT NULL OR e.description_display_en IS NOT NULL)
+    WHERE e.status = 'scheduled' AND e.starts_at >= ? AND coalesce(e.location_hidden, 0) = 0
+      AND EXISTS (SELECT 1 FROM event_source_evidence x WHERE x.event_id = e.id)
     ORDER BY e.starts_at, e.id LIMIT ?`).bind(new Date(earliestStart).toISOString(), limit).all()
   return results.map(toPayload)
 }

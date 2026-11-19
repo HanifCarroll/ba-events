@@ -1,21 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
 	import { gsap } from 'gsap'
-	import { ScrollTrigger } from 'gsap/ScrollTrigger'
-	import {
-		ArrowUp,
-		ArrowUpRight,
-		CalendarDays,
-		Mic,
-		MapPin,
-		MessageCircle,
-		Mic2,
-		Search,
-		Sparkles,
-		Ticket,
-		User,
-		Send
-	} from 'lucide-svelte'
+	import { ArrowUp, CalendarDays, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
@@ -111,10 +97,8 @@
 		if (!root) return
 		landingInput?.focus({ preventScroll: true })
 
-		gsap.registerPlugin(ScrollTrigger)
 		const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 		const context = gsap.context(() => {
-			const revealItems = root.querySelectorAll('[data-reveal]')
 			const prompts = [
 				m.landing_placeholder(),
 				m.landing_placeholder_2(),
@@ -125,7 +109,6 @@
 			const input = landingInput
 
 			if (reduceMotion) {
-				gsap.set(revealItems, { clearProps: 'all' })
 				input?.setAttribute('placeholder', prompts[0])
 				return
 			}
@@ -153,22 +136,6 @@
 				}
 			}
 
-			gsap.set(revealItems, { opacity: 0, y: 24 })
-
-			const reveal = (selector: string, trigger: string, start = 'top 82%') => {
-				gsap.to(selector, {
-					opacity: 1,
-					y: 0,
-					duration: 0.8,
-					ease: 'power3.out',
-					stagger: 0.12,
-					scrollTrigger: { trigger, scroller: root, start, once: true }
-				})
-			}
-
-			reveal('[data-reveal="explanation"]', '[data-reveal="explanation"]')
-			reveal('[data-reveal="steps"], [data-reveal="steps-heading"], [data-reveal="step"]', '[data-reveal="steps"]')
-			reveal('[data-reveal="cta"]', '[data-reveal="cta"]', 'top 88%')
 		}, root)
 
 		return () => context.revert()
@@ -190,15 +157,20 @@
 
 		<nav
 			data-hero-motion="nav"
-			class="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-10"
+			class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-5 sm:px-10"
 			aria-label={m.landing_nav_label()}
 		>
 			<a href="/" class="flex items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
 				BA Eventos
 			</a>
-			<div class="flex items-center gap-2 text-xs font-medium sm:gap-4 sm:text-sm">
-				<a href="#what-it-does" class="hidden hover:text-indigo-200 sm:inline">{m.landing_what_it_does()}</a>
-				<a href="#how-it-works" class="hidden hover:text-indigo-200 sm:inline">{m.landing_how_it_works()}</a>
+			<div class="flex flex-wrap items-center gap-2 text-xs font-medium sm:gap-4 sm:text-sm">
+				<a
+					href="https://www.instagram.com/baeventos.app/"
+					target="_blank"
+					rel="noopener noreferrer"
+					aria-label={m.landing_instagram_aria()}
+					class="rounded px-1 py-2 hover:text-indigo-200 focus-visible:ring-2 focus-visible:ring-white"
+				>{m.landing_instagram()}</a>
 				<LanguageSwitcher compact />
 				<InstallApp compact class="border border-white/60 px-2.5 py-2 text-white hover:bg-white/10 sm:px-3" />
 				{#if auth.user}
@@ -269,7 +241,7 @@
 					bind:this={landingInput}
 					bind:value={landingQuery}
 					id="landing-composer"
-					placeholder=""
+					placeholder={m.landing_placeholder()}
 					autocomplete="off"
 					onkeydown={handleComposerKeydown}
 					oninput={resizeLandingInput}
@@ -302,10 +274,10 @@
 			<div data-hero-motion="actions" class="mt-6 flex flex-wrap justify-center gap-3">
 				<button
 					type="button"
-					onclick={() => onSelectPrompt(m.landing_prompt_live_music())}
+					onclick={() => onSelectPrompt(m.landing_prompt_today())}
 					class="flex min-h-11 items-center gap-2 rounded-full border border-white/70 px-4 py-2 text-sm font-medium hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
 				>
-					<Mic2 class="size-4" aria-hidden="true" />{m.landing_live_music()}
+					<CalendarDays class="size-4" aria-hidden="true" />{m.landing_today()}
 				</button>
 				<button
 					type="button"
@@ -343,59 +315,7 @@
 	<div class="mx-auto max-w-7xl px-5 py-12 sm:px-10 sm:py-16">
 		<HappeningSoonEvents onSelectPrompt={onSelectPrompt} initialEvents={happeningSoonEvents} />
 
-		<section id="what-it-does" data-reveal="explanation" class="scroll-mt-8 grid gap-10 py-16 lg:grid-cols-2 lg:items-center" aria-labelledby="ask-heading">
-			<div>
-				<h2 id="ask-heading" class="font-display text-4xl leading-tight sm:text-5xl">
-					{m.landing_ask_title()}
-				</h2>
-				<p class="mt-5 max-w-lg leading-7 text-muted-foreground">{m.landing_ask_body()}</p>
-				<div class="mt-8 space-y-6">
-					<div class="flex gap-4">
-						<MessageCircle class="mt-1 size-5 shrink-0 text-primary" aria-hidden="true" />
-						<p><strong>{m.landing_capability_ask_title()}</strong><br /><span class="text-sm text-muted-foreground">{m.landing_capability_ask_body()}</span></p>
-					</div>
-					<div class="flex gap-4">
-						<CalendarDays class="mt-1 size-5 shrink-0 text-primary" aria-hidden="true" />
-						<p><strong>{m.landing_capability_details_title()}</strong><br /><span class="text-sm text-muted-foreground">{m.landing_capability_details_body()}</span></p>
-					</div>
-					<div class="flex gap-4">
-						<MapPin class="mt-1 size-5 shrink-0 text-primary" aria-hidden="true" />
-						<p><strong>{m.landing_capability_followup_title()}</strong><br /><span class="text-sm text-muted-foreground">{m.landing_capability_followup_body()}</span></p>
-					</div>
-				</div>
-			</div>
-			<div
-				class="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-8"
-				aria-label={m.landing_example_label()}
-			>
-				<div class="ml-auto max-w-[85%] rounded-xl bg-primary/10 p-4 text-sm">{m.landing_example_user()}</div>
-				<div class="mt-4 max-w-[90%] rounded-xl border bg-background p-4 text-sm leading-6">
-					<p>{m.landing_example_assistant()}</p>
-					<div class="mt-3 rounded-lg border bg-card p-3">
-						<p class="font-semibold">{m.landing_example_event_title()}</p>
-						<p class="mt-1 text-xs text-muted-foreground">{m.landing_example_event_meta()}</p>
-						<p class="mt-1 text-xs font-medium text-primary">{m.landing_example_event_price()}</p>
-						<p class="mt-2 flex items-center gap-1 text-xs font-medium text-primary">
-							{m.landing_example_details()} <ArrowUpRight class="size-3" aria-hidden="true" />
-						</p>
-					</div>
-				</div>
-				<div class="ml-auto mt-4 max-w-[70%] rounded-xl bg-primary/10 p-4 text-sm">{m.landing_example_followup()}</div>
-				<div class="mt-4 max-w-[90%] rounded-xl border bg-background p-4 text-sm leading-6">{m.landing_example_directions()}</div>
-				<div class="mt-4 rounded-full border px-4 py-3 text-sm text-muted-foreground">{m.landing_example_input()}</div>
-			</div>
-		</section>
-
-		<section id="how-it-works" data-reveal="steps" class="scroll-mt-8 py-12 text-center" aria-labelledby="how-heading">
-			<h2 id="how-heading" data-reveal="steps-heading" class="font-display text-4xl">{m.landing_how_it_works()}</h2>
-			<div class="mt-10 grid gap-10 md:grid-cols-3">
-				<div data-reveal="step"><MessageCircle class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">1. {m.landing_step_one_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_one_body()}</p></div>
-				<div data-reveal="step"><CalendarDays class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">2. {m.landing_step_two_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_two_body()}</p></div>
-				<div data-reveal="step"><Ticket class="mx-auto size-8 text-primary" aria-hidden="true" /><h3 class="mt-4 font-semibold">3. {m.landing_step_three_title()}</h3><p class="mt-2 text-sm leading-6 text-muted-foreground">{m.landing_step_three_body()}</p></div>
-			</div>
-		</section>
-
-		<section data-reveal="cta" class="flex flex-col items-center py-12 text-center">
+		<section class="flex flex-col items-center py-12 text-center">
 			<button
 				type="button"
 				onclick={startAsking}

@@ -79,19 +79,7 @@ export async function getEventsWithVenues(limit = 50) {
   return (await eventsByStartD1(boundCatalogD1(), limit)).map(row => pickColumns<EventWithVenue>(row, EVENT_ADMIN_COLUMNS))
 }
 
-/**
- * Next upcoming events for the home "Happening soon" grid.
- * Chat columns only (no embedding), soonest first, capped at `limit`.
- *
- * Only events with complete, actionable info make the grid: a real start
- * time (date + time), an actual location (venue name, neighborhood, or
- * address — not TBA), a description, and a photo. Events lacking any of
- * these are excluded so every card shows where the event happens, what it
- * is, and what it looks like.
- *
- * Floor is now + 12 hours, rolling. Daytime events can appear if they
- * start at least 12 hours out; a night already in progress does not.
- */
+/** Next scheduled intake-linked events for the temporary homepage strip. */
 const HOME_CARD_COLUMNS = 'id, name, starts_at, time_tba, image_url, image_width, image_height, venue_name, venue_neighborhood, price, is_free'
 
 export async function getHappeningSoonEvents(limit = 4): Promise<HomeEventCard[]> {
