@@ -31,10 +31,11 @@ export async function eventsByStartD1(db: D1Database, limit: number): Promise<Ch
   return results.map(toPayload)
 }
 
-/** Scheduled, in-scope intake-linked events from `earliestStart` on, soonest first. */
+/** Scheduled, in-scope intake-linked events that have artwork, from `earliestStart` on, soonest first. */
 export async function happeningSoonD1(db: D1Database, earliestStart: string, limit: number): Promise<ChatEventPayload[]> {
   const { results } = await db.prepare(`SELECT ${EVENT_COLUMNS} FROM ${FROM_EVENTS}
     WHERE e.status = 'scheduled' AND e.scope = 'in' AND e.starts_at >= ? AND coalesce(e.location_hidden, 0) = 0
+      AND e.image_url IS NOT NULL AND e.image_url <> ''
       AND EXISTS (SELECT 1 FROM event_source_evidence x WHERE x.event_id = e.id)
     ORDER BY e.starts_at, e.id LIMIT ?`).bind(new Date(earliestStart).toISOString(), limit).all()
   return results.map(toPayload)

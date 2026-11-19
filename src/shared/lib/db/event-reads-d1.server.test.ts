@@ -71,9 +71,10 @@ async function linkIntakeEvidence(eventIds: string[]) {
 }
 
 describe('public event reads on D1', () => {
-  it('home feed: only scheduled, visible, in-scope, intake-linked events 12 hours out, soonest first', async () => {
+  it('home feed: only scheduled, visible, in-scope, intake-linked events with artwork 12 hours out, soonest first', async () => {
     const bar = await venue('Bar Sintético', { neighborhood: 'Palermo' })
-    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5), image_url: null })
+    const later = await event('Jazz tardío', { venue_id: bar, starts_at: inDays(5) })
+    const noArtwork = await event('Sin imagen', { venue_id: bar, starts_at: inDays(2), image_url: null })
     const sooner = await event('Jazz temprano', { venue_id: bar, starts_at: inDays(1) })
     const imminent = await event('Empieza ya', { venue_id: bar, starts_at: inDays(0.25) })
     const hidden = await event('Lugar privado', { venue_id: bar, location_hidden: true })
@@ -81,7 +82,7 @@ describe('public event reads on D1', () => {
     await event('Sin vínculo de intake', { venue_id: bar })
     const party = await event('Fiesta', { venue_id: bar, starts_at: inDays(0.75) })
     const unjudged = await event('Sin clasificar', { venue_id: bar, starts_at: inDays(0.75), scope: null })
-    const qualifying = [later, sooner, imminent, hidden, canceled]
+    const qualifying = [later, sooner, noArtwork, imminent, hidden, canceled]
     await linkIntakeEvidence([...qualifying, party, unjudged])
     await db.batch([
       db.prepare("UPDATE events SET scope = 'in' WHERE id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(qualifying)),
