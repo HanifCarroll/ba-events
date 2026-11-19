@@ -8,6 +8,9 @@
  * `beforeWrite` runs before every new write (container, carousel, media_publish), never before a reconciling read.
  */
 
+import { footerHandle } from './copy.ts'
+import type { PostEvent } from './select.ts'
+
 export const GRAPH = 'https://graph.facebook.com/v27.0'
 export const PROFILE_URL = 'https://www.instagram.com/baeventos.app/'
 
@@ -225,6 +228,12 @@ export async function publish(job: PublishJob, state: PublishState, deps: Publis
     await deps.save(state)
   }
   return state.permalink!
+}
+
+/** The cover and closing have no account; intervening frames follow draft event order. */
+export function eventFrameTag(events: Array<Pick<PostEvent, 'handle' | 'via'>>, index: number, height: number) {
+  const event = events[index - 1]
+  return event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null
 }
 
 /** Tag position: the centre of the footer text ("@handle" or "Vía @handle" at left 80px, 72px from the bottom, 28px DM Sans). */

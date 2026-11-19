@@ -9,10 +9,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { join } from 'node:path'
 import { PublishStop, checkWrite, decide, readReactions } from './approval.ts'
 import * as alerts from './alerts.ts'
-import { caption as captionFor, footerHandle, heldText, postedText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
+import { caption as captionFor, footerHandle, heldText, postedText, skippedMentionsText, skipText, slackPreview, tooFewText, type SkipReason } from './copy.ts'
 import { FORMATS, activeRuns, draftId, parseDraftId, runWindow, type FormatKey, type RunWindow } from './formats.ts'
 import { FRAME, framesHtml } from './html.ts'
-import { PROFILE_URL, StillProcessing, emptyPublishState, footerTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
+import { PROFILE_URL, StillProcessing, emptyPublishState, eventFrameTag, instagramApi, publish, type InstagramApi, type PublishJob, type PublishState, type Slide } from './instagram.ts'
 import { nextTrack, readTracks, readyTrack, type DraftTrack, type ReadyTrack } from './reel/music.ts'
 import { reelTiming, type ReelTiming } from './reel/project.ts'
 import * as runtime from './runtime.ts'
@@ -224,7 +224,7 @@ export class Job {
     const draft = this.loadDraft(id)
     if (!draft || draft.format !== 'hoy') throw new Error(`No Hoy draft ${id}; see \`status\``)
     this.verifyFrames(draft)
-    await this.s.composeStory(stickerFrames(draft.frames, draft.events), { previewDir: outDir })
+    return this.s.composeStory(stickerFrames(draft.frames, draft.events), { previewDir: outDir })
   }
 
   // Outcomes and notifications
@@ -298,6 +298,7 @@ export class Job {
 
   private async reconcileStory(draft: Draft, window: RunWindow, poll = false): Promise<boolean> {
     const attempt = draft.storyShare!
+    const skippedNote = attempt.skippedMentions?.length ? skippedMentionsText(attempt.skippedMentions) : null
     let failure: string | undefined
     for (let check = 0; check < (poll ? 5 : 1); check++) {
       let confirmed = false
@@ -310,11 +311,11 @@ export class Job {
         failure = alerts.describeFailure(error).message
       }
       if (confirmed) {
-        await this.settle(draft, 'published', postedText(PROFILE_URL), { publishFailures: 0, note: null })
+        await this.settle(draft, 'published', [postedText(PROFILE_URL), skippedNote].filter(Boolean).join('\n'), { publishFailures: 0, note: skippedNote })
         return true
       }
       if (this.s.now() >= window.deadline) {
-        const note = 'Business Suite Share was attempted; check @baeventos.app Stories.'
+        const note = ['Business Suite Share was attempted; check @baeventos.app Stories.', skippedNote].filter(Boolean).join('\n')
         await this.settle(draft, 'held', `Held: ${note}`, { note })
         await this.s.alert(alerts.draftKey(draft), alerts.draftTitle(draft), alerts.storyUnconfirmed(draft, this.s.now(), failure))
         return false
@@ -344,7 +345,7 @@ export class Job {
       this.verifyFrames(draft)
       const frames = stickerFrames(draft.frames, draft.events)
       try {
-        await this.s.composeStory(frames, { beforeShare: async signal => {
+        await this.s.composeStory(frames, { beforeShare: async (signal, skippedMentions) => {
           const api = this.s.instagram(token.token.access_token)
           const before = await liveStories(api, token.token.ig_user_id).catch(() => {
             throw new StoryComposerError('read existing Instagram Stories before sharing')
@@ -355,7 +356,7 @@ export class Job {
           const now = this.s.now()
           if (now >= window.deadline) throw new PublishStop('deadline', 'The publishing deadline passed')
           if (signal.aborted) throw new StoryComposerError('finish the Business Suite flow within six minutes')
-          draft.storyShare = { at: now.toISOString(), frameCount: frames.length, beforeIds: before.map(story => story.id) }
+          draft.storyShare = { at: now.toISOString(), frameCount: frames.length, beforeIds: before.map(story => story.id), skippedMentions }
           draft.state = 'publishing'
           this.save(draft)
         } })
@@ -388,11 +389,7 @@ export class Job {
       job = { kind, igUserId: token.token.ig_user_id, slides: [], caption: draft.caption, video: { url: url('reel.mp4'), coverUrl: url('cover.jpg') } }
     } else {
       const height = FRAME[kind].height
-      // Frame 1 is the cover and the last one the closing frame; the cards in between carry the tags.
-      const slides: Slide[] = draft.frames.map((_, index) => {
-        const event = index > 0 && index <= draft.events.length ? draft.events[index - 1]! : null
-        return { url: url(names[index]!), tag: event?.handle ? footerTag(event.handle, height, footerHandle(event)) : null }
-      })
+      const slides: Slide[] = draft.frames.map((_, index) => ({ url: url(names[index]!), tag: eventFrameTag(draft.events, index, height) }))
       job = { kind, igUserId: token.token.ig_user_id, slides, caption: draft.caption }
     }
     draft.publish ??= emptyPublishState(job)
@@ -569,8 +566,9 @@ export const tick = () => runtime.withLock(() => new Job(liveServices()).tick())
 
 export async function stickersDryRun(id: string, outDir: string) {
   const job = new Job(liveServices())
-  await runtime.withLock(() => job.previewStickers(id, outDir))
+  const skipped = await runtime.withLock(() => job.previewStickers(id, outDir))
   console.log(`Instagram preview screenshots saved to ${outDir}; composer discarded without sharing.`)
+  if (skipped.length) console.log(skippedMentionsText(skipped))
 }
 
 export async function regenerate(id: string, excludeIds: string[], trackId: string | null = null) {

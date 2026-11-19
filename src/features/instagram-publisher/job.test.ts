@@ -598,7 +598,7 @@ describe('Hoy link stickers', () => {
       if (changed === 'rejection') w.reject()
       if (changed === 'deadline') w.at(date, 19)
       if (changed === 'cancelled event') w.statuses.set(load().events[0]!.id, 'canceled')
-      await action.beforeShare(new AbortController().signal)
+      await action.beforeShare(new AbortController().signal, [])
       throw new Error('Must not allow Share')
     }
     await advance()
@@ -616,8 +616,8 @@ describe('Hoy link stickers', () => {
     let clicks = 0
     w.composeStory = async (_frames, action) => {
       if (!('beforeShare' in action)) throw new Error('Expected Share callback')
-      await action.beforeShare(new AbortController().signal)
-      expect(load().storyShare).toEqual({ at: w.clock.toISOString(), frameCount: 4, beforeIds: ['m1'] })
+      await action.beforeShare(new AbortController().signal, ['sala1'])
+      expect(load().storyShare).toEqual({ at: w.clock.toISOString(), frameCount: 4, beforeIds: ['m1'], skippedMentions: ['sala1'] })
       clicks++
       for (let i = 0; i < 3; i++) w.ig.postStoryByHand()
       throw new StoryComposerError('read the Share result')
@@ -631,7 +631,9 @@ describe('Hoy link stickers', () => {
     w.at(date, 19)
     await advance()
     expect(load().state).toBe('published')
-    expect(w.replies()).toContain('Posted: https://www.instagram.com/baeventos.app/')
+    const note = 'Skipped Instagram mentions (no exact username match): @sala1.'
+    expect(load().note).toBe(note)
+    expect(w.replies()).toContain(`Posted: https://www.instagram.com/baeventos.app/\n${note}`)
     expect(clicks).toBe(1)
     expect(w.r2).toEqual([])
     expect(new Set(w.ig.calls)).toEqual(new Set(['GET 17841/stories']))
@@ -641,8 +643,9 @@ describe('Hoy link stickers', () => {
     const { w, load, advance } = await hoy()
     w.composeStory = async (_frames, action) => {
       if (!('beforeShare' in action)) throw new Error('Expected Share callback')
-      await action.beforeShare(new AbortController().signal)
+      await action.beforeShare(new AbortController().signal, [])
       w.ig.postStoryByHand()
+      return []
     }
     await advance()
     w.ig.get = async () => { throw new Error('Graph unavailable') }
@@ -659,7 +662,7 @@ describe('Hoy link stickers', () => {
     const { w, load, advance } = await hoy()
     w.composeStory = async (_frames, action) => {
       if (!('beforeShare' in action)) throw new Error('Expected Share callback')
-      await action.beforeShare(AbortSignal.abort())
+      await action.beforeShare(AbortSignal.abort(), [])
       throw new Error('Must not allow Share')
     }
     await advance()
@@ -674,8 +677,9 @@ describe('Hoy link stickers', () => {
     w.composeStory = async (frames, action) => {
       expect(action).toEqual({ previewDir: '/test/previews' })
       previews += frames.length
+      return ['sala1']
     }
-    await w.job().previewStickers(draft.id, '/test/previews')
+    expect(await w.job().previewStickers(draft.id, '/test/previews')).toEqual(['sala1'])
     expect(previews).toBe(4)
     expect(load()).toEqual(draft)
     expect(w.ig.calls).toEqual([])

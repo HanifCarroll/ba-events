@@ -1,4 +1,5 @@
-import type { InstagramApi } from './instagram.ts'
+import { eventFrameTag, type InstagramApi } from './instagram.ts'
+import type { PostEvent } from './select.ts'
 
 const HOME_PAGE = 'https://baeventos.com'
 // Only count frames created close to the click, even if a later tick does the read.
@@ -9,9 +10,10 @@ export interface StickerFrame {
   url: string
   text: string
   centerY: number
+  mention?: string
 }
 
-export function stickerFrames(frames: string[], events: Array<{ id: string }>): StickerFrame[] {
+export function stickerFrames(frames: string[], events: Array<Pick<PostEvent, 'id' | 'handle' | 'via'>>): StickerFrame[] {
   if (events.length < 2 || events.length > 4 || frames.length !== events.length + 2) {
     throw new Error('The Hoy draft does not have a cover, one frame per event, and a closing frame.')
   }
@@ -19,11 +21,21 @@ export function stickerFrames(frames: string[], events: Array<{ id: string }>): 
   return frames.map((path, index) => {
     if (index === 0) return { path, url: HOME_PAGE, text: 'Ver la agenda', centerY: 1440 }
     if (index === frames.length - 1) return { path, url: HOME_PAGE, text: 'Buscar planes', centerY: 1390 }
-    return { path, url: `${HOME_PAGE}/events/${encodeURIComponent(events[index - 1]!.id)}`, text: 'Ver evento', centerY: 1440 }
+    const mention = eventFrameTag(events, index, 1920)?.username
+    return { path, url: `${HOME_PAGE}/events/${encodeURIComponent(events[index - 1]!.id)}`, text: 'Ver evento', centerY: 1440, mention }
   })
 }
 
-export interface StoryShareAttempt { at: string; frameCount: number; beforeIds: string[] }
+/** Each option displays the full username first and the display name on a separate line. */
+export function exactMentionOption(options: string[], username: string): number | undefined {
+  const matches = options.flatMap((label, index) => {
+    const displayedUsername = label.trim().split(/\r?\n/, 1)[0]?.trim().replace(/^@/, '')
+    return displayedUsername?.toLowerCase() === username.toLowerCase() ? [index] : []
+  })
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+export interface StoryShareAttempt { at: string; frameCount: number; beforeIds: string[]; skippedMentions?: string[] }
 
 export async function liveStories(api: InstagramApi, userId: string): Promise<Array<{ id: string; timestamp: string }>> {
   const { data } = await api.get(`${userId}/stories`, { fields: 'id,timestamp', limit: '100' })
@@ -51,4 +63,4 @@ export class StoryComposerError extends Error implements StickerFailure {
   }
 }
 
-export type ComposeStory = (frames: StickerFrame[], action: { beforeShare(signal: AbortSignal): Promise<void> } | { previewDir: string }) => Promise<void>
+export type ComposeStory = (frames: StickerFrame[], action: { beforeShare(signal: AbortSignal, skippedMentions: string[]): Promise<void> } | { previewDir: string }) => Promise<string[]>

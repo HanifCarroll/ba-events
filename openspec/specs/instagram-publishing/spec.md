@@ -95,6 +95,11 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 
 With `linkStickers.hoy` enabled and no Graph API publish underway for the draft, the job MUST use Business Suite's Share now for Instagram only. Every frame MUST have an Instagram link sticker that leaves the artwork's text clear. The cover links to `https://baeventos.com` with “Ver la agenda”, each event frame to `https://baeventos.com/events/<event id>` with “Ver evento”, and the closing frame to `https://baeventos.com` with “Buscar planes”. If the composer does not support custom text, use its default. The job MUST re-check reactions, deadline, and event validity before Share and never use Business Suite scheduling.
 
+#### Scenario: An event has a venue or curator handle
+- **WHEN** the Graph route would tag an event frame's account
+- **THEN** the Business Suite route adds an Instagram Mention sticker for that same username without covering the link sticker or other artwork text
+- **AND** if there is no exact username match, it skips only that mention and lists it in the outcome note
+
 #### Scenario: The composer is unavailable before Share
 - **WHEN** the browser flow fails before a Share attempt, including if Meta requires sign-in
 - **THEN** the job discards the composer and uses the Graph API subject to the same publishing gates. If it publishes, it alerts that the Story went out without links and says what needs attention.

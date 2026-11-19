@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { needsFacebookSignIn } from './story-composer.ts'
-import { confirmsStory, stickerFrames } from './story-stickers.ts'
+import { eventFrameTag } from './instagram.ts'
+import { confirmsStory, exactMentionOption, stickerFrames } from './story-stickers.ts'
 
 describe('Hoy sticker frames', () => {
   it.each([2, 3, 4])('uses the saved frame and event order for %i events', count => {
     const frames = Array.from({ length: count + 2 }, (_, i) => `/frames/${i + 1}.jpg`)
-    const events = Array.from({ length: count }, (_, i) => ({ id: `event-${count - i}` }))
+    const events = Array.from({ length: count }, (_, i) => ({ id: `event-${count - i}`, handle: null, via: false }))
     expect(stickerFrames(frames, events).map(({ path, text, url }) => [path, text, url])).toEqual([
       [frames[0], 'Ver la agenda', 'https://baeventos.com'],
       ...events.map(({ id }, i) => [frames[i + 1], 'Ver evento', `https://baeventos.com/events/${id}`]),
@@ -14,7 +15,32 @@ describe('Hoy sticker frames', () => {
   })
 
   it('refuses a frame list that cannot map to the events', () => {
-    expect(() => stickerFrames(['cover', 'card1', 'close'], [{ id: 'a' }, { id: 'b' }])).toThrow(/one frame per event/)
+    expect(() => stickerFrames(['cover', 'card1', 'close'], [{ id: 'a', handle: null, via: false }, { id: 'b', handle: null, via: false }])).toThrow(/one frame per event/)
+  })
+
+  it('uses the same venue and curator usernames as Graph, with no mention when the frame has no tag', () => {
+    const frames = ['cover', 'a', 'b', 'c', 'close']
+    const events = [
+      { id: 'a', handle: 'venue.one', via: false },
+      { id: 'b', handle: 'introduces_art', via: true },
+      { id: 'c', handle: null, via: false },
+    ]
+    const mentions = stickerFrames(frames, events).map(frame => frame.mention)
+    expect(mentions).toEqual([undefined, 'venue.one', 'introduces_art', undefined, undefined])
+    expect(mentions).toEqual(frames.map((_, index) => eventFrameTag(events, index, 1920)?.username))
+  })
+})
+
+describe('Business Suite mention search', () => {
+  it('ignores lookalikes and matching display names, not just the first suggestion', () => {
+    const options = ['venue.one_ar\nVenue One', 'copy\nvenue.one', 'venueXone\nVenue Uno', 'venue.one\nVenue']
+    expect(exactMentionOption(options, 'Venue.One')).toBe(3)
+    expect(exactMentionOption(options.slice(0, 3), 'venue.one')).toBeUndefined()
+    expect(exactMentionOption([], 'venue.one')).toBeUndefined()
+  })
+
+  it('does not select an ambiguous exact result', () => {
+    expect(exactMentionOption(['venue.one\nVenue 1', '@venue.one\nVenue 2'], 'venue.one')).toBeUndefined()
   })
 })
 
