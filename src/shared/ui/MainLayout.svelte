@@ -145,8 +145,11 @@
 	{#if !isLanding}
 	<!-- Mobile header -->
 	<header
-		class="lg:hidden h-16 border-b bg-card flex items-center gap-3 px-4 shrink-0 z-30"
+		class="lg:hidden h-16 border-b bg-card flex items-center justify-between gap-3 px-4 shrink-0 z-30"
 	>
+		<a href="/" class="flex min-h-10 items-center gap-2 hover:opacity-80 transition-opacity">
+			<BrandLogo />
+		</a>
 		<Button
 			variant="ghost"
 			size="icon"
@@ -157,9 +160,6 @@
 		>
 			{#if mobileMenuOpen}<X class="h-5 w-5" />{:else}<Menu class="h-5 w-5" />{/if}
 		</Button>
-		<a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-			<BrandLogo />
-		</a>
 	</header>
 
 	<!-- Mobile menu — slides down OVER the content (does not push it) -->

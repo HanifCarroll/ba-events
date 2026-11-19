@@ -35,7 +35,7 @@
 		aria-label={m.install_app()}
 	>
 		<Download class="size-4" aria-hidden="true" />
-		<span class={compact ? 'hidden sm:inline' : ''}>{m.install_app()}</span>
+		<span class={compact ? 'hidden md:inline' : ''}>{m.install_app()}</span>
 	</Button>
 {/if}
 

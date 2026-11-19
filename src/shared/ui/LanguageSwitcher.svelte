@@ -74,14 +74,14 @@
 {/snippet}
 
 {#if compact}
-	<div class="flex items-center gap-1" aria-label="Language / Idioma">
+	<div class="flex items-center md:gap-1" aria-label="Language / Idioma">
 		{#each locales as locale (locale)}
 			{@const isActive = locale === currentLocale}
 			<button
 				type="button"
 				onclick={() => handleLocaleChange(locale)}
 				aria-current={isActive ? 'true' : undefined}
-				class="rounded px-1.5 py-1 text-xs font-semibold transition-colors {isActive
+				class="rounded px-1.5 py-1 text-xs font-semibold transition-colors max-md:min-h-[40px] max-md:min-w-[40px] max-md:px-0 {isActive
 					? 'bg-white/15 text-white'
 					: 'text-white/65 hover:text-white'}"
 			>

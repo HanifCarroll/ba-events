@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
 	import { gsap } from 'gsap'
-	import { CalendarDays, Camera, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
+	import { CalendarDays, Camera, LogIn, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
@@ -157,20 +157,25 @@
 
 <div class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
 	<header class="mx-auto max-w-[90rem] px-4 pt-3 pb-5 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
-		<nav class="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label={m.landing_nav_label()}>
-			<a href="/" class="inline-flex min-h-10 items-center">
+		<nav class="flex items-center max-md:-mx-1 md:flex-wrap md:gap-x-4 md:gap-y-2" aria-label={m.landing_nav_label()}>
+			<a href="/" class="inline-flex min-h-10 min-w-0 items-center max-md:mr-2 max-md:[&_img]:h-auto max-md:[&_img]:w-32">
 				<BrandLogo />
 			</a>
-			<LanguageSwitcher compact />
-			<div class="flex flex-wrap items-center gap-2 text-xs font-medium sm:ml-auto sm:gap-4 sm:text-sm">
+			<div class="ml-auto shrink-0 md:contents">
+				<LanguageSwitcher compact />
+			</div>
+			<div class="flex items-center text-xs font-medium max-md:shrink-0 md:ml-auto md:flex-wrap md:gap-4 md:text-sm">
 				<a
 					href={instagram}
 					target="_blank"
 					rel="noopener noreferrer"
 					aria-label={m.landing_instagram_aria()}
-					class="rounded px-1 py-2 hover:text-indigo-200 focus-visible:ring-2 focus-visible:ring-white"
-				>{m.landing_instagram()}</a>
-				<InstallApp compact class="border border-white/60 px-2.5 py-2 text-white hover:bg-white/10 sm:px-3" />
+					class="rounded hover:text-indigo-200 focus-visible:ring-2 focus-visible:ring-white max-md:grid max-md:size-[40px] max-md:place-items-center md:px-1 md:py-2"
+				>
+					<Camera class="size-4 md:hidden" aria-hidden="true" />
+					<span class="max-md:sr-only">{m.landing_instagram()}</span>
+				</a>
+				<InstallApp compact class="border border-white/60 text-white hover:bg-white/10 max-md:size-[40px] max-md:p-0 max-md:has-[>svg]:px-0 md:px-3" />
 				{#if auth.user}
 					<DropdownMenu>
 						<DropdownMenuTrigger>
@@ -178,10 +183,10 @@
 								<button
 									{...props}
 									type="button"
-									class="flex min-h-10 items-center gap-1 rounded-lg border border-white/60 px-2.5 py-2 hover:bg-white/10 sm:px-3"
+									class="flex min-h-[40px] items-center gap-1 rounded-lg border border-white/60 hover:bg-white/10 max-md:w-[40px] max-md:justify-center md:min-h-10 md:px-3 md:py-2"
 								>
 									<User class="size-4" aria-hidden="true" />
-									<span>{m.nav_account()}</span>
+									<span class="max-md:sr-only">{m.nav_account()}</span>
 								</button>
 							{/snippet}
 						</DropdownMenuTrigger>
@@ -211,9 +216,10 @@
 				{:else}
 					<a
 						href="/login"
-						class="rounded-lg border border-white/60 px-3 py-2 hover:bg-white/10 sm:px-4"
+						class="rounded-lg border border-white/60 hover:bg-white/10 max-md:grid max-md:size-[40px] max-md:place-items-center md:px-4 md:py-2"
 					>
-						{m.auth_sign_in()}
+						<LogIn class="size-4 md:hidden" aria-hidden="true" />
+						<span class="max-md:sr-only">{m.auth_sign_in()}</span>
 					</a>
 				{/if}
 			</div>

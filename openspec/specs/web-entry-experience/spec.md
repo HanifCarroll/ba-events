@@ -20,8 +20,17 @@ Event detail time ranges SHALL show the end date when it differs from the start 
 The homepage SHALL use the active locale for the independent-culture title, description, headline, and subtitles. It SHALL link to BA Eventos on Instagram in both desktop and mobile navigation and SHALL NOT present an invented example conversation.
 
 #### Scenario: Visitor opens the homepage on a phone
-- **WHEN** the homepage renders in English or Spanish
-- **THEN** the Instagram link and language switch are available in the navigation
+- **WHEN** the homepage renders at 320 to 767 CSS pixels in English or Spanish, with or without a session or an available install action
+- **THEN** the wordmark sits on the left and the language, Instagram, optional install, and sign-in or account controls sit on the right, all in a single row without overflow
+- **AND** each control has a target at least 40 CSS pixels wide and tall, and icon-only controls retain accessible names
+
+### Requirement: The app header places the menu trigger on the right
+Below the large breakpoint, the app layout’s mobile header on non-homepage routes SHALL place the home wordmark at the left and the menu trigger at the right. The menu SHALL open below the full header without pushing the page content down.
+
+#### Scenario: A visitor toggles the mobile menu from the keyboard
+- **WHEN** the visitor focuses and activates the menu trigger
+- **THEN** the trigger retains focus and its accessible name and expanded state reflect whether the menu is open
+- **AND** while the menu is open, Tab from the trigger enters the menu
 
 ### Requirement: Web branding uses the BA Eventos ticket mark
 The homepage and app navigation SHALL show the ticket wordmark as a home link with the accessible name “BA Eventos”. Browser tab, Apple touch, and installable app icons SHALL use the matching ticket mark.
@@ -159,6 +168,6 @@ The PWA installation prompt and pull-to-refresh gesture SHALL each have explicit
 
 ## Verification
 - Implementation: `messages/en.json`, `messages/es.json`, `src/features/chat/components/SuggestedPrompts.svelte`, `src/shared/ui/MainLayout.svelte`, `src/features/events/components/EventArtwork.svelte`, `src/routes/mcp/+page.svelte`, `src/shared/lib/utils/formatting.ts`
-- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify the reassurance line, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions.
+- Browser checks: render the real components in English and Spanish at desktop and mobile widths; verify homepage and app header alignment at 320, 360, 390, and 430 CSS pixels with both session states, with and without the homepage install action; verify menu keyboard access, the reassurance line, navigation icon geometry, wrapped labels, Telegram link attributes, and Claude and ChatGPT setup instructions.
 - Static check: `bun run paraglide:compile && bun run check`
 - Specification validation: `bunx @fission-ai/openspec validate --specs --json`
