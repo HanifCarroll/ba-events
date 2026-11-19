@@ -48,7 +48,7 @@ const usigArea = Schema.Struct({ barrio: Schema.String })
 const MAX_USIG_BYTES = 256 * 1024
 
 async function readUsig(base: string, params: Record<string, string>): Promise<unknown> {
-  const response = await fetch(`${base}?${new URLSearchParams(params)}`, { redirect: 'error', signal: AbortSignal.timeout(5000) })
+  const response = await fetch(`${base}?${new URLSearchParams(params)}`, { redirect: 'manual', signal: AbortSignal.timeout(5000) })
   if (!response.ok || !response.body || Number(response.headers.get('content-length')) > MAX_USIG_BYTES) {
     await response.body?.cancel()
     return null
