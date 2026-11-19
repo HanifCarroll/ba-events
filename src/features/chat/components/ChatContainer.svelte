@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { HomeAgenda } from '#features/events/lib/home-feed.ts'
+	import type { HomeAgendaPage } from '#features/events/lib/home-feed.ts'
 	import { untrack } from 'svelte'
 	import { useMachine } from '@xstate/svelte'
 	import { createAsyncLogic } from 'xstate'
@@ -80,7 +80,7 @@
 	}: {
 		conversationId?: string | null
 		onConversationChange?: (id: string) => Promise<void>
-		homeAgenda?: HomeAgenda | null
+		homeAgenda?: HomeAgendaPage | null
 		preloadedConversation?: ConversationWithMessages | null
 		pendingTurns?: Array<{
 			id: string

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
-import { homeWindow, nextHomeViewChange, parseHomeFilter, selectHomeView } from './home-feed.ts'
+import { homeWindow, nextHomeViewChange, pageHomeView, parseHomeFilter, selectHomeView } from './home-feed.ts'
 
 const monday = homeWindow(new Date('2026-11-24T02:59:59.999Z'))
 const asOf = Date.parse(monday.start)
@@ -113,6 +113,36 @@ describe('homepage agenda views', () => {
       ...Array.from({ length: 4 }, (_, i) => agendaEvent(`event ${i}`, `2026-11-24T2${i}:00:00.000Z`)),
     ]
     expect(selectHomeView({ window: monday, asOf, events }, 'hoy').events.map(({ id }) => id)).toEqual(['slot 0', 'event 0', 'event 1', 'event 2'])
+  })
+
+  it('splits a busy date between pages without splitting a same-day time-slot group', () => {
+    const shared = { name: 'Visita guiada', venue_id: 'casa' }
+    const firstSlot = agendaEvent('slot-1', '2026-11-23T20:00:00.000Z', shared)
+    const secondSlot = agendaEvent('slot-2', '2026-11-23T21:00:00.000Z', shared)
+    const following = agendaEvent('following', '2026-11-23T22:00:00.000Z')
+    const events = [
+      ...Array.from({ length: 23 }, (_, i) => agendaEvent(`card-${i}`, '2026-11-23T18:00:00.000Z')),
+      firstSlot, secondSlot, following,
+    ]
+    const view = selectHomeView({ window: monday, asOf, events }, 'hoy')
+    const first = pageHomeView(view, null)
+    expect(first.total).toBe(25)
+    expect(first.events).toHaveLength(24)
+    expect(first.events.at(-1)).toEqual({ ...firstSlot, slotStarts: [firstSlot.starts_at, secondSlot.starts_at] })
+    expect(pageHomeView(view, '48').events).toEqual([...first.events, following])
+  })
+
+  it('clamps the requested count to whole pages and at most the view total', () => {
+    const events = Array.from({ length: 59 }, (_, i) => agendaEvent(`card-${i}`, '2026-11-23T18:00:00.000Z'))
+    const view = { events, empty: null }
+    for (const value of [null, 'garbage', '1.5', '2e2', '-1', '0', '23', '9'.repeat(309)]) {
+      expect(pageHomeView(view, value).events).toHaveLength(24)
+    }
+    expect(pageHomeView(view, '49').events).toHaveLength(48)
+    expect(pageHomeView(view, '999999').events).toHaveLength(59)
+    expect(pageHomeView({ events: events.slice(0, 4), empty: 'hoy' }, '48')).toEqual({
+      events: events.slice(0, 4), empty: 'hoy', total: 4,
+    })
   })
 
   it('includes zero and explicit free, but not a la gorra or unknown admission', () => {

@@ -4,7 +4,7 @@
 	import ChatContainer from './ChatContainer.svelte'
 	import { getChatConversationId } from '#features/chat/lib/chat-navigation.ts'
 	import type { ConversationWithMessages } from '#shared/lib/types.ts'
-	import type { HomeAgenda } from '#features/events/lib/home-feed.ts'
+	import type { HomeAgendaPage } from '#features/events/lib/home-feed.ts'
 
 	const isMarketingLanding = $derived(page.url.pathname === '/')
 
@@ -19,7 +19,7 @@
 
 	// Guests read conversations from IndexedDB; the homepage only preloads the agenda.
 	const data = $derived(page.data as {
-		homeAgenda?: HomeAgenda | null
+		homeAgenda?: HomeAgendaPage | null
 		conversation?: ConversationWithMessages | null
 		turns?: Array<{ id: string; status: string; content: string; user_client_message_id: string; assistant_client_message_id: string }>
 	})

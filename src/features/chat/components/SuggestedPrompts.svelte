@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte'
 	import { gsap } from 'gsap'
-	import { CalendarDays, Camera, LogIn, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
+	import { ArrowUp, CalendarDays, Camera, LogIn, Mic, Search, Sparkles, Ticket, User, Send } from 'lucide-svelte'
 	import * as m from '#paraglide/messages.js'
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
-	import { homeWindow, nextHomeViewChange, parseHomeFilter, selectHomeCollage, selectHomeView, type HomeAgenda as Agenda, type HomeAgendaEvent, type HomeView } from '#features/events/lib/home-feed.ts'
+	import { parseHomeFilter, type HomeAgendaPage, type HomeAgendaEvent, type HomeViewPage } from '#features/events/lib/home-feed.ts'
 	import HomeAgenda from '#features/events/components/HomeAgenda.svelte'
 	import HomeFlyerCollage from '#features/events/components/HomeFlyerCollage.svelte'
 	import BrandLogo from '#shared/ui/BrandLogo.svelte'
@@ -30,19 +30,21 @@
 		homeAgenda = null
 	}: {
 		onSelectPrompt: (prompt: string, options: { eventId?: string; happeningSoonEventIds: string[] }) => void
-		homeAgenda?: Agenda | null
+		homeAgenda?: HomeAgendaPage | null
 	} = $props()
 
 	const auth = useAuthContext()
 	let landingQuery = $state('')
 	let promptedEvent: { id: string; prompt: string } | null = null
-	const url = $derived(new URL((page.shallow?.url ?? page.url).href))
+	const url = $derived(new URL(page.url.href))
 	const filter = $derived(parseHomeFilter(url.searchParams.get('f')))
-	let browserNow = $state<number | null>(null)
-	let requestedDay: string | null = null
-	const now = $derived(Math.max(homeAgenda?.asOf ?? 0, browserNow ?? 0))
-	const view: HomeView = $derived(homeAgenda ? selectHomeView(homeAgenda, filter, now) : { events: [], empty: 'feed' })
-	const flyers = $derived(homeAgenda ? selectHomeCollage(homeAgenda, now) : [])
+	const view: HomeViewPage = $derived(homeAgenda?.view ?? { events: [], empty: 'feed', total: 0 })
+	const flyers = $derived(homeAgenda?.flyers ?? [])
+	let refreshPending = false
+	let refreshAt = Infinity
+	let scroller = $state<HTMLDivElement>()
+	let headline = $state<HTMLHeadingElement>()
+	let showBackToTop = $state(false)
 	const instagram = 'https://www.instagram.com/baeventos.app/'
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
@@ -78,25 +80,53 @@
 		}
 	}
 
-	function refreshAgendaClock() {
-		browserNow = Date.now()
-		if (homeAgenda && browserNow >= Date.parse(homeAgenda.window.tomorrow)) {
-			const { day } = homeWindow(new Date(browserNow))
-			if (requestedDay !== day) {
-				requestedDay = day
-				void invalidate('ba:home-agenda')
-			}
+	async function refreshAgendaIfDue() {
+		if (Date.now() < refreshAt || document.hidden || refreshPending) return
+		refreshPending = true
+		try {
+			await invalidate('ba:home-agenda')
+		} finally {
+			refreshPending = false
 		}
 	}
 
 	$effect(() => {
 		if (!homeAgenda) return
-		const timeout = window.setTimeout(refreshAgendaClock, Math.max(0, nextHomeViewChange(homeAgenda, now) - Date.now()))
-		return () => window.clearTimeout(timeout)
+		const delay = homeAgenda.refreshInMs
+		refreshAt = Date.now() + delay
+		const timeout = window.setTimeout(() => {
+			refreshAt = 0
+			void refreshAgendaIfDue()
+		}, delay)
+		return () => {
+			window.clearTimeout(timeout)
+			refreshAt = Infinity
+		}
 	})
 
+	function updateBackToTop() {
+		if (scroller) showBackToTop = scroller.scrollTop > 2 * scroller.clientHeight
+	}
+
+	async function revealAgendaPage(href: string) {
+		const scrollport = scroller
+		if (!scrollport) return goto(href, { reset: false })
+		scrollport.style.overflowAnchor = 'none'
+		try {
+			await goto(href, { reset: false })
+			// Lay out the new cards before the browser can anchor to the old pager.
+			void scrollport.offsetHeight
+		} finally {
+			scrollport.style.removeProperty('overflow-anchor')
+		}
+	}
+
+	function backToTop() {
+		headline?.focus({ preventScroll: true })
+		scroller?.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+	}
+
 	function sendPrompt(prompt: string, eventId?: string) {
-		refreshAgendaClock()
 		const happeningSoonEventIds = view.events.slice(0, 4).map(({ id }) => id)
 		onSelectPrompt(prompt, { eventId, happeningSoonEventIds })
 	}
@@ -133,7 +163,6 @@
 	}
 
 	onMount(() => {
-		refreshAgendaClock()
 		const input = landingInput
 		if (!input || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 		const prompts = [m.landing_placeholder(), m.landing_placeholder_2(), m.landing_placeholder_3(),
@@ -153,9 +182,10 @@
 	})
 </script>
 
-<svelte:window onfocus={refreshAgendaClock} />
+<svelte:window onfocus={refreshAgendaIfDue} />
+<svelte:document onvisibilitychange={refreshAgendaIfDue} />
 
-<div class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
+<div bind:this={scroller} onscroll={updateBackToTop} class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
 	<header class="mx-auto max-w-[90rem] px-4 pt-3 pb-5 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
 		<nav class="flex items-center max-md:-mx-1 md:flex-wrap md:gap-x-4 md:gap-y-2" aria-label={m.landing_nav_label()}>
 			<a href="/" class="inline-flex min-h-10 min-w-0 items-center max-md:mr-2 max-md:[&_img]:h-auto max-md:[&_img]:w-32">
@@ -227,7 +257,7 @@
 
 		<div class={['mt-3 grid items-stretch gap-8', flyers.length && 'md:grid-cols-[minmax(0,1fr)_minmax(9rem,21%)]']}>
 			<div class="min-w-0">
-				<h1 class={['max-w-[28ch] font-display text-4xl leading-[1.02] font-semibold tracking-tight md:text-5xl lg:text-6xl', !flyers.length && 'md:max-w-none']}>
+				<h1 bind:this={headline} tabindex="-1" class={['max-w-[28ch] font-display text-4xl leading-[1.02] font-semibold tracking-tight md:text-5xl lg:text-6xl', !flyers.length && 'md:max-w-none']}>
 					{m.landing_title()}
 				</h1>
 				<p class="mt-2 max-w-3xl text-sm text-[#d5d5db] sm:text-base">{m.landing_subtitle()}</p>
@@ -237,9 +267,9 @@
 		</div>
 	</header>
 
-	<HomeAgenda {view} {filter} {url} onAsk={askAbout} onFilter={(href) => { void goto(href, { shallow: true }) }} />
+	<HomeAgenda {view} {filter} {url} onAsk={askAbout} onMore={revealAgendaPage} />
 
-	<section class="border-y border-[#3b3b42] bg-[#19191d] px-4 py-12 text-center sm:px-8 sm:py-16" aria-labelledby="home-chat-heading">
+	<section class="home-chat border-y border-[#3b3b42] bg-[#19191d] px-4 py-12 text-center sm:px-8 sm:py-16" aria-labelledby="home-chat-heading">
 		<div class="mx-auto flex max-w-3xl flex-col items-center">
 			<h2 id="home-chat-heading" class="font-display text-3xl font-semibold sm:text-4xl">{m.home_chat_heading()}</h2>
 			<p class="mt-3 max-w-lg text-[#d5d5db]">{m.home_chat_body()}</p>
@@ -350,9 +380,38 @@
 			class="inline-flex min-h-11 items-center text-sm text-[#d5d5db] underline underline-offset-4 hover:text-white"
 		>{m.mcp_signpost()}</a>
 	</footer>
+
+	{#if showBackToTop}
+		<button
+			type="button"
+			aria-label={m.home_back_to_top()}
+			onclick={backToTop}
+			class="back-to-top fixed z-30 grid place-items-center rounded-full border border-[#d0ff36] bg-[#19191d] text-[#d0ff36] shadow-lg hover:bg-[#29320c]"
+		>
+			<ArrowUp class="size-5" aria-hidden="true" />
+		</button>
+	{/if}
 </div>
 
 <style>
+	.home {
+		--back-to-top-size: 2.75rem;
+		--back-to-top-right: calc(1rem + env(safe-area-inset-right, 0px));
+	}
+
+	.back-to-top {
+		width: var(--back-to-top-size);
+		aspect-ratio: 1;
+		right: var(--back-to-top-right);
+		bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+	}
+
+	@media (width < 64rem) {
+		.home-chat {
+			padding-right: calc(var(--back-to-top-right) + var(--back-to-top-size) + 0.5rem);
+		}
+	}
+
 	.home :global(:focus-visible) {
 		outline: 2px solid #d0ff36;
 		outline-offset: 3px;
