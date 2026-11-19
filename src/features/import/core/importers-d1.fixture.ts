@@ -142,8 +142,7 @@ for (const [source, run] of Object.entries(coordinators)) {
   passed.push(source)
 }
   assert.deepEqual(passed, ['luma', 'meetup', 'ba-tourism'])
-  console.log(JSON.stringify({ passed }))
-  process.exitCode = 0
 } finally {
   await dispose()
 }
+process.exitCode = 0
