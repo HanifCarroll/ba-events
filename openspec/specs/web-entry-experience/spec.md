@@ -48,7 +48,9 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 #### Scenario: A visitor uses an agenda card
 - **WHEN** an event appears on the grid
 - **THEN** its title, local date and time state, venue and neighborhood when known, and price state appear as real text
-- **AND** the card links to event details, can prefill the composer with the existing event prompt, and exposes matching glossary terms to pointer, touch, and keyboard users
+- **AND** the card links to event details and can prefill the composer with the existing event prompt
+- **AND** glossary triggers appear on the matched words in the title or metadata, without adding another line, and work by pointer, touch, and keyboard; terms that appear only in the description do not add a trigger
+- **AND** when an original post is available, its link and the composer action share a row at desktop widths
 
 ### Requirement: Homepage reassurance focuses on guest access
 The homepage SHALL state that the service is free to use and no sign-up is needed in the active locale. Its reassurance line SHALL NOT include the English-or-Spanish language claim.
@@ -70,6 +72,7 @@ Event artwork SHALL preserve the full image without cropping inside a softly tin
 #### Scenario: Poster has a different aspect ratio from the card
 - **WHEN** a portrait or landscape poster appears in a card
 - **THEN** the full poster remains visible and unused image space uses a subtle background
+- **AND** the homepage agenda uses a 4:5 frame for portrait, square, and landscape flyers
 
 ### Requirement: Telegram navigation preserves icon alignment
 The desktop sidebar and mobile menu SHALL align the Telegram icon with the other primary navigation icons using the same horizontal padding and icon size. The Telegram icon SHALL retain its size when its label wraps.
