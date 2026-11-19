@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs'
 import { Data, Effect } from 'effect'
 import { initializeLangfuse, traceConcierge } from './langfuse.server.ts'
 
@@ -17,7 +18,7 @@ const started = new Promise<void>(resolve => { runStarted = resolve })
 const retained: Promise<unknown>[] = []
 const pending = new Set<Promise<unknown>>()
 let runs = 0
-const mode = process.argv[2] ?? 'interrupted'
+const [, , output, mode = 'interrupted'] = process.argv
 const controller = new AbortController()
 let owningSettled = false
 const owning = Effect.runPromise(Effect.tryPromise({
@@ -43,5 +44,5 @@ const retainedPendingAfterInterruption = pending.size > 0
 releaseFlush()
 await Promise.allSettled(retained)
 const interrupted = await owning
-console.log(JSON.stringify({ interrupted, returnedBeforeFlush, retainedPendingAfterInterruption, cleanupSettled: pending.size === 0, runs, networkCalls }))
+writeFileSync(output, JSON.stringify({ interrupted, returnedBeforeFlush, retainedPendingAfterInterruption, cleanupSettled: pending.size === 0, runs, networkCalls }))
 process.exit(0)

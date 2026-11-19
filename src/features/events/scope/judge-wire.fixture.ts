@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs'
 import { createOpenAI } from '@ai-sdk/openai'
 import { judgeScopeBatch, requestScopeJudgments, SCOPE_MODEL } from './judge.ts'
 
@@ -12,4 +13,4 @@ const fetch: typeof globalThis.fetch = async (_url, init) => {
 }
 const model = createOpenAI({ apiKey: 'synthetic', fetch }).chat(SCOPE_MODEL)
 const judgments = await judgeScopeBatch([{ name: 'Metal en vivo' }], requestScopeJudgments(model))
-console.log(JSON.stringify({ body, calls, judgments }))
+writeFileSync(process.argv[2], JSON.stringify({ body, calls, judgments }))

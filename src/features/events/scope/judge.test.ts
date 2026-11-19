@@ -1,6 +1,5 @@
-import { execFileSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
+import { runJsonFixture } from '../../../../tests/support/run-fixture.ts'
 import { decodeScopeJudgments, judgeScopeBatch, precheckScope, SCOPE_MODEL } from './judge.ts'
 
 const inScope = { scope: 'in', reason: 'It is a small-room live show.' }
@@ -34,8 +33,7 @@ describe('scope judgment', () => {
 
   it('requests native strict JSON with no reasoning, tools, or storage', () => {
     // Bun's module mocks can leak between suites; verify the real SDK in a fresh process.
-    const fixture = fileURLToPath(new URL('./judge-wire.fixture.ts', import.meta.url))
-    const { body, calls, judgments } = JSON.parse(execFileSync('bun', ['--no-env-file', fixture], { encoding: 'utf8', timeout: 4000 }))
+    const { body, calls, judgments } = runJsonFixture(new URL('./judge-wire.fixture.ts', import.meta.url), [], {}, 4000)
     expect(body).toMatchObject({ model: SCOPE_MODEL, response_format: { type: 'json_schema', json_schema: { strict: true } },
       reasoning_effort: 'none', store: false })
     expect(body).not.toHaveProperty('tools')
