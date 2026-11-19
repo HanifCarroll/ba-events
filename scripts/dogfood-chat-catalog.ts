@@ -13,7 +13,7 @@ export async function openDogfoodCatalog(now = new Date()) {
       startsAt.setUTCHours(22, 0, 0, 0)
       startsAt.setUTCDate(startsAt.getUTCDate() + day)
       return DB.prepare(`INSERT INTO events (id, name, starts_at, description_es, description_display_es,
-        search_document, is_free, venue_id, source) VALUES (?, ?, ?, ?, ?, ?, 1, 'dogfood-venue', 'dogfood')`)
+        search_document, is_free, venue_id, source, scope) VALUES (?, ?, ?, ?, ?, ?, 1, 'dogfood-venue', 'dogfood', 'in')`)
         .bind(ids[index], `Concierto de prueba ${day}`, startsAt.toISOString(), description, description, description)
     }))
     let queryVector: number[] = []

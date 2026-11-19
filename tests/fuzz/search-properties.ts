@@ -19,8 +19,8 @@ useCloudflareBindings({ DB: db, VECTORIZE: vectors })
 try {
   await db.batch(rows.flatMap((row, i) => [
     db.prepare('INSERT INTO venues (id, name, neighborhood) VALUES (?, ?, ?)').bind(`venue-${row.id}`, 'Synthetic venue', row.neighborhood),
-    db.prepare(`INSERT INTO events (id, name, starts_at, source, status, venue_id, is_free, price, min_age, categories, facets)
-      VALUES (?, 'Synthetic', ?, 'fixture', 'scheduled', ?, ?, ?, ?, ?, ?)`)
+    db.prepare(`INSERT INTO events (id, name, starts_at, source, status, venue_id, is_free, price, min_age, categories, facets, scope)
+      VALUES (?, 'Synthetic', ?, 'fixture', 'scheduled', ?, ?, ?, ?, ?, ?, 'in')`)
       .bind(row.id, `2026-11-01T0${i}:00:00.000Z`, `venue-${row.id}`, +row.isFree, row.price, row.age,
         JSON.stringify([row.category]), JSON.stringify({ genres: [row.genre] })),
   ]))
