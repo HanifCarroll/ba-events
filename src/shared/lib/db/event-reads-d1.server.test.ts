@@ -61,7 +61,7 @@ beforeEach(async () => {
   await db.batch([db.prepare('DELETE FROM event_source_evidence'), db.prepare('DELETE FROM events'), db.prepare('DELETE FROM venues')])
 })
 
-async function linkIntakeEvidence(eventIds: string[]) {
+async function linkIntakeEvidence(eventIds: string[], intent: 'create' | 'link' = 'create') {
   await db.batch([
     db.prepare("INSERT OR IGNORE INTO instagram_sources (username, authority, qualification) VALUES ('fixture', 'venue', 'synthetic')"),
     db.prepare("INSERT OR IGNORE INTO intake_runs (id, local_date, reserved_usd, input) VALUES ('run', '2026-11-01', 1, '{}')"),
@@ -69,7 +69,7 @@ async function linkIntakeEvidence(eventIds: string[]) {
       VALUES ('post', 'run', 'post', 'fixture', 'https://www.instagram.com/p/fixture/', 'Synthetic post', ?)`).bind('0'.repeat(64)),
     db.prepare("INSERT OR IGNORE INTO intake_candidates (id, revision, payload) VALUES ('candidate', 1, '{}')"),
     db.prepare("INSERT OR IGNORE INTO intake_candidate_revisions (candidate_id, revision, payload) VALUES ('candidate', 1, ?)")
-      .bind(JSON.stringify({ intent: 'create', price_kind: 'conditional', price_note: 'A la gorra' })),
+      .bind(JSON.stringify({ intent, price_kind: 'conditional', price_note: 'A la gorra' })),
     ...eventIds.map(eventId => db.prepare("INSERT INTO event_source_evidence VALUES (?, 'candidate', 'post', 1)").bind(eventId)),
   ])
 }
@@ -117,7 +117,7 @@ describe('public event reads on D1', () => {
     const fromTitle = await event('Cuarteto — Á LA GÓRRA', fields)
     const fromDescription = await event('Taller de grabado', { ...fields, description_es: 'Entrada a la go\u0301rra.' })
     const free = await event('Muestra gratuita', fields)
-    await linkIntakeEvidence([fromNote])
+    await linkIntakeEvidence([fromNote], 'link')
     await db.prepare("UPDATE events SET scope = 'in' WHERE id = ?").bind(fromNote).run()
 
     const events = await getHomeAgendaEvents(window)

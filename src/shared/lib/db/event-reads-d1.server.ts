@@ -62,7 +62,7 @@ export async function homeAgendaD1(db: D1Database, window: HomeWindow): Promise<
         WHERE x.event_id = e.id ORDER BY o.observed_at DESC, o.id DESC LIMIT 1) AS sourceUrl,
       (SELECT json_extract(r.payload, '$.price_note') FROM event_source_evidence x
         JOIN intake_candidate_revisions r ON r.candidate_id = x.candidate_id AND r.revision = x.revision
-        WHERE x.event_id = e.id AND json_extract(r.payload, '$.intent') IN ('create', 'update')
+        WHERE x.event_id = e.id AND json_extract(r.payload, '$.intent') IN ('create', 'update', 'link')
           AND (json_extract(r.payload, '$.price_kind') <> 'unknown' OR json_extract(r.payload, '$.price_note') IS NOT NULL)
         ORDER BY r.created_at DESC, r.candidate_id, r.revision DESC LIMIT 1) AS priceNote
     FROM selected JOIN events e ON e.id = selected.id LEFT JOIN venues v ON v.id = e.venue_id
