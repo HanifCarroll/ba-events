@@ -95,6 +95,11 @@ Each draft MUST go to #ba-eventos as a new top-level message with every frame at
 
 With `linkStickers.hoy` enabled and no Graph API publish underway for the draft, the job MUST use Business Suite's Share now for Instagram only. Every frame MUST have an Instagram link sticker that leaves the artwork's text clear. The cover links to `https://baeventos.com` with “Ver la agenda”, each event frame to `https://baeventos.com/events/<event id>` with “Ver evento”, and the closing frame to `https://baeventos.com` with “Buscar planes”. If the composer does not support custom text, use its default. The job MUST re-check reactions, deadline, and event validity before Share and never use Business Suite scheduling.
 
+#### Scenario: R2 is not configured
+- **WHEN** the job has no R2 bucket configured
+- **THEN** it starts no new publish via Business Suite or Graph, even when link stickers are enabled
+- **AND** it still reconciles a saved Share attempt without publishing again
+
 #### Scenario: An event has a venue or curator handle
 - **WHEN** the Graph route would tag an event frame's account
 - **THEN** the Business Suite route adds an Instagram Mention sticker for that same username without covering the link sticker or other artwork text

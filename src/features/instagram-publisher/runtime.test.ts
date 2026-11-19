@@ -85,11 +85,18 @@ describe('rendering', () => {
     expect(calls[1]).toEqual(['systemctl', '--user', 'stop', `${unit}.scope`])
   })
 
-  it('leaves the scope alone after a clean render', async () => {
+  it('passes Node flags to the child and leaves the scope alone after a clean render', async () => {
     const calls: string[][] = []
     const runner: Runner = async argv => { calls.push(argv); return { out: '', err: '', code: 0 } }
-    await renderFrames('<html></html>', mkdtempSync(join(tmpdir(), 'ig-render-')), 1350, runner)
-    expect(calls).toHaveLength(1)
+    const args = process.execArgv
+    process.execArgv = [...args, '--experimental-transform-types']
+    try {
+      await renderFrames('<html></html>', mkdtempSync(join(tmpdir(), 'ig-render-')), 1350, runner)
+      expect(calls).toHaveLength(1)
+      const start = calls[0]!.indexOf(process.execPath)
+      expect(start).toBeGreaterThanOrEqual(0)
+      expect(calls[0]!.slice(start + 1, calls[0]!.indexOf('render-frames') - 1)).toEqual(process.execArgv)
+    } finally { process.execArgv = args }
   })
 })
 

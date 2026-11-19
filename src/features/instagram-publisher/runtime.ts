@@ -212,7 +212,7 @@ export async function renderFrames(html: string, outDir: string, height: number,
   const htmlFile = join(outDir, 'frames.html')
   writeFileSync(htmlFile, html)
   const entry = join(REPO, 'scripts/instagram-publisher.ts')
-  const command = [process.execPath, entry, 'render-frames', htmlFile, outDir, String(height)]
+  const command = [process.execPath, ...process.execArgv, entry, 'render-frames', htmlFile, outDir, String(height)]
   const unit = `ba-events-instagram-render-${process.pid}-${Date.now()}`
   const scoped = process.env.BA_INSTAGRAM_RENDER_NO_SCOPE === '1'
     ? command

@@ -332,6 +332,7 @@ export class Job {
     const config = this.s.config()
     const token = await this.s.loadToken(this.s.now())
     if (token.state === 'missing') { this.s.log(`${draft.id}: no Instagram token file; skipping publishing`); return false }
+    if (!config.r2) { this.s.log(`${draft.id}: no R2 bucket in the config; skipping publishing`); return false }
     const auto = config.auto[draft.format]
     // Every write re-checks the reactions and the deadline; the first write of each attempt also re-checks the events.
     // Reconciling an earlier unclear publish never calls this, so it isn't blocked by any of these checks.
@@ -372,7 +373,6 @@ export class Job {
       if (!draft.stickerFallback) throw new Error('The composer returned without recording a Share attempt.')
       eventsChecked = false // The Graph fallback has its own first-write check.
     }
-    if (!config.r2) { this.s.log(`${draft.id}: no R2 bucket in the config; skipping publishing`); return false }
     if (!draft.publish) await beforeWrite()
     const prefix = `instagram/${draft.id}/${draft.framesHash}`
     const kind = FORMATS[draft.format].kind

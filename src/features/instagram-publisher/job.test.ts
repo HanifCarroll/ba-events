@@ -573,6 +573,17 @@ describe('Hoy link stickers', () => {
     expect(load().storyShare).toBeUndefined()
   })
 
+  it('keeps the sticker-enabled publisher preview-only with no R2 configuration', async () => {
+    const { w, load, advance } = await hoy()
+    w.config.r2 = null
+    let opened = false
+    w.composeStory = async () => { opened = true; return [] }
+    await advance()
+    expect(opened).toBe(false)
+    expect(load().state).toBe('previewed')
+    expect(w.ig.calls).toEqual([])
+  })
+
   it('falls back before Share, says why, and reports that the Story went out without links', async () => {
     const { w, load, advance } = await hoy()
     w.composeStory = async () => { throw new StoryComposerError('open the Business Suite story composer', true) }
