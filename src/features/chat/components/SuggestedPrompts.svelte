@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner'
 	import { getLocale } from '#paraglide/runtime.js'
 	import { useSpeech } from '#features/chat/lib/speech.svelte.ts'
-	import { parseHomeFilter, selectHomeView, type HomeAgenda as Agenda, type HomeAgendaEvent } from '#features/events/lib/home-feed.ts'
+	import { homeWindow, nextHomeViewChange, parseHomeFilter, selectHomeView, type HomeAgenda as Agenda, type HomeAgendaEvent, type HomeView } from '#features/events/lib/home-feed.ts'
 	import HomeAgenda from '#features/events/components/HomeAgenda.svelte'
 	import BrandLogo from '#shared/ui/BrandLogo.svelte'
 	import LanguageSwitcher from '#shared/ui/LanguageSwitcher.svelte'
@@ -20,7 +20,7 @@
 	} from '#shared/ui/dropdown-menu/index.ts'
 	import { useAuthContext, getAuthState } from '#features/auth/hooks/auth-context.svelte.ts'
 	import { signOut } from '#features/auth/api/auth.remote.ts'
-	import { goto } from '$app/navigation'
+	import { goto, invalidate } from '$app/navigation'
 	import { page } from '$app/state'
 	import { track } from '#shared/lib/analytics.ts'
 
@@ -36,6 +36,11 @@
 	let landingQuery = $state('')
 	let promptedEvent: { id: string; prompt: string } | null = null
 	const url = $derived(new URL((page.shallow?.url ?? page.url).href))
+	const filter = $derived(parseHomeFilter(url.searchParams.get('f')))
+	let browserNow = $state<number | null>(null)
+	let requestedDay: string | null = null
+	const now = $derived(Math.max(homeAgenda?.asOf ?? 0, browserNow ?? 0))
+	const view: HomeView = $derived(homeAgenda ? selectHomeView(homeAgenda, filter, now) : { events: [], empty: 'feed' })
 	const instagram = 'https://www.instagram.com/baeventos.app/'
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
@@ -71,11 +76,26 @@
 		}
 	}
 
+	function refreshAgendaClock() {
+		browserNow = Date.now()
+		if (homeAgenda && browserNow >= Date.parse(homeAgenda.window.tomorrow)) {
+			const { day } = homeWindow(new Date(browserNow))
+			if (requestedDay !== day) {
+				requestedDay = day
+				void invalidate('ba:home-agenda')
+			}
+		}
+	}
+
+	$effect(() => {
+		if (!homeAgenda) return
+		const timeout = window.setTimeout(refreshAgendaClock, Math.max(0, nextHomeViewChange(homeAgenda, now) - Date.now()))
+		return () => window.clearTimeout(timeout)
+	})
+
 	function sendPrompt(prompt: string, eventId?: string) {
-		const filter = parseHomeFilter(url.searchParams.get('f'))
-		const happeningSoonEventIds = homeAgenda
-			? selectHomeView(homeAgenda, filter).events.slice(0, 4).map(({ id }) => id)
-			: []
+		refreshAgendaClock()
+		const happeningSoonEventIds = view.events.slice(0, 4).map(({ id }) => id)
 		onSelectPrompt(prompt, { eventId, happeningSoonEventIds })
 	}
 
@@ -111,6 +131,7 @@
 	}
 
 	onMount(() => {
+		refreshAgendaClock()
 		const input = landingInput
 		if (!input || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 		const prompts = [m.landing_placeholder(), m.landing_placeholder_2(), m.landing_placeholder_3(),
@@ -129,6 +150,8 @@
 		return () => { typewriter.kill() }
 	})
 </script>
+
+<svelte:window onfocus={refreshAgendaClock} />
 
 <div class="home h-full overflow-y-auto bg-[#101012] text-[#f6f6f7]">
 	<header class="mx-auto max-w-[90rem] px-4 pt-3 pb-5 sm:px-8 sm:pt-4 sm:pb-7 lg:px-12">
@@ -206,7 +229,7 @@
 		</div>
 	</header>
 
-	<HomeAgenda agenda={homeAgenda} {url} onAsk={askAbout} onFilter={(href) => { void goto(href, { shallow: true }) }} />
+	<HomeAgenda {view} {filter} {url} onAsk={askAbout} onFilter={(href) => { void goto(href, { shallow: true }) }} />
 
 	<section class="border-y border-[#3b3b42] bg-[#19191d] px-4 py-12 text-center sm:px-8 sm:py-16" aria-labelledby="home-chat-heading">
 		<div class="mx-auto flex max-w-3xl flex-col items-center">

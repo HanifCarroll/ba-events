@@ -4,11 +4,11 @@
 	import * as m from '#paraglide/messages.js'
 	import { formatShortDate, formatTime } from '#shared/lib/utils/formatting.ts'
 	import { formatPrice } from '#features/chat/lib/messages.ts'
-	import type { HomeAgendaEvent } from '../lib/home-feed.ts'
+	import type { HomeAgendaCardEvent, HomeAgendaEvent } from '../lib/home-feed.ts'
 	import { HOME_ARTWORK_SIZES } from '../lib/artwork-delivery.ts'
 	import EventArtwork from './EventArtwork.svelte'
 
-	let { event, index, onAsk }: { event: HomeAgendaEvent; index: number; onAsk: (event: HomeAgendaEvent) => void } = $props()
+	let { event, index, onAsk }: { event: HomeAgendaCardEvent; index: number; onAsk: (event: HomeAgendaEvent) => void } = $props()
 	let expanded = $state<string | null>(null)
 	let hovered = $state<string | null>(null)
 	const visibleTooltip = $derived(hovered ?? expanded)
@@ -84,17 +84,17 @@
 				class="w-full rounded-none! bg-[#1d1d23]!"
 			/>
 		</a>
-		<div class="space-y-1 pt-3 wrap-anywhere">
-			<time datetime={event.starts_at} class="block font-mono text-xs text-[#d0ff36] sm:text-sm">
-				{formatShortDate(event.starts_at)}{#if event.time_tba}{' · '}{m.concierge_time_tba()}{:else if !event.is_all_day}{' · '}{formatTime(event.starts_at)}{/if}
-			</time>
-			<div class="relative">
-				<h2 class="line-clamp-3 text-base leading-tight font-semibold has-[:focus-visible]:line-clamp-none sm:line-clamp-none sm:text-lg group-has-[a:hover]:underline">{@render glossaryText(event.name, 'title')}</h2>
+		<div class="space-y-1 pt-2 wrap-anywhere">
+			<div class="font-mono text-xs text-[#d0ff36] sm:text-sm">
+				<time datetime={event.starts_at}>{formatShortDate(event.starts_at)}</time>{#if event.slotStarts}{#each event.slotStarts as slot (slot)}{' · '}<time datetime={slot}>{formatTime(slot)}</time>{/each}{:else if event.time_tba}{' · '}{m.concierge_time_tba()}{:else if !event.is_all_day}{' · '}<time datetime={event.starts_at}>{formatTime(event.starts_at)}</time>{/if}
 			</div>
-			<p class="relative text-xs text-[#ccccd4] sm:text-sm">{@render glossaryText(`${venue} · ${price}`, 'meta')}</p>
+			<div class="relative">
+				<h2 class="line-clamp-3 text-base leading-tight font-semibold has-[:focus-visible]:line-clamp-none sm:line-clamp-2 group-has-[a:hover]:underline">{@render glossaryText(event.name, 'title')}</h2>
+			</div>
+			<p class="relative text-xs leading-snug text-[#ccccd4]">{@render glossaryText(`${venue} · ${price}`, 'meta')}</p>
 		</div>
 	</div>
-	<div class="mt-auto flex flex-wrap items-center gap-x-3 pt-1 text-xs sm:font-mono">
+	<div class="mt-auto flex flex-wrap items-center gap-x-2.5 pt-1 text-xs sm:font-mono">
 		{#if event.sourceUrl}
 			<a href={event.sourceUrl} class="inline-flex min-h-8 max-w-full items-center gap-1 text-[#ccccd4] underline underline-offset-4 hover:text-white sm:min-h-10 sm:whitespace-nowrap">
 				<ArrowUpRight class="size-3.5 shrink-0" aria-hidden="true" /> {m.home_original_post()}

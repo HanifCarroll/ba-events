@@ -49,6 +49,10 @@ Venue matching SHALL prefer valid existing identities and SHALL leave ambiguous 
 - **AND** when several venues share that name it reuses the one at the event's own street and number; a same-name venue at another street and number is never reused, and the event gets a new venue instead
 - **AND** without a numbered address on the event, or among copies with no numbered address, it reuses the copy the duplicate merge keeps (numbered address and barrio, then most events, then oldest)
 
+#### Scenario: A source venue name retains a trailing address separator
+- **WHEN** import or intake receives a venue name ending in a dash or hyphen
+- **THEN** it removes the trailing separator before matching or creating the venue and keeps any dashes within the name
+
 #### Scenario: A venue lookup fails
 - **WHEN** the same-name or similar-name lookup returns an error
 - **THEN** settlement leaves the event without a venue rather than creating a possible duplicate

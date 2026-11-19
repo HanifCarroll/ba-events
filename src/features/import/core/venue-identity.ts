@@ -3,6 +3,9 @@
  * Shared by the importers' matcher and `scripts/venue-duplicates.ts`, so matching and the duplicate merge agree.
  */
 
+/** Clean a source's trailing venue/address separator without changing dashes within the name. */
+export const trimVenueName = (name: string) => name.trimStart().replace(/[\s—–-]+$/u, '')
+
 // Accented letters in the catalog's names, dashes, and the non-breaking space. Upper case maps straight to lower case so
 // SQL never depends on the database locale. `public.venue_name_key` in 20261116180000_venue_name_matching.sql uses
 // these exact two strings; a test keeps them equal.

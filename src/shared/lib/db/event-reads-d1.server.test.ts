@@ -40,20 +40,20 @@ async function venue(name: string, fields: { neighborhood?: string; address?: st
   return venueId
 }
 
-type EventFields = Partial<{ starts_at: string; status: string; venue_id: string | null; image_url: string | null;
+type EventFields = Partial<{ starts_at: string; ends_at: string; status: string; venue_id: string | null; image_url: string | null;
   description_es: string; description_summary_es: string | null; location_tba: boolean; location_hidden: boolean; categories: string[];
   price: number | null; is_free: boolean; facets: Record<string, unknown>; scope: 'in' | 'out' | null }>
 async function event(name: string, fields: EventFields = {}) {
   const eventId = id()
   await db.prepare(`INSERT INTO events (id, name, starts_at, status, venue_id, image_url, image_width, image_height,
-      description_es, description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document, scope)
-    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', 'secreto', ?)`).bind(
+      description_es, description_summary_es, location_tba, location_hidden, categories, is_free, price, facets, source, search_document, scope, ends_at)
+    VALUES (?, ?, ?, ?, ?, ?, 800, 600, ?, ?, ?, ?, ?, ?, ?, ?, 'luma', 'secreto', ?, ?)`).bind(
     eventId, name, fields.starts_at ?? inDays(2), fields.status ?? 'scheduled', fields.venue_id ?? null,
     fields.image_url === undefined ? 'https://images.lumacdn.com/uploads/a.png' : fields.image_url,
     fields.description_es ?? null,
     fields.description_summary_es === undefined ? 'Una noche de jazz' : fields.description_summary_es,
     fields.location_tba ? 1 : 0, fields.location_hidden ? 1 : 0, JSON.stringify(fields.categories ?? ['music']),
-    fields.is_free === false ? 0 : 1, fields.price ?? null, JSON.stringify(fields.facets ?? { genres: ['jazz'] }), fields.scope ?? null).run()
+    fields.is_free === false ? 0 : 1, fields.price ?? null, JSON.stringify(fields.facets ?? { genres: ['jazz'] }), fields.scope ?? null, fields.ends_at ?? null).run()
   return eventId
 }
 
@@ -75,9 +75,11 @@ async function linkIntakeEvidence(eventIds: string[], intent: 'create' | 'link' 
 }
 
 describe('public event reads on D1', () => {
-  it('home agenda: only scheduled, in-scope events with artwork in the local week and at most four later', async () => {
+  it('home agenda: only eligible events, including ongoing ones and complete fallback dates', async () => {
     const window = homeWindow(new Date('2026-11-19T08:00:00.000Z'))
     const bar = await venue('Bar Sintético', { neighborhood: 'Palermo', address: 'Calle Falsa 123' })
+    const exhibition = await event('Muestra de varios días', { starts_at: '2026-11-15T12:00:00.000Z', ends_at: window.tomorrow, venue_id: bar })
+    const finished = await event('Muestra cerrada', { starts_at: '2026-11-15T12:00:00.000Z', ends_at: window.start })
     const older = await event('Ayer en Buenos Aires', { starts_at: '2026-11-19T02:59:59.999Z' })
     const first = await event('Empieza hoy a medianoche', { starts_at: window.start })
     const missingImage = await event('Sin foto', { starts_at: window.start, image_url: null })
@@ -93,21 +95,23 @@ describe('public event reads on D1', () => {
     for (let day = 26; day <= 30; day++) {
       tail.push(await event(`Próximo ${day}`, { starts_at: `2026-11-${day}T03:00:00.000Z` }))
     }
+    const lateOnFourthDate = await event('Otro horario del cuarto día', { starts_at: '2026-11-30T02:59:59.999Z' })
     await linkIntakeEvidence([linked, out])
     await db.batch([
-      ...[older, first, linked, hidden, unconfirmed, canceled, missingImage, emptyImage, laterMissingImage, ...tail].map(eventId =>
+      ...[exhibition, finished, older, first, linked, hidden, unconfirmed, canceled, missingImage, emptyImage, laterMissingImage, lateOnFourthDate, ...tail].map(eventId =>
         db.prepare("UPDATE events SET scope = 'in' WHERE id = ?").bind(eventId)),
       db.prepare("UPDATE events SET scope = 'out' WHERE id = ?").bind(out),
     ])
 
     const cards = await getHomeAgendaEvents(window)
-    expect(cards.map(card => card.id)).toEqual([first, linked, hidden, unconfirmed, ...tail.slice(0, 4)])
-    expect(cards[0]).toMatchObject({ image_url: 'https://images.lumacdn.com/uploads/a.png', sourceUrl: null, music: false, payWhatYouCan: false })
-    expect(cards[1]).toMatchObject({ sourceUrl: 'https://www.instagram.com/p/fixture/', price: null, is_free: false,
-      payWhatYouCan: true, music: true, venue_name: 'Bar Sintético', venue_neighborhood: 'Palermo' })
-    expect(cards[1]).not.toHaveProperty('venue_address')
-    expect(cards[2]).toMatchObject({ location_hidden: true, venue_name: null, venue_neighborhood: null })
-    expect(cards[3]).toMatchObject({ location_tba: true, venue_name: null, venue_neighborhood: null })
+    expect(cards.map(card => card.id)).toEqual([exhibition, older, first, linked, hidden, unconfirmed, ...tail.slice(0, 4), lateOnFourthDate])
+    expect(cards[0]).toMatchObject({ ends_at: window.tomorrow, venue_id: bar, sourceUrl: null, music: false })
+    expect(selectHomeView({ window, events: cards, asOf: Date.parse('2026-11-19T08:00:00.000Z') }, 'hoy').events.map(({ id }) => id)).toEqual([exhibition])
+    expect(cards[3]).toMatchObject({ sourceUrl: 'https://www.instagram.com/p/fixture/', price: null, is_free: false,
+      payWhatYouCan: true, music: true, venue_name: 'Bar Sintético', venue_neighborhood: 'Palermo', venue_id: bar })
+    expect(cards[3]).not.toHaveProperty('venue_address')
+    expect(cards[4]).toMatchObject({ location_hidden: true, venue_name: null, venue_neighborhood: null, venue_id: null })
+    expect(cards[5]).toMatchObject({ location_tba: true, venue_name: null, venue_neighborhood: null, venue_id: null })
   })
 
   it('keeps pay-what-you-can events out of Gratis when D1 also marks them free', async () => {
@@ -125,7 +129,7 @@ describe('public event reads on D1', () => {
       [fromNote, true, true], [fromTitle, true, true], [fromDescription, true, true], [free, true, false],
     ])
     expect(events[2]).not.toHaveProperty('description_es')
-    expect(selectHomeView({ window, events }, 'gratis').events.map(({ id }) => id)).toEqual([free])
+    expect(selectHomeView({ window, events, asOf: Date.parse(window.start) }, 'gratis').events.map(({ id }) => id)).toEqual([free])
   })
 
   it('event page and chat tools: any status, decoded like events_with_venues, missing ids throw', async () => {
