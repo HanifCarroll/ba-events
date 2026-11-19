@@ -47,14 +47,14 @@ The homepage SHALL render the event grid before the chat composer and follow lin
 - **WHEN** the homepage renders without a valid paging parameter
 - **THEN** it shows at most 24 grouped cards and the localized shown and total counts when there are matches
 - **AND** if more cards are available, a real link increases `n` by 24, preserving `f`; the count is bounded by the selected view's total
-- **AND** with JavaScript, the link adds cards without a document reload or a scroll jump; choosing a filter starts its view over at 24 cards
+- **AND** with JavaScript, the link adds cards without a document reload or a scroll jump, including when the link is near the top of the viewport; choosing a filter starts its view over at 24 cards
 - **AND** the server groups time slots before applying the card limit, and retains the localized empty-date message and its fallback cards
 
 #### Scenario: A visitor opens the first page or scrolls deep into it
 - **WHEN** the agenda shows flyer cards
 - **THEN** the first four images load eagerly, the first has high fetch priority, and the remaining images load lazily in reserved 4:5 frames
 - **WHEN** the visitor scrolls more than approximately two viewport heights
-- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets
+- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets and stays available at the bottom of the page
 - **AND** activating it returns the visitor to the top without smooth scrolling when reduced motion is requested
 
 #### Scenario: A visitor filters the agenda

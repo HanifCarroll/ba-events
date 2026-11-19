@@ -45,7 +45,6 @@
 	let scroller = $state<HTMLDivElement>()
 	let headline = $state<HTMLHeadingElement>()
 	let showBackToTop = $state(false)
-	let composerInView = $state(false)
 	const instagram = 'https://www.instagram.com/baeventos.app/'
 	let landingInput = $state<HTMLTextAreaElement | null>(null)
 	let isSigningOut = $state(false)
@@ -109,10 +108,17 @@
 		if (scroller) showBackToTop = scroller.scrollTop > 2 * scroller.clientHeight
 	}
 
-	function watchComposer(section: HTMLElement) {
-		const observer = new IntersectionObserver(([entry]) => { composerInView = entry.isIntersecting })
-		observer.observe(section)
-		return () => observer.disconnect()
+	async function revealAgendaPage(href: string) {
+		const scrollport = scroller
+		if (!scrollport) return goto(href, { reset: false })
+		scrollport.style.overflowAnchor = 'none'
+		try {
+			await goto(href, { reset: false })
+			// Lay out the new cards before the browser can anchor to the old pager.
+			void scrollport.offsetHeight
+		} finally {
+			scrollport.style.removeProperty('overflow-anchor')
+		}
 	}
 
 	function backToTop() {
@@ -261,9 +267,9 @@
 		</div>
 	</header>
 
-	<HomeAgenda {view} {filter} {url} onAsk={askAbout} />
+	<HomeAgenda {view} {filter} {url} onAsk={askAbout} onMore={revealAgendaPage} />
 
-	<section {@attach watchComposer} class="border-y border-[#3b3b42] bg-[#19191d] px-4 py-12 text-center sm:px-8 sm:py-16" aria-labelledby="home-chat-heading">
+	<section class="home-chat border-y border-[#3b3b42] bg-[#19191d] px-4 py-12 text-center sm:px-8 sm:py-16" aria-labelledby="home-chat-heading">
 		<div class="mx-auto flex max-w-3xl flex-col items-center">
 			<h2 id="home-chat-heading" class="font-display text-3xl font-semibold sm:text-4xl">{m.home_chat_heading()}</h2>
 			<p class="mt-3 max-w-lg text-[#d5d5db]">{m.home_chat_body()}</p>
@@ -380,7 +386,7 @@
 			type="button"
 			aria-label={m.home_back_to_top()}
 			onclick={backToTop}
-			class={['back-to-top fixed z-30 grid size-11 place-items-center rounded-full border border-[#d0ff36] bg-[#19191d] text-[#d0ff36] shadow-lg hover:bg-[#29320c]', composerInView && 'max-lg:invisible']}
+			class="back-to-top fixed z-30 grid place-items-center rounded-full border border-[#d0ff36] bg-[#19191d] text-[#d0ff36] shadow-lg hover:bg-[#29320c]"
 		>
 			<ArrowUp class="size-5" aria-hidden="true" />
 		</button>
@@ -388,9 +394,22 @@
 </div>
 
 <style>
+	.home {
+		--back-to-top-size: 2.75rem;
+		--back-to-top-right: calc(1rem + env(safe-area-inset-right, 0px));
+	}
+
 	.back-to-top {
-		right: calc(1rem + env(safe-area-inset-right));
-		bottom: calc(3.5rem + env(safe-area-inset-bottom));
+		width: var(--back-to-top-size);
+		aspect-ratio: 1;
+		right: var(--back-to-top-right);
+		bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+	}
+
+	@media (width < 64rem) {
+		.home-chat {
+			padding-right: calc(var(--back-to-top-right) + var(--back-to-top-size) + 0.5rem);
+		}
 	}
 
 	.home :global(:focus-visible) {

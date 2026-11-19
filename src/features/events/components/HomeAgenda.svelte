@@ -1,15 +1,16 @@
 <script lang="ts">
-	import { goto } from '$app/navigation'
 	import * as m from '#paraglide/messages.js'
 	import { HOME_FILTERS, HOME_PAGE_SIZE, type HomeAgendaEvent, type HomeFilter, type HomeViewPage } from '../lib/home-feed.ts'
 	import HomeAgendaCard from './HomeAgendaCard.svelte'
 
-	let { view, filter, url, onAsk }: {
+	let { view, filter, url, onAsk, onMore }: {
 		view: HomeViewPage
 		filter: HomeFilter | null
 		url: URL
 		onAsk: (event: HomeAgendaEvent) => void
+		onMore: (href: string) => Promise<void>
 	} = $props()
+	let loadingMore = false
 	let grid = $state<HTMLDivElement>()
 	const nextHref = $derived.by(() => {
 		const target = new URL(url)
@@ -28,12 +29,18 @@
 		return target.pathname + target.search
 	}
 
-	async function focusAddedCard(event: MouseEvent) {
-		if (event.detail !== 0 || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+	async function showMore(event: MouseEvent) {
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 		event.preventDefault()
+		if (loadingMore) return
+		loadingMore = true
 		const index = view.events.length
-		await goto(nextHref, { reset: false })
-		grid?.children[index]?.querySelector('a')?.focus({ preventScroll: true })
+		try {
+			await onMore(nextHref)
+			if (event.detail === 0) grid?.children[index]?.querySelector('a')?.focus({ preventScroll: true })
+		} finally {
+			loadingMore = false
+		}
 	}
 </script>
 
@@ -65,8 +72,7 @@
 			{#if view.events.length < view.total}
 				<a
 					href={nextHref}
-					onclick={focusAddedCard}
-					data-sveltekit-reset="false"
+					onclick={showMore}
 					data-sveltekit-preload-data="false"
 					class="inline-flex min-h-11 items-center rounded-full border border-[#d0ff36] px-5 text-sm font-medium text-[#d0ff36] hover:bg-[#29320c]"
 				>{m.home_show_more()}</a>

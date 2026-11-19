@@ -27,7 +27,7 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     const filter = parseHomeFilter(url.searchParams.get('f'))
     const fullView = occurrences ? selectHomeView({ window, events: occurrences, asOf }, filter) : { events: [], empty: 'feed' as const }
     const view = pageHomeView(fullView, url.searchParams.get('n'))
-    return render(HomeAgenda, { props: { view, filter, url, onAsk() {} } }).body
+    return render(HomeAgenda, { props: { view, filter, url, onAsk() {}, async onMore() {} } }).body
   }
 
   it('puts responsive artwork, titles, and event links in HTML before hydration', () => {
