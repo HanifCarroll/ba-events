@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { render } from 'svelte/server'
 import * as m from '#paraglide/messages.js'
 import { agendaEvent } from '../../../../tests/support/home-agenda.ts'
-import { homeWindow, parseHomeFilter, selectHomeView, type HomeAgendaEvent } from './home-feed.ts'
+import { homeWindow, pageHomeView, parseHomeFilter, selectHomeView, type HomeAgendaEvent } from './home-feed.ts'
 
 const asOf = Date.parse('2026-11-19T14:00:00Z')
 const window = homeWindow(new Date(asOf))
@@ -25,8 +25,9 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
   function renderAgenda(href: string, occurrences: HomeAgendaEvent[] | null = events) {
     const url = new URL(href, 'https://example.test')
     const filter = parseHomeFilter(url.searchParams.get('f'))
-    const view = occurrences ? selectHomeView({ window, events: occurrences, asOf }, filter) : { events: [], empty: 'feed' as const }
-    return render(HomeAgenda, { props: { view, filter, url, onAsk() {}, onFilter() {} } }).body
+    const fullView = occurrences ? selectHomeView({ window, events: occurrences, asOf }, filter) : { events: [], empty: 'feed' as const }
+    const view = pageHomeView(fullView, url.searchParams.get('n'))
+    return render(HomeAgenda, { props: { view, filter, url, onAsk() {} } }).body
   }
 
   it('puts responsive artwork, titles, and event links in HTML before hydration', () => {
@@ -38,9 +39,21 @@ describe.skipIf('Bun' in globalThis)('homepage server-rendered agenda', () => {
     expect(body).toContain('href="https://www.instagram.com/p/synthetic/"')
     expect(body).toContain('alt="Jam sintética"')
     expect(body).toContain('Sala sintética · Almagro · $5.000 ARS')
-    expect(body.match(/loading="eager"/g)).toHaveLength(2)
-    expect(body.match(/loading="lazy"/g)).toHaveLength(2)
+    expect(body.match(/loading="eager"/g)).toHaveLength(4)
     expect(body.match(/fetchpriority="high"/g)).toHaveLength(1)
+  })
+
+  it('renders a plain paging link, resets paging in filter links, and keeps later flyers lazy', () => {
+    const free = Array.from({ length: 50 }, (_, i) => agendaEvent(`free-${i}`, events[0].starts_at, { is_free: true }))
+    const first = renderAgenda('/?f=gratis', free)
+    expect(first).toContain(m.home_showing_count({ shown: 24, total: 50 }))
+    expect(first).toMatch(/<a href="\/\?f=gratis&amp;n=48"[^>]*>Ver más<\/a>/)
+    expect(first.match(/loading="eager"/g)).toHaveLength(4)
+    expect(first.match(/loading="lazy"/g)).toHaveLength(20)
+    const more = renderAgenda('/?f=gratis&n=48', free)
+    expect(more).toContain(m.home_showing_count({ shown: 48, total: 50 }))
+    expect(more).toContain('href="/?f=hoy"')
+    expect(more).toContain('href="/?f=gratis&amp;n=72"')
   })
 
   it('renders contained 4:5 flyers and puts glossary triggers inside the original text', () => {

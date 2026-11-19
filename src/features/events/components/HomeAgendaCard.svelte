@@ -79,7 +79,7 @@
 				sizes={HOME_ARTWORK_SIZES}
 				aspectRatio="4 / 5"
 				alt={event.name}
-				loading={index < 2 ? 'eager' : 'lazy'}
+				loading={index < 4 ? 'eager' : 'lazy'}
 				fetchpriority={index === 0 ? 'high' : 'auto'}
 				class="w-full rounded-none! bg-[#1d1d23]!"
 			/>

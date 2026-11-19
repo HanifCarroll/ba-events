@@ -23,6 +23,7 @@ export type HomeAgendaEvent = HomeEventCard & {
 export const HOME_FILTERS = ['hoy', 'finde', 'gratis', 'musica'] as const
 export type HomeFilter = (typeof HOME_FILTERS)[number]
 export const HOME_FALLBACK_LIMIT = 4
+export const HOME_PAGE_SIZE = 24
 export const HOME_EVENT_DEFAULT_DURATION_MS = 3 * 60 * 60 * 1000
 export const HOME_FEED_FRESH_SECONDS = 60
 export const HOME_FEED_STALE_SECONDS = 300
@@ -55,6 +56,16 @@ export type HomeWindow = ReturnType<typeof homeWindow>
 export type HomeAgenda = { window: HomeWindow; events: HomeAgendaEvent[]; asOf: number }
 export type HomeAgendaCardEvent = HomeAgendaEvent & { slotStarts?: string[] }
 export type HomeView = { events: HomeAgendaCardEvent[]; empty: HomeFilter | 'feed' | null }
+export type HomeViewPage = HomeView & { total: number }
+export type HomeAgendaPage = { view: HomeViewPage; flyers: HomeAgendaCardEvent[]; refreshInMs: number }
+
+export function pageHomeView(view: HomeView, requested: string | null): HomeViewPage {
+  const n = requested && /^\d+$/.test(requested) ? Number(requested) : 0
+  const pages = Number.isSafeInteger(n) ? Math.floor(n / HOME_PAGE_SIZE) : 0
+  const total = view.events.length
+  const count = Math.min(total, Math.max(1, pages) * HOME_PAGE_SIZE)
+  return { ...view, events: view.events.slice(0, count), total }
+}
 
 function occurrenceEnd(event: HomeAgendaEvent): number {
   const explicitEnd = event.ends_at ? Date.parse(event.ends_at) : NaN

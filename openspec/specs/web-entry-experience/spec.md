@@ -41,7 +41,21 @@ The homepage and app navigation SHALL show the ticket wordmark as a home link wi
 - **AND** the browser tab and installed app use the ticket mark
 
 ### Requirement: The homepage leads with the current agenda
-The homepage SHALL render the event grid before the chat composer and follow links. Filters SHALL use linkable `?f=` URLs that render the same view on a direct request; client-side filter changes SHALL reuse the loaded agenda.
+The homepage SHALL render the event grid before the chat composer and follow links. Filter and paging URLs SHALL render the same view on a direct request. The server SHALL select each view from the shared cached agenda without sending undisplayed grid cards to the browser.
+
+#### Scenario: A visitor browses more of the agenda
+- **WHEN** the homepage renders without a valid paging parameter
+- **THEN** it shows at most 24 grouped cards and the localized shown and total counts when there are matches
+- **AND** if more cards are available, a real link increases `n` by 24, preserving `f`; the count is bounded by the selected view's total
+- **AND** with JavaScript, the link adds cards without a document reload or a scroll jump; choosing a filter starts its view over at 24 cards
+- **AND** the server groups time slots before applying the card limit, and retains the localized empty-date message and its fallback cards
+
+#### Scenario: A visitor opens the first page or scrolls deep into it
+- **WHEN** the agenda shows flyer cards
+- **THEN** the first four images load eagerly, the first has high fetch priority, and the remaining images load lazily in reserved 4:5 frames
+- **WHEN** the visitor scrolls more than approximately two viewport heights
+- **THEN** a localized back-to-top button with a target at least 44 pixels square appears clear of page controls and safe-area insets
+- **AND** activating it returns the visitor to the top without smooth scrolling when reduced motion is requested
 
 #### Scenario: A visitor filters the agenda
 - **WHEN** the visitor selects Today, This weekend, Free, or Music
