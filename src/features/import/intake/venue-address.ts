@@ -19,10 +19,16 @@ export function addressKey(address: string | null | undefined): string | null {
   return avenue ? `avenida ${key.replace(/^presidente sarmiento (?=\d+$)/, 'sarmiento ')}` : key
 }
 
+/** Catalog spellings often omit Av., but Sarmiento and Avenida Sarmiento are separate streets. */
+export const duplicateAddressKey = (address: string | null, strictKey: string | null) =>
+  /^avenida sarmiento \d+$/.test(strictKey ?? '') ? strictKey : catalogAddressKey(address)
+
 const words = (text: string) => fold(text).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 const cityLabel = 'caba|c a b a|capital federal|(?:ciudad|cdad)(?: autonoma)? de buenos aires'
 const citySuffix = new RegExp(`^(?:${cityLabel})$`)
-const cityEvidence = new RegExp(`\\b(?:${cityLabel}|${NEIGHBORHOODS.map(words).join('|')})\\b`)
+const barrioLabel = `barrio (?:de(?:l)? )?(?:${NEIGHBORHOODS.map(words).join('|')})`
+// Require a locality label in prose, not a bare barrio word or a label followed by a house number.
+const localityEvidence = new RegExp(`\\b(?:${cityLabel}|${barrioLabel})\\b(?! (?:(?:n|nro|num|numero) )?\\d)`)
 
 /** Keep unknown localities out of the municipal fallback; USIG expects the city suffix as ", CABA". */
 export function municipalAddress(address: string, height: string, evidence: readonly { confirms: string }[]) {
@@ -30,7 +36,7 @@ export function municipalAddress(address: string, height: string, evidence: read
   if (!numbered) return null
   const qualifiers = numbered[2].split(/[,–—-]/).map(words).filter(label => label && !/^(?:argentina|c\d{4}[a-z]{0,3})$/.test(label))
   if (qualifiers.some(label => !citySuffix.test(label) && !barrio(label))) return null
-  const explicit = qualifiers.length > 0 || evidence.some(item => cityEvidence.test(words(item.confirms)))
+  const explicit = qualifiers.length > 0 || evidence.some(item => localityEvidence.test(words(item.confirms)))
   return { explicit, query: explicit ? `${numbered[1]}, CABA` : numbered[1], neighborhood: qualifiers.map(barrio).find(Boolean) ?? null }
 }
 
@@ -62,17 +68,19 @@ async function readUsig(base: string, params: Record<string, string>): Promise<u
 }
 
 /** USIG can suggest fuzzy matches. Confirm the exact CABA street and height before reading their barrio. */
-export function lookupUsig(address: string, key: string) {
+export function lookupUsig(address: string, key: string, explicit: boolean) {
   const height = Number(key.split(' ').at(-1))
   return Effect.tryPromise(async () => {
     const candidates = Schema.decodeUnknownResult(usigAddresses)(await readUsig('https://servicios.usig.buenosaires.gob.ar/normalizar', { direccion: address }))
     if (candidates._tag !== 'Success') return null
-    const matches = candidates.success.direccionesNormalizadas.filter(item => item.cod_partido === 'caba' && item.altura === height &&
+    const exact = candidates.success.direccionesNormalizadas.filter(item => item.altura === height &&
       addressKey(`${item.nombre_calle.replace(/^([^,]+), ([^,]+?)( AV\.)?$/, '$2 $1$3')} ${height}`) === key)
-    if (new Set(matches.map(item => item.cod_calle)).size > 1) return 'ambiguous' as const
-    if (!matches.length) return null
+    const city = exact.filter(item => item.cod_partido === 'caba')
+    if (!city.length) return null
+    if (!explicit && city.length !== exact.length) return 'provincia-namesake' as const
+    if (new Set(city.map(item => item.cod_calle)).size > 1) return 'ambiguous' as const
     const area = Schema.decodeUnknownResult(usigArea)(await readUsig('https://ws.usig.buenosaires.gob.ar/datos_utiles',
-      { calle: matches[0].nombre_calle, altura: String(height) }))
+      { calle: city[0].nombre_calle, altura: String(height) }))
     return area._tag === 'Success' ? barrio(area.success.barrio) : null
   }).pipe(Effect.catch(() => Effect.succeed(null)))
 }

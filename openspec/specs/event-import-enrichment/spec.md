@@ -272,7 +272,9 @@ The agent SHALL submit validated structured candidates with supporting observati
 - **AND** a similar-name or alias candidate no longer blocks creation once the operator lists it in `distinct_from` with a reason, which is kept with the evidence; a same-name or same-address candidate always blocks
 - **AND** otherwise a venue is created only inside the city of Buenos Aires with a valid barrio, its evidence is kept as an approved `instagram-intake` row in `venue_review_queue`, and repeating the request returns the same venue
 - **AND** before creating, completing, or correcting a venue, Nominatim or USIG confirms the exact CABA street type, name, and house number; failures or lack of an exact match never authorize a write
-- **AND** an exact Provincia match holds unless the address or evidence explicitly identifies CABA or a CABA barrio and USIG independently confirms a single matching CABA street, without overriding any supplied non-CABA locality; conflicting USIG street matches or a conflicting stated barrio return `ambiguous` without writing
+- **AND** catalog duplicate checks flag avenue and plain spellings of the same street and number as possible matches, except that Sarmiento and Avenida Sarmiento are different streets; geocoding still requires the exact street type
+- **AND** competing exact CABA and Provincia matches in USIG, or an exact Provincia match in Nominatim, hold unless the address or evidence explicitly identifies CABA or names a CABA barrio as a locality and USIG confirms a single matching CABA street without overriding a supplied non-CABA locality; a barrio name used only as a street name does not identify the city
+- **AND** multiple matching CABA street codes in USIG or a stated barrio that conflicts with USIG or the official `suburb` of an exact Nominatim result return `ambiguous` without writing; an informal `neighbourhood` mismatch alone does not block a write
 - **AND** the `held` operation lists unpublished future candidates grouped by venue with their hold reasons
 
 ### Requirement: Intake publication is transactional and revision checked

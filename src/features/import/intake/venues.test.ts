@@ -35,8 +35,8 @@ function fakeDb(venues: VenueRow[], options: { similar?: Record<string, number>;
   return { db: db as unknown as IntakeStore, inserts, venues }
 }
 // By default the synthetic geocoder finds the request's own street and number (Av. Ficticia 1234).
-const geocoded = (state: string, suburb?: string, road = 'Avenida Ficticia', house_number = '1234') => () => Effect.succeed({
-  lat: '0', lon: '0', display_name: 'synthetic', address: { road, house_number: house_number || undefined, state, suburb, country_code: 'ar' } } as NominatimResult)
+const geocoded = (state: string, suburb?: string, road = 'Avenida Ficticia', house_number = '1234', neighbourhood?: string) => () => Effect.succeed({
+  lat: '0', lon: '0', display_name: 'synthetic', address: { road, house_number: house_number || undefined, state, suburb, neighbourhood, country_code: 'ar' } } as NominatimResult)
 const request = (overrides: Partial<VenueRequest> = {}): VenueRequest => decodeVenueRequest({
   name: 'Sala Sintética', address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro',
   evidence: [{ url: 'https://example.org/sala', confirms: 'name, address and barrio on the official site' }], ...overrides })
@@ -147,7 +147,8 @@ describe('intake venue resolution', () => {
       const listed = (count: number) => lookalikes.slice(0, count).map(venue => ({ venue_id: venue.id, reason: why }))
       expect(await run(sixListed.db, request({ ...museum, distinct_from: listed(6) }))).toMatchObject({ outcome: 'ambiguous' })
       expect(sixListed.inserts).toHaveLength(0)
-      expect(await run(fakeDb(structuredClone(lookalikes), { similar: scores }).db, request({ ...museum, distinct_from: listed(7) }))).toMatchObject({ outcome: 'created' })
+      expect(await run(fakeDb(structuredClone(lookalikes), { similar: scores }).db, request({ ...museum, distinct_from: listed(7) }),
+        geocoded('Ciudad Autónoma de Buenos Aires', 'Saavedra'))).toMatchObject({ outcome: 'created' })
     })
     it('stays ambiguous for an unlisted candidate, an empty reason, the same name, or the same street and number', async () => {
       const alias = () => fakeDb([{ id: id(1), name: 'Saavedra', address: null, neighborhood: null },
@@ -205,7 +206,7 @@ describe('intake venue resolution', () => {
     const abastoGeocode = () => Effect.succeed({ lat: '0', lon: '0', display_name: 'synthetic', address: { road: 'Avenida Corrientes', house_number: '3200',
       neighbourhood: 'Abasto', suburb: 'Almagro', state: 'Ciudad Autónoma de Buenos Aires', country_code: 'ar' } } as NominatimResult)
     expect(await run(abasto.db, request({ name: 'Sala Abasto', address: 'Av. Corrientes 3200', neighborhood: 'Balvanera' }), abastoGeocode))
-      .toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'ab', why: expect.stringContaining('places it in Almagro, not Balvanera') }] })
+      .toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringMatching(/Nominatim.*Almagro.*Balvanera/)] })
     expect(abasto.venues[0].neighborhood).toBe('Almagro')
     expect(abasto.inserts).toHaveLength(0)
     // A different number keeps today's behavior.
@@ -233,6 +234,26 @@ describe('intake venue resolution', () => {
     const shared = fakeDb([{ id: 'v3', name: 'Centro Cultural Ficticio', address: 'Avenida Ficticia 1234', neighborhood: 'Almagro' }])
     expect(await run(shared.db, request())).toMatchObject({ outcome: 'ambiguous', candidates: [{ id: 'v3', why: 'same address' }] })
     expect([...band.inserts, ...moved.inserts, ...shared.inserts]).toHaveLength(0)
+  })
+  it.each([
+    ['Corrientes 3781', 'Av. Corrientes 3781'],
+    ['Av. Corrientes 3781', 'Corrientes 3781'],
+    ['Av. Roque Sáenz Peña 943', 'Roque Sáenz Peña 943'],
+    ['Av. Roque Sáenz Peña 943', 'Diagonal Norte 943'],
+  ])('holds a different name at %s when the catalog has %s', async (address, stored) => {
+    const id = '00000000-0000-4000-8000-000000000001'
+    const { db, inserts } = fakeDb([{ id, name: 'Centro Cultural Ficticio', address: stored, neighborhood: 'Almagro' }])
+    const [road, height] = address.split(/ (?=\d+$)/)
+    const geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro', road, height)
+    expect(await run(db, request({ address, distinct_from: [{ venue_id: id, reason: 'The recorded name is different' }] }), geocode))
+      .toMatchObject({ outcome: 'ambiguous', candidates: [{ id, why: 'same address' }] })
+    expect(inserts).toHaveLength(0)
+  })
+  it('does not flag plain Sarmiento and Avenida Sarmiento as the same catalog address', async () => {
+    const { db } = fakeDb([{ id: 'v1', name: 'Centro Cultural Ficticio', address: 'Sarmiento 2715', neighborhood: 'Balvanera' }])
+    expect(await run(db, request({ address: 'Av. Sarmiento 2715', neighborhood: 'Palermo' }),
+      geocoded('Ciudad Autónoma de Buenos Aires', 'Palermo', 'Avenida Presidente Sarmiento', '2715')))
+      .toMatchObject({ outcome: 'created', venue: { neighborhood: 'Palermo' } })
   })
   it('rejects addresses outside the city and invalid barrios, and derives a missing barrio', async () => {
     const { db, inserts } = fakeDb([])
@@ -292,11 +313,26 @@ describe('intake venue resolution', () => {
     })
 
     it.each([
+      ['Av. Belgrano 1234', 'Avenida Belgrano', 'La web confirma Av. Belgrano 1234'],
+      ['Belgrano 1234', 'Belgrano', 'La sala queda en Belgrano 1234'],
+      ['Palermo 1234', 'Palermo', 'El sitio da la dirección Palermo n.º 1234'],
+    ])('does not use street words from %s as evidence of the city', async (address, road, confirms) => {
+      const urls = providers({ ...province, road, house_number: '1234', town: 'Brandsen' }, [usig(road, 1234)], 'Monserrat')
+      const { result, inserts } = resolve(address, null, confirms)
+      expect(await result).toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringContaining('Brandsen')] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().map(url => url.pathname)).toEqual(['/search'])
+    })
+
+    it.each([
       ['Av. Roque Sáenz Peña 943, CABA', undefined],
       ['Av. Roque Sáenz Peña 943, Capital Federal', undefined],
       ['Av. Roque Sáenz Peña 943, Ciudad de Buenos Aires', undefined],
       ['Av. Roque Sáenz Peña 943, San Nicolás', undefined],
       ['Av. Roque Sáenz Peña 943', 'Sala en el barrio de San Nicolás'],
+      ['Av. Roque Sáenz Peña 943', 'Sala en San Nicolás, CABA'],
+      ['Av. Roque Sáenz Peña 943', 'Av. Roque Sáenz Peña 943, San Nicolás, C.A.B.A.'],
+      ['Av. Roque Sáenz Peña 943', 'La sala queda en la Ciudad Autónoma de Buenos Aires'],
     ] as const)('can confirm %s when the address or evidence identifies the city', async (address, evidence) => {
       const urls = providers(brandsen, [usig(diagonal, 943)], 'San Nicolas')
       expect(await resolve(address, null, evidence).result).toMatchObject({ outcome: 'created', venue: { address, neighborhood: 'San Nicolás' } })
@@ -347,11 +383,26 @@ describe('intake venue resolution', () => {
       expect(inserts).toHaveLength(0)
     })
 
+    it('holds when USIG finds the exact address in both CABA and Provincia without an explicit locality', async () => {
+      const urls = providers({ ...province, road: 'Avenida 58', house_number: '943' }, [
+        usig('ROQUE SAENZ PEÑA AV.', 943, 'brandsen'), usig(diagonal, 943),
+      ], 'San Nicolás')
+      const address = 'Av. Roque Sáenz Peña 943'
+      const { result, inserts } = resolve(address, 'San Nicolás')
+      expect(await result).toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringMatching(/CABA.*Provincia/)] })
+      expect(inserts).toHaveLength(0)
+      expect(urls().at(-1)?.pathname).toBe('/normalizar')
+
+      expect(await resolve(`${address}, CABA`).result).toMatchObject({ outcome: 'created', venue: { neighborhood: 'San Nicolás' } })
+      expect(await resolve(address, null, 'La sala queda en el barrio de San Nicolás').result)
+        .toMatchObject({ outcome: 'created', venue: { neighborhood: 'San Nicolás' } })
+    })
+
     it.each([
       ['Av. Sarmiento 2715', { ...province, road: 'Avenida 58', house_number: '2715' }, 'SARMIENTO AV.', 2715, 'Palermo', 'Palermo'],
       ['Av. Rivadavia 1499', { ...province, road: 'Rivadavia', postcode: '1499' }, 'RIVADAVIA AV.', 1499, 'San Nicolas', 'San Nicolás'],
     ] as const)('recovers %s only with a matching CABA street and height', async (address, osm, street, number, reported, neighborhood) => {
-      const urls = providers(osm, [usig(street, number, 'brandsen'), usig(street, number)], reported)
+      const urls = providers(osm, [usig(street, number + 1, 'brandsen'), usig(street, number)], reported)
       const { result, inserts } = resolve(address)
       expect(await result).toMatchObject({ outcome: 'created', venue: { address, neighborhood }, warnings: [] })
       expect(inserts[1].row.notes).toContain('"neighborhood_method":"usig"')
@@ -430,12 +481,25 @@ describe('intake venue resolution', () => {
     expect(inserts).toHaveLength(0)
     expect(geocode).toHaveBeenCalledTimes(4)
   })
-  it('rejects a geocoder outage but keeps the stated barrio when an exact Nominatim match disagrees', async () => {
+  it('rejects a geocoder outage without writing', async () => {
     const { db, inserts } = fakeDb([])
     expect(await run(db, request(), () => Effect.fail('timeout'))).toMatchObject({ outcome: 'rejected' })
     expect(inserts).toHaveLength(0)
-    const other = await run(db, request(), geocoded('Ciudad Autónoma de Buenos Aires', 'Boedo'))
-    expect(other).toMatchObject({ outcome: 'created', venue: { neighborhood: 'Almagro' }, warnings: [expect.stringContaining('Boedo')] })
+  })
+  it.each([
+    { address: 'Av. Ficticia 1234, CABA', neighborhood: 'Almagro' },
+    { address: 'Av. Ficticia 1234, Almagro', neighborhood: null },
+    { address: 'Av. Ficticia 1234, Almagro', neighborhood: 'Boedo' },
+  ])('holds a stated barrio contradicted by the exact Nominatim suburb: %j', async (input) => {
+    const { db, inserts } = fakeDb([])
+    expect(await run(db, request(input), geocoded('Ciudad Autónoma de Buenos Aires', 'Boedo')))
+      .toMatchObject({ outcome: 'ambiguous', reasons: [expect.stringMatching(/Nominatim.*Boedo.*Almagro/)] })
+    expect(inserts).toHaveLength(0)
+  })
+  it('keeps the stated barrio when only the informal Nominatim neighbourhood disagrees', async () => {
+    const geocode = geocoded('Ciudad Autónoma de Buenos Aires', 'Almagro', undefined, undefined, 'Boedo')
+    expect(await run(fakeDb([]).db, request(), geocode))
+      .toMatchObject({ outcome: 'created', venue: { neighborhood: 'Almagro' }, warnings: [expect.stringContaining('Boedo')] })
   })
   it('fails on a database outage instead of creating a possible duplicate', async () => {
     const { db, inserts } = fakeDb([], { failReads: true })

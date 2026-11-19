@@ -8,7 +8,7 @@ import { REVIEW_QUEUE_THRESHOLD, areaOnlyVenueName, isGarbageVenueName, isPlaceh
 import { validPublicUrl } from './schema.ts'
 import { baDate, normalizeTitle } from './planning.ts'
 import type { CandidateRow, IntakeStore, PlanSummary, VenueRow } from './store.ts'
-import { addressKey, barrio, fold, lookupUsig, municipalAddress } from './venue-address.ts'
+import { addressKey, barrio, duplicateAddressKey, fold, lookupUsig, municipalAddress } from './venue-address.ts'
 
 const text = (min: number, max: number) => Schema.String.pipe(Schema.check(Schema.isMinLength(min), Schema.isMaxLength(max)))
 export const VenueRequestSchema = Schema.Struct({
@@ -31,7 +31,7 @@ export type VenueOutcome =
   | { outcome: 'ambiguous'; candidates: Array<VenueRow & { why: string }>; reasons?: string[] }
   | { outcome: 'rejected'; reasons: string[] }
 export type Geocode = (query: string, options?: NominatimSearchOptions) => Effect.Effect<NominatimResult | null, unknown>
-type CityLookup = (address: string, key: string) => Effect.Effect<Neighborhood | 'ambiguous' | null>
+type CityLookup = (address: string, key: string, explicit: boolean) => Effect.Effect<Neighborhood | 'ambiguous' | 'provincia-namesake' | null>
 // Nominatim allows one request a second; only the second, city-biased lookup of a `venue` call waits.
 const nominatim: Geocode = (query, options) => options?.cityBias
   ? Effect.sleep(1000).pipe(Effect.andThen(searchNominatimEffect(query, 1, options))) : searchNominatimEffect(query)
@@ -92,7 +92,11 @@ export const resolveIntakeVenueEffect = Effect.fn('intake.venue')(function*(stor
     : venue.address && addressKey(venue.address) !== key ? 'same name, different address' : 'same name, different barrio', true)
   for (const venue of similar) flag(venue, `similar name (${Number(venue.similarity).toFixed(2)})`)
   for (const venue of venues) if (possibleAlias(venue.name, name)) flag(venue, 'possible alias')
-  for (const venue of venues) if (addressKey(venue.address) === key) flag(venue, 'same address', true)
+  const duplicateKey = duplicateAddressKey(address, key)
+  for (const venue of venues) {
+    const storedKey = addressKey(venue.address)
+    if (storedKey === key || duplicateKey && duplicateAddressKey(venue.address, storedKey) === duplicateKey) flag(venue, 'same address', true)
+  }
   const distinct = new Map((request.distinct_from ?? []).map(item => [item.venue_id, item.reason.trim()]))
   const cleared = (id: string) => !blocking.has(id) && !!distinct.get(id)
   // Other lookalikes the operator cleared don't stop the one same-name venue from matching, which keeps a retry idempotent.
@@ -176,17 +180,18 @@ const locateEffect = Effect.fn('intake.venue-locate')(function*(geocode: Geocode
   if (outside && exact(outside) && !qualification?.explicit) {
     return holdLocation(`${elsewhere}; confirm the CABA locality in the address or evidence`)
   }
-  const municipal = !confirmed && cityLookup && qualification ? yield* cityLookup(qualification.query, requested) : null
+  const municipal = !confirmed && cityLookup && qualification ? yield* cityLookup(qualification.query, requested, qualification.explicit) : null
+  if (municipal === 'provincia-namesake') return holdLocation('USIG found the exact address in CABA and Provincia; confirm the CABA locality in the address or evidence')
   if (municipal === 'ambiguous') return holdLocation('USIG found more than one CABA street matching the address')
   if (!confirmed && !municipal) return rejectLocation(elsewhere || 'The geocoders could not confirm the exact CABA street and house number')
-  if (municipal) {
-    const conflict = [stated, qualification?.neighborhood].find(value => value && value !== municipal)
-    if (conflict) return holdLocation(`USIG places the address in ${municipal}, not the stated ${conflict}`)
+  // Only USIG or an exact Nominatim result's official suburb may block or correct a stated barrio.
+  const official = municipal ?? (confirmed?.address.suburb ? barrio(confirmed.address.suburb) : null)
+  if (official) {
+    const conflict = [stated, qualification?.neighborhood].find(value => value && value !== official)
+    if (conflict) return holdLocation(`${municipal ? 'USIG' : 'Nominatim'} places the address in ${official}, not the stated ${conflict}`)
   }
   const warnings: string[] = []
   const derived = municipal ?? (confirmed ? mapNominatimNeighborhood(confirmed.address.neighbourhood, confirmed.address.suburb) : null)
-  // Only USIG or an exact Nominatim result's official suburb may correct a stored barrio.
-  const official = municipal ?? (confirmed?.address.suburb ? barrio(confirmed.address.suburb) : null)
   if (stated) {
     if (derived && derived !== stated) warnings.push(`Geocoder places the address in ${derived}; kept the stated ${stated}`)
     return { neighborhood: stated, method: municipal ? 'usig' : 'stated', warnings, official }
